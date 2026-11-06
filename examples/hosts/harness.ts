@@ -1,6 +1,6 @@
 import type { HostController } from "./controller.ts";
 import type { ViewBindings } from "./bindings.ts";
-import type { TextEdit } from "../../src/index.ts";
+import type { Selection, TextEdit } from "../../src/index.ts";
 
 export function installHostHarness(controller: HostController, bindings: ViewBindings, mode: "plain" | "react",
     mount: () => void, unmount: () => void, commits: () => Readonly<{ form: number; metadata: number }>): void {
@@ -20,6 +20,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         externalWrite: (text: string) => controller.externalWrite(text), finishConflictReview: controller.finishConflictReview, saveReviewedSource: controller.saveReviewedSource,
         range: (from: number, to: number) => controller.workspace.document(controller.source.documentId).buffer.slice(from, to),
         referenceRange: (from: number, to: number) => bindings.referenceRange(from, to),
+        selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => bindings.selectSource(id, revision, selection),
         unmount, mount: attach, dispose });
     window.hostFixture = fixture;
 }
@@ -31,4 +32,5 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; mode
     finishRun: () => void; failRun: () => void; finishSave: () => void; range: (from: number, to: number) => string;
     externalWrite: (text: string) => void; finishConflictReview: () => boolean; saveReviewedSource: () => void;
     referenceRange: (from: number, to: number) => string | undefined;
+    selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => boolean;
     unmount: () => void; mount: () => void; dispose: () => Promise<void> }> } }

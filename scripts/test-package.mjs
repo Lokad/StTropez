@@ -133,6 +133,12 @@ try {
     await page.waitForFunction(() => window.consumer.comparison().status === "ready" && window.consumer.comparison().count === 0);
     assert.equal(await page.evaluate(() => window.consumer.acceptComparison()), true);
     await page.waitForFunction(() => window.consumer.comparison().version === "accepted-2");
+    const retainedComparison = await page.evaluate(() => window.consumer.comparison());
+    assert.equal(await page.evaluate(() => window.consumer.remountComparison()), true);
+    await page.waitForFunction(() => { const s = window.consumer.comparison(); return s.status === "ready" && !s.working.pending
+        && JSON.stringify(s.working.selection) === JSON.stringify(s.selection); });
+    const remountedComparison = await page.evaluate(() => window.consumer.comparison());
+    assert.equal(remountedComparison.viewId, retainedComparison.viewId); assert.deepEqual(remountedComparison.selection, retainedComparison.selection);
     const saveReview = await page.evaluate(() => window.consumer.saveReview());
     assert.deepEqual(saveReview, { baselineBefore: "v0", precondition: "v1", saved: "saved", textAfter: "merged later", dirtyAfter: true,
         cleanAfterUndo: true, serverVersion: "v2", leases: 0 });

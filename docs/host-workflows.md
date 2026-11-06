@@ -52,6 +52,31 @@ tickets, while a completed reference survives reopening. These commands neither 
 acknowledge an agent proposal. Comparison editing always uses the bounded candidate, including
 when the two source panes use the native baseline.
 
+The comparison's working selection is host-owned too. Closing/reopening review and a full
+host unmount preserve its independent selection and scroll position. Edits made while detached
+map the retained selection through the shared document. The reference pane restores selection
+and scroll only for the same buffer and reference version; acceptance or refresh to a different
+reference starts a new reference view. Pending tickets still expire on detach. Host disposal
+releases all retained selections, and reopening does not focus an input automatically.
+
+Viewport snapshots expose the immutable selection used by their last completed render,
+alongside that render's revision. A model selection can change without a revision change;
+readiness checks must wait for the rendered selection and pending work as well as the revision.
+Candidate snapshots separately expose synchronous keydown-handler elapsed time, pending caret
+work and cooperative word/grapheme steps. Keydown initiation can finish before those jobs,
+comparison or painting; it is not complete interaction latency.
+
+`bench:host-navigation` exercises actual word/grapheme, line selection, deletion, undo/redo and
+page commands with review and 20 Hz host traffic active in both candidate hosts. It checks
+beginning/middle/end positions in Unicode/CRLF, repeated/distinct 100,000-line sources and a
+2.4-million-unit identifier. Explicit selection setup and full text/reference oracles are
+outside timers. Readiness waits for pending scans/caret work, exact model and rendered
+selections/revisions, completed comparison and two consecutive frames. Handler elapsed time,
+readiness, automation and cooperative step times remain separate. Deleting or restoring more
+than 4,096 units is labelled bulk and receives no point-action readiness target. Target misses
+remain in the report. The comparison reference index is warm; this does not qualify cold first
+edits after the identical-buffer fast path, physical display latency or native device input.
+
 ## Save conflicts and reviewed retries
 
 Both hosts show save status and a conflict panel with the attempted local revision, expected

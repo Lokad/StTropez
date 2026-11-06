@@ -1,7 +1,7 @@
 import { createComparisonController } from "../core/comparison.ts";
 import type { ComparisonBaseline, ComparisonController } from "../core/comparison.ts";
 import type { DiffRange } from "../core/diff.ts";
-import type { TabId, TabTarget, TextResourceHandle, Workspace } from "../core/workspace.ts";
+import type { DocumentView, TabId, TabTarget, TextResourceHandle, Workspace } from "../core/workspace.ts";
 import { mountEditingCandidate } from "./editing-candidate.ts";
 import type { EditingCandidate } from "./editing-candidate.ts";
 import { mountTextViewport } from "./viewport.ts";
@@ -16,12 +16,12 @@ export type TextComparison = Readonly<{
 let nextMount = 0;
 /** Two independently virtualized panes. Hosts own reference retrieval, acceptance, saving and execution. */
 export function mountTextComparison(host: HTMLElement, workspace: Workspace, workingTab: TabId, baseline: ComparisonBaseline,
-    options: Readonly<{ ariaLabel?: string; workBudget?: number }> = {}): TextComparison {
+    options: Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView }> = {}): TextComparison {
     const budget = options.workBudget ?? 32768;
     if (!Number.isSafeInteger(budget) || budget < 512) throw new RangeError("Comparison budget must be at least 512.");
     const owner = host.ownerDocument, win = owner.defaultView;
     if (!win) throw new Error("Comparison requires an attached browser document.");
-    const controller = createComparisonController(workspace, workingTab, baseline), mount = ++nextMount;
+    const controller = createComparisonController(workspace, workingTab, baseline, options), mount = ++nextMount;
     const root = owner.createElement("div"), controls = owner.createElement("div"), panes = owner.createElement("div");
     root.className = "st-comparison"; root.setAttribute("role", "group"); root.setAttribute("aria-label", options.ariaLabel ?? "Text comparison");
     controls.className = "st-comparison-controls"; panes.className = "st-comparison-panes";

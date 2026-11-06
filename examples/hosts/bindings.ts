@@ -1,13 +1,10 @@
 import { mountEditingCandidate, mountTextComparison, mountTextEditor } from "../../src/browser/index.ts";
-import type { MountedEditor, TextComparison, ViewportSnapshot, ViewState } from "../../src/browser/index.ts";
-import type { ComparisonTicket, DocumentId, DocumentView } from "../../src/index.ts";
+import type { EditingCandidate, MountedEditor, TextComparison, ViewportSnapshot, ViewState } from "../../src/browser/index.ts";
+import type { ComparisonBaseline, ComparisonTicket, DocumentId, DocumentView, Selection } from "../../src/index.ts";
 import type { HostController } from "./controller.ts";
 
 export type HostEditor = "native" | "candidate";
-type BoundEditor = MountedEditor & Readonly<{ metrics: () => null | Readonly<{
-    inputUnits: number; commits: number; composing: boolean; lastInputMs: number;
-    viewport: ViewportSnapshot;
-}> }>;
+type BoundEditor = MountedEditor & Readonly<{ metrics: () => null | ReturnType<EditingCandidate["snapshot"]> & Readonly<{ viewport: ViewportSnapshot }> }>;
 export function hostEditor(): HostEditor { return new URLSearchParams(location.search).get("editor") === "candidate" ? "candidate" : "native"; }
 
 /** Stable refs own editor descendants; the controller and resource IDs survive every detach. */
@@ -20,6 +17,7 @@ export class ViewBindings {
     private mounts = 0;
     private destroys = 0;
     private review: TextComparison | undefined;
+    private referenceState: Readonly<{ baseline: ComparisonBaseline; state: ViewState }> | undefined;
     private reviewStatus: HTMLOutputElement | undefined;
     private reviewListeners: AbortController | undefined;
     private readonly reviewTickets: ComparisonTicket[] = [];
@@ -29,13 +27,25 @@ export class ViewBindings {
     readonly secondary: (host: HTMLDivElement | null) => void;
     readonly comparison = (host: HTMLDivElement | null): void => {
         for (const ticket of this.reviewTickets.splice(0)) ticket.cancel();
+        if (this.review) {
+            const baseline = this.review.controller.getSnapshot().baseline, reference = this.review.referenceViewport();
+            if (baseline && reference) this.referenceState = { baseline, state: reference.captureView() };
+            if (this.review.controller.getSnapshot().working) this.retainState("comparison", this.review.working.view.documentId, this.review.working.captureView());
+        }
         this.review?.destroy(); this.review = undefined; this.reviewListeners?.abort(); this.reviewListeners = undefined;
         this.reviewStatus?.remove(); this.reviewStatus = undefined;
         if (!host) return;
         this.reviewStatus = host.ownerDocument.createElement("output"); this.reviewStatus.setAttribute("aria-label", "Reference operation status");
         this.reviewStatus.setAttribute("aria-live", "polite"); this.reviewStatus.textContent = this.reviewResult; host.append(this.reviewStatus);
+        const baseline = this.controller.comparisonReference.getSnapshot().baseline;
+        const view = this.retainedView("comparison", this.controller.source.documentId);
         this.review = mountTextComparison(host, this.controller.workspace, this.controller.viewTab("primary"),
-            this.controller.comparisonReference.getSnapshot().baseline, { ariaLabel: "Source review" });
+            baseline, { ariaLabel: "Source review", view });
+        const state = this.states.get("comparison")?.get(view.documentId);
+        if (state) this.review.working.restoreView({ ...state, ...view.getSnapshot().selection });
+        if (this.referenceState?.baseline.buffer === baseline.buffer && this.referenceState.baseline.version === baseline.version)
+            this.review.referenceViewport()?.restoreView(this.referenceState.state);
+        else this.referenceState = undefined;
         const documentId = this.review.working.view.documentId;
         this.reviewListeners = new AbortController();
         this.review.working.input.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: this.reviewListeners.signal });
@@ -66,10 +76,23 @@ export class ViewBindings {
     readonly beginReviewAcceptance = (): void => this.beginReference("accept");
     readonly finishReviewAcceptance = (): void => this.finishReference("accept");
     referenceRange(from: number, to: number): string | undefined { return this.review?.controller.getSnapshot().baseline?.buffer.slice(from, to); }
+    selectSource(id: "primary" | "secondary", revision: number, selection: Selection): boolean {
+        return this.mounted.get(id)?.editor.view.setSelection(revision, selection) ?? false;
+    }
     constructor(controller: HostController, editor: HostEditor = "native") {
         this.controller = controller; this.editor = editor;
         this.primary = this.ref("primary", "Primary source");
         this.secondary = this.ref("secondary", "Secondary source");
+    }
+    private retainedView(id: string, documentId: DocumentId): DocumentView {
+        const selections = this.selections.get(id) ?? new Map<DocumentId, DocumentView>();
+        let view = selections.get(documentId);
+        if (!view) { view = this.controller.workspace.createDocumentView(documentId); selections.set(documentId, view); this.selections.set(id, selections); }
+        return view;
+    }
+    private retainState(id: string, documentId: DocumentId, state: ViewState): void {
+        const states = this.states.get(id) ?? new Map<DocumentId, ViewState>();
+        states.set(documentId, state); this.states.set(id, states);
     }
     private ref(id: "primary" | "secondary", ariaLabel: string): (host: HTMLDivElement | null) => void {
         return host => {
@@ -79,9 +102,7 @@ export class ViewBindings {
             const tab = workspace.resolveTab(workspace.captureTab(tabId));
             if (tab?.surface.kind !== "text") throw new Error("Text view requires a text tab.");
             const documentId = tab.surface.documentId;
-            const selections = this.selections.get(id) ?? new Map<DocumentId, DocumentView>();
-            let view = selections.get(documentId);
-            if (!view) { view = workspace.createDocumentView(documentId); selections.set(documentId, view); this.selections.set(id, selections); }
+            const view = this.retainedView(id, documentId);
             const candidate = this.editor === "candidate" ? mountEditingCandidate(host, workspace, tabId, { ariaLabel, view }) : undefined;
             const mounted: BoundEditor = candidate ? { element: candidate.input, view, captureView: candidate.captureView,
                 restoreView: candidate.restoreView, destroy: candidate.destroy,
@@ -96,19 +117,19 @@ export class ViewBindings {
     }
     private detach(id: string): void {
         const mounted = this.mounted.get(id); if (!mounted) return;
-        const states = this.states.get(id) ?? new Map<DocumentId, ViewState>();
-        states.set(mounted.documentId, mounted.editor.captureView()); this.states.set(id, states);
+        this.retainState(id, mounted.documentId, mounted.editor.captureView());
         mounted.editor.destroy(); this.mounted.delete(id); this.destroys++;
     }
     unmount(): void { for (const id of [...this.mounted.keys()]) this.detach(id); }
     dispose(): void {
         this.comparison(null); this.unmount(); for (const selections of this.selections.values()) for (const view of selections.values()) view.dispose();
-        this.selections.clear(); this.states.clear();
+        this.selections.clear(); this.states.clear(); this.referenceState = undefined;
     }
     debug() {
         const comparison = this.review?.controller.getSnapshot();
         return { editor: this.editor, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size,
         comparison: comparison ? { status: comparison.status, generation: comparison.generation, workingRevision: comparison.working?.revision,
+            viewId: this.review!.working.view.id, selection: this.review!.working.view.getSnapshot().selection,
             baseline: comparison.baseline && { version: comparison.baseline.version, epoch: comparison.baseline.epoch, length: comparison.baseline.buffer.length },
             hunks: comparison.hunks.length, pending: this.reviewTickets.map(ticket => ({ kind: ticket.kind, revision: ticket.capture.working.revision, current: ticket.isCurrent() })),
             result: this.reviewResult, work: this.review!.snapshot(), input: this.review!.working.snapshot(),

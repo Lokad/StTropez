@@ -12,6 +12,12 @@ closing or replacing it expires the captured presentation. Baseline display reso
 their own identity and deny editing from every origin, saving and execution. They retain
 the existing `TextBuffer` through `createTextResourceFromBuffer`, without a string export.
 
+Browser mounts accept an optional host-owned working `DocumentView`, as the core controller
+already does. Destroying such a mount releases its jobs, DOM and reference display resource,
+while leaving that view registered for revision-mapped selection updates. The host disposes
+the view at its own lifetime boundary. Reference display views remain mount-owned; restoring
+their scroll and selection requires the same immutable reference buffer and version.
+
 ## Exact alignment and scheduling
 
 `TextDiff` tokenizes LF-inclusive lines, aligns them with shortest-edit bisection, and trims

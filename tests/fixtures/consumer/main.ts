@@ -18,7 +18,8 @@ const candidate = mountEditingCandidate(document.getElementById("candidate")!, w
 const find = createFindController(workspace, tabId, candidate);
 const comparisonResource = workspace.createTextResourceFromBuffer({ scope: "consumer", resource: "review", variant: "working" }, "Review", { buffer: TextBuffer.from("working\r\n"), serverVersion: "saved-1" });
 const comparisonTab = workspace.open({ kind: "text", documentId: comparisonResource.documentId }, "review");
-const comparison = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonTab, { buffer: TextBuffer.from("baseline\r\n"), version: "reference-1" });
+const comparisonView = workspace.createDocumentView(comparisonResource.documentId);
+let comparison = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonTab, { buffer: TextBuffer.from("baseline\r\n"), version: "reference-1" }, { view: comparisonView });
 Object.assign(window, { consumer: { text: () => workspace.document(documentId).text,
     saveReview: async () => {
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "retry", variant: "working" }, "Retry", { value: "base", serverVersion: "v0" });
@@ -95,7 +96,14 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
             asset.dispose(); return { ...captured, released: document.fonts.size === before, retainedA: current.data.nominalGlyphMetrics(2).advanceWidth, retainedPositioned: pair.advances.total };
         } finally { asset.dispose(); }
     },
-    comparison: () => { const s = comparison.controller.getSnapshot(); return { status: s.status, generation: s.generation, count: s.hunks.length, version: s.baseline?.version, reference: comparison.referenceViewport()?.snapshot(), working: comparison.working.viewport.snapshot() }; },
+    comparison: () => { const s = comparison.controller.getSnapshot(); return { status: s.status, generation: s.generation, count: s.hunks.length, version: s.baseline?.version,
+        viewId: comparisonView.id, selection: comparisonView.getSnapshot().selection, reference: comparison.referenceViewport()?.snapshot(), working: comparison.working.viewport.snapshot() }; },
+    remountComparison: () => {
+        const baseline = comparison.controller.getSnapshot().baseline!, state = comparison.working.captureView();
+        comparison.destroy(); const retained = workspace.ownsDocumentView(comparisonView);
+        comparison = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonTab, baseline, { view: comparisonView });
+        comparison.working.restoreView({ ...state, ...comparisonView.getSnapshot().selection }); return retained;
+    },
     acceptComparison: () => { const t = comparison.controller.beginAcceptance(); return t.complete({ buffer: t.capture.working.buffer, version: "accepted-2" }); },
     diff: () => { const cache = new DiffReferenceCache(), d = new TextDiff(TextBuffer.from("a\r\n"), TextBuffer.from("a\n"), cache);
         try { let s = d.next(512); while (s.status === "running") s = d.next(512); return { status: s.status, whitespaceOnly: s.hunks[0]?.whitespaceOnly }; }

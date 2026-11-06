@@ -8,7 +8,7 @@ import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
 
 export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport;
     focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
-    snapshot: () => Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; commits: number; conflicts: number; composing: boolean; pendingWord: boolean; wordScanSteps: number; maxWordScanStepMs: number; pendingGrapheme: boolean; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number; disposed: boolean }>;
+    snapshot: () => Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; keydownEvents: number; lastKeydownMs: number; pendingCaret: boolean; commits: number; conflicts: number; composing: boolean; pendingWord: boolean; wordScanSteps: number; maxWordScanStepMs: number; pendingGrapheme: boolean; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number; disposed: boolean }>;
     destroy: () => void }>;
 let nextMount = 0;
 
@@ -36,6 +36,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     let revision = workspace.document(documentId).revision, context: InputContext = inputContext(workspace.document(documentId).buffer, view.getSnapshot().selection);
     let disposed = false, composing = false, selecting = false, committing = false, escaped = false;
     let frame: number | undefined, commits = 0, conflicts = 0, serial = 0, preferredX: number | undefined, inputEvents = 0, lastInputMs = 0;
+    let keydownEvents = 0, lastKeydownMs = 0;
     let preferredSelection: Selection | undefined, preferredColumnWidth = 0;
     let wordScanSteps = 0, maxWordScanStepMs = 0;
     let graphemeScanSteps = 0, maxGraphemeScanStepMs = 0;
@@ -269,7 +270,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     for (const type of ["select", "keyup"] as const) input.addEventListener(type, syncSelection, { signal: listeners.signal });
     input.addEventListener("focus", scheduleCaret, { signal: listeners.signal });
     input.addEventListener("blur", () => { syncSelection(); group = undefined; scheduleCaret(); }, { signal: listeners.signal });
-    input.addEventListener("keydown", event => {
+    function keydown(event: KeyboardEvent): void {
         if (composing || event.isComposing) return;
         const command = (event.ctrlKey || event.metaKey) && !event.altKey, key = event.key.toLowerCase();
         if (command && (key === "z" || (event.ctrlKey && key === "y"))) { event.preventDefault(); history(event.shiftKey || key === "y" ? "redo" : "undo"); return; }
@@ -315,6 +316,10 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             if (closing && (!next || /[\s)\]}]/.test(next))) { event.preventDefault(); apply([{ from: selected.head, to: selected.head, insert: event.key + closing }], { anchor: selected.head + 1, head: selected.head + 1 }, "typing"); }
             else if ([")", "]", "}"].includes(event.key) && next === event.key) { event.preventDefault(); move(selected.head + 1, false); }
         }
+    }
+    input.addEventListener("keydown", event => {
+        const started = win.performance.now(); keydownEvents++;
+        try { keydown(event); } finally { lastKeydownMs = win.performance.now() - started; }
     }, { signal: listeners.signal });
     root.addEventListener("pointerdown", event => {
         if (event.button !== 0 || event.target === input) return;
@@ -348,7 +353,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     return Object.freeze({ element: root, input, view, viewport, focus,
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state: ViewState) => { viewport.restoreView(state); refresh(); },
-        snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, commits, conflicts, composing, pendingWord: wordJob !== undefined || graphemeJob?.purpose === "word", wordScanSteps, maxWordScanStepMs, pendingGrapheme: graphemeJob !== undefined, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves, disposed }),
+        snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, keydownEvents, lastKeydownMs, pendingCaret: frame !== undefined, commits, conflicts, composing, pendingWord: wordJob !== undefined || graphemeJob?.purpose === "word", wordScanSteps, maxWordScanStepMs, pendingGrapheme: graphemeJob !== undefined, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves, disposed }),
         destroy: () => {
             if (disposed) return; disposed = true;
             cancelWord(); wordInput = undefined; graphemeCache = undefined;

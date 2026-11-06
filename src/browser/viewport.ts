@@ -1,4 +1,4 @@
-import type { DocumentId, DocumentSnapshot, DocumentView, TabId, TextBuffer, Workspace } from "../index.ts";
+import type { DocumentId, DocumentSnapshot, DocumentView, Selection, TabId, TextBuffer, Workspace } from "../index.ts";
 import type { ViewState } from "./index.ts";
 import { scrollAxis } from "./scroll.ts";
 import type { ScrollAxis } from "./scroll.ts";
@@ -6,7 +6,7 @@ import { rowGeometry } from "./text-geometry.ts";
 import type { CaretRectangle } from "./text-geometry.ts";
 import type { Affinity } from "../index.ts";
 
-export type ViewportSnapshot = Readonly<{ revision: number | null; renders: number; firstLine: number; lastLine: number;
+export type ViewportSnapshot = Readonly<{ revision: number | null; selection: Selection | null; renders: number; firstLine: number; lastLine: number;
     rows: number; partialRows: number; textUnits: number; readUnits: number; lastRenderMs: number; scrollTop: number; scrollLeft: number; width: number; height: number;
     lineHeight: number; columnWidth: number; verticalExtent: number; horizontalExtent: number;
     physicalHeight: number; physicalWidth: number; pending: boolean; disposed: boolean }>;
@@ -48,6 +48,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     let frame: number | undefined, disposed = false, previous: DocumentSnapshot | undefined;
     let top = 0, left = 0, width = 0, height = 0, lineHeight = 22.4, columnWidth = 8.4;
     let x = scrollAxis(0, 0), y = scrollAxis(0, 0), renderedRevision: number | null = null;
+    let renderedSelection: Selection | null = null;
     let renders = 0, firstLine = 0, lastLine = 0, partialRows = 0, textUnits = 0, readUnits = 0, lastRenderMs = 0;
     let anchor: Readonly<{ revision: number; offset: number; topRemainder: number; leftRemainder: number }> | undefined;
     let reveal: Readonly<{ revision: number; offset: number; horizontal: "center" | "nearest"; vertical: "center" | "nearest"; affinity: Affinity }> | undefined;
@@ -126,7 +127,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             layer.replaceChildren(); rows.clear(); geometries.clear(); measuredWidth = 0; measuredRevision = null; spacer.style.width = "0px"; spacer.style.height = "0px";
             layer.style.transform = "none"; layer.style.width = "0px"; layer.style.height = "0px";
             root.setAttribute("aria-disabled", "true"); root.setAttribute("aria-busy", String(resource.getSnapshot().state === "loading"));
-            previous = undefined; anchor = undefined; renderedRevision = null; partialRows = 0; textUnits = 0; readUnits = 0; firstLine = 0; lastLine = 0; return;
+            previous = undefined; anchor = undefined; renderedRevision = null; renderedSelection = null; partialRows = 0; textUnits = 0; readUnits = 0; firstLine = 0; lastLine = 0; return;
         }
         if (measuredRevision !== document.revision) { measuredWidth = 0; measuredRevision = document.revision; }
         if (anchor?.revision === document.revision) {
@@ -190,7 +191,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         for (const [line, element] of rows) if (line < firstLine || line >= lastLine) { element.remove(); rows.delete(line); }
         next.forEach((item, index) => { const element = rows.get(item.line)!; if (layer.children.item(index) !== element) layer.insertBefore(element, layer.children.item(index)); });
         root.removeAttribute("aria-disabled"); root.setAttribute("aria-busy", "false"); root.dataset.revision = String(document.revision);
-        renderedRevision = document.revision; previous = document; renders++; geometries.clear();
+        renderedRevision = document.revision; renderedSelection = selected; previous = document; renders++; geometries.clear();
         // A bounded batch of native shaping measurements follows the row writes. Extent corrections
         // are scheduled for the next frame, without alternating reads and writes for each row.
         const measured = Math.max(0, ...[...rows.values()].filter(element => element.dataset.complete === "true").map(element => element.getBoundingClientRect().width));
@@ -265,13 +266,13 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             if (![horizontal, vertical].every(value => value === "center" || value === "nearest") || affinity !== "after" && affinity !== "before") throw new RangeError("Invalid reveal options.");
             reveal = { revision: document.revision, offset, horizontal, vertical, affinity }; schedule();
         },
-        snapshot: () => Object.freeze({ revision: renderedRevision, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, lastRenderMs,
+        snapshot: () => Object.freeze({ revision: renderedRevision, selection: renderedSelection, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, lastRenderMs,
             scrollTop: top, scrollLeft: left, width, height, lineHeight, columnWidth, verticalExtent: y.extent, horizontalExtent: x.extent,
             physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent, pending: frame !== undefined, disposed }),
         destroy: () => {
             if (disposed) return; disposed = true; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined;
-            renderedRevision = null; partialRows = 0; textUnits = 0; readUnits = 0; layer.replaceChildren(); root.replaceChildren(); root.remove();
+            renderedRevision = null; renderedSelection = null; partialRows = 0; textUnits = 0; readUnits = 0; layer.replaceChildren(); root.replaceChildren(); root.remove();
             if (!options.view) view.dispose();
         } });
 }
