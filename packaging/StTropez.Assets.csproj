@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>StTropez.Assets</PackageId>
+    <PackageVersion>0.0.0-local</PackageVersion>
+    <Authors>StTropez contributors</Authors>
+    <Description>Dependency-free browser editor assets. Local evaluation package.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <NoPackageAnalysis>true</NoPackageAnalysis>
+    <PackageOutputPath>../artifacts/nuget/feed/</PackageOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="../dist/**/*.js;../dist/**/*.d.ts;../dist/**/*.css;../dist/package.json;../dist/manifest.json"
+          Pack="true" PackagePath="assets/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="../dist/UNICODE-LICENSE.txt" Pack="true" PackagePath="assets/" />
+    <None Include="StTropez.Assets.props;StTropez.Assets.targets" Pack="true" PackagePath="build/" />
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+  <Target Name="RequireCompiledAssets" BeforeTargets="GenerateNuspec">
+    <Error Condition="!Exists('../dist/manifest.json')" Text="Run npm run build before packing." />
+  </Target>
+</Project>

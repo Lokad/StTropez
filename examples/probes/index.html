@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Input and provider probes</title>
+<link rel="stylesheet" href="/probe.css"></head><body>
+<h1>Input and provider boundary probes</h1>
+<p>Development experiments. Native-device composition and assistive technology require separate manual qualification.</p>
+<label>Native baseline<textarea aria-label="Native probe">a😀b</textarea></label>
+<div role="textbox" aria-label="Contenteditable probe" contenteditable="true" spellcheck="false">a😀b</div>
+<label>Provider source<textarea aria-label="Provider source">const sam = 1; // TODO</textarea></label>
+<pre id="tokens" aria-label="Local highlighting"></pre>
+<button id="complete">Complete</button><button id="cancel">Cancel request</button>
+<button id="disconnect">Disconnect provider</button><button id="reconnect">Reconnect provider</button>
+<output id="provider-status" aria-live="polite"></output><ul id="diagnostics" aria-label="Diagnostics"></ul>
+<h2>Workspace stress recipe</h2><button id="start-workspace">Start workspace workload</button>
+<button id="move-workspace">Move workload view</button><button id="dispose-workspace">Dispose workspace workload</button>
+<div id="workspace"></div>
+<script type="module" src="/probe.js"></script></body></html>

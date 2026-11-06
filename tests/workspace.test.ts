@@ -15,7 +15,7 @@ test("delayed actions follow a moved tab and expire after replacement or close",
     workspace.move(tabId, "right");
     await Promise.resolve();
     assert.equal(workspace.resolveTab(target)?.paneId, "right");
-    workspace.replace(tabId, { kind: "panel", documentId, panelType: "configuration" });
+    workspace.replace(tabId, { kind: "panel", resourceId: workspace.resourceForDocument(documentId).id, panelType: "configuration" });
     assert.equal(workspace.resolveTab(target), undefined);
     const replacement = workspace.captureTab(tabId);
     workspace.close(tabId);
@@ -39,7 +39,7 @@ test("late agent edits cannot overwrite a newer human revision", () => {
 
 test("all surfaces share one document while ownership prevents premature release", () => {
     const { workspace, documentId, tabId } = fixture();
-    const panel = workspace.open({ kind: "panel", documentId, panelType: "configuration" }, "right");
+    const panel = workspace.open({ kind: "panel", resourceId: workspace.resourceForDocument(documentId).id, panelType: "configuration" }, "right");
     workspace.close(tabId);
     assert.throws(() => workspace.releaseDocument(documentId));
     workspace.close(panel);

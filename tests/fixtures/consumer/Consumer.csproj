@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <StTropezStageDirectory>$(MSBuildProjectDirectory)/obj/sttropez</StTropezStageDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="StTropez.Assets" Version="0.0.0-local" />
+  </ItemGroup>
+  <Target Name="PrepareFrontend" DependsOnTargets="StTropezPrepareAssets">
+    <WriteLinesToFile File="$(MSBuildProjectDirectory)/assets-root.txt" Lines="$(StTropezPreparedRoot)" Overwrite="true" />
+  </Target>
+</Project>

@@ -1,0 +1,112 @@
+import assert from "node:assert/strict";
+import { mkdir, writeFile } from "node:fs/promises";
+import { performance } from "node:perf_hooks";
+import { Workspace, TextBuffer } from "../src/index.ts";
+import { corpus, corpusIds, editLog, workloadSeed, workspaceWorkload } from "../tests/fixtures/workloads.ts";
+import { distribution, environment, sourceIdentity } from "./measurement.mjs";
+
+export async function benchmarkModel() {
+    const scenarios = [];
+    for (const id of corpusIds) {
+        const workspace = new Workspace();
+        let oracle = corpus(id);
+        const documentId = workspace.createDocument({ scope: "bench", resource: id, variant: "working" }, id, oracle);
+        const samples = [], roots = [];
+        let notifications = 0;
+        workspace.subscribe(() => notifications++);
+        workspace.observeDocument(documentId).subscribe(() => {
+            const buffer = workspace.document(documentId).buffer;
+            buffer.slice(buffer.offsetAt(0), Math.min(buffer.length, 24)); buffer.lineAt(Math.floor(buffer.length / 2));
+        });
+        const edits = editLog(oracle.length, 65);
+        let expectedRevision = 0;
+        for (const [index, edit] of edits.entries()) {
+            const next = oracle.slice(0, edit.from) + edit.insert + oracle.slice(edit.to);
+            const before = workspace.document(documentId).buffer;
+            const start = performance.now();
+            const result = workspace.edit({ documentId, expectedRevision, origin: "human", edits: [edit] });
+            const elapsed = performance.now() - start;
+            assert.equal(result.applied, true);
+            if (next !== oracle) {
+                expectedRevision++; roots.push(before);
+                assert.equal(workspace.document(documentId).buffer.readMetrics().textExports, 0, "Routine delivery flattened the document.");
+            }
+            assert.equal(workspace.document(documentId).text, next);
+            assert.equal(workspace.document(documentId).revision, expectedRevision);
+            oracle = next;
+            if (index >= 5) samples.push(elapsed);
+        }
+        assert.equal(notifications, expectedRevision);
+        const final = workspace.document(documentId).buffer, undo = [], redo = [];
+        assert.ok(final instanceof TextBuffer);
+        assert.equal(workspace.observeHistory(documentId).getSnapshot().undoDepth, roots.length);
+        const retention = TextBuffer.retained([...roots, final]);
+        for (let index = roots.length - 1; index >= 0; index--) {
+            const revision = workspace.document(documentId).revision, start = performance.now();
+            const result = workspace.undo({ documentId, expectedRevision: revision });
+            const elapsed = performance.now() - start;
+            assert.equal(result.applied, true); assert.equal(workspace.document(documentId).buffer, roots[index]);
+            if (index < roots.length - 5) undo.push(elapsed);
+        }
+        assert.equal(workspace.resourceForDocument(documentId).metadata.getSnapshot().dirty, false);
+        for (let index = 0; index < roots.length; index++) {
+            const revision = workspace.document(documentId).revision, start = performance.now();
+            const result = workspace.redo({ documentId, expectedRevision: revision });
+            const elapsed = performance.now() - start;
+            assert.equal(result.applied, true); assert.equal(workspace.document(documentId).buffer, roots[index + 1] ?? final);
+            if (index >= 5) redo.push(elapsed);
+        }
+        assert.equal(workspace.document(documentId).text, oracle);
+        assert.equal(notifications, expectedRevision * 3);
+        scenarios.push({ corpus: id, initialLength: corpus(id).length, finalLength: oracle.length,
+            revisions: expectedRevision, finalRevision: workspace.document(documentId).revision, notifications, routineWholeTextExports: 0, retention,
+            modelTransactionMs: distribution(samples), undoMs: distribution(undo), redoMs: distribution(redo) });
+    }
+    const propagation = [];
+    for (const resources of workspaceWorkload.resources) {
+        for (const views of workspaceWorkload.activeViews) {
+            const workspace = new Workspace();
+            const source = workspace.createTextResource({ scope: "bench", resource: "source", variant: "working" }, "Source", { value: "baseline" });
+            const others = Array.from({ length: resources - 1 }, (_, index) => workspace.createResource(
+                { scope: "bench", resource: `form-${index}`, variant: "working" }, "Form", { value: { field: "unchanged" } }));
+            const write = value => workspace.edit({ documentId: source.documentId,
+                expectedRevision: workspace.document(source.documentId).revision, origin: "human",
+                edits: [{ from: 0, to: workspace.document(source.documentId).buffer.length, insert: value }] });
+            write("dirty");
+            const metadata = source.metadata.getSnapshot(), snapshots = others.map(other => other.getSnapshot());
+            let unrelatedCalls = 0, metadataCalls = 0, viewCalls = 0, selectionCalls = 0, coarseCalls = 0;
+            others.forEach(other => other.subscribe(() => unrelatedCalls++));
+            source.metadata.subscribe(() => metadataCalls++);
+            for (let index = 0; index < views; index++) {
+                workspace.observeDocument(source.documentId).subscribe(() => viewCalls++);
+                workspace.createDocumentView(source.documentId).subscribe(() => selectionCalls++);
+            }
+            workspace.subscribe(() => coarseCalls++);
+            const samples = [];
+            for (let index = 0; index < 65; index++) {
+                const start = performance.now();
+                const result = write(`edit-${index}`);
+                const elapsed = performance.now() - start;
+                assert.equal(result.applied, true);
+                if (index >= 5) samples.push(elapsed);
+            }
+            assert.equal(viewCalls, views * 65); assert.equal(coarseCalls, 65);
+            assert.equal(selectionCalls, views * 65); assert.equal(workspace.document(source.documentId).buffer.readMetrics().textExports, 0);
+            assert.equal(unrelatedCalls, 0); assert.equal(metadataCalls, 0);
+            assert.equal(source.metadata.getSnapshot(), metadata);
+            others.forEach((other, index) => assert.equal(other.getSnapshot(), snapshots[index]));
+            propagation.push({ resources, views, warmup: 5, measured: 60, viewCalls, selectionCalls, coarseCalls, unrelatedCalls, metadataCalls,
+                transactionAndDeliveryMs: distribution(samples) });
+        }
+    }
+    return { schemaVersion: 3, created: new Date().toISOString(), runtime: "piece-tree-workspace-with-bounded-history",
+        note: "Headless transactions include history and bounded range/line reads during delivery. Undo/redo verify exact retained roots and undo-to-saved state. Oracle exports/validation are outside timing. No renderer or production latency guarantee.",
+        seed: workloadSeed, warmup: 5, measured: 60, source: await sourceIdentity(), environment: environment(), scenarios, propagation };
+}
+
+if (process.argv[1]?.replaceAll("\\", "/").endsWith("/benchmark-model.mjs")) {
+    const report = await benchmarkModel();
+    await mkdir("artifacts/bench", { recursive: true });
+    await writeFile("artifacts/bench/model.json", JSON.stringify(report, null, 2));
+    console.log(JSON.stringify(report.scenarios.map(({ corpus, modelTransactionMs: { p50, p95 } }) => ({ corpus, p50, p95 })), null, 2));
+}

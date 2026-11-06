@@ -1,0 +1,153 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { PositionMap, TextBuffer, applyTextEdits, validateTextEdits } from "../src/index.ts";
+import { corpus, corpusIds, editLog } from "./fixtures/workloads.ts";
+
+test("the selected buffer applies atomic original-coordinate batches and preserves immutable snapshots", () => {
+    const original = TextBuffer.from("a😀b\r\nc"), edits = [{ from: 1, to: 3, insert: "X" }, { from: 3, to: 3, insert: "Y" }, { from: 6, to: 7, insert: "Z" }];
+    const result = original.apply(edits);
+    assert.equal(result.buffer.text(), applyTextEdits("a😀b\r\nc", edits));
+    assert.equal(original.text(), "a😀b\r\nc"); assert.ok(Object.isFrozen(original));
+    assert.equal(result.mapping.map(7).offset, result.buffer.length);
+    const noOp = original.apply([{ from: 1, to: 3, insert: "😀" }]);
+    assert.equal(noOp.buffer, original); assert.equal(noOp.mapping.map(2).offset, 2);
+    assert.throws(() => original.apply([{ from: 0, to: 3, insert: "x" }, { from: 1, to: 1, insert: "bad" }]), RangeError);
+    const duplicates = original.apply([{ from: 1, to: 1, insert: "X" }, { from: 1, to: 1, insert: "Y" }]);
+    assert.equal(duplicates.buffer.slice(0, 5), "aXY😀");
+    const unchanged = TextBuffer.from("ab"), netNoOp = unchanged.apply([{ from: 0, to: 1, insert: "" }, { from: 1, to: 1, insert: "a" }]);
+    assert.equal(netNoOp.buffer, unchanged); assert.equal(netNoOp.mapping.map(1).offset, 1);
+    assert.equal(netNoOp.changedUnits, 0);
+    const partial = unchanged.apply([{ from: 0, to: 1, insert: "a" }, { from: 1, to: 2, insert: "X" }]);
+    assert.equal(partial.changedUnits, 2);
+});
+
+test("routine read counters are immutable snapshots independent of explicit retention diagnostics", () => {
+    const buffer = TextBuffer.from("a😀\r\nb"), before = buffer.readMetrics();
+    assert.deepEqual(before, { textExports: 0, sliceUnits: 0 }); assert.ok(Object.isFrozen(before));
+    assert.equal(buffer.slice(1, 3), "😀"); buffer.text();
+    assert.deepEqual(before, { textExports: 0, sliceUnits: 0 });
+    assert.deepEqual(buffer.readMetrics(), { textExports: 1, sliceUnits: 2 });
+    assert.deepEqual(buffer.replace(0, 0, "x").readMetrics(), { textExports: 0, sliceUnits: 0 });
+    const diagnostic = buffer.diagnostics(); assert.equal(diagnostic.retention.versions, 1); assert.equal(diagnostic.textExports, 1);
+});
+
+test("indexed line/range subscribers do not materialize the document and retained versions share backing text", () => {
+    let buffer = TextBuffer.from(corpus("lines-100000")); const history = [buffer];
+    for (let index = 0; index < 200; index++) {
+        buffer = buffer.replace(index * 17, index * 17, "😀"); history.push(buffer);
+        const offset = buffer.offsetAt(50_000);
+        assert.equal(buffer.lineAt(offset), 50_000); assert.ok(buffer.slice(offset, offset + 24).length === 24);
+    }
+    assert.equal(buffer.diagnostics().textExports, 0);
+    assert.ok(buffer.diagnostics().sliceUnits < 100);
+    const retained = TextBuffer.retained(history);
+    assert.equal(retained.versions, 201); assert.equal(retained.backingTextUnits, 2_400_400);
+    assert.ok(retained.nodes < 10_000);
+    assert.equal(history[0]!.length, 2_400_000);
+});
+
+test("exact equality works across different structures and shared ranges without whole-text export", () => {
+    const text = corpus("unicode"), original = TextBuffer.from(text), modified = original.replace(1, 3, "XY");
+    const restored = modified.replace(1, 3, text.slice(1, 3));
+    assert.equal(original.equals(modified), false); assert.equal(original.equals(restored), true);
+    assert.equal(restored.equals(TextBuffer.from(text)), true);
+    assert.equal(original.diagnostics().textExports, 0); assert.equal(restored.diagnostics().textExports, 0);
+    assert.equal(TextBuffer.from("").equals(TextBuffer.from("")), true);
+});
+
+test("random replay preserves UTF-16, CRLF and all retained roots against a string oracle", () => {
+    for (const id of corpusIds) {
+        let text = corpus(id), buffer = TextBuffer.from(text);
+        const history: { buffer: TextBuffer; text: string }[] = [];
+        for (const [index, edit] of editLog(text.length, 200).entries()) {
+            if (index % 29 === 0) history.push({ buffer, text });
+            const result = buffer.apply([edit]); buffer = result.buffer; text = applyTextEdits(text, [edit]);
+            assert.equal(buffer.length, text.length);
+            assert.equal([...buffer.chunks(edit.from, Math.min(buffer.length, edit.from + 12))].join(""), text.slice(edit.from, edit.from + 12));
+            if (index % 37 === 0) {
+                assert.equal(buffer.text(), text); buffer.diagnostics();
+                assert.equal(buffer.longestLineLength, text.split("\n").reduce((longest, line) => Math.max(longest, line.length), 0));
+            }
+        }
+        assert.equal(buffer.text(), text); history.forEach(entry => assert.equal(entry.buffer.text(), entry.text));
+    }
+});
+
+test("longest line indexing survives splits, joined lines, CRLF, empty lines and retained roots", () => {
+    for (const text of ["", "\n", "abc\r\nlonger\n", "x".repeat(100_000), "a\n".repeat(10_000)]) {
+        const original = TextBuffer.from(text);
+        let buffer = original, oracle = text;
+        for (const edit of [{ from: 0, to: 0, insert: "long\nline" }, { from: 0, to: 5, insert: "" }, { from: 0, to: 0, insert: "😀" }]) {
+            buffer = buffer.apply([edit]).buffer; oracle = applyTextEdits(oracle, [edit]);
+            assert.equal(buffer.longestLineLength, oracle.split("\n").reduce((longest, line) => Math.max(longest, line.length), 0));
+        }
+        assert.equal(original.longestLineLength, text.split("\n").reduce((longest, line) => Math.max(longest, line.length), 0));
+        assert.equal(buffer.diagnostics().textExports, 0);
+    }
+});
+
+test("multi-range batches preserve the string oracle and map untouched original boundaries", () => {
+    let text = "a😀\r\ne\u0301👩‍💻\ud800".repeat(50), buffer = TextBuffer.from(text), seed = 0x5eeda11;
+    const random = (maximum: number): number => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % maximum; };
+    for (let step = 0; step < 300; step++) {
+        const edits = [], inserts = ["", "\r\n", "😀", "e\u0301", "👩‍💻", "\ud800"];
+        let cursor = 0;
+        for (let index = 0; index < 5 && cursor < text.length; index++) {
+            const from = cursor + random(Math.max(1, Math.floor((text.length - cursor) / 2)));
+            const to = Math.min(text.length, from + random(5));
+            edits.push({ from, to, insert: inserts[random(inserts.length)]! }); cursor = to + 1;
+        }
+        const before = buffer, result = buffer.apply(edits), expected = applyTextEdits(text, edits);
+        assert.equal(result.buffer.text(), expected); assert.equal(before.text(), text);
+        assert.equal(result.mapping.newLength, expected.length);
+        for (let offset = 0; offset < text.length; offset += 7) {
+            if (edits.some(edit => offset >= edit.from && offset <= edit.to)) continue;
+            const mapped = result.mapping.map(offset);
+            assert.equal(expected.charCodeAt(mapped.offset), text.charCodeAt(offset));
+            assert.equal(result.mapping.invert().map(mapped.offset).offset, offset);
+        }
+        buffer = result.buffer; text = expected;
+    }
+    assert.throws(() => validateTextEdits(-1, []), RangeError);
+    assert.throws(() => validateTextEdits(Number.NaN, []), RangeError);
+    assert.throws(() => TextBuffer.from(42 as unknown as string), TypeError);
+});
+
+test("packed batches preserve raw seams, duplicate insertion order and exact mappings across backing boundaries", () => {
+    const text = "x".repeat(70_000) + "\r\n😀é👩‍💻\ud800\t", before = TextBuffer.from(text);
+    const edits = [{ from: 0, to: 0, insert: "\ud83d" }, { from: 0, to: 0, insert: "\ude00" },
+        { from: 1, to: 2, insert: "\n".repeat(65_536) }, { from: 2, to: 3, insert: "\r" + "Z".repeat(65_537) },
+        { from: 60_000, to: 60_001, insert: "é".repeat(64) }, { from: 70_000, to: 70_000, insert: "👩‍💻" }, { from: text.length - 1, to: text.length, insert: "" }];
+    const result = before.apply(edits), expected = applyTextEdits(text, edits), mapping = new PositionMap(text.length, edits);
+    assert.equal([...result.buffer.chunks()].join(""), expected); assert.equal([...before.chunks()].join(""), text);
+    assert.equal(result.buffer.lineCount, expected.split("\n").length);
+    assert.equal(result.buffer.longestLineLength, Math.max(...expected.split("\n").map(line => line.length)));
+    for (const offset of [0, 1, 2, 3, 60_000, 60_001, 70_000, text.length - 1, text.length]) for (const side of ["before", "after"] as const) assert.deepEqual(result.mapping.map(offset, side), mapping.map(offset, side));
+    for (const from of [0, 1, 65_534, 65_536, 65_538, 131_070, expected.length - 8]) {
+        const to = Math.min(expected.length, from + 13); assert.equal([...result.buffer.chunks(from, to)].join(""), expected.slice(from, to));
+        assert.equal(result.buffer.lineAt(from), expected.slice(0, from).split("\n").length - 1);
+    }
+    TextBuffer.retained([before, result.buffer]); assert.equal(result.buffer.readMetrics().textExports, 0);
+    const empty = TextBuffer.from("").apply([{ from: 0, to: 0, insert: "\r" }, { from: 0, to: 0, insert: "\n😀" }]).buffer;
+    assert.equal([...empty.chunks()].join(""), "\r\n😀"); assert.equal(empty.offsetAt(1), 2);
+});
+
+test("dense batches bound fragmentation while sparse batches share large unchanged backing ranges", () => {
+    const line = "const sample = 1234567;\n", lines = 100_000, before = TextBuffer.from(line.repeat(lines));
+    const edits = Array.from({ length: lines }, (_, index) => ({ from: index * line.length, to: index * line.length + 5, insert: "let" }));
+    const changed = before.apply(edits).buffer, expected = "let sample = 1234567;\n".repeat(lines); let offset = 0, chunks = 0;
+    for (const value of changed.chunks()) { assert.ok(value.length <= 65_536); assert.equal(value, expected.slice(offset, offset + value.length)); offset += value.length; chunks++; }
+    assert.equal(offset, expected.length); assert.ok(chunks < 128);
+    const retained = TextBuffer.retained([before, changed]); assert.ok(retained.nodes < 256); assert.ok(retained.backingBuffers < 128);
+    const sparse = before.apply([{ from: 1, to: 2, insert: "!" }, { from: before.length - 2, to: before.length - 1, insert: "!" }]).buffer;
+    assert.ok(TextBuffer.retained([before, sparse]).backingTextUnits <= before.length + 128);
+    assert.equal(sparse.slice(100, 200), before.slice(100, 200)); assert.equal(before.readMetrics().textExports, 0); assert.equal(changed.readMetrics().textExports, 0);
+    let fragmented = before;
+    for (let index = 0; index < 512; index++) fragmented = fragmented.replace(index * 100, index * 100, "z");
+    const oldNodes = fragmented.diagnostics().retention.nodes;
+    const shared = fragmented.apply([{ from: 1, to: 2, insert: "!" }, { from: fragmented.length - 2, to: fragmented.length - 1, insert: "!" }]).buffer;
+    assert.ok(TextBuffer.retained([fragmented, shared]).nodes < oldNodes * 1.1 + 128, "Sparse batches must retain untouched subtrees instead of rebuilding the source tree.");
+    const cancellation = TextBuffer.from("ab");
+    const noOp = cancellation.apply([{ from: 0, to: 1, insert: "" }, { from: 1, to: 1, insert: "a" }]);
+    assert.equal(noOp.buffer, cancellation); assert.equal(noOp.changedUnits, 0); assert.deepEqual(noOp.mapping.map(1), { offset: 1, deleted: false });
+});

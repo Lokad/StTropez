@@ -20,14 +20,16 @@ visible content, with indexed lookup costs, rather than total file length or wor
 This is not a universal complexity promise: global search, large paste and lexical invalidation
 have different costs and need separate scheduling policies.
 
-The current scaffold deliberately falls short: the native view reads its whole `value` and
-submits a full-document replacement, workspace edits scan/copy arrays, every subscriber runs,
-and the playground updates unrelated metadata on every transaction. These are measurable
-prototype limitations, not contracts to preserve in the final engine.
+The native view still reads/renders its whole `value` and derives a single range replacement
+by scanning common text. The workspace now uses indexed piece storage, bounded history and
+mapped views, but its coarse snapshot still rebuilds resource/document arrays. Scoped
+document/resource/metadata subscriptions keep edits out of unrelated form and tab listeners.
+Two native views can still incur browser layout for the whole text.
+The remaining costs are measurable prototype limitations, not final engine contracts.
 
 ## Local diagnostic experiment
 
-On 2026-11-05, a headless Chromium 156.0.8078.4 experiment on Windows with an Intel Core
+Before storage/history integration on 2026-11-05, a headless Chromium 156.0.8078.4 experiment on Windows with an Intel Core
 i7-14700KF compared the scaffold with a native textarea control in the same page. Replacing
 the textarea with a clone removed the application listeners for the control. Each condition
 reloaded the page and used five warmup characters followed by twenty measured characters,
@@ -82,11 +84,83 @@ report missing metrics explicitly. Continuous scrolling also needs frame/layout 
 can inspect the recorded interactions and CPU/layout/paint work. A browser paint estimate is
 not a physical keyboard-to-monitor measurement.
 
-The current `npm run bench` starts at input dispatch and ends at the second animation-frame
-callback. It excludes earlier native editing and contains frame scheduling delay. It is a
-useful smoke signal but not editor CPU time or end-to-end presentation latency. Twenty samples
-per size are insufficient for a reliable tail estimate. Serially waiting for each sample also
-misses pressure from sustained input. Improve this harness before using it as a performance gate.
+`npm run bench` now writes separate headless model and browser reports. `bench:model` runs
+only the model replay; `bench:trace` runs a separate Chromium layout/paint attribution
+diagnostic. All are baselines, not performance gates or production-engine qualification.
+The bounded editing candidate has its own `bench:editing` report covering actual keyboard input,
+model commit and two viewport projections. `inputHandlerMs` times the adapter's `input` listener,
+including context refresh and synchronous model/subscriber work. It excludes browser processing
+before the event and later layout/paint. `beforeInputToFrameProxyMs` spans the native beforeinput
+event through an animation-frame readiness poll; it is not physical latency. Three warmups and
+twenty samples per corpus/position form a development diagnostic. Runtime counters require one
+input and commit, exact inserted text, bounded native context/DOM, zero whole-buffer exports and
+no whole-value fallback. Cross-candidate production comparison and native-device gates remain open.
+The editing fixture now includes incremental visible-line tokens, idle find state and a connected
+host-owned provider. `bench:services` measures search and replacement separately: scan-step maxima,
+global scheduling/readiness proxies, synchronous replacement transaction/publication, exact
+count/history/undo and no-export guards. Offset-index memory is proportional to match count.
+Planning yields; the final bulk transaction still scales with changed ranges. Its 100,000-line
+case is a single diagnostic, with no percentile/adoption claim. A real worker reply is required
+independently of local highlighting so fallback cannot satisfy the provider guard.
+`bench:bulk` isolates the actual tree's multi-range construction, traversal and scanner CPU in
+fresh Node processes, with full oracle checks outside timing. Dense packing trades some copied
+backing/index units for fewer nodes; sparse-subtree sharing and retained roots have separate
+guards. This measured TypeScript kernel work precedes optional worker/WASM experiments.
+
+`bench:comparison` measures exact line alignment over immutable snapshots. Headless total CPU
+and cooperative-step maxima are separate from browser controller-step time and scheduled
+readiness proxies. Reconstruction checks occur outside timing. Normal/10,000-line/Unicode
+browser cases repeat; 100,000-line and huge-line browser cases are diagnostic observations.
+Line metadata and search arrays scale with the input; cooperative work accounting does not
+bound allocator/GC pauses or qualify adversarial repeated-line tail latency.
+
+`bench:hosts` exercises full request/correction/save/acknowledgement/Run sequences in plain
+and React hosts with two views, a typed form and 20 Hz progress. Each native/candidate and
+normal/10,000-line condition uses three warmups and ten measured workflows. Proposal
+acceptance/notification CPU is separate from automation/readiness proxies. Explicit host
+captures export their exact snapshots; routine candidate rendering stays bounded. See the
+[workflow contract](host-workflows.md) for metric limits and recovery/disposal behavior.
+
+`bench:storage` separately compares immutable flat, chunk and piece storage with edit,
+first-lookup, local-read, snapshot, export and GC retention boundaries. The selected runtime
+piece tree is exercised through its own adapter. See [the storage decision](text-storage.md)
+for the repeated quiet-machine measurements, source identity and tradeoffs. Current workspace
+measurements include the selected piece tree, bounded shared history and mapped selections;
+the native-control report retains whole-value rendering. Viewport and bounded-input reports
+exercise their separate paths. All remain diagnostics.
+
+| Report | Measured boundary | Limit |
+| --- | --- | --- |
+| `artifacts/bench/model.json` | 60 seeded range transactions after 5 warmups, including history, a counting subscriber and bounded range/line reads; zero routine exports asserted; separate undo/redo samples check exact retained roots and undo-to-saved state | Oracle exports/validation are outside timing; arbitrary UTF-16 offsets are deliberate; logical retention is not a heap byte estimate |
+| `artifacts/bench/latest.json` input handler | Capture-to-bubble dispatch, including synchronous model/subscribers | Excludes native editing before `input`; timer resolution can produce zero samples |
+| Same report, second frame proxy | Capture through second animation-frame callback | Frame scheduling proxy; neither physical presentation nor CPU time |
+| Same report, browser work | CDP LayoutDuration/RecalcStyleDuration counter deltas around 20 measured inputs | Aggregate milliseconds, includes intervening harness activity; no per-event percentile claim |
+| Same report, startup | Navigation time origin to module readiness for 3 page loads | Includes parse/mount and server work; mixed warm caches, insufficient for a tail/cold-start claim |
+| `artifacts/bench/phases.json` | Per-event Layout/Paint/PrePaint/style/event-dispatch durations from a separate 5-input trace | Diagnostic overhead; events can nest, so phase sums are invalid; raw trace/content is not exported |
+
+Browser runs exercise start/middle/end input for all six pinned corpora and assert exact text
+and model lengths. Native LF display coordinates map to preserved model CRLF; native and model
+lengths are checked independently. Reports include a hash of every nonignored source
+file (including uncommitted files), lockfile identity, seed, hardware, OS, browser, viewport
+and computed font settings. Model and browser measurements run sequentially.
+
+The model report also measures propagation for 1/10/100 resources and 1/2 document listeners
+with retained selection handles.
+It asserts exact changed-document deliveries and zero unrelated resource/unchanged metadata
+deliveries, mapped-selection deliveries and stable snapshot identities. These listeners represent view subscriptions,
+not browser mounts. The current browser campaign explicitly records two mounted native views;
+earlier one-view native baselines are different workloads and cannot be compared as regressions.
+
+Twenty browser samples per condition and three startup loads are insufficient for a reliable
+tail estimate. Serially waiting for each sample also misses sustained-input pressure. These
+desktop diagnostics are separate from any quiet-machine campaign. Production/constrained
+hardware, repeated alternating runs and retention budgets remain qualification work.
+
+The [bounded read-only viewport](viewport.md) has a separate `artifacts/bench/viewport/latest.json`
+report. It asserts visible range text, viewport-sized rows/reads and zero whole-text exports under
+programmatic edits in two views. Geometry/range/DOM-write timings are separate from a frame-ready
+scheduling proxy. These are rendering-layer diagnostics, not native input or full editor latency;
+the UTF-16 horizontal estimate still needs measured glyph geometry for long shaped lines.
 
 ## Workload matrix and regression policy
 

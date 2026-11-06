@@ -1,0 +1,105 @@
+import type { TextBuffer } from "./text-buffer.ts";
+import type { Affinity, PositionMapping } from "./positions.ts";
+
+export type EditKind = "typing" | "delete" | "paste" | "composition" | "form" | "refactor" | "proposal" | "live" | "replace" | "canonical";
+export type HistoryOptions = Readonly<{ maxGroups?: number; maxChanges?: number; maxChangedUnits?: number }>;
+export type HistorySnapshot = Readonly<{ undoDepth: number; redoDepth: number }>;
+export type Selection = Readonly<{ anchor: number; head: number; anchorAffinity?: Affinity; headAffinity?: Affinity }>;
+export type HistorySelection = Readonly<{ viewId: string; before: Selection; after: Selection }>;
+export type HistoryChange = Readonly<{ documentId: string; before: TextBuffer; after: TextBuffer;
+    mappings: readonly PositionMapping[]; units: number; selection: HistorySelection | null }>;
+export type HistoryEntry = Readonly<{ id: number; origin: string; kind: EditKind; group: string | null;
+    changes: readonly HistoryChange[]; steps: number; units: number }>;
+
+const kinds: readonly EditKind[] = ["typing", "delete", "paste", "composition", "form", "refactor", "proposal", "live", "replace", "canonical"];
+export function validateHistory(kind: EditKind, group: string | undefined): void {
+    if (!kinds.includes(kind) || (group !== undefined && (typeof group !== "string" || !group))) throw new TypeError("Invalid history kind or group.");
+}
+
+/** Workspace-local history units shared by the participating documents. No I/O or clock policy. */
+export class TextHistory {
+    private readonly past = new Map<string, HistoryEntry[]>();
+    private readonly future = new Map<string, HistoryEntry[]>();
+    private nextId = 0;
+    private readonly last = new Map<string, HistoryEntry>();
+    private readonly limits: Readonly<{ groups: number; changes: number; units: number }>;
+    constructor(options: HistoryOptions = {}) {
+        this.limits = Object.freeze({ groups: options.maxGroups ?? 100, changes: options.maxChanges ?? 1_000, units: options.maxChangedUnits ?? 8_388_608 });
+        if (Object.values(this.limits).some(value => !Number.isSafeInteger(value) || value < 0)) throw new RangeError("History limits must be nonnegative safe integers.");
+    }
+    snapshot(id: string): HistorySnapshot { return Object.freeze({ undoDepth: this.past.get(id)?.length ?? 0, redoDepth: this.future.get(id)?.length ?? 0 }); }
+    diagnostics(): Readonly<{ groups: number; changes: number; changedUnits: number }> {
+        const entries = [...new Set([...this.past.values(), ...this.future.values()].flat())];
+        return Object.freeze({ groups: entries.length, changes: entries.reduce((sum, entry) => sum + entry.steps, 0), changedUnits: entries.reduce((sum, entry) => sum + entry.units, 0) });
+    }
+    peek(id: string, direction: "undo" | "redo"): HistoryEntry | undefined { return (direction === "undo" ? this.past : this.future).get(id)?.at(-1); }
+    available(entry: HistoryEntry, direction: "undo" | "redo"): boolean {
+        return entry.changes.every(change => this.peek(change.documentId, direction) === entry);
+    }
+    seal(id: string): void { this.last.delete(id); }
+    record(changes: readonly HistoryChange[], origin: string, kind: EditKind, group?: string): void {
+        validateHistory(kind, group);
+        this.clearFuture(changes.map(change => change.documentId));
+        const units = changes.reduce((total, change) => total + change.units, 0), previous = this.last.get(changes[0]!.documentId);
+        if (!this.limits.groups || !this.limits.changes || units > this.limits.units) {
+            changes.forEach(change => this.forget(change.documentId)); return;
+        }
+        const first = changes[0], old = previous?.changes[0];
+        if (group !== undefined && previous && first && old && changes.length === 1 && previous.changes.length === 1
+            && previous.origin === origin && previous.kind === kind && previous.group === group && first.documentId === old.documentId
+            && first.before === old.after && first.selection?.viewId === old.selection?.viewId
+            && this.peek(first.documentId, "undo") === previous && previous.steps + 1 <= this.limits.changes && previous.units + units <= this.limits.units) {
+            const change = Object.freeze({ ...old, after: first.after, mappings: Object.freeze([...old.mappings, ...first.mappings]), units: old.units + first.units,
+                selection: old.selection && first.selection ? Object.freeze({ ...old.selection, after: first.selection.after }) : null });
+            const entry = Object.freeze({ ...previous, id: ++this.nextId, changes: Object.freeze([change]), steps: previous.steps + 1, units: previous.units + units });
+            this.past.get(first.documentId)![this.past.get(first.documentId)!.length - 1] = entry; this.last.set(first.documentId, entry);
+        } else {
+            const entry = Object.freeze({ id: ++this.nextId, origin, kind, group: group ?? null, changes: Object.freeze([...changes]), steps: 1, units });
+            for (const change of changes) this.stack(this.past, change.documentId).push(entry);
+            for (const change of changes) this.last.set(change.documentId, entry);
+        }
+        this.trim();
+    }
+    move(entry: HistoryEntry, direction: "undo" | "redo"): void {
+        if (!this.available(entry, direction)) throw new Error("History unit is blocked by a later edit in a participating document.");
+        const source = direction === "undo" ? this.past : this.future, target = direction === "undo" ? this.future : this.past;
+        for (const change of entry.changes) { source.get(change.documentId)!.pop(); this.stack(target, change.documentId).push(entry); }
+        entry.changes.forEach(change => this.seal(change.documentId));
+    }
+    /** A load/release is an explicit history boundary, including linked multi-document units. */
+    forget(id: string): void {
+        const pending = [id], visited = new Set<string>();
+        while (pending.length) {
+            const current = pending.pop()!; if (visited.has(current)) continue; visited.add(current);
+            for (const stack of [this.past.get(current), this.future.get(current)]) for (const entry of stack ?? []) {
+                entry.changes.forEach(change => pending.push(change.documentId));
+            }
+        }
+        visited.forEach(current => { this.past.delete(current); this.future.delete(current); this.seal(current); });
+    }
+    private stack(map: Map<string, HistoryEntry[]>, id: string): HistoryEntry[] {
+        let stack = map.get(id); if (!stack) { stack = []; map.set(id, stack); } return stack;
+    }
+    private clearFuture(ids: readonly string[]): void {
+        const pending = [...ids], visited = new Set<string>();
+        while (pending.length) {
+            const id = pending.pop()!; if (visited.has(id)) continue; visited.add(id);
+            for (const entry of this.future.get(id) ?? []) entry.changes.forEach(change => pending.push(change.documentId));
+            this.future.delete(id);
+        }
+    }
+    private trim(): void {
+        while (true) {
+            const entries = [...new Set([...this.past.values(), ...this.future.values()].flat())].sort((a, b) => a.id - b.id);
+            const steps = entries.reduce((total, entry) => total + entry.steps, 0), units = entries.reduce((total, entry) => total + entry.units, 0);
+            if (entries.length <= this.limits.groups && steps <= this.limits.changes && units <= this.limits.units) return;
+            const entry = entries[0]!;
+            for (const change of entry.changes) {
+                const stack = this.past.get(change.documentId), index = stack?.indexOf(entry) ?? -1;
+                if (index >= 0) stack!.splice(index, 1);
+            }
+            if (entry.changes.some(change => this.future.get(change.documentId)?.includes(entry))) this.clearFuture(entry.changes.map(change => change.documentId));
+            entry.changes.forEach(change => { if (this.last.get(change.documentId) === entry) this.seal(change.documentId); });
+        }
+    }
+}

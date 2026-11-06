@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup>
+    <StTropezAssetRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../assets/'))</StTropezAssetRoot>
+  </PropertyGroup>
+</Project>

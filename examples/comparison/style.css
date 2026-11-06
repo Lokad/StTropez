@@ -1,0 +1,7 @@
+body { margin: 24px; background: #10151f; color: #d7deea; font: 15px/1.5 system-ui, sans-serif; }
+h1 { font-size: 24px; margin-bottom: 8px; }
+nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+button { padding: 6px 10px; }
+#host-status { display: block; margin-bottom: 12px; }
+main { border: 1px solid #465069; }
+#after { margin-top: 16px; }

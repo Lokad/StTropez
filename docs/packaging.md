@@ -3,9 +3,77 @@
 Decision: NuGet is the preferred distribution format. The package contains browser assets
 and small MSBuild integration files, with no managed assembly or runtime dependencies.
 The TypeScript implementation and browser APIs remain independent of .NET.
+Compiled assets and staged consumer output include `UNICODE-LICENSE.txt` for the bundled
+Unicode character-property data. Hosts retain that notice when bundling or deploying assets.
+The project-wide release license remains a separate decision.
 
-This is the packaging contract. The scaffold currently builds `dist/`; NuGet packing and
-consumer integration are planned work, not implemented or validated yet.
+The local evaluation package and minimal consumer proof are implemented. Release metadata,
+license selection, version upgrade/downgrade qualification and broad consumer compatibility
+remain pending. Nothing is published by these commands.
+
+## Local proof
+
+Run `npm run test:package` with Node.js 24+, the pinned development tools, Chromium and a
+.NET SDK 10+ installation. `npm run pack:nuget` first compiles the assets and creates
+`artifacts/nuget/feed/StTropez.Assets.0.0.0-local.nupkg`. The pack project includes no managed
+output or package dependencies. The local prerelease ID/version are evaluation metadata.
+
+The proof inspects the actual ZIP entries and dependency metadata, checks SHA-256 integrity,
+copies the package and generic fixture to a fresh OS temporary directory, and restores using
+only a local feed and isolated package cache. TypeScript checks the restored declarations
+with library checking enabled. esbuild bundles only consumer/restored files; the browser loads
+explicit CSS and performs an edit verified against the model. It also applies a range edit
+to the restored indexed buffer and checks newline conversion, line lookup and position maps.
+The same restored modules mount the bounded input candidate, type through it and undo against
+shared history. Its native context width comes from the restored CSS, with no checkout fallback.
+It also captures a backward native selection immediately before detach, using the restored
+candidate's synchronous view-capture API.
+The restored resolver checks bidi levels/order, and actual visual keys traverse an RTL run.
+The proof verifies the Unicode notice in the archive, generated stage and served consumer output.
+It also advances a compiled `BidiCursor` over a large buffer and queries the immutable result
+after disposal. The restored index controller validates expected revisions and releases its lease.
+The compiled advance builder also constructs 2.4 million numeric entries, releases its input,
+queries beyond native coordinate limits and splices while retaining the old root. Its windows
+check bounded traversal, negative/zero cells and shared numeric leaves. This tests measured-value
+storage; the consumer does not claim a complete font shaper or global glyph projection.
+The compiled font-data reader also maps an original host-generated font, reads nominal metrics
+and variation glyphs, and constructs an advance index. The browser font controller loads those
+same copied bytes, verifies native kerning/ligature widths and releases its owned native face
+while captured core metrics survive. The fixture supplies its own font bytes; no font asset or
+third-party font dependency is added to the editor package. These checks do not qualify complete
+shaping or global layout; see [owned font data](fonts.md).
+The restored GSUB plan also forms the fixture's actual ligature, verifies its nominal advance
+against the native width and retains both source components. This proves compiled substitution
+data/application and declarations; it does not qualify a complete script/positioning engine.
+The consumer also supplies a visible decoration callback and performs literal search/replace
+plus undo through the restored find controller. Language service workers remain host-owned.
+The restored comparison also uses buffer-based resource creation and exact line alignment,
+mounts both panes, reverts a change and advances its captured reference version.
+Host-owned compiler/bundler
+executables are reused from development tooling; the editor package installs no npm package
+and does not compile at consumer restore time. This is a source-isolation proof, not an OS
+sandbox. The fixture has no source-checkout imports or runtime fallback.
+
+`artifacts/package/report.json` records package hash, inspected entries, tool/browser versions,
+visible CSS values and the actual result. `consumer.png` shows the restored view. The isolated
+consumer directory is retained for inspection. This proof currently covers the pinned
+TypeScript/esbuild versions only; it does not claim compatibility with every frontend tool.
+
+## Build bridge
+
+Restore imports `build/StTropez.Assets.props` and `.targets` and exposes `StTropezAssetRoot`.
+No staging target runs automatically. The host can resolve that immutable root directly, or
+explicitly invoke `StTropezPrepareAssets` with `StTropezStageDirectory` set to a dedicated
+generated directory. `StTropezPreparedRoot` then identifies a subdirectory addressed by the
+asset manifest hash. This prevents differently built versions from mixing stale chunks;
+the target copies allowlisted extensions and never deletes files. Old stages are owned and
+cleaned by the host. The generic consumer's `PrepareFrontend` target demonstrates this API.
+
+The host configures TypeScript paths and bundler aliases for `sttropez` and `sttropez/browser`
+from the selected root, then includes `editor.css` explicitly. The package metadata also
+declares ESM entry points. The manifest records entry points, sizes and SHA-256 per asset.
+Declaration specifiers use `.js`, allowing ordinary consumer resolution without source `.ts`
+files or consumer-time editor compilation.
 
 ## Artifact contents
 
@@ -69,3 +137,10 @@ asset wrapper can be considered for another consumer later, but is not the core 
 
 Package ID, feed and license are release metadata decisions. No package publication or
 application-specific build change is implied by this document.
+
+The separate [horizontal positioning stage](positioning.md) reuses owned GSUB provenance,
+implements explicit GPOS/legacy policies and publishes retained signed pen advances.
+The clean consumer also exercises the compiled [Unicode pipeline](unicode-shaping.md), including
+compatibility decomposition, nominal mapping and repeated original source components through a ligature.
+It also exercises compiled contextual script interpretation, cooperative glyph partitions and owned
+subrun views feeding separate feature plans.

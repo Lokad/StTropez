@@ -1,0 +1,54 @@
+# Bounded provider fixture and text presentation
+
+The editing fixture combines local incremental highlighting, a real worker completion request
+and scoped diagnostics over the bounded view. The host owns the worker, UI, protocol and service
+lifecycle. The runtime has no networking, language client, framework or worker dependency.
+The narrow fixture reuses the existing tokenizer/worker rather than importing an editor/client
+runtime. It is not an implementation of a full language protocol.
+
+`mountTextViewport` and `mountEditingCandidate` accept an optional `decorate` function. It
+receives the captured document ID/revision and one already bounded line fragment, its global
+range and logical line start. It returns global ranges plus CSS class names; the view clips
+valid integer ranges to the fragment and renders only text nodes/spans. Selection backgrounds
+combine with overlapping decorations. Invalid ranges/classes are ignored. No provider string
+becomes HTML. `viewport.invalidate()` schedules presentation changes independently of model
+edits. Hosts must keep this synchronous callback pure and bounded, validate external data and
+index/query large annotation collections before returning visible ranges.
+
+The development line lexer recognizes a few deterministic keyword/number/comment patterns.
+Each view keeps at most 128 fragments keyed by line and exact text, reusing local token offsets
+when the text is unchanged. Editing one visible line re-tokenizes that line in each active view;
+search/diagnostic changes reuse lexical results. This demonstrates incremental visible work,
+not a complete grammar: multiline states and contextual long-line tokenization remain open.
+Presentation classes are styled by the host fixture; the package retains no design-system or
+language-specific dependency. Native range geometry continues to work across the token spans.
+
+A request captures tab generation, document revision, view selection and a resource lease. It
+serializes at most 4,096 raw UTF-16 units around the caret through the dedicated worker. The
+worker returns separate insertion and replacement end positions and scoped diagnostics.
+The host validates the entire unknown response, IDs/revision, ranges, text/message bounds and
+diagnostic limit before publication. A word crossing the context boundary rejects completion
+instead of replacing a partial identifier. Diagnostic output is capped at 256 entries, with
+visible truncation; these are diagnostics near the caret, not whole-document analysis.
+
+An offer remains tied to its original revision/selection. New text, moved selection, cancellation,
+expired tab generation or disconnected worker prevents a late reply from applying. Read-only
+and edit-lease rules are checked by the core transaction again at acceptance. Accepting insertion
+or replacement creates one separate shared history unit and maps surviving diagnostic ranges
+through that exact edit; a no-op preserves the revision and diagnostics. Later human edits clear
+stale presentation. Diagnostic navigation uses explicit ranges and revisions, never later focus.
+
+Worker startup/error, malformed results, timeout and disconnect leave local editing/highlighting
+available. Reconnect requires a new real worker result; no local fallback satisfies that path.
+Cancellation deliberately leaves a possible late worker reply for the rejection tests. Pending
+leases/timers and worker/listeners are released on disposal. The fixture's default snapshot
+reports counts, revisions and input sizes, with no document/provider text.
+
+Browser tests use actual keyboard input to create a request during `beforeinput`, ensuring the
+document commit precedes the worker response in the same browser task. Other scenarios cover
+Unicode insertion/replacement, diagnostic mapping/navigation, selection-only staleness, cancel,
+tab replacement, malformed payloads, worker failure, reconnect, permissions, bounded huge-file
+requests and truncation. `inspect` records completion and decorated search/diagnostic screenshots.
+The restored package proof verifies the generic presentation callback and find API; the worker
+remains host-owned. Full language transport/synchronization, richer operations, large lexical
+invalidation and native accessibility announcements remain separate qualification work.

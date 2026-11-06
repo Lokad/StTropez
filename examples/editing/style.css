@@ -1,0 +1,5 @@
+@import "../viewport/style.css";
+label { margin-right: 12px; } input { margin-left: 6px; }
+.st-token-keyword { color: #a9c5ff; } .st-token-number { color: #b9e29e; } .st-token-comment { color: #b5bbc7; }
+.st-search-match { background: #5c4719; outline: 1px solid #a88c40; }
+.st-diagnostic { text-decoration: underline wavy #efaa6c; text-underline-offset: 3px; }

@@ -1,0 +1,183 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { cp, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve, relative } from "node:path";
+import { createServer } from "node:http";
+import { build } from "esbuild";
+import { unzipSync, strFromU8 } from "fflate";
+import { chromium } from "@playwright/test";
+
+const project = resolve(".");
+const archive = await readFile("artifacts/nuget/feed/StTropez.Assets.0.0.0-local.nupkg");
+const entries = unzipSync(archive);
+const assets = JSON.parse(strFromU8(entries["assets/manifest.json"]));
+assert.equal(strFromU8(entries["assets/UNICODE-LICENSE.txt"]), await readFile("licenses/Unicode-3.0.txt", "utf8"));
+const allowlist = new Set(["[Content_Types].xml", "_rels/.rels", "StTropez.Assets.nuspec", "README.md",
+    "build/StTropez.Assets.props", "build/StTropez.Assets.targets", "assets/manifest.json",
+    ...assets.assets.map(asset => `assets/${asset.path}`)]);
+for (const [path, bytes] of Object.entries(entries)) {
+    if (path.endsWith("/")) continue;
+    assert.ok(allowlist.has(path) || /^package\/services\/metadata\/core-properties\/[^/]+\.psmdcp$/.test(path), `Unexpected package entry: ${path}`);
+    assert.ok(!path.includes("..") && !path.startsWith("/"));
+    if (path.startsWith("assets/") && path !== "assets/manifest.json") {
+        const asset = assets.assets.find(asset => `assets/${asset.path}` === path);
+        assert.equal(bytes.length, asset.bytes);
+        assert.equal(createHash("sha256").update(bytes).digest("hex"), asset.sha256);
+    }
+}
+for (const path of allowlist) assert.ok(entries[path], `Missing package entry: ${path}`);
+const nuspec = strFromU8(entries["StTropez.Assets.nuspec"]);
+assert.ok(!/<dependency\b/.test(nuspec), "Package must not depend on managed or third-party packages.");
+
+// Separate directory, local feed and isolated restore cache; no checkout/source fallback.
+const consumer = await realpath(await mkdtemp(join(tmpdir(), "sttropez-consumer-")));
+await cp("tests/fixtures/consumer", consumer, { recursive: true });
+await mkdir(join(consumer, "feed"));
+await writeFile(join(consumer, "feed/StTropez.Assets.0.0.0-local.nupkg"), archive);
+await writeFile(join(consumer, "NuGet.Config"), '<configuration><packageSources><clear/><add key="local" value="feed"/></packageSources></configuration>');
+const dotnet = args => execFileSync("dotnet", args, { cwd: consumer, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+dotnet(["restore", "Consumer.csproj", "--packages", join(consumer, "packages"), "--configfile", "NuGet.Config"]);
+dotnet(["msbuild", "Consumer.csproj", "-target:PrepareFrontend", "-verbosity:minimal"]);
+const assetRoot = (await readFile(join(consumer, "assets-root.txt"), "utf8")).trim();
+assert.ok(relative(consumer, await realpath(assetRoot)).replaceAll("\\", "/").startsWith("obj/sttropez/"), `Stage escaped generated directory: ${assetRoot}`);
+const restored = JSON.parse(await readFile(join(consumer, "obj/project.assets.json"), "utf8"));
+assert.deepEqual(Object.keys(restored.libraries), ["StTropez.Assets/0.0.0-local"]);
+const restoreLibrary = Object.values(restored.targets)[0]["StTropez.Assets/0.0.0-local"];
+assert.equal(restoreLibrary.compile, undefined);
+assert.equal(restoreLibrary.runtime, undefined);
+for (const asset of assets.assets) {
+    const bytes = await readFile(join(assetRoot, asset.path));
+    assert.equal(createHash("sha256").update(bytes).digest("hex"), asset.sha256);
+}
+// The host already owns TypeScript/esbuild. Paths are an explicit frontend bridge.
+const compilerOptions = { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true,
+    skipLibCheck: false, noEmit: true, types: [], paths: {
+        sttropez: [join(assetRoot, "index.d.ts")], "sttropez/browser": [join(assetRoot, "browser/index.d.ts")],
+    } };
+await writeFile(join(consumer, "package.json"), '{"type":"module"}');
+await writeFile(join(consumer, "tsconfig.json"), JSON.stringify({ compilerOptions, files: ["main.ts"] }));
+execFileSync(process.execPath, [join(project, "node_modules/typescript/bin/tsc"), "-p", join(consumer, "tsconfig.json")], { cwd: consumer, stdio: "pipe" });
+await build({ absWorkingDir: consumer, entryPoints: ["main.ts"], bundle: true, format: "esm", platform: "browser",
+    outfile: join(consumer, "site/app.js"), alias: { sttropez: assetRoot }, metafile: true,
+    plugins: [{ name: "consumer-isolation", setup(builder) { builder.onEnd(result => {
+        for (const path of Object.keys(result.metafile.inputs)) {
+            assert.ok(!resolve(consumer, path).startsWith(project), `Checkout input leaked into consumer: ${path}`);
+        }
+    }); } }] });
+await cp(join(assetRoot, "editor.css"), join(consumer, "site/editor.css"));
+await cp(join(assetRoot, "UNICODE-LICENSE.txt"), join(consumer, "site/UNICODE-LICENSE.txt"));
+await cp(join(consumer, "index.html"), join(consumer, "site/index.html"));
+const server = createServer(async (request, response) => {
+    const path = new URL(request.url, "http://localhost").pathname;
+    const file = { "/": "index.html", "/app.js": "app.js", "/editor.css": "editor.css", "/UNICODE-LICENSE.txt": "UNICODE-LICENSE.txt" }[path];
+    if (!file) { response.writeHead(404).end(); return; }
+    response.setHeader("Content-Type", file.endsWith("js") ? "text/javascript" : file.endsWith("css") ? "text/css" : file.endsWith("txt") ? "text/plain" : "text/html");
+    response.end(await readFile(join(consumer, "site", file)));
+});
+await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+let browser;
+try {
+    browser = await chromium.launch();
+    const page = await browser.newPage();
+    const errors = [];
+    page.on("pageerror", error => errors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
+    await page.goto(`http://127.0.0.1:${server.address().port}`);
+    const notice = await page.request.get(`http://127.0.0.1:${server.address().port}/UNICODE-LICENSE.txt`);
+    assert.equal(notice.status(), 200); assert.equal(await notice.text(), await readFile("licenses/Unicode-3.0.txt", "utf8"));
+    const editor = page.getByRole("textbox", { name: "Consumer source" });
+    await editor.fill("edited restored package");
+    assert.equal(await page.evaluate(() => window.consumer.text()), "edited restored package");
+    await editor.press("Control+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "restored assets");
+    await editor.press("Control+Shift+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "edited restored package");
+    const history = await page.evaluate(() => window.consumer.history()); assert.deepEqual(history, { undoDepth: 1, redoDepth: 0 });
+    await page.waitForFunction(() => { const state = window.consumer.viewport(); return state.revision === 3 && !state.pending; });
+    const viewport = await page.evaluate(() => window.consumer.viewport()); assert.equal(viewport.rows, 1);
+    assert.equal(await page.getByRole("region", { name: "Restored viewport" }).locator(".st-viewport-row").textContent(), "edited restored package");
+    const storage = await page.evaluate(() => window.consumer.storage());
+    assert.deepEqual(storage, { original: "a😀\nb", exported: "aX\r\nb", readMetrics: { textExports: 1, sliceUnits: 0 }, batch: { text: "X\r\nYb", mappedEnd: 5, lineOffset: 3 }, lineCount: 2, lineOffset: 3, mappedEnd: 4,
+        anchor: { from: 2, to: 4, fromAffinity: "after", toAffinity: "before", onDelete: "collapse" } });
+    const style = await editor.evaluate(element => { const style = getComputedStyle(element); return { color: style.color, background: style.backgroundColor, padding: style.paddingTop }; });
+    assert.deepEqual(style, { color: "rgb(225, 231, 239)", background: "rgb(19, 27, 39)", padding: "20px" });
+    const candidateInput = page.getByRole("textbox", { name: "Restored candidate" });
+    await candidateInput.focus(); await candidateInput.press("Control+Home"); await candidateInput.press("!");
+    assert.equal(await page.evaluate(() => window.consumer.text()), "!edited restored package");
+    await page.waitForFunction(() => { const state = window.consumer.candidate(); return state.viewport.revision === 4 && !state.viewport.pending; });
+    const candidate = await page.evaluate(() => window.consumer.candidate());
+    assert.equal(candidate.commits, 1); assert.ok(candidate.inputUnits <= 2600);
+    assert.equal(await candidateInput.evaluate(element => getComputedStyle(element).width), "1px");
+    await candidateInput.press("Control+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "edited restored package");
+    const capturedSelection = await candidateInput.evaluate(input => { input.setSelectionRange(2, 5, "backward"); return window.consumer.captureCandidate(); });
+    assert.equal(capturedSelection.anchor, 5); assert.equal(capturedSelection.head, 2);
+    const navigation = await page.evaluate(() => window.consumer.navigation());
+    assert.equal(navigation.offset, 100_002); assert.ok(navigation.advances > 1); assert.equal(navigation.exports, 0);
+    await candidateInput.press("Control+Home"); await candidateInput.press("Control+ArrowRight");
+    assert.equal((await page.evaluate(() => window.consumer.captureCandidate())).head, 7);
+    await candidateInput.press("Control+Shift+ArrowRight");
+    assert.deepEqual(await page.evaluate(() => { const s = window.consumer.captureCandidate(); return { anchor: s.anchor, head: s.head }; }), { anchor: 7, head: 16 });
+    await page.waitForFunction(() => document.querySelector("#candidate .consumer-token")?.textContent === "restored");
+    await page.evaluate(() => window.consumer.find("restored"));
+    await page.waitForFunction(() => window.consumer.findState().status === "ready");
+    const find = await page.evaluate(() => window.consumer.findState()); assert.equal(find.count, 1);
+    await page.evaluate(() => window.consumer.replaceAll("packed"));
+    await page.waitForFunction(() => window.consumer.findState().status === "ready" && window.consumer.findState().count === 0);
+    assert.equal(await page.evaluate(() => window.consumer.text()), "edited packed package");
+    await candidateInput.press("Control+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "edited restored package");
+    await page.waitForFunction(() => { const s = window.consumer.comparison(); return s.status === "ready" && !s.working.pending && s.reference && !s.reference.pending; });
+    const comparison = await page.evaluate(() => window.consumer.comparison()); assert.equal(comparison.count, 1);
+    assert.deepEqual(await page.evaluate(() => window.consumer.diff()), { status: "ready", whitespaceOnly: true });
+    await page.getByRole("button", { name: "Next change", exact: true }).click();
+    await page.getByRole("button", { name: "Use baseline", exact: true }).click();
+    await page.waitForFunction(() => window.consumer.comparison().status === "ready" && window.consumer.comparison().count === 0);
+    assert.equal(await page.evaluate(() => window.consumer.acceptComparison()), true);
+    await page.waitForFunction(() => window.consumer.comparison().version === "accepted-2");
+    const bidi = await page.evaluate(() => window.consumer.bidi());
+    assert.deepEqual(bidi.levels, [0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0]);
+    assert.deepEqual(bidi.order, [0, 1, 2, 3, 6, 5, 4, 7, 8, 9, 10]);
+    await page.evaluate(() => window.consumer.bidiSample());
+    await page.waitForFunction(() => !window.consumer.candidate().viewport.pending);
+    await candidateInput.press("ArrowLeft");
+    assert.equal((await page.evaluate(() => window.consumer.captureCandidate())).head, 5);
+    await candidateInput.press("ArrowRight");
+    assert.equal((await page.evaluate(() => window.consumer.captureCandidate())).head, 4);
+    assert.ok((await page.evaluate(() => window.consumer.candidate())).visualMoves >= 2);
+    const paragraph = await page.evaluate(() => window.consumer.paragraph());
+    assert.ok(paragraph.advances > 1); assert.equal(paragraph.level, 1); assert.equal(paragraph.retainedLevel, 1); assert.equal(paragraph.exports, 0);
+    assert.equal(paragraph.current, true); assert.equal(paragraph.mainLevel, 1); assert.equal(paragraph.rejected, true); assert.equal(paragraph.releasedLease, true); assert.equal(paragraph.sourceRevision, true);
+    const advances = await page.evaluate(() => window.consumer.advances());
+    assert.equal(advances.total, 77_400_000); assert.equal(advances.changedTotal, 77_399_969); assert.equal(advances.origin, 2_399_980 * 32.25);
+    assert.equal(advances.cells, 10); assert.equal(advances.first, 2_399_980); assert.ok(advances.readValues <= 512); assert.equal(advances.truncated, false);
+    assert.ok(advances.retained.values < 2_401_024); assert.equal(advances.disposed, "disposed"); assert.deepEqual(advances.signed, [{ index: 1, from: 4, to: 4, advance: 0 }]);
+    const graphemes = await page.evaluate(() => window.consumer.graphemes());
+    const fontNormalization = await page.evaluate(() => window.consumer.fontNormalization());
+    const glyphVisibility = await page.evaluate(() => window.consumer.glyphVisibility());
+    assert.deepEqual(glyphVisibility, { glyphs: [2, 0, 3], hidden: [false, true, false], widths: [600, 0, 700], total: 1300, preserved: 1800, source: [{ from: 1, to: 2 }],
+        properties: { defaultIgnorable: true, zeroWidthJoiner: true, zeroWidthNonJoiner: false, variationSelector: false, substituted: false, ligated: false }, released: true, exports: 0 });
+    assert.deepEqual(fontNormalization, { form: "font", text: "A\u0301α", clusters: 2, runs: 2, fonts: [0, 1], origin: [{ from: 0, to: 1 }], rows: [{ from: 0, to: 2, fontIndex: 0, glyphs: [2, 9], units: 600 }, { from: 2, to: 3, fontIndex: 1, glyphs: [7], units: 1000 }], released: true, nativeReleased: true, exports: 0 });
+    assert.deepEqual(graphemes, { version: "18.0.0", raw: [0, 4, 9, 11], normalized: [0, 2, 5], coordinates: ["buffer", "normalized"], scripts: 2, origin: [{ from: 0, to: 1 }], released: true, exports: 0 });
+    const font = await page.evaluate(() => window.consumer.font());
+    assert.deepEqual(font, { result: "ready", current: true, ownedFaces: 1, unitsPerEm: 1000, glyphCount: 10,
+        nominalUnits: 1550, variation: 8, native: [155, 120, 50], copiedNominalA: 600, released: true, retainedA: 600, retainedPositioned: 1200,
+        positioning: { pairUnits: 1200, pairPrefix: 500, ligatureUnits: 500, source: [[{ from: 0, to: 1 }], [{ from: 1, to: 2 }]] },
+        cursor: { units: 500, disposed: "disposed", resultReleased: true },
+        scripts: { runs: 2, clusters: 5, rows: [{ script: "Latn", from: 0, to: 4, glyphs: [6, 2, 3], units: 1700 }, { script: "Grek", from: 4, to: 5, glyphs: [0], units: 500 }], missing: 1, repeatedOrigin: [{ from: 0, to: 1 }], released: true },
+        glyphPipeline: { inputGlyphs: 2, glyphs: [6], units: 500, source: [[{ from: 0, to: 1 }], [{ from: 1, to: 2 }]], released: true },
+        unicode: { version: "18.0.0", text: "fiAB", points: 4, glyphs: [6, 2, 3], units: 1700, components: [[{ from: 0, to: 1 }], [{ from: 0, to: 1 }]], script: "Latn", extensions: ["Hira", "Kana"], mappingReleased: true },
+        substitution: { glyphs: [6], components: [[{ from: 0, to: 1 }], [{ from: 1, to: 2 }]], units: 500 } });
+    assert.deepEqual(errors, []);
+    await mkdir("artifacts/package", { recursive: true });
+    await page.screenshot({ path: "artifacts/package/consumer.png" });
+    await writeFile("artifacts/package/report.json", JSON.stringify({ schemaVersion: 1,
+        packageSha256: createHash("sha256").update(archive).digest("hex"), entries: Object.keys(entries).sort(),
+        consumer, browser: browser.version(), node: process.version, dotnet: dotnet(["--version"]).trim(),
+        typescript: JSON.parse(await readFile("node_modules/typescript/package.json", "utf8")).version,
+        esbuild: JSON.parse(await readFile("node_modules/esbuild/package.json", "utf8")).version,
+        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, comparison, style, errors }, null, 2));
+    console.log("Restored package: declarations, storage/mappings, modules, visible CSS and actual edit passed. Evidence: artifacts/package/");
+    console.log(`Isolated consumer retained for inspection: ${consumer}`);
+} finally {
+    await browser?.close();
+    await new Promise(resolve => server.close(resolve));
+}

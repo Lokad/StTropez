@@ -8,16 +8,27 @@ The headless model owns editing decisions. The browser view translates native in
 transactions and projects the current document into DOM. Hosts render tabs, menus, forms,
 job status, data previews and connection configuration.
 
-The initial text representation is a string and each input replaces the document. This is
-deliberately a baseline. It extracts the whole native value and has no application-level undo. A later
-text-buffer benchmark selects a chunked tree or piece tree; do not treat this scaffold as
-the final large-document implementation.
+Documents use an immutable indexed piece tree with bounded shared history. Snapshots expose a
+buffer for range reads and a lazy string export for host services/native views. The native input
+adapter derives range changes from whole values and maps independent view selections, including
+LF display coordinates over preserved CRLF. It still performs document-sized rendering/diff work.
+See [the storage decision](text-storage.md) and [history/view contracts](history.md); this baseline
+does not qualify the production renderer or native-device input.
+The separate [bounded editing candidate](editing-candidate.md) maps a small native context to
+range transactions and uses local native glyph rectangles over the [viewport](viewport.md).
+It preserves the same identities, selections and history, while leaving long contextual-line
+geometry and native-device/accessibility qualification open.
+The [comparison controller](comparison.md) captures an independent reference buffer/version
+and one working tab. Refresh and acceptance advance the reference through captured tickets;
+they never implicitly save the working resource. Browser panes reuse the same buffer/view
+contracts and release their reference display resources on refresh or teardown.
 
 ## Identity and asynchronous work
 
 | Identity | Meaning | Lifetime |
 | --- | --- | --- |
 | Resource key | Opaque scope, resource and variant tuple | Host-defined; paths and titles are labels |
+| Resource ID | One text or typed non-text resource handle | Until explicitly released; never reused |
 | Document ID | One in-memory buffer and revision sequence | Until explicitly released |
 | Tab ID | One opened workspace surface | Until closed; moving it preserves identity |
 | Tab generation | The surface currently occupying a tab | Changes when its contents are replaced |
@@ -25,14 +36,16 @@ the final large-document implementation.
 | Request ID | One pending operation | Until completed, cancelled or superseded |
 | Proposal revision | One offered change against a specified baseline | Until explicitly acknowledged or retired |
 
-The scaffold implements resource/document/tab/generation identities. Request, proposal and
-save-receipt protocols remain planned. View selection and scroll can be captured/restored;
-automatic selection mapping across changes remains planned.
+The scaffold implements resource/document/tab/generation identities, guarded operations,
+save receipts, captured Run inputs and versioned agent association/proposal/acknowledgement.
+Shared history survives tab/view lifecycles. Stable document-view handles map selections across
+edits while mounted or detached; scroll remains separate browser/host state.
 
-The planned resource lifecycle also covers non-text surfaces without requiring a dummy text
-document. Common handles expose ownership, version, dirty/save status and capabilities; the
-host owns typed data and validation. The scaffold's string-backed panel does not yet meet this
-contract. Related connection, transfer and historical-run resources may have independent IDs.
+Text and typed non-text handles share loading/ready/failed/released states, metadata,
+capabilities and revision checks. A panel refers to a resource ID and requires no text document.
+The host supplies plain typed form snapshots, schemas and validation; the workspace copies and
+freezes the supplied values without interpreting them. Related connection, transfer and
+historical-run resources may have independent IDs. See [resource contracts](resources.md).
 
 An operation captures the target before awaiting. On completion it resolves the original
 tab and generation, then checks the exact document revision relevant to the operation.
@@ -43,20 +56,26 @@ has not changed. Cancellation improves efficiency; validation enforces correctne
 Documents can have multiple views with different cursors and scroll positions. They share
 text, dirty state and edit history. They must not acquire divergent copies through React
 state. Releasing a document while a surface owns it is rejected. Closing the last tab does
-not discard a buffer implicitly. Future load/poll/save tasks hold explicit leases as well.
+not discard a buffer implicitly. Load/operation/save/Run tasks hold explicit leases as well.
+Superseding or cancelling an operation invalidates its result but retains its lease until the
+original work settles and is finished. Releasing dirty work additionally requires explicit discard.
 
 ## Transactions, saves and agent proposals
 
 Edits use UTF-16 offsets in the original document, half-open ranges, and an expected
 revision. A sorted batch validates before publication. No-op edits do not advance the
-revision. LF storage normalization, offset mapping, atomic workspace edits and history
-grouping require explicit policies before language services are integrated.
+revision. Separate buffer transactions now provide position maps, affinities and anchored
+ranges. Newline preservation/conversion is an explicit import/export choice. Workspace
+transactions preflight all participants before publication, with shared undo units, explicit
+history kinds/grouping and per-view selection mapping. Language providers still need their own
+revision checks and cancellation at the adapter boundary.
 
-The production design distinguishes saved server version, current local revision and
-proposal revision. A save captures the submitted revision and contents before awaiting.
-Its receipt marks only that version saved. Later typing remains dirty; a later proposal
-remains pending. Serialize saves per resource or require a server version precondition:
-client-side receipt ordering alone cannot prevent out-of-order server writes.
+Saved baseline/server version and current local revision are separate. A save captures the
+submitted revision and immutable contents at invocation. `WorkspaceCommands` serializes writes
+per resource and supplies the current saved server-version precondition at submission. The host
+service must enforce that precondition. Receipts preserve exact submitted content; later typing
+remains dirty. Proposal targets and acknowledgement receipts use their own versions and queues;
+see [agent review](agent-review.md).
 
 Dirty state follows divergence from the saved baseline, including undo back to saved content;
 a monotonically increasing revision alone cannot determine it. Canonical save responses must
@@ -65,8 +84,8 @@ the successful product save, before the host submits a subsequent agent request.
 
 Agent changes enter the same transaction path. Capture immutable request inputs at a turn
 boundary. Subsequent proposals name their base document and proposal revision. A host may
-choose an exclusive editing lease while an agent works, or permit concurrent human editing
-and require explicit conflict review. Switching the associated agent session is a visible
+choose its editing policy. The initial policy uses an exclusive lease during an executing
+request; concurrent editing/merging remains deferred. Switching the agent association is a visible
 host action. Never overwrite human corrections because a delayed operation finished.
 
 Save and Run are separate host commands with explicit resource/variant targets. A run captures
@@ -102,11 +121,14 @@ with symmetric cleanup. A view detach does not destroy its document/controller. 
 must tolerate repeated attachment and cleanup without duplicating views or subscriptions.
 Construct persistent controllers at the host composition boundary, outside component renders.
 
-Add per-resource/field subscriptions and stable unchanged snapshots before scaling the
-workspace; the scaffold currently publishes every update to every listener. Keep text changes
-out of unrelated tab metadata and form subscriptions. Exercise plain and React hosts early
-with two text views, a typed form, queued host updates and Strict Mode remounts. The runtime
-must not acquire a second reactive framework to support these adapters.
+Resource, document, metadata and tab observables now notify only for their own changes; a coarse
+workspace observable remains for tooling. Unchanged metadata and unrelated form snapshots keep
+their identity through typing. Listener exceptions are reported without stopping other delivery.
+Reentrant mutations are rejected during notification; a host can queue its next command after
+delivery. Plain-host fixtures exercise two text views, a typed form and deferred save/Run ports.
+The shared plain/React controller fixtures test queued host-write ordering, stable refs and
+Strict Mode remounts, plus root error recovery without discarding documents. The runtime imports
+no React or host cell library. See [the host adapter](host-adapter.md) for fixture boundaries.
 
 React owns a container; StTropez owns its descendants. Host-rendered panels or inline
 widgets get separate DOM roots and explicit mount/update/dispose contracts. A future
@@ -137,6 +159,15 @@ Keep DOM rendering as the initial production direction for accessibility and nat
 interaction. Benchmark input approaches before choosing a hidden textarea or contenteditable
 implementation. Canvas and GPU text rendering add hit-testing, accessibility and composition
 burdens and require measured justification. The native textarea scaffold settles neither choice.
+The [read-only viewport layer](viewport.md) now bounds DOM/range work in both axes and keeps
+logical scroll ranges separate from browser scroll extents. It shares indexed documents and
+mapped view handles. The bounded editing candidate exercises input on that layer; the production
+input strategy and full contextual-line geometry remain unselected.
+The [literal find controller](search.md) scans pieces with explicit scheduling and applies
+revision-checked replacement transactions. Generic line decorators keep presentation within
+the owned subtree. The [provider fixture](providers.md) supplies incremental visible tokens
+and scoped completion/diagnostics through a real host-owned worker, with no runtime service
+dependency or full language-protocol claim.
 
 Language support is supplied by host adapters: incremental tokenization, completion, hover,
 signature help, diagnostics, definition/reference navigation, rename, code actions, folds,

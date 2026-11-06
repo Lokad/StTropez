@@ -1,0 +1,21 @@
+<Project>
+  <!-- Explicit invocation only. No compiler, install, source edits or package-cache writes. -->
+  <Target Name="StTropezPrepareAssets">
+    <Error Condition="'$(StTropezStageDirectory)' == ''" Text="Set StTropezStageDirectory to a dedicated generated directory." />
+    <PropertyGroup>
+      <!-- Content address prevents version changes from mixing stale assets. Old stages are host-owned. -->
+      <_StTropezManifest>$(StTropezAssetRoot)/manifest.json</_StTropezManifest>
+    </PropertyGroup>
+    <GetFileHash Files="$(_StTropezManifest)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_StTropezManifestHash" />
+    </GetFileHash>
+    <PropertyGroup>
+      <StTropezPreparedRoot>$([System.IO.Path]::GetFullPath('$(StTropezStageDirectory)/%(_StTropezManifestHash.FileHash)/'))</StTropezPreparedRoot>
+    </PropertyGroup>
+    <ItemGroup>
+      <_StTropezAsset Include="$(StTropezAssetRoot)/**/*.js;$(StTropezAssetRoot)/**/*.d.ts;$(StTropezAssetRoot)/**/*.css;$(StTropezAssetRoot)/package.json;$(StTropezAssetRoot)/manifest.json;$(StTropezAssetRoot)/UNICODE-LICENSE.txt" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_StTropezAsset)" DestinationFiles="@(_StTropezAsset->'$(StTropezPreparedRoot)/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="StTropez assets: $(StTropezPreparedRoot)" />
+  </Target>
+</Project>
