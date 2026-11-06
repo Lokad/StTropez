@@ -16,7 +16,8 @@ export type TextComparison = Readonly<{
 let nextMount = 0;
 /** Two independently virtualized panes. Hosts own reference retrieval, acceptance, saving and execution. */
 export function mountTextComparison(host: HTMLElement, workspace: Workspace, workingTab: TabId, baseline: ComparisonBaseline,
-    options: Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView }> = {}): TextComparison {
+    options: Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView;
+        workingDecorate?: (line: PresentedLine) => readonly InlineDecoration[]; baselineDecorate?: (line: PresentedLine) => readonly InlineDecoration[] }> = {}): TextComparison {
     const budget = options.workBudget ?? 32768;
     if (!Number.isSafeInteger(budget) || budget < 512) throw new RangeError("Comparison budget must be at least 512.");
     const owner = host.ownerDocument, win = owner.defaultView;
@@ -49,10 +50,11 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
         const range = state.hunks[low]?.[side]; return range && range.lineFrom <= line ? range : undefined;
     }
     const decorate = (side: "baseline" | "working") => (line: PresentedLine): readonly InlineDecoration[] => {
-        if (side === "working" && line.revision !== state.working?.revision) return [];
+        const decorations = (side === "working" ? options.workingDecorate : options.baselineDecorate)?.(line) ?? [];
+        if (side === "working" && line.revision !== state.working?.revision) return decorations;
         const range = rangeAt(side, line.line);
-        if (!range || range.from === range.to || range.from >= line.to || range.to <= line.from) return [];
-        return [{ from: range.from, to: range.to, className: side === "baseline" ? "st-comparison-removed" : "st-comparison-added" }];
+        if (!range || range.from === range.to || range.from >= line.to || range.to <= line.from) return decorations;
+        return [...decorations, { from: range.from, to: range.to, className: side === "baseline" ? "st-comparison-removed" : "st-comparison-added" }];
     };
     const lineClass = (side: "baseline" | "working") => (line: PresentedLine) => (side !== "working" || line.revision === state.working?.revision) && rangeAt(side, line.line) ? `st-comparison-line-${side}` : undefined;
     let working: EditingCandidate;

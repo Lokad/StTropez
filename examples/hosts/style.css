@@ -12,3 +12,11 @@ section { padding: 12px; border: 1px solid #8193a7; background: white; min-width
 .host-review .st-comparison-editor { height: 260px; }
 label { display: block; } input { display: block; width: 90%; padding: 7px; margin-top: 6px; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.host-language { margin-top: 16px; }
+.host-language h2 { font-size: 17px; }
+.host-language button { margin: 3px; }
+.st-token-keyword { color: #a9c5ff; }
+.st-token-number { color: #b9e29e; }
+.st-token-comment { color: #b5bbc7; }
+.st-search-match { background: #5c4719; outline: 1px solid #a88c40; }
+.st-diagnostic { text-decoration: underline wavy #efaa6c; text-underline-offset: 3px; }

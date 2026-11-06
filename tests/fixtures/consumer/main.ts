@@ -5,6 +5,7 @@ import { FontCascade, createFontNormalizationCursor } from "sttropez";
 import { createGraphemeCursor, createNormalizedGraphemeCursor, createScriptItemizationCursor } from "sttropez";
 import { DiffReferenceCache, WorkspaceCommands } from "sttropez";
 import type { SaveReview } from "sttropez";
+import type { PresentedLine } from "sttropez/browser";
 const workspace = new Workspace();
 const documentId = workspace.createDocument({ scope: "consumer", resource: "source", variant: "working" }, "Consumer source", "restored assets");
 const tabId = workspace.open({ kind: "text", documentId }, "main");
@@ -19,7 +20,9 @@ const find = createFindController(workspace, tabId, candidate);
 const comparisonResource = workspace.createTextResourceFromBuffer({ scope: "consumer", resource: "review", variant: "working" }, "Review", { buffer: TextBuffer.from("working\r\n"), serverVersion: "saved-1" });
 const comparisonTab = workspace.open({ kind: "text", documentId: comparisonResource.documentId }, "review");
 const comparisonView = workspace.createDocumentView(comparisonResource.documentId);
-let comparison = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonTab, { buffer: TextBuffer.from("baseline\r\n"), version: "reference-1" }, { view: comparisonView });
+const reviewDecorate = (line: PresentedLine) => [{ from: line.from, to: line.to, className: "consumer-review-token" }];
+const reviewOptions = { view: comparisonView, workingDecorate: reviewDecorate, baselineDecorate: reviewDecorate };
+let comparison = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonTab, { buffer: TextBuffer.from("baseline\r\n"), version: "reference-1" }, reviewOptions);
 Object.assign(window, { consumer: { text: () => workspace.document(documentId).text,
     saveReview: async () => {
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "retry", variant: "working" }, "Retry", { value: "base", serverVersion: "v0" });
@@ -101,7 +104,7 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
     remountComparison: () => {
         const baseline = comparison.controller.getSnapshot().baseline!, state = comparison.working.captureView();
         comparison.destroy(); const retained = workspace.ownsDocumentView(comparisonView);
-        comparison = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonTab, baseline, { view: comparisonView });
+        comparison = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonTab, baseline, reviewOptions);
         comparison.working.restoreView({ ...state, ...comparisonView.getSnapshot().selection }); return retained;
     },
     acceptComparison: () => { const t = comparison.controller.beginAcceptance(); return t.complete({ buffer: t.capture.working.buffer, version: "accepted-2" }); },

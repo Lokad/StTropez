@@ -12,7 +12,8 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
     const dispose = async () => { disposed = true; listeners.abort(); unmount(); bindings.dispose(); await controller.dispose(); };
     window.addEventListener("pagehide", () => { void dispose(); }, { once: true, signal: listeners.signal });
     controller.startBackground(); mount();
-    const fixture = Object.freeze({ ready: true, mode, snapshot: () => ({ ...controller.debug(), bindings: bindings.debug(), commits: commits() }),
+    const fixture = Object.freeze({ ready: true, mode, snapshot: () => { const state = controller.debug(), views = bindings.debug();
+        return { ...state, hostSubscriptions: state.hostSubscriptions + views.language.subscriptions, bindings: views, commits: commits() }; },
         editSource: (expectedRevision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: controller.source.documentId,
             expectedRevision, edits, origin: "host", history: { kind: "live" } }),
         deliverProposal: controller.deliverProposalText, runCapture: (index: number) => controller.runCapture(index), setPath: controller.setPath, recoveryText: () => controller.recoveryText(),
@@ -21,6 +22,8 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         range: (from: number, to: number) => controller.workspace.document(controller.source.documentId).buffer.slice(from, to),
         referenceRange: (from: number, to: number) => bindings.referenceRange(from, to),
         selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => bindings.selectSource(id, revision, selection),
+        setProviderDelay: (delay: number) => bindings.language.setDelay(delay), faultProviderNext: (fault: "malformed" | "failure") => bindings.language.faultNext(fault),
+        requestProvider: bindings.language.request,
         unmount, mount: attach, dispose });
     window.hostFixture = fixture;
 }
@@ -33,4 +36,6 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; mode
     externalWrite: (text: string) => void; finishConflictReview: () => boolean; saveReviewedSource: () => void;
     referenceRange: (from: number, to: number) => string | undefined;
     selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => boolean;
+    setProviderDelay: (delay: number) => void; faultProviderNext: (fault: "malformed" | "failure") => void;
+    requestProvider: () => void;
     unmount: () => void; mount: () => void; dispose: () => Promise<void> }> } }

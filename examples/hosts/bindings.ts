@@ -2,6 +2,8 @@ import { mountEditingCandidate, mountTextComparison, mountTextEditor } from "../
 import type { EditingCandidate, MountedEditor, TextComparison, ViewportSnapshot, ViewState } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, ComparisonTicket, DocumentId, DocumentView, Selection } from "../../src/index.ts";
 import type { HostController } from "./controller.ts";
+import { EditingPresentation } from "../editing/presentation.ts";
+import { HostLanguageTools } from "./language.ts";
 
 export type HostEditor = "native" | "candidate";
 type BoundEditor = MountedEditor & Readonly<{ metrics: () => null | ReturnType<EditingCandidate["snapshot"]> & Readonly<{ viewport: ViewportSnapshot }> }>;
@@ -17,6 +19,8 @@ export class ViewBindings {
     private mounts = 0;
     private destroys = 0;
     private review: TextComparison | undefined;
+    readonly language: HostLanguageTools;
+    private detachReviewLanguage: (() => void) | undefined;
     private referenceState: Readonly<{ baseline: ComparisonBaseline; state: ViewState }> | undefined;
     private reviewStatus: HTMLOutputElement | undefined;
     private reviewListeners: AbortController | undefined;
@@ -32,6 +36,7 @@ export class ViewBindings {
             if (baseline && reference) this.referenceState = { baseline, state: reference.captureView() };
             if (this.review.controller.getSnapshot().working) this.retainState("comparison", this.review.working.view.documentId, this.review.working.captureView());
         }
+        this.detachReviewLanguage?.(); this.detachReviewLanguage = undefined;
         this.review?.destroy(); this.review = undefined; this.reviewListeners?.abort(); this.reviewListeners = undefined;
         this.reviewStatus?.remove(); this.reviewStatus = undefined;
         if (!host) return;
@@ -39,8 +44,11 @@ export class ViewBindings {
         this.reviewStatus.setAttribute("aria-live", "polite"); this.reviewStatus.textContent = this.reviewResult; host.append(this.reviewStatus);
         const baseline = this.controller.comparisonReference.getSnapshot().baseline;
         const view = this.retainedView("comparison", this.controller.source.documentId);
+        const presentation = new EditingPresentation(), referencePresentation = new EditingPresentation();
         this.review = mountTextComparison(host, this.controller.workspace, this.controller.viewTab("primary"),
-            baseline, { ariaLabel: "Source review", view });
+            baseline, { ariaLabel: "Source review", view, workingDecorate: presentation.decorate, baselineDecorate: referencePresentation.decorate });
+        const detachLanguage = this.language.attach("comparison", this.controller.viewTab("primary"), this.review.working, presentation);
+        this.detachReviewLanguage = () => { detachLanguage(); referencePresentation.clear(); };
         const state = this.states.get("comparison")?.get(view.documentId);
         if (state) this.review.working.restoreView({ ...state, ...view.getSnapshot().selection });
         if (this.referenceState?.baseline.buffer === baseline.buffer && this.referenceState.baseline.version === baseline.version)
@@ -80,7 +88,7 @@ export class ViewBindings {
         return this.mounted.get(id)?.editor.view.setSelection(revision, selection) ?? false;
     }
     constructor(controller: HostController, editor: HostEditor = "native") {
-        this.controller = controller; this.editor = editor;
+        this.controller = controller; this.editor = editor; this.language = new HostLanguageTools(controller.workspace);
         this.primary = this.ref("primary", "Primary source");
         this.secondary = this.ref("secondary", "Secondary source");
     }
@@ -103,14 +111,16 @@ export class ViewBindings {
             if (tab?.surface.kind !== "text") throw new Error("Text view requires a text tab.");
             const documentId = tab.surface.documentId;
             const view = this.retainedView(id, documentId);
-            const candidate = this.editor === "candidate" ? mountEditingCandidate(host, workspace, tabId, { ariaLabel, view }) : undefined;
+            const presentation = new EditingPresentation();
+            const candidate = this.editor === "candidate" ? mountEditingCandidate(host, workspace, tabId, { ariaLabel, view, decorate: presentation.decorate }) : undefined;
+            const detachLanguage = candidate ? this.language.attach(id, tabId, candidate, presentation) : undefined;
             const mounted: BoundEditor = candidate ? { element: candidate.input, view, captureView: candidate.captureView,
                 restoreView: candidate.restoreView, destroy: candidate.destroy,
                 metrics: () => ({ ...candidate.snapshot(), viewport: candidate.viewport.snapshot() }) }
                 : { ...mountTextEditor(host, workspace, tabId, { ariaLabel, view }), metrics: () => null };
             const listeners = new AbortController();
             mounted.element.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
-            const editor: BoundEditor = { ...mounted, destroy: () => { try { mounted.destroy(); } finally { listeners.abort(); } } };
+            const editor: BoundEditor = { ...mounted, destroy: () => { try { detachLanguage?.(); mounted.destroy(); } finally { listeners.abort(); } } };
             const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView({ ...state, ...view.getSnapshot().selection });
             this.mounted.set(id, { editor, documentId }); this.mounts++;
         };
@@ -127,7 +137,7 @@ export class ViewBindings {
     }
     debug() {
         const comparison = this.review?.controller.getSnapshot();
-        return { editor: this.editor, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size,
+        return { editor: this.editor, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size, language: this.language.debug(),
         comparison: comparison ? { status: comparison.status, generation: comparison.generation, workingRevision: comparison.working?.revision,
             referenceIsWorkingBuffer: comparison.baseline !== null && comparison.baseline.buffer === comparison.working?.buffer,
             progress: comparison.progress && { work: comparison.progress.work, readUnits: comparison.progress.readUnits,

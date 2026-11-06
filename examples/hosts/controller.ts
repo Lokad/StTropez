@@ -1,5 +1,6 @@
+import { HostCell } from "../shared/observable.ts";
 import { TextBuffer, Workspace, WorkspaceCommands } from "../../src/index.ts";
-import type { AgentRequest, CloseOperation, ComparisonBaseline, DocumentId, Observable, Operation, RunSubmission, SaveResponse, SaveReview, SaveSubmission, TabId, TabTarget, TextEdit } from "../../src/index.ts";
+import type { AgentRequest, CloseOperation, ComparisonBaseline, DocumentId, Operation, RunSubmission, SaveResponse, SaveReview, SaveSubmission, TabId, TabTarget, TextEdit } from "../../src/index.ts";
 
 export type Connection = Readonly<{ path: string; format: "csv" }>;
 type RunSettings = Readonly<{ mode: "preview" | "inspect" }>;
@@ -12,31 +13,6 @@ export type Layout = Readonly<{ position: "left" | "right"; visible: boolean; fo
 export type Activity = Readonly<{ writes: number; acknowledgements: number; ackAttempts: number; pendingRuns: number; completedRuns: number; background: number;
     errors: number; lastSavedRevision: number | null; lastRun: Readonly<{ sourceRevision: number; configurationRevision: number; mode: string }> | null;
     ordering: readonly string[] }>;
-
-/** Development host's stand-in for its own cell scheduler, never exported by the package. */
-class HostCell<T> {
-    private value: T;
-    private queue: Promise<void> = Promise.resolve();
-    private readonly listeners = new Set<() => void>();
-    readonly observable: Observable<T>;
-    constructor(initial: T) {
-        this.value = freezeHost(initial);
-        this.observable = Object.freeze({ getSnapshot: () => this.value, subscribe: (listener: () => void) => {
-            const subscription = () => listener(); this.listeners.add(subscription);
-            return () => { this.listeners.delete(subscription); };
-        } });
-    }
-    set(next: T): void { this.value = freezeHost(next); for (const listener of [...this.listeners]) listener(); }
-    get(): T { return this.value; }
-    enqueue(next: T): Promise<void> { this.queue = this.queue.then(() => { this.set(next); }); return this.queue; }
-    count(): number { return this.listeners.size; }
-}
-function freezeHost<T>(value: T): T {
-    if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-        Object.values(value).forEach(freezeHost); Object.freeze(value);
-    }
-    return value;
-}
 
 /** Persistent composition root shared by plain and React hosts; no DOM and no mirrored text cell. */
 export class HostController {

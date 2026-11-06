@@ -135,6 +135,46 @@ agent and releases its proposal lease. Model/recovery data remains owned
 by the host; disposing a view does not discard unsaved work or retire stored receipts. The
 consuming application still owns durable recovery, navigation and unload policy.
 
+## Language and find in the review host
+
+The bounded source views and editable comparison use the same small fixture lexer and real
+worker provider as the editing playground. Each view has an independent bounded presentation
+cache. Comparison decorations compose host tokens/search/diagnostics with change highlighting;
+the immutable reference receives only its own local tokens. Services remain host-owned.
+
+Focus a source view, then use Ctrl+Space to request completion and Alt+Enter to replace its
+captured word. The host also exposes insertion/replacement buttons and scoped diagnostic
+navigation. Ctrl+F opens find, Ctrl+H opens replacement, F3 moves between matches, and Escape
+from the find fields cancels and returns focus. Search and replacement reuse the existing
+cooperative controller and shared history. These keyboard routes are automated pilot evidence;
+native IME and assistive-technology qualification remain separate.
+
+The host language controller exposes one stable observable handle with immutable snapshots.
+Plain and pure React views render those snapshots and call commands. Stable editor refs own
+mounting; React effects do not synchronize editor or application state. Each provider request
+captures a document, tab generation, revision, view and selection before posting at most 4,096
+UTF-16 units. Validation, partial-word refusal, diagnostic limits and shared undo transactions
+reuse the playground implementation. A view change cancels the previous offer/request and
+search; a late reply cannot apply to the newly focused view. Worker failure/disconnection leaves
+local typing and highlighting available. Reconnect requires a fresh request.
+
+Unmount cancels searches and pending requests, terminates workers and releases subscriptions
+and temporary leases. Independent selection/scroll and owned unsaved source survive remount.
+The host diagnostics include the language panel's observable subscriptions. No provider engine,
+reactive dependency or application-service connection is added to the runtime package. The
+example controller is host code; the package supplies editor and comparison primitives.
+
+`bench:host-language` records six repeated normal/distinct-100k-line/long-line workflows across
+both candidate hosts, with background traffic and all review views mounted. A real worker
+request is posted in the typing event's `beforeinput` task so the subsequent text change must
+make the reply stale. Fresh completion, keyboard search, save with later correction,
+acknowledgement failure/retry and the next request follow. Each stage and whole workflow is an
+automation proxy including controls and asynchronous settlement; the report keeps the typing
+adapter's input-event handler duration separate. These stage clocks are not point-input
+readiness timings. The existing host-input benchmark retains its input-to-ready clocks and
+targets. Full text/reference checks and setup run outside the workflow clock; no service delay
+is imposed. Physical display latency and native devices are unmeasured.
+
 ## Measurements
 
 `npm run bench:hosts` runs three warmups and ten measured workflows for each plain/React,

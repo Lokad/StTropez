@@ -2,6 +2,7 @@ import { actions, conflictText, statusText } from "./actions.ts";
 import type { HostController, Layout } from "./controller.ts";
 import type { ViewBindings } from "./bindings.ts";
 import type { TabSnapshot } from "../../src/index.ts";
+import { mountLanguagePanel } from "./language-panel.ts";
 
 export function mountPlain(host: HTMLElement, controller: HostController, bindings: ViewBindings): () => void {
     const listeners = new AbortController(), subscriptions: (() => void)[] = [];
@@ -28,7 +29,9 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const updateConflict = () => { const state = controller.saveConflict.getSnapshot(); conflict.hidden = state === null;
         conflictStatus.textContent = conflictText(controller); finishRemote.disabled = state?.review !== "loading";
         retry.disabled = !controller.canSaveReviewedSource(); };
-    host.replaceChildren(nav, status, recovery, conflict, scene, review, modal);
+    const language = document.createElement("section"); language.setAttribute("aria-label", "Language and find tools"); language.className = "host-language";
+    host.replaceChildren(nav, status, recovery, conflict, scene, review, language, modal);
+    const destroyLanguage = mountLanguagePanel(language, bindings.language);
     const updateStatus = () => { status.textContent = statusText(controller); };
     let unwatchForm: (() => void) | undefined;
     let sceneListeners: AbortController | undefined;
@@ -84,5 +87,5 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         controller.saveConflict.subscribe(updateConflict), controller.source.metadata.subscribe(updateConflict),
         controller.layout.subscribe(updateConflict), controller.comparisonReference.subscribe(updateConflict));
     renderScene(); renderReview(); updateStatus(); updateRecovery(); updateConflict();
-    return () => { unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
+    return () => { destroyLanguage(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
 }

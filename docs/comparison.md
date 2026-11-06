@@ -120,6 +120,12 @@ Only the selected preview is rendered, even with many hunks. Scrolling remains i
 aligned filler rows, synchronized scrolling, inline merge conflicts and advanced review are
 outside this slice. The host owns refresh/acceptance controls and transport errors.
 
+Hosts may supply independent `workingDecorate` and `baselineDecorate` callbacks for bounded
+visible fragments. Their decorations compose with changed ranges, preserving both classes
+where they overlap. The host owns provider/search state and invalidates its working viewport
+when that state changes. Reference presentation stays independent of mutable working state.
+The restored consumer verifies this composition using the compiled API and declarations.
+
 Tests check exact reconstruction, a seeded dynamic-programming edit-distance oracle, hash
 collisions, cooperative long-line work, undo, late typing, out-of-order and cross-lane results,
 permission changes, presentation expiry and disposal. Browser tests exercise actual keyboard

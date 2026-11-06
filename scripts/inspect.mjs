@@ -83,6 +83,25 @@ try {
         await writeFile(`artifacts/inspect/host-${mode}-conflict-saved.json`, JSON.stringify(await harness.page.evaluate(() => window.hostFixture.snapshot()), null, 2));
         await harness.page.evaluate(() => window.hostFixture.dispose());
     }
+    for (const mode of ["plain", "react"]) {
+        await harness.page.goto(new URL(`/hosts/${mode}/?editor=candidate`, harness.page.url()).href);
+        const input = harness.page.getByRole("textbox", { name: "Primary source", exact: true });
+        await input.fill("const saMORE = 123; // TODO\n😀 const value = 2;");
+        await harness.page.getByRole("button", { name: "Open source review", exact: true }).click();
+        await input.press("Control+Home"); for (let i = 0; i < 8; i++) await input.press("ArrowRight");
+        await input.press("Control+Space"); await harness.page.getByRole("option", { name: "sample", exact: true }).waitFor();
+        await harness.page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return s.bindings.comparison?.status === "ready" && !s.bindings.comparison.workingViewport.pending
+            && s.bindings.views.every(v => !v.metrics.viewport.pending); });
+        if (await harness.page.locator('[aria-label="Left host pane"] .st-diagnostic').textContent() !== "TODO") throw new Error("Host inspection missed provider diagnostics.");
+        await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-language.png`, fullPage: true });
+        await writeFile(`artifacts/inspect/host-${mode}-language.json`, JSON.stringify(await harness.page.evaluate(() => window.hostFixture.snapshot()), null, 2));
+        await input.press("Alt+Enter"); await input.press("Control+f");
+        await harness.page.getByRole("textbox", { name: "Find source", exact: true }).fill("TODO");
+        await harness.page.waitForFunction(() => document.querySelector('[aria-label="Find status"]').textContent.includes("1 matches · ready"));
+        await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-find.png`, fullPage: true });
+        if (await harness.page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length)) !== "const sample = 123; // TODO\n😀 const value = 2;") throw new Error("Host inspection lost completion correction.");
+        await harness.page.evaluate(() => window.hostFixture.dispose());
+    }
     await harness.page.goto(new URL("/viewport/", harness.page.url()).href);
     await harness.page.waitForFunction(() => { const state = window.viewportFixture?.snapshot(); return state && state.primary.revision !== null && !state.primary.pending; });
     await harness.page.screenshot({ path: "artifacts/inspect/viewport-lines.png", fullPage: true });

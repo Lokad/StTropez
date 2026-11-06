@@ -136,6 +136,8 @@ try {
     await candidateInput.press("Control+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "edited restored package");
     await page.waitForFunction(() => { const s = window.consumer.comparison(); return s.status === "ready" && !s.working.pending && s.reference && !s.reference.pending; });
     const comparison = await page.evaluate(() => window.consumer.comparison()); assert.equal(comparison.count, 1);
+    assert.equal(await page.locator("#comparison .consumer-review-token.st-comparison-added").textContent(), "working");
+    assert.equal(await page.locator("#comparison .consumer-review-token.st-comparison-removed").textContent(), "baseline");
     assert.deepEqual(await page.evaluate(() => window.consumer.diff()), { status: "ready", whitespaceOnly: true });
     await page.getByRole("button", { name: "Next change", exact: true }).click();
     await page.getByRole("button", { name: "Use baseline", exact: true }).click();
