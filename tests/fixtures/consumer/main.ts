@@ -24,6 +24,22 @@ const reviewDecorate = (line: PresentedLine) => [{ from: line.from, to: line.to,
 const reviewOptions = { view: comparisonView, workingDecorate: reviewDecorate, baselineDecorate: reviewDecorate };
 let comparison = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonTab, { buffer: TextBuffer.from("baseline\r\n"), version: "reference-1" }, reviewOptions);
 Object.assign(window, { consumer: { text: () => workspace.document(documentId).text,
+    readonlyIndent: async (outdent: boolean) => {
+        const model = new Workspace(), text = "    const sample = 1;\r\n".repeat(1024), source = model.createTextResource({ scope: "consumer", resource: "readonly-indent", variant: "working" }, "Locked command", { value: text });
+        const tab = model.open({ kind: "text", documentId: source.documentId }, "locked-command"), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
+        const editor = mountEditingCandidate(host, model, tab, { ariaLabel: "Restored locked command" });
+        try {
+            editor.view.setSelection(0, { anchor: 0, head: text.length }); model.setCapabilities(source.id, { edit: ["host"], save: true, run: true });
+            const before = model.observeHistory(source.documentId).getSnapshot(); let lockedAtHandler = false;
+            editor.input.addEventListener("keydown", () => { lockedAtHandler = editor.input.readOnly;
+                queueMicrotask(() => model.setCapabilities(source.id, { edit: ["human", "host"], save: true, run: true })); }, { once: true });
+            editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: outdent, bubbles: true, cancelable: true }));
+            await new Promise<void>(resolve => { let turns = 16; const step = () => { if (--turns) setTimeout(step, 0); else resolve(); }; setTimeout(step, 0); });
+            const current = model.document(source.documentId);
+            return { outdent, lockedAtHandler, revision: current.revision, sameText: current.buffer.slice(0, text.length) === text,
+                undoBefore: before.undoDepth, undoAfter: model.observeHistory(source.documentId).getSnapshot().undoDepth, exports: current.buffer.readMetrics().textExports };
+        } finally { editor.destroy(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
+    },
     saveReview: async () => {
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "retry", variant: "working" }, "Retry", { value: "base", serverVersion: "v0" });
         model.edit({ documentId: source.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 4, insert: "merged" }] });

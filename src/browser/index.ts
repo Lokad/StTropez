@@ -136,7 +136,8 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
             if (key === "z" || (event.ctrlKey && key === "y")) { event.preventDefault(); history(event.shiftKey || key === "y" ? "redo" : "undo"); }
         }
     }, { signal: listeners.signal });
-    for (const type of ["select", "keyup", "pointerup"] as const) input.addEventListener(type, syncSelection, { signal: listeners.signal });
+    for (const type of ["select", "pointerup"] as const) input.addEventListener(type, syncSelection, { signal: listeners.signal });
+    input.addEventListener("keyup", event => { if (event.key === "Tab") refresh(); else syncSelection(); }, { signal: listeners.signal });
     input.addEventListener("blur", () => { syncSelection(); group = undefined; }, { signal: listeners.signal });
     input.addEventListener("compositionstart", () => { syncSelection(); insertion = undefined; composing = true; group = undefined; }, { signal: listeners.signal });
     input.addEventListener("compositionend", () => { composing = false; commit("insertCompositionText"); }, { signal: listeners.signal });

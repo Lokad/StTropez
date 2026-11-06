@@ -135,6 +135,33 @@ agent and releases its proposal lease. Model/recovery data remains owned
 by the host; disposing a view does not discard unsaved work or retire stored receipts. The
 consuming application still owns durable recovery, navigation and unload policy.
 
+## Commands, permission changes and clipboard
+
+Multiline indentation checks editability before it schedules any planning work. A Tab or
+Shift+Tab pressed while the view is read-only cannot become a deferred edit after the host
+restores permission. Commands that begin editable still capture their document revision and
+view selection, and the model checks current permissions before committing. Existing history
+and mapping code own each accepted indentation or clipboard transaction.
+
+The integrated host scenarios exercise keyboard row selection across CRLF, indentation and
+outdent, paired brackets, copy/cut/paste, shared undo/redo and Escape/Tab focus into the adjacent
+configuration form and back. Find, provider diagnostics, review and deferred saves remain
+present. Read-only checks permit copying and navigation while rejecting text/history edits.
+Both input adapters project the retained model selection on Tab keyup: a browser's default
+focus range must not replace the view's collapsed or backward selection. Other selection
+events keep their existing native-to-model path, including pointer placement.
+Large backward clipboard ranges keep native contexts and rendered rows bounded through
+remount, without changing the immutable review reference. Clipboard payload work is explicit
+user-requested range work; it is separate from ordinary typing and routine telemetry.
+
+The fixture save service trims trailing whitespace in its canonical reply. Later human edits
+remain intact. Undoing later typing may still leave raw CRLF different from the canonical saved
+baseline; dirty state stays true until an explicit user edit adopts that exact saved text.
+
+These clipboard scenarios dispatch synthetic ClipboardEvent/DataTransfer payloads and prove
+the editor's event path. They do not qualify the OS clipboard, browser menus or native input.
+Windows IME, dead keys, NVDA and Narrator remain separate unverified device gates.
+
 ## Language and find in the review host
 
 The bounded source views and editable comparison use the same small fixture lexer and real

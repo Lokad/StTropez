@@ -100,6 +100,26 @@ try {
         await harness.page.waitForFunction(() => document.querySelector('[aria-label="Find status"]').textContent.includes("1 matches · ready"));
         await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-find.png`, fullPage: true });
         if (await harness.page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length)) !== "const sample = 123; // TODO\n😀 const value = 2;") throw new Error("Host inspection lost completion correction.");
+        await harness.page.getByRole("textbox", { name: "Find source", exact: true }).press("Enter");
+        const copied = await input.evaluate(node => { const event = new ClipboardEvent("copy", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }); node.dispatchEvent(event); return event.clipboardData.getData("text/plain"); });
+        if (copied !== "TODO") throw new Error("Host command inspection copied the wrong range.");
+        await input.evaluate(node => { const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }); event.clipboardData.setData("text/plain", "A\r\nB"); node.dispatchEvent(event); });
+        await harness.page.getByRole("button", { name: "Save source", exact: true }).click();
+        await harness.page.waitForFunction(() => window.hostFixture.snapshot().pendingSaves.length === 1);
+        await input.press("Control+End"); await input.pressSequentially(" later"); await harness.page.evaluate(() => window.hostFixture.finishSave());
+        await harness.page.waitForFunction(() => window.hostFixture.snapshot().source.serverVersion === "v1");
+        if (await harness.page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length)) !== "const sample = 123; // A\r\nB\n😀 const value = 2; later") throw new Error("Host command inspection lost pasted CRLF or later typing.");
+        const retainedSelection = await harness.page.evaluate(() => window.hostFixture.snapshot().bindings.views.find(v => v.id === "primary").selection);
+        await input.press("Escape"); await input.press("Tab");
+        const form = harness.page.getByRole("textbox", { name: "Configuration path", exact: true });
+        if (!await form.evaluate(node => node.ownerDocument.activeElement === node)) throw new Error("Host command inspection trapped keyboard focus.");
+        await form.press("Shift+Tab");
+        if (!await input.evaluate(node => node.ownerDocument.activeElement === node)
+            || JSON.stringify(await harness.page.evaluate(() => window.hostFixture.snapshot().bindings.views.find(v => v.id === "primary").selection)) !== JSON.stringify(retainedSelection)) throw new Error("Host command inspection lost the retained selection on focus return.");
+        await input.press("Escape"); await input.press("Tab");
+        await harness.page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return s.bindings.comparison.status === "ready" && !s.bindings.comparison.workingViewport.pending && !s.bindings.comparison.referenceViewport.pending; });
+        await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-commands.png`, fullPage: true });
+        await writeFile(`artifacts/inspect/host-${mode}-commands.json`, JSON.stringify({ state: await harness.page.evaluate(() => window.hostFixture.snapshot()), syntheticClipboard: { copied, pastedUnits: 4 }, physicalClipboardQualified: false }, null, 2));
         await harness.page.evaluate(() => window.hostFixture.dispose());
     }
     await harness.page.goto(new URL("/viewport/", harness.page.url()).href);

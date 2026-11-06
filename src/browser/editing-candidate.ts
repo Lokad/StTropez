@@ -236,6 +236,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (hit) { move(hit.offset, extend, hit.affinity); preferredSelection = view.getSnapshot().selection; preferredColumnWidth = state.columnWidth; }
     }
     function indent(outdent: boolean): void {
+        if (disposed || composing || input.disabled || input.readOnly) return;
         const document = workspace.document(documentId), buffer = document.buffer, selected = view.getSnapshot().selection;
         const low = Math.min(selected.anchor, selected.head), high = Math.max(selected.anchor, selected.head);
         if (!outdent && low === high) { replaceSelection("    ", "replace"); return; }
@@ -284,7 +285,9 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     }, { signal: listeners.signal });
     input.addEventListener("compositionstart", () => { cancelWord(); wordInput = undefined; insertion = undefined; syncSelection(); composing = true; group = undefined; root.classList.add("st-composing"); scheduleCaret(); }, { signal: listeners.signal });
     input.addEventListener("compositionend", () => { composing = false; root.classList.remove("st-composing"); commit("insertCompositionText"); }, { signal: listeners.signal });
-    for (const type of ["select", "keyup"] as const) input.addEventListener(type, syncSelection, { signal: listeners.signal });
+    input.addEventListener("select", syncSelection, { signal: listeners.signal });
+    // Tab can reset the browser range after focus dispatch. It changes focus, not model selection.
+    input.addEventListener("keyup", event => { if (event.key === "Tab") refresh(); else syncSelection(); }, { signal: listeners.signal });
     input.addEventListener("focus", scheduleCaret, { signal: listeners.signal });
     input.addEventListener("blur", () => { syncSelection(); group = undefined; scheduleCaret(); }, { signal: listeners.signal });
     function keydown(event: KeyboardEvent): void {
