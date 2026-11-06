@@ -4,11 +4,12 @@ import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
 import { corpusIds } from "../tests/fixtures/workloads.ts";
 
-const harness = await openHarness();
+const source = await sourceIdentity(), harness = await openHarness();
 try {
     await harness.page.goto(new URL("/editing/", harness.page.url()).href);
     const ready = () => harness.page.waitForFunction(() => { const state = window.editingFixture?.snapshot();
-        return state && state.primary.viewport.revision === state.document?.revision && !state.primary.viewport.pending && !state.secondary.viewport.pending; });
+        return state && state.primary.viewport.revision === state.document?.revision && state.secondary.viewport.revision === state.document?.revision
+            && !state.primary.viewport.pending && !state.secondary.viewport.pending; });
     await ready();
     assert.equal(await harness.page.locator("textarea.st-input-context").count(), 2);
     assert.equal(await harness.page.locator("textarea.st-editor").count(), 0, "Whole-value fallback satisfied the candidate measurement.");
@@ -23,14 +24,20 @@ try {
             await harness.page.evaluate(() => {
                 const input = document.querySelector("#primary textarea"), before = window.editingFixture.snapshot();
                 globalThis.editingMeasurement = new Promise((resolve, reject) => {
-                    let start;
+                    let start, readyFrames = 0;
                     const timeout = setTimeout(() => reject(new Error("Candidate input measurement did not complete.")), 5000);
                     input.addEventListener("beforeinput", () => { start = performance.now(); }, { once: true });
                     input.addEventListener("input", () => {
                         const check = () => {
                             const state = window.editingFixture.snapshot();
                             if (state.primary.viewport.revision !== state.document.revision || state.secondary.viewport.revision !== state.document.revision
-                                || state.primary.viewport.pending || state.secondary.viewport.pending) { requestAnimationFrame(check); return; }
+                                || state.primary.viewport.pending || state.secondary.viewport.pending) { readyFrames = 0; requestAnimationFrame(check); return; }
+                            const expected = before.primary.selection.head + 1;
+                            if (state.document.revision !== before.document.revision + 1 || state.primary.selection.anchor !== expected || state.primary.selection.head !== expected
+                                || window.editingFixture.range(expected - 1, expected) !== "z") {
+                                clearTimeout(timeout); reject(new Error("Input readiness had incorrect text, revision or selection.")); return;
+                            }
+                            if (++readyFrames < 2) { requestAnimationFrame(check); return; }
                             clearTimeout(timeout);
                             resolve({ beforeInputToFrameProxyMs: performance.now() - start, inputHandlerMs: state.primary.lastInputMs,
                                 inputEvents: state.primary.inputEvents - before.primary.inputEvents, commits: state.primary.commits - before.primary.commits,
@@ -40,8 +47,10 @@ try {
                     }, { once: true });
                 });
             });
+            const actionStart = performance.now();
             await harness.page.keyboard.type("z");
             const sample = await harness.page.evaluate(() => globalThis.editingMeasurement);
+            sample.completeActionProxyMs = performance.now() - actionStart;
             assert.equal(sample.inputEvents, 1); assert.equal(sample.commits, 1); assert.equal(sample.revisionDelta, 1);
             assert.equal(sample.wholeTextExports, 0); assert.equal(sample.length, length + index + 1);
             assert.equal(await harness.page.evaluate(offset => window.editingFixture.range(offset, offset + 1), offset + index), "z");
@@ -54,7 +63,8 @@ try {
             if (index >= 3) samples.push(sample);
         }
         cases.push({ corpus, position, initialLength: length, warmup: 3, measured: 20,
-            inputHandlerMs: distribution(samples.map(sample => sample.inputHandlerMs)), beforeInputToFrameProxyMs: distribution(samples.map(sample => sample.beforeInputToFrameProxyMs)), samples });
+            inputHandlerMs: distribution(samples.map(sample => sample.inputHandlerMs)), beforeInputToFrameProxyMs: distribution(samples.map(sample => sample.beforeInputToFrameProxyMs)),
+            completeActionProxyMs: distribution(samples.map(sample => sample.completeActionProxyMs)), samples });
     }
     assert.deepEqual(harness.errors, []);
     const display = await harness.page.locator("#primary .st-viewport").evaluate(element => {
@@ -62,10 +72,11 @@ try {
             font: { family: style.fontFamily, size: style.fontSize, lineHeight: style.lineHeight, weight: style.fontWeight,
                 style: style.fontStyle, ligatures: style.fontVariantLigatures, kerning: style.fontKerning, letterSpacing: style.letterSpacing }, tabSize: style.tabSize };
     });
-    const report = { schemaVersion: 1, created: new Date().toISOString(), source: await sourceIdentity(), environment: { ...environment(), browser: harness.browser.version(), display },
+    assert.equal((await sourceIdentity()).sha256, source.sha256);
+    const report = { schemaVersion: 2, created: new Date().toISOString(), source, environment: { ...environment(), browser: harness.browser.version(), display },
         runtime: "bounded-editing-candidate", activeViews: 2, features: { visibleLineTokens: true, find: "idle", provider: "connected; no pending requests" }, cases, errors: harness.errors,
-        note: "Actual automated keyboard insertion through bounded native context into core history and two DOM views. Input timing covers the adapter input-event handler including model commit and context refresh, excluding native event processing/layout/paint. Beforeinput-to-frame-ready is an animation-frame scheduling proxy, not display/physical latency. No IME/AT/native-device or long contextual-line qualification follows." };
+        note: "Actual automated keyboard insertion through bounded native context into core history and two DOM views. Input-handler CPU covers the adapter input-event handler, model commit and context refresh, excluding native event processing/layout/paint. Beforeinput-to-frame-ready requires exact inserted text, revision, primary selection and both rendered view revisions across two consecutive animation frames. Complete-action proxy starts before the automation keyboard call and ends after the same readiness promise returns, including transport and settlement. Neither proxy measures physical presentation. No IME/AT/native-device or long contextual-line qualification follows." };
     await mkdir("artifacts/bench/editing", { recursive: true }); await writeFile("artifacts/bench/editing/latest.json", JSON.stringify(report, null, 2));
     console.log(JSON.stringify(cases.map(item => ({ corpus: item.corpus, position: item.position, inputP95: item.inputHandlerMs.p95, frameProxyP95: item.beforeInputToFrameProxyMs.p95,
-        maxInputUnits: Math.max(...item.samples.map(sample => sample.primary.inputUnits)) })), null, 2));
+        completeActionP95: item.completeActionProxyMs.p95, maxInputUnits: Math.max(...item.samples.map(sample => sample.primary.inputUnits)) })), null, 2));
 } finally { await harness.close(); }

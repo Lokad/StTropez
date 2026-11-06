@@ -1,12 +1,16 @@
 import type { HostController } from "./controller.ts";
+import type { ViewBindings } from "./bindings.ts";
 
-export function actions(controller: HostController): readonly Readonly<{ label: string; invoke: () => void }>[] {
+export function actions(controller: HostController, bindings: ViewBindings): readonly Readonly<{ label: string; invoke: () => void }>[] {
     return [
         { label: "Associate agent", invoke: controller.associate }, { label: "Request proposal", invoke: controller.requestAgent },
         { label: "Deliver proposal", invoke: controller.deliverProposal }, { label: "Interrupt agent", invoke: controller.interrupt },
         { label: "Fail agent service", invoke: controller.failAgent }, { label: "Offer newer proposal", invoke: controller.offerNewerProposal },
         { label: "Detach agent", invoke: controller.detach }, { label: "Save source", invoke: controller.save },
         { label: "Finish save", invoke: controller.finishSave }, { label: "Retry acknowledgement", invoke: controller.retryAcknowledgement },
+        { label: "Open source review", invoke: controller.openReview }, { label: "Close source review", invoke: controller.closeReview },
+        { label: "Capture reference refresh", invoke: bindings.beginReferenceRefresh }, { label: "Finish reference refresh", invoke: bindings.finishReferenceRefresh },
+        { label: "Capture review acceptance", invoke: bindings.beginReviewAcceptance }, { label: "Finish review acceptance", invoke: bindings.finishReviewAcceptance },
         { label: "Run captured inputs", invoke: controller.run }, { label: "Finish run", invoke: controller.finishRun },
         { label: "Fail run", invoke: controller.failRun }, { label: "Queue setting and run", invoke: controller.demonstrateOrdering },
         { label: "Inspect recovered input", invoke: controller.inspectRecovery }, { label: "Discard recovered input", invoke: controller.discardRecovery },

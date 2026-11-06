@@ -1,5 +1,5 @@
-import { Workspace, WorkspaceCommands } from "../../src/index.ts";
-import type { AgentRequest, CloseOperation, DocumentId, Observable, RunSubmission, SaveResponse, SaveSubmission, TabId, TextEdit } from "../../src/index.ts";
+import { TextBuffer, Workspace, WorkspaceCommands } from "../../src/index.ts";
+import type { AgentRequest, CloseOperation, ComparisonBaseline, DocumentId, Observable, RunSubmission, SaveResponse, SaveSubmission, TabId, TextEdit } from "../../src/index.ts";
 
 export type Connection = Readonly<{ path: string; format: "csv" }>;
 type RunSettings = Readonly<{ mode: "preview" | "inspect" }>;
@@ -43,6 +43,9 @@ export class HostController {
     readonly source = this.workspace.createTextResource({ scope: "host-fixture", resource: "source", variant: "working" }, "Primary source", { value: "start", serverVersion: "v0" });
     readonly connection = this.workspace.createResource<Connection>({ scope: "host-fixture", resource: "connection", variant: "working" }, "Connection", { value: { path: "source.csv", format: "csv" } });
     readonly review = this.workspace.agentState(this.source.id);
+    private savedReference: ComparisonBaseline = Object.freeze({ buffer: this.workspace.document(this.source.documentId).buffer, version: "reference:saved-v0" });
+    private readonly referenceCell = new HostCell<Readonly<{ generation: number; baseline: ComparisonBaseline }>>({ generation: 0, baseline: this.savedReference });
+    readonly comparisonReference = this.referenceCell.observable;
     private primaryTab = this.workspace.open({ kind: "text", documentId: this.source.documentId }, "left");
     private readonly secondaryTab = this.workspace.open({ kind: "text", documentId: this.source.documentId }, "right");
     readonly formTab = this.workspace.open({ kind: "panel", resourceId: this.connection.id, panelType: "configuration" }, "right");
@@ -68,6 +71,12 @@ export class HostController {
     private timer: ReturnType<typeof setInterval> | undefined;
     private disposed = false;
     viewTab(id: "primary" | "secondary"): TabId { return id === "primary" ? this.primaryTab : this.secondaryTab; }
+    readonly openReview = (): void => this.safe(() => { this.layoutCell.set({ ...this.layoutCell.get(), navigation: { kind: "review" } }); });
+    readonly closeReview = (): void => this.safe(() => { this.layoutCell.set({ ...this.layoutCell.get(), navigation: { kind: "workspace" } }); });
+    savedComparisonReference(): ComparisonBaseline { return this.savedReference; }
+    retainComparisonReference(baseline: ComparisonBaseline): void {
+        if (!this.disposed) this.referenceCell.set({ ...this.referenceCell.get(), baseline });
+    }
 
     private updateActivity(patch: Partial<Activity>): void { this.activityCell.set({ ...this.activityCell.get(), ...patch }); }
     readonly reportError = (_error: unknown): void => {
@@ -104,6 +113,8 @@ export class HostController {
     readonly requestAgent = (): void => this.safe(() => {
         const configuration = this.connection.getSnapshot();
         if (configuration.state !== "ready") throw new Error("Configuration not ready.");
+        const before = this.workspace.document(this.source.documentId);
+        const baseline = Object.freeze({ buffer: before.buffer, version: `reference:before-proposal-r${before.revision}` });
         const request = this.workspace.beginAgentRequest(this.source, { configurationRevision: configuration.revision, path: configuration.value.path });
         this.pendingAgent = request;
         // Synthetic deferred service deliberately ignores cancellation; the ticket guards late delivery.
@@ -111,7 +122,10 @@ export class HostController {
             const start = performance.now();
             const result = request.accept({ id: request.input.id, revision: 1, edits: [{ from: 0, to: request.input.source.value.length, insert: text }] });
             this.proposalTransactionMs = performance.now() - start;
-            if (result.applied) this.layoutCell.set({ ...this.layoutCell.get(), navigation: Object.freeze({ kind: "review" }) });
+            if (result.applied) {
+                this.referenceCell.set({ generation: this.referenceCell.get().generation + 1, baseline });
+                this.openReview();
+            }
         }).catch(error => { request.fail(); this.reportError(error); }).finally(() => {
             request.finish(); if (this.pendingAgent === request) this.pendingAgent = undefined;
         }));
@@ -133,7 +147,10 @@ export class HostController {
         void this.track(this.commands.save(this.source, { save: submission => this.disposed ? Promise.resolve({ kind: "conflict", serverVersion: this.serverVersion })
             : new Promise(resolve => this.saves.push({ submission, resolve })) })
             .then(result => {
-                if (!this.disposed && result.kind === "saved") this.updateActivity({ lastSavedRevision: result.receipt.submission.revision });
+                if (!this.disposed && result.kind === "saved") {
+                    this.savedReference = Object.freeze({ buffer: TextBuffer.from(result.receipt.savedValue), version: `reference:saved-${result.receipt.serverVersion}` });
+                    this.updateActivity({ lastSavedRevision: result.receipt.submission.revision });
+                }
             }).catch(error => this.reportError(error)));
     });
     readonly finishSave = (): void => {
@@ -243,6 +260,8 @@ export class HostController {
                 serverVersion: source.metadata.serverVersion, dirty: source.metadata.dirty },
             history: this.workspace.observeHistory(this.source.documentId).getSnapshot(),
             configuration: { id: this.connection.id, revision: form.revision }, review: this.review.getSnapshot(),
+            comparisonReference: { generation: this.referenceCell.get().generation, version: this.referenceCell.get().baseline.version,
+                length: this.referenceCell.get().baseline.buffer.length },
             pendingSaves: this.saves.map(save => ({ revision: save.submission.revision, length: save.submission.value.length })),
             pendingRuns: this.runs.map(({ submission }) => ({ sourceId: submission.source.target.id, sourceRevision: submission.source.revision,
                 sourceLength: submission.source.value.length, sourceVersion: submission.source.serverVersion, configurationId: submission.configuration.target.id,
@@ -252,12 +271,13 @@ export class HostController {
                 sourceLength: this.pendingAgent.input.source.value.length, configurationRevision: this.pendingAgent.input.context.configurationRevision } : null,
             proposalTransactionMs: this.proposalTransactionMs, pendingCommands: this.operations.size,
             inputRecovery: this.recoveryCell.get().items.map(item => ({ documentId: item.documentId, expectedRevision: item.expectedRevision, reason: item.reason, contextFrom: item.contextFrom, attemptedUnits: item.attemptedText.length })),
-            hostSubscriptions: this.layoutCell.count() + this.activityCell.count() + this.settingsCell.count() + this.recoveryCell.count(), loadPending: this.pendingLoad !== undefined, disposed: this.disposed };
+            hostSubscriptions: this.layoutCell.count() + this.activityCell.count() + this.settingsCell.count() + this.recoveryCell.count() + this.referenceCell.count(), loadPending: this.pendingLoad !== undefined, disposed: this.disposed };
     }
     dispose(): Promise<void> {
         if (this.disposal) return this.disposal; this.disposed = true;
         if (this.timer !== undefined) clearInterval(this.timer); this.timer = undefined;
         this.workspace.interruptAgent(this.source.id);
+        this.workspace.detachAgent(this.source.id);
         this.agentReplies.splice(0).forEach(reply => { reply.request.fail(); reply.resolve(""); });
         this.saves.splice(0).forEach(save => save.resolve({ kind: "conflict", serverVersion: this.serverVersion }));
         this.runs.splice(0).forEach(run => run.resolve());

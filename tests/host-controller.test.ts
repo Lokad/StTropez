@@ -13,6 +13,16 @@ test("host disposal waits for accepted queued state and in-flight command settle
     host.demonstrateOrdering(); host.startBackground(); await host.dispose(); assert.deepEqual(host.debug(), stopped);
 });
 
+test("host disposal releases an unacknowledged proposal while retaining the unsaved document", async () => {
+    const host = new HostController(); host.associate(); host.requestAgent(); host.deliverProposalText("unsaved proposal");
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(host.debug().review.proposal?.target.revision, 1);
+    await host.dispose();
+    assert.equal(host.debug().diagnostics.leases, 0); assert.equal(host.debug().review.association, null);
+    assert.equal(host.source.getSnapshot().state, "ready");
+    assert.equal(host.workspace.document(host.source.documentId).text, "unsaved proposal"); assert.equal(host.debug().source.dirty, true);
+});
+
 test("parallel Run captures, denied submission and older results keep independent counts and targets", async () => {
     const host = new HostController();
     try {

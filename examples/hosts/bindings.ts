@@ -1,6 +1,6 @@
-import { mountEditingCandidate, mountTextEditor } from "../../src/browser/index.ts";
-import type { MountedEditor, ViewportSnapshot, ViewState } from "../../src/browser/index.ts";
-import type { DocumentId, DocumentView } from "../../src/index.ts";
+import { mountEditingCandidate, mountTextComparison, mountTextEditor } from "../../src/browser/index.ts";
+import type { MountedEditor, TextComparison, ViewportSnapshot, ViewState } from "../../src/browser/index.ts";
+import type { ComparisonTicket, DocumentId, DocumentView } from "../../src/index.ts";
 import type { HostController } from "./controller.ts";
 
 export type HostEditor = "native" | "candidate";
@@ -19,8 +19,53 @@ export class ViewBindings {
     private readonly selections = new Map<string, Map<DocumentId, DocumentView>>();
     private mounts = 0;
     private destroys = 0;
+    private review: TextComparison | undefined;
+    private reviewStatus: HTMLOutputElement | undefined;
+    private reviewListeners: AbortController | undefined;
+    private readonly reviewTickets: ComparisonTicket[] = [];
+    private referenceSerial = 0;
+    private reviewResult = "No reference command";
     readonly primary: (host: HTMLDivElement | null) => void;
     readonly secondary: (host: HTMLDivElement | null) => void;
+    readonly comparison = (host: HTMLDivElement | null): void => {
+        for (const ticket of this.reviewTickets.splice(0)) ticket.cancel();
+        this.review?.destroy(); this.review = undefined; this.reviewListeners?.abort(); this.reviewListeners = undefined;
+        this.reviewStatus?.remove(); this.reviewStatus = undefined;
+        if (!host) return;
+        this.reviewStatus = host.ownerDocument.createElement("output"); this.reviewStatus.setAttribute("aria-label", "Reference operation status");
+        this.reviewStatus.setAttribute("aria-live", "polite"); this.reviewStatus.textContent = this.reviewResult; host.append(this.reviewStatus);
+        this.review = mountTextComparison(host, this.controller.workspace, this.controller.viewTab("primary"),
+            this.controller.comparisonReference.getSnapshot().baseline, { ariaLabel: "Source review" });
+        const documentId = this.review.working.view.documentId;
+        this.reviewListeners = new AbortController();
+        this.review.working.input.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: this.reviewListeners.signal });
+    };
+    private beginReference(kind: "refresh" | "accept"): void {
+        if (!this.review) return;
+        try {
+            const ticket = kind === "refresh" ? this.review.controller.beginRefresh() : this.review.controller.beginAcceptance();
+            this.reviewTickets.push(ticket); this.reviewResult = `Captured ${kind} at revision ${ticket.capture.working.revision}`;
+            this.reviewStatus!.textContent = this.reviewResult;
+        } catch (error) { this.controller.reportError(error); }
+    }
+    private finishReference(kind: "refresh" | "accept"): void {
+        const index = this.reviewTickets.findIndex(ticket => ticket.kind === kind);
+        if (index < 0 || !this.review) return;
+        const ticket = this.reviewTickets.splice(index, 1)[0]!;
+        try {
+            const baseline = kind === "refresh" ? this.controller.savedComparisonReference()
+                : { buffer: ticket.capture.working.buffer, version: `reference:accepted-${++this.referenceSerial}-r${ticket.capture.working.revision}` };
+            const applied = ticket.complete(baseline);
+            if (applied) this.controller.retainComparisonReference(this.review.controller.getSnapshot().baseline!);
+            this.reviewResult = `${kind} ${applied ? "applied" : "expired"}`;
+            this.reviewStatus!.textContent = this.reviewResult;
+        } catch (error) { this.controller.reportError(error); } finally { ticket.finish(); }
+    }
+    readonly beginReferenceRefresh = (): void => this.beginReference("refresh");
+    readonly finishReferenceRefresh = (): void => this.finishReference("refresh");
+    readonly beginReviewAcceptance = (): void => this.beginReference("accept");
+    readonly finishReviewAcceptance = (): void => this.finishReference("accept");
+    referenceRange(from: number, to: number): string | undefined { return this.review?.controller.getSnapshot().baseline?.buffer.slice(from, to); }
     constructor(controller: HostController, editor: HostEditor = "native") {
         this.controller = controller; this.editor = editor;
         this.primary = this.ref("primary", "Primary source");
@@ -57,10 +102,17 @@ export class ViewBindings {
     }
     unmount(): void { for (const id of [...this.mounted.keys()]) this.detach(id); }
     dispose(): void {
-        this.unmount(); for (const selections of this.selections.values()) for (const view of selections.values()) view.dispose();
+        this.comparison(null); this.unmount(); for (const selections of this.selections.values()) for (const view of selections.values()) view.dispose();
         this.selections.clear(); this.states.clear();
     }
-    debug() { return { editor: this.editor, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size,
+    debug() {
+        const comparison = this.review?.controller.getSnapshot();
+        return { editor: this.editor, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size,
+        comparison: comparison ? { status: comparison.status, generation: comparison.generation, workingRevision: comparison.working?.revision,
+            baseline: comparison.baseline && { version: comparison.baseline.version, epoch: comparison.baseline.epoch, length: comparison.baseline.buffer.length },
+            hunks: comparison.hunks.length, pending: this.reviewTickets.map(ticket => ({ kind: ticket.kind, revision: ticket.capture.working.revision, current: ticket.isCurrent() })),
+            result: this.reviewResult, work: this.review!.snapshot(), input: this.review!.working.snapshot(),
+            workingViewport: this.review!.working.viewport.snapshot(), referenceViewport: this.review!.referenceViewport()?.snapshot() } : null,
         views: [...this.mounted].map(([id, { editor, documentId }]) => ({ id, documentId, viewId: editor.view.id,
             selection: editor.view.getSnapshot().selection, focused: editor.element.ownerDocument.activeElement === editor.element, metrics: editor.metrics() })) }; }
 }

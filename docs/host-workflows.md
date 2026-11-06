@@ -31,10 +31,26 @@ focus away from an active editor.
 - Unmount/remount independent selections, retain shared history, recover a React root failure,
   and dispose during queued saves, pending Run and agent requests.
 
-The browser matrix also exercises a 10,000-line CRLF/Unicode source through the full candidate
-workflow with two bounded views. Ordinary rendering and metadata polling do not export text.
+The browser matrix also exercises a 100,000-line CRLF/Unicode source through the full candidate
+workflow with two bounded source views and an integrated comparison. Ordinary rendering and metadata polling do not export text.
 Explicit agent/save/Run capture exports the exact requested snapshot for the host port. Range
 readers verify complete text outside measurement without changing that export boundary.
+
+## Integrated source review
+
+A delivered proposal opens an immutable reference captured before the request alongside an
+editable working comparison. Opening or closing review preserves the two source mounts and
+their independent selections. All three working views share the document and undo history;
+hunk navigation and **Use baseline** use the existing comparison implementation.
+
+Reference commands deliberately separate capture from synthetic service completion. Acceptance
+advances the reference to its captured working revision and retains later typing. Refresh reads
+the latest successful save receipt; it does not replace working text. Reference versions are
+distinct from resource server versions and agent proposal revisions. Advancing the reference
+invalidates older tickets. Closing, hiding, replacing or unmounting review cancels its pending
+tickets, while a completed reference survives reopening. These commands neither save nor
+acknowledge an agent proposal. Comparison editing always uses the bounded candidate, including
+when the two source panes use the native baseline.
 
 ## Input recovery and disposal
 
@@ -55,19 +71,22 @@ policy remain explicit acceptance gates.
 Full fixture disposal unmounts DOM, removes listeners/subscriptions, cancels deferred ports and
 awaits the controller's tracked command settlement. A queued save reaching its port after
 disposal settles locally instead of adding another unresolved request. Pending command leases
-then release through their normal completion paths. Model/review/recovery data remains owned
+then release through their normal completion paths. Full fixture disposal also detaches the
+agent and releases its proposal lease. Model/recovery data remains owned
 by the host; disposing a view does not discard unsaved work or retire stored receipts. The
 consuming application still owns durable recovery, navigation and unload policy.
 
 ## Measurements
 
 `npm run bench:hosts` runs three warmups and ten measured workflows for each plain/React,
-native/candidate and normal/10,000-line condition. Two views and 20 Hz host progress remain
+native/candidate and normal/10,000-line condition, plus 100,000 lines for the candidate.
+Two source views, an integrated comparison after proposal delivery and 20 Hz host progress remain
 active. Reports contain exact source/environment metadata and raw samples. Full text oracles
 run outside timed intervals, and actual candidate mounts are required.
 
 The full-workflow and disposal numbers include browser automation transport, controls,
-deferred response settlement and readiness polling. They are automation proxies. Synchronous
+deferred response settlement and readiness polling, including completed diff work and current
+working/reference viewports. They are automation proxies. Synchronous
 proposal acceptance/notification CPU and selected candidate input-handler observations are
 separate fields; ordinary editing has its own benchmark. These desktop diagnostics establish
 neither physical presentation latency nor production tails, retained-memory budgets or a

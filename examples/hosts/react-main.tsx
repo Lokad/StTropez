@@ -16,7 +16,7 @@ const metadataCommitted = () => { counters.metadata++; };
 function useObserved<T>(store: Observable<T>): T { return useSyncExternalStore(store.subscribe, store.getSnapshot); }
 
 function Commands() {
-    return <nav aria-label="Host commands">{actions(controller).map(action => <button key={action.label} onClick={action.invoke}>{action.label}</button>)}</nav>;
+    return <nav aria-label="Host commands">{actions(controller, bindings).map(action => <button key={action.label} onClick={action.invoke}>{action.label}</button>)}</nav>;
 }
 function Status() {
     useObserved(controller.review); useObserved(controller.activity); useObserved(controller.source.metadata);
@@ -50,8 +50,15 @@ function Scene() {
             {layout.visible ? <div key="secondary" className="editor-host" ref={bindings.secondary} /> : null}</section></main>
         <div role="status" aria-label="Host messages">{layout.modal.kind === "error" ? layout.modal.message : layout.modal.kind === "close" ? "Close the captured tab?" : ""}</div></>;
 }
+function SourceReview() {
+    const layout = useObserved(controller.layout), reference = useObserved(controller.comparisonReference);
+    const tabs = useObserved(controller.workspace.tabState), tab = tabs.find(tab => tab.id === controller.viewTab("primary"));
+    return layout.navigation.kind === "review" && layout.visible && !layout.formFault && layout.primarySurface === "text"
+        && tab?.surface.kind === "text" && tab.surface.documentId === controller.source.documentId
+        ? <section className="host-review" aria-label="Source review surface"><div key={`${tab.id}:${tab.generation}:${reference.generation}`} ref={bindings.comparison} /></section> : null;
+}
 function App() {
-    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><Scene /></>;
+    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><Scene /><SourceReview /></>;
 }
 let root: Root | undefined;
 const unmount = () => { root?.unmount(); root = undefined; };

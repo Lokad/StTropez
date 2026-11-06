@@ -12,11 +12,14 @@ const clock = () => harness.page.evaluate(() => performance.now());
 async function ready() {
     await harness.page.waitForFunction(() => {
         const s = window.hostFixture?.snapshot(); return s && s.bindings.activeViews === 2
-            && s.bindings.views.every(view => !view.metrics || !view.metrics.viewport.pending && view.metrics.viewport.revision === s.source.revision);
+            && s.bindings.views.every(view => !view.metrics || !view.metrics.viewport.pending && view.metrics.viewport.revision === s.source.revision)
+            && (!s.bindings.comparison || s.bindings.comparison.status === "ready" && s.bindings.comparison.workingRevision === s.source.revision
+                && s.bindings.comparison.workingViewport.revision === s.source.revision && !s.bindings.comparison.workingViewport.pending
+                && s.bindings.comparison.referenceViewport && !s.bindings.comparison.referenceViewport.pending);
     });
 }
 try {
-    for (const editor of ["native", "candidate"]) for (const host of ["plain", "react"]) for (const corpusId of ["normal", "lines-10000"]) {
+    for (const editor of ["native", "candidate"]) for (const host of ["plain", "react"]) for (const corpusId of editor === "candidate" ? ["normal", "lines-10000", "lines-100000"] : ["normal", "lines-10000"]) {
         const original = corpus(corpusId).trimEnd(), proposal = `agent ${original}`, corrected = `fixed ${proposal}`, samples = [];
         for (let iteration = 0; iteration < warmup + measured; iteration++) {
             await harness.page.goto(new URL(`/hosts/${host}/?editor=${editor}`, harness.page.url()).href); await ready();
@@ -31,6 +34,7 @@ try {
             await harness.page.evaluate(text => window.hostFixture.deliverProposal(text), proposal);
             await harness.page.waitForFunction(() => window.hostFixture.snapshot().review.proposal !== null); await ready();
             const delivered = await snapshot(), input = harness.page.getByRole("textbox", { name: "Primary source", exact: true });
+            assert.equal(delivered.bindings.comparison.baseline.length, original.length);
             await input.press("Control+Home"); await input.pressSequentially("fixed "); await ready();
             const correction = await snapshot();
             await click("Save source");
@@ -63,6 +67,11 @@ try {
                 for (let from = 0; from < expected.length; from += 32768) if (f.range(from, Math.min(expected.length, from + 32768)) !== expected.slice(from, from + 32768)) return false;
                 return true;
             }, `${corrected} later!?`), true);
+            assert.equal(await harness.page.evaluate(expected => {
+                const f = window.hostFixture;
+                for (let from = 0; from < expected.length; from += 32768) if (f.referenceRange(from, Math.min(expected.length, from + 32768)) !== expected.slice(from, from + 32768)) return false;
+                return true;
+            }, original), true);
             assert.equal(next.bindings.mounts, before.bindings.mounts); assert.equal(next.activity.errors, 1);
             const metrics = [correction, typing, running].flatMap(s => s.bindings.views.filter(v => v.id === "primary" && v.metrics).map(v => v.metrics));
             if (editor === "candidate") { assert.ok(metrics.every(s => s.inputUnits < 2600)); assert.ok(next.bindings.views.every(v => v.metrics.viewport.rows < 100)); }
@@ -73,6 +82,8 @@ try {
             const sample = { workflowAutomationProxyMs, disposeAutomationProxyMs, proposalTransactionMs: delivered.proposalTransactionMs,
                 observedInputHandlerMs: metrics.map(s => s.lastInputMs), maxInputUnits: metrics.length ? Math.max(...metrics.map(s => s.inputUnits)) : null,
                 revisions: next.source.revision - before.source.revision, backgroundUpdates: next.activity.background - before.activity.background,
+                reviewHunks: next.bindings.comparison.hunks, reviewMaxStepMs: next.bindings.comparison.work.maxStepMs,
+                reviewWorkingRows: next.bindings.comparison.workingViewport.rows, reviewReferenceRows: next.bindings.comparison.referenceViewport.rows,
                 mounts: next.bindings.mounts - before.bindings.mounts, writes: next.activity.writes, acknowledgements: next.activity.acknowledgements, completedRuns: next.activity.completedRuns };
             if (iteration >= warmup) samples.push(sample);
         }
@@ -82,7 +93,7 @@ try {
     }
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
     await mkdir("artifacts/bench/hosts", { recursive: true });
-    await writeFile("artifacts/bench/hosts/latest.json", JSON.stringify({ schemaVersion: 1, created: new Date().toISOString(), source, smoke,
+    await writeFile("artifacts/bench/hosts/latest.json", JSON.stringify({ schemaVersion: 2, created: new Date().toISOString(), source, smoke,
         environment: { ...environment(), browser: harness.browser.version(), viewport: { width: 1440, height: 900 } }, cases, errors: harness.errors,
-        note: "Synthetic complete host workflows with two editor views, a typed form and 20Hz activity. Three warmups and ten measured fresh-page workflows per condition unless explicitly smoke mode. Workflow/disposal proxies include automation transport, controls, service settlement, RAF/readiness polling and do not measure physical presentation. Proposal transaction timing covers synchronous request acceptance and workspace/view notification, excluding host navigation/rendered-frame readiness. Observed input-handler samples are only selected candidate keystrokes; ordinary input has its separate report. Full text oracles are outside timing. Explicit service capture can export exact whole text; routine candidate rendering and diagnostics remain bounded. Desktop diagnostic measurements establish no production tail, retention, native-device/AT or renderer-selection guarantee." }, null, 2));
+        note: "Synthetic complete host workflows with two source editor views, an immutable-reference/editable-working comparison after proposal delivery, a typed form and 20Hz activity. Candidate cases include 100,000 lines. Three warmups and ten measured fresh-page workflows per condition unless explicitly smoke mode. Workflow/disposal proxies include automation transport, controls, local deferred service settlement, RAF/readiness polling, completed diff work and current comparison viewports. No imposed network delay or physical presentation is measured. Proposal transaction timing covers synchronous request acceptance and workspace/view notification, excluding host navigation/rendered-frame readiness. Observed input-handler samples are only selected candidate keystrokes; ordinary input has its separate report. Full working/reference text oracles are outside timing. Explicit service capture can export exact whole text; routine candidate rendering and diagnostics remain bounded. Review step metrics describe the latest diff generation, not the longest call across the workflow. Desktop diagnostic measurements establish no production tail, retention, native-device/AT or renderer-selection guarantee." }, null, 2));
 } finally { await harness.close(); }

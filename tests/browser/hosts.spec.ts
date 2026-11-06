@@ -54,7 +54,79 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await primary.fill("after interrupt");
             await page.getByRole("button", { name: "Deliver proposal", exact: true }).click();
             await expect(primary).toHaveValue("after interrupt");
+            await page.getByRole("button", { name: "Close source review", exact: true }).click();
             await expect.poll(() => page.evaluate(() => { const { leases, views } = window.hostFixture.snapshot().diagnostics; return leases - views; })).toBe(0);
+        });
+
+        test("proposal review exposes an immutable reference, shared typing and undoable hunk reversion without remounting source views", async ({ page }) => {
+            const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
+            const secondary = page.getByRole("textbox", { name: "Secondary source", exact: true });
+            await primary.press("End"); await primary.pressSequentially(" human");
+            await page.getByRole("button", { name: "Associate agent", exact: true }).click();
+            await page.getByRole("button", { name: "Request proposal", exact: true }).click();
+            await primary.focus(); await primary.evaluate(node => { node.dataset.retained = "yes"; });
+            const before = await page.evaluate(() => window.hostFixture.snapshot());
+            await page.evaluate(() => window.hostFixture.deliverProposal("agent proposal"));
+            const review = page.getByRole("group", { name: "Source review", exact: true });
+            await expect(review).toHaveAttribute("data-status", "ready");
+            expect(await page.evaluate(() => window.hostFixture.referenceRange(0, window.hostFixture.snapshot().bindings.comparison!.baseline!.length))).toBe("start human");
+            await expect(primary).toHaveAttribute("data-retained", "yes"); await expect(primary).toBeFocused();
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).bindings.mounts).toBe(before.bindings.mounts);
+            await review.getByRole("button", { name: "Next change", exact: true }).click();
+            await review.getByRole("button", { name: "Use baseline", exact: true }).click();
+            await expect(primary).toHaveValue("start human"); await expect(secondary).toHaveValue("start human");
+            await primary.press("Control+z"); await expect(primary).toHaveValue("agent proposal");
+            await primary.press("Control+Shift+z"); await expect(primary).toHaveValue("start human");
+            const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });
+            await working.press("Control+End"); await working.pressSequentially("!");
+            await expect(primary).toHaveValue("start human!"); await expect(secondary).toHaveValue("start human!");
+            expect(await page.evaluate(() => window.hostFixture.referenceRange(0, window.hostFixture.snapshot().bindings.comparison!.baseline!.length))).toBe("start human");
+            await expect(review).toHaveAttribute("data-status", "ready");
+            const after = await page.evaluate(() => window.hostFixture.snapshot());
+            expect(after.bindings.comparison!.workingRevision).toBe(after.source.revision);
+            expect(after.bindings.comparison!.input.inputUnits).toBeLessThan(2600);
+            await page.evaluate(() => window.hostFixture.dispose());
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 });
+        });
+
+        test("captured review acceptance and saved-reference refresh retain later edits, expire stale responses and survive remount", async ({ page }) => {
+            const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
+            await primary.press("End"); await primary.pressSequentially(" A");
+            await page.getByRole("button", { name: "Open source review", exact: true }).click();
+            await expect(page.getByRole("group", { name: "Source review", exact: true })).toHaveAttribute("data-status", "ready");
+            await page.getByRole("button", { name: "Capture reference refresh", exact: true }).click();
+            await page.getByRole("button", { name: "Capture review acceptance", exact: true }).click();
+            await primary.press("End"); await primary.pressSequentially("B");
+            await page.getByRole("button", { name: "Finish review acceptance", exact: true }).click();
+            expect(await page.evaluate(() => window.hostFixture.referenceRange(0, window.hostFixture.snapshot().bindings.comparison!.baseline!.length))).toBe("start A");
+            await page.getByRole("button", { name: "Finish reference refresh", exact: true }).click();
+            await expect(page.getByLabel("Reference operation status", { exact: true })).toHaveText("refresh expired");
+            expect(await page.evaluate(() => window.hostFixture.referenceRange(0, window.hostFixture.snapshot().bindings.comparison!.baseline!.length))).toBe("start A");
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).source).toMatchObject({ serverVersion: "v0", dirty: true });
+            await page.evaluate(() => window.hostFixture.unmount()); await page.evaluate(() => window.hostFixture.mount());
+            expect(await page.evaluate(() => window.hostFixture.referenceRange(0, window.hostFixture.snapshot().bindings.comparison!.baseline!.length))).toBe("start A");
+            await page.getByRole("button", { name: "Save source", exact: true }).click();
+            await primary.press("End"); await primary.pressSequentially("C");
+            await page.evaluate(() => window.hostFixture.finishSave());
+            await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().source.serverVersion)).toBe("v1");
+            expect(await page.evaluate(() => window.hostFixture.referenceRange(0, window.hostFixture.snapshot().bindings.comparison!.baseline!.length))).toBe("start A");
+            await page.getByRole("button", { name: "Capture reference refresh", exact: true }).click();
+            await page.getByRole("button", { name: "Finish reference refresh", exact: true }).click();
+            expect(await page.evaluate(() => window.hostFixture.referenceRange(0, window.hostFixture.snapshot().bindings.comparison!.baseline!.length))).toBe("start AB");
+            await expect(primary).toHaveValue("start ABC");
+            await primary.press("Control+z"); await expect(primary).toHaveValue("start AB");
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).source.dirty).toBe(false);
+            await primary.press("Control+Shift+z"); await expect(primary).toHaveValue("start ABC");
+            await page.getByRole("button", { name: "Capture review acceptance", exact: true }).click();
+            await page.getByRole("button", { name: "Replace primary panel", exact: true }).click();
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).bindings.comparison).toBeNull();
+            await page.getByRole("button", { name: "Reopen primary source", exact: true }).click();
+            await page.getByRole("button", { name: "Finish review acceptance", exact: true }).click();
+            expect(await page.evaluate(() => window.hostFixture.referenceRange(0, window.hostFixture.snapshot().bindings.comparison!.baseline!.length))).toBe("start AB");
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).bindings.comparison!.pending).toEqual([]);
+            await page.evaluate(() => window.hostFixture.dispose());
+            const disposed = await page.evaluate(() => window.hostFixture.snapshot());
+            expect(disposed.diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 }); expect(disposed.hostSubscriptions).toBe(0);
         });
 
         test("stable refs preserve independent view state through movement/remount and typing avoids unrelated commits", async ({ page }) => {
@@ -263,7 +335,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
         });
 
         if (editor === "candidate") test("a large source completes propose/correct/save/acknowledge/next-request through bounded views", async ({ page }) => {
-            const original = "const sample = '😀 é';\r\n".repeat(10000).trimEnd();
+            const original = "const sample = '😀 é';\r\n".repeat(100000).trimEnd();
             await page.evaluate(text => { const s = window.hostFixture.snapshot(); window.hostFixture.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
             const input = page.getByRole("textbox", { name: "Primary source", exact: true });
             await input.press("Control+Home"); await input.pressSequentially("human ");
@@ -289,10 +361,15 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().review.acknowledgements[0]?.status)).toBe("failed");
             await page.getByRole("button", { name: "Retry acknowledgement", exact: true }).click();
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().review.proposal)).toBeNull();
+            await expect(page.getByRole("group", { name: "Source review", exact: true })).toHaveAttribute("data-status", "ready");
             expect(await page.evaluate(expected => { for (let from = 0; from < expected.length; from += 32768) if (window.hostFixture.range(from, Math.min(expected.length, from + 32768)) !== expected.slice(from, from + 32768)) return false; return true; }, `${corrected} later`)).toBe(true);
             const after = await page.evaluate(() => window.hostFixture.snapshot());
             expect(after.source.id).toBe(before.source.id); expect(after.bindings.mounts).toBe(before.bindings.mounts);
             expect(after.bindings.views.every(view => view.metrics!.inputUnits < 2600)).toBe(true);
+            expect(after.bindings.comparison!.input.inputUnits).toBeLessThan(2600);
+            expect(after.bindings.comparison!.workingViewport.rows).toBeLessThan(100);
+            expect(after.bindings.comparison!.referenceViewport!.rows).toBeLessThan(100);
+            expect(after.bindings.comparison!.baseline!.length).toBe(original.length + 6);
             expect(after.source.exports).toBe(0); expect(after.source.serverVersion).toBe("v1");
             await page.getByRole("button", { name: "Request proposal", exact: true }).click();
             const next = await page.evaluate(() => window.hostFixture.snapshot()); expect(next.requestInput!.sourceLength).toBe(corrected.length + 6);

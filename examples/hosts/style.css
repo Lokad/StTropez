@@ -7,5 +7,7 @@ output { display: block; min-height: 22px; margin: 12px 0; }
 main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 section { padding: 12px; border: 1px solid #8193a7; background: white; min-width: 0; }
 .editor-host { height: 200px; margin: 12px 0; }
+.host-review { margin-top: 16px; }
+.host-review .st-comparison-editor { height: 260px; }
 label { display: block; } input { display: block; width: 90%; padding: 7px; margin-top: 6px; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; }

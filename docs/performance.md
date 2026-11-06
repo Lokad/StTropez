@@ -187,6 +187,16 @@ p95 below 4 ms on reference hardware leaves some room for the host and browser, 
 guarantee either frame rate. An ordinary interaction target below 50 ms is a separate,
 provisional end-to-end objective. Define workload and hardware before adopting either as a gate.
 
+The [M3 pilot](m3-pilot.md) defines separate initial budgets for handler CPU, interaction
+readiness and complete automation actions. `bench:editing` reports these as `inputHandlerMs`,
+`beforeInputToFrameProxyMs` and `completeActionProxyMs`. Readiness verifies exact inserted
+text, revision, primary selection and both rendered view revisions across two consecutive
+animation frames. The complete action starts before the keyboard automation call and includes
+transport and returning that same readiness result. Neither measure proves physical display
+latency. Compare reports only when their timing boundaries match; older frame reports used
+one readiness frame. Integrated host workflow reports also wait for comparison work and both
+comparison viewports, so they are a different workload from earlier source-only host reports.
+
 ## WASM decision
 
 Prioritize bounding work and isolating host updates. WASM does not remove DOM layout, native
