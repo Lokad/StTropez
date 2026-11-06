@@ -1,5 +1,5 @@
 import { TextBuffer } from "./text-buffer.ts";
-import { TextDiff } from "./diff.ts";
+import { DiffReferenceCache, TextDiff } from "./diff.ts";
 import type { DiffHunk, DiffProgress } from "./diff.ts";
 import { NotificationScope, Store } from "./observable.ts";
 import type { Observable } from "./observable.ts";
@@ -44,18 +44,19 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
     const scope = new NotificationScope(options.onListenerError ?? (() => {}));
     const state = new Store<ComparisonSnapshot>(Object.freeze({ status: "running", generation: 0, baseline: initialBaseline,
         working: document, hunks: empty, progress: null, failure: null }), scope);
-    let job: TextDiff | undefined = new TextDiff(initialBaseline.buffer, document.buffer), disposed = false;
+    const referenceCache = new DiffReferenceCache();
+    let job: TextDiff | undefined = new TextDiff(initialBaseline.buffer, document.buffer, referenceCache), disposed = false;
     let refreshGeneration = 0, acceptanceGeneration = 0;
     const pending = new Set<() => void>();
     const publish = (next: ComparisonSnapshot) => { const changed = new Set<Store<unknown>>(); state.set(Object.freeze(next), changed); scope.deliver([...changed]); };
     const live = () => !disposed && state.get().baseline !== null && workspace.ownsDocumentView(view) && workspace.resolveTab(target) !== undefined && resource.getSnapshot().state === "ready";
     const canAccept = () => live() && resource.metadata.getSnapshot().capabilities.edit.includes("human") && resource.metadata.getSnapshot().editLock === null;
     function expire(): void {
-        job?.dispose(); job = undefined;
+        job?.dispose(); job = undefined; referenceCache.dispose();
         publish({ status: "expired", generation: state.get().generation + 1, baseline: null, working: null, hunks: empty, progress: null, failure: null });
     }
     function restart(reference: ComparisonBaseline & Readonly<{ epoch: number }>, working: DocumentSnapshot): void {
-        job?.dispose(); job = new TextDiff(reference.buffer, working.buffer);
+        job?.dispose(); job = new TextDiff(reference.buffer, working.buffer, referenceCache);
         publish({ status: "running", generation: state.get().generation + 1, baseline: reference, working, hunks: empty, progress: null, failure: null });
     }
     const unsubscribe = workspace.subscribe(() => {
@@ -115,7 +116,7 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
         scope.assertWritable(); if (disposed) return;
         retention.release();
         for (const finish of [...pending]) finish();
-        disposed = true; unsubscribe(); job?.dispose(); job = undefined;
+        disposed = true; unsubscribe(); job?.dispose(); job = undefined; referenceCache.dispose();
         if (!options.view) view.dispose();
         publish({ status: "disposed", generation: state.get().generation + 1, baseline: null, working: null, hunks: empty, progress: null, failure: null });
     } });

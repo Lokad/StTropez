@@ -82,12 +82,27 @@ A successful receipt carries the exact submission, saved canonical value and res
 version. Canonical content is applied only if the submitted revision is still current and host
 edits remain permitted. Otherwise it becomes the saved baseline while later human content stays
 untouched and dirty. Dirty compares content with that baseline, not revision numbers. Changing
-content back to the saved baseline clears dirty; undo/redo support is subsequent engine work.
+content back to the saved baseline, including through shared undo/redo, clears dirty.
 Conflict/failure preserves the previous baseline and local content. Conflict versions are
 returned to the host for an explicit review/refresh decision. Service errors invoke the host
 error callback outside notification and return a failed save outcome. Error reporters cannot
 prevent lease cleanup. Save preflight failures throw synchronously; a queued failure returns
 the failed outcome. Low-level `captureSave` tickets require explicit `finish` in a finally block.
+
+After explicit remote review, pass a `SaveReview` as the third argument to
+`WorkspaceCommands.save(handle, port, { target, expectedRevision, expectedServerVersion })`, or the
+second argument to `captureSave`. The host asserts which current local revision it reviewed
+against that remote version. Capture rejects another resource/workspace target, a stale
+revision or another reserved save, and
+copies the precondition. Submission also rejects an intervening saved-version change.
+Ordinary saves retain their serialized latest-known-version behavior.
+
+A reviewed save sends the captured remote version as its conditional-write precondition. It
+does not adopt the remote content or version as a local saved baseline. A further remote change
+can produce another conflict; only a successful receipt advances the saved baseline. Later
+typing, canonical-reply guards, shared history and proposal acknowledgement identity follow
+the same existing save contract. The host owns remote retrieval, comparison, merge choices,
+presentation guards and any idempotency policy; there is no automatic merge or forced write.
 
 `run(source, configuration, settings, port)` captures immutable values, variants, revisions and
 server versions before awaiting and retains both resource leases through settlement. It checks

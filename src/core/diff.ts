@@ -2,27 +2,46 @@ import type { TextBuffer } from "./text-buffer.ts";
 export type DiffRange = Readonly<{ from: number; to: number; lineFrom: number; lineTo: number }>;
 export type DiffHunk = Readonly<{ baseline: DiffRange; working: DiffRange; whitespaceOnly: boolean }>;
 export type DiffProgress = Readonly<{ status: "running" | "ready" | "cancelled"; work: number; readUnits: number; lineComparisons: number; lineEdits: number; hunks: readonly DiffHunk[] }>;
-type Line = Readonly<{ from: number; to: number; hash: number }>;
+type Line = Readonly<{ from: number; to: number; hash: number; token: number | undefined }>;
 type Stats = { work: number; yielded: number; readUnits: number; lineComparisons: number; lineEdits: number };
+type ReferenceIndex = { buffer: TextBuffer; lines: readonly Line[] | undefined; tokens: Map<string, number> };
+const referenceCaches = new WeakMap<DiffReferenceCache, { reference: ReferenceIndex | undefined }>();
+
+/** Retains one immutable reference index, never working revisions. Active jobs own their captures. */
+export class DiffReferenceCache {
+    constructor() { referenceCaches.set(this, { reference: undefined }); Object.freeze(this); }
+    dispose(): void { referenceCaches.delete(this); }
+}
 type Region = Readonly<{ a0: number; a1: number; b0: number; b1: number }>;
 const tick = (stats: Stats, units = 1): boolean => { stats.work += units; if (stats.work - stats.yielded < 256) return false; stats.yielded = stats.work; return true; };
-function* lines(buffer: TextBuffer, stats: Stats): Generator<void, readonly Line[]> {
+function* lines(buffer: TextBuffer, stats: Stats, tokens: Map<string, number>, known?: ReadonlyMap<string, number>): Generator<void, readonly Line[]> {
     const result: Line[] = []; let from = 0, offset = 0, hash = 2166136261;
+    const line = (): Line => {
+        let token: number | undefined;
+        if (offset - from <= 256) {
+            const text = buffer.slice(from, offset); stats.readUnits += text.length;
+            token = known?.get(text) ?? tokens.get(text);
+            if (token === undefined) { token = (known?.size ?? 0) + tokens.size; tokens.set(text, token); }
+        }
+        return Object.freeze({ from, to: offset, hash: hash >>> 0, token });
+    };
     for (const chunk of buffer.chunks()) for (let start = 0; start < chunk.length;) {
-        const end = Math.min(chunk.length, start + 256);
+        const end = Math.min(chunk.length, start + 256), beforeReads = stats.readUnits;
         for (let index = start; index < end; index++) {
             const unit = chunk.charCodeAt(index); hash = Math.imul(hash ^ unit, 16777619); offset++;
-            if (unit === 10) { result.push(Object.freeze({ from, to: offset, hash: hash >>> 0 })); from = offset; hash = 2166136261; }
+            if (unit === 10) { result.push(line()); from = offset; hash = 2166136261; }
         }
-        stats.readUnits += end - start; if (tick(stats, end - start)) yield; start = end;
+        const tokenUnits = stats.readUnits - beforeReads;
+        stats.readUnits += end - start; if (tick(stats, end - start + tokenUnits)) yield; start = end;
     }
-    if (from < offset) result.push(Object.freeze({ from, to: offset, hash: hash >>> 0 }));
+    if (from < offset) { const beforeReads = stats.readUnits; result.push(line()); if (tick(stats, stats.readUnits - beforeReads)) yield; }
     return result;
 }
 function* equalLine(a: TextBuffer, b: TextBuffer, left: Line, right: Line, stats: Stats): Generator<void, boolean> {
     stats.lineComparisons++;
     if (tick(stats)) yield;
     if (left.hash !== right.hash || left.to - left.from !== right.to - right.from) return false;
+    if (left.token !== undefined && right.token !== undefined) return left.token === right.token;
     for (let offset = 0; offset < left.to - left.from; offset += 256) {
         const length = Math.min(256, left.to - left.from - offset);
         const equal = a.slice(left.from + offset, left.from + offset + length) === b.slice(right.from + offset, right.from + offset + length);
@@ -72,9 +91,12 @@ function* bisect(a: TextBuffer, b: TextBuffer, left: readonly Line[], right: rea
 function range(buffer: TextBuffer, from: number, to: number): DiffRange {
     const lineFrom = buffer.lineAt(from); return Object.freeze({ from, to, lineFrom, lineTo: from === to ? lineFrom : buffer.lineAt(to - 1) + 1 });
 }
-function* compare(a: TextBuffer, b: TextBuffer, stats: Stats): Generator<void, readonly DiffHunk[]> {
+function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, reference: ReferenceIndex): Generator<void, readonly DiffHunk[]> {
     if (a === b) return Object.freeze([]);
-    const left = yield* lines(a, stats), right = yield* lines(b, stats), tasks: Region[] = [{ a0: 0, a1: left.length, b0: 0, b1: right.length }], changes: Region[] = [];
+    // Short lines receive exact, job-local string identities. Repeated alignment probes then
+    // avoid rereading equal text; long lines retain bounded chunk comparison and collision checks.
+    const left = reference.lines ?? (reference.lines = yield* lines(a, stats, reference.tokens));
+    const right = yield* lines(b, stats, new Map(), reference.tokens), tasks: Region[] = [{ a0: 0, a1: left.length, b0: 0, b1: right.length }], changes: Region[] = [];
     while (tasks.length) {
         let { a0, a1, b0, b1 } = tasks.pop()!;
         while (a0 < a1 && b0 < b1 && (yield* equalLine(a, b, left[a0]!, right[b0]!, stats))) { a0++; b0++; }
@@ -126,7 +148,13 @@ export class TextDiff {
     private readonly stats: Stats = { work: 0, yielded: 0, readUnits: 0, lineComparisons: 0, lineEdits: 0 };
     private status: DiffProgress["status"] = "running";
     private hunks: readonly DiffHunk[] = Object.freeze([]);
-    constructor(baseline: TextBuffer, working: TextBuffer) { this.iterator = compare(baseline, working, this.stats); }
+    constructor(baseline: TextBuffer, working: TextBuffer, cache?: DiffReferenceCache) {
+        const state = cache === undefined ? undefined : referenceCaches.get(cache);
+        if (cache !== undefined && !state) throw new Error("Reference cache is disposed or foreign.");
+        const reference = state?.reference?.buffer === baseline ? state.reference : { buffer: baseline, lines: undefined, tokens: new Map<string, number>() };
+        if (state) state.reference = reference;
+        this.iterator = compare(baseline, working, this.stats, reference);
+    }
     next(workBudget = 32_768): DiffProgress {
         if (!Number.isSafeInteger(workBudget) || workBudget < 512) throw new RangeError("Comparison budget must be an integer of at least 512 units.");
         const start = this.stats.work;

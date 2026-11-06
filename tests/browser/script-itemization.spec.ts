@@ -24,7 +24,9 @@ test("a long script-feature pipeline yields to native typing and expires on acti
     await load(page); await page.getByRole("textbox", { name: "Unicode source", exact: true }).fill("Aαא".repeat(4000)); await page.getByLabel("Normalization form").selectOption("none"); await page.getByRole("button", { name: "Analyze Unicode text", exact: true }).click();
     await expect.poll(() => page.evaluate(() => ["substitute", "position"].includes(window.shapingFixture.unicode.snapshot().stage ?? "")), { timeout: 20_000 }).toBe(true); expect(await page.evaluate(() => window.shapingFixture.unicode.scriptAt(0))).toBeNull();
     await page.getByLabel("Independent input").pressSequentially("responsive"); expect(await page.evaluate(() => window.shapingFixture.unicode.snapshot().status)).toBe("running"); await page.evaluate(() => window.shapingFixture.font.request(800).settled);
-    await expect.poll(() => page.evaluate(() => window.shapingFixture.unicode.snapshot().status)).toBe("expired"); expect(await page.evaluate(() => window.shapingFixture.unicode.positionedPart(0))).toBeNull(); await expect(page.getByLabel("Independent input")).toHaveValue("responsive");
+    // Observe invalidation in the browser; delayed protocol replies must not consume a Node poll deadline.
+    await page.waitForFunction(() => window.shapingFixture.unicode.snapshot().status === "expired", undefined, { timeout: 5000 });
+    expect(await page.evaluate(() => window.shapingFixture.unicode.positionedPart(0))).toBeNull(); await expect(page.getByLabel("Independent input")).toHaveValue("responsive");
 });
 test("combining/paired script interpretation is visible and preview controls cannot reorder adjacent labels", async ({ page }) => {
     await analyze(page, "A(α[א]β)B\u202e\u2069"); const data = await page.evaluate(() => ({ state: window.shapingFixture.unicode.snapshot(), scripts: Array.from({ length: window.shapingFixture.unicode.snapshot().scriptRuns! }, (_, i) => window.shapingFixture.unicode.scriptAt(i)), preview: document.getElementById("unicode-status")!.textContent }));

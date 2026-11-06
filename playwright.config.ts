@@ -3,7 +3,8 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
     testDir: "tests/browser",
     timeout: 30_000,
-    globalTimeout: 180_000,
+    // Suite growth includes integrated large-source workflows; each test keeps its 30s limit.
+    globalTimeout: 360_000,
     forbidOnly: true,
     retries: 0,
     workers: 1,

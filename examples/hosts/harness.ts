@@ -17,6 +17,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
             expectedRevision, edits, origin: "host", history: { kind: "live" } }),
         deliverProposal: controller.deliverProposalText, runCapture: (index: number) => controller.runCapture(index), setPath: controller.setPath, recoveryText: () => controller.recoveryText(),
         finishRun: controller.finishRun, failRun: controller.failRun, finishSave: controller.finishSave,
+        externalWrite: (text: string) => controller.externalWrite(text), finishConflictReview: controller.finishConflictReview, saveReviewedSource: controller.saveReviewedSource,
         range: (from: number, to: number) => controller.workspace.document(controller.source.documentId).buffer.slice(from, to),
         referenceRange: (from: number, to: number) => bindings.referenceRange(from, to),
         unmount, mount: attach, dispose });
@@ -28,5 +29,6 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; mode
     deliverProposal: (text: string) => void; runCapture: (index: number) => ReturnType<HostController["runCapture"]>; setPath: (path: string) => void;
     recoveryText: () => string | null;
     finishRun: () => void; failRun: () => void; finishSave: () => void; range: (from: number, to: number) => string;
+    externalWrite: (text: string) => void; finishConflictReview: () => boolean; saveReviewedSource: () => void;
     referenceRange: (from: number, to: number) => string | undefined;
     unmount: () => void; mount: () => void; dispose: () => Promise<void> }> } }

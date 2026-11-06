@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { TextDiff, TextBuffer } from "../src/index.ts";
+import { DiffReferenceCache, TextDiff, TextBuffer } from "../src/index.ts";
 
 function diff(a: string, b: string, buffers?: readonly [TextBuffer, TextBuffer]) {
     const job = new TextDiff(buffers?.[0] ?? TextBuffer.from(a), buffers?.[1] ?? TextBuffer.from(b)); let result = job.next(512), calls = 1;
@@ -51,6 +51,17 @@ test("equal-length hash collisions still require exact line comparison", () => {
     const surrounded = diff(`same\n${a}same\n`, `same\n${b}same\n`); assert.equal(surrounded.hunks.length, 1);
 });
 
+test("mixed short and long line identities retain exact UTF16 alignment at bounded-read thresholds", () => {
+    const alphabet = ["\n", "a\r\n", "é😀\n", "x".repeat(254) + "\n", "x".repeat(255) + "\n", "x".repeat(256) + "\n", "\ud800".repeat(900) + "\n"];
+    let seed = 7291; const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
+    for (let trial = 0; trial < 250; trial++) {
+        const a = Array.from({ length: random(11) }, () => alphabet[random(alphabet.length)]!), b = Array.from({ length: random(11) }, () => alphabet[random(alphabet.length)]!);
+        const rows = Array.from({ length: a.length + 1 }, () => Array<number>(b.length + 1).fill(0));
+        for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) rows[i]![j] = a[i - 1] === b[j - 1] ? rows[i - 1]![j - 1]! + 1 : Math.max(rows[i - 1]![j]!, rows[i]![j - 1]!);
+        assert.equal(diff(a.join(""), b.join("")).lineEdits, a.length + b.length - 2 * rows[a.length]![b.length]!);
+    }
+});
+
 test("fragmented snapshots preserve raw seams, unpaired surrogates and every edit range", () => {
     let a = "a😀\r\nb\né\t".repeat(10), b = a, left = TextBuffer.from(a), right = TextBuffer.from(b), seed = 871;
     const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
@@ -60,4 +71,30 @@ test("fragmented snapshots preserve raw seams, unpaired surrogates and every edi
         else { b = b.slice(0, from) + insert + b.slice(to); right = right.replace(from, to, insert); }
         diff(a, b, [left, right]); assert.equal(left.readMetrics().textExports, 0); assert.equal(right.readMetrics().textExports, 0);
     }
+});
+
+test("reference reuse skips only immutable reference indexing and retains exact hunks across edits and baseline replacement", () => {
+    const cache = new DiffReferenceCache(), baseline = TextBuffer.from(Array.from({ length: 2000 }, (_, i) => `line ${i}\r\n`).join(""));
+    const finish = (a: TextBuffer, b: TextBuffer, shared?: DiffReferenceCache) => { const job = new TextDiff(a, b, shared); let result = job.next(512);
+        while (result.status === "running") result = job.next(512); job.dispose(); return result; };
+    let working = baseline.replace(0, 4, "changed"); finish(baseline, working, cache);
+    for (let i = 0; i < 12; i++) {
+        working = working.replace(working.length, working.length, `tail ${i}\n`);
+        const reused = finish(baseline, working, cache), fresh = finish(baseline, working);
+        assert.deepEqual(reused.hunks, fresh.hunks); assert.equal(reused.lineEdits, fresh.lineEdits); assert.ok(reused.readUnits < fresh.readUnits);
+    }
+    const other = TextBuffer.from("different\r\n"), reused = finish(other, working, cache), fresh = finish(other, working);
+    assert.deepEqual(reused.hunks, fresh.hunks); assert.equal(reused.lineEdits, fresh.lineEdits); cache.dispose();
+    assert.throws(() => new TextDiff(baseline, working, cache), /disposed/);
+    assert.equal(baseline.readMetrics().textExports, 0); assert.equal(working.readMetrics().textExports, 0);
+});
+
+test("cancelled partial reference indexing and concurrent jobs retain independent working identities", () => {
+    const cache = new DiffReferenceCache(), a = TextBuffer.from("repeat\n".repeat(2000));
+    const cancelled = new TextDiff(a, TextBuffer.from("other\n"), cache); cancelled.next(512); cancelled.dispose();
+    const left = new TextDiff(a, TextBuffer.from("left\n"), cache), right = new TextDiff(a, TextBuffer.from("right\n"), cache);
+    let l = left.next(512), r = right.next(512);
+    while (l.status === "running" || r.status === "running") { if (l.status === "running") l = left.next(512); if (r.status === "running") r = right.next(512); }
+    assert.equal(l.hunks.length, 1); assert.equal(r.hunks.length, 1);
+    cache.dispose(); assert.equal(left.next(512).status, "ready"); left.dispose(); right.dispose(); cache.dispose();
 });

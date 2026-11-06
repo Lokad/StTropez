@@ -8,6 +8,7 @@ export function actions(controller: HostController, bindings: ViewBindings): rea
         { label: "Fail agent service", invoke: controller.failAgent }, { label: "Offer newer proposal", invoke: controller.offerNewerProposal },
         { label: "Detach agent", invoke: controller.detach }, { label: "Save source", invoke: controller.save },
         { label: "Finish save", invoke: controller.finishSave }, { label: "Retry acknowledgement", invoke: controller.retryAcknowledgement },
+        { label: "Simulate external source change", invoke: controller.simulateExternalWrite },
         { label: "Open source review", invoke: controller.openReview }, { label: "Close source review", invoke: controller.closeReview },
         { label: "Capture reference refresh", invoke: bindings.beginReferenceRefresh }, { label: "Finish reference refresh", invoke: bindings.finishReferenceRefresh },
         { label: "Capture review acceptance", invoke: bindings.beginReviewAcceptance }, { label: "Finish review acceptance", invoke: bindings.finishReviewAcceptance },
@@ -24,5 +25,9 @@ export function actions(controller: HostController, bindings: ViewBindings): rea
 }
 export function statusText(controller: HostController): string {
     const review = controller.review.getSnapshot(), activity = controller.activity.getSnapshot(), metadata = controller.source.metadata.getSnapshot();
-    return `Association: ${review.association?.id ?? "detached"} · Request: ${review.request ? "running" : "idle"} · Proposal: ${review.proposal?.target.revision ?? "none"} · Acknowledgement: ${review.acknowledgements[0]?.status ?? "none"} · ${metadata.dirty ? "Unsaved" : "Saved"} · Saves: ${activity.writes} · Runs: ${activity.pendingRuns} pending, ${activity.completedRuns} completed${activity.lastRun ? ` · Captured run: source revision ${activity.lastRun.sourceRevision}, configuration revision ${activity.lastRun.configurationRevision}, ${activity.lastRun.mode}` : ""} · Background: ${activity.background}`;
+    return `Association: ${review.association?.id ?? "detached"} · Request: ${review.request ? "running" : "idle"} · Proposal: ${review.proposal?.target.revision ?? "none"} · Acknowledgement: ${review.acknowledgements[0]?.status ?? "none"} · ${metadata.dirty ? "Unsaved" : "Saved"} · Save status: ${metadata.saveStatus} · Saves: ${activity.writes} · Runs: ${activity.pendingRuns} pending, ${activity.completedRuns} completed${activity.lastRun ? ` · Captured run: source revision ${activity.lastRun.sourceRevision}, configuration revision ${activity.lastRun.configurationRevision}, ${activity.lastRun.mode}` : ""} · Background: ${activity.background}`;
+}
+export function conflictText(controller: HostController): string {
+    const conflict = controller.saveConflict.getSnapshot();
+    return conflict ? `Save conflict at local revision ${conflict.submittedRevision}. Expected server ${conflict.expectedVersion ?? "none"}; observed ${conflict.observedVersion}.${conflict.reviewVersion ? ` Reviewing remote ${conflict.reviewVersion}.` : ""} ${conflict.message}` : "";
 }

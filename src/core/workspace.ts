@@ -71,6 +71,8 @@ export type CloseIntent = Readonly<{ tab: TabTarget; resource: ResourceTarget; r
 export type CloseOperation = Operation & Readonly<{ intent: CloseIntent; complete: (decision: "keep-open" | "close") => boolean }>;
 export type SaveSubmission<T> = Readonly<{ id: string; target: ResourceTarget; key: ResourceKey;
     revision: number; value: Immutable<T>; expectedServerVersion: string | null; proposal: ProposalTarget | null }>;
+/** Host-confirmed remote version for saving the explicitly reviewed local revision. No baseline adoption. */
+export type SaveReview = Readonly<{ target: ResourceTarget; expectedRevision: number; expectedServerVersion: string }>;
 export type SaveReceipt<T> = Readonly<{ submission: SaveSubmission<T>; savedValue: Immutable<T>; serverVersion: string;
     canonicalApplied: boolean; acknowledgementId: string | null }>;
 export type SaveTicket<T> = Readonly<{ target: ResourceTarget; revision: number; value: Immutable<T>;
@@ -633,10 +635,16 @@ export class Workspace {
     }
 
     /** Captures content now, retains ownership while queued, and enforces one writer per resource. */
-    captureSave<T extends SnapshotValue>(handle: ResourceHandle<T>): SaveTicket<T> {
+    captureSave<T extends SnapshotValue>(handle: ResourceHandle<T>, review?: SaveReview): SaveTicket<T> {
         this.scope.assertWritable();
         const record = this.handles.get(handle), initial = record?.state.get();
         if (!record || initial?.state !== "ready" || !initial.metadata.capabilities.save || record.editLease) throw new Error("Resource is not ready or cannot be saved.");
+        const reviewedVersion = review?.expectedServerVersion;
+        if (review !== undefined) {
+            if (!review || !Number.isSafeInteger(review.expectedRevision) || review.expectedRevision < 0 || typeof reviewedVersion !== "string") throw new TypeError("Reviewed save requires a revision and server version.");
+            if (!review.target || this.resolveResource(review.target) !== handle) throw new Error("Reviewed save belongs to another resource or workspace.");
+            if (initial.revision !== review.expectedRevision || record.saveReservations !== 0) throw new Error("Reviewed save has changed or another save is pending.");
+        }
         const lease = this.acquire(handle.id), target = this.captureResource(handle.id), marker = Symbol("save");
         if (record.documentId !== null) this.history.seal(record.documentId);
         const value = initial.value as Immutable<T>, revision = initial.revision, id = `save-${++this.nextId}`;
@@ -658,9 +666,10 @@ export class Workspace {
             const current = record.state.get();
             if (finished || submission || record.saving !== null) throw new Error("Serialize resource saves before starting another write.");
             if (current.state !== "ready" || !current.metadata.capabilities.save || record.editLease) throw new Error("Save capability or edit lease has changed.");
+            if (reviewedVersion !== undefined && current.metadata.serverVersion !== initial.metadata.serverVersion) throw new Error("Saved baseline changed after review capture.");
             record.saving = marker;
             submission = Object.freeze({ id, target, key: initial.metadata.key, revision, value,
-                expectedServerVersion: current.metadata.serverVersion, proposal });
+                expectedServerVersion: reviewedVersion ?? current.metadata.serverVersion, proposal });
             status("saving"); return submission;
         }, accept: (response: Readonly<{ serverVersion: string; canonical?: T }>) => {
             const submitted = requireStarted();

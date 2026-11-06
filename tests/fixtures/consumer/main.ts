@@ -3,6 +3,8 @@ import { createFontAssetController, createFindController, mountTextComparison, m
 import { fontFixture, FontBytes, assembleFont, fontTables, cmapTable } from "./font-fixture.js";
 import { FontCascade, createFontNormalizationCursor } from "sttropez";
 import { createGraphemeCursor, createNormalizedGraphemeCursor, createScriptItemizationCursor } from "sttropez";
+import { DiffReferenceCache, WorkspaceCommands } from "sttropez";
+import type { SaveReview } from "sttropez";
 const workspace = new Workspace();
 const documentId = workspace.createDocument({ scope: "consumer", resource: "source", variant: "working" }, "Consumer source", "restored assets");
 const tabId = workspace.open({ kind: "text", documentId }, "main");
@@ -18,6 +20,24 @@ const comparisonResource = workspace.createTextResourceFromBuffer({ scope: "cons
 const comparisonTab = workspace.open({ kind: "text", documentId: comparisonResource.documentId }, "review");
 const comparison = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonTab, { buffer: TextBuffer.from("baseline\r\n"), version: "reference-1" });
 Object.assign(window, { consumer: { text: () => workspace.document(documentId).text,
+    saveReview: async () => {
+        const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "retry", variant: "working" }, "Retry", { value: "base", serverVersion: "v0" });
+        model.edit({ documentId: source.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 4, insert: "merged" }] });
+        const commands = new WorkspaceCommands(model);
+        await commands.save(source, { save: async () => ({ kind: "conflict", serverVersion: "v1" }) });
+        const baselineBefore = source.metadata.getSnapshot().serverVersion;
+        const review: SaveReview = { target: model.captureResource(source.id), expectedRevision: source.getSnapshot().revision, expectedServerVersion: "v1" };
+        let precondition: string | null = null;
+        const saved = await commands.save(source, { save: async submission => {
+            precondition = submission.expectedServerVersion;
+            model.edit({ documentId: source.documentId, expectedRevision: submission.revision, origin: "human", edits: [{ from: 6, to: 6, insert: " later" }] });
+            return { kind: "saved", serverVersion: "v2" };
+        } }, review);
+        const textAfter = model.document(source.documentId).text, dirtyAfter = source.metadata.getSnapshot().dirty;
+        model.undo({ documentId: source.documentId, expectedRevision: source.getSnapshot().revision });
+        return { baselineBefore, precondition, saved: saved.kind, textAfter, dirtyAfter, cleanAfterUndo: !source.metadata.getSnapshot().dirty,
+            serverVersion: source.metadata.getSnapshot().serverVersion, leases: model.ownership(source.id).leases };
+    },
     fontNormalization: async () => {
         const asset = createFontAssetController(document, "consumer-cascade"), before = document.fonts.size;
         try { const load = asset.request(0, fontFixture())!; await load.settled;
@@ -77,7 +97,9 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
     },
     comparison: () => { const s = comparison.controller.getSnapshot(); return { status: s.status, generation: s.generation, count: s.hunks.length, version: s.baseline?.version, reference: comparison.referenceViewport()?.snapshot(), working: comparison.working.viewport.snapshot() }; },
     acceptComparison: () => { const t = comparison.controller.beginAcceptance(); return t.complete({ buffer: t.capture.working.buffer, version: "accepted-2" }); },
-    diff: () => { const d = new TextDiff(TextBuffer.from("a\r\n"), TextBuffer.from("a\n")); let s = d.next(512); while (s.status === "running") s = d.next(512); return { status: s.status, whitespaceOnly: s.hunks[0]?.whitespaceOnly }; },
+    diff: () => { const cache = new DiffReferenceCache(), d = new TextDiff(TextBuffer.from("a\r\n"), TextBuffer.from("a\n"), cache);
+        try { let s = d.next(512); while (s.status === "running") s = d.next(512); return { status: s.status, whitespaceOnly: s.hunks[0]?.whitespaceOnly }; }
+        finally { d.dispose(); cache.dispose(); } },
     viewport: () => viewport.snapshot(),
     candidate: () => ({ ...candidate.snapshot(), viewport: candidate.viewport.snapshot() }),
     captureCandidate: candidate.captureView,

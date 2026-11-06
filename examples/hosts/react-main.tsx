@@ -5,7 +5,7 @@ import type { Root } from "react-dom/client";
 import type { Observable } from "../../src/index.ts";
 import { HostController } from "./controller.ts";
 import { hostEditor, ViewBindings } from "./bindings.ts";
-import { actions, statusText } from "./actions.ts";
+import { actions, conflictText, statusText } from "./actions.ts";
 import { installHostHarness } from "./harness.ts";
 import "./style.css";
 
@@ -25,6 +25,14 @@ function Status() {
 function SourceMetadata() {
     const metadata = useObserved(controller.source.metadata);
     return <p>{metadata.title} · {metadata.dirty ? "Unsaved" : "Saved"}</p>;
+}
+function SaveConflict() {
+    const conflict = useObserved(controller.saveConflict);
+    useObserved(controller.source.metadata); useObserved(controller.comparisonReference); useObserved(controller.layout); useObserved(controller.workspace.tabState);
+    return conflict ? <section aria-label="Save conflict"><output aria-live="polite">{conflictText(controller)}</output>
+        <button onClick={controller.reviewSaveConflict}>Review remote source</button>
+        <button onClick={controller.finishConflictReview} disabled={conflict.review !== "loading"}>Finish remote review</button>
+        <button onClick={controller.saveReviewedSource} disabled={!controller.canSaveReviewedSource()}>Save reviewed source</button></section> : null;
 }
 function InputRecovery() {
     const state = useObserved(controller.recovery), text = state.items.at(-1)?.attemptedText ?? "";
@@ -58,7 +66,7 @@ function SourceReview() {
         ? <section className="host-review" aria-label="Source review surface"><div key={`${tab.id}:${tab.generation}:${reference.generation}`} ref={bindings.comparison} /></section> : null;
 }
 function App() {
-    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><Scene /><SourceReview /></>;
+    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /></>;
 }
 let root: Root | undefined;
 const unmount = () => { root?.unmount(); root = undefined; };

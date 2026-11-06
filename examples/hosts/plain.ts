@@ -1,4 +1,4 @@
-import { actions, statusText } from "./actions.ts";
+import { actions, conflictText, statusText } from "./actions.ts";
 import type { HostController, Layout } from "./controller.ts";
 import type { ViewBindings } from "./bindings.ts";
 import type { TabSnapshot } from "../../src/index.ts";
@@ -18,7 +18,17 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         recovery.hidden = state.items.length === 0; recoveryNotice.textContent = `${state.items.length} input ${state.items.length === 1 ? "change" : "changes"} retained for recovery.`;
         recoveryPreview.hidden = !state.visible; recoveryPreview.textContent = state.visible ? text.slice(0, 4096) + (text.length > 4096 ? "…" : "") : ""; };
     const review = document.createElement("section"); review.setAttribute("aria-label", "Source review surface"); review.className = "host-review";
-    host.replaceChildren(nav, status, recovery, scene, review, modal);
+    const conflict = document.createElement("section"), conflictStatus = document.createElement("output");
+    conflict.setAttribute("aria-label", "Save conflict"); conflictStatus.setAttribute("aria-live", "polite"); conflict.append(conflictStatus);
+    const reviewRemote = document.createElement("button"), finishRemote = document.createElement("button"), retry = document.createElement("button");
+    reviewRemote.textContent = "Review remote source"; finishRemote.textContent = "Finish remote review"; retry.textContent = "Save reviewed source";
+    reviewRemote.addEventListener("click", controller.reviewSaveConflict, { signal: listeners.signal });
+    finishRemote.addEventListener("click", controller.finishConflictReview, { signal: listeners.signal });
+    retry.addEventListener("click", controller.saveReviewedSource, { signal: listeners.signal }); conflict.append(reviewRemote, finishRemote, retry);
+    const updateConflict = () => { const state = controller.saveConflict.getSnapshot(); conflict.hidden = state === null;
+        conflictStatus.textContent = conflictText(controller); finishRemote.disabled = state?.review !== "loading";
+        retry.disabled = !controller.canSaveReviewedSource(); };
+    host.replaceChildren(nav, status, recovery, conflict, scene, review, modal);
     const updateStatus = () => { status.textContent = statusText(controller); };
     let unwatchForm: (() => void) | undefined;
     let sceneListeners: AbortController | undefined;
@@ -70,7 +80,9 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     // notification itself cannot synchronously mount/release the comparison's display resources.
     subscriptions.push(controller.layout.subscribe(renderScene), controller.source.metadata.subscribe(updateStatus),
         controller.review.subscribe(updateStatus), controller.activity.subscribe(updateStatus), controller.recovery.subscribe(updateRecovery),
-        controller.layout.subscribe(renderReview), controller.comparisonReference.subscribe(renderReview));
-    renderScene(); renderReview(); updateStatus(); updateRecovery();
+        controller.layout.subscribe(renderReview), controller.comparisonReference.subscribe(renderReview),
+        controller.saveConflict.subscribe(updateConflict), controller.source.metadata.subscribe(updateConflict),
+        controller.layout.subscribe(updateConflict), controller.comparisonReference.subscribe(updateConflict));
+    renderScene(); renderReview(); updateStatus(); updateRecovery(); updateConflict();
     return () => { unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
 }

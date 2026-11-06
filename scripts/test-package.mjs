@@ -133,6 +133,9 @@ try {
     await page.waitForFunction(() => window.consumer.comparison().status === "ready" && window.consumer.comparison().count === 0);
     assert.equal(await page.evaluate(() => window.consumer.acceptComparison()), true);
     await page.waitForFunction(() => window.consumer.comparison().version === "accepted-2");
+    const saveReview = await page.evaluate(() => window.consumer.saveReview());
+    assert.deepEqual(saveReview, { baselineBefore: "v0", precondition: "v1", saved: "saved", textAfter: "merged later", dirtyAfter: true,
+        cleanAfterUndo: true, serverVersion: "v2", leases: 0 });
     const bidi = await page.evaluate(() => window.consumer.bidi());
     assert.deepEqual(bidi.levels, [0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0]);
     assert.deepEqual(bidi.order, [0, 1, 2, 3, 6, 5, 4, 7, 8, 9, 10]);
@@ -174,7 +177,7 @@ try {
         consumer, browser: browser.version(), node: process.version, dotnet: dotnet(["--version"]).trim(),
         typescript: JSON.parse(await readFile("node_modules/typescript/package.json", "utf8")).version,
         esbuild: JSON.parse(await readFile("node_modules/esbuild/package.json", "utf8")).version,
-        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, comparison, style, errors }, null, 2));
+        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, comparison, saveReview, style, errors }, null, 2));
     console.log("Restored package: declarations, storage/mappings, modules, visible CSS and actual edit passed. Evidence: artifacts/package/");
     console.log(`Isolated consumer retained for inspection: ${consumer}`);
 } finally {

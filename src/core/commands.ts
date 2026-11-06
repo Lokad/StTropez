@@ -1,4 +1,4 @@
-import type { ResourceHandle, ResourceId, ResourceKey, ResourceTarget, SaveReceipt, SaveSubmission, Workspace } from "./workspace.ts";
+import type { ResourceHandle, ResourceId, ResourceKey, ResourceTarget, SaveReceipt, SaveReview, SaveSubmission, Workspace } from "./workspace.ts";
 import { snapshotValue } from "./values.ts";
 import type { Immutable, SnapshotValue } from "./values.ts";
 import type { AcknowledgementSubmission } from "./agent.ts";
@@ -20,8 +20,8 @@ export class WorkspaceCommands {
         this.workspace = workspace; this.onError = onError;
     }
     /** Content is captured at invocation, server preconditions at serialized submission. */
-    save<T extends SnapshotValue>(resource: ResourceHandle<T>, port: SavePort<T>): Promise<SaveOutcome<T>> {
-        const ticket = this.workspace.captureSave(resource);
+    save<T extends SnapshotValue>(resource: ResourceHandle<T>, port: SavePort<T>, review?: SaveReview): Promise<SaveOutcome<T>> {
+        const ticket = this.workspace.captureSave(resource, review);
         const previous = this.saves.get(resource.id) ?? Promise.resolve();
         const result = previous.then(async (): Promise<SaveOutcome<T>> => {
             try {

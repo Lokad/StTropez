@@ -3,8 +3,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { openHarness } from "./browser-harness.mjs";
 import { corpus } from "../tests/fixtures/workloads.ts";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
+import { typeHostSuffix } from "./host-typing.mjs";
 
 const source = await sourceIdentity(), smoke = process.env.STTROPEZ_HOST_SMOKE === "1", warmup = smoke ? 0 : 3, measured = smoke ? 1 : 10;
+let activeCase;
 const harness = await openHarness(), cases = [];
 const snapshot = () => harness.page.evaluate(() => window.hostFixture.snapshot());
 const click = name => harness.page.getByRole("button", { name, exact: true }).click();
@@ -22,12 +24,14 @@ try {
     for (const editor of ["native", "candidate"]) for (const host of ["plain", "react"]) for (const corpusId of editor === "candidate" ? ["normal", "lines-10000", "lines-100000"] : ["normal", "lines-10000"]) {
         const original = corpus(corpusId).trimEnd(), proposal = `agent ${original}`, corrected = `fixed ${proposal}`, samples = [];
         for (let iteration = 0; iteration < warmup + measured; iteration++) {
+            activeCase = { editor, host, corpus: corpusId, iteration, stage: "mount" };
             await harness.page.goto(new URL(`/hosts/${host}/?editor=${editor}`, harness.page.url()).href); await ready();
             await harness.page.evaluate(text => { const s = window.hostFixture.snapshot(); window.hostFixture.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original); await ready();
             assert.equal(await harness.page.locator("textarea.st-input-context").count(), editor === "candidate" ? 2 : 0);
             assert.equal(await harness.page.locator("textarea.st-editor").count(), editor === "native" ? 2 : 0);
             const before = await snapshot(); if (editor === "candidate") assert.equal(before.source.exports, 0);
             const start = await clock();
+            activeCase.stage = "proposal";
             await click("Associate agent"); await click("Request proposal");
             const request = (await snapshot()).requestInput; assert.equal(request.sourceLength, original.length);
             await harness.page.evaluate(() => window.hostFixture.setPath("during-request.csv"));
@@ -37,17 +41,28 @@ try {
             assert.equal(delivered.bindings.comparison.baseline.length, original.length);
             await input.press("Control+Home"); await input.pressSequentially("fixed "); await ready();
             const correction = await snapshot();
+            activeCase.stage = "captured-save-and-later-typing";
             await click("Save source");
             await harness.page.waitForFunction(() => window.hostFixture.snapshot().pendingSaves.length === 1);
-            await input.press("Control+End"); await input.pressSequentially(" later");
+            await input.press("Control+End");
+            const lateTyping = await typeHostSuffix(input, " later");
             const typing = await snapshot(); await harness.page.evaluate(() => window.hostFixture.finishSave());
             await harness.page.waitForFunction(() => window.hostFixture.snapshot().review.acknowledgements.length === 1);
             assert.equal(await input.evaluate(node => node.ownerDocument.activeElement === node), true);
-            await input.press("Control+z"); await harness.page.waitForFunction(() => !window.hostFixture.snapshot().source.dirty);
-            await input.press("Control+Shift+z");
+            assert.equal(lateTyping.beforeDepth, correction.history.undoDepth);
+            const lateTypingGroups = lateTyping.groups;
+            assert.equal(typing.history.undoDepth - correction.history.undoDepth, lateTypingGroups);
+            activeCase = { ...activeCase, stage: "undo-to-saved", correction, typing, lateTyping, lateTypingGroups };
+            for (let undo = 0; undo < lateTypingGroups; undo++) {
+                await input.press("Control+z"); assert.equal((await snapshot()).history.undoDepth, typing.history.undoDepth - undo - 1);
+            }
+            assert.equal((await snapshot()).source.dirty, false);
+            activeCase.stage = "redo-and-acknowledgement";
+            for (let redo = 0; redo < lateTypingGroups; redo++) await input.press("Control+Shift+z");
             await click("Retry acknowledgement"); await harness.page.waitForFunction(() => window.hostFixture.snapshot().review.acknowledgements[0]?.status === "failed");
             await click("Retry acknowledgement"); await harness.page.waitForFunction(() => window.hostFixture.snapshot().review.proposal === null);
             const saved = await snapshot(); assert.equal(saved.activity.writes, 1); assert.equal(saved.source.serverVersion, "v1");
+            activeCase.stage = "captured-run";
             await click("Run captured inputs");
             const captured = await harness.page.evaluate(() => window.hostFixture.runCapture(0));
             assert.deepEqual(captured, { source: `${corrected} later`, configuration: { path: "during-request.csv", format: "csv" }, settings: { mode: "preview" } });
@@ -84,6 +99,7 @@ try {
                 revisions: next.source.revision - before.source.revision, backgroundUpdates: next.activity.background - before.activity.background,
                 reviewHunks: next.bindings.comparison.hunks, reviewMaxStepMs: next.bindings.comparison.work.maxStepMs,
                 reviewWorkingRows: next.bindings.comparison.workingViewport.rows, reviewReferenceRows: next.bindings.comparison.referenceViewport.rows,
+                lateTypingGroups, lateTypingEvents: lateTyping.events,
                 mounts: next.bindings.mounts - before.bindings.mounts, writes: next.activity.writes, acknowledgements: next.activity.acknowledgements, completedRuns: next.activity.completedRuns };
             if (iteration >= warmup) samples.push(sample);
         }
@@ -93,7 +109,13 @@ try {
     }
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
     await mkdir("artifacts/bench/hosts", { recursive: true });
-    await writeFile("artifacts/bench/hosts/latest.json", JSON.stringify({ schemaVersion: 2, created: new Date().toISOString(), source, smoke,
+    await writeFile("artifacts/bench/hosts/latest.json", JSON.stringify({ schemaVersion: 3, created: new Date().toISOString(), source, smoke,
         environment: { ...environment(), browser: harness.browser.version(), viewport: { width: 1440, height: 900 } }, cases, errors: harness.errors,
         note: "Synthetic complete host workflows with two source editor views, an immutable-reference/editable-working comparison after proposal delivery, a typed form and 20Hz activity. Candidate cases include 100,000 lines. Three warmups and ten measured fresh-page workflows per condition unless explicitly smoke mode. Workflow/disposal proxies include automation transport, controls, local deferred service settlement, RAF/readiness polling, completed diff work and current comparison viewports. No imposed network delay or physical presentation is measured. Proposal transaction timing covers synchronous request acceptance and workspace/view notification, excluding host navigation/rendered-frame readiness. Observed input-handler samples are only selected candidate keystrokes; ordinary input has its separate report. Full working/reference text oracles are outside timing. Explicit service capture can export exact whole text; routine candidate rendering and diagnostics remain bounded. Review step metrics describe the latest diff generation, not the longest call across the workflow. Desktop diagnostic measurements establish no production tail, retention, native-device/AT or renderer-selection guarantee." }, null, 2));
+} catch (error) {
+    const observed = await harness.page.evaluate(() => { const f = window.hostFixture; if (!f) return null; const s = f.snapshot();
+        return { snapshot: s, head: f.range(0, Math.min(s.source.length, 80)), tail: f.range(Math.max(0, s.source.length - 100), s.source.length) }; }).catch(failure => ({ observationError: String(failure) }));
+    await mkdir("artifacts/bench/hosts", { recursive: true });
+    await writeFile(`artifacts/bench/hosts/failure-${Date.now()}.json`, JSON.stringify({ source, activeCase, error: String(error), observed, browserErrors: harness.errors }, null, 2));
+    throw error;
 } finally { await harness.close(); }

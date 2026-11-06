@@ -21,7 +21,7 @@ export { BidiCursor } from "./core/bidi-cursor.ts";
 export type { BidiIndex, BidiStep } from "./core/bidi-cursor.ts";
 export { createBidiIndexController } from "./core/bidi-controller.ts";
 export type { BidiIndexController, BidiIndexRequest, BidiIndexSnapshot, BidiProgress } from "./core/bidi-controller.ts";
-export { TextDiff } from "./core/diff.ts";
+export { DiffReferenceCache, TextDiff } from "./core/diff.ts";
 export type { DiffHunk, DiffProgress, DiffRange } from "./core/diff.ts";
 export { createComparisonController } from "./core/comparison.ts";
 export type { ComparisonBaseline, ComparisonCapture, ComparisonController, ComparisonSnapshot, ComparisonTicket } from "./core/comparison.ts";
@@ -31,7 +31,7 @@ export type {
     BatchEditResult, Capabilities, ChangeResult, CloseIntent, CloseOperation, DocumentChange, DocumentId, DocumentSnapshot, DocumentView,
     DocumentViewSnapshot, EditLease, EditOrigin, EditRequest, EditResult, HistoryRequest,
     LoadedResource, LoadedTextBuffer, LoadOperation, Operation, PaneId, ResourceHandle, ResourceId, ResourceKey, ResourceLease,
-    ResourceMetadata, ResourceSnapshot, ResourceTarget, SaveReceipt, SaveSubmission, SaveTicket, Surface, TabId, TabSnapshot, TabTarget, TextResourceHandle,
+    ResourceMetadata, ResourceSnapshot, ResourceTarget, SaveReceipt, SaveReview, SaveSubmission, SaveTicket, Surface, TabId, TabSnapshot, TabTarget, TextResourceHandle,
     ViewId, WorkspaceOptions, WorkspaceSnapshot,
 } from "./core/workspace.ts";
 export type { Observable } from "./core/observable.ts";

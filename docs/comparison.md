@@ -17,12 +17,15 @@ the existing `TextBuffer` through `createTextResourceFromBuffer`, without a stri
 `TextDiff` tokenizes LF-inclusive lines, aligns them with shortest-edit bisection, and trims
 common UTF-16 boundaries within changed blocks. CRLF, LF, tabs, spaces and final newlines
 remain exact. `whitespaceOnly` describes a change; it never suppresses one. Hashes can reject
-unequal lines or prove disjoint regions; matching hashes always require exact text checks.
+unequal lines or prove disjoint regions. Lines of at most 256 UTF-16 units receive exact
+job-local string identities, reused across alignment probes without repeated buffer reads.
+Longer matching hashes still require bounded exact text checks. Identity storage is linear;
+no normalization or hash-only equality is introduced.
 This is a line alignment with trimmed boundaries, rather than a globally minimal character
 alignment or moved-block detection. The original TypeScript implementation reuses the
 project's buffers; a general diff package would add a runtime dependency.
 
-Core callers explicitly advance work. Browser tasks group up to eight advances of 32,768 work
+Core callers explicitly advance work. Browser tasks group up to 32 advances of 32,768 work
 units, stopping after the first advance that reaches four milliseconds. This reduces nested
 timer delays while bounding each batch's advances. Reads and comparisons yield within long
 lines, and stale revision jobs are
@@ -30,6 +33,21 @@ disposed before replacement. The budget is work accounting, not a hard milliseco
 allocation, garbage collection, publication and rendering can still delay a turn. Alignment
 uses line metadata and linear search space; difficult repeated-line cases can take quadratic
 work. No worker or WASM runtime is required.
+
+Diff progress alone does not invalidate either viewport. A new generation or status redraws
+decorations; selection and scrolling retain their viewport-owned invalidation. This avoids
+repeated row work while the same captured diff is still running. The scheduling and short-line
+identity changes address a reproduced large conflict-review interaction, not a new shaping
+feature. Full input-to-review-ready measurements remain separate from handler CPU.
+
+`DiffReferenceCache` optionally reuses one immutable reference index across `TextDiff` jobs.
+Pass it as the third constructor argument and explicitly dispose it when its owner ends.
+Working-line identities remain job-local, so successive edits do not grow the reference cache.
+A different buffer replaces the cached index. Active jobs retain their original captures;
+disposing the cache releases future reuse and prevents new jobs from using it. The comparison
+controller owns a cache and disposes it on expiration or teardown. Cold indexing remains
+cooperative. An identical-buffer fast path can defer indexing until the first edit; that cold
+interaction needs separate measurement from edits against an already indexed reference.
 
 Hunks and progress snapshots are immutable. A hunk command carries its comparison generation
 and index. Reversion checks that generation and the working revision, then submits one human

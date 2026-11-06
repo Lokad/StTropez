@@ -52,6 +52,40 @@ tickets, while a completed reference survives reopening. These commands neither 
 acknowledge an agent proposal. Comparison editing always uses the bounded candidate, including
 when the two source panes use the native baseline.
 
+## Save conflicts and reviewed retries
+
+Both hosts show save status and a conflict panel with the attempted local revision, expected
+server version and observed conflict version. **Review remote source** starts a deferred read;
+**Finish remote review** supplies its captured immutable snapshot. Local typing continues.
+The read captures the source tab generation and conflict identity, so replacement, close or a
+newer read prevents an old response from publishing. A further remote write after read capture
+is deliberately possible and remains protected by the subsequent save precondition.
+
+The remote snapshot becomes a comparison reference. Edit the working source, then explicitly
+choose **Save reviewed source**. That command captures the current local revision and the
+reviewed remote version. Changed references, expired source tabs, permissions and edit locks
+prevent submission. Another remote change produces a new visible conflict; it never silently
+retries against an unreviewed version. Only a successful save changes the saved baseline.
+Canonical replies preserve later typing, and corrected agent proposals retain their independent
+acknowledgement/retry flow. Reference acceptance and refresh do not authorize a conflict save
+after replacing the reviewed reference. The fixture's external-writer control changes only its
+synthetic service state, not the local document. No application service is integrated.
+
+`bench:save-conflicts` records full conflict/read/retry workflows with 20 Hz host traffic and a
+point edit while all three working views and the remote reference are mounted. Handler CPU,
+document-capture-beforeinput to exact model/selection/diff/view readiness across two frames,
+and complete keyboard-action automation are separate measurements. Stage/workflow timings
+include controls, typing during deferred responses and settlement. The fixture imposes no
+network delay. Full text/reference checks run outside timing; real IME/clipboard/AT and physical
+display latency remain unqualified.
+
+The conflict benchmark includes repeated and distinct 100,000-line sources and a 2.4-million
+unit single-line control, plus normal sources in both source-editor modes. Its provisional
+budget assessment reports misses explicitly; semantic success is not a latency pass. It
+measures point insertion after loading a differing remote reference. First edits after an
+identical-reference acceptance, sustained input, navigation and broader host populations remain
+separate pilot qualification work.
+
 ## Input recovery and disposal
 
 The binding consumes the editor's existing `sttropez-conflict` event and validates its captured
@@ -91,3 +125,9 @@ proposal acceptance/notification CPU and selected candidate input-handler observ
 separate fields; ordinary editing has its own benchmark. These desktop diagnostics establish
 neither physical presentation latency nor production tails, retained-memory budgets or a
 production renderer choice. Native input and accessibility qualification remain open.
+
+The host benchmark validates typing-group boundaries against event timing and undo depth.
+Continuous adjacent typing must coalesce; a documented one-second pause starts another group.
+It undoes and redoes every group created after the save capture and verifies exact final text
+and saved state. Group counts and event timing bounds remain in raw samples, so an automation
+stall cannot silently weaken either continuous-typing or undo-to-saved assertions.

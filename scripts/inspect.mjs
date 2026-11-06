@@ -59,6 +59,30 @@ try {
             await writeFile(`artifacts/inspect/${name}-recovery.json`, JSON.stringify(await harness.page.evaluate(() => window.hostFixture.snapshot()), null, 2));
         }
     }
+    for (const mode of ["plain", "react"]) {
+        await harness.page.goto(new URL(`/hosts/${mode}/?editor=candidate`, harness.page.url()).href);
+        const input = harness.page.getByRole("textbox", { name: "Primary source", exact: true });
+        await input.press("End"); await input.pressSequentially(" local correction");
+        await harness.page.getByRole("button", { name: "Save source", exact: true }).click();
+        await harness.page.waitForFunction(() => window.hostFixture.snapshot().pendingSaves.length === 1);
+        await harness.page.evaluate(() => { window.hostFixture.externalWrite("remote source\r\n"); window.hostFixture.finishSave(); });
+        await harness.page.getByRole("region", { name: "Save conflict", exact: true }).waitFor();
+        await harness.page.getByRole("button", { name: "Review remote source", exact: true }).click();
+        await input.press("End"); await input.pressSequentially(" during review");
+        await harness.page.evaluate(() => window.hostFixture.finishConflictReview());
+        await harness.page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return s.bindings.comparison?.status === "ready"
+            && !s.bindings.comparison.workingViewport.pending && !s.bindings.comparison.referenceViewport.pending; });
+        if (await input.inputValue() !== "start local correction during review" || await harness.page.evaluate(() => window.hostFixture.referenceRange(0, 15)) !== "remote source\r\n") throw new Error("Conflict inspection lost local or remote text.");
+        if (!await input.evaluate(node => node.ownerDocument.activeElement === node)) throw new Error("Conflict review lost editing focus.");
+        await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-save-conflict.png`, fullPage: true });
+        await writeFile(`artifacts/inspect/host-${mode}-save-conflict.json`, JSON.stringify(await harness.page.evaluate(() => window.hostFixture.snapshot()), null, 2));
+        await harness.page.getByRole("button", { name: "Save reviewed source", exact: true }).click();
+        await input.press("End"); await input.pressSequentially(" later"); await harness.page.evaluate(() => window.hostFixture.finishSave());
+        await harness.page.waitForFunction(() => window.hostFixture.snapshot().source.serverVersion === "v2");
+        if (await input.inputValue() !== "start local correction during review later") throw new Error("Reviewed save overwrote later typing.");
+        await writeFile(`artifacts/inspect/host-${mode}-conflict-saved.json`, JSON.stringify(await harness.page.evaluate(() => window.hostFixture.snapshot()), null, 2));
+        await harness.page.evaluate(() => window.hostFixture.dispose());
+    }
     await harness.page.goto(new URL("/viewport/", harness.page.url()).href);
     await harness.page.waitForFunction(() => { const state = window.viewportFixture?.snapshot(); return state && state.primary.revision !== null && !state.primary.pending; });
     await harness.page.screenshot({ path: "artifacts/inspect/viewport-lines.png", fullPage: true });

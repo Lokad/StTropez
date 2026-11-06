@@ -40,6 +40,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     let displayTarget: TabTarget | undefined;
     let epoch = -1, selected = -1, selectedGeneration = -1, timer: number | undefined, disposed = false;
     let measuredGeneration = -1, steps = 0, advances = 0, maxStepMs = 0, totalStepMs = 0;
+    let decoratedGeneration = -1, decoratedStatus: string | undefined;
     const listeners = new AbortController();
     function rangeAt(side: "baseline" | "working", line: number): DiffRange | undefined {
         if (state.status !== "ready") return;
@@ -89,7 +90,12 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
                 return `${side === "baseline" ? "Baseline" : "Working"} lines ${range.lineFrom + 1}–${Math.max(range.lineFrom + 1, range.lineTo)}: ${range.from === range.to ? "∅" : visible(buffer.slice(range.from, Math.min(range.to, range.from + 160))) + (range.to - range.from > 160 ? "…" : "")}`; };
             referencePreview.textContent = text("baseline"); workingPreview.textContent = text("working");
         } else { referencePreview.textContent = workingPreview.textContent = ""; }
-        reference?.invalidate(); working.viewport.invalidate();
+        // Progress-only publications change no decorations. Selection and scroll invalidate
+        // their own viewports; redraw hunks once on restart, completion or expiration.
+        if (state.generation !== decoratedGeneration || state.status !== decoratedStatus) {
+            decoratedGeneration = state.generation; decoratedStatus = state.status;
+            reference?.invalidate(); working.viewport.invalidate();
+        }
     }
     function schedule(): void { if (!disposed && timer === undefined) timer = win!.setTimeout(step, 0); }
     function step(): void {
@@ -99,7 +105,8 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
             if (measuredGeneration !== current.generation) { measuredGeneration = current.generation; steps = advances = maxStepMs = totalStepMs = 0; }
             const start = win!.performance.now(); let count = 0;
             do { controller.advance(budget); count++; advances++; }
-            while (controller.getSnapshot().status === "running" && count < 8 && win!.performance.now() - start < 4);
+            // Cheap advances may share a task; the elapsed-time budget still yields to input.
+            while (controller.getSnapshot().status === "running" && count < 32 && win!.performance.now() - start < 4);
             const elapsed = win!.performance.now() - start;
             steps++; totalStepMs += elapsed; maxStepMs = Math.max(maxStepMs, elapsed);
         }
