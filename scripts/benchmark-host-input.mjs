@@ -116,10 +116,12 @@ try {
             await page.waitForFunction(() => window.hostFixture?.snapshot().bindings.activeViews === 2);
             await click("Open source review"); await ready();
             const input = page.getByRole("textbox", { name: "Primary source", exact: true });
-            for (const position of ["beginning", "middle", "end"]) for (const mode of ["cold-character", "cold-newline", "sustained"]) {
+            for (const pattern of corpus === "single-line" ? ["mixed", "repeated"] : ["mixed"])
+            for (const position of ["beginning", "middle", "end"]) for (const mode of pattern === "repeated" ? ["cold-character", "sustained"] : ["cold-character", "cold-newline", "sustained"]) {
                 const offset = position === "beginning" ? 0 : position === "end" ? original.length : corpus === "single-line" ? 1200000 : Math.floor(count / 2) * (line.length + eol.length) + 7;
-                const before = await prepare(original, offset, input), text = mode === "cold-character" ? "z" : mode === "cold-newline" ? "\n" : "abcdefghijklmnopqrstuvwxyzabcdef";
-                if (iteration === 0 && position === "beginning" && mode === "cold-character") displays.push({ host, corpus, ...await input.evaluate(node => {
+                const before = await prepare(original, offset, input), character = pattern === "repeated" ? "x" : "z", burst = pattern === "repeated" ? "x".repeat(32) : "abcdefghijklmnopqrstuvwxyzabcdef";
+                const text = mode === "cold-character" ? character : mode === "cold-newline" ? "\n" : burst;
+                if (iteration === 0 && position === "beginning" && mode === "cold-character") displays.push({ host, corpus, pattern, ...await input.evaluate(node => {
                     const root = node.closest(".st-viewport"), style = getComputedStyle(root); return { font: style.font, width: root.clientWidth, height: root.clientHeight, devicePixelRatio }; }) });
                 const sample = await measure(input, text, mode), expected = original.slice(0, offset) + text + original.slice(offset);
                 assert.equal(sample.revision, before.source.revision + text.length);
@@ -132,7 +134,7 @@ try {
                 for (let i = 0; i < groups; i++) await input.press("Control+Shift+z"); await ready();
                 assert.equal(await page.evaluate(text => window.hostFixture.range(0, text.length) === text && window.hostFixture.snapshot().source.length === text.length, expected), true);
                 if (iteration >= warmup) {
-                    const id = `${position}:${mode}`, item = results.get(id) ?? { host, editor: "candidate", corpus, position, mode, length: original.length, offset, text,
+                    const id = `${pattern}:${position}:${mode}`, item = results.get(id) ?? { host, editor: "candidate", corpus, pattern, position, mode, length: original.length, offset, text,
                         warmup, measured, requestedKeyDelayMs: mode === "sustained" ? 8 : 0, samples: [] };
                     item.samples.push(sample); results.set(id, item);
                 }
@@ -159,10 +161,10 @@ try {
         console.log(JSON.stringify({ host, corpus, conditions: results.size, measured, semanticChecks: "passed" }));
     }
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
-    const report = { schemaVersion: 1, created: new Date().toISOString(), source, smoke, environment: { ...environment(), browser: harness.browser.version(), displays }, cases, errors: harness.errors,
+    const report = { schemaVersion: 2, created: new Date().toISOString(), source, smoke, environment: { ...environment(), browser: harness.browser.version(), displays }, cases, errors: harness.errors,
         boundaries: "Fresh identical working/reference buffer and zero diff work/read units before each measured character, Enter or 32-character typing burst. Three source positions, both candidate hosts, two source panes plus editable comparison/immutable reference and 20Hz traffic. Explicit caret placement/reveal, reference acceptance, full-text/reference oracles and shared undo/redo are outside timers. Input-event handler durations exclude beforeinput capture; that capture is included in the full clock beginning at beforeinput. Input-to-full-review readiness, last-input settlement and whole keyboard-action automation are separate. Working-render event timestamps during bursts include exact model/rendered selection/revision in all three working panes, but may precede caret or comparison settlement; those clocks do not substitute for full review readiness. Missing intermediate working-ready observations remain counted as superseded, not displayed. Full final readiness includes pending caret/scans, completed comparison/reference and two consecutive frames. Requested keyboard delay and observed gaps remain in results; burst totals include cadence. Instrumented render/history observers add work. No network delay, physical-presentation or native-device qualification." };
     await mkdir("artifacts/bench/host-input", { recursive: true });
     await writeFile(`artifacts/bench/host-input/${smoke ? "smoke" : "latest"}.json`, JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ conditions: cases.length, misses: cases.filter(c => Object.values(c.assessment).some(v => v === false)).map(c => ({ host: c.host, corpus: c.corpus,
-        position: c.position, mode: c.mode, handlerP95: c.inputHandlerMs.p95, reviewReadyP95: c.lastInputToFullReviewReadyProxyMs.p95, actionP95: c.completeActionProxyMs.p95 })) }, null, 2));
+        pattern: c.pattern, position: c.position, mode: c.mode, handlerP95: c.inputHandlerMs.p95, reviewReadyP95: c.lastInputToFullReviewReadyProxyMs.p95, actionP95: c.completeActionProxyMs.p95 })) }, null, 2));
 } finally { await harness.close(); }

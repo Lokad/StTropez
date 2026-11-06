@@ -120,6 +120,15 @@ avoids nested generator delegation; singleton edits retain their split/join impl
 `equals` compares exact content, skipping shared backing ranges; unrelated buffers may need
 a linear comparison. There is no probabilistic content hash or implicit text export.
 
+`sharedEdge(other, side, range?)` iterates cumulative equal edge lengths proved by immutable
+node or backing identity, for `"start"` or `"end"`. Optional `{ from, to, otherFrom, otherTo }`
+captures raw UTF-16 ranges. It reads no text, exposes no backing objects and stops at the first
+unproved span. Equal text in independent storage may therefore yield no proof. Each advance
+walks bounded tree paths and the caller can stop iteration to release its captures. The
+comparison kernel uses these proofs inside its cooperative budget, with exact bounded reads
+where a textual equality decision is needed. Ownership proofs do not replace document revision,
+resource identity or lifecycle checks.
+
 ## Affinity, anchors and newlines
 
 `PositionMap` maps one batch's old coordinate space to its new space. A position's `before`

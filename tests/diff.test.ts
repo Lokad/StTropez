@@ -35,8 +35,10 @@ test("line alignment agrees with a dynamic-programming edit-distance oracle", ()
 });
 
 test("comparison yields within a long line, never exports full text and cancels retained work", () => {
-    const a = TextBuffer.from("x".repeat(1_000_000)), b = a.replace(500_000, 500_001, "y");
+    // Independent backing forces a genuine long scan even when shared-span proofs exist.
+    const a = TextBuffer.from("x".repeat(1_000_000)), b = TextBuffer.from("x".repeat(500_000) + "y" + "x".repeat(499_999));
     const job = new TextDiff(a, b); let result = job.next(512);
+    while (result.status === "running" && result.readUnits === 0) result = job.next(512);
     assert.equal(result.status, "running"); assert.ok(result.readUnits <= 1024);
     job.dispose(); result = job.next(512); assert.equal(result.status, "cancelled"); assert.equal(result.hunks.length, 0);
     assert.equal(a.readMetrics().textExports, 0); assert.equal(b.readMetrics().textExports, 0);
@@ -73,11 +75,12 @@ test("fragmented snapshots preserve raw seams, unpaired surrogates and every edi
     }
 });
 
-test("reference reuse skips only immutable reference indexing and retains exact hunks across edits and baseline replacement", () => {
-    const cache = new DiffReferenceCache(), baseline = TextBuffer.from(Array.from({ length: 2000 }, (_, i) => `line ${i}\r\n`).join(""));
+test("reference and working index reuse retain exact hunks across edits and baseline replacement", () => {
+    const cache = new DiffReferenceCache(), original = Array.from({ length: 2000 }, (_, i) => `line ${i}\r\n`).join(""), baseline = TextBuffer.from(original);
     const finish = (a: TextBuffer, b: TextBuffer, shared?: DiffReferenceCache) => { const job = new TextDiff(a, b, shared); let result = job.next(512);
         while (result.status === "running") result = job.next(512); job.dispose(); return result; };
-    let working = baseline.replace(0, 4, "changed"); finish(baseline, working, cache);
+    // Independent reference storage requires cached exact identities rather than ownership alone.
+    let working = TextBuffer.from(original).replace(0, 4, "changed"); finish(baseline, working, cache);
     for (let i = 0; i < 12; i++) {
         working = working.replace(working.length, working.length, `tail ${i}\n`);
         const reused = finish(baseline, working, cache), fresh = finish(baseline, working);

@@ -1,62 +1,77 @@
 import type { TextBuffer } from "./text-buffer.ts";
+import type { DiffLine } from "./diff-lines.ts";
+import { commonText, getLine, indexLines, lineLength, matchingLines, offsetAt, tick } from "./diff-index.ts";
+import type { DiffStats as Stats, DiffIndex as Index } from "./diff-index.ts";
 export type DiffRange = Readonly<{ from: number; to: number; lineFrom: number; lineTo: number }>;
 export type DiffHunk = Readonly<{ baseline: DiffRange; working: DiffRange; whitespaceOnly: boolean }>;
 export type DiffProgress = Readonly<{ status: "running" | "ready" | "cancelled"; work: number; readUnits: number; lineComparisons: number; lineEdits: number; hunks: readonly DiffHunk[] }>;
-type Line = Readonly<{ from: number; to: number; hash: number; token: number | undefined }>;
-type Stats = { work: number; yielded: number; readUnits: number; lineComparisons: number; lineEdits: number };
-type ReferenceIndex = { buffer: TextBuffer; lines: readonly Line[] | undefined; tokens: Map<string, number> };
-const referenceCaches = new WeakMap<DiffReferenceCache, { reference: ReferenceIndex | undefined }>();
+type Cache = { baseline: TextBuffer; serial: number; reference: Index | undefined; working: Index | undefined };
+const referenceCaches = new WeakMap<DiffReferenceCache, { current: Cache | undefined }>();
+const longHashes = new WeakMap<DiffLine, number>();
 
-/** Retains one immutable reference index, never working revisions. Active jobs own their captures. */
+/** Retains one reference and one current working index. Active jobs own their captures. */
 export class DiffReferenceCache {
-    constructor() { referenceCaches.set(this, { reference: undefined }); Object.freeze(this); }
+    constructor() { referenceCaches.set(this, { current: undefined }); Object.freeze(this); }
     dispose(): void { referenceCaches.delete(this); }
 }
 type Region = Readonly<{ a0: number; a1: number; b0: number; b1: number }>;
-const tick = (stats: Stats, units = 1): boolean => { stats.work += units; if (stats.work - stats.yielded < 256) return false; stats.yielded = stats.work; return true; };
-function* lines(buffer: TextBuffer, stats: Stats, tokens: Map<string, number>, known?: ReadonlyMap<string, number>): Generator<void, readonly Line[]> {
-    const result: Line[] = []; let from = 0, offset = 0, hash = 2166136261;
-    const line = (): Line => {
-        let token: number | undefined;
-        if (offset - from <= 256) {
-            const text = buffer.slice(from, offset); stats.readUnits += text.length;
-            token = known?.get(text) ?? tokens.get(text);
-            if (token === undefined) { token = (known?.size ?? 0) + tokens.size; tokens.set(text, token); }
-        }
-        return Object.freeze({ from, to: offset, hash: hash >>> 0, token });
-    };
-    for (const chunk of buffer.chunks()) for (let start = 0; start < chunk.length;) {
-        const end = Math.min(chunk.length, start + 256), beforeReads = stats.readUnits;
-        for (let index = start; index < end; index++) {
-            const unit = chunk.charCodeAt(index); hash = Math.imul(hash ^ unit, 16777619); offset++;
-            if (unit === 10) { result.push(line()); from = offset; hash = 2166136261; }
-        }
-        const tokenUnits = stats.readUnits - beforeReads;
-        stats.readUnits += end - start; if (tick(stats, end - start + tokenUnits)) yield; start = end;
-    }
-    if (from < offset) { const beforeReads = stats.readUnits; result.push(line()); if (tick(stats, stats.readUnits - beforeReads)) yield; }
-    return result;
-}
-function* equalLine(a: TextBuffer, b: TextBuffer, left: Line, right: Line, stats: Stats): Generator<void, boolean> {
+function* equalLine(a: Index, b: Index, ai: number, bi: number, stats: Stats, prove = true): Generator<void, boolean> {
     stats.lineComparisons++;
     if (tick(stats)) yield;
-    if (left.hash !== right.hash || left.to - left.from !== right.to - right.from) return false;
+    const length = lineLength(a, ai); if (length !== lineLength(b, bi)) return false;
+    if (prove && (yield* matchingLines(a, b, ai, ai + 1, bi, bi + 1, false, stats)) === 1) return true;
+    const left = yield* getLine(a, ai, stats), right = yield* getLine(b, bi, stats);
+    const leftHash = left.hash ?? longHashes.get(left), rightHash = right.hash ?? longHashes.get(right);
+    if (leftHash !== undefined && rightHash !== undefined && leftHash !== rightHash) return false;
     if (left.token !== undefined && right.token !== undefined) return left.token === right.token;
-    for (let offset = 0; offset < left.to - left.from; offset += 256) {
-        const length = Math.min(256, left.to - left.from - offset);
-        const equal = a.slice(left.from + offset, left.from + offset + length) === b.slice(right.from + offset, right.from + offset + length);
-        stats.readUnits += length * 2; if (tick(stats, length * 2)) yield;
-        if (!equal) return false;
+    const af = offsetAt(a, ai), bf = offsetAt(b, bi);
+    return (yield* commonText(a.buffer, b.buffer, af, af + left.length, bf, bf + right.length, "start", stats)) === left.length;
+}
+function* commonLines(a: Index, b: Index, region: Region, reverse: boolean, stats: Stats): Generator<void, number> {
+    let count = 0;
+    const maximum = Math.min(region.a1 - region.a0, region.b1 - region.b0);
+    while (count < maximum) {
+        if (count % 64 === 0) {
+            const proved = yield* matchingLines(a, b, reverse ? region.a0 : region.a0 + count, reverse ? region.a1 - count : region.a1,
+                reverse ? region.b0 : region.b0 + count, reverse ? region.b1 - count : region.b1, reverse, stats);
+            if (proved) { count += proved; continue; }
+        }
+        const ai = reverse ? region.a1 - count - 1 : region.a0 + count, bi = reverse ? region.b1 - count - 1 : region.b0 + count;
+        if (!(yield* equalLine(a, b, ai, bi, stats, false))) break; count++;
+        // Repeated rows can align at different backing offsets. Verify their remaining
+        // text in bounded native string comparisons instead of materializing every row.
+        const token = a.lines.at(ai)?.token; let repeated = false;
+        for (let distance = 1; token !== undefined && distance <= 4 && count - 1 + distance < maximum; distance++) {
+            const nextA = ai + (reverse ? -distance : distance), nextB = bi + (reverse ? -distance : distance);
+            if (token === a.lines.at(nextA)?.token && token === b.lines.at(nextB)?.token) { repeated = true; break; }
+        }
+        if (repeated) {
+            count += yield* matchingLines(a, b, reverse ? region.a0 : region.a0 + count, reverse ? region.a1 - count : region.a1,
+                reverse ? region.b0 : region.b0 + count, reverse ? region.b1 - count : region.b1, reverse, stats, true);
+        }
     }
-    return true;
+    return count;
 }
-function* disjoint(left: readonly Line[], right: readonly Line[], region: Region, stats: Stats): Generator<void, boolean> {
+function* lineHash(index: Index, row: number, line: DiffLine, stats: Stats): Generator<void, number> {
+    const known = line.hash ?? longHashes.get(line); if (known !== undefined) return known;
+    const from = offsetAt(index, row); let hash = 2166136261;
+    for (let offset = 0; offset < line.length; offset += 256) {
+        const length = Math.min(256, line.length - offset), text = index.buffer.slice(from + offset, from + offset + length);
+        for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
+        stats.readUnits += length; if (tick(stats, length)) yield;
+    }
+    hash >>>= 0; longHashes.set(line, hash); return hash;
+}
+function* disjoint(left: Index, right: Index, region: Region, stats: Stats): Generator<void, boolean> {
+    // A cheap exact match can decline this optional scan without indexing a huge shared interior.
+    for (let offset = 1; offset < Math.min(4, region.a1 - region.a0, region.b1 - region.b0); offset++)
+        if (yield* equalLine(left, right, region.a0 + offset, region.b0 + offset, stats)) return false;
     const signatures = new Set<number>();
-    for (let index = region.a0; index < region.a1; index++) { signatures.add(left[index]!.hash); if (tick(stats)) yield; }
-    for (let index = region.b0; index < region.b1; index++) { if (signatures.has(right[index]!.hash)) return false; if (tick(stats)) yield; }
+    for (let ai = region.a0; ai < region.a1; ai++) { signatures.add(yield* lineHash(left, ai, yield* getLine(left, ai, stats), stats)); if (tick(stats)) yield; }
+    for (let bi = region.b0; bi < region.b1; bi++) { if (signatures.has(yield* lineHash(right, bi, yield* getLine(right, bi, stats), stats))) return false; if (tick(stats)) yield; }
     return true;
 }
-function* bisect(a: TextBuffer, b: TextBuffer, left: readonly Line[], right: readonly Line[], region: Region, stats: Stats): Generator<void, readonly [number, number]> {
+function* bisect(a: Index, b: Index, region: Region, stats: Stats): Generator<void, readonly [number, number]> {
     const n = region.a1 - region.a0, m = region.b1 - region.b0, maximum = Math.ceil((n + m) / 2), origin = maximum + 1, delta = n - m;
     const forward = new Int32Array(maximum * 2 + 3), reverse = new Int32Array(maximum * 2 + 3);
     for (let index = 0; index < forward.length; index++) { forward[index] = -1; reverse[index] = -1; if (tick(stats, 2)) yield; }
@@ -69,7 +84,7 @@ function* bisect(a: TextBuffer, b: TextBuffer, left: readonly Line[], right: rea
     for (let distance = 0; distance <= maximum; distance++) {
         for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
             let x = start(forward, diagonal), y = x - diagonal;
-            if (x >= 0) while (x < n && y < m && (yield* equalLine(a, b, left[region.a0 + x]!, right[region.b0 + y]!, stats))) { x++; y++; }
+            if (x >= 0) { const same = yield* commonLines(a, b, { a0: region.a0 + x, a1: region.a1, b0: region.b0 + y, b1: region.b1 }, false, stats); x += same; y += same; }
             forward[origin + diagonal] = x;
             const opposite = origin + delta - diagonal;
             if (x >= 0 && delta % 2 !== 0 && opposite >= 0 && opposite < reverse.length && reverse[opposite]! >= 0 && x >= n - reverse[opposite]!) return [region.a0 + x, region.b0 + y];
@@ -77,7 +92,7 @@ function* bisect(a: TextBuffer, b: TextBuffer, left: readonly Line[], right: rea
         }
         for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
             let x = start(reverse, diagonal), y = x - diagonal;
-            if (x >= 0) while (x < n && y < m && (yield* equalLine(a, b, left[region.a1 - x - 1]!, right[region.b1 - y - 1]!, stats))) { x++; y++; }
+            if (x >= 0) { const same = yield* commonLines(a, b, { a0: region.a0, a1: region.a1 - x, b0: region.b0, b1: region.b1 - y }, true, stats); x += same; y += same; }
             reverse[origin + diagonal] = x;
             const opposite = origin + delta - diagonal;
             if (x >= 0 && delta % 2 === 0 && opposite >= 0 && opposite < forward.length && forward[opposite]! >= 0 && forward[opposite]! >= n - x) {
@@ -91,28 +106,32 @@ function* bisect(a: TextBuffer, b: TextBuffer, left: readonly Line[], right: rea
 function range(buffer: TextBuffer, from: number, to: number): DiffRange {
     const lineFrom = buffer.lineAt(from); return Object.freeze({ from, to, lineFrom, lineTo: from === to ? lineFrom : buffer.lineAt(to - 1) + 1 });
 }
-function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, reference: ReferenceIndex): Generator<void, readonly DiffHunk[]> {
+function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, serial = 0): Generator<void, readonly DiffHunk[]> {
     if (a === b) return Object.freeze([]);
-    // Short lines receive exact, job-local string identities. Repeated alignment probes then
-    // avoid rereading equal text; long lines retain bounded chunk comparison and collision checks.
-    const left = reference.lines ?? (reference.lines = yield* lines(a, stats, reference.tokens));
-    const right = yield* lines(b, stats, new Map(), reference.tokens), tasks: Region[] = [{ a0: 0, a1: left.length, b0: 0, b1: right.length }], changes: Region[] = [];
+    const left = yield* indexLines(a, stats, cache?.reference);
+    if (cache?.serial === serial) cache.reference = left;
+    const right = yield* indexLines(b, stats, cache?.working ?? left);
+    if (cache?.serial === serial) cache.working = right;
+    const tasks: Region[] = [{ a0: 0, a1: left.lines.size, b0: 0, b1: right.lines.size }], changes: Region[] = [];
+    const append = (change: Region) => {
+        const previous = changes.at(-1);
+        if (previous?.a1 === change.a0 && previous.b1 === change.b0) changes[changes.length - 1] = { a0: previous.a0, a1: change.a1, b0: previous.b0, b1: change.b1 };
+        else changes.push(change);
+    };
     while (tasks.length) {
         let { a0, a1, b0, b1 } = tasks.pop()!;
-        while (a0 < a1 && b0 < b1 && (yield* equalLine(a, b, left[a0]!, right[b0]!, stats))) { a0++; b0++; }
-        while (a0 < a1 && b0 < b1 && (yield* equalLine(a, b, left[a1 - 1]!, right[b1 - 1]!, stats))) { a1--; b1--; }
+        const prefix = yield* commonLines(left, right, { a0, a1, b0, b1 }, false, stats); a0 += prefix; b0 += prefix;
+        const suffix = yield* commonLines(left, right, { a0, a1, b0, b1 }, true, stats); a1 -= suffix; b1 -= suffix;
         if (a0 === a1 && b0 === b1) continue;
-        if (a0 === a1 || b0 === b1 || (yield* disjoint(left, right, { a0, a1, b0, b1 }, stats))) {
-            const previous = changes.at(-1);
-            if (previous?.a1 === a0 && previous.b1 === b0) changes[changes.length - 1] = { a0: previous.a0, a1, b0: previous.b0, b1 };
-            else changes.push({ a0, a1, b0, b1 });
+        if (a0 === a1 || b0 === b1 || a1 - a0 > 1 && b1 - b0 > 1 && (yield* disjoint(left, right, { a0, a1, b0, b1 }, stats))) {
+            append({ a0, a1, b0, b1 });
         } else if (a1 - a0 === 1 || b1 - b0 === 1) {
             let matchA = -1, matchB = -1;
-            outer: for (let ai = a0; ai < a1; ai++) for (let bi = b0; bi < b1; bi++) if (yield* equalLine(a, b, left[ai]!, right[bi]!, stats)) { matchA = ai; matchB = bi; break outer; }
-            if (matchA < 0) changes.push({ a0, a1, b0, b1 });
+            outer: for (let ai = a0; ai < a1; ai++) for (let bi = b0; bi < b1; bi++) if (yield* equalLine(left, right, ai, bi, stats)) { matchA = ai; matchB = bi; break outer; }
+            if (matchA < 0) append({ a0, a1, b0, b1 });
             else { tasks.push({ a0: matchA + 1, a1, b0: matchB + 1, b1 }); tasks.push({ a0, a1: matchA, b0, b1: matchB }); }
         } else {
-            const [ai, bi] = yield* bisect(a, b, left, right, { a0, a1, b0, b1 }, stats);
+            const [ai, bi] = yield* bisect(left, right, { a0, a1, b0, b1 }, stats);
             if ((ai === a0 && bi === b0) || (ai === a1 && bi === b1)) throw new Error("Comparison split did not make progress.");
             tasks.push({ a0: ai, a1, b0: bi, b1 }); tasks.push({ a0, a1: ai, b0, b1: bi });
         }
@@ -120,22 +139,15 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, reference: Referen
     const hunks: DiffHunk[] = [];
     for (const change of changes) {
         stats.lineEdits += change.a1 - change.a0 + change.b1 - change.b0;
-        let a0 = left[change.a0]?.from ?? a.length, a1 = change.a1 > change.a0 ? left[change.a1 - 1]!.to : a0;
-        let b0 = right[change.b0]?.from ?? b.length, b1 = change.b1 > change.b0 ? right[change.b1 - 1]!.to : b0;
-        while (a0 < a1 && b0 < b1) {
-            const length = Math.min(256, a1 - a0, b1 - b0), av = a.slice(a0, a0 + length), bv = b.slice(b0, b0 + length); let common = 0;
-            while (common < length && av[common] === bv[common]) common++; a0 += common; b0 += common;
-            stats.readUnits += length * 2; if (tick(stats, length * 2)) yield; if (common < length) break;
-        }
-        while (a0 < a1 && b0 < b1) {
-            const length = Math.min(256, a1 - a0, b1 - b0), av = a.slice(a1 - length, a1), bv = b.slice(b1 - length, b1); let common = 0;
-            while (common < length && av[length - common - 1] === bv[length - common - 1]) common++; a1 -= common; b1 -= common;
-            stats.readUnits += length * 2; if (tick(stats, length * 2)) yield; if (common < length) break;
-        }
+        let a0 = offsetAt(left, change.a0), a1 = offsetAt(left, change.a1);
+        let b0 = offsetAt(right, change.b0), b1 = offsetAt(right, change.b1);
+        const prefix = yield* commonText(a, b, a0, a1, b0, b1, "start", stats); a0 += prefix; b0 += prefix;
+        const suffix = yield* commonText(a, b, a0, a1, b0, b1, "end", stats); a1 -= suffix; b1 -= suffix;
         let whitespaceOnly = true;
-        for (const [buffer, from, to] of [[a, a0, a1], [b, b0, b1]] as const) for (let offset = from; offset < to; offset += 256) {
-            const end = Math.min(to, offset + 256); if (!/^\s*$/u.test(buffer.slice(offset, end))) whitespaceOnly = false;
+        outer: for (const [buffer, from, to] of [[a, a0, a1], [b, b0, b1]] as const) for (let offset = from; offset < to; offset += 256) {
+            const end = Math.min(to, offset + 256), white = /^\s*$/u.test(buffer.slice(offset, end));
             stats.readUnits += end - offset; if (tick(stats, end - offset)) yield;
+            if (!white) { whitespaceOnly = false; break outer; }
         }
         if (a0 !== a1 || b0 !== b1) hunks.push(Object.freeze({ baseline: range(a, a0, a1), working: range(b, b0, b1), whitespaceOnly }));
     }
@@ -151,9 +163,9 @@ export class TextDiff {
     constructor(baseline: TextBuffer, working: TextBuffer, cache?: DiffReferenceCache) {
         const state = cache === undefined ? undefined : referenceCaches.get(cache);
         if (cache !== undefined && !state) throw new Error("Reference cache is disposed or foreign.");
-        const reference = state?.reference?.buffer === baseline ? state.reference : { buffer: baseline, lines: undefined, tokens: new Map<string, number>() };
-        if (state) state.reference = reference;
-        this.iterator = compare(baseline, working, this.stats, reference);
+        const current = state?.current?.baseline === baseline ? state.current : { baseline, serial: 0, reference: undefined, working: undefined };
+        if (state) state.current = current;
+        this.iterator = compare(baseline, working, this.stats, current, ++current.serial);
     }
     next(workBudget = 32_768): DiffProgress {
         if (!Number.isSafeInteger(workBudget) || workBudget < 512) throw new RangeError("Comparison budget must be an integer of at least 512 units.");

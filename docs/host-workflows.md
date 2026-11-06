@@ -164,6 +164,13 @@ timers. Both candidate hosts run beginning/middle/end positions in Unicode/CRLF,
 distinct 100,000-line sources and a 2.4-million-unit single-line control, with 20 Hz traffic.
 Full text/reference assertions and shared undo/redo run outside clocks.
 
+The long-line control also types the source's existing `x`, as one character and a 32-character
+burst, at all three positions in both hosts. These repeated-text cases expose equal-prefix
+scanning and ambiguous native ranges. The report identifies the text pattern explicitly:
+72 mixed-text conditions retain their original data, with 12 repeated-text conditions added.
+Enter remains covered once per position. The input/readiness oracle and timing targets are
+the same for both patterns.
+
 During bursts, render-event timestamps record when all three working panes have the expected
 model/rendered selection and revision. These observations can precede caret and comparison
 settlement; they are not complete interaction readiness. Superseded revisions with no ready

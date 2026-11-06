@@ -1,0 +1,148 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { DiffReferenceCache, TextBuffer, TextDiff } from "../src/index.ts";
+import type { DiffProgress } from "../src/index.ts";
+
+function finish(a: TextBuffer, b: TextBuffer, cache?: DiffReferenceCache): DiffProgress {
+    const job = new TextDiff(a, b, cache); let prior = 0, result = job.next(512), calls = 0;
+    for (;;) {
+        assert.ok(result.work - prior < 1280); if (result.status !== "running") break;
+        prior = result.work; assert.ok(++calls < 100000); result = job.next(512);
+    }
+    job.dispose(); assert.equal(result.status, "ready"); return result;
+}
+function reconstruct(result: DiffProgress, a: string, b: string): void {
+    let forward = a, reverse = b;
+    for (const hunk of [...result.hunks].reverse()) {
+        forward = forward.slice(0, hunk.baseline.from) + b.slice(hunk.working.from, hunk.working.to) + forward.slice(hunk.baseline.to);
+        reverse = reverse.slice(0, hunk.working.from) + a.slice(hunk.baseline.from, hunk.baseline.to) + reverse.slice(hunk.working.to);
+    }
+    assert.equal(forward, b); assert.equal(reverse, a);
+}
+const tokens = (text: string) => text.match(/[^\n]*\n|[^\n]+$/gu) ?? [];
+function distance(a: string, b: string): number {
+    const left = tokens(a), right = tokens(b), rows = Array.from({ length: left.length + 1 }, () => Array<number>(right.length + 1).fill(0));
+    for (let i = 1; i <= left.length; i++) for (let j = 1; j <= right.length; j++) rows[i]![j] = left[i - 1] === right[j - 1]
+        ? rows[i - 1]![j - 1]! + 1 : Math.max(rows[i - 1]![j]!, rows[i]![j - 1]!);
+    return left.length + right.length - rows[left.length]![right.length]! * 2;
+}
+
+test("shared proofs preserve backing-independent alignment ties, Enter splits and final-token semantics", () => {
+    for (const original of ["", "A\n", "A\nA\n", "x", "x\n", "a\r\nb\r\n", "😀é\n\ud800\r", "x".repeat(2000)]) {
+        const a = TextBuffer.from(original), cache = new DiffReferenceCache();
+        for (const at of new Set([0, Math.floor(original.length / 2), original.length])) for (const text of ["A\n", "\n", "\r", "😀", "x"]) {
+            const b = a.replace(at, at, text), expected = original.slice(0, at) + text + original.slice(at);
+            const shared = finish(a, b, cache), independent = finish(TextBuffer.from(original), TextBuffer.from(expected));
+            assert.deepEqual(shared.hunks, independent.hunks); assert.equal(shared.lineEdits, distance(original, expected)); reconstruct(shared, original, expected);
+        }
+        cache.dispose();
+    }
+    const a = TextBuffer.from("A\n"), result = finish(a, a.replace(0, 0, "A\n"));
+    assert.equal(result.hunks[0]!.baseline.from, 2); assert.equal(result.hunks[0]!.working.from, 2);
+});
+
+test("shared and cached fragmented revisions agree with independent snapshots and a seeded LCS oracle", () => {
+    let seed = 82213; const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
+    const alphabet = ["A\n", "A\r\n", "B\n", "😀é\n", "\ud800", "\r", "", "x".repeat(257) + "\n"];
+    for (let trial = 0; trial < 180; trial++) {
+        const original = Array.from({ length: 1 + random(12) }, () => alphabet[random(alphabet.length)]!).join("");
+        const baseline = TextBuffer.from(original), cache = new DiffReferenceCache(); let working = baseline, text = original;
+        for (let change = 0; change < 16; change++) {
+            const from = random(text.length + 1), to = Math.min(text.length, from + random(7)), insert = alphabet[random(alphabet.length)]!;
+            working = working.replace(from, to, insert); text = text.slice(0, from) + insert + text.slice(to);
+            const reused = finish(baseline, working, cache), fresh = finish(TextBuffer.from(original), TextBuffer.from(text));
+            assert.deepEqual(reused.hunks, fresh.hunks); assert.equal(reused.lineEdits, distance(original, text)); reconstruct(reused, original, text);
+            assert.equal(working.readMetrics().textExports, 0);
+        }
+        cache.dispose();
+    }
+});
+
+test("adjacent unmatched regions remain one review hunk with unknown or colliding signatures", () => {
+    const x = "x".repeat(256) + "\n", longX = "x".repeat(300) + "\n", longY = "y".repeat(300) + "\n", unicode = "😀é\n";
+    const a = ["B\n", unicode, longX, unicode, "B\n", longY, "B\n", x, "A\r\n", "B\n", "A\r\n", "B\n", longY, "\ud800A\n"].join("");
+    const b = ["A\r\n", "\rA\n", "\r" + longY, x, "\ud800" + x].join("");
+    const result = finish(TextBuffer.from(a), TextBuffer.from(b));
+    assert.equal(result.hunks.length, 2); assert.equal(result.lineEdits, distance(a, b)); reconstruct(result, a, b);
+    const ca = "F\"]:`#\"/Q\n".repeat(2), cb = "S/:hvp6FJ\n".repeat(2), collision = finish(TextBuffer.from(ca), TextBuffer.from(cb));
+    assert.equal(collision.hunks.length, 1); assert.equal(collision.lineEdits, 4); reconstruct(collision, ca, cb);
+});
+
+test("cold shared 100k-line and long-line point edits avoid document-sized indexing and preserve exact Enter hunks", () => {
+    const sources = [Array.from({ length: 100000 }, (_, i) => `const value${i} = 123;`).join("\n"), "x".repeat(2400000)];
+    for (const source of sources) {
+        const baseline = TextBuffer.from(source);
+        for (const at of [0, Math.floor(source.length / 2), source.length]) for (const insert of ["z", "\n", "abc"]) {
+            const working = baseline.replace(at, at, insert), result = finish(baseline, working), expected = source.slice(0, at) + insert + source.slice(at);
+            reconstruct(result, source, expected); assert.ok(result.readUnits < 4096, `${result.readUnits} units for ${at}/${JSON.stringify(insert)}`);
+            assert.ok(result.lineComparisons < 12); assert.equal(baseline.readMetrics().textExports, 0); assert.equal(working.readMetrics().textExports, 0);
+        }
+    }
+});
+
+test("disjoint long-line blocks retain linear scanning and lazy hash collisions still require exact equality", () => {
+    const a = Array.from({ length: 300 }, (_, i) => `baseline ${i} ` + "x".repeat(1000) + "\n").join("");
+    const b = Array.from({ length: 300 }, (_, i) => `working ${i}  ` + "y".repeat(1000) + "\n").join("");
+    const result = finish(TextBuffer.from(a), TextBuffer.from(b));
+    reconstruct(result, a, b); assert.equal(result.hunks.length, 1); assert.equal(result.lineEdits, 600);
+    assert.ok(result.lineComparisons < 20); assert.ok(result.readUnits < (a.length + b.length) * 2);
+    // Appending the same suffix preserves these existing synthetic FNV collisions.
+    const suffix = "x".repeat(400) + "\n", ca = ("F\"]:`#\"/Q" + suffix).repeat(2), cb = ("S/:hvp6FJ" + suffix).repeat(2);
+    const collision = finish(TextBuffer.from(ca), TextBuffer.from(cb));
+    assert.equal(collision.lineEdits, 4); reconstruct(collision, ca, cb);
+});
+
+test("independent remote references reuse working metadata across shifted suffixes and split or joined rows", () => {
+    const source = Array.from({ length: 4000 }, (_, i) => `value${i} = 123;`).join("\n"), remote = TextBuffer.from("remote " + source);
+    const cache = new DiffReferenceCache(); let working = TextBuffer.from(source), text = source;
+    finish(remote, working, cache);
+    for (let i = 0; i < 36; i++) {
+        const from = i % 3 === 0 ? 0 : i % 3 === 1 ? Math.floor(text.length / 2) : text.length;
+        const to = Math.min(text.length, from + (i % 4 === 0 ? 4 : 0)), insert = ["z", "\n", "\r\n", ""][i % 4]!;
+        working = working.replace(from, to, insert); text = text.slice(0, from) + insert + text.slice(to);
+        const reused = finish(remote, working, cache), fresh = finish(remote, TextBuffer.from(text));
+        assert.deepEqual(reused.hunks, fresh.hunks); assert.equal(reused.lineEdits, fresh.lineEdits); reconstruct(reused, "remote " + source, text);
+        assert.ok(reused.readUnits < fresh.readUnits / 10, `${reused.readUnits}/${fresh.readUnits}`);
+    }
+    cache.dispose();
+});
+
+test("tail-only warmup retains sparse coverage through distant edits, undo and redo without indexing the intervening 100k rows", () => {
+    const original = Array.from({ length: 100000 }, (_, i) => `const value${String(i).padStart(6, "0")} = 123;`).join("\n");
+    const baseline = TextBuffer.from(original), text = original + "\nreview-tail", working = baseline.replace(baseline.length, baseline.length, "\nreview-tail");
+    const cache = new DiffReferenceCache(); finish(baseline, working, cache);
+    for (const at of [0, 50000 * 25]) {
+        const changed = working.replace(at, at + 7, ""), expected = text.slice(0, at) + text.slice(at + 7);
+        for (const value of [changed, working, changed, working]) {
+            const result = finish(baseline, value, cache), fresh = finish(baseline, value);
+            assert.deepEqual(result.hunks, fresh.hunks); assert.equal(result.lineEdits, fresh.lineEdits);
+            assert.ok(result.readUnits < 20000, `${at}: ${result.readUnits}`);
+            reconstruct(result, original, value === working ? text : expected);
+        }
+    }
+    cache.dispose();
+});
+
+test("periodic row alignment verifies long exact runs without probing every repeated line", () => {
+    for (const period of [1, 2, 3, 4]) {
+        const original = Array.from({ length: 5000 }, (_, i) => `const name${i % period} = 1234567;`).join("\n");
+        const baseline = TextBuffer.from(original), tail = original + "\nreview-tail", working = baseline.replace(baseline.length, baseline.length, "\nreview-tail");
+        const cache = new DiffReferenceCache(); finish(baseline, working, cache);
+        const changed = working.replace(0, 7, ""), result = finish(baseline, changed, cache);
+        reconstruct(result, original, tail.slice(7)); assert.equal(result.hunks.length, 2);
+        assert.ok(result.lineComparisons < 128, `${period}: ${result.lineComparisons}`); cache.dispose();
+    }
+});
+
+test("cancelled and concurrent index captures cannot publish stale working or replacement-reference data", () => {
+    const baseline = TextBuffer.from("A\r\n".repeat(2000)), cache = new DiffReferenceCache();
+    const old = new TextDiff(baseline, TextBuffer.from("old\n".repeat(2000)), cache); old.next(512);
+    const first = new TextDiff(baseline, baseline.replace(30, 32, "first"), cache), secondWorking = baseline.replace(900, 900, "second\n");
+    const second = new TextDiff(baseline, secondWorking, cache); first.next(512); second.next(512); first.dispose();
+    let result = second.next(512); while (result.status === "running") result = second.next(512);
+    let stale = old.next(512); while (stale.status === "running") stale = old.next(512);
+    const expected = finish(baseline, secondWorking); assert.deepEqual(result.hunks, expected.hunks);
+    const replacement = TextBuffer.from("other\n"), newResult = finish(replacement, secondWorking, cache), fresh = finish(replacement, secondWorking);
+    assert.deepEqual(newResult.hunks, fresh.hunks); old.dispose(); second.dispose(); cache.dispose();
+    assert.throws(() => new TextDiff(baseline, secondWorking, cache), /disposed/);
+});

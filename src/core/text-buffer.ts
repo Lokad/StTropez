@@ -10,6 +10,7 @@ type Leaf = LineMeasure & Readonly<{ kind: "leaf"; piece: Piece; length: number;
 type Branch = LineMeasure & Readonly<{ kind: "branch"; left: Node; right: Node; length: number; breaks: number; height: number }>;
 type Node = Leaf | Branch;
 type Root = Node | null;
+type PairRange = Readonly<{ from: number; to: number; otherFrom: number; otherTo: number }>;
 export type BufferChange = Readonly<{ buffer: TextBuffer; mapping: PositionMap; changedUnits: number }>;
 export type BufferRetention = Readonly<{ versions: number; nodes: number; backingBuffers: number; backingTextUnits: number; lineEntries: number; gapEntries: number }>;
 export type BufferReadMetrics = Readonly<{ textExports: number; sliceUnits: number }>;
@@ -66,6 +67,35 @@ function split(root: Root, offset: number): readonly [Root, Root] {
 }
 function validateRange(length: number, from: number, to = from): void {
     if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > length) throw new RangeError("Invalid UTF-16 range.");
+}
+/** Walk owned nodes rather than comparing strings. Unshared text ends the proof. */
+function* sharedEdge(a: Root, b: Root, side: "start" | "end", range: PairRange): Generator<number> {
+    type Span = { node: Node; from: number; to: number };
+    const left: Span[] = a && range.from < range.to ? [{ node: a, from: range.from, to: range.to }] : [];
+    const right: Span[] = b && range.otherFrom < range.otherTo ? [{ node: b, from: range.otherFrom, to: range.otherTo }] : [];
+    const descend = (stack: Span[]) => {
+        const span = stack.pop()!; if (span.node.kind !== "branch") throw new Error("Expected a shared-edge branch.");
+        const { left: first, right: second } = span.node, split = first.length;
+        const before = span.from < split ? { node: first, from: span.from, to: Math.min(span.to, split) } : undefined;
+        const after = span.to > split ? { node: second, from: Math.max(0, span.from - split), to: span.to - split } : undefined;
+        for (const child of side === "start" ? [after, before] : [before, after]) if (child) stack.push(child);
+    };
+    const consume = (stack: Span[], length: number) => {
+        const span = stack.at(-1)!;
+        if (side === "start") span.from += length; else span.to -= length;
+        if (span.from === span.to) stack.pop();
+    };
+    let matched = 0;
+    while (left.length && right.length) {
+        const x = left.at(-1)!, y = right.at(-1)!, length = Math.min(x.to - x.from, y.to - y.from);
+        const xf = side === "start" ? x.from : x.to - length, yf = side === "start" ? y.from : y.to - length;
+        const same = x.node === y.node && xf === yf || x.node.kind === "leaf" && y.node.kind === "leaf"
+            && x.node.piece.backing === y.node.piece.backing && x.node.piece.from + xf === y.node.piece.from + yf;
+        if (same) { matched += length; consume(left, length); consume(right, length); yield matched; }
+        else if (x.node.kind === "leaf" && y.node.kind === "leaf") return;
+        else if (x.node.kind === "branch" && (y.node.kind === "leaf" || x.node.height >= y.node.height)) descend(left);
+        else descend(right);
+    }
 }
 function* pieces(root: Root, from = 0, to = root?.length ?? 0): Generator<Pick<Piece, "backing" | "from" | "length">> {
     if (!root || from === to) return;
@@ -199,6 +229,15 @@ export class TextBuffer {
             else { line -= node.left.breaks; offset += node.left.length; node = node.right; }
         }
         return offset + node.piece.backing.lines[node.piece.firstLine + line - 1]! - node.piece.from + 1;
+    }
+    /** Cumulative equal edge lengths proved only by immutable node/backing identity.
+     * Each advance visits bounded tree paths; unrelated but equal text may prove no span.
+     * Ranges use raw UTF-16. Iteration retains captures until it ends or is closed.
+     */
+    sharedEdge(other: TextBuffer, side: "start" | "end", range: PairRange = { from: 0, to: this.length, otherFrom: 0, otherTo: other.length }): Iterable<number> {
+        if (side !== "start" && side !== "end") throw new RangeError("Invalid shared edge.");
+        validateRange(this.length, range.from, range.to); validateRange(other.length, range.otherFrom, range.otherTo);
+        return sharedEdge(this.#root, other.#root, side, { ...range });
     }
     /** Exact equality skips shared backing ranges; differing unrelated buffers can require a linear comparison. */
     equals(other: TextBuffer): boolean {

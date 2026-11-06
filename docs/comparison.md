@@ -22,11 +22,25 @@ their scroll and selection requires the same immutable reference buffer and vers
 
 `TextDiff` tokenizes LF-inclusive lines, aligns them with shortest-edit bisection, and trims
 common UTF-16 boundaries within changed blocks. CRLF, LF, tabs, spaces and final newlines
-remain exact. `whitespaceOnly` describes a change; it never suppresses one. Hashes can reject
-unequal lines or prove disjoint regions. Lines of at most 256 UTF-16 units receive exact
-job-local string identities, reused across alignment probes without repeated buffer reads.
-Longer matching hashes still require bounded exact text checks. Identity storage is linear;
-no normalization or hash-only equality is introduced.
+remain exact. `whitespaceOnly` describes a change; it never suppresses one. Lines of at most
+256 UTF-16 units retain exact strings and rejection hashes. Longer lines retain lengths and
+use cooperative exact range comparisons when equality is needed; they are not hashed eagerly.
+Regions with multiple unmatched lines on both sides compute long-line rejection hashes lazily,
+so disjoint large blocks retain linear scanning rather than an unnecessary quadratic search.
+These numeric signatures are weakly memoized by immutable line metadata and retain no buffers
+on their own. No normalization or hash-only equality is introduced. Adjacent unmatched regions
+coalesce before scalar trimming, so optional signatures cannot split a contiguous review hunk.
+
+Alignment consumes maximal exact matching line prefixes and suffixes. Immutable node/backing
+proofs can skip whole matching spans, including inside bisection searches. Unproved rows still
+use exact comparisons, so repeated-line ties do not depend on storage identity. An unterminated
+final token does not match if the other buffer extends that line. Within changed blocks, the
+same ownership proofs skip equal scalar spans; unrelated storage falls back to bounded exact
+reads. Cold character/Enter edits and distant edits after a tail-only warmup therefore need
+not index every intervening line. Long equal text with no applicable ownership proof can still
+require a linear scan. Short periodic-row candidates can use exact bounded text comparisons
+instead of materializing every equal row. Candidate detection never establishes equality;
+the subsequent string checks do. String-equal chunks skip the per-unit mismatch search.
 This is a line alignment with trimmed boundaries, rather than a globally minimal character
 alignment or moved-block detection. The original TypeScript implementation reuses the
 project's buffers; a general diff package would add a runtime dependency.
@@ -46,14 +60,29 @@ repeated row work while the same captured diff is still running. The scheduling 
 identity changes address a reproduced large conflict-review interaction, not a new shaping
 feature. Full input-to-review-ready measurements remain separate from handler CPU.
 
-`DiffReferenceCache` optionally reuses one immutable reference index across `TextDiff` jobs.
-Pass it as the third constructor argument and explicitly dispose it when its owner ends.
-Working-line identities remain job-local, so successive edits do not grow the reference cache.
-A different buffer replaces the cached index. Active jobs retain their original captures;
-disposing the cache releases future reuse and prevents new jobs from using it. The comparison
-controller owns a cache and disposes it on expiration or teardown. Cold indexing remains
-cooperative. An identical-buffer fast path can defer indexing until the first edit; that cold
-interaction needs separate measurement from edits against an already indexed reference.
+`DiffReferenceCache` optionally retains one reference index and one most recently completed
+working index across `TextDiff` jobs. Pass it as the third constructor argument and dispose it
+when its owner ends. Each index captures the full buffer's row coordinates. Unvisited regions
+occupy implicit gaps in a persistent sequence; offsets come from the buffer's existing line
+index. Metadata blocks of at most 64 rows are built cooperatively when a probe needs them.
+Only completed blocks are memoized. This private memoization changes neither source nor public
+snapshots. Verified unchanged rows reuse sequence subtrees without copying every suffix offset.
+The project already owns the AVL balancing implementation; this original sparse layer adds no
+dependency. Exact candidate matches can decline an unnecessary disjoint-region scan. Short
+string identities remain exact across jobs, without an accumulating token dictionary or reused
+job-local numeric namespace.
+
+Working reuse proves whole-line ownership against the preceding working capture. It also
+works when the remote reference has independent backing. There is no working revision chain:
+new indices retain only their buffer and needed metadata subtrees. Gap nodes retain no old
+buffers. Replacing the reference replaces both cache captures. Partial metadata blocks are
+not published, and older concurrent jobs cannot replace a newer job's cache capture. Memoized
+reference metadata stays valid for every job using that immutable reference. Active jobs retain
+their original captures; disposing the
+cache releases future reuse and prevents new jobs from using it. The comparison controller
+owns a cache and disposes it on expiration or teardown. Indexing and fallback reads remain
+cooperative. Cold input, warm remote-reference input and sustained bursts still require
+separate complete-interaction measurements; reduced read counts alone do not prove latency.
 
 Hunks and progress snapshots are immutable. A hunk command carries its comparison generation
 and index. Reversion checks that generation and the working revision, then submits one human
