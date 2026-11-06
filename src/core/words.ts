@@ -6,6 +6,8 @@ type Kind = "word" | "space" | "symbol" | "extend";
 type Unit = Readonly<{ from: number; to: number; kind: Kind }>;
 type Counters = { work: number; yielded: number; reads: number };
 const kind = (text: string): Kind => /^[\p{M}\u200c\u200d]$/u.test(text) ? "extend" : /^\p{White_Space}$/u.test(text) ? "space" : /^[\p{L}\p{N}\p{Pc}]$/u.test(text) ? "word" : "symbol";
+const asciiKind = (code: number): Exclude<Kind, "extend"> => code === 32 || code >= 9 && code <= 13 ? "space"
+    : code >= 48 && code <= 57 || code >= 65 && code <= 90 || code >= 97 && code <= 122 || code === 95 ? "word" : "symbol";
 function* units(buffer: TextBuffer, start: number, direction: -1 | 1, counters: Counters): Generator<Unit> {
     let offset = start;
     while (direction < 0 ? offset > 0 : offset < buffer.length) {
@@ -19,9 +21,19 @@ function* units(buffer: TextBuffer, start: number, direction: -1 | 1, counters: 
             if (high(previous.charCodeAt(0))) { text = previous + text; from--; }
         }
         if (direction > 0) for (let index = 0; index < text.length;) {
+            if (text.charCodeAt(index) < 128) {
+                const type = asciiKind(text.charCodeAt(index)); let end = index + 1;
+                while (end < text.length && text.charCodeAt(end) < 128 && asciiKind(text.charCodeAt(end)) === type) end++;
+                counters.work += end - index; yield { from: from + index, to: from + end, kind: type }; index = end; continue;
+            }
             const width = high(text.charCodeAt(index)) && low(text.charCodeAt(index + 1)) ? 2 : 1;
             counters.work += width; yield { from: from + index, to: from + index + width, kind: kind(text.slice(index, index + width)) }; index += width;
         } else for (let end = text.length; end > 0;) {
+            if (text.charCodeAt(end - 1) < 128) {
+                const type = asciiKind(text.charCodeAt(end - 1)); let index = end - 1;
+                while (index > 0 && text.charCodeAt(index - 1) < 128 && asciiKind(text.charCodeAt(index - 1)) === type) index--;
+                counters.work += end - index; yield { from: from + index, to: from + end, kind: type }; end = index; continue;
+            }
             const width = low(text.charCodeAt(end - 1)) && high(text.charCodeAt(end - 2)) ? 2 : 1;
             counters.work += width; yield { from: from + end - width, to: from + end, kind: kind(text.slice(end - width, end)) }; end -= width;
         }

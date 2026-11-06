@@ -52,3 +52,24 @@ test("seeded code-word navigation agrees with an independent whole-string graphe
         assert.equal(buffer.readMetrics().textExports, 0);
     }
 });
+
+test("batched ASCII runs preserve every class transition, interior start and bounded advance", () => {
+    const text = Array.from({ length: 128 }, (_, code) => String.fromCharCode(code)).join("") + "x".repeat(769) + " \r\n\t".repeat(130) + "!?".repeat(390) + "_tail";
+    let buffer = TextBuffer.from(""); for (let from = 0; from < text.length; from += 17) buffer = buffer.replace(buffer.length, buffer.length, text.slice(from, from + 17));
+    const starts = [0]; let previous = "";
+    for (let offset = 0; offset < text.length; offset++) {
+        const value = text[offset]!, type = /^\p{White_Space}$/u.test(value) ? "space" : /^[\p{L}\p{N}\p{Pc}]$/u.test(value) ? "word" : "symbol";
+        if (offset > 0 && type !== "space" && type !== previous) starts.push(offset); previous = type;
+    }
+    starts.push(text.length);
+    for (let offset = 0; offset <= text.length; offset++) {
+        assert.equal(next(buffer, offset, 1), starts.find(start => start > offset) ?? text.length, `forward ${offset}`);
+        assert.equal(next(buffer, offset, -1), starts.filter(start => start < offset).at(-1) ?? 0, `backward ${offset}`);
+    }
+    for (const direction of [-1, 1] as const) for (const budget of [256, 257, 4096]) {
+        const job = new WordCursor(TextBuffer.from("x".repeat(20000)), direction < 0 ? 20000 : 0, direction); let previous = 0, step;
+        do { step = job.next(budget); assert.ok(step.workUnits - previous <= budget + 256); assert.ok(step.readUnits <= step.workUnits + 512); previous = step.workUnits; } while (step.status === "running");
+        assert.equal(step.offset, direction < 0 ? 0 : 20000); job.dispose();
+    }
+    assert.equal(buffer.readMetrics().textExports, 0);
+});

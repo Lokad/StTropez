@@ -37,12 +37,24 @@ for the exact normalized identity and range. Its explicit `clusterMode: "combini
 the earlier base/mark/join/selector policy. Script interpretation is still a separate policy;
 grapheme boundaries do not establish orthographic syllables, shaping clusters or glyph carets.
 
-The editing candidate cooperatively scans the entire captured logical line, including its LF
+The editing candidate first checks at most four UTF-16 units around the requested offset.
+When this neighborhood contains only ASCII and no CR, each adjacent pair is a proven break:
+ASCII has only Other/Control/CR/LF grapheme properties, and excluding CR removes its only
+joining pair. The two units on each side prove the offset and its strict immediate neighbors,
+including document edges. This answers one point; it creates no clipped-context index and
+does not cache artificial slice boundaries. CR or any non-ASCII neighbor declines the query.
+This deliberately small dependency-free query addresses the measured multi-second pilot
+delay for local commands inside a 2.4-million-unit identifier. It reuses the existing full
+segmentation kernel for uncertain context, without adding a segmentation library or changing
+grapheme definitions. Full-context and native-oracle comparisons cover accepted points beside
+Prepend, marks, Indic, emoji/RI, surrogate seams and controls.
+
+For uncertain context the candidate cooperatively scans the entire captured logical line, including its LF
 ending, and caches one index by immutable buffer identity and exact range. LF is a safe restart
 boundary; backward movement at a line start scans the preceding line. It never estimates RI
 parity or truncates a cluster at a fixed context window. Collapsed deletion inside a cluster
 expands to both boundaries. Nonempty selections retain their exact requested extent. Word
-destinations use the same grapheme indexes. Captured revision, selection identity, tab generation,
+destinations use the same point query or grapheme indexes. Captured revision, selection identity, tab generation,
 composition, disposal and editing permission guard delayed work. Input edits and view changes
 cancel pending commands. Complete-row visual movement still uses measured geometry.
 

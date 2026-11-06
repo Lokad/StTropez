@@ -2,6 +2,8 @@ import { PositionMap, textDifference, WordCursor, createGraphemeCursor } from ".
 import type { Affinity, DocumentView, EditKind, Selection, TabId, TextBuffer, TextEdit, Workspace, GraphemeCursor, GraphemeIndex } from "../index.ts";
 import type { ViewState } from "./index.ts";
 import { inputContext } from "./input-context.ts";
+import { localAsciiGraphemePoint } from "../core/grapheme-point.ts";
+import type { GraphemePoint } from "../core/grapheme-point.ts";
 import type { InputContext } from "./input-context.ts";
 import { mountTextViewport } from "./viewport.ts";
 import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
@@ -149,11 +151,14 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         apply([{ from, to, insert }], { anchor: head, head }, kind, type);
     }
     const validCommand = (capture: CommandCapture) => !disposed && !composing && !input.disabled && !(capture.deleting && input.readOnly) && !!workspace.resolveTab(target) && workspace.observeDocument(documentId).getSnapshot()?.revision === capture.revision && view.getSnapshot().selection === capture.selection;
-    function withGraphemes(capture: CommandCapture, offset: number, side: -1 | 1, purpose: "word" | "grapheme", done: (index: GraphemeIndex) => void): void {
+    function withGraphemes(capture: CommandCapture, offset: number, side: -1 | 1, purpose: "word" | "grapheme", done: (point: GraphemePoint) => void): void {
         cancelWord(); if (!validCommand(capture)) return;
+        const local = localAsciiGraphemePoint(capture.buffer, offset);
+        if (local) { done(local); return; }
+        const point = (index: GraphemeIndex): GraphemePoint => Object.freeze({ offset, floor: index.floor(offset), ceil: index.ceil(offset), preceding: index.preceding(offset), following: index.following(offset) });
         const buffer = capture.buffer; let line = buffer.lineAt(offset); if (side < 0 && line > 0 && offset === buffer.offsetAt(line)) line--;
         const from = buffer.offsetAt(line), to = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
-        if (graphemeCache?.buffer === buffer && graphemeCache.from === from && graphemeCache.to === to) { done(graphemeCache.index); return; }
+        if (graphemeCache?.buffer === buffer && graphemeCache.from === from && graphemeCache.to === to) { done(point(graphemeCache.index)); return; }
         const job = { cursor: createGraphemeCursor(buffer, { from, to }), capture, purpose }; graphemeJob = job;
         const step = () => {
             if (graphemeJob !== job) return; if (!validCommand(capture)) { cancelWord(); return; }
@@ -162,17 +167,17 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             catch { cancelWord(); conflict("grapheme-limit"); return; }
             graphemeScanSteps++; maxGraphemeScanStepMs = Math.max(maxGraphemeScanStepMs, win.performance.now() - began);
             if (result.status === "running") { const timer = win.setTimeout(() => { commandTimers.delete(timer); if (graphemeJob === job) graphemeTimer = undefined; step(); }, 0); graphemeTimer = timer; commandTimers.add(timer); return; }
-            const index = result.result!; job.cursor.dispose(); graphemeJob = undefined; graphemeCache = Object.freeze({ buffer, from, to, index }); done(index);
+            const index = result.result!; job.cursor.dispose(); graphemeJob = undefined; graphemeCache = Object.freeze({ buffer, from, to, index }); done(point(index));
         }; step();
     }
     function grapheme(direction: -1 | 1, deleting: boolean, extend = false): void {
         cancelWord(); if (disposed || composing || input.disabled || deleting && input.readOnly) return; syncSelection();
         const document = workspace.document(documentId), selection = view.getSnapshot().selection, capture = { buffer: document.buffer, revision: document.revision, selection, deleting }, offset = selection.head;
         graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
-        withGraphemes(capture, offset, direction, "grapheme", index => {
-            if (deleting) { const from = direction < 0 && index.isBoundary(offset) ? index.preceding(offset) ?? offset : index.floor(offset), to = direction > 0 ? index.following(offset) ?? offset : index.ceil(offset);
+        withGraphemes(capture, offset, direction, "grapheme", point => {
+            if (deleting) { const from = direction < 0 && point.floor === offset ? point.preceding ?? offset : point.floor, to = direction > 0 ? point.following ?? offset : point.ceil;
                 apply([{ from, to, insert: "" }], { anchor: from, head: from }, "delete", direction < 0 ? "deleteContentBackward" : "deleteContentForward", capture.revision); }
-            else move(direction < 0 ? index.preceding(offset) ?? offset : index.following(offset) ?? offset, extend);
+            else move(direction < 0 ? point.preceding ?? offset : point.following ?? offset, extend);
         });
     }
     function word(direction: -1 | 1, deleting: boolean, extend = false): void {
@@ -182,22 +187,22 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (deleting && selected.anchor !== selected.head) { replaceSelection("", "delete"); return; }
         wordScanSteps = 0; maxWordScanStepMs = 0; graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
         const capture = { buffer: document.buffer, revision: document.revision, selection: selected, deleting };
-        withGraphemes(capture, selected.head, deleting ? direction < 0 ? 1 : -1 : direction, "word", index => {
-        const start = (deleting ? -direction : direction) < 0 ? index.floor(selected.head) : index.ceil(selected.head);
+        withGraphemes(capture, selected.head, deleting ? direction < 0 ? 1 : -1 : direction, "word", point => {
+        const start = (deleting ? -direction : direction) < 0 ? point.floor : point.ceil;
         const job = { cursor: new WordCursor(document.buffer, start, direction), revision: document.revision, selection: selected }; wordJob = job;
         const step = () => {
             if (wordJob !== job) return;
             const current = workspace.observeDocument(documentId).getSnapshot();
             if (!validCommand(capture) || current?.revision !== job.revision) { cancelWord(); return; }
             const began = win.performance.now(); let result, count = 0;
-            do { result = job.cursor.next(4096); count++; } while (result.status === "running" && count < 8 && win.performance.now() - began < 4);
+            do { result = job.cursor.next(4096); count++; } while (result.status === "running" && count < 32 && win.performance.now() - began < 4);
             wordScanSteps++; maxWordScanStepMs = Math.max(maxWordScanStepMs, win.performance.now() - began);
             if (result.status === "running") {
                 const timer = win.setTimeout(() => { commandTimers.delete(timer); if (wordJob === job) wordTimer = undefined; step(); }, 0);
                 wordTimer = timer; commandTimers.add(timer); return;
             }
-            withGraphemes(capture, result.offset!, direction, "word", index => {
-            const end = direction < 0 ? index.floor(result.offset!) : index.ceil(result.offset!);
+            withGraphemes(capture, result.offset!, direction, "word", point => {
+            const end = direction < 0 ? point.floor : point.ceil;
             if (deleting) { const from = Math.min(start, end), to = Math.max(start, end); apply([{ from, to, insert: "" }], { anchor: from, head: from }, "delete", undefined, job.revision); }
             else move(end, extend);
             });

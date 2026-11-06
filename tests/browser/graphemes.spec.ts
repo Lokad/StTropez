@@ -56,6 +56,30 @@ test("regional-indicator parity uses the whole line and repeated movement reuses
     await page.keyboard.press("Delete"); await ready(page); expect((await state(page)).document!.length).toBe(5998);
 });
 
+test("local ASCII deletion avoids whole-line indexing while nearby Unicode and CRLF retain exact clusters", async ({ page }) => {
+    await page.goto("/editing/"); await ready(page);
+    const text = "\u0600" + "x".repeat(2400000), offset = 1200000;
+    await setup(page, text, offset); const before = await state(page);
+    await page.keyboard.press("Delete"); await ready(page);
+    const after = await state(page);
+    expect(after.document).toMatchObject({ length: text.length - 1, revision: before.document!.revision + 1, exports: 0 });
+    expect(after.primary.graphemeScanSteps).toBe(0);
+    expect(after.primary.selection).toMatchObject({ anchor: offset, head: offset });
+    expect(await page.evaluate(() => window.editingFixture.range(1199998, 1200002))).toBe("xxxx");
+    await page.keyboard.press("ControlOrMeta+z"); await ready(page);
+    expect(await page.evaluate(n => window.editingFixture.range(0, n), text.length)).toBe(text);
+    for (const cluster of ["\u0600a", "a\u0301", "\r\n"]) {
+        const original = "x".repeat(5000) + cluster + "b";
+        await setup(page, original, 5000 + cluster.length);
+        await page.keyboard.press("Backspace"); await ready(page);
+        const removed = await state(page);
+        expect(removed.primary.graphemeScanSteps).toBeGreaterThan(0);
+        expect(await page.evaluate(n => window.editingFixture.range(0, n), 5001)).toBe("x".repeat(5000) + "b");
+        await page.keyboard.press("ControlOrMeta+z"); await ready(page);
+        expect(await page.evaluate(n => window.editingFixture.range(0, n), original.length)).toBe(original);
+    }
+});
+
 test("a whole-line deletion yields to animation frames and typing in the other view cancels it", async ({ page }) => {
     await page.goto("/editing/"); await ready(page); await setup(page, "x" + "\u0301".repeat(1_000_000), 1_000_001);
     const observed = await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(input => {

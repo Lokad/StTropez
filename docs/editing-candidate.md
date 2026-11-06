@@ -50,8 +50,11 @@ and consumes the preceding run. This is a code-oriented policy, not dictionary s
 a claim of Unicode word-boundary conformance. The browser still snaps destinations to graphemes.
 
 The headless cursor retains bounded 256-unit slices, handles surrogate seams and exposes
-`next(maxWork)` plus explicit disposal. Browser commands advance at most eight 4,096-unit scans
-per timer turn, stopping sooner after four milliseconds of scan CPU. A single advance, GC and
+`next(maxWork)` plus explicit disposal. Equal-class ASCII runs share one unit within each
+slice; Unicode marks/joiners and other code points retain their existing classification.
+This reduces per-character allocation without changing code-word endpoints or work bounds.
+Browser commands advance at most 32 4,096-unit scans
+per timer turn, stopping sooner after four milliseconds of elapsed scan time. A single advance, GC and
 the final model transaction can exceed that scheduling threshold. Revision, selection identity
 and tab generation are checked before every turn. Typing, another navigation command,
 composition or disposal cancels pending scans. The final edit also rechecks current capability.
@@ -73,7 +76,7 @@ Complete rows support [visual bidi navigation and dual affinities](bidi.md). Cur
 long contextual-line geometry/navigation, wrapping,
 drag autoscroll, touch/mobile selection, native undo/menu behavior, OS clipboard, accessibility,
 and additional platform modifier bindings. [Literal search/replace](search.md) and the host-owned
-[provider/highlighting fixture](providers.md) now exercise the view. [Grapheme navigation](graphemes.md) cooperatively indexes the full captured logical line using Unicode 18 facts. A one-line cache uses immutable buffer identity and range; long clusters and RI parity retain full context. Delayed commands check captured revision, selection, tab generation, composition, permission and disposal. Complete-row visual movement still requires measured geometry.
+[provider/highlighting fixture](providers.md) now exercise the view. [Grapheme navigation](graphemes.md) first attempts an exact local ASCII boundary query; uncertain context cooperatively indexes the full captured logical line using Unicode 18 facts. A one-line cache uses immutable buffer identity and range; long clusters and RI parity retain full context. Delayed commands check captured revision, selection, tab generation, composition, permission and disposal. Complete-row visual movement still requires measured geometry.
 The textarea's value is an internal context, so setting it is not a full-document edit API.
 Hosts use revision-checked model edits for that operation.
 
