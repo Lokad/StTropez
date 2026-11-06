@@ -129,6 +129,9 @@ export class ViewBindings {
         const comparison = this.review?.controller.getSnapshot();
         return { editor: this.editor, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size,
         comparison: comparison ? { status: comparison.status, generation: comparison.generation, workingRevision: comparison.working?.revision,
+            referenceIsWorkingBuffer: comparison.baseline !== null && comparison.baseline.buffer === comparison.working?.buffer,
+            progress: comparison.progress && { work: comparison.progress.work, readUnits: comparison.progress.readUnits,
+                lineComparisons: comparison.progress.lineComparisons, lineEdits: comparison.progress.lineEdits },
             viewId: this.review!.working.view.id, selection: this.review!.working.view.getSnapshot().selection,
             baseline: comparison.baseline && { version: comparison.baseline.version, epoch: comparison.baseline.epoch, length: comparison.baseline.buffer.length },
             hunks: comparison.hunks.length, pending: this.reviewTickets.map(ticket => ({ kind: ticket.kind, revision: ticket.capture.working.revision, current: ticket.isCurrent() })),

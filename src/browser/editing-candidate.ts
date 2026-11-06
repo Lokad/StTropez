@@ -4,6 +4,8 @@ import type { ViewState } from "./index.ts";
 import { inputContext } from "./input-context.ts";
 import { localAsciiGraphemePoint } from "../core/grapheme-point.ts";
 import type { GraphemePoint } from "../core/grapheme-point.ts";
+import { captureNativeInsertion, resolveNativeInsertion } from "./input-target.ts";
+import type { NativeInsertionTarget } from "./input-target.ts";
 import type { InputContext } from "./input-context.ts";
 import { mountTextViewport } from "./viewport.ts";
 import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
@@ -51,6 +53,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     let graphemeJob: Readonly<{ cursor: GraphemeCursor; capture: CommandCapture; purpose: "word" | "grapheme" }> | undefined, graphemeTimer: number | undefined;
     let graphemeCache: Readonly<{ buffer: TextBuffer; from: number; to: number; index: GraphemeIndex }> | undefined;
     let wordInput: Readonly<{ revision: number; selection: Selection; direction: -1 | 1 }> | undefined;
+    let insertion: Readonly<{ revision: number; selection: Selection; target: NativeInsertionTarget; contextFrom: number }> | undefined;
     const apple = /Mac|iPhone|iPad|iPod/.test(win.navigator.platform);
     function cancelWord(): void {
         wordJob?.cursor.dispose(); wordJob = undefined;
@@ -97,10 +100,10 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         finally { selecting = false; }
         scheduleCaret();
     }
-    const conflict = (reason: string, edit?: TextEdit) => {
+    const conflict = (reason: string, edit?: TextEdit, expectedRevision = revision, contextFrom = context.from) => {
         conflicts++; group = undefined;
-        input.dispatchEvent(new CustomEvent("sttropez-conflict", { bubbles: true, detail: Object.freeze({ documentId, expectedRevision: revision, reason,
-            attemptedText: input.value, contextFrom: context.from, ...(edit ? { attemptedEdit: Object.freeze({ ...edit }) } : {}) }) }));
+        input.dispatchEvent(new CustomEvent("sttropez-conflict", { bubbles: true, detail: Object.freeze({ documentId, expectedRevision, reason,
+            attemptedText: input.value, contextFrom, ...(edit ? { attemptedEdit: Object.freeze({ ...edit }) } : {}) }) }));
     };
     function apply(edits: readonly TextEdit[], selection: Selection, kind: EditKind, type?: string, expectedRevision = revision): void {
         if (disposed) return;
@@ -122,9 +125,14 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         } finally { committing = false; refresh(); }
     }
     function commit(type: string): void {
+        const captured = insertion; insertion = undefined;
         if (disposed || composing) return;
         if (type === "historyUndo" || type === "historyRedo") { history(type === "historyUndo" ? "undo" : "redo"); return; }
-        const edit = textDifference(context.text, input.value); if (!edit) { refresh(); return; }
+        if (captured && (captured.revision !== revision || captured.selection !== view.getSnapshot().selection)) {
+            conflict("stale-text-input", undefined, captured.revision, captured.contextFrom); refresh(); return;
+        }
+        const edit = captured && resolveNativeInsertion(captured.target, input, type) || textDifference(context.text, input.value);
+        if (!edit) { refresh(); return; }
         const from = context.toModel(edit.from), to = edit.from === edit.to ? from : context.toModel(edit.to), delta = edit.insert.length - (to - from);
         const map = (offset: number) => offset <= edit.from ? context.toModel(offset)
             : offset >= edit.from + edit.insert.length ? context.toModel(offset - edit.insert.length + edit.to - edit.from) + delta : from + offset - edit.from;
@@ -252,13 +260,17 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         }; group = undefined; step();
     }
     input.addEventListener("beforeinput", event => {
-        wordInput = undefined;
+        wordInput = undefined; insertion = undefined;
         if (!composing && (event.inputType === "deleteWordBackward" || event.inputType === "deleteWordForward")) {
             syncSelection(); const direction = event.inputType === "deleteWordBackward" ? -1 : 1;
             if (event.cancelable) { event.preventDefault(); word(direction, true); }
             else wordInput = { revision, selection: view.getSnapshot().selection, direction };
         } else if (!composing && event.cancelable && (event.inputType === "historyUndo" || event.inputType === "historyRedo")) { event.preventDefault(); history(event.inputType === "historyUndo" ? "undo" : "redo"); }
         else syncSelection();
+        if (!composing && !event.isComposing && !input.disabled && !input.readOnly && input.value === context.text) {
+            const target = captureNativeInsertion(input, event.inputType, event.data);
+            if (target) insertion = { revision, selection: view.getSnapshot().selection, target, contextFrom: context.from };
+        }
     }, { signal: listeners.signal });
     input.addEventListener("input", event => {
         const start = win.performance.now(), type = (event as InputEvent).inputType;
@@ -270,7 +282,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         } else commit(type);
         lastInputMs = win.performance.now() - start; inputEvents++;
     }, { signal: listeners.signal });
-    input.addEventListener("compositionstart", () => { cancelWord(); wordInput = undefined; syncSelection(); composing = true; group = undefined; root.classList.add("st-composing"); scheduleCaret(); }, { signal: listeners.signal });
+    input.addEventListener("compositionstart", () => { cancelWord(); wordInput = undefined; insertion = undefined; syncSelection(); composing = true; group = undefined; root.classList.add("st-composing"); scheduleCaret(); }, { signal: listeners.signal });
     input.addEventListener("compositionend", () => { composing = false; root.classList.remove("st-composing"); commit("insertCompositionText"); }, { signal: listeners.signal });
     for (const type of ["select", "keyup"] as const) input.addEventListener(type, syncSelection, { signal: listeners.signal });
     input.addEventListener("focus", scheduleCaret, { signal: listeners.signal });
@@ -361,7 +373,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, keydownEvents, lastKeydownMs, pendingCaret: frame !== undefined, commits, conflicts, composing, pendingWord: wordJob !== undefined || graphemeJob?.purpose === "word", wordScanSteps, maxWordScanStepMs, pendingGrapheme: graphemeJob !== undefined, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves, disposed }),
         destroy: () => {
             if (disposed) return; disposed = true;
-            cancelWord(); wordInput = undefined; graphemeCache = undefined;
+            cancelWord(); wordInput = undefined; insertion = undefined; graphemeCache = undefined;
             if (composing && input.value !== context.text) conflict("composition-detached");
             composing = false; drag = undefined;
             if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;

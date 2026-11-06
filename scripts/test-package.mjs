@@ -109,6 +109,15 @@ try {
     assert.equal(candidate.commits, 1); assert.ok(candidate.inputUnits <= 2600);
     assert.equal(await candidateInput.evaluate(element => getComputedStyle(element).width), "1px");
     await candidateInput.press("Control+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "edited restored package");
+    for (const target of [candidateInput, editor]) {
+        await target.press("Control+Home"); const depth = (await page.evaluate(() => window.consumer.history())).undoDepth;
+        await target.pressSequentially("abedited");
+        assert.equal(await page.evaluate(() => window.consumer.text()), "abeditededited restored package");
+        assert.equal((await page.evaluate(() => window.consumer.history())).undoDepth, depth + 1);
+        await target.press("Control+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "edited restored package");
+        await target.press("Control+Shift+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "abeditededited restored package");
+        await target.press("Control+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "edited restored package");
+    }
     const capturedSelection = await candidateInput.evaluate(input => { input.setSelectionRange(2, 5, "backward"); return window.consumer.captureCandidate(); });
     assert.equal(capturedSelection.anchor, 5); assert.equal(capturedSelection.head, 2);
     const navigation = await page.evaluate(() => window.consumer.navigation());

@@ -156,3 +156,22 @@ Continuous adjacent typing must coalesce; a documented one-second pause starts a
 It undoes and redoes every group created after the save capture and verifies exact final text
 and saved state. Group counts and event timing bounds remain in raw samples, so an automation
 stall cannot silently weaken either continuous-typing or undo-to-saved assertions.
+
+`bench:host-input` measures the first character, Enter and a 32-character typing burst after
+accepting an identical reference. Before each clock the reference is the exact working buffer
+and the completed diff reports zero work/reads. Caret setup/reveal and acceptance are outside
+timers. Both candidate hosts run beginning/middle/end positions in Unicode/CRLF, repeated and
+distinct 100,000-line sources and a 2.4-million-unit single-line control, with 20 Hz traffic.
+Full text/reference assertions and shared undo/redo run outside clocks.
+
+During bursts, render-event timestamps record when all three working panes have the expected
+model/rendered selection and revision. These observations can precede caret and comparison
+settlement; they are not complete interaction readiness. Superseded revisions with no ready
+observation remain counted, rather than being labelled displayed. Full final readiness waits
+for caret/scans, all working views, completed comparison/reference and two consecutive frames.
+Input-event handler duration excludes the separate `beforeinput` capture; the full clock
+starts at `beforeinput` and includes that work. Handler duration, whole-burst readiness,
+settlement after the last input and complete action
+automation have separate fields. Requested keyboard delay and actual input gaps are retained;
+burst totals include cadence and instrumentation. No metric proves physical presentation or
+native IME/clipboard/assistive-technology support. Target misses remain in raw assessments.

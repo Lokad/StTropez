@@ -39,6 +39,19 @@ boundaries. Large indentation plans yield every 256 lines against a captured imm
 and reject changes to the revision, selection or tab target before applying one transaction.
 The final transaction is still proportional to the number of changed lines.
 
+Ordinary text and line-break input capture the native replacement range, document revision
+and model selection in `beforeinput`. The following `input` uses that range only when the
+actual value and collapsed caret agree with it. Repeated neighboring text therefore cannot
+shift an insertion past the caret, split a continuous undo group or mis-map another view.
+Typing the same text over a selection still collapses that selection without changing the
+document revision. Intervening revision/selection changes reject the captured input and emit
+recovery data. Composition and unrecognized browser rewrites retain their existing value-diff
+path. The native baseline shares these target checks; its whole-value projection remains
+unbounded. These automated scenarios do not qualify real native devices.
+Projection-driven native selection events also preserve the model's existing affinities when
+the endpoints already match. Such an event does not seal another view's continuous typing
+group; a real selection change still establishes a history boundary.
+
 Control+Left/Right moves to code-word starts; Shift retains the anchor. Control+Backspace/Delete
 deletes the selected range, or one code word when collapsed, as one undoable transaction.
 On Apple platforms Option supplies the word modifier. Non-shift movement starts at the active

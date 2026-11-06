@@ -1,5 +1,7 @@
 import { applyTextEdits, exportText, PositionMap, textDifference } from "../index.ts";
 import type { DocumentSnapshot, DocumentView, EditKind, PositionMapping, Selection, TextBuffer, Workspace, TabId } from "../index.ts";
+import { captureNativeInsertion, resolveNativeInsertion } from "./input-target.ts";
+import type { NativeInsertionTarget } from "./input-target.ts";
 export { mountTextViewport } from "./viewport.ts";
 export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RevealOptions, TextViewport, ViewportSnapshot } from "./viewport.ts";
 export { mountEditingCandidate } from "./editing-candidate.ts";
@@ -40,6 +42,7 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
     let revision = workspace.document(documentId).revision, rendered = projection(workspace.document(documentId));
     let composing = false, destroyed = false, committing = false, selecting = false;
     let pending: Readonly<{ revision: number; value: Projection }> | undefined;
+    let insertion: Readonly<{ revision: number; selection: Selection; target: NativeInsertionTarget }> | undefined;
     let serial = 0, group: Readonly<{ type: string; edge: number; time: number; key: string }> | undefined;
     const readSelection = (map: PositionMapping): Selection => {
         const inverse = map.invert(), backward = input.selectionDirection === "backward";
@@ -48,9 +51,13 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
     };
     const syncSelection = () => {
         if (destroyed || composing || committing || resource.getSnapshot().state !== "ready" || input.value !== rendered.text) return;
+        const selected = readSelection(rendered.mapping), current = view.getSnapshot();
+        // A projection-driven select event cannot express model affinities. Preserve
+        // them, and the shared typing group, when its endpoints already match.
+        if (current.revision === revision && current.selection.anchor === selected.anchor && current.selection.head === selected.head) return;
         // In particular, beforeinput must retain the browser's pending native replacement range.
         selecting = true;
-        try { view.setSelection(revision, readSelection(rendered.mapping)); } finally { selecting = false; }
+        try { view.setSelection(revision, selected); } finally { selecting = false; }
     };
     const refresh = () => {
         if (destroyed || selecting) return;
@@ -72,8 +79,8 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
         }
         input.scrollTop = scrollTop; input.scrollLeft = scrollLeft; revision = document.revision;
     };
-    const conflict = (reason: string) => input.dispatchEvent(new CustomEvent("sttropez-conflict", { bubbles: true,
-        detail: Object.freeze({ documentId, expectedRevision: revision, reason, attemptedText: input.value }) }));
+    const conflict = (reason: string, expectedRevision = revision) => input.dispatchEvent(new CustomEvent("sttropez-conflict", { bubbles: true,
+        detail: Object.freeze({ documentId, expectedRevision, reason, attemptedText: input.value }) }));
     const history = (direction: "undo" | "redo") => {
         if (!workspace.resolveTab(target)) { conflict("expired-view"); refresh(); return; }
         group = undefined; syncSelection();
@@ -81,13 +88,18 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
         if (!result.applied && result.reason !== "history-empty") conflict(result.reason); refresh();
     };
     const commit = (type = "insertReplacementText") => {
+        const captured = insertion; insertion = undefined;
         if (composing) return;
         if (type === "historyUndo" || type === "historyRedo") { refresh(); history(type === "historyUndo" ? "undo" : "redo"); return; }
         if (!workspace.resolveTab(target)) { conflict("expired-view"); refresh(); return; }
         if (resource.getSnapshot().state !== "ready") { conflict("not-ready"); refresh(); return; }
         const document = workspace.document(documentId);
         if (document.revision !== revision) { conflict("stale-revision"); refresh(); return; }
-        const nativeEdit = textDifference(rendered.text, input.value); if (!nativeEdit) { refresh(); return; }
+        if (captured && (captured.revision !== revision || captured.selection !== view.getSnapshot().selection)) {
+            group = undefined; conflict("stale-text-input", captured.revision); refresh(); return;
+        }
+        const nativeEdit = captured && resolveNativeInsertion(captured.target, input, type) || textDifference(rendered.text, input.value);
+        if (!nativeEdit) { refresh(); return; }
         const inverse = rendered.mapping.invert(), from = inverse.map(nativeEdit.from, "before").offset;
         const edit = { from, to: nativeEdit.from === nativeEdit.to ? from : inverse.map(nativeEdit.to, "before").offset, insert: nativeEdit.insert };
         const next = rendered.hasCR ? project(applyTextEdits(document.text, [edit])) : project(input.value);
@@ -109,9 +121,14 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
         } finally { pending = undefined; committing = false; refresh(); }
     };
     input.addEventListener("beforeinput", event => {
+        insertion = undefined;
         if ((event.inputType === "historyUndo" || event.inputType === "historyRedo") && event.cancelable && !composing) {
             event.preventDefault(); history(event.inputType === "historyUndo" ? "undo" : "redo");
         } else syncSelection();
+        if (!composing && !event.isComposing && !input.disabled && !input.readOnly && input.value === rendered.text) {
+            const native = captureNativeInsertion(input, event.inputType, event.data);
+            if (native) insertion = { revision, selection: view.getSnapshot().selection, target: native };
+        }
     }, { signal: listeners.signal });
     input.addEventListener("keydown", event => {
         if (!composing && (event.ctrlKey || event.metaKey) && !event.altKey) {
@@ -121,7 +138,7 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
     }, { signal: listeners.signal });
     for (const type of ["select", "keyup", "pointerup"] as const) input.addEventListener(type, syncSelection, { signal: listeners.signal });
     input.addEventListener("blur", () => { syncSelection(); group = undefined; }, { signal: listeners.signal });
-    input.addEventListener("compositionstart", () => { syncSelection(); composing = true; group = undefined; }, { signal: listeners.signal });
+    input.addEventListener("compositionstart", () => { syncSelection(); insertion = undefined; composing = true; group = undefined; }, { signal: listeners.signal });
     input.addEventListener("compositionend", () => { composing = false; commit("insertCompositionText"); }, { signal: listeners.signal });
     input.addEventListener("input", event => commit((event as InputEvent).inputType), { signal: listeners.signal });
     const unsubscribers = [workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(refresh),
@@ -132,7 +149,7 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
         restoreView: (state: ViewState) => {
             view.setSelection(revision, state); refresh(); input.scrollTop = state.scrollTop; input.scrollLeft = state.scrollLeft;
         }, destroy: () => {
-            if (destroyed) return; syncSelection(); destroyed = true;
+            if (destroyed) return; syncSelection(); destroyed = true; insertion = undefined;
             if (composing && input.value !== rendered.text) conflict("composition-detached");
             composing = false; unsubscribers.forEach(unsubscribe => unsubscribe()); listeners.abort(); input.remove();
             if (!options.view) view.dispose();
