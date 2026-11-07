@@ -33,6 +33,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     root.classList.add("st-editing-candidate"); root.tabIndex = -1;
     root.querySelector(".st-viewport-layer")!.setAttribute("aria-hidden", "true");
     input.className = "st-input-context"; input.wrap = "off"; input.spellcheck = false; input.autocomplete = "off";
+    // The native projection belongs to the editor, independently of enclosing host forms.
+    input.setAttribute("form", "");
     input.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
     input.setAttribute("aria-multiline", "true"); input.setAttribute("autocapitalize", "off");
     help.id = `st-input-help-${scope}`; help.className = "st-input-help"; help.textContent = "Tab inserts indentation. Press Escape, then Tab to leave the editor.";

@@ -36,6 +36,8 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
     const view = options.view ?? workspace.createDocumentView(documentId);
     const groupScope = ++nextMount;
     const input = host.ownerDocument.createElement("textarea");
+    // The native projection belongs to the editor, independently of enclosing host forms.
+    input.setAttribute("form", "");
     input.className = "st-editor"; input.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
     input.spellcheck = false; input.wrap = "off"; host.append(input);
     const listeners = new AbortController();
