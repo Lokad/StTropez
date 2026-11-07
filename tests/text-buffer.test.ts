@@ -86,6 +86,31 @@ test("longest line indexing survives splits, joined lines, CRLF, empty lines and
     }
 });
 
+test("large line indexes remain exact across split backings and retained versions", () => {
+    const rows = Array.from({ length: 100_000 }, (_, index) => `${index % 127 === 0 ? "👩‍💻e\u0301" : "row"}${index}${index % 3 === 0 ? "\r" : ""}`);
+    const text = rows.join("\n"), original = TextBuffer.from(text), versions = [original];
+    const boundaries = [0, 1, 65_535, 65_536, 99_999, 100_000];
+    let buffer = original, expected = text;
+    for (const row of boundaries) {
+        const from = buffer.offsetAt(row), edit = { from, to: from, insert: "prefix\r\n😀\n" };
+        buffer = buffer.apply([edit]).buffer; expected = applyTextEdits(expected, [edit]); versions.push(buffer);
+        const lines = expected.split("\n"); let offset = 0, longest = 0;
+        for (let line = 0; line < lines.length; line++) {
+            assert.equal(buffer.offsetAt(line), offset);
+            assert.equal(buffer.lineAt(offset), line);
+            if (lines[line]!.length) assert.equal(buffer.lineAt(offset + lines[line]!.length - 1), line);
+            if (line + 1 < lines.length) assert.equal(buffer.lineAt(offset + lines[line]!.length), line);
+            longest = Math.max(longest, lines[line]!.length); offset += lines[line]!.length + 1;
+        }
+        assert.equal(buffer.offsetAt(lines.length - 1) + lines.at(-1)!.length, expected.length);
+        assert.equal(buffer.longestLineLength, longest); assert.equal(buffer.lineCount, lines.length);
+        assert.equal([...buffer.chunks()].join(""), expected); assert.ok(Object.isFrozen(buffer));
+    }
+    assert.equal([...original.chunks()].join(""), text);
+    assert.equal(original.lineCount, rows.length); assert.equal(original.offsetAt(99_999), text.lastIndexOf("\n") + 1);
+    for (const version of versions) assert.equal(version.readMetrics().textExports, 0);
+});
+
 test("multi-range batches preserve the string oracle and map untouched original boundaries", () => {
     let text = "a😀\r\ne\u0301👩‍💻\ud800".repeat(50), buffer = TextBuffer.from(text), seed = 0x5eeda11;
     const random = (maximum: number): number => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % maximum; };

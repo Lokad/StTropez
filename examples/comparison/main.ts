@@ -34,8 +34,9 @@ document.querySelector("#dispose")!.addEventListener("click", dispose);
 function setText(value: string) { const current = workspace.document(resource.documentId); return workspace.edit({ documentId: current.id, expectedRevision: current.revision, origin: "host", history: { kind: "replace" }, edits: [{ from: 0, to: current.buffer.length, insert: value }] }); }
 function snapshot() {
     const state = comparison.controller.getSnapshot(), current = workspace.document(resource.documentId);
-    return { status: state.status, generation: state.generation, baseline: state.baseline && { epoch: state.baseline.epoch, version: state.baseline.version, length: state.baseline.buffer.length, exports: state.baseline.buffer.readMetrics().textExports },
+    return { status: state.status, generation: state.generation, selection: comparison.controller.view.getSnapshot().selection, baseline: state.baseline && { epoch: state.baseline.epoch, version: state.baseline.version, length: state.baseline.buffer.length, exports: state.baseline.buffer.readMetrics().textExports },
         working: { id: current.id, resourceId: current.resourceId, revision: current.revision, length: current.buffer.length, exports: current.buffer.readMetrics().textExports, metadata: resource.metadata.getSnapshot() },
+        reads: { working: current.buffer.readMetrics(), baseline: state.baseline?.buffer.readMetrics() ?? null },
         hunks: state.hunks, history: workspace.observeHistory(current.id).getSnapshot(), viewId: comparison.working.view.id, editor: { ...comparison.working.snapshot(), viewport: comparison.working.viewport.snapshot() }, reference: comparison.referenceViewport()?.snapshot() ?? null,
         pending: { refreshes: refreshes.length, acceptances: acceptances.length }, comparison: comparison.snapshot(), diagnostics: workspace.diagnostics(), result, disposed };
 }

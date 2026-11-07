@@ -3,7 +3,7 @@ import type { TextEdit } from "./changes.ts";
 import { PositionMap } from "./positions.ts";
 import { joinTrees } from "./avl.ts";
 
-type Backing = Readonly<{ text: string; lines: readonly number[]; gaps: readonly number[]; gapBase: number }>;
+type Backing = Readonly<{ text: string; lines: Readonly<Float64Array>; gaps: Readonly<Float64Array>; gapBase: number }>;
 type Piece = Readonly<{ backing: Backing; from: number; length: number; firstLine: number; breaks: number }>;
 type LineMeasure = Readonly<{ prefix: number; suffix: number; longest: number }>;
 type Leaf = LineMeasure & Readonly<{ kind: "leaf"; piece: Piece; length: number; breaks: number; height: 1 }>;
@@ -16,7 +16,7 @@ export type BufferRetention = Readonly<{ versions: number; nodes: number; backin
 export type BufferReadMetrics = Readonly<{ textExports: number; sliceUnits: number }>;
 const counters = new WeakMap<TextBuffer, { textExports: number; sliceUnits: number }>();
 
-function lowerBound(values: readonly number[], target: number): number {
+function lowerBound(values: ArrayLike<number>, target: number): number {
     let low = 0, high = values.length;
     while (low < high) { const middle = (low + high) >>> 1; if (values[middle]! < target) low = middle + 1; else high = middle; }
     return low;
@@ -34,13 +34,16 @@ function piece(backing: Backing, from: number, length: number): Leaf {
     return Object.freeze({ kind: "leaf", piece: Object.freeze({ backing, from, length, firstLine, breaks }), length, breaks, height: 1, prefix, suffix, longest });
 }
 function backing(text: string): Backing {
-    const lines: number[] = [];
-    for (let index = text.indexOf("\n"); index !== -1; index = text.indexOf("\n", index + 1)) lines.push(index);
+    const offsets: number[] = [];
+    for (let index = text.indexOf("\n"); index !== -1; index = text.indexOf("\n", index + 1)) offsets.push(index);
+    const lines = new Float64Array(offsets);
     let gapBase = lines.length > 1 ? 1 : 0; while (gapBase < lines.length - 1) gapBase *= 2;
-    const gaps = Array<number>(gapBase * 2).fill(0);
+    const gaps = new Float64Array(gapBase * 2);
     for (let index = 0; index + 1 < lines.length; index++) gaps[gapBase + index] = lines[index + 1]! - lines[index]! - 1;
     for (let index = gapBase - 1; index > 0; index--) gaps[index] = Math.max(gaps[index * 2]!, gaps[index * 2 + 1]!);
-    return Object.freeze({ text, lines: Object.freeze(lines), gaps: Object.freeze(gaps), gapBase });
+    // Owned indexes never escape the private root or change after construction. As in
+    // AdvanceIndex, float64 preserves numeric range without freezing every array entry.
+    return Object.freeze({ text, lines, gaps, gapBase });
 }
 function original(text: string): Root { return text.length ? piece(backing(text), 0, text.length) : null; }
 function branch(left: Node, right: Node): Branch {

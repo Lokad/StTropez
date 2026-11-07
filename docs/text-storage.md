@@ -18,6 +18,15 @@ chunks bounded at 2,048 code units. The selected piece tree indexes immutable or
 backings and splits descriptors without copying their text. Its AVL branches cache length,
 LF count and height. Edits copy affected paths; unchanged nodes and backings are shared.
 
+Backing LF offsets and longest-line gap indexes use owned `Float64Array` storage, following
+the existing advance index. They never escape the private tree and are never changed after
+construction; public buffers and descriptors remain frozen. Float64 preserves the numeric
+range of the previous arrays. This avoids a measured bulk-review stall caused by freezing
+hundreds of thousands of numeric properties in one browser engine. No runtime dependency or
+public storage contract is added. Full-hunk reversion tests retain exact source, bounded
+history, later typing and immutable reference checks; kernel timings remain separate from
+complete interaction readiness and automation timings.
+
 The selection campaign ran on Linux x64, four AMD EPYC 9V45 virtual CPUs, 15.6 GiB RAM and
 official Node 24.17.0. Current preflight and postflight samples reported 100% idle, excluding
 vmstat's since-boot average. The postflight load average includes the campaign itself.
