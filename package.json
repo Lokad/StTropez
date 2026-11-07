@@ -45,6 +45,7 @@
     "bench:host-navigation": "node scripts/benchmark-host-navigation.mjs",
     "bench:host-pointer": "node scripts/benchmark-host-pointer.mjs",
     "bench:host-drag-scroll": "node scripts/benchmark-host-drag-scroll.mjs",
+    "bench:host-word-selection": "node scripts/benchmark-host-word-selection.mjs",
     "bench:navigation": "node scripts/benchmark-navigation.mjs",
     "bench:hosts": "node scripts/benchmark-hosts.mjs",
     "bench:save-conflicts": "node scripts/benchmark-save-conflicts.mjs",

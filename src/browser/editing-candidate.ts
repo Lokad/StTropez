@@ -12,7 +12,7 @@ import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
 
 export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport;
     focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
-    snapshot: () => Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; keydownEvents: number; lastKeydownMs: number; pendingCaret: boolean; pendingDragScroll: boolean; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; composing: boolean; pendingWord: boolean; wordScanSteps: number; maxWordScanStepMs: number; pendingGrapheme: boolean; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number; disposed: boolean }>;
+    snapshot: () => Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; keydownEvents: number; lastKeydownMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; pendingCaret: boolean; pendingDragScroll: boolean; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; composing: boolean; pendingWord: boolean; wordScanSteps: number; maxWordScanStepMs: number; pendingGrapheme: boolean; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number; disposed: boolean }>;
     destroy: () => void }>;
 let nextMount = 0;
 
@@ -41,6 +41,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     let disposed = false, composing = false, selecting = false, committing = false, escaped = false;
     let frame: number | undefined, commits = 0, conflicts = 0, serial = 0, preferredX: number | undefined, inputEvents = 0, lastInputMs = 0;
     let keydownEvents = 0, lastKeydownMs = 0;
+    let wordSelectionEvents = 0, lastWordSelectionMs = 0, maxWordSelectionTurnMs = 0;
     let preferredSelection: Selection | undefined, preferredColumnWidth = 0;
     let wordScanSteps = 0, maxWordScanStepMs = 0;
     let graphemeScanSteps = 0, maxGraphemeScanStepMs = 0;
@@ -51,7 +52,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     const commandTimers = new Set<number>();
     let wordJob: Readonly<{ cursor: WordCursor; revision: number; selection: Selection }> | undefined, wordTimer: number | undefined;
     type CommandCapture = Readonly<{ buffer: TextBuffer; revision: number; selection: Selection; deleting: boolean }>;
-    let graphemeJob: Readonly<{ cursor: GraphemeCursor; capture: CommandCapture; purpose: "word" | "grapheme" }> | undefined, graphemeTimer: number | undefined;
+    let graphemeJob: Readonly<{ cursor: GraphemeCursor; capture: CommandCapture; purpose: "word" | "word-selection" | "grapheme" }> | undefined, graphemeTimer: number | undefined;
     let graphemeCache: Readonly<{ buffer: TextBuffer; from: number; to: number; index: GraphemeIndex }> | undefined;
     let wordInput: Readonly<{ revision: number; selection: Selection; direction: -1 | 1 }> | undefined;
     let insertion: Readonly<{ revision: number; selection: Selection; target: NativeInsertionTarget; contextFrom: number }> | undefined;
@@ -160,7 +161,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         apply([{ from, to, insert }], { anchor: head, head }, kind, type);
     }
     const validCommand = (capture: CommandCapture) => !disposed && !composing && !input.disabled && !(capture.deleting && input.readOnly) && !!workspace.resolveTab(target) && workspace.observeDocument(documentId).getSnapshot()?.revision === capture.revision && view.getSnapshot().selection === capture.selection;
-    function withGraphemes(capture: CommandCapture, offset: number, side: -1 | 1, purpose: "word" | "grapheme", done: (point: GraphemePoint) => void): void {
+    function withGraphemes(capture: CommandCapture, offset: number, side: -1 | 1, purpose: "word" | "word-selection" | "grapheme", done: (point: GraphemePoint) => void): void {
         cancelWord(); if (!validCommand(capture)) return;
         const local = localAsciiGraphemePoint(capture.buffer, offset);
         if (local) { done(local); return; }
@@ -170,6 +171,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (graphemeCache?.buffer === buffer && graphemeCache.from === from && graphemeCache.to === to) { done(point(graphemeCache.index)); return; }
         const job = { cursor: createGraphemeCursor(buffer, { from, to }), capture, purpose }; graphemeJob = job;
         const step = () => {
+            const started = purpose === "word-selection" ? win.performance.now() : 0;
+            try {
             if (graphemeJob !== job) return; if (!validCommand(capture)) { cancelWord(); return; }
             const began = win.performance.now(); let result, calls = 0;
             try { do { result = job.cursor.next(4096); calls++; } while (result.status === "running" && calls < 8 && win.performance.now() - began < 4); }
@@ -177,6 +180,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             graphemeScanSteps++; maxGraphemeScanStepMs = Math.max(maxGraphemeScanStepMs, win.performance.now() - began);
             if (result.status === "running") { const timer = win.setTimeout(() => { commandTimers.delete(timer); if (graphemeJob === job) graphemeTimer = undefined; step(); }, 0); graphemeTimer = timer; commandTimers.add(timer); return; }
             const index = result.result!; job.cursor.dispose(); graphemeJob = undefined; graphemeCache = Object.freeze({ buffer, from, to, index }); done(point(index));
+            } finally { if (purpose === "word-selection") maxWordSelectionTurnMs = Math.max(maxWordSelectionTurnMs, win.performance.now() - started); }
         }; step();
     }
     function grapheme(direction: -1 | 1, deleting: boolean, extend = false): void {
@@ -216,6 +220,45 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             else move(end, extend);
             });
         }; step();
+        });
+    }
+    function selectWord(offset: number): void {
+        cancelWord(); if (disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
+        stopDrag(); group = undefined; preferredX = undefined; focus(); syncSelection();
+        const document = workspace.document(documentId), buffer = document.buffer, selected = view.getSnapshot().selection;
+        const capture = { buffer, revision: document.revision, selection: selected, deleting: false };
+        const line = buffer.lineAt(offset), from = buffer.offsetAt(line);
+        let to = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) - 1 : buffer.length;
+        if (line + 1 < buffer.lineCount && to > from && buffer.slice(to - 1, to) === "\r") to--;
+        if (to === from) return;
+        wordScanSteps = 0; maxWordScanStepMs = 0; graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
+        const scan = (start: number, direction: -1 | 1, done: (offset: number) => void) => {
+            if (!validCommand(capture)) return;
+            const job = { cursor: new WordCursor(buffer, start, direction, { from, to, skipWhitespace: false }), revision: capture.revision, selection: selected }; wordJob = job;
+            const step = () => {
+                const started = win.performance.now();
+                try {
+                if (wordJob !== job) return; if (!validCommand(capture)) { cancelWord(); return; }
+                const began = win.performance.now(); let result, count = 0;
+                do { result = job.cursor.next(4096); count++; } while (result.status === "running" && count < 32 && win.performance.now() - began < 4);
+                wordScanSteps++; maxWordScanStepMs = Math.max(maxWordScanStepMs, win.performance.now() - began);
+                if (result.status === "running") {
+                    const timer = win.setTimeout(() => { commandTimers.delete(timer); if (wordJob === job) wordTimer = undefined; step(); }, 0);
+                    wordTimer = timer; commandTimers.add(timer); return;
+                }
+                done(result.offset!);
+                } finally { maxWordSelectionTurnMs = Math.max(maxWordSelectionTurnMs, win.performance.now() - started); }
+            }; step();
+        };
+        withGraphemes(capture, Math.min(offset, to), -1, "word-selection", point => {
+            const probe = Math.max(from, offset >= to ? point.preceding ?? from : point.floor);
+            const width = buffer.slice(probe, Math.min(to, probe + 2)).codePointAt(0)! > 0xffff ? 2 : 1;
+            scan(Math.min(to, probe + width), -1, left => scan(probe, 1, right => {
+                withGraphemes(capture, left, -1, "word-selection", low => withGraphemes(capture, right, 1, "word-selection", high => {
+                    if (!validCommand(capture)) return;
+                    view.setSelection(capture.revision, { anchor: Math.max(from, low.floor), head: Math.min(to, high.ceil) }); refresh();
+                }));
+            }));
         });
     }
     function vertical(direction: -1 | 1, page: boolean, extend: boolean): void {
@@ -342,6 +385,15 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const started = win.performance.now(); keydownEvents++;
         try { keydown(event); } finally { lastKeydownMs = win.performance.now() - started; }
     }, { signal: listeners.signal });
+    root.addEventListener("dblclick", event => {
+        const began = win.performance.now();
+        try {
+        wordSelectionEvents++;
+        if (event.button !== 0 || disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
+        const point = viewport.hitTest(event.clientX, event.clientY); if (!point) return;
+        event.preventDefault(); selectWord(point.offset);
+        } finally { lastWordSelectionMs = win.performance.now() - began; maxWordSelectionTurnMs = Math.max(maxWordSelectionTurnMs, lastWordSelectionMs); }
+    }, { signal: listeners.signal });
     root.addEventListener("pointerdown", event => {
         if (event.button !== 0 || event.target === input) return;
         const point = viewport.hitTest(event.clientX, event.clientY); if (!point) return;
@@ -424,8 +476,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     return Object.freeze({ element: root, input, view, viewport, focus,
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state: ViewState) => { viewport.restoreView(state); refresh(); },
-        snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, keydownEvents, lastKeydownMs, pendingCaret: frame !== undefined,
-            pendingDragScroll: dragFrame !== undefined, dragScrollFrames, maxDragScrollStepMs, commits, conflicts, composing, pendingWord: wordJob !== undefined || graphemeJob?.purpose === "word", wordScanSteps, maxWordScanStepMs, pendingGrapheme: graphemeJob !== undefined, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves, disposed }),
+        snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, keydownEvents, lastKeydownMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs, pendingCaret: frame !== undefined,
+            pendingDragScroll: dragFrame !== undefined, dragScrollFrames, maxDragScrollStepMs, commits, conflicts, composing, pendingWord: wordJob !== undefined || graphemeJob?.purpose === "word" || graphemeJob?.purpose === "word-selection", wordScanSteps, maxWordScanStepMs, pendingGrapheme: graphemeJob !== undefined, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves, disposed }),
         destroy: () => {
             if (disposed) return; disposed = true;
             cancelWord(); wordInput = undefined; insertion = undefined; graphemeCache = undefined;

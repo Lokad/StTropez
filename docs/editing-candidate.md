@@ -52,6 +52,35 @@ Projection-driven native selection events also preserve the model's existing aff
 the endpoints already match. Such an event does not seal another view's continuous typing
 group; a real selection change still establishes a history boundary.
 
+Double-click selects the code-word, symbol or whitespace run under the measured source point.
+The range stays inside the clicked logical line, excludes its CRLF terminator and uses exact
+grapheme boundaries. The existing cooperative word cursor supplies run edges with
+`skipWhitespace:false`; its default keyboard-navigation policy still skips trailing whitespace.
+Selection captures the buffer, revision, immutable selection and view target. A later edit,
+selection, remount, replacement, composition or disposal expires pending work. Large selections
+use the bounded native input placeholder; typing replaces the source range as one shared undo
+transaction without exporting it. This is a code-oriented selection policy, with no claim of
+language-specific word segmentation or native device qualification.
+
+`wordSelectionEvents` and `lastWordSelectionMs` count double-click commands and measure the
+complete synchronous handler elapsed span, including its first scan turns and subscribers.
+Later cooperative turns, all-pane readiness, automation actions and physical display latency
+are separate. `wordScanSteps` and `maxWordScanStepMs` also describe word-selection scans.
+`maxWordSelectionTurnMs` is the longest complete synchronous selection handler or word/grapheme
+continuation callback per mount, including guards, transitions, projection/subscribers and
+scheduling. Scan-loop maxima omit that surrounding work; neither metric reports process CPU.
+
+`bench:host-word-selection` records both hosts on normal Unicode/CRLF, 100,000-line and
+2.4-million-unit ASCII words at beginning, middle and end. Three warmups and ten samples
+retain command-handler, all-pane selection readiness and complete double-click action clocks,
+then distinct typing-handler/readiness/action and full workflow clocks. Exact replacement,
+shared undo-to-saved/redo, saved references, independent selections, context/DOM/read bounds,
+background activity and disposal remain asserted. Per-workflow complete-callback maxima and
+scan-loop maxima are separate from per-callback distributions. Optional screenshot smoke
+inspection is excluded from full timings. Typing keeps the browser's native UTF-16 replacement
+caret; trusted native-textarea controls record engine differences when a replacement forms a
+new grapheme. Selection endpoints before typing still use the captured grapheme boundaries.
+
 Control+Left/Right moves to code-word starts; Shift retains the anchor. Control+Backspace/Delete
 deletes the selected range, or one code word when collapsed, as one undoable transaction.
 On Apple platforms Option supplies the word modifier. Non-shift movement starts at the active

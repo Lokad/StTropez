@@ -10,7 +10,7 @@ export type { BufferChange, BufferReadMetrics, BufferRetention } from "./core/te
 export { LiteralSearch } from "./core/search.ts";
 export type { SearchMatch, SearchStep } from "./core/search.ts";
 export { WordCursor } from "./core/words.ts";
-export type { WordStep } from "./core/words.ts";
+export type { WordStep, WordOptions } from "./core/words.ts";
 export { GraphemeIndex, GraphemeLimitError, createGraphemeCursor, createNormalizedGraphemeCursor, graphemeBoundaries } from "./core/graphemes.ts";
 export type { GraphemeSource, GraphemeRange, GraphemeOptions, GraphemeProgress, GraphemeCursor } from "./core/graphemes.ts";
 export { graphemeUnicodeVersion as unicodeGraphemeVersion, graphemeBreakProperty, indicConjunctBreak, extendedPictographic } from "./core/grapheme-data.ts";

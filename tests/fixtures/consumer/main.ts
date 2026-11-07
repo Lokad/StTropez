@@ -161,8 +161,11 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
     navigation: () => {
         const buffer = TextBuffer.from("x".repeat(100_000) + "  tail"), cursor = new WordCursor(buffer, 0, 1);
         let step = cursor.next(256), advances = 1; while (step.status === "running") { step = cursor.next(256); advances++; }
+        const run = new WordCursor(buffer, 7, 1, { from: 0, to: 100_000, skipWhitespace: false });
+        let runStep = run.next(256), runAdvances = 1; while (runStep.status === "running") { runStep = run.next(256); runAdvances++; }
+        const runOffset = runStep.offset; run.dispose();
         candidate.viewport.revealOffset(candidate.view.getSnapshot().selection.head, { horizontal: "nearest", vertical: "nearest" });
-        return { offset: step.offset, advances, exports: buffer.readMetrics().textExports };
+        return { offset: step.offset, advances, runOffset, runAdvances, exports: buffer.readMetrics().textExports };
     },
     find: find.setQuery, findState: find.state.getSnapshot, replaceAll: find.replaceAll,
     history: () => workspace.observeHistory(documentId).getSnapshot(),

@@ -122,10 +122,25 @@ try {
     assert.equal(capturedSelection.anchor, 5); assert.equal(capturedSelection.head, 2);
     const navigation = await page.evaluate(() => window.consumer.navigation());
     assert.equal(navigation.offset, 100_002); assert.ok(navigation.advances > 1); assert.equal(navigation.exports, 0);
+    assert.equal(navigation.runOffset, 100_000); assert.ok(navigation.runAdvances > 1);
     await candidateInput.press("Control+Home"); await candidateInput.press("Control+ArrowRight");
     assert.equal((await page.evaluate(() => window.consumer.captureCandidate())).head, 7);
     await candidateInput.press("Control+Shift+ArrowRight");
     assert.deepEqual(await page.evaluate(() => { const s = window.consumer.captureCandidate(); return { anchor: s.anchor, head: s.head }; }), { anchor: 7, head: 16 });
+    await page.waitForFunction(() => document.querySelector("#candidate .consumer-token")?.textContent === "restored");
+    const wordPoint = await page.locator("#candidate .st-editing-candidate").evaluate(element => {
+        const row = element.querySelector(".st-viewport-row"), walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT), nodes = []; let node;
+        while (node = walker.nextNode()) nodes.push(node);
+        const locate = offset => { for (const node of nodes) { if (offset <= node.length) return { node, offset }; offset -= node.length; } throw new Error("Missing restored word."); };
+        const a = locate(9), b = locate(10), range = document.createRange(); range.setStart(a.node, a.offset); range.setEnd(b.node, b.offset); const r = range.getBoundingClientRect(); return { x: r.left + r.width * .25, y: r.top + r.height * .5 };
+    });
+    await page.mouse.dblclick(wordPoint.x, wordPoint.y);
+    await page.waitForFunction(() => { const s = window.consumer.candidate(); return !s.pendingWord && !s.pendingGrapheme && !s.pendingCaret && !s.viewport.pending; });
+    const wordSelection = await page.evaluate(() => ({ selection: window.consumer.captureCandidate(), events: window.consumer.candidate().wordSelectionEvents, handlerMs: window.consumer.candidate().lastWordSelectionMs, callbackMaximumMs: window.consumer.candidate().maxWordSelectionTurnMs }));
+    assert.equal(wordSelection.selection.anchor, 7); assert.equal(wordSelection.selection.head, 15); assert.equal(wordSelection.events, 1);
+    const wordUndoDepth = (await page.evaluate(() => window.consumer.history())).undoDepth;
+    await candidateInput.pressSequentially("q"); assert.equal(await page.evaluate(() => window.consumer.text()), "edited q package"); assert.equal((await page.evaluate(() => window.consumer.history())).undoDepth, wordUndoDepth + 1);
+    await candidateInput.press("Control+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "edited restored package");
     await page.waitForFunction(() => document.querySelector("#candidate .consumer-token")?.textContent === "restored");
     await page.evaluate(() => window.consumer.find("restored"));
     await page.waitForFunction(() => window.consumer.findState().status === "ready");
@@ -200,7 +215,7 @@ try {
         consumer, browser: browser.version(), node: process.version, dotnet: dotnet(["--version"]).trim(),
         typescript: JSON.parse(await readFile("node_modules/typescript/package.json", "utf8")).version,
         esbuild: JSON.parse(await readFile("node_modules/esbuild/package.json", "utf8")).version,
-        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, comparison, readonlyIndent, saveReview, style, errors }, null, 2));
+        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, comparison, readonlyIndent, saveReview, style, errors }, null, 2));
     console.log("Restored package: declarations, storage/mappings, modules, visible CSS and actual edit passed. Evidence: artifacts/package/");
     console.log(`Isolated consumer retained for inspection: ${consumer}`);
 } finally {
