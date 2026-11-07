@@ -66,7 +66,8 @@
     "bench:scripts": "node scripts/benchmark-scripts.mjs",
     "bench:graphemes": "node scripts/benchmark-graphemes.mjs",
     "bench:font-normalization": "node scripts/benchmark-font-normalization.mjs",
-    "bench:glyph-visibility": "node scripts/benchmark-glyph-visibility.mjs"
+    "bench:glyph-visibility": "node scripts/benchmark-glyph-visibility.mjs",
+    "bench:host-reference-focus": "node scripts/benchmark-host-reference-focus.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",

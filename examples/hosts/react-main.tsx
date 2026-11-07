@@ -60,11 +60,11 @@ function Scene() {
         <div role="status" aria-label="Host messages">{layout.modal.kind === "error" ? layout.modal.message : layout.modal.kind === "close" ? "Close the captured tab?" : ""}</div></>;
 }
 function SourceReview() {
-    const layout = useObserved(controller.layout), reference = useObserved(controller.comparisonReference);
+    const layout = useObserved(controller.layout);
     const tabs = useObserved(controller.workspace.tabState), tab = tabs.find(tab => tab.id === controller.viewTab("primary"));
     return layout.navigation.kind === "review" && layout.visible && !layout.formFault && layout.primarySurface === "text"
         && tab?.surface.kind === "text" && tab.surface.documentId === controller.source.documentId
-        ? <section className="host-review" aria-label="Source review surface"><div key={`${tab.id}:${tab.generation}:${reference.generation}`} ref={bindings.comparison} /></section> : null;
+        ? <section className="host-review" aria-label="Source review surface"><div key={`${tab.id}:${tab.generation}`} ref={bindings.comparison} /></section> : null;
 }
 function LanguageTools() {
     const tools = bindings.language, state = useObserved(tools.state);

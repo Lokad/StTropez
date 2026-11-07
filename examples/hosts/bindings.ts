@@ -27,9 +27,12 @@ export class ViewBindings {
     private readonly reviewTickets: ComparisonTicket[] = [];
     private referenceSerial = 0;
     private reviewResult = "No reference command";
+    private unwatchReference: (() => void) | undefined;
+    private referenceGeneration = -1;
     readonly primary: (host: HTMLDivElement | null) => void;
     readonly secondary: (host: HTMLDivElement | null) => void;
     readonly comparison = (host: HTMLDivElement | null): void => {
+        this.unwatchReference?.(); this.unwatchReference = undefined;
         for (const ticket of this.reviewTickets.splice(0)) ticket.cancel();
         if (this.review) {
             const baseline = this.review.controller.getSnapshot().baseline, reference = this.review.referenceViewport();
@@ -42,7 +45,8 @@ export class ViewBindings {
         if (!host) return;
         this.reviewStatus = host.ownerDocument.createElement("output"); this.reviewStatus.setAttribute("aria-label", "Reference operation status");
         this.reviewStatus.setAttribute("aria-live", "polite"); this.reviewStatus.textContent = this.reviewResult; host.append(this.reviewStatus);
-        const baseline = this.controller.comparisonReference.getSnapshot().baseline;
+        const publication = this.controller.comparisonReference.getSnapshot(), baseline = publication.baseline;
+        this.referenceGeneration = publication.generation;
         const view = this.retainedView("comparison", this.controller.source.documentId);
         const presentation = new EditingPresentation(), referencePresentation = new EditingPresentation();
         this.review = mountTextComparison(host, this.controller.workspace, this.controller.viewTab("primary"),
@@ -57,6 +61,7 @@ export class ViewBindings {
         const documentId = this.review.working.view.documentId;
         this.reviewListeners = new AbortController();
         this.review.working.input.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: this.reviewListeners.signal });
+        this.unwatchReference = this.controller.comparisonReference.subscribe(() => this.updateReference());
     };
     private beginReference(kind: "refresh" | "accept"): void {
         if (!this.review) return;
@@ -91,6 +96,20 @@ export class ViewBindings {
         this.controller = controller; this.editor = editor; this.language = new HostLanguageTools(controller.workspace);
         this.primary = this.ref("primary", "Primary source");
         this.secondary = this.ref("secondary", "Secondary source");
+    }
+    private updateReference(): void {
+        const review = this.review, current = review?.controller.getSnapshot().baseline;
+        if (!review || !current) return;
+        const publication = this.controller.comparisonReference.getSnapshot(), next = publication.baseline;
+        if (current.buffer === next.buffer && current.version === next.version && this.referenceGeneration === publication.generation) return;
+        // A host reference publication expires older captures; the working view still owns
+        // its input, selection, provider target and pending commands on the same document.
+        for (const ticket of this.reviewTickets.splice(0)) ticket.cancel();
+        try {
+            const ticket = review.controller.beginRefresh();
+            try { if (ticket.complete(next)) { this.referenceState = undefined; this.referenceGeneration = publication.generation; } }
+            finally { ticket.finish(); }
+        } catch (error) { this.controller.reportError(error); }
     }
     private retainedView(id: string, documentId: DocumentId): DocumentView {
         const selections = this.selections.get(id) ?? new Map<DocumentId, DocumentView>();

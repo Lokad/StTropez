@@ -68,11 +68,11 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     };
     let reviewKey: string | undefined;
     const renderReview = () => {
-        const layout = controller.layout.getSnapshot(), reference = controller.comparisonReference.getSnapshot();
+        const layout = controller.layout.getSnapshot();
         const tab = controller.workspace.tabState.getSnapshot().find(tab => tab.id === controller.viewTab("primary"));
         const key = layout.navigation.kind === "review" && layout.visible && !layout.formFault && layout.primarySurface === "text"
             && tab?.surface.kind === "text" && tab.surface.documentId === controller.source.documentId
-            ? `${tab.id}:${tab.generation}:${reference.generation}` : undefined;
+            ? `${tab.id}:${tab.generation}` : undefined;
         review.hidden = key === undefined;
         if (key === reviewKey) return;
         // Record identity before mounting: the comparison creates its own reference display tab.
@@ -83,7 +83,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     // notification itself cannot synchronously mount/release the comparison's display resources.
     subscriptions.push(controller.layout.subscribe(renderScene), controller.source.metadata.subscribe(updateStatus),
         controller.review.subscribe(updateStatus), controller.activity.subscribe(updateStatus), controller.recovery.subscribe(updateRecovery),
-        controller.layout.subscribe(renderReview), controller.comparisonReference.subscribe(renderReview),
+        controller.layout.subscribe(renderReview),
         controller.saveConflict.subscribe(updateConflict), controller.source.metadata.subscribe(updateConflict),
         controller.layout.subscribe(updateConflict), controller.comparisonReference.subscribe(updateConflict));
     renderScene(); renderReview(); updateStatus(); updateRecovery(); updateConflict();

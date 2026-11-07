@@ -5,6 +5,22 @@ document, tab and view handles. `?editor=native` mounts the native control; `?ed
 mounts the bounded input candidate. The same host protocol tests run against both choices.
 These remain synthetic evaluation hosts. All service responses come from deferred local ports.
 
+Reference versions update the existing comparison through a captured refresh ticket. They
+preserve its editable input, focus, selection, provider target and in-flight working commands.
+An external reference expires older captured reference commands and releases their leases.
+Tab identity and generation control host mounts; a reference version does not recreate the
+working surface. The stable binding owns and disposes its reference subscription, so React
+components keep their pure rendering and explicit ref lifecycle. A reference reply while the
+user types neither drops characters nor splits an otherwise continuous typing transaction.
+
+`bench:host-reference-focus` measures the complete reference callback, all-pane readiness and
+automation action separately, followed by a distinct point-input handler/readiness/action and
+full workflow. Both hosts use normal Unicode/CRLF and 100,000-line sources with comparison or
+host-form focus. Exact text/history/reference versions, stable views/focus, bounded contexts,
+background activity and disposal remain assertions. Screenshot smoke inspection is separate
+from repeated timings. These browser proxies do not qualify native IME, assistive technology
+or physical display latency.
+
 The bounded mount adapts its input, view capture/restore and disposal APIs to the existing
 host binding. Shared selections remain registered across view detach/reattach. Capture first
 synchronizes the native selection, including its direction, so a queued selection event cannot
