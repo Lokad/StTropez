@@ -45,6 +45,26 @@ export class DiffLines {
         if (node.entries) { this.#last = { from, entries: node.entries }; return node.entries[index]; }
         return undefined;
     }
+    /** Exact short-row proof within the current immutable metadata leaves. Reads no source. */
+    matching(other: DiffLines, from: number, to: number, otherFrom: number, otherTo: number, reverse: boolean): number {
+        if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || !Number.isSafeInteger(otherFrom) || !Number.isSafeInteger(otherTo)
+            || from < 0 || to < from || to > this.size
+            || otherFrom < 0 || otherTo < otherFrom || otherTo > other.size) throw new RangeError("Invalid comparison metadata range.");
+        if (from === to || otherFrom === otherTo) return 0;
+        const ai = reverse ? to - 1 : from, bi = reverse ? otherTo - 1 : otherFrom;
+        const left = this.at(ai), a = this.#last!, right = other.at(bi), b = other.#last!;
+        if (left?.token === undefined || right?.token !== left.token || left.length !== right.length) return 0;
+        const al = ai - a.from, bl = bi - b.from;
+        const maximum = Math.min(to - from, otherTo - otherFrom,
+            reverse ? al + 1 : a.entries.length - al, reverse ? bl + 1 : b.entries.length - bl);
+        const direction = reverse ? -1 : 1; let count = 1;
+        while (count < maximum) {
+            const av = a.entries[al + direction * count]!, bv = b.entries[bl + direction * count]!;
+            if (av.token === undefined || av.token !== bv.token || av.length !== bv.length) break;
+            count++;
+        }
+        return count;
+    }
     materialize(from: number, to: number, entries: readonly DiffLine[]): void {
         if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > this.size) throw new RangeError("Invalid comparison line range.");
         if (entries.length !== to - from) throw new RangeError("Invalid comparison metadata block.");

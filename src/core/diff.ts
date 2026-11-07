@@ -48,6 +48,14 @@ function* commonLines(a: Index, b: Index, region: Region, reverse: boolean, stat
         if (repeated) {
             count += yield* matchingLines(a, b, reverse ? region.a0 : region.a0 + count, reverse ? region.a1 - count : region.a1,
                 reverse ? region.b0 : region.b0 + count, reverse ? region.b1 - count : region.b1, reverse, stats, true);
+        } else {
+            // A metadata leaf can end between ownership checkpoints, especially in reverse.
+            // Stop at the pending checkpoint, including one just reached by equalLine.
+            // An empty run lets the next loop retry the shared-source proof immediately.
+            const end = Math.min(maximum, Math.ceil(count / 64) * 64);
+            const known = a.lines.matching(b.lines, reverse ? region.a1 - end : region.a0 + count, reverse ? region.a1 - count : region.a0 + end,
+                reverse ? region.b1 - end : region.b0 + count, reverse ? region.b1 - count : region.b0 + end, reverse);
+            count += known; stats.lineComparisons += known; if (tick(stats, known)) yield;
         }
     }
     return count;

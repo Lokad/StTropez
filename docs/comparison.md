@@ -41,6 +41,14 @@ not index every intervening line. Long equal text with no applicable ownership p
 require a linear scan. Short periodic-row candidates can use exact bounded text comparisons
 instead of materializing every equal row. Candidate detection never establishes equality;
 the subsequent string checks do. String-equal chunks skip the per-unit mismatch search.
+Already materialized short-row metadata can prove a bounded run of equal rows directly from
+their exact UTF-16 strings and lengths. Each proof stays inside the two existing immutable
+metadata leaves, with at most 64 rows, and charges cooperative row work before continuing.
+Runs stop at the next ownership checkpoint, including when a partial metadata leaf is traversed
+in reverse, so cached strides cannot skip a proof of shared source storage.
+It neither materializes missing rows nor reads source text. Hashes alone and long rows cannot
+establish this proof; they retain the existing exact fallback. Ownership proofs remain first,
+so shared source spans can still skip large interiors without walking every metadata block.
 This is a line alignment with trimmed boundaries, rather than a globally minimal character
 alignment or moved-block detection. The original TypeScript implementation reuses the
 project's buffers; a general diff package would add a runtime dependency.
@@ -58,7 +66,9 @@ Diff progress alone does not invalidate either viewport. A new generation or sta
 decorations; selection and scrolling retain their viewport-owned invalidation. This avoids
 repeated row work while the same captured diff is still running. The scheduling and short-line
 identity changes address a reproduced large conflict-review interaction, not a new shaping
-feature. Full input-to-review-ready measurements remain separate from handler CPU.
+feature. Full input-to-review-ready measurements remain separate from elapsed adapter-handler
+duration. Comparison advance-loop counters exclude the rest of the scheduled callback and
+rendering; complete callback traces and complete interaction readiness are separate measurements.
 
 `DiffReferenceCache` optionally retains one reference index and one most recently completed
 working index across `TextDiff` jobs. Pass it as the third constructor argument and dispose it
