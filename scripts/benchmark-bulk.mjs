@@ -13,6 +13,6 @@ for (let round = 0; round < rounds; round++) for (const workload of round % 2 ? 
 }
 assert.equal((await sourceIdentity()).sha256, source.sha256, "Source changed during the campaign.");
 const report = { schemaVersion: 1, created: new Date().toISOString(), source, environment: environment(), runtime: "piece-tree-bulk-batches", rounds, cases,
-    note: "Fresh Node process per workload/round, three warmups and ten measured batches. Apply includes validation/filtering/maps/construction; traversal and search CPU are separate. Full text/mapping/metadata oracle checks and explicit GC/retention are outside timing. No browser/scheduling/production-latency claim." };
+    note: "Fresh Node process per workload/round, three warmups and ten measured batches. Apply includes validation/filtering/maps/construction; traversal and search elapsed times are separate. These clocks do not measure process CPU time. Full text/mapping/metadata oracle checks and explicit GC/retention are outside timing. No browser/scheduling/production-latency claim." };
 await mkdir("artifacts/bench/bulk", { recursive: true }); await writeFile("artifacts/bench/bulk/latest.json", JSON.stringify(report, null, 2));
 console.log(JSON.stringify(cases.map(c => ({ round: c.round, workload: c.workload, applyP95: c.applyMs.p95, traversalP95: c.traversalMs.p95, chunks: c.chunks })), null, 2));
