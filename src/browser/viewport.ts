@@ -21,6 +21,19 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     invalidate: () => void;
     revealOffset: (offset: number, options?: RevealOptions) => void; snapshot: () => ViewportSnapshot; destroy: () => void }>;
 type Row = Readonly<{ line: number; from: number; to: number; text: string; left: number; complete: boolean }>;
+type RowPart = Readonly<{ text: string; className: string }>;
+function renderRowChildren(element: HTMLElement, parts: readonly RowPart[]): void {
+    if (element.childNodes.length === parts.length && parts.every((part, index) => {
+        const node = element.childNodes.item(index); if (!node || node.textContent !== part.text) return false;
+        return part.className ? node.nodeName === "SPAN" && (node as HTMLSpanElement).className === part.className
+            && node.childNodes.length === 1 && node.firstChild?.nodeType === Node.TEXT_NODE : node.nodeType === Node.TEXT_NODE;
+    })) return;
+    const owner = element.ownerDocument;
+    element.replaceChildren(...parts.map(part => {
+        if (!part.className) return owner.createTextNode(part.text);
+        const span = owner.createElement("span"); span.className = part.className; span.textContent = part.text; return span;
+    }));
+}
 export type InlineDecoration = Readonly<{ from: number; to: number; className: string }>;
 export type PresentedLine = Readonly<{ documentId: DocumentId; revision: number; line: number; lineStart: number; from: number; to: number; text: string }>;
 export type LineDecorator = (line: PresentedLine) => readonly InlineDecoration[];
@@ -173,19 +186,18 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
                 const boundaries = new Set([item.from, item.to]);
                 if (from < to) { boundaries.add(from); boundaries.add(to); }
                 for (const range of ranges) { boundaries.add(Math.max(item.from, range.from)); boundaries.add(Math.min(item.to, range.to)); }
-                const offsets = [...boundaries].sort((a, b) => a - b), children: Node[] = [];
+                const offsets = [...boundaries].sort((a, b) => a - b), children: RowPart[] = [];
                 for (let index = 0; index + 1 < offsets.length; index++) {
                     const start = offsets[index]!, end = offsets[index + 1]!, classes = ranges.filter(range => range.from < end && range.to > start).map(range => range.className);
                     if (start >= from && end <= to && from < to) classes.push("st-viewport-selected");
                     const text = item.text.slice(start - item.from, end - item.from);
-                    if (classes.length) { const span = owner.createElement("span"); span.className = classes.join(" "); span.textContent = text; children.push(span); }
-                    else children.push(owner.createTextNode(text));
+                    children.push({ text, className: classes.join(" ") });
                 }
-                element.replaceChildren(...children);
+                renderRowChildren(element, children);
             } else if (from < to) {
-                const mark = owner.createElement("span"); mark.className = "st-viewport-selected"; mark.textContent = item.text.slice(from - item.from, to - item.from);
-                element.replaceChildren(owner.createTextNode(item.text.slice(0, from - item.from)), mark, owner.createTextNode(item.text.slice(to - item.from)));
-            } else if (element.textContent !== item.text || element.childNodes.length !== 1) element.replaceChildren(owner.createTextNode(item.text));
+                renderRowChildren(element, [{ text: item.text.slice(0, from - item.from), className: "" },
+                    { text: item.text.slice(from - item.from, to - item.from), className: "st-viewport-selected" }, { text: item.text.slice(to - item.from), className: "" }]);
+            } else renderRowChildren(element, [{ text: item.text, className: "" }]);
             textUnits += item.text.length;
         }
         for (const [line, element] of rows) if (line < firstLine || line >= lastLine) { element.remove(); rows.delete(line); }

@@ -10,6 +10,11 @@ Each frame reads the container/font geometry, obtains only visible/overscan line
 horizontal ranges, then writes the DOM. A bounded batch of native row-width reads follows the
 writes; extent/reveal corrections schedule another frame. Rows are reused, kept in document order and removed
 outside the window. The default overscan is four lines and 32 UTF-16 units per horizontal edge.
+Unchanged row text and inline classes retain their text/span nodes, including selection and
+provider decorations. Each render still obtains current decorations and updates row offsets,
+geometry and revision metadata. Changed text, classes or selection segments replace the affected
+children; no second document or provider-state cache is retained. Comparison marks may
+expire while a new revision is being aligned, so that intentional class change can replace nodes.
 Lines up to 512 UTF-16 units render whole for natural browser shaping; longer lines use bounded
 windows. Mounted text and reads scale with viewport dimensions and that per-row cap. Neither
 rendering, scroll changes nor metadata updates access `DocumentSnapshot.text` or resource value.

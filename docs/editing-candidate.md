@@ -82,8 +82,24 @@ place. Raw CRLF offsets and independently scrolled views remain separate from na
 
 Tab inserts indentation. Escape followed by Tab returns to the host's normal focus order.
 Pointer selection uses rendered native rectangles; drag anchors expire across document changes.
+Only the captured pointer can end its drag. Losing capture, cancellation, releasing the primary
+button or disposing the mount stops selection updates and releases any remaining capture.
+Returning to the editor after a release outside it leaves the retained caret unchanged; subsequent
+typing inserts there. Unrelated pointer cancellation does not terminate the owned gesture.
 The native textarea and preedit overlay sit near the measured caret. This is an input-positioning
 experiment, with no qualified screen-reader document representation or native-device claim.
+
+`bench:host-pointer` checks the pointer-to-typing handoff in both hosts on Unicode/CRLF and
+100,000-line sources, with three warmups and ten samples per capture-loss or synthetic-cancel
+condition. Actual capture activation, release outside, inert hover, independent selections,
+point typing, saved-reference versions, shared undo/redo and disposal remain asserted. The
+report separates elapsed typing-handler duration, full point-input review readiness, complete
+point automation and whole gesture/workflow clocks. Initial save/reference setup is excluded;
+its explicit save export is counted separately. The gesture adds no exports and the edited
+buffer retains zero ordinary exports.
+Whole gestures have no point-action budget; synthetic cancellation does not qualify native
+devices. Raw samples and font-family/size/line-height fields remain separate from physical
+display latency and installed-font identity.
 
 Complete rows support [visual bidi navigation and dual affinities](bidi.md). Current limits include
 long contextual-line geometry/navigation, wrapping,

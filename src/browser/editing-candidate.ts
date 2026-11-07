@@ -351,11 +351,16 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     }, { signal: listeners.signal });
     root.addEventListener("pointermove", event => {
         if (drag?.pointer !== event.pointerId) return;
-        if (drag.revision !== revision) { drag = undefined; return; }
+        if (!(event.buttons & 1) || drag.revision !== revision) { stopDrag(); return; }
         const point = viewport.hitTest(event.clientX, event.clientY); if (point) { view.setSelection(revision, { anchor: drag.anchor, head: point.offset, anchorAffinity: drag.anchorAffinity, headAffinity: point.affinity }); refresh(); }
     }, { signal: listeners.signal });
-    const stopDrag = () => { drag = undefined; };
+    const stopDrag = (event?: PointerEvent) => {
+        if (event && event.pointerId !== drag?.pointer) return;
+        const pointer = drag?.pointer; drag = undefined;
+        if (pointer !== undefined && root.hasPointerCapture(pointer)) root.releasePointerCapture(pointer);
+    };
     root.addEventListener("pointerup", stopDrag, { signal: listeners.signal }); root.addEventListener("pointercancel", stopDrag, { signal: listeners.signal });
+    root.addEventListener("lostpointercapture", stopDrag, { signal: listeners.signal });
     for (const type of ["copy", "cut", "paste"] as const) input.addEventListener(type, event => {
         if (composing || !event.clipboardData) return;
         event.preventDefault(); syncSelection(); group = undefined;
@@ -378,7 +383,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             if (disposed) return; disposed = true;
             cancelWord(); wordInput = undefined; insertion = undefined; graphemeCache = undefined;
             if (composing && input.value !== context.text) conflict("composition-detached");
-            composing = false; drag = undefined;
+            composing = false; stopDrag();
             if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
             commandTimers.forEach(timer => win.clearTimeout(timer)); commandTimers.clear();
             listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); input.value = ""; viewport.destroy(); if (!options.view) view.dispose();
