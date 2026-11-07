@@ -86,6 +86,23 @@ Only the captured pointer can end its drag. Losing capture, cancellation, releas
 button or disposing the mount stops selection updates and releases any remaining capture.
 Returning to the editor after a release outside it leaves the retained caret unchanged; subsequent
 typing inserts there. Unrelated pointer cancellation does not terminate the owned gesture.
+Holding a captured mouse drag beyond a viewport edge continues selection through logical
+scrolling on animation frames. It reuses the viewport's scroll, flush and native hit-test APIs;
+compressed physical scroll ranges do not change the logical velocity. Speed grows with distance
+outside the edge, capped at three viewport lengths per second on each axis. Each callback uses
+at most 32ms of elapsed movement, so a delayed frame does not jump through the document.
+The pointer is clamped to the visible content edge for hit testing after each scroll step.
+Returning inside stops queued scrolling; hitting a document boundary stops it until another
+pointer movement. Source revision, immutable selection identity, captured tab/view, composition,
+input readiness, pointer capture and mount lifetime are rechecked before delayed work. Another
+selection or revision expires the gesture instead of overwriting newer navigation.
+
+This original selection policy is needed because bounded rendered rows cannot supply native
+selection scrolling through unmounted content. It adds no external editing runtime or second
+document state. `pendingDragScroll`, `dragScrollFrames` and `maxDragScrollStepMs` expose queued
+work, projected frame count and the longest complete synchronous callback elapsed span per
+mount. That maximum includes guards, layout, projection, selection/subscribers and scheduling;
+it is separate from typing-handler duration, per-frame distributions and process CPU time.
 The native textarea and preedit overlay sit near the measured caret. This is an input-positioning
 experiment, with no qualified screen-reader document representation or native-device claim.
 
@@ -101,9 +118,20 @@ Whole gestures have no point-action budget; synthetic cancellation does not qual
 devices. Raw samples and font-family/size/line-height fields remain separate from physical
 display latency and installed-font identity.
 
+`bench:host-drag-scroll` exercises both directions in both hosts on normal Unicode/CRLF,
+100,000-line sources and simple ASCII long lines with compressed physical extents. Three
+warmups and ten samples per condition retain actual pointer events and frame observations,
+native-range selection checks, typing over the selected range, shared undo-to-saved/redo,
+immutable saved references, ordinary-export/context/DOM bounds, background updates and disposal.
+It reports the requested stationary hold separately from release readiness, the distribution
+of per-workflow longest callback spans, typing-handler/readiness and complete gesture/point/
+workflow automation clocks. The callback and handler targets are 16ms; release and point-ready
+targets are 100ms normal/250ms large. Whole gestures include the imposed hold and have no point
+action budget. These are measurements and targets, not native-device or display qualification.
+
 Complete rows support [visual bidi navigation and dual affinities](bidi.md). Current limits include
 long contextual-line geometry/navigation, wrapping,
-drag autoscroll, touch/mobile selection, native undo/menu behavior, OS clipboard, accessibility,
+touch/mobile selection, native undo/menu behavior, OS clipboard, accessibility,
 and additional platform modifier bindings. [Literal search/replace](search.md) and the host-owned
 [provider/highlighting fixture](providers.md) now exercise the view. [Grapheme navigation](graphemes.md) first attempts an exact local ASCII boundary query; uncertain context cooperatively indexes the full captured logical line using Unicode 18 facts. A one-line cache uses immutable buffer identity and range; long clusters and RI parity retain full context. Delayed commands check captured revision, selection, tab generation, composition, permission and disposal. Complete-row visual movement still requires measured geometry.
 The textarea's value is an internal context, so setting it is not a full-document edit API.

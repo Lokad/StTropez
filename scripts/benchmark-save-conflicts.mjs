@@ -10,8 +10,8 @@ const harness = await openHarness(), cases = [], snapshot = () => harness.page.e
 const click = name => harness.page.getByRole("button", { name, exact: true }).click();
 async function ready() {
     await harness.page.waitForFunction(() => { const s = window.hostFixture?.snapshot(), c = s?.bindings.comparison;
-        return s && s.bindings.activeViews === 2 && s.bindings.views.every(v => !v.metrics || !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision)
-            && (!c || c.status === "ready" && c.workingRevision === s.source.revision && !c.workingViewport.pending && c.workingViewport.revision === s.source.revision
+        return s && s.bindings.activeViews === 2 && s.bindings.views.every(v => !v.metrics || !v.metrics.pendingDragScroll && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision)
+            && (!c || c.status === "ready" && c.workingRevision === s.source.revision && !c.input.pendingDragScroll && !c.workingViewport.pending && c.workingViewport.revision === s.source.revision
                 && c.referenceViewport && !c.referenceViewport.pending); });
     await harness.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
@@ -44,8 +44,8 @@ try {
                         const check = () => {
                             const f = window.hostFixture, s = f.snapshot(), c = s.bindings.comparison, view = s.bindings.views.find(v => v.id === "primary");
                             if (!c || c.status !== "ready" || c.workingRevision !== s.source.revision || c.workingViewport.revision !== s.source.revision
-                                || c.workingViewport.pending || !c.referenceViewport || c.referenceViewport.pending
-                                || s.bindings.views.some(v => v.metrics && (v.metrics.viewport.pending || v.metrics.viewport.revision !== s.source.revision))) {
+                                || c.input.pendingDragScroll || c.workingViewport.pending || !c.referenceViewport || c.referenceViewport.pending
+                                || s.bindings.views.some(v => v.metrics && (v.metrics.pendingDragScroll || v.metrics.viewport.pending || v.metrics.viewport.revision !== s.source.revision))) {
                                 frames = 0; requestAnimationFrame(check); return;
                             }
                             if (s.source.revision !== before.source.revision + 1 || s.source.length !== before.source.length + 1

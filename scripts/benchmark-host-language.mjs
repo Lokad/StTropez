@@ -12,10 +12,10 @@ async function ready() {
     await page.waitForFunction(() => {
         const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
         const same = (a, b) => a?.anchor === b?.anchor && a?.head === b?.head && a?.anchorAffinity === b?.anchorAffinity && a?.headAffinity === b?.headAffinity;
-        return s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.viewport.pending
+        return s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingDragScroll && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.viewport.pending
             && v.metrics.viewport.revision === s.source.revision && same(v.metrics.viewport.selection, v.selection))
             && c?.status === "ready" && c.workingRevision === s.source.revision && !c.workingViewport.pending && !c.referenceViewport.pending
-            && !c.input.pendingCaret && !c.input.pendingWord && !c.input.pendingGrapheme && same(c.workingViewport.selection, c.selection);
+            && !c.input.pendingCaret && !c.input.pendingDragScroll && !c.input.pendingWord && !c.input.pendingGrapheme && same(c.workingViewport.selection, c.selection);
     });
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }

@@ -12,7 +12,7 @@ import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
 
 export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport;
     focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
-    snapshot: () => Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; keydownEvents: number; lastKeydownMs: number; pendingCaret: boolean; commits: number; conflicts: number; composing: boolean; pendingWord: boolean; wordScanSteps: number; maxWordScanStepMs: number; pendingGrapheme: boolean; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number; disposed: boolean }>;
+    snapshot: () => Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; keydownEvents: number; lastKeydownMs: number; pendingCaret: boolean; pendingDragScroll: boolean; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; composing: boolean; pendingWord: boolean; wordScanSteps: number; maxWordScanStepMs: number; pendingGrapheme: boolean; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number; disposed: boolean }>;
     destroy: () => void }>;
 let nextMount = 0;
 
@@ -46,7 +46,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     let graphemeScanSteps = 0, maxGraphemeScanStepMs = 0;
     let visualMoves = 0;
     let group: Readonly<{ type: string; edge: number; time: number; key: string }> | undefined;
-    let drag: Readonly<{ pointer: number; anchor: number; anchorAffinity: Affinity; revision: number }> | undefined;
+    let drag: Readonly<{ pointer: number; anchor: number; anchorAffinity: Affinity; revision: number; x: number; y: number; selection: Selection }> | undefined;
+    let dragFrame: number | undefined, dragTime: number | undefined, dragScrollFrames = 0, maxDragScrollStepMs = 0;
     const commandTimers = new Set<number>();
     let wordJob: Readonly<{ cursor: WordCursor; revision: number; selection: Selection }> | undefined, wordTimer: number | undefined;
     type CommandCapture = Readonly<{ buffer: TextBuffer; revision: number; selection: Selection; deleting: boolean }>;
@@ -347,15 +348,60 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         event.preventDefault(); cancelWord(); preferredX = undefined; focus(); group = undefined;
         const selected = view.getSnapshot().selection, anchor = event.shiftKey ? selected.anchor : point.offset;
         const anchorAffinity = event.shiftKey ? selected.anchorAffinity ?? "after" : point.affinity;
-        view.setSelection(revision, { anchor, head: point.offset, anchorAffinity, headAffinity: point.affinity }); refresh(); drag = { pointer: event.pointerId, anchor, anchorAffinity, revision }; root.setPointerCapture(event.pointerId);
+        view.setSelection(revision, { anchor, head: point.offset, anchorAffinity, headAffinity: point.affinity }); refresh();
+        drag = { pointer: event.pointerId, anchor, anchorAffinity, revision, x: event.clientX, y: event.clientY, selection: view.getSnapshot().selection }; root.setPointerCapture(event.pointerId);
     }, { signal: listeners.signal });
     root.addEventListener("pointermove", event => {
         if (drag?.pointer !== event.pointerId) return;
-        if (!(event.buttons & 1) || drag.revision !== revision) { stopDrag(); return; }
-        const point = viewport.hitTest(event.clientX, event.clientY); if (point) { view.setSelection(revision, { anchor: drag.anchor, head: point.offset, anchorAffinity: drag.anchorAffinity, headAffinity: point.affinity }); refresh(); }
+        if (!(event.buttons & 1) || !validDrag()) { stopDrag(); return; }
+        drag = { ...drag, x: event.clientX, y: event.clientY }; updateDragHead(); scheduleDragScroll();
     }, { signal: listeners.signal });
+    function validDrag(): boolean {
+        return !!drag && !disposed && !composing && !input.disabled && root.isConnected && root.clientWidth > 0 && root.clientHeight > 0
+            && drag.revision === revision && drag.selection === view.getSnapshot().selection && !!workspace.resolveTab(target) && root.hasPointerCapture(drag.pointer);
+    }
+    function dragBounds(): Readonly<{ left: number; right: number; top: number; bottom: number }> {
+        const rectangle = root.getBoundingClientRect(), left = rectangle.left + root.clientLeft, top = rectangle.top + root.clientTop;
+        return { left, right: left + root.clientWidth, top, bottom: top + root.clientHeight };
+    }
+    function updateDragHead(): void {
+        const current = drag; if (!current) return; const bounds = dragBounds();
+        const point = viewport.hitTest(Math.max(bounds.left, Math.min(bounds.right - 1, current.x)), Math.max(bounds.top, Math.min(bounds.bottom - 1, current.y)));
+        if (!point) return;
+        view.setSelection(current.revision, { anchor: current.anchor, head: point.offset, anchorAffinity: current.anchorAffinity, headAffinity: point.affinity });
+        if (drag === current) drag = { ...current, selection: view.getSnapshot().selection }; refresh();
+    }
+    function dragVelocity(): Readonly<{ x: number; y: number }> {
+        if (!drag) return { x: 0, y: 0 }; const bounds = dragBounds(), metrics = viewport.snapshot();
+        const speed = (point: number, low: number, high: number, unit: number) => {
+            const outside = point < low ? point - low : point >= high ? point - high + 1 : 0;
+            return Math.sign(outside) * Math.min((high - low) * 3, Math.max(unit * 5, Math.abs(outside) * 20));
+        };
+        return { x: speed(drag.x, bounds.left, bounds.right, metrics.columnWidth), y: speed(drag.y, bounds.top, bounds.bottom, metrics.lineHeight) };
+    }
+    function scheduleDragScroll(): void {
+        const velocity = dragVelocity();
+        if (!velocity.x && !velocity.y) { if (dragFrame !== undefined) win.cancelAnimationFrame(dragFrame); dragFrame = undefined; dragTime = undefined; }
+        else if (dragFrame === undefined) dragFrame = win.requestAnimationFrame(scrollDrag);
+    }
+    function scrollDrag(time: number): void {
+        const started = win.performance.now();
+        try {
+            dragFrame = undefined; if (!validDrag()) { stopDrag(); return; }
+            const velocity = dragVelocity(); if (!velocity.x && !velocity.y) { dragTime = undefined; return; }
+            const elapsed = dragTime === undefined ? 1000 / 60 : Math.max(0, Math.min(32, time - dragTime)); dragTime = time;
+            const before = viewport.snapshot();
+            viewport.scrollTo({ left: before.scrollLeft + velocity.x * elapsed / 1000, top: before.scrollTop + velocity.y * elapsed / 1000 }); viewport.flush();
+            if (!validDrag()) { stopDrag(); return; } updateDragHead();
+            dragScrollFrames++;
+            const after = viewport.snapshot();
+            if (drag && (after.scrollLeft !== before.scrollLeft || after.scrollTop !== before.scrollTop)) dragFrame = win.requestAnimationFrame(scrollDrag);
+            else dragTime = undefined;
+        } finally { maxDragScrollStepMs = Math.max(maxDragScrollStepMs, win.performance.now() - started); }
+    }
     const stopDrag = (event?: PointerEvent) => {
         if (event && event.pointerId !== drag?.pointer) return;
+        if (dragFrame !== undefined) win.cancelAnimationFrame(dragFrame); dragFrame = undefined; dragTime = undefined;
         const pointer = drag?.pointer; drag = undefined;
         if (pointer !== undefined && root.hasPointerCapture(pointer)) root.releasePointerCapture(pointer);
     };
@@ -378,7 +424,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     return Object.freeze({ element: root, input, view, viewport, focus,
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state: ViewState) => { viewport.restoreView(state); refresh(); },
-        snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, keydownEvents, lastKeydownMs, pendingCaret: frame !== undefined, commits, conflicts, composing, pendingWord: wordJob !== undefined || graphemeJob?.purpose === "word", wordScanSteps, maxWordScanStepMs, pendingGrapheme: graphemeJob !== undefined, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves, disposed }),
+        snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, keydownEvents, lastKeydownMs, pendingCaret: frame !== undefined,
+            pendingDragScroll: dragFrame !== undefined, dragScrollFrames, maxDragScrollStepMs, commits, conflicts, composing, pendingWord: wordJob !== undefined || graphemeJob?.purpose === "word", wordScanSteps, maxWordScanStepMs, pendingGrapheme: graphemeJob !== undefined, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves, disposed }),
         destroy: () => {
             if (disposed) return; disposed = true;
             cancelWord(); wordInput = undefined; insertion = undefined; graphemeCache = undefined;

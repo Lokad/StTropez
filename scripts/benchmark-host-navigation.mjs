@@ -13,8 +13,8 @@ async function ready() {
         const s = window.hostFixture?.snapshot(), c = s?.bindings.comparison;
         const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
         return s?.bindings.activeViews === 2 && s.bindings.views.every(v => v.metrics && !v.metrics.pendingWord && !v.metrics.pendingGrapheme
-            && !v.metrics.pendingCaret && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision && same(v.selection, v.metrics.viewport.selection))
-            && c?.status === "ready" && !c.input.pendingWord && !c.input.pendingGrapheme && !c.input.pendingCaret
+            && !v.metrics.pendingCaret && !v.metrics.pendingDragScroll && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision && same(v.selection, v.metrics.viewport.selection))
+            && c?.status === "ready" && !c.input.pendingWord && !c.input.pendingGrapheme && !c.input.pendingCaret && !c.input.pendingDragScroll
             && c.workingRevision === s.source.revision && !c.workingViewport.pending && c.workingViewport.revision === s.source.revision
             && same(c.selection, c.workingViewport.selection) && c.referenceViewport && !c.referenceViewport.pending;
     });
@@ -36,9 +36,9 @@ async function command(key, expected) {
             const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
             const check = () => {
                 const s = f.snapshot(), c = s.bindings.comparison, p = s.bindings.views.find(v => v.id === "primary");
-                const workingReady = s.bindings.views.every(v => v.metrics && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.pendingCaret
+                const workingReady = s.bindings.views.every(v => v.metrics && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.pendingCaret && !v.metrics.pendingDragScroll
                     && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision && same(v.selection, v.metrics.viewport.selection));
-                if (!workingReady || !c || c.status !== "ready" || c.input.pendingWord || c.input.pendingGrapheme || c.input.pendingCaret
+                if (!workingReady || !c || c.status !== "ready" || c.input.pendingWord || c.input.pendingGrapheme || c.input.pendingCaret || c.input.pendingDragScroll
                     || c.workingRevision !== s.source.revision || c.workingViewport.pending || c.workingViewport.revision !== s.source.revision
                     || !same(c.selection, c.workingViewport.selection) || !c.referenceViewport || c.referenceViewport.pending) {
                     frames = 0; requestAnimationFrame(check); return;

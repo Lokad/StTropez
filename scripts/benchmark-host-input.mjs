@@ -11,9 +11,9 @@ const click = name => page.getByRole("button", { name, exact: true }).click();
 async function ready() {
     await page.waitForFunction(() => {
         const s = window.hostFixture?.snapshot(), c = s?.bindings.comparison, same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-        return s?.bindings.activeViews === 2 && s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme
+        return s?.bindings.activeViews === 2 && s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingDragScroll && !v.metrics.pendingWord && !v.metrics.pendingGrapheme
             && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision && same(v.metrics.viewport.selection, v.selection))
-            && c?.status === "ready" && !c.input.pendingCaret && !c.input.pendingWord && !c.input.pendingGrapheme && !c.workingViewport.pending
+            && c?.status === "ready" && !c.input.pendingCaret && !c.input.pendingDragScroll && !c.input.pendingWord && !c.input.pendingGrapheme && !c.workingViewport.pending
             && c.workingRevision === s.source.revision && c.workingViewport.revision === s.source.revision && same(c.workingViewport.selection, c.selection)
             && c.referenceViewport && !c.referenceViewport.pending;
     });
@@ -42,8 +42,8 @@ async function measure(input, text, mode) {
                 && c && !c.input.pendingWord && !c.input.pendingGrapheme && !c.workingViewport.pending
                 && c.workingViewport.revision === s.source.revision && same(c.workingViewport.selection, c.selection);
         };
-        const full = s => rendered(s) && s.bindings.views.every(v => !v.metrics.pendingCaret)
-            && s.bindings.comparison.status === "ready" && !s.bindings.comparison.input.pendingCaret
+        const full = s => rendered(s) && s.bindings.views.every(v => !v.metrics.pendingCaret && !v.metrics.pendingDragScroll)
+            && s.bindings.comparison.status === "ready" && !s.bindings.comparison.input.pendingCaret && !s.bindings.comparison.input.pendingDragScroll
             && s.bindings.comparison.workingRevision === s.source.revision && s.bindings.comparison.referenceViewport
             && !s.bindings.comparison.referenceViewport.pending;
         let frame, frames = 0, started, pendingStart, finished = false;

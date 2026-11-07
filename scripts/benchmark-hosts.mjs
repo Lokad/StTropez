@@ -14,9 +14,9 @@ const clock = () => harness.page.evaluate(() => performance.now());
 async function ready() {
     await harness.page.waitForFunction(() => {
         const s = window.hostFixture?.snapshot(); return s && s.bindings.activeViews === 2
-            && s.bindings.views.every(view => !view.metrics || !view.metrics.viewport.pending && view.metrics.viewport.revision === s.source.revision)
+            && s.bindings.views.every(view => !view.metrics || !view.metrics.pendingDragScroll && !view.metrics.viewport.pending && view.metrics.viewport.revision === s.source.revision)
             && (!s.bindings.comparison || s.bindings.comparison.status === "ready" && s.bindings.comparison.workingRevision === s.source.revision
-                && s.bindings.comparison.workingViewport.revision === s.source.revision && !s.bindings.comparison.workingViewport.pending
+                && s.bindings.comparison.workingViewport.revision === s.source.revision && !s.bindings.comparison.input.pendingDragScroll && !s.bindings.comparison.workingViewport.pending
                 && s.bindings.comparison.referenceViewport && !s.bindings.comparison.referenceViewport.pending);
     });
 }

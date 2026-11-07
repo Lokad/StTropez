@@ -11,10 +11,11 @@ export function installHostReferenceProbe() {
             && c.workingViewport.revision === state.source.revision && same(c.workingViewport.selection, c.selection);
         const scans = views.every(v => !v.metrics.pendingWord && !v.metrics.pendingGrapheme) && c && !c.input.pendingWord && !c.input.pendingGrapheme;
         const caret = views.every(v => !v.metrics.pendingCaret) && c && !c.input.pendingCaret;
+        const drag = views.every(v => !v.metrics.pendingDragScroll) && c && !c.input.pendingDragScroll;
         const comparison = c?.status === "ready" && c.workingRevision === state.source.revision;
         const reference = c?.referenceViewport && !c.referenceViewport.pending && referenceLabel() === `Baseline · ${c.baseline?.version}`;
-        return { rendered: !!rendered, scans: !!scans, caret: !!caret, comparison: !!comparison, reference: !!reference,
-            full: !!(state.bindings.activeViews === 2 && rendered && scans && caret && comparison && reference) };
+        return { rendered: !!rendered, scans: !!scans, caret: !!caret, drag: !!drag, comparison: !!comparison, reference: !!reference,
+            full: !!(state.bindings.activeViews === 2 && rendered && scans && caret && drag && comparison && reference) };
     };
     function waitReady() {
         return new Promise((resolve, reject) => {
@@ -26,11 +27,13 @@ export function installHostReferenceProbe() {
             }; frame = requestAnimationFrame(check);
         });
     }
-    function arm({ kind, operation, text = "" }) {
+    function arm({ kind, operation, text = "", replaceSelection = false }) {
         active?.abort();
         const before = fixture.snapshot(), prior = before.bindings.views.find(v => v.id === "primary"), initial = before.bindings.comparison;
         const node = document.querySelector('textarea[aria-label="Primary source"]'), listeners = new AbortController(), records = [], generations = new Map(), phases = {};
-        const offset = prior.selection.head, expectedRevision = before.source.revision + (kind === "input" ? text.length : 0);
+        const offset = replaceSelection ? Math.min(prior.selection.anchor, prior.selection.head) : prior.selection.head;
+        const replacedUnits = replaceSelection ? Math.abs(prior.selection.anchor - prior.selection.head) : 0;
+        const expectedRevision = before.source.revision + (kind === "input" ? text.length : 0);
         let start, pendingStart, dispatchEnd, frame, frames = 0, finished = false, resolve, reject;
         const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
         // A later Playwright call awaits this promise; keep a timeout rejection handled in the meantime.
@@ -67,7 +70,7 @@ export function installHostReferenceProbe() {
                 ? c.baseline?.epoch === initial.baseline.epoch + 1 : records.length === text.length);
             if (!model) return;
             const now = performance.now(); phases.modelObservedAt ??= now;
-            for (const key of ["rendered", "scans", "caret", "comparison", "reference"]) if (current[key]) phases[`${key}At`] ??= now;
+            for (const key of ["rendered", "scans", "caret", "drag", "comparison", "reference"]) if (current[key]) phases[`${key}At`] ??= now;
         }
         const roots = document.querySelectorAll(".st-editing-candidate");
         if (roots.length !== 3 || !facts(before).full || !node) { fail("Reference experiment requires three ready bounded working views."); return; }
@@ -80,7 +83,7 @@ export function installHostReferenceProbe() {
             // React delegates at its root; document bubbling observes both hosts after their handlers.
             document.addEventListener("click", event => { if (event.target === button) { dispatchEnd = performance.now(); observe(); } }, { signal: listeners.signal });
         } else {
-            if (prior.selection.anchor !== offset || node.ownerDocument.activeElement !== node) { fail("Input experiment requires its captured collapsed source selection."); return; }
+            if ((!replaceSelection && prior.selection.anchor !== offset) || node.ownerDocument.activeElement !== node) { fail("Input experiment requires its captured source selection and focus."); return; }
             node.addEventListener("beforeinput", () => { pendingStart = performance.now(); start ??= pendingStart; observeGeneration(fixture.snapshot()); }, { capture: true, signal: listeners.signal });
             node.addEventListener("input", () => observeGeneration(fixture.snapshot()), { capture: true, signal: listeners.signal });
             node.addEventListener("blur", () => fail("Reference experiment input lost focus."), { signal: listeners.signal });
@@ -88,7 +91,7 @@ export function installHostReferenceProbe() {
                 const state = fixture.snapshot(), view = state.bindings.views.find(v => v.id === "primary"), count = records.length + 1;
                 if (pendingStart === undefined || count > text.length || !["insertText", "insertLineBreak"].includes(event.inputType)
                     || state.source.id !== before.source.id || view.viewId !== prior.viewId || state.source.revision !== before.source.revision + count
-                    || state.source.length !== before.source.length + count || view.selection.anchor !== offset + count || view.selection.head !== offset + count
+                    || state.source.length !== before.source.length - replacedUnits + count || view.selection.anchor !== offset + count || view.selection.head !== offset + count
                     || fixture.range(offset, offset + count) !== text.slice(0, count) || view.metrics.inputEvents !== prior.metrics.inputEvents + count
                     || view.metrics.commits !== prior.metrics.commits + count || view.metrics.inputUnits > 2600) { fail("Incorrect reference experiment input result."); return; }
                 records.push({ revision: state.source.revision, beforeinputAt: pendingStart, inputFinishedAt: performance.now(), inputHandlerMs: view.metrics.lastInputMs });
@@ -124,6 +127,7 @@ export function installHostReferenceProbe() {
                 referenceLabel: referenceLabel(), hunks: c.hunks, revision: state.source.revision, exports: state.source.exports,
                 rows, readUnits, inputUnits: state.bindings.views.map(v => v.metrics.inputUnits), comparisonInputUnits: c.input.inputUnits,
                 backgroundUpdates: state.activity.background - before.activity.background, historyBefore: before.history, historyAfter: state.history,
+                replacement: replaceSelection ? { from: offset, to: offset + replacedUnits } : null,
                 primarySelection: state.bindings.views.find(v => v.id === "primary").selection, secondarySelection: state.bindings.views.find(v => v.id === "secondary").selection });
         }; frame = requestAnimationFrame(check);
     }
