@@ -67,6 +67,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
         if (display) { workspace.releaseResource(display.id); display = undefined; }
     }
     function visible(value: string): string { return value.replaceAll(" ", "·").replaceAll("\t", "⇥").replaceAll("\r", "␍").replaceAll("\n", "↵\n"); }
+    const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
     function render(): void {
         if (disposed) return; state = controller.getSnapshot();
         if (state.baseline && state.baseline.epoch !== epoch) {
@@ -77,21 +78,24 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
             displayTarget = workspace.captureTab(displayTab);
             reference = mountTextViewport(referencePane.content, workspace, displayTab, { ariaLabel: "Comparison baseline source", decorate: decorate("baseline"), lineClass: lineClass("baseline") });
         } else if (!state.baseline && reference) clearReference();
-        root.dataset.status = state.status; root.dataset.generation = String(state.generation);
-        referencePane.heading.textContent = state.baseline ? `Baseline · ${state.baseline.version}` : "Baseline unavailable";
-        workingPane.heading.textContent = state.working ? `Working · revision ${state.working.revision}` : "Working unavailable";
+        if (root.dataset.status !== state.status) root.dataset.status = state.status;
+        const generation = String(state.generation); if (root.dataset.generation !== generation) root.dataset.generation = generation;
+        setText(referencePane.heading, state.baseline ? `Baseline · ${state.baseline.version}` : "Baseline unavailable");
+        setText(workingPane.heading, state.working ? `Working · revision ${state.working.revision}` : "Working unavailable");
         const count = state.hunks.length; selected = selectedGeneration === state.generation ? Math.min(selected, count - 1) : -1;
         const hunk = selected >= 0 ? state.hunks[selected] : undefined;
-        status.textContent = state.status === "ready" ? count ? `${hunk ? `Change ${selected + 1} of ${count}` : `${count} changes`}${hunk?.whitespaceOnly ? " · whitespace only" : ""}` : "No changes" : state.failure ?? `Comparison ${state.status}`;
-        previous.disabled = next.disabled = state.status !== "ready" || count === 0 || working.snapshot().composing;
+        setText(status, state.status === "ready" ? count ? `${hunk ? `Change ${selected + 1} of ${count}` : `${count} changes`}${hunk?.whitespaceOnly ? " · whitespace only" : ""}` : "No changes" : state.failure ?? `Comparison ${state.status}`);
+        const navigationDisabled = state.status !== "ready" || count === 0 || working.snapshot().composing;
+        for (const button of [previous, next]) if (button.disabled !== navigationDisabled) button.disabled = navigationDisabled;
         const metadata = state.working ? workspace.resource(state.working.resourceId).metadata.getSnapshot() : undefined;
-        revert.disabled = !hunk || !metadata?.capabilities.edit.includes("human") || metadata.editLock !== null || working.snapshot().composing;
-        preview.hidden = !hunk;
+        const revertDisabled = !hunk || !metadata?.capabilities.edit.includes("human") || metadata.editLock !== null || working.snapshot().composing;
+        if (revert.disabled !== revertDisabled) revert.disabled = revertDisabled;
+        if (preview.hidden !== !hunk) preview.hidden = !hunk;
         if (hunk && state.baseline && state.working) {
             const text = (side: "baseline" | "working") => { const range = hunk[side], buffer = side === "baseline" ? state.baseline!.buffer : state.working!.buffer;
                 return `${side === "baseline" ? "Baseline" : "Working"} lines ${range.lineFrom + 1}–${Math.max(range.lineFrom + 1, range.lineTo)}: ${range.from === range.to ? "∅" : visible(buffer.slice(range.from, Math.min(range.to, range.from + 160))) + (range.to - range.from > 160 ? "…" : "")}`; };
-            referencePreview.textContent = text("baseline"); workingPreview.textContent = text("working");
-        } else { referencePreview.textContent = workingPreview.textContent = ""; }
+            setText(referencePreview, text("baseline")); setText(workingPreview, text("working"));
+        } else { setText(referencePreview, ""); setText(workingPreview, ""); }
         // Progress-only publications change no decorations. Selection and scroll invalidate
         // their own viewports; redraw hunks once on restart, completion or expiration.
         if (state.generation !== decoratedGeneration || state.status !== decoratedStatus) {

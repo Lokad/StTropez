@@ -44,14 +44,25 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
     const buttons = languageActions(tools).map(action => { const button = owner.createElement("button"); button.textContent = action.label;
         button.addEventListener("click", action.invoke, { signal: listeners.signal }); nav.append(button); return button; });
     host.append(heading, help, status, choices, diagnostics, ...fields.map(f => f.label), findStatus, nav);
+    const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
     const render = () => {
-        const state = tools.state.getSnapshot(); status.textContent = state.provider?.message ?? "Focus a source view to use language actions.";
-        choices.replaceChildren(); if (state.provider?.offerText != null) { const item = owner.createElement("li"); item.textContent = state.provider.offerText; item.setAttribute("role", "option"); item.setAttribute("aria-selected", "true"); choices.append(item); }
-        diagnostics.replaceChildren(); state.provider?.diagnostics.forEach((diagnostic, index) => { const item = owner.createElement("li"), button = owner.createElement("button"); button.textContent = `${diagnostic.from}: ${diagnostic.message}`;
-            button.onclick = () => tools.selectDiagnostic(index); item.append(button); diagnostics.append(item); });
-        for (const [index, action] of languageActions(tools).entries()) buttons[index]!.disabled = action.disabled;
-        findStatus.textContent = findText(tools);
-        fields[0]!.field.value = state.query; fields[1]!.field.value = state.replacement;
+        const state = tools.state.getSnapshot(); setText(status, state.provider?.message ?? "Focus a source view to use language actions.");
+        const offered = state.provider?.offerText;
+        if (offered != null) {
+            if (choices.childElementCount !== 1 || choices.firstElementChild?.textContent !== offered) {
+                const item = owner.createElement("li"); item.textContent = offered; item.setAttribute("role", "option"); item.setAttribute("aria-selected", "true"); choices.replaceChildren(item);
+            }
+        } else if (choices.childNodes.length) choices.replaceChildren();
+        const currentDiagnostics = state.provider?.diagnostics ?? [];
+        if (diagnostics.childElementCount !== currentDiagnostics.length || currentDiagnostics.some((diagnostic, index) => diagnostics.children.item(index)?.textContent !== `${diagnostic.from}: ${diagnostic.message}`)) {
+            const items = currentDiagnostics.map((diagnostic, index) => { const item = owner.createElement("li"), button = owner.createElement("button"); button.textContent = `${diagnostic.from}: ${diagnostic.message}`;
+                button.onclick = () => tools.selectDiagnostic(index); item.append(button); return item; });
+            diagnostics.replaceChildren(...items);
+        }
+        for (const [index, action] of languageActions(tools).entries()) { const button = buttons[index]!; if (button.disabled !== action.disabled) button.disabled = action.disabled; }
+        setText(findStatus, findText(tools));
+        if (fields[0]!.field.value !== state.query) fields[0]!.field.value = state.query;
+        if (fields[1]!.field.value !== state.replacement) fields[1]!.field.value = state.replacement;
     };
     const unsubscribe = tools.state.subscribe(render); render();
     return () => { unsubscribe(); listeners.abort(); tools.queryRef(null); tools.replacementRef(null); host.replaceChildren(); };

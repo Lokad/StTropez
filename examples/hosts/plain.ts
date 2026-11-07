@@ -32,7 +32,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const language = document.createElement("section"); language.setAttribute("aria-label", "Language and find tools"); language.className = "host-language";
     host.replaceChildren(nav, status, recovery, conflict, scene, review, language, modal);
     const destroyLanguage = mountLanguagePanel(language, bindings.language);
-    const updateStatus = () => { status.textContent = statusText(controller); };
+    const updateStatus = () => { const text = statusText(controller); if (status.textContent !== text) status.textContent = text; };
     let unwatchForm: (() => void) | undefined;
     let sceneListeners: AbortController | undefined;
     let rendered: Layout | undefined;

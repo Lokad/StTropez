@@ -249,3 +249,43 @@ settlement after the last input and complete action
 automation have separate fields. Requested keyboard delay and actual input gaps are retained;
 burst totals include cadence and instrumentation. No metric proves physical presentation or
 native IME/clipboard/assistive-technology support. Target misses remain in raw assessments.
+
+Plain host controls project changed text, field values and enabled states into their existing
+DOM. Identical offers and diagnostic labels retain their rows; diagnostic buttons resolve the
+current controller entry when invoked. Comparison progress also retains unchanged headings,
+messages and control attributes. This reuses the viewport and configuration field's existing
+DOM equality-guard pattern, without a second application-state store or reactive dependency.
+Actual provider results, permissions and reference versions still update their visible controls.
+
+## Equal references and input timing
+
+`bench:host-reference` pairs acceptance of the exact working buffer with refresh from an
+independently stored, equal saved reference. Both arms explicitly save the same source first.
+The fixture's canonical trimming leaves that source unchanged because it ends in a nonwhite
+character. Save automation and its intentional text capture are recorded outside the reference
+and input clocks. Exact text and reference checks run outside those clocks too.
+
+The existing 84 input conditions remain intact, including first character, Enter, sustained
+typing and repeated-x long-line controls. Two reference types and two history modes produce
+336 conditions with three warmups and ten measured samples. A fresh condition recreates its
+host; accumulated conditions retain the pattern/position/mode sequence within each arm and
+iteration. Arm order alternates. Both hosts, beginning/middle/end positions, Unicode/CRLF,
+repeated and distinct 100,000-line sources and a long-line control remain explicit.
+
+Reference timing starts at the captured finish command's click. Document bubbling observes
+both plain and delegated React handlers; this dispatch observation includes instrumentation.
+Reference replacement is a separate whole-document operation, with no point-action budget.
+Input timing starts at `beforeinput`. Adapter input-handler duration, working render, scans,
+caret, comparison computation, current reference readiness and complete automation clocks are
+separate. Full readiness requires current model/selections, every working/reference viewport,
+the displayed reference version, completed comparison and two frames. Requested and actual
+key cadence, raw samples and p50/p95/max values stay in the report.
+
+Comparison scheduler counters describe an old generation until a new job first advances.
+The observer checks that identity before attributing counters. It samples every input capture
+and bubble, render events and frames, retaining observed work for superseded generations
+alongside final-generation counters. These observations add overhead and are not process CPU
+attribution. They do not replace the original input reports or establish a runtime speedup.
+All exact-source/history, independent-selection, bounded-context/DOM/read, ordinary-export
+and disposal assertions remain active. Native devices and physical display latency remain
+unverified.

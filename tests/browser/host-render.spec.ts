@@ -1,0 +1,68 @@
+import { test, expect } from "@playwright/test";
+import type { Page } from "@playwright/test";
+
+const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
+async function ready(page: Page): Promise<void> {
+    await expect.poll(async () => { const state = await snapshot(page), c = state.bindings.comparison;
+        return state.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme
+            && !v.metrics.viewport.pending && v.metrics.viewport.revision === state.source.revision)
+            && c?.status === "ready" && !c.input.pendingCaret && !c.input.pendingWord && !c.input.pendingGrapheme
+            && !c.workingViewport.pending && c.referenceViewport && !c.referenceViewport.pending;
+    }).toBe(true);
+}
+
+for (const mode of ["plain", "react"] as const) test(`${mode} review typing retains unchanged labels and controls while new reference versions still appear`, async ({ page }) => {
+    page.on("pageerror", error => { throw error; });
+    page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+    await page.goto(`/hosts/${mode}/?editor=candidate`);
+    const input = page.getByRole("textbox", { name: "Primary source", exact: true }), original = "const sample = 1; // TODO\n" + "x".repeat(2_400_000);
+    await expect(input).toBeVisible();
+    await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);
+    await page.evaluate(text => { const f = window.hostFixture, state = f.snapshot(); f.editSource(state.source.revision, [{ from: 0, to: state.source.length, insert: text }]); }, original);
+    await page.getByRole("button", { name: "Capture review acceptance", exact: true }).click();
+    await page.getByRole("button", { name: "Finish review acceptance", exact: true }).click(); await ready(page);
+    await page.getByRole("button", { name: "Save source", exact: true }).click();
+    await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1); await page.evaluate(() => window.hostFixture.finishSave());
+    await expect.poll(async () => (await snapshot(page)).pendingCommands).toBe(0);
+    await page.getByRole("button", { name: "Capture reference refresh", exact: true }).click();
+    await page.getByRole("button", { name: "Finish reference refresh", exact: true }).click(); await ready(page);
+    const reference = page.getByRole("heading", { name: "Baseline · reference:saved-v1", exact: true }); await expect(reference).toBeVisible();
+    expect((await snapshot(page)).bindings.comparison!.referenceIsWorkingBuffer).toBe(false);
+    await input.press("Control+Home"); for (let i = 0; i < 8; i++) await input.press("ArrowRight");
+    await input.press("Control+Space"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
+    await expect(page.getByLabel("Source diagnostics", { exact: true })).toContainText(`${original.indexOf("TODO")}: Resolve this placeholder.`);
+    await input.press("Control+End"); await ready(page);
+    const probe = await page.evaluateHandle(() => {
+        const root = document.querySelector('.st-comparison[aria-label="Source review"]')!, heading = [...root.querySelectorAll("h3")].find(h => h.textContent!.startsWith("Baseline ·"))!;
+        const fields = new Map<Node, string>([[heading, "reference"], [document.querySelector('[aria-label="Language status"]')!, "language"],
+            [document.querySelector('[aria-label="Find status"]')!, "find"], [document.querySelector('[aria-label="Host operation status"]')!, "host"]]);
+        const first = heading.firstChild, duplicates: Record<string, number> = { reference: 0, language: 0, find: 0, host: 0 };
+        const collect = (records: readonly MutationRecord[]) => { for (const record of records) { const key = fields.get(record.target); if (!key) continue;
+            const before = [...record.removedNodes].map(n => n.textContent).join(""), after = [...record.addedNodes].map(n => n.textContent).join("");
+            if (before === after) duplicates[key] = duplicates[key]! + 1;
+        } };
+        const observer = new MutationObserver(collect); for (const node of fields.keys()) observer.observe(node, { childList: true });
+        return { read: () => { collect(observer.takeRecords()); return { duplicates, referenceRetained: heading.firstChild === first }; }, stop: () => observer.disconnect() };
+    });
+    try {
+        await input.pressSequentially("x".repeat(32)); await ready(page);
+        expect(await page.evaluate(text => { const f = window.hostFixture; return f.range(0, text.length) === text; }, original + "x".repeat(32))).toBe(true);
+        expect((await snapshot(page)).source.exports).toBe(0);
+        const observed = await probe.evaluate(p => p.read());
+        expect(observed.duplicates).toEqual({ reference: 0, language: 0, find: 0, host: 0 }); expect(observed.referenceRetained).toBe(true);
+    } finally { await probe.evaluate(p => p.stop()); await probe.dispose(); }
+    await expect(page.getByLabel("Source diagnostics", { exact: true }).getByRole("button")).toHaveCount(0);
+    await input.press("Control+Home"); for (let i = 0; i < 8; i++) await input.press("ArrowRight");
+    await input.press("Control+Space"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
+    await page.getByLabel("Source diagnostics", { exact: true }).getByRole("button", { name: `${original.indexOf("TODO")}: Resolve this placeholder.`, exact: true }).click();
+    await expect(input).toBeFocused();
+    expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: original.indexOf("TODO"), head: original.indexOf("TODO") + 4 });
+    await page.getByRole("button", { name: "Save source", exact: true }).click();
+    await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1); await page.evaluate(() => window.hostFixture.finishSave());
+    await expect.poll(async () => (await snapshot(page)).pendingCommands).toBe(0);
+    await page.getByRole("button", { name: "Capture reference refresh", exact: true }).click();
+    await page.getByRole("button", { name: "Finish reference refresh", exact: true }).click(); await ready(page);
+    await expect(page.getByRole("heading", { name: "Baseline · reference:saved-v2", exact: true })).toBeVisible();
+    expect((await snapshot(page)).source.dirty).toBe(false); expect((await snapshot(page)).bindings.comparison!.hunks).toBe(0);
+    await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+});
