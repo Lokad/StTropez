@@ -486,3 +486,37 @@ test(`React ${editor} explicit mount returns only after stable refs and Strict M
     await expect(primary).toHaveValue("first input after mount");
 });
 }
+
+for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const) {
+    test(`${mode} ${editor} native status reset preserves captured Run progress, later typing and shared history`, async ({ page }) => {
+        await page.goto(`/hosts/${mode}/?editor=${editor}`);
+        const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
+        const status = page.getByLabel("Host operation status", { exact: true });
+        await primary.press("End"); await primary.pressSequentially(" human");
+        await page.getByRole("textbox", { name: "Configuration path", exact: true }).fill("status-reset.csv");
+        const before = await page.evaluate(() => window.hostFixture.snapshot());
+        await status.evaluate(node => {
+            // Associate only the output so this checks its native reset independently of input reset policy.
+            const form = document.createElement("form"); form.id = "host-status-reset"; document.body.append(form);
+            node.setAttribute("form", form.id); form.reset();
+        });
+        const reset = await page.evaluate(() => window.hostFixture.snapshot());
+        expect(reset.source.revision).toBe(before.source.revision); expect(reset.history).toEqual(before.history);
+        await page.getByRole("button", { name: "Run captured inputs", exact: true }).click();
+        await expect(status).toContainText("Runs: 1 pending, 0 completed");
+        expect(await page.evaluate(() => window.hostFixture.runCapture(0))).toMatchObject({ source: "start human" });
+        await primary.press("End"); await primary.pressSequentially(" later");
+        const typed = await page.evaluate(() => window.hostFixture.snapshot());
+        await page.getByRole("button", { name: "Finish run", exact: true }).click();
+        await expect(status).toContainText("Runs: 0 pending, 1 completed");
+        expect((await page.evaluate(() => window.hostFixture.snapshot())).history).toEqual(typed.history);
+        await expect(primary).toHaveValue("start human later");
+        expect(await page.evaluate(() => window.hostFixture.range(0, 17))).toBe("start human later");
+        await primary.press("Control+z"); await expect(primary).toHaveValue("start human");
+        await primary.press("Control+Shift+z"); await expect(primary).toHaveValue("start human later");
+        await page.evaluate(() => window.hostFixture.dispose());
+        const disposed = await page.evaluate(() => window.hostFixture.snapshot());
+        expect(disposed.diagnostics.views).toBe(0); expect(disposed.diagnostics.leases).toBe(0);
+        expect(disposed.diagnostics.subscriptions).toBe(0); expect(disposed.hostSubscriptions).toBe(0);
+    });
+}
