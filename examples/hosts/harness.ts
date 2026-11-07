@@ -17,7 +17,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         editSource: (expectedRevision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: controller.source.documentId,
             expectedRevision, edits, origin: "host", history: { kind: "live" } }),
         deliverProposal: controller.deliverProposalText, runCapture: (index: number) => controller.runCapture(index), setPath: controller.setPath, recoveryText: () => controller.recoveryText(),
-        finishRun: controller.finishRun, failRun: controller.failRun, finishSave: controller.finishSave,
+        finishRun: controller.finishRun, failRun: controller.failRun, finishSave: controller.finishSave, failSave: controller.failSave,
         externalWrite: (text: string) => controller.externalWrite(text), finishConflictReview: controller.finishConflictReview, saveReviewedSource: controller.saveReviewedSource,
         range: (from: number, to: number) => controller.workspace.document(controller.source.documentId).buffer.slice(from, to),
         referenceRange: (from: number, to: number) => bindings.referenceRange(from, to),
@@ -32,7 +32,7 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; mode
     editSource: (expectedRevision: number, edits: readonly TextEdit[]) => ReturnType<HostController["workspace"]["edit"]>;
     deliverProposal: (text: string) => void; runCapture: (index: number) => ReturnType<HostController["runCapture"]>; setPath: (path: string) => void;
     recoveryText: () => string | null;
-    finishRun: () => void; failRun: () => void; finishSave: () => void; range: (from: number, to: number) => string;
+    finishRun: () => void; failRun: () => void; finishSave: () => void; failSave: () => void; range: (from: number, to: number) => string;
     externalWrite: (text: string) => void; finishConflictReview: () => boolean; saveReviewedSource: () => void;
     referenceRange: (from: number, to: number) => string | undefined;
     selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => boolean;

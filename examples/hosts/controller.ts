@@ -43,7 +43,7 @@ export class HostController {
     private readonly conflictReads: { operation: Operation; presentation: TabTarget; conflictId: number; buffer: TextBuffer; version: string }[] = [];
     private pendingAgent: AgentRequest<Readonly<{ configurationRevision: number; path: string }>> | undefined;
     private readonly agentReplies: { request: AgentRequest<Readonly<{ configurationRevision: number; path: string }>>; resolve: (proposal: string) => void; reject: (error: unknown) => void }[] = [];
-    private readonly saves: { submission: SaveSubmission<string>; resolve: (response: SaveResponse<string>) => void }[] = [];
+    private readonly saves: { submission: SaveSubmission<string>; resolve: (response: SaveResponse<string>) => void; reject: (error: unknown) => void }[] = [];
     private readonly runs: { submission: RunSubmission<string, Connection, RunSettings>; resolve: () => void; reject: (error: unknown) => void }[] = [];
     private readonly operations = new Set<Promise<unknown>>();
     private disposal: Promise<void> | undefined;
@@ -140,7 +140,7 @@ export class HostController {
         void this.track(this.commands.save(this.source, { save: submission => {
             captured = submission;
             return this.disposed ? Promise.resolve({ kind: "conflict", serverVersion: this.serverVersion })
-                : new Promise(resolve => this.saves.push({ submission, resolve }));
+                : new Promise((resolve, reject) => this.saves.push({ submission, resolve, reject }));
         } }, review)
             .then(result => {
                 if (!this.disposed && result.kind === "saved") {
@@ -210,6 +210,7 @@ export class HostController {
         this.serverBuffer = TextBuffer.from(pending.submission.value.trimEnd());
         pending.resolve({ kind: "saved", serverVersion: this.serverVersion, canonical: pending.submission.value.trimEnd() });
     };
+    readonly failSave = (): void => { this.saves.shift()?.reject(new Error("Synthetic save transport failure")); };
     readonly retryAcknowledgement = (): void => this.safe(() => {
         const acknowledgement = this.review.getSnapshot().acknowledgements[0];
         if (!acknowledgement) return;

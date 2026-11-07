@@ -289,3 +289,40 @@ attribution. They do not replace the original input reports or establish a runti
 All exact-source/history, independent-selection, bounded-context/DOM/read, ordinary-export
 and disposal assertions remain active. Native devices and physical display latency remain
 unverified.
+
+## Save transport recovery
+
+The deferred local save port exposes **Fail save** alongside **Finish save**. Failure rejects
+the existing captured submission; it does not write the synthetic server, advance a saved
+reference or create an acknowledgement receipt. The existing command layer reports the error,
+marks the save failed and releases its ownership. Human edits and shared history remain owned
+by the document. This control exercises a service failure without introducing a service client.
+
+A retry captures the current source explicitly. Content already queued keeps its captured
+revision while server preconditions are resolved when that queued submission starts. Successful
+retry receipts preserve edits made after capture, including across host remount and tab movement.
+Reference refresh and acknowledgement remain independent commands. Disposing the host settles
+pending rejections and queued operations before reporting completion; late controls are inert.
+
+The recovery scenarios use real keyboard corrections in plain and React hosts, independent
+selections, both source adapters and a 100,000-line bounded candidate. They check the exact
+source, saved/reference/server versions, undo-to-saved behavior, acknowledgement retry and
+released ownership. These local fixtures do not establish native-device support or real-service
+availability. Handler duration and complete recovery workflow measurements remain distinct.
+
+`bench:save-recovery` repeats eight candidate-host conditions with three warmups and ten
+measured samples: both hosts and Unicode/CRLF, repeated/distinct 100,000-line and long-line
+sources. Initial successful save/reference setup is outside recovery clocks. A rejected save
+is followed by a real point input while corrections remain owned, then an explicit retry,
+later typing, remount, successful receipt and saved-reference refresh. History and full source
+checks remain exact. The native baseline has semantic browser coverage; candidate handler
+measurements do not certify its input path.
+
+The report separates the adapter input-event duration, point-input review readiness, visible
+failure-plus-review readiness, complete point/failure automation, capture, retry/remount,
+reference refresh and complete recovery workflow. The point probe uses the existing current
+model/selection/scans/caret/all-pane/two-frame contract. The failure clock additionally waits
+for the visible host message and two further frames. Full workflow time includes intermediate
+automation/assertions and typing; no service delay is imposed. Whole recovery and reference
+replacement have no point-action budget. Raw samples, background counts and p50/p95/max remain
+available, including target misses. These proxies do not measure physical presentation.
