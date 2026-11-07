@@ -12,10 +12,13 @@ import { runPackagedPilot } from "./package-pilot.mjs";
 import { runPackagedHunkPilot } from "./package-hunk-pilot.mjs";
 
 const hunkOnly = process.argv.includes("--hunk-only");
-const pilotOnly = hunkOnly || process.argv.includes("--pilot-only"), benchmark = process.argv.includes("--bench");
+const reactOnly = process.argv.includes("--react-only"), prepareOnly = process.argv.includes("--prepare-only");
+const pilotOnly = reactOnly || hunkOnly || process.argv.includes("--pilot-only"), benchmark = process.argv.includes("--bench");
 const browserName = process.argv.find(arg => arg.startsWith("--browser="))?.slice("--browser=".length) ?? "chromium";
 assert.ok(["chromium", "firefox", "webkit"].includes(browserName), `Unknown browser: ${browserName}`);
-assert.ok(!benchmark || pilotOnly, "Use --pilot-only or --hunk-only with --bench to keep the workload explicit.");
+assert.ok(!benchmark || pilotOnly, "Use --pilot-only, --hunk-only or --react-only with --bench to keep the workload explicit.");
+assert.ok(!reactOnly || (!hunkOnly && !process.argv.includes("--pilot-only")), "Select one restored pilot scenario.");
+assert.ok(!prepareOnly || (reactOnly && !benchmark), "Preparation-only checks require --react-only without --bench.");
 
 const project = resolve(".");
 const archive = await readFile("artifacts/nuget/feed/StTropez.Assets.0.0.0-local.nupkg");
@@ -60,37 +63,62 @@ for (const asset of assets.assets) {
     assert.equal(createHash("sha256").update(bytes).digest("hex"), asset.sha256);
 }
 // The host already owns TypeScript/esbuild. Paths are an explicit frontend bridge.
+const reactHost = reactOnly ? await (await import("./package-react-host.mjs")).stagePackagedReactHost(project, consumer) : undefined;
 const compilerOptions = { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true,
     skipLibCheck: false, noEmit: true, types: [], paths: {
         sttropez: [join(assetRoot, "index.d.ts")], "sttropez/browser": [join(assetRoot, "browser/index.d.ts")],
     } };
+if (reactHost) Object.assign(compilerOptions, reactHost.compilerOptions, { paths: { ...compilerOptions.paths, ...reactHost.compilerOptions.paths } });
+const compilerFiles = ["main.ts", "pilot.ts", ...(reactHost?.compilerFiles ?? [])];
 await writeFile(join(consumer, "package.json"), '{"type":"module"}');
-await writeFile(join(consumer, "tsconfig.json"), JSON.stringify({ compilerOptions, files: ["main.ts", "pilot.ts"] }));
-execFileSync(process.execPath, [join(project, "node_modules/typescript/bin/tsc"), "-p", join(consumer, "tsconfig.json")], { cwd: consumer, stdio: "pipe" });
-const bundle = await build({ absWorkingDir: consumer, entryPoints: { app: "main.ts", pilot: "pilot.ts" }, bundle: true, format: "esm", platform: "browser",
+await writeFile(join(consumer, "tsconfig.json"), JSON.stringify({ compilerOptions, files: compilerFiles }));
+const compilerOutput = execFileSync(process.execPath, [join(project, "node_modules/typescript/bin/tsc"), "-p", join(consumer, "tsconfig.json"),
+    ...(reactHost ? ["--listFiles", "--pretty", "false"] : [])], { cwd: consumer, encoding: "utf8", stdio: "pipe" });
+const typeInputs = [];
+if (reactHost) {
+    await writeFile(join(consumer, "compiler-inputs.txt"), compilerOutput);
+    for (const path of compilerOutput.split(/\r?\n/).filter(Boolean)) {
+        const input = await realpath(resolve(consumer, path));
+        assert.ok(reactHost.allowTypeInput(input), `Unexpected declaration input leaked into consumer: ${path}`);
+        typeInputs.push(input);
+    }
+    assert.ok(typeInputs.length >= compilerFiles.length, "Compiler input evidence is missing.");
+}
+const bundle = await build({ absWorkingDir: consumer, entryPoints: { app: "main.ts", pilot: "pilot.ts", ...reactHost?.entryPoints }, bundle: true, format: "esm", platform: "browser",
     outdir: join(consumer, "site"), alias: { sttropez: assetRoot }, metafile: true,
+    ...(reactHost ? { nodePaths: reactHost.nodePaths, define: { "process.env.NODE_ENV": '"development"' } } : {}),
     plugins: [{ name: "consumer-isolation", setup(builder) { builder.onEnd(result => {
         for (const path of Object.keys(result.metafile.inputs)) {
-            assert.ok(!resolve(consumer, path).startsWith(project), `Checkout input leaked into consumer: ${path}`);
+            const input = resolve(consumer, path);
+            assert.ok(reactHost ? reactHost.allowInput(input) : !input.startsWith(project), reactHost
+                ? `Unexpected host input leaked into consumer: ${path}` : `Checkout input leaked into consumer: ${path}`);
         }
     }); } }] });
 await cp(join(assetRoot, "editor.css"), join(consumer, "site/editor.css"));
 await cp(join(assetRoot, "UNICODE-LICENSE.txt"), join(consumer, "site/UNICODE-LICENSE.txt"));
 await cp(join(consumer, "index.html"), join(consumer, "site/index.html"));
 await cp(join(consumer, "pilot.html"), join(consumer, "site/pilot.html"));
+if (reactHost) await writeFile(join(consumer, "site/react.html"), reactHost.html);
 await mkdir("artifacts/package", { recursive: true });
 await writeFile("artifacts/package/restored-consumer.json", JSON.stringify({ schemaVersion: 1,
     packageSha256: createHash("sha256").update(archive).digest("hex"), consumer, assetRoot,
-    browser: browserName, mode: benchmark ? "benchmark" : pilotOnly ? "pilot" : "full", scenario: hunkOnly ? "hunk" : pilotOnly ? "recovery" : "all",
-    declarations: { files: ["main.ts", "pilot.ts"], strict: true, skipLibCheck: false, passed: true },
+    browser: browserName, mode: prepareOnly ? "prepare-only" : benchmark ? "benchmark" : pilotOnly ? "pilot" : "full", scenario: reactOnly ? "react" : hunkOnly ? "hunk" : pilotOnly ? "recovery" : "all",
+    declarations: { files: compilerFiles, strict: true, skipLibCheck: false, passed: true, ...(reactHost ? { inputs: typeInputs } : {}) },
     inputs: Object.keys(bundle.metafile.inputs).sort(), assets,
+    ...(reactHost ? { reactHost: { sources: reactHost.sources, hostPackages: reactHost.hostPackages,
+        strictMode: true, nodeEnvironment: "development", librarySourceCompilation: false,
+        note: "Only project-owned development host fixtures and precompiled restored editor assets enter the consumer. React packages belong to this host; no package installation is performed." } } : {}),
     node: process.version, dotnet: dotnet(["--version"]).trim(),
     typescript: JSON.parse(await readFile("node_modules/typescript/package.json", "utf8")).version,
     esbuild: JSON.parse(await readFile("node_modules/esbuild/package.json", "utf8")).version,
 }, null, 2));
+if (prepareOnly) {
+    console.log(`Restored React consumer declarations and isolated bundle prepared without a browser: ${consumer}`);
+} else {
 const server = createServer(async (request, response) => {
     const path = new URL(request.url, "http://localhost").pathname;
-    const file = { "/": "index.html", "/app.js": "app.js", "/pilot": "pilot.html", "/pilot.js": "pilot.js", "/editor.css": "editor.css", "/UNICODE-LICENSE.txt": "UNICODE-LICENSE.txt" }[path];
+    const file = { "/": "index.html", "/app.js": "app.js", "/pilot": "pilot.html", "/pilot.js": "pilot.js", "/editor.css": "editor.css", "/UNICODE-LICENSE.txt": "UNICODE-LICENSE.txt",
+        ...(reactHost ? { "/hosts/react/": "react.html", "/host-react.js": "host-react.js", "/host-react.css": "host-react.css", "/provider-worker.js": "provider-worker.js" } : {}) }[path];
     if (!file) { response.writeHead(404).end(); return; }
     response.setHeader("Content-Type", file.endsWith("js") ? "text/javascript" : file.endsWith("css") ? "text/css" : file.endsWith("txt") ? "text/plain" : "text/html");
     response.end(await readFile(join(consumer, "site", file)));
@@ -240,14 +268,21 @@ try {
     console.log(`Isolated consumer retained for inspection: ${consumer}`);
     await page.close();
     }
-    if (!hunkOnly) await runPackagedPilot(browser, `http://127.0.0.1:${server.address().port}`, {
+    if (reactOnly) {
+        const { runPackagedReactPilot } = await import("./package-react-pilot.mjs");
+        await runPackagedReactPilot(browser, `http://127.0.0.1:${server.address().port}`, {
+            directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), benchmark,
+        });
+    }
+    if (!reactOnly && !hunkOnly) await runPackagedPilot(browser, `http://127.0.0.1:${server.address().port}`, {
         directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), benchmark,
     });
-    if (hunkOnly || !pilotOnly) await runPackagedHunkPilot(browser, `http://127.0.0.1:${server.address().port}`, {
+    if (!reactOnly && (hunkOnly || !pilotOnly)) await runPackagedHunkPilot(browser, `http://127.0.0.1:${server.address().port}`, {
         directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), benchmark,
     });
     console.log(`Restored integrated pilot passed in ${browserName}. Consumer retained: ${consumer}`);
 } finally {
     await browser?.close();
     await new Promise(resolve => server.close(resolve));
+}
 }

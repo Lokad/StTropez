@@ -177,6 +177,33 @@ asset wrapper can be considered for another consumer later, but is not the core 
 Package ID, feed and license are release metadata decisions. No package publication or
 application-specific build change is implied by this document.
 
+`npm run test:package:react` runs the existing React development host against a locally
+restored package. It copies only project-owned host fixtures into the temporary consumer,
+rewrites their public editor imports, and checks declarations with strict TypeScript and
+`skipLibCheck: false`. The bundle accepts restored compiled editor modules and the host's
+already installed React packages; it neither compiles editor implementation sources nor
+installs another dependency. React stays outside the editor assets.
+The compiler's actual input list is retained and checked against the consumer directory and
+the host's compiler, React and CSS declaration packages, so type imports cannot fall back
+to checkout editor sources.
+
+The coupled scenario covers keyboard navigation/backward selection, proposal correction,
+shared undo/redo, save failure and retry,
+remote conflict review, actual hunk reversion, typing during captured saves, canonical
+replies, captured Run/configuration, retained-view remount and explicit disposal. It uses
+Unicode/CRLF and 100,000-line inputs under development Strict Mode.
+Automated non-ASCII input retains the browser's input/composition event sequence and requires
+one exact document/history commit; this does not qualify a native IME.
+Select another installed engine with `node scripts/test-package.mjs --react-only --browser=firefox` or `--browser=webkit`
+after packing. `--prepare-only` checks declarations and bundling without starting a browser.
+
+`npm run bench:package-react` retains three warmup and ten measured workflows per corpus.
+Only the isolated point keystroke has handler, all-pane readiness and complete automation
+action targets. Setup and the full workflow have separate elapsed clocks; workflow time
+includes controls, assertions and local service settlement. These measurements do not
+establish physical display latency, native IME, platform clipboard or assistive-technology
+behavior. A prepared consumer alone is not a completed runtime qualification.
+
 The separate [horizontal positioning stage](positioning.md) reuses owned GSUB provenance,
 implements explicit GPOS/legacy policies and publishes retained signed pen advances.
 The clean consumer also exercises the compiled [Unicode pipeline](unicode-shaping.md), including
