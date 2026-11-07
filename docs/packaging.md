@@ -79,6 +79,25 @@ local settlement, oracles and cleanup. Workflow timings have no point-action bud
 Native IME/reconversion, OS clipboard, assistive technology and physical display latency
 remain separate device checks. Pilot reports and images are under `artifacts/package/`.
 
+The restored hunk scenario keeps a reviewed save pending while actual comparison controls
+navigate between two changes and revert one. A later keyboard correction survives the old
+receipt. Undo from the other view returns exactly to the captured saved value; redo restores
+the correction, and a subsequent captured save remains valid through remount. Normal CRLF
+and 100,000-line sources retain independent selections, immutable references, bounded views
+and explicit cleanup. `npm run test:package:hunk` runs the focused semantic proof;
+`npm run bench:package-hunk` collects three warmups and ten measured workflows per corpus.
+Use `--browser=firefox` or `--browser=webkit` with `node scripts/test-package.mjs --hunk-only`
+after packing; add `--bench` for repeated measurements. Default `test:package` covers both
+coupled scenarios, while `--pilot-only` retains the separate recovery scenario.
+
+Hunk click dispatch observations exclude preceding pointer/focus work and include synchronous
+model subscribers between click capture and document bubbling. They are not exact adapter
+handlers or complete traced callbacks. Full hunk readiness waits for the same view, caret,
+scan, reference and comparison checks plus two frames. Complete action adds automation and
+pointer/focus work. Hunk and whole-workflow clocks have no single-keystroke budget; only the
+post-revert keyboard point is assessed against the declared typing targets. Initial mount
+and initial readiness are outside the workflow clock; range oracles and cleanup are inside.
+
 ## Build bridge
 
 Restore imports `build/StTropez.Assets.props` and `.targets` and exposes `StTropezAssetRoot`.

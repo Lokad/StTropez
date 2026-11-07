@@ -96,17 +96,17 @@ export function mountPackagedPilot(host: HTMLElement, original: string) {
                         selection: editor.view.getSnapshot().selection, metrics: Object.freeze({ ...editor.snapshot(), viewport: editor.viewport.snapshot() }) })] : [])),
                     comparison: c && comparison ? Object.freeze({ status: c.status, generation: c.generation, baseline: c.baseline ? Object.freeze({ version: c.baseline.version, epoch: c.baseline.epoch, length: c.baseline.buffer.length }) : null,
                         workingRevision: c.working?.revision, referenceIsWorkingBuffer: c.baseline?.buffer === document?.buffer, viewId: reviewView.id, selection: reviewView.getSnapshot().selection,
-                        hunks: c.hunks.length, progress: c.progress, work: comparison.snapshot(), input: comparison.working.snapshot(), workingViewport: comparison.working.viewport.snapshot(), referenceViewport: comparison.referenceViewport()?.snapshot() }) : null }) });
+                        hunks: c.hunks.length, hunkRanges: c.hunks, progress: c.progress, work: comparison.snapshot(), input: comparison.working.snapshot(), workingViewport: comparison.working.viewport.snapshot(), referenceViewport: comparison.referenceViewport()?.snapshot() }) : null }) });
         },
         range: (from: number, to: number) => workspace.document(source.documentId).buffer.slice(from, to),
         referenceRange: (from: number, to: number) => comparison!.controller.getSnapshot().baseline!.buffer.slice(from, to),
         selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => (id === "primary" ? primaryView : peerView).setSelection(revision, selection),
         pendingRange: (id: string, from: number, to: number) => pending.get(id)!.submission.value.slice(from, to),
-        respond: (id: string, kind: "conflict" | "failure" | "saved" | "canonical") => {
+        respond: (id: string, kind: "conflict" | "failure" | "saved" | "canonical", serverVersion?: string) => {
             const request = pending.get(id); if (!request) return false; pending.delete(id);
             if (kind === "failure") request.reject(new Error("Simulated save failure"));
             else if (kind === "conflict") { remote = Object.freeze({ buffer: TextBuffer.from("remote " + original), version: "remote:v1" }); request.resolve({ kind: "conflict", serverVersion: "v1" }); }
-            else request.resolve(kind === "canonical" ? { kind: "saved", serverVersion: "v3", canonical: request.submission.value + "\r\ncanonical server reply" } : { kind: "saved", serverVersion: "v2" });
+            else request.resolve(kind === "canonical" ? { kind: "saved", serverVersion: serverVersion ?? "v3", canonical: request.submission.value + "\r\ncanonical server reply" } : { kind: "saved", serverVersion: serverVersion ?? "v2" });
             return true;
         },
         remount: () => {

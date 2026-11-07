@@ -9,11 +9,13 @@ import { build } from "esbuild";
 import { unzipSync, strFromU8 } from "fflate";
 import { chromium, firefox, webkit } from "@playwright/test";
 import { runPackagedPilot } from "./package-pilot.mjs";
+import { runPackagedHunkPilot } from "./package-hunk-pilot.mjs";
 
-const pilotOnly = process.argv.includes("--pilot-only"), benchmark = process.argv.includes("--bench");
+const hunkOnly = process.argv.includes("--hunk-only");
+const pilotOnly = hunkOnly || process.argv.includes("--pilot-only"), benchmark = process.argv.includes("--bench");
 const browserName = process.argv.find(arg => arg.startsWith("--browser="))?.slice("--browser=".length) ?? "chromium";
 assert.ok(["chromium", "firefox", "webkit"].includes(browserName), `Unknown browser: ${browserName}`);
-assert.ok(!benchmark || pilotOnly, "Use --pilot-only with --bench to keep the measurement workload explicit.");
+assert.ok(!benchmark || pilotOnly, "Use --pilot-only or --hunk-only with --bench to keep the workload explicit.");
 
 const project = resolve(".");
 const archive = await readFile("artifacts/nuget/feed/StTropez.Assets.0.0.0-local.nupkg");
@@ -79,7 +81,7 @@ await cp(join(consumer, "pilot.html"), join(consumer, "site/pilot.html"));
 await mkdir("artifacts/package", { recursive: true });
 await writeFile("artifacts/package/restored-consumer.json", JSON.stringify({ schemaVersion: 1,
     packageSha256: createHash("sha256").update(archive).digest("hex"), consumer, assetRoot,
-    browser: browserName, mode: benchmark ? "benchmark" : pilotOnly ? "pilot" : "full",
+    browser: browserName, mode: benchmark ? "benchmark" : pilotOnly ? "pilot" : "full", scenario: hunkOnly ? "hunk" : pilotOnly ? "recovery" : "all",
     declarations: { files: ["main.ts", "pilot.ts"], strict: true, skipLibCheck: false, passed: true },
     inputs: Object.keys(bundle.metafile.inputs).sort(), assets,
     node: process.version, dotnet: dotnet(["--version"]).trim(),
@@ -238,7 +240,10 @@ try {
     console.log(`Isolated consumer retained for inspection: ${consumer}`);
     await page.close();
     }
-    await runPackagedPilot(browser, `http://127.0.0.1:${server.address().port}`, {
+    if (!hunkOnly) await runPackagedPilot(browser, `http://127.0.0.1:${server.address().port}`, {
+        directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), benchmark,
+    });
+    if (hunkOnly || !pilotOnly) await runPackagedHunkPilot(browser, `http://127.0.0.1:${server.address().port}`, {
         directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), benchmark,
     });
     console.log(`Restored integrated pilot passed in ${browserName}. Consumer retained: ${consumer}`);
