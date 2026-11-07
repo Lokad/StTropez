@@ -173,6 +173,14 @@ composition races, and disposal. A Chromium-only protocol test exercises browser
 it does not replace native-device checks on any engine. The restored NuGet consumer also types
 and undoes through the compiled candidate and packaged CSS without checkout inputs.
 
+The guarded Chromium headless clipboard regression uses actual copy, cut and paste keys in
+both hosts, including large backward selections, independent views, captured saves, shared
+history and read-only transitions. It verifies the isolated headless shell before any clipboard
+action and uses only known fixture text. The native baseline commits the textarea API value
+with LF line endings; the candidate custom paste preserves the clipboard event payload.
+Other browser backends, OS/application/browser-menu clipboard, native IME and assistive
+technology remain unverified. These functional scenarios collect no latency samples.
+
 `npm run bench:editing` records actual keyboard insertions at start/middle/end of six pinned
 corpora, with three warmups and twenty measured inputs per condition. Guards require one native
 input and one model commit per sample, exact text/range/length, zero whole-text exports, bounded
