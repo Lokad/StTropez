@@ -59,6 +59,26 @@ visible CSS values and the actual result. `consumer.png` shows the restored view
 consumer directory is retained for inspection. This proof currently covers the pinned
 TypeScript/esbuild versions only; it does not claim compatibility with every frontend tool.
 
+The dedicated restored pilot page connects two independent source views and a comparison
+to one document. Actual keyboard input continues during captured saves, remote conflict
+review, a failed reviewed save and its retry. It checks captured server preconditions,
+pending-save remounts, shared undo back to the saved value, redo from the other view, and
+a canonical reply arriving after newer typing. Disposal during the final save releases
+views and listeners; a late failure retains the exact unsaved source until explicit cleanup.
+The host supplies deferred local ports and background activity; no application service is used.
+
+`npm run test:package:pilot` runs the focused semantic proof on normal Unicode/CRLF and
+100,000-line sources. `--browser=firefox` or `--browser=webkit` can be passed directly to
+`node scripts/test-package.mjs --pilot-only` after packing. Its single sample per corpus
+and screenshots are diagnostic evidence, not tail estimates. `npm run bench:package-pilot`
+uses three warmups and ten measured workflows per corpus, without screenshots. The reports
+retain raw samples and distinguish the input adapter handler, input to full review readiness
+(all working views, immutable reference, caret, scans, diff and two animation frames), the
+complete point-action automation proxy, and the whole workflow proxy including controls,
+local settlement, oracles and cleanup. Workflow timings have no point-action budget.
+Native IME/reconversion, OS clipboard, assistive technology and physical display latency
+remain separate device checks. Pilot reports and images are under `artifacts/package/`.
+
 ## Build bridge
 
 Restore imports `build/StTropez.Assets.props` and `.targets` and exposes `StTropezAssetRoot`.

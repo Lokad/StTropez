@@ -7,7 +7,13 @@ import { join, resolve, relative } from "node:path";
 import { createServer } from "node:http";
 import { build } from "esbuild";
 import { unzipSync, strFromU8 } from "fflate";
-import { chromium } from "@playwright/test";
+import { chromium, firefox, webkit } from "@playwright/test";
+import { runPackagedPilot } from "./package-pilot.mjs";
+
+const pilotOnly = process.argv.includes("--pilot-only"), benchmark = process.argv.includes("--bench");
+const browserName = process.argv.find(arg => arg.startsWith("--browser="))?.slice("--browser=".length) ?? "chromium";
+assert.ok(["chromium", "firefox", "webkit"].includes(browserName), `Unknown browser: ${browserName}`);
+assert.ok(!benchmark || pilotOnly, "Use --pilot-only with --bench to keep the measurement workload explicit.");
 
 const project = resolve(".");
 const archive = await readFile("artifacts/nuget/feed/StTropez.Assets.0.0.0-local.nupkg");
@@ -57,10 +63,10 @@ const compilerOptions = { target: "ES2022", module: "NodeNext", moduleResolution
         sttropez: [join(assetRoot, "index.d.ts")], "sttropez/browser": [join(assetRoot, "browser/index.d.ts")],
     } };
 await writeFile(join(consumer, "package.json"), '{"type":"module"}');
-await writeFile(join(consumer, "tsconfig.json"), JSON.stringify({ compilerOptions, files: ["main.ts"] }));
+await writeFile(join(consumer, "tsconfig.json"), JSON.stringify({ compilerOptions, files: ["main.ts", "pilot.ts"] }));
 execFileSync(process.execPath, [join(project, "node_modules/typescript/bin/tsc"), "-p", join(consumer, "tsconfig.json")], { cwd: consumer, stdio: "pipe" });
-await build({ absWorkingDir: consumer, entryPoints: ["main.ts"], bundle: true, format: "esm", platform: "browser",
-    outfile: join(consumer, "site/app.js"), alias: { sttropez: assetRoot }, metafile: true,
+const bundle = await build({ absWorkingDir: consumer, entryPoints: { app: "main.ts", pilot: "pilot.ts" }, bundle: true, format: "esm", platform: "browser",
+    outdir: join(consumer, "site"), alias: { sttropez: assetRoot }, metafile: true,
     plugins: [{ name: "consumer-isolation", setup(builder) { builder.onEnd(result => {
         for (const path of Object.keys(result.metafile.inputs)) {
             assert.ok(!resolve(consumer, path).startsWith(project), `Checkout input leaked into consumer: ${path}`);
@@ -69,9 +75,20 @@ await build({ absWorkingDir: consumer, entryPoints: ["main.ts"], bundle: true, f
 await cp(join(assetRoot, "editor.css"), join(consumer, "site/editor.css"));
 await cp(join(assetRoot, "UNICODE-LICENSE.txt"), join(consumer, "site/UNICODE-LICENSE.txt"));
 await cp(join(consumer, "index.html"), join(consumer, "site/index.html"));
+await cp(join(consumer, "pilot.html"), join(consumer, "site/pilot.html"));
+await mkdir("artifacts/package", { recursive: true });
+await writeFile("artifacts/package/restored-consumer.json", JSON.stringify({ schemaVersion: 1,
+    packageSha256: createHash("sha256").update(archive).digest("hex"), consumer, assetRoot,
+    browser: browserName, mode: benchmark ? "benchmark" : pilotOnly ? "pilot" : "full",
+    declarations: { files: ["main.ts", "pilot.ts"], strict: true, skipLibCheck: false, passed: true },
+    inputs: Object.keys(bundle.metafile.inputs).sort(), assets,
+    node: process.version, dotnet: dotnet(["--version"]).trim(),
+    typescript: JSON.parse(await readFile("node_modules/typescript/package.json", "utf8")).version,
+    esbuild: JSON.parse(await readFile("node_modules/esbuild/package.json", "utf8")).version,
+}, null, 2));
 const server = createServer(async (request, response) => {
     const path = new URL(request.url, "http://localhost").pathname;
-    const file = { "/": "index.html", "/app.js": "app.js", "/editor.css": "editor.css", "/UNICODE-LICENSE.txt": "UNICODE-LICENSE.txt" }[path];
+    const file = { "/": "index.html", "/app.js": "app.js", "/pilot": "pilot.html", "/pilot.js": "pilot.js", "/editor.css": "editor.css", "/UNICODE-LICENSE.txt": "UNICODE-LICENSE.txt" }[path];
     if (!file) { response.writeHead(404).end(); return; }
     response.setHeader("Content-Type", file.endsWith("js") ? "text/javascript" : file.endsWith("css") ? "text/css" : file.endsWith("txt") ? "text/plain" : "text/html");
     response.end(await readFile(join(consumer, "site", file)));
@@ -79,7 +96,8 @@ const server = createServer(async (request, response) => {
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 let browser;
 try {
-    browser = await chromium.launch();
+    browser = await ({ chromium, firefox, webkit })[browserName].launch();
+    if (!pilotOnly) {
     const page = await browser.newPage();
     const errors = [];
     page.on("pageerror", error => errors.push(error.message));
@@ -218,6 +236,12 @@ try {
         actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, comparison, readonlyIndent, saveReview, style, errors }, null, 2));
     console.log("Restored package: declarations, storage/mappings, modules, visible CSS and actual edit passed. Evidence: artifacts/package/");
     console.log(`Isolated consumer retained for inspection: ${consumer}`);
+    await page.close();
+    }
+    await runPackagedPilot(browser, `http://127.0.0.1:${server.address().port}`, {
+        directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), benchmark,
+    });
+    console.log(`Restored integrated pilot passed in ${browserName}. Consumer retained: ${consumer}`);
 } finally {
     await browser?.close();
     await new Promise(resolve => server.close(resolve));
