@@ -3,6 +3,7 @@ import type { HostController, Layout } from "./controller.ts";
 import type { ViewBindings } from "./bindings.ts";
 import type { TabSnapshot } from "../../src/index.ts";
 import { mountLanguagePanel } from "./language-panel.ts";
+import { mountVariantPanel } from "./variant-panel.ts";
 
 export function mountPlain(host: HTMLElement, controller: HostController, bindings: ViewBindings): () => void {
     const listeners = new AbortController(), subscriptions: (() => void)[] = [];
@@ -73,6 +74,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         }
     };
     let reviewKey: string | undefined;
+    let destroyVariants: (() => void) | undefined;
     const renderReview = () => {
         const layout = controller.layout.getSnapshot();
         const tab = controller.workspace.tabState.getSnapshot().find(tab => tab.id === controller.viewTab("primary"));
@@ -82,8 +84,9 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         review.hidden = key === undefined;
         if (key === reviewKey) return;
         // Record identity before mounting: the comparison creates its own reference display tab.
-        reviewKey = key; bindings.comparison(null); review.replaceChildren();
-        if (key !== undefined) { const content = document.createElement("div"); review.append(content); bindings.comparison(content); }
+        reviewKey = key; destroyVariants?.(); destroyVariants = undefined; bindings.comparison(null); review.replaceChildren();
+        if (key !== undefined) { const controls = document.createElement("div"), content = document.createElement("div"); review.append(controls, content);
+            destroyVariants = mountVariantPanel(controls, controller, bindings); bindings.comparison(content); }
     };
     // Controller lifecycle commands publish layout after workspace mutations finish; a workspace
     // notification itself cannot synchronously mount/release the comparison's display resources.
@@ -93,5 +96,5 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         controller.saveConflict.subscribe(updateConflict), controller.source.metadata.subscribe(updateConflict),
         controller.layout.subscribe(updateConflict), controller.comparisonReference.subscribe(updateConflict));
     renderScene(); renderReview(); updateStatus(); updateRecovery(); updateConflict();
-    return () => { destroyLanguage(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
+    return () => { destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
 }

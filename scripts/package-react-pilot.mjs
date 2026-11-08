@@ -258,14 +258,15 @@ async function workflow(page, original, activeCase, screenshot) {
         final, disposed, workflowAutomationProxyMs: performance.now() - started };
 }
 
-async function proveCompiledTextDrag(browser, baseUrl) {
+export async function proveCompiledTextDrag(browser, baseUrl) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }), errors = [];
     page.on("pageerror", error => errors.push(error.message));
     const original = "alpha\r\nbeta tail", expected = "\r\n tail", targetText = "target", inserted = "taalpha\nbetarget";
     const read = () => page.evaluate(() => { const f = window.hostFixture, state = f.snapshot(); return { state, target: f.transferSnapshot(), text: f.range(0, state.source.length) }; });
-    const ready = () => page.waitForFunction(() => { const f = window.hostFixture, state = f.snapshot(), target = f.transferSnapshot();
+    const ready = () => page.waitForFunction(() => { const f = window.hostFixture, state = f.snapshot(), target = f.transferSnapshot(), comparison = state.bindings.comparison;
         return state.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.viewport.pending
-            && v.metrics.viewport.revision === (v.documentId === target.documentId ? target.revision : state.source.revision) && v.metrics.viewport.selectionSet === v.selectionSet); });
+            && v.metrics.viewport.revision === (v.documentId === target.documentId ? target.revision : state.source.revision) && v.metrics.viewport.selectionSet === v.selectionSet)
+            && (!comparison || comparison.status === "ready" && !comparison.input.pendingCaret && !comparison.workingViewport.pending && !comparison.referenceViewport?.pending); });
     const point = (name, offset) => page.locator(`.st-editing-candidate:has(> textarea[aria-label="${name}"])`).evaluate((element, offset) => {
         const row = [...element.querySelectorAll(".st-viewport-row")].find(row => Number(row.dataset.from) <= offset && Number(row.dataset.to) > offset);
         if (!row) throw new Error("Compiled drag point is not rendered.");
@@ -300,10 +301,22 @@ async function proveCompiledTextDrag(browser, baseUrl) {
             await page.getByRole("textbox", { name: "Primary source", exact: true }).press("Control+Shift+z"); await ready(); const redo = await read();
             assert.equal(redo.text, expected); assert.equal(redo.target.text, inserted);
         }
-        assert.equal(after.state.source.exports, 0); assert.equal(after.target.exports, 0); assert.deepEqual(errors, []);
+        const base = (await read()).text, primary = page.getByRole("textbox", { name: "Primary source", exact: true }), click = name => page.getByRole("button", { name, exact: true }).click();
+        await click("Open source review"); await ready(); await click("Keep draft version");
+        await page.getByRole("combobox", { name: "Review version", exact: true }).selectOption("draft"); await click("Finish version load"); await ready();
+        await primary.press("Escape"); await primary.press("Control+End"); await ready();
+        assert.equal((await read()).state.bindings.views.find(view => view.id === "primary").selectionSet.ranges.length, 1);
+        await primary.pressSequentially(" local"); await ready(); const corrected = await read(); assert.equal(corrected.text, base + " local");
+        await click("Discard reviewed changes"); await click("Confirm reviewed discard"); await ready(); const reverted = await read();
+        assert.equal(reverted.text, base); assert.equal(reverted.state.history.undoDepth, corrected.state.history.undoDepth + 1);
+        await page.getByRole("textbox", { name: "Comparison working source", exact: true }).press("Control+z"); await ready();
+        const undoDiscard = await read(); assert.equal(undoDiscard.text, corrected.text); assert.deepEqual(undoDiscard.state.bindings.comparison.selectionSet, corrected.state.bindings.comparison.selectionSet);
+        await primary.press("Control+Shift+z"); await ready(); const redoDiscard = await read(); assert.equal(redoDiscard.text, base);
+        const variantDiscard = { compiledPublicReversion: true, oneUndoUnit: true, completeSetRestored: true, zeroCompleteExports: redoDiscard.state.source.exports === 0 };
+        assert.equal(redoDiscard.state.source.exports, 0); assert.equal(after.target.exports, 0); assert.deepEqual(errors, []);
         await page.evaluate(() => window.hostFixture.dispose()); const disposed = await page.evaluate(() => window.hostFixture.snapshot());
         for (const key of ["views", "leases", "subscriptions"]) assert.equal(disposed.diagnostics[key], 0);
-        return { source: "restored-compiled-assets", browser: browser.browserType().name(), audit, moveAndLinkedHistoryQualified: !refused, tokenlessRefusalQualified: refused,
+        return { source: "restored-compiled-assets", browser: browser.browserType().name(), audit, moveAndLinkedHistoryQualified: !refused, tokenlessRefusalQualified: refused, variantDiscard,
             nativeMove: refused ? "unverified; automated transport strips the internal token" : "automated gesture verified; OS/application transfers unverified",
             completeSetsRestored: !refused, zeroCompleteExports: true, disposed: { views: 0, leases: 0, subscriptions: 0 }, errors, note: "One qualitative fresh-page proof, outside all existing point/workflow clocks. No latency or native-device claim." };
     } finally { await page.close(); }

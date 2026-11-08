@@ -24,7 +24,7 @@ export type { BidiIndexController, BidiIndexRequest, BidiIndexSnapshot, BidiProg
 export { DiffReferenceCache, TextDiff } from "./core/diff.ts";
 export type { DiffHunk, DiffProgress, DiffRange } from "./core/diff.ts";
 export { createComparisonController } from "./core/comparison.ts";
-export type { ComparisonBaseline, ComparisonCapture, ComparisonController, ComparisonSnapshot, ComparisonTicket } from "./core/comparison.ts";
+export type { ComparisonBaseline, ComparisonCapture, ComparisonController, ComparisonSnapshot, ComparisonTicket, ComparisonReversion } from "./core/comparison.ts";
 export type { EditKind, HistoryOptions, HistorySnapshot, Selection } from "./core/history.ts";
 export { createSelectionSet, mapSelectionSet, planSelectionEdits } from "./core/selections.ts";
 export type { SelectionSet, SelectionEditPlan } from "./core/selections.ts";

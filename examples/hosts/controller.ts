@@ -1,6 +1,7 @@
 import { HostCell } from "../shared/observable.ts";
 import { TextBuffer, Workspace, WorkspaceCommands } from "../../src/index.ts";
 import type { AgentRequest, CloseOperation, ComparisonBaseline, DocumentId, Operation, RunSubmission, SaveResponse, SaveReview, SaveSubmission, TabId, TabTarget, TextEdit } from "../../src/index.ts";
+import { ReviewVariants } from "./variants.ts";
 
 export type Connection = Readonly<{ path: string; format: "csv" }>;
 type RunSettings = Readonly<{ mode: "preview" | "inspect" }>;
@@ -56,12 +57,17 @@ export class HostController {
     private failNextAck = true;
     private timer: ReturnType<typeof setInterval> | undefined;
     private disposed = false;
+    readonly variants = new ReviewVariants(this.workspace, this.source, {
+        presentation: () => this.workspace.captureTab(this.primaryTab), reference: this.comparisonReference,
+        saved: () => this.savedReference, server: () => ({ buffer: this.serverBuffer, version: `reference:server-${this.serverVersion}` }),
+        present: () => this.openReview(), publish: baseline => this.referenceCell.set({ generation: this.referenceCell.get().generation + 1, baseline }),
+    });
     viewTab(id: "primary" | "secondary"): TabId { return id === "primary" ? this.primaryTab : this.secondaryTab; }
     readonly openReview = (): void => this.safe(() => { this.layoutCell.set({ ...this.layoutCell.get(), navigation: { kind: "review" } }); });
     readonly closeReview = (): void => this.safe(() => { this.layoutCell.set({ ...this.layoutCell.get(), navigation: { kind: "workspace" } }); });
     savedComparisonReference(): ComparisonBaseline { return this.savedReference; }
     retainComparisonReference(baseline: ComparisonBaseline): void {
-        if (!this.disposed) this.referenceCell.set({ ...this.referenceCell.get(), baseline });
+        if (!this.disposed) { this.referenceCell.set({ ...this.referenceCell.get(), baseline }); this.variants.referenceChanged(); }
     }
 
     private updateActivity(patch: Partial<Activity>): void { this.activityCell.set({ ...this.activityCell.get(), ...patch }); }
@@ -110,6 +116,7 @@ export class HostController {
             this.proposalTransactionMs = performance.now() - start;
             if (result.applied) {
                 this.referenceCell.set({ generation: this.referenceCell.get().generation + 1, baseline });
+                this.variants.referenceChanged();
                 this.openReview();
             }
         }).catch(error => { request.fail(); this.reportError(error); }).finally(() => {
@@ -144,7 +151,9 @@ export class HostController {
         } }, review)
             .then(result => {
                 if (!this.disposed && result.kind === "saved") {
+                    this.variants.remember(this.savedReference);
                     this.savedReference = Object.freeze({ buffer: TextBuffer.from(result.receipt.savedValue), version: `reference:saved-${result.receipt.serverVersion}` });
+                    this.variants.refreshCatalog();
                     if (this.conflictCell.get()?.id === conflictId) {
                         this.conflictCell.set(null); this.conflictReference = undefined; this.conflictPresentation = undefined;
                     }
@@ -161,6 +170,7 @@ export class HostController {
     externalWrite(text: string): void {
         if (this.disposed) return;
         this.serverBuffer = TextBuffer.from(text); this.serverVersion = `v${++this.serverSerial}`;
+        this.variants.refreshCatalog();
     }
     readonly simulateExternalWrite = (): void => { this.externalWrite("external source\r\n"); };
     readonly reviewSaveConflict = (): void => this.safe(() => {
@@ -183,6 +193,7 @@ export class HostController {
             const baseline = Object.freeze({ buffer: read.buffer, version: `reference:conflict-${read.version}` });
             this.conflictReference = baseline; this.conflictPresentation = read.presentation;
             this.referenceCell.set({ generation: this.referenceCell.get().generation + 1, baseline });
+            this.variants.referenceChanged();
             this.conflictCell.set({ ...conflict, review: "ready", reviewVersion: read.version, message: "Compare and edit the working source, then save the reviewed source." });
             this.openReview(); return true;
         } catch (error) { this.reportError(error); return false; } finally { read.operation.finish(); }
@@ -308,7 +319,7 @@ export class HostController {
             source: { id: this.source.id, revision: source.revision, length: source.state === "ready" ? this.workspace.document(this.source.documentId).buffer.length : 0,
                 exports: source.state === "ready" ? this.workspace.document(this.source.documentId).buffer.readMetrics().textExports : 0,
                 serverVersion: source.metadata.serverVersion, dirty: source.metadata.dirty, saveStatus: source.metadata.saveStatus },
-            saveConflict: this.conflictCell.get(), pendingConflictReads: this.conflictReads.length,
+            saveConflict: this.conflictCell.get(), pendingConflictReads: this.conflictReads.length, variants: this.variants.state.getSnapshot(),
             server: { version: this.serverVersion, length: this.serverBuffer.length },
             history: this.workspace.observeHistory(this.source.documentId).getSnapshot(),
             configuration: { id: this.connection.id, revision: form.revision }, review: this.review.getSnapshot(),
@@ -326,7 +337,7 @@ export class HostController {
             hostSubscriptions: this.layoutCell.count() + this.activityCell.count() + this.settingsCell.count() + this.recoveryCell.count() + this.referenceCell.count() + this.conflictCell.count(), loadPending: this.pendingLoad !== undefined, disposed: this.disposed };
     }
     dispose(): Promise<void> {
-        if (this.disposal) return this.disposal; this.disposed = true;
+        if (this.disposal) return this.disposal; this.disposed = true; this.variants.dispose();
         if (this.timer !== undefined) clearInterval(this.timer); this.timer = undefined;
         this.workspace.interruptAgent(this.source.id);
         this.workspace.detachAgent(this.source.id);

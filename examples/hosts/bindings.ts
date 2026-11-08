@@ -1,6 +1,6 @@
 import { mountEditingCandidate, mountTextComparison, mountTextEditor } from "../../src/browser/index.ts";
 import type { EditingCandidate, MountedEditor, TextComparison, ViewportSnapshot, ViewState } from "../../src/browser/index.ts";
-import type { ComparisonBaseline, ComparisonTicket, DocumentId, DocumentView, Selection, TabId } from "../../src/index.ts";
+import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId } from "../../src/index.ts";
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../editing/presentation.ts";
 import { HostLanguageTools } from "./language.ts";
@@ -25,6 +25,7 @@ export class ViewBindings {
     private reviewStatus: HTMLOutputElement | undefined;
     private reviewListeners: AbortController | undefined;
     private readonly reviewTickets: ComparisonTicket[] = [];
+    private readonly discardTickets: { ticket: ComparisonReversion; variantGeneration: number }[] = [];
     private referenceSerial = 0;
     private reviewResult = "No reference command";
     private unwatchReference: (() => void) | undefined;
@@ -34,6 +35,7 @@ export class ViewBindings {
     readonly comparison = (host: HTMLDivElement | null): void => {
         this.unwatchReference?.(); this.unwatchReference = undefined;
         for (const ticket of this.reviewTickets.splice(0)) ticket.cancel();
+        for (const { ticket } of this.discardTickets.splice(0)) ticket.cancel();
         if (this.review) {
             const baseline = this.review.controller.getSnapshot().baseline, reference = this.review.referenceViewport();
             if (baseline && reference) this.referenceState = { baseline, state: reference.captureView() };
@@ -101,6 +103,28 @@ export class ViewBindings {
     readonly finishReferenceRefresh = (): void => this.finishReference("refresh");
     readonly beginReviewAcceptance = (): void => this.beginReference("accept");
     readonly finishReviewAcceptance = (): void => this.finishReference("accept");
+    private composing(): boolean { return this.review?.working.snapshot().composing === true || [...this.mounted.values()].some(value => value.editor.metrics()?.composing); }
+    readonly beginDiscard = (): void => {
+        if (!this.review) return;
+        for (const { ticket } of this.discardTickets.splice(0)) ticket.cancel();
+        if (this.composing() || this.review.controller.getSnapshot().status !== "ready") {
+            this.reviewResult = "Finish composition and wait for the review before discarding changes."; this.reviewStatus!.textContent = this.reviewResult; return;
+        }
+        if (this.review.working.input.disabled || this.review.working.input.readOnly) {
+            this.reviewResult = "The working source is read-only. Changes were retained."; this.reviewStatus!.textContent = this.reviewResult; return;
+        }
+        try { const ticket = this.review.controller.beginReversion(); this.discardTickets.push({ ticket, variantGeneration: this.controller.variants.state.getSnapshot().generation });
+            this.reviewResult = `Confirm discarding the captured changes against ${ticket.capture.baselineVersion}. Undo will restore them.`; this.reviewStatus!.textContent = this.reviewResult;
+        } catch (error) { this.controller.reportError(error); }
+    };
+    readonly finishDiscard = (): void => {
+        const captured = this.discardTickets.shift(); if (!captured) return; const { ticket } = captured;
+        try { const applied = !this.composing() && this.controller.variants.state.getSnapshot().generation === captured.variantGeneration && ticket.complete(); this.reviewResult = applied ? "Discarded the reviewed changes as one undoable command." : "The captured review changed. Later text was retained.";
+            if (this.reviewStatus) this.reviewStatus.textContent = this.reviewResult;
+        } catch (error) { this.controller.reportError(error); } finally { ticket.finish(); }
+    };
+    readonly cancelDiscard = (): void => { for (const { ticket } of this.discardTickets.splice(0)) ticket.cancel();
+        this.reviewResult = "Discard cancelled. Working text was retained."; if (this.reviewStatus) this.reviewStatus.textContent = this.reviewResult; };
     referenceRange(from: number, to: number): string | undefined { return this.review?.controller.getSnapshot().baseline?.buffer.slice(from, to); }
     selectSource(id: "primary" | "secondary", revision: number, selection: Selection): boolean {
         return this.mounted.get(id)?.editor.view.setSelection(revision, selection) ?? false;
@@ -192,6 +216,7 @@ export class ViewBindings {
             baseline: comparison.baseline && { version: comparison.baseline.version, epoch: comparison.baseline.epoch, length: comparison.baseline.buffer.length },
             hunks: comparison.hunks.length, pending: this.reviewTickets.map(ticket => ({ kind: ticket.kind, revision: ticket.capture.working.revision, current: ticket.isCurrent() })),
             result: this.reviewResult, work: this.review!.snapshot(), input: this.review!.working.snapshot(),
+            discards: this.discardTickets.map(({ ticket, variantGeneration }) => ({ revision: ticket.capture.working.revision, current: ticket.isCurrent() && this.controller.variants.state.getSnapshot().generation === variantGeneration })),
             workingViewport: this.review!.working.viewport.snapshot(), referenceViewport: this.review!.referenceViewport()?.snapshot() } : null,
         views: [...this.mounted].map(([id, { editor, documentId }]) => ({ id, documentId, viewId: editor.view.id,
             selection: editor.view.getSnapshot().selection, selectionSet: editor.view.getSnapshot().selectionSet, focused: editor.element.ownerDocument.activeElement === editor.element, metrics: editor.metrics() })) }; }

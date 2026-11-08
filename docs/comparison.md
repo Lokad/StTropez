@@ -123,6 +123,23 @@ its history, saved baseline, dirty state and server version remain intact. Accep
 human edit permission and no edit lock, checked at capture and completion. It is a review
 reference advancement. Hosts use the independent save/acknowledgement protocol for persistence.
 
+`beginReversion()` captures a ready comparison's entire change set for a delayed discard
+confirmation. `complete()` restores those reviewed changes in one human transaction, using
+the existing hunks and history. It preserves raw source bytes outside the hunks and maps
+independent views normally; shared undo restores the initiating view's complete selection set.
+The reference and saved/server version remain independent. Empty comparisons create no history.
+No full-document export or second comparison is needed, although inserted hunk text still
+materializes synchronously as it does for an individual hunk reversion.
+
+The confirmation expires after text, initiating selection, reference generation or reference
+intent changes, saved-version changes, authorization/lease transitions, agent ownership changes,
+tab replacement/close or view/controller disposal. Restoring permission does not revive an old
+confirmation. The host additionally guards its own pending variant-selection intent and composition
+state. The evaluation hosts expose immutable saved/server/draft/history choices, captured deferred
+loads, failure/cancellation and an explicit discard confirmation. Selecting a version changes the
+reference; Save and Run keep targeting the working resource. A newer server version does not relabel
+an already captured version. These local host ports do not perform application-service integration.
+
 Tickets own explicit resource leases until completion, cancellation or `finish()`. Completion
 settles even stale or rejected results; finish/cancel are idempotent. Captures remain available
 for host recovery. Dispose the controller and release host-held tickets when done. Disposal

@@ -64,7 +64,19 @@ function SourceReview() {
     const tabs = useObserved(controller.workspace.tabState), tab = tabs.find(tab => tab.id === controller.viewTab("primary"));
     return layout.navigation.kind === "review" && layout.visible && !layout.formFault && layout.primarySurface === "text"
         && tab?.surface.kind === "text" && tab.surface.documentId === controller.source.documentId
-        ? <section className="host-review" aria-label="Source review surface"><div key={`${tab.id}:${tab.generation}`} ref={bindings.comparison} /></section> : null;
+        ? <section className="host-review" aria-label="Source review surface"><ReviewVersions /><div key={`${tab.id}:${tab.generation}`} ref={bindings.comparison} /></section> : null;
+}
+function ReviewVersions() {
+    const state = useObserved(controller.variants.state), reference = useObserved(controller.comparisonReference), selected = state.requested ?? state.selected,
+        pinned = selected && !state.choices.some(choice => choice.id === selected.id && choice.version === selected.version);
+    return <div><label>Review version <select aria-label="Review version" value={pinned ? "__captured" : selected?.id ?? ""}
+        onChange={event => { if (event.currentTarget.value) controller.variants.review(event.currentTarget.value); }}>
+        <option value="">Choose a version</option><option value="__captured" disabled hidden={!pinned}>{pinned ? `Captured ${selected.label} · ${selected.version}` : ""}</option>
+        {state.choices.map(choice => <option key={choice.id} value={choice.id}>{choice.label} · {choice.version}</option>)}
+    </select></label><output aria-label="Version review status" aria-live="polite">{state.message} Reference: {reference.baseline.version}.</output>
+        <button onClick={controller.variants.keepDraft}>Keep draft version</button><button onClick={controller.variants.finishNext} disabled={!state.pending}>Finish version load</button>
+        <button onClick={controller.variants.failNext} disabled={!state.pending}>Fail version load</button><button onClick={controller.variants.cancel} disabled={!state.pending}>Cancel version load</button>
+        <button onClick={bindings.beginDiscard}>Discard reviewed changes</button><button onClick={bindings.finishDiscard}>Confirm reviewed discard</button><button onClick={bindings.cancelDiscard}>Cancel reviewed discard</button></div>;
 }
 function LanguageTools() {
     const tools = bindings.language, state = useObserved(tools.state);
