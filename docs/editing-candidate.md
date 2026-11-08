@@ -109,7 +109,11 @@ existing anchor. The preferred column resets after edits, other navigation, exte
 changes or measured column-width changes. Nearest reveal keeps an already visible caret in
 place. Raw CRLF offsets and independently scrolled views remain separate from native LF context.
 
-Tab inserts indentation. Escape followed by Tab returns to the host's normal focus order.
+Tab indents and Shift+Tab outdents. Press Escape, then Tab or Shift+Tab to move focus to the
+next or previous host control. Shift alone preserves the pending exit. The next Tab consumes
+that exit, so ordinary indentation resumes after returning to the editor. Host controls retain
+their normal tab order.
+
 Pointer selection uses rendered native rectangles; drag anchors expire across document changes.
 Only the captured pointer can end its drag. Losing capture, cancellation, releasing the primary
 button or disposing the mount stops selection updates and releases any remaining capture.

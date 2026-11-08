@@ -37,7 +37,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     input.setAttribute("form", "");
     input.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
     input.setAttribute("aria-multiline", "true"); input.setAttribute("autocapitalize", "off");
-    help.id = `st-input-help-${scope}`; help.className = "st-input-help"; help.textContent = "Tab inserts indentation. Press Escape, then Tab to leave the editor.";
+    help.id = `st-input-help-${scope}`; help.className = "st-input-help"; help.textContent = "Tab inserts indentation. Press Escape, then Tab or Shift+Tab to leave the editor.";
     input.setAttribute("aria-describedby", help.id); caret.className = "st-input-caret"; caret.setAttribute("aria-hidden", "true"); root.append(input, caret, help);
     let revision = workspace.document(documentId).revision, context: InputContext = inputContext(workspace.document(documentId).buffer, view.getSnapshot().selection);
     let disposed = false, composing = false, selecting = false, committing = false, escaped = false;
@@ -343,6 +343,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (command && key === "a") { event.preventDefault(); cancelWord(); const length = workspace.document(documentId).buffer.length; view.setSelection(revision, { anchor: 0, head: length }); refresh(); return; }
         if (command && (event.key === "Home" || event.key === "End")) { event.preventDefault(); preferredX = undefined; move(event.key === "Home" ? 0 : workspace.document(documentId).buffer.length, event.shiftKey); return; }
         if (event.key === "Escape") { escaped = true; return; }
+        // Backward focus traversal presses Shift before Tab.
+        if (escaped && event.key === "Shift") return;
         if (event.key === "Tab" && escaped) { escaped = false; return; }
         escaped = false; syncSelection();
         const wordModifier = !event.metaKey && (event.ctrlKey && !event.altKey || apple && event.altKey && !event.ctrlKey);
