@@ -4,6 +4,7 @@ import { fontFixture, FontBytes, assembleFont, fontTables, cmapTable } from "./f
 import { FontCascade, createFontNormalizationCursor } from "sttropez";
 import { createGraphemeCursor, createNormalizedGraphemeCursor, createScriptItemizationCursor } from "sttropez";
 import { DiffReferenceCache, WorkspaceCommands } from "sttropez";
+import { createSelectionSet, planSelectionEdits } from "sttropez";
 import type { SaveReview } from "sttropez";
 import type { PresentedLine } from "sttropez/browser";
 const workspace = new Workspace();
@@ -169,6 +170,18 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
     },
     find: find.setQuery, findOptions: find.setOptions, findState: find.state.getSnapshot, replaceAll: find.replaceAll,
     history: () => workspace.observeHistory(documentId).getSnapshot(),
+    selectionSets: () => {
+        const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "sets", variant: "working" }, "Sets", { value: "abcd" });
+        const view = model.createDocumentView(source.documentId, createSelectionSet(4, [{ anchor: 0, head: 1 }, { anchor: 4, head: 3 }], 1));
+        const before = view.getSnapshot().selectionSet, plan = planSelectionEdits(4, before, "X");
+        model.edit({ documentId: source.documentId, expectedRevision: 0, origin: "human", view, ...plan });
+        const changed = model.document(source.documentId).buffer.slice(0, 4), after = view.getSnapshot().selectionSet;
+        model.undo({ documentId: source.documentId, expectedRevision: 1 });
+        const restored = model.document(source.documentId).buffer.slice(0, 4), restoredSet = view.getSnapshot().selectionSet;
+        const alias = view.getSnapshot().selection === restoredSet.ranges[restoredSet.primary];
+        view.dispose(); model.releaseResource(source.id, true);
+        return { before, after, restoredSet, changed, restored, alias, views: model.diagnostics().views, leases: model.diagnostics().leases };
+    },
     storage: () => {
         const imported = importText("a😀\r\nb", "lf"), original = TextBuffer.from(imported.text);
         const changed = original.apply([{ from: 1, to: 3, insert: "X" }]);

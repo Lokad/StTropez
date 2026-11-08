@@ -196,6 +196,10 @@ try {
     await page.evaluate(() => window.consumer.find("restored"));
     await page.waitForFunction(() => window.consumer.findState().status === "ready");
     const find = await page.evaluate(() => window.consumer.findState()); assert.equal(find.count, 1); assert.equal(find.wholeWord, true);
+    const selectionSets = await page.evaluate(() => window.consumer.selectionSets());
+    assert.equal(selectionSets.changed, "XbcX"); assert.equal(selectionSets.restored, "abcd");
+    assert.deepEqual(selectionSets.restoredSet, selectionSets.before); assert.equal(selectionSets.after.ranges.length, 2); assert.equal(selectionSets.after.primary, 1);
+    assert.equal(selectionSets.alias, true); assert.equal(selectionSets.views, 0); assert.equal(selectionSets.leases, 0);
     await page.evaluate(() => window.consumer.replaceAll("packed"));
     await page.waitForFunction(() => window.consumer.findState().status === "ready" && window.consumer.findState().count === 0);
     assert.equal(await page.evaluate(() => window.consumer.text()), "edited packed package");
@@ -266,7 +270,7 @@ try {
         consumer, browser: browser.version(), node: process.version, dotnet: dotnet(["--version"]).trim(),
         typescript: JSON.parse(await readFile("node_modules/typescript/package.json", "utf8")).version,
         esbuild: JSON.parse(await readFile("node_modules/esbuild/package.json", "utf8")).version,
-        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, comparison, readonlyIndent, saveReview, style, errors }, null, 2));
+        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, selectionSets, comparison, readonlyIndent, saveReview, style, errors }, null, 2));
     console.log("Restored package: declarations, storage/mappings, modules, visible CSS and actual edit passed. Evidence: artifacts/package/");
     console.log(`Isolated consumer retained for inspection: ${consumer}`);
     await page.close();

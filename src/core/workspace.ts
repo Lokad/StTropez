@@ -5,6 +5,8 @@ import { composePositionMaps } from "./positions.ts";
 import type { PositionMapping } from "./positions.ts";
 import { TextHistory, validateHistory } from "./history.ts";
 import type { EditKind, HistoryChange, HistoryOptions, HistorySnapshot, Selection } from "./history.ts";
+import { createSelectionSet, mapSelectionSet, sameSelectionSet } from "./selections.ts";
+import type { SelectionSet } from "./selections.ts";
 import { NotificationScope, Store } from "./observable.ts";
 import type { Observable } from "./observable.ts";
 import { equalValue, snapshotValue } from "./values.ts";
@@ -43,9 +45,10 @@ export type DocumentSnapshot = Readonly<{
 }>;
 export type DocumentChange = Readonly<{ previousRevision: number; transactionId: number; origin: EditOrigin;
     kind: EditKind | "undo" | "redo"; mapping: PositionMapping }>;
-export type DocumentViewSnapshot = Readonly<{ documentId: DocumentId; revision: number; selection: Selection }>;
+export type DocumentViewSnapshot = Readonly<{ documentId: DocumentId; revision: number; selection: Selection; selectionSet: SelectionSet }>;
 export type DocumentView = Observable<DocumentViewSnapshot> & Readonly<{ id: ViewId; documentId: DocumentId;
-    setSelection: (expectedRevision: number, selection: Selection) => boolean; dispose: () => void }>;
+    setSelection: (expectedRevision: number, selection: Selection) => boolean;
+    setSelections: (expectedRevision: number, selections: readonly Selection[], primary?: number) => boolean; dispose: () => void }>;
 export type Surface = Readonly<
     { kind: "text"; documentId: DocumentId }
     | { kind: "panel"; resourceId: ResourceId; panelType: string }
@@ -80,7 +83,7 @@ export type SaveTicket<T> = Readonly<{ target: ResourceTarget; revision: number;
     conflict: () => void; fail: () => void; finish: () => void }>;
 export type EditRequest = Readonly<{
     documentId: DocumentId; expectedRevision: number; edits: readonly TextEdit[]; origin: EditOrigin; lease?: EditLease;
-    history?: Readonly<{ kind: EditKind; group?: string }>; view?: DocumentView; selection?: Selection;
+    history?: Readonly<{ kind: EditKind; group?: string }>; view?: DocumentView; selection?: Selection; selectionSet?: SelectionSet;
 }>;
 export type ChangeResult = Readonly<{ applied: true; revision: number } | { applied: false;
     reason: "missing-resource" | "missing-document" | "stale-revision" | "not-ready" | "read-only" | "edit-locked" | "stale-proposal" | "stale-association" | "history-empty" | "history-blocked" }>;
@@ -120,18 +123,8 @@ function readySnapshot(metadata: ResourceMetadata, revision: number, value: Snap
 function withMetadata(state: ResourceSnapshot<SnapshotValue>, metadata: ResourceMetadata): ResourceSnapshot<SnapshotValue> {
     return Object.freeze(Object.defineProperties({}, { ...Object.getOwnPropertyDescriptors(state), metadata: { value: metadata, enumerable: true } })) as ResourceSnapshot<SnapshotValue>;
 }
-function selection(length: number, value: Selection): Selection {
-    if (![value.anchor, value.head].every(offset => Number.isSafeInteger(offset) && offset >= 0 && offset <= length)) throw new RangeError("Selection is outside the document.");
-    const anchorAffinity = value.anchorAffinity ?? (value.anchor <= value.head ? "after" : "before");
-    const headAffinity = value.headAffinity ?? (value.anchor === value.head ? anchorAffinity : value.anchor < value.head ? "before" : "after");
-    if (![anchorAffinity, headAffinity].every(side => side === "before" || side === "after")) throw new TypeError("Unknown selection affinity.");
-    return Object.freeze({ anchor: value.anchor, head: value.head, anchorAffinity, headAffinity });
-}
-function mapSelection(mapping: PositionMapping, value: Selection): Selection {
-    return selection(mapping.newLength, { ...value, anchor: mapping.map(value.anchor, value.anchorAffinity).offset, head: mapping.map(value.head, value.headAffinity).offset });
-}
-function sameSelection(a: Selection, b: Selection): boolean {
-    return a.anchor === b.anchor && a.head === b.head && a.anchorAffinity === b.anchorAffinity && a.headAffinity === b.headAffinity;
+function viewSnapshot(documentId: DocumentId, revision: number, selectionSet: SelectionSet): DocumentViewSnapshot {
+    return Object.freeze({ documentId, revision, selection: selectionSet.ranges[selectionSet.primary]!, selectionSet });
 }
 
 /** Framework-free resource ownership and versioned transactions. All I/O is supplied by a host. */
@@ -233,22 +226,23 @@ export class Workspace {
     }
     observeHistory(id: DocumentId): Observable<HistorySnapshot> { return this.requireResource(this.resourceForDocument(id).id).history.observable; }
     ownsDocumentView(view: DocumentView): boolean { return this.documents.get(view.documentId)?.views.get(view.id)?.handle === view; }
-    createDocumentView(id: DocumentId, initial: Selection = { anchor: 0, head: 0 }): DocumentView {
+    createDocumentView(id: DocumentId, initial: Selection | SelectionSet = { anchor: 0, head: 0 }): DocumentView {
         // View registration, like subscribing, may occur during host view attachment in a delivery.
         const document = this.document(id), record = this.documents.get(id)!;
-        const state = new Store<DocumentViewSnapshot>(Object.freeze({ documentId: id, revision: document.revision,
-            selection: selection(document.buffer.length, initial) }), this.scope);
+        const selections = "ranges" in initial ? createSelectionSet(document.buffer.length, initial.ranges, initial.primary) : createSelectionSet(document.buffer.length, [initial]);
+        const state = new Store<DocumentViewSnapshot>(viewSnapshot(id, document.revision, selections), this.scope);
         const viewId = `view-${++this.nextId}` as ViewId, retention = Symbol("view"); record.leases.add(retention);
         const lease = Object.freeze({ resourceId: record.handle.id, active: () => record.leases.has(retention), release: () => { record.leases.delete(retention); } });
+        const setSelections = (expectedRevision: number, ranges: readonly Selection[], primary = 0): boolean => {
+            if (!record.views.has(viewId) || record.state.get().state !== "ready" || record.state.get().revision !== expectedRevision) return false;
+            const next = createSelectionSet(record.buffer!.length, ranges, primary), previous = state.get();
+            if (sameSelectionSet(next, previous.selectionSet)) return true;
+            this.scope.assertWritable(); this.history.seal(id);
+            const changed = new Set<Store<unknown>>(); state.set(viewSnapshot(id, previous.revision, next), changed); this.scope.deliver([...changed]); return true;
+        };
         const handle: DocumentView = Object.freeze({ ...state.observable, id: viewId, documentId: id,
-            setSelection: (expectedRevision: number, value: Selection) => {
-                if (!record.views.has(viewId) || record.state.get().state !== "ready" || record.state.get().revision !== expectedRevision) return false;
-                const next = selection(record.buffer!.length, value), previous = state.get();
-                if (sameSelection(next, previous.selection)) return true;
-                this.scope.assertWritable();
-                this.history.seal(id);
-                const changed = new Set<Store<unknown>>(); state.set(Object.freeze({ ...previous, selection: next }), changed); this.scope.deliver([...changed]); return true;
-            }, dispose: () => { record.views.delete(viewId); lease.release(); } });
+            setSelection: (expectedRevision: number, value: Selection) => setSelections(expectedRevision, [value]), setSelections,
+            dispose: () => { record.views.delete(viewId); lease.release(); } });
         record.views.set(viewId, { handle, state, lease }); return handle;
     }
     captureResource(id: ResourceId): ResourceTarget {
@@ -285,24 +279,26 @@ export class Workspace {
             if (!record || record.state.get().state === "released") return { applied: false, reason: "missing-document" };
             const refusal = this.validateEdit(record, request.expectedRevision, request.origin, request.lease); if (refusal) return refusal;
             const view = request.view === undefined ? undefined : record.views.get(request.view.id);
-            if ((request.view && view?.handle !== request.view) || (request.selection && !view)) throw new Error("Selection target must be a live view of this document.");
+            if ((request.view && view?.handle !== request.view) || ((request.selection || request.selectionSet) && !view)) throw new Error("Selection target must be a live view of this document.");
+            if (request.selection && request.selectionSet) throw new Error("Choose a single selection or a selection set.");
             const before = record.buffer!, result = before.apply(request.edits);
-            const afterSelection = request.selection ? selection(result.buffer.length, request.selection) : undefined;
-            prepared.push({ request, record, before, after: result.buffer, mapping: result.mapping, units: result.changedUnits, view, afterSelection });
+            const afterSelections = request.selectionSet ? createSelectionSet(result.buffer.length, request.selectionSet.ranges, request.selectionSet.primary)
+                : request.selection ? createSelectionSet(result.buffer.length, [request.selection]) : view ? mapSelectionSet(result.mapping, view.state.get().selectionSet) : undefined;
+            prepared.push({ request, record, before, after: result.buffer, mapping: result.mapping, units: result.changedUnits, view, afterSelections });
         }
         const actual = prepared.filter(change => change.before !== change.after);
         const changes: HistoryChange[] = actual.map(change => Object.freeze({ documentId: change.request.documentId, before: change.before, after: change.after,
             mappings: Object.freeze([change.mapping]), units: change.units,
-            selection: change.view ? Object.freeze({ viewId: change.view.handle.id, before: change.view.state.get().selection,
-                after: change.afterSelection ?? mapSelection(change.mapping, change.view.state.get().selection) }) : null }));
+            selection: change.view ? Object.freeze({ viewId: change.view.handle.id, before: change.view.state.get().selectionSet,
+                after: change.afterSelections! }) : null }));
         if (changes.length) this.history.record(changes, first.origin, kind, requests.length === 1 ? group : undefined);
         const changed = new Set<Store<unknown>>(), transactionId = actual.length ? ++this.nextTransaction : 0;
         for (const change of prepared) {
-            if (change.before !== change.after) this.commitText(change.record, change.after, change.mapping, first.origin, kind, transactionId, changed);
-            if (change.view && change.afterSelection && !sameSelection(change.view.state.get().selection, change.afterSelection)) {
-                if (!actual.length) this.history.seal(change.request.documentId);
-                change.view.state.set(Object.freeze({ documentId: change.request.documentId,
-                    revision: change.record.state.get().revision, selection: change.afterSelection }), changed);
+            if (change.before !== change.after) this.commitText(change.record, change.after, change.mapping, first.origin, kind, transactionId, changed,
+                change.view && change.afterSelections ? { viewId: change.view.handle.id, selectionSet: change.afterSelections } : undefined);
+            if (change.view && change.afterSelections && !sameSelectionSet(change.view.state.get().selectionSet, change.afterSelections)) {
+                if (change.before === change.after) this.history.seal(change.request.documentId);
+                change.view.state.set(viewSnapshot(change.request.documentId, change.record.state.get().revision, change.afterSelections), changed);
             }
         }
         this.syncHistory(changed); if (changed.size) { if (actual.length) this.publish(changed); else this.scope.deliver([...changed]); }
@@ -327,22 +323,22 @@ export class Workspace {
         const changed = new Set<Store<unknown>>(), transactionId = ++this.nextTransaction, revisions = [];
         for (const change of entry.changes) {
             const participant = this.documents.get(change.documentId as DocumentId)!, forward = composePositionMaps(...change.mappings);
-            this.commitText(participant, direction === "undo" ? change.before : change.after, direction === "undo" ? forward.invert() : forward,
-                origin, direction, transactionId, changed);
             const view = change.selection ? participant.views.get(change.selection.viewId as ViewId) : undefined;
-            if (view && change.selection) view.state.set(Object.freeze({ documentId: participant.documentId!, revision: participant.state.get().revision,
-                selection: direction === "undo" ? change.selection.before : change.selection.after }), changed);
+            this.commitText(participant, direction === "undo" ? change.before : change.after, direction === "undo" ? forward.invert() : forward,
+                origin, direction, transactionId, changed, view && change.selection ? { viewId: view.handle.id,
+                    selectionSet: direction === "undo" ? change.selection.before : change.selection.after } : undefined);
             revisions.push(Object.freeze({ documentId: participant.documentId!, revision: participant.state.get().revision }));
         }
         this.syncHistory(changed); this.publish(changed); return Object.freeze({ applied: true, revisions: Object.freeze(revisions) });
     }
-    private commitText(record: ResourceRecord, buffer: TextBuffer, mapping: PositionMapping, origin: EditOrigin, kind: DocumentChange["kind"], transactionId: number, changed: Set<Store<unknown>>): void {
+    private commitText(record: ResourceRecord, buffer: TextBuffer, mapping: PositionMapping, origin: EditOrigin, kind: DocumentChange["kind"], transactionId: number, changed: Set<Store<unknown>>,
+        override?: Readonly<{ viewId: ViewId; selectionSet: SelectionSet }>): void {
         const current = record.state.get(), revision = current.revision + 1;
         record.buffer = buffer;
         record.change = Object.freeze({ previousRevision: current.revision, mapping, transactionId, origin, kind });
         this.setRecord(record, readySnapshot({ ...current.metadata, dirty: record.savedBuffer === null || !buffer.equals(record.savedBuffer) }, revision, buffer), changed);
-        for (const view of record.views.values()) view.state.set(Object.freeze({ documentId: record.documentId!, revision,
-            selection: mapSelection(mapping, view.state.get().selection) }), changed);
+        for (const view of record.views.values()) view.state.set(viewSnapshot(record.documentId!, revision,
+            override?.viewId === view.handle.id ? override.selectionSet : mapSelectionSet(mapping, view.state.get().selectionSet)), changed);
     }
     private syncHistory(changed: Set<Store<unknown>>): void {
         for (const [id, record] of this.documents) {
@@ -617,8 +613,8 @@ export class Workspace {
                 const changed = new Set<Store<unknown>>(), revision = current.revision + 1;
                 this.setRecord(record, readySnapshot({ ...current.metadata, state: "ready", dirty: false, serverVersion: loaded.serverVersion ?? null, failure: null, saveStatus: "idle" },
                     revision, record.buffer ?? value), changed);
-                for (const view of record.views.values()) view.state.set(Object.freeze({ documentId: record.documentId!, revision,
-                    selection: selection(record.buffer!.length, { anchor: 0, head: 0 }) }), changed);
+                for (const view of record.views.values()) view.state.set(viewSnapshot(record.documentId!, revision,
+                    createSelectionSet(record.buffer!.length, [{ anchor: 0, head: 0 }])), changed);
                 this.syncHistory(changed); this.publish(changed);
                 return true;
             } finally { operation.finish(); }

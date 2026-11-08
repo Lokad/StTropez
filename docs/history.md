@@ -1,6 +1,6 @@
 # Document transactions, history and views
 
-Reviewed 2026-11-05. Workspace documents use the immutable `TextBuffer` piece tree. A document
+Reviewed 2026-11-08. Workspace documents use the immutable `TextBuffer` piece tree. A document
 owns its text, revision, saved baseline and bounded history. Each `DocumentView` owns a separate
 selection; the browser or host owns its scroll position. Tabs and view mounts do not own history.
 
@@ -70,7 +70,9 @@ through retained shared units, preserving consistent boundaries in those partici
 tab or detaching a view leaves document history intact. Capability changes do not erase it.
 
 Workspace history defaults to at most 100 distinct groups, 1,000 recorded transactions and
-8,388,608 changed UTF-16 units (inserted plus removed content after no-op filtering). Shared
+8,388,608 changed UTF-16 units (inserted plus removed content after no-op filtering). A separate
+`maxSelectionRanges` limit defaults to 1,000,000 ranges across captured before/after view sets.
+It bounds selection metadata even when a command changes little text. Shared
 units count once across the workspace. Set `WorkspaceOptions.history` to change these limits;
 zero disables the corresponding capacity. Least recently extended units are evicted as a whole. A group rolls
 over before exceeding a per-group change/unit limit. An oversized transaction still applies,
@@ -120,6 +122,36 @@ Registering/disposal of views, like adding/removing subscriptions, is allowed du
 attachment in notification delivery; it changes no document snapshot. Actual selection writes
 and text/history mutations are rejected during delivery. Callers must queue such commands.
 An unchanged selection is a no-op. Never synchronize editor state in React effects or render.
+
+### Multiple-selection model
+
+Each view snapshot also contains `selectionSet: { ranges, primary }`. `selection` is the exact
+primary range object, preserving single-selection readers. `createSelectionSet(length, ranges,
+primary?)` clones/freezes inputs, sorts by source range and merges overlaps, duplicate carets
+and carets on an occupied range. Adjacent nonempty ranges stay distinct. A merged range keeps
+the primary member's direction/affinities, or the first supplied member's if it is secondary.
+`primary` is an index into that immutable normalized set, not a durable identity for later work.
+Capture the view, revision and whole set when scheduling a command.
+
+`createDocumentView` accepts a single selection or a set. `setSelections(revision, ranges,
+primary?)` updates all ranges together; `setSelection` deliberately collapses to one range.
+Identical normalized sets publish nothing. A selection-only change seals that document's group,
+including inside a batch that changes another document. Mapping uses every range's affinities
+and coalesces ranges that overlap after an edit. Mapping deleted positions is lossy; other views
+do not acquire the initiating view's captured selection history.
+
+`planSelectionEdits(length, normalizedSet, textOrTexts)` returns frozen original-coordinate
+edits and resulting caret positions. Per-range replacement text follows normalized range order.
+Apply both through `edit({ ...capturedTarget, view, ...plan })`; planning alone changes nothing.
+An edit may supply `selectionSet` or `selection`, with a live initiating view. Every document,
+range and result set is validated before a multi-document transaction publishes. Undo/redo
+restore the initiating view's complete captured set and map other retained views independently.
+
+This is the headless foundation. Browser multiple-caret gestures, rendering and input routing
+remain implementation work; the existing browser adapters still operate on the primary range.
+The native text-control [selection API](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#textFieldSelection)
+supplies the primary input projection. The project model reuses its own mappings, transactions
+and history to represent the additional ranges without an editor/runtime dependency.
 
 The native textarea displays LF and maps its selection/replacement coordinates back to raw
 model text. Editing an unrelated range preserves CRLF; deleting a displayed CRLF newline removes

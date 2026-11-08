@@ -1,17 +1,20 @@
 import type { TextBuffer } from "./text-buffer.ts";
-import type { Affinity, PositionMapping } from "./positions.ts";
+import type { PositionMapping } from "./positions.ts";
+import type { SelectionSet } from "./selections.ts";
+export type { Selection } from "./selections.ts";
 
 export type EditKind = "typing" | "delete" | "paste" | "composition" | "form" | "refactor" | "proposal" | "live" | "replace" | "canonical";
-export type HistoryOptions = Readonly<{ maxGroups?: number; maxChanges?: number; maxChangedUnits?: number }>;
+export type HistoryOptions = Readonly<{ maxGroups?: number; maxChanges?: number; maxChangedUnits?: number; maxSelectionRanges?: number }>;
 export type HistorySnapshot = Readonly<{ undoDepth: number; redoDepth: number }>;
-export type Selection = Readonly<{ anchor: number; head: number; anchorAffinity?: Affinity; headAffinity?: Affinity }>;
-export type HistorySelection = Readonly<{ viewId: string; before: Selection; after: Selection }>;
+export type HistorySelection = Readonly<{ viewId: string; before: SelectionSet; after: SelectionSet }>;
 export type HistoryChange = Readonly<{ documentId: string; before: TextBuffer; after: TextBuffer;
     mappings: readonly PositionMapping[]; units: number; selection: HistorySelection | null }>;
 export type HistoryEntry = Readonly<{ id: number; origin: string; kind: EditKind; group: string | null;
     changes: readonly HistoryChange[]; steps: number; units: number }>;
 
 const kinds: readonly EditKind[] = ["typing", "delete", "paste", "composition", "form", "refactor", "proposal", "live", "replace", "canonical"];
+const selectionRanges = (changes: readonly HistoryChange[]): number => changes.reduce((total, change) => total
+    + (change.selection ? change.selection.before.ranges.length + change.selection.after.ranges.length : 0), 0);
 export function validateHistory(kind: EditKind, group: string | undefined): void {
     if (!kinds.includes(kind) || (group !== undefined && (typeof group !== "string" || !group))) throw new TypeError("Invalid history kind or group.");
 }
@@ -22,9 +25,10 @@ export class TextHistory {
     private readonly future = new Map<string, HistoryEntry[]>();
     private nextId = 0;
     private readonly last = new Map<string, HistoryEntry>();
-    private readonly limits: Readonly<{ groups: number; changes: number; units: number }>;
+    private readonly limits: Readonly<{ groups: number; changes: number; units: number; selections: number }>;
     constructor(options: HistoryOptions = {}) {
-        this.limits = Object.freeze({ groups: options.maxGroups ?? 100, changes: options.maxChanges ?? 1_000, units: options.maxChangedUnits ?? 8_388_608 });
+        this.limits = Object.freeze({ groups: options.maxGroups ?? 100, changes: options.maxChanges ?? 1_000, units: options.maxChangedUnits ?? 8_388_608,
+            selections: options.maxSelectionRanges ?? 1_000_000 });
         if (Object.values(this.limits).some(value => !Number.isSafeInteger(value) || value < 0)) throw new RangeError("History limits must be nonnegative safe integers.");
     }
     snapshot(id: string): HistorySnapshot { return Object.freeze({ undoDepth: this.past.get(id)?.length ?? 0, redoDepth: this.future.get(id)?.length ?? 0 }); }
@@ -41,7 +45,7 @@ export class TextHistory {
         validateHistory(kind, group);
         this.clearFuture(changes.map(change => change.documentId));
         const units = changes.reduce((total, change) => total + change.units, 0), previous = this.last.get(changes[0]!.documentId);
-        if (!this.limits.groups || !this.limits.changes || units > this.limits.units) {
+        if (!this.limits.groups || !this.limits.changes || units > this.limits.units || selectionRanges(changes) > this.limits.selections) {
             changes.forEach(change => this.forget(change.documentId)); return;
         }
         const first = changes[0], old = previous?.changes[0];
@@ -92,7 +96,8 @@ export class TextHistory {
         while (true) {
             const entries = [...new Set([...this.past.values(), ...this.future.values()].flat())].sort((a, b) => a.id - b.id);
             const steps = entries.reduce((total, entry) => total + entry.steps, 0), units = entries.reduce((total, entry) => total + entry.units, 0);
-            if (entries.length <= this.limits.groups && steps <= this.limits.changes && units <= this.limits.units) return;
+            const selections = entries.reduce((total, entry) => total + selectionRanges(entry.changes), 0);
+            if (entries.length <= this.limits.groups && steps <= this.limits.changes && units <= this.limits.units && selections <= this.limits.selections) return;
             const entry = entries[0]!;
             for (const change of entry.changes) {
                 const stack = this.past.get(change.documentId), index = stack?.indexOf(entry) ?? -1;
