@@ -297,11 +297,27 @@ separate. Full readiness requires current model/selections, every working/refere
 the displayed reference version, completed comparison and two frames. Requested and actual
 key cadence, raw samples and p50/p95/max values stay in the report.
 
+The report retains raw warmups in `warmupCases`, separately from the measured `cases`.
+Warmups never enter measured distributions or target assessments. The `retention` counts
+cover workflows and input events in both phases. Failure reports include completed samples
+from both phases and available active save/reference/input results captured after their
+clocks close, before assertions. Partial results remain identified by the active case and phase.
+Failure JSON and its screenshot share one identifier.
+
+`npm run bench:host-reference -- --retention-check` exercises eighteen existing normal-source,
+accumulated-history controls with two warmups and one observation. It writes
+`retention-check.json` and marks the result diagnostic-only. This checks report retention;
+the full campaign keeps its original 336 conditions, three warmups and ten observations.
+
 Comparison scheduler counters describe an old generation until a new job first advances.
 The observer checks that identity before attributing counters. It samples every input capture
 and bubble, render events and frames, retaining observed work for superseded generations
 alongside final-generation counters. These observations add overhead and are not process CPU
 attribution. They do not replace the original input reports or establish a runtime speedup.
+The comparison counters' `totalStepMs` sums inner-loop elapsed time across one generation;
+`maxStepMs` is the longest inner loop. Both exclude outer rendering and rescheduling and
+neither measures a complete callback. Fresh host documents share a browser process, whose
+caches may persist across document navigation.
 All exact-source/history, independent-selection, bounded-context/DOM/read, ordinary-export
 and disposal assertions remain active. Native devices and physical display latency remain
 unverified.
