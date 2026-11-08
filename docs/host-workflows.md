@@ -365,3 +365,16 @@ for the visible host message and two further frames. Full workflow time includes
 automation/assertions and typing; no service delay is imposed. Whole recovery and reference
 replacement have no point-action budget. Raw samples, background counts and p50/p95/max remain
 available, including target misses. These proxies do not measure physical presentation.
+
+Raw warmups are retained in `warmupCases`, separately from measured `cases`; they never enter
+measured distributions or target assessments. The `retention` counts distinguish workflows
+from the single measured point input within each workflow. A full run retains 24 warmup and
+80 observed workflows and point inputs. It does not count every other key in the workflow.
+Failure reports retain completed conditions in both phases, current-condition raw samples and
+available stage results captured after their clocks close. Active phase and stage identify
+partial results. Failure JSON and its screenshot share one identifier.
+
+`npm run bench:save-recovery -- --retention-check` runs both existing normal-source controls
+with two warmups and one observation each. It writes `retention-check.json` and marks the
+result diagnostic-only. This validates reporting; it is not a reduced qualification campaign.
+The full run retains its original eight conditions, workflow order, clocks and semantic checks.
