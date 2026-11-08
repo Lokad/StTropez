@@ -23,6 +23,55 @@ Useful automated host evaluation may proceed while device checks are unavailable
 status separate from complete M3/native qualification, and continue independent implementation
 and measurement. Do not claim production replacement readiness from synthetic composition.
 
+## Try the integrated pilot
+
+After `npm ci` and `npm run dev`, open the
+[plain host](http://127.0.0.1:4173/hosts/plain/?editor=candidate) or
+[React host](http://127.0.0.1:4173/hosts/react/?editor=candidate).
+Both expose the same workflow. Use `?editor=native` for the native source-input baseline;
+the comparison working pane always uses the bounded candidate.
+
+The services are local, deferred fixtures. **Finish save**, **Deliver proposal** and
+**Finish remote review** explicitly complete a pending response so that you can keep typing
+while it is in flight. **Finish save** trims trailing whitespace in its canonical reply.
+
+1. In **Primary source**, type a correction, select text with Shift+Arrow and replace it.
+   Check the shared text in **Secondary source**. Use Ctrl+Z and Ctrl+Shift+Z to undo and redo;
+   the views share history and retain independent selections. Escape followed by Tab leaves
+   the candidate editor for the surrounding host controls.
+2. Choose **Open source review**. Edit the working pane, then use **Next change** and
+   **Use baseline**. Undo the reversion to restore your correction. The reference stays
+   immutable while the working pane shares the source document and history.
+3. Focus a source editor and press Ctrl+S or Cmd+S. Type additional text before choosing
+   **Finish save**. The captured revision is saved; later typing remains present and unsaved.
+   Undo the later typing to return to the saved capture, then redo it. Use text without trailing
+   whitespace for this step so the synthetic canonical reply does not alter the capture.
+4. Choose **Simulate external source change**, save again and choose **Finish save**.
+   The conflict notice must retain your local text. Choose **Review remote source**, then
+   **Finish remote review** to compare the captured remote version. Correct the working text,
+   choose **Save reviewed source**, continue typing and choose **Finish save**. The conflict
+   clears after success; text typed after the capture remains unsaved. On that pending
+   reviewed save, you can instead choose **Fail save**, then **Save reviewed source** and
+   **Finish save** to try transport recovery without discarding local work.
+5. Choose **Associate agent**, **Request proposal**, then **Deliver proposal**. The source
+   is read-only while the request is pending; the configuration form remains independent.
+   Correct the delivered proposal, save it and choose **Finish save**. Choose
+   **Retry acknowledgement** twice: the fixture fails the first attempt and succeeds on retry.
+   The next **Request proposal**
+   captures your current source and configuration. **Interrupt agent** restores editing.
+6. Use **Move primary view**, then **Toggle views** twice. Text, history and independent view
+   state survive movement and remount. Configuration changes and background progress keep
+   their own state. Reloading the page starts a new fixture; this is not durable storage.
+
+The automated large-document workflows additionally exercise 100,000-line and long-line
+sources with bounded input contexts, DOM and reads. See the
+[host workflow contract](host-workflows.md) and [viewport limits](viewport.md).
+The walkthrough does not qualify real IME, OS clipboard, screen readers or physical display
+latency. Those checks remain unverified until a declared device/support record supplies evidence.
+
+
+## Measurement boundaries
+
 For local point typing and navigation, initial targets on the recorded development runner are
 p95 input-handler duration at most 16ms, interaction-ready proxy at most 100ms for normal sources
 and 250ms for large sources, and complete action proxy at most 200ms/500ms respectively.

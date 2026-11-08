@@ -11,6 +11,8 @@ ports. The playground mounts two native text views and an independent typed conf
 with synthetic deferred saves and an explicit preview command.
 The plain and React development hosts add exclusive agent requests, human correction, exact
 save/acknowledgement receipts and retry, stable refs and controller-preserving error recovery.
+Try the [integrated editor/review pilot](docs/m3-pilot.md#try-the-integrated-pilot) for direct
+host links and a walkthrough of editing, comparison, captured saves, conflicts and remount.
 Documents use an immutable indexed piece tree, bounded shared undo/redo, mapped view selections,
 atomic multi-document edits and explicit newline conversion. The textarea remains an input and
 instrumentation baseline. A bounded viewport and experimental bounded-input candidate provide
