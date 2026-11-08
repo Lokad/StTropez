@@ -65,6 +65,9 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         graphemeJob?.cursor.dispose(); graphemeJob = undefined;
         if (graphemeTimer !== undefined) { win.clearTimeout(graphemeTimer); commandTimers.delete(graphemeTimer); graphemeTimer = undefined; }
     }
+    function cancelCommandTimers(): void {
+        commandTimers.forEach(timer => win.clearTimeout(timer)); commandTimers.clear();
+    }
     const scheduleCaret = () => { if (!disposed && frame === undefined) frame = win.requestAnimationFrame(positionCaret); };
     function positionCaret(): void {
         frame = undefined; if (disposed) return;
@@ -329,7 +332,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         } else commit(type);
         lastInputMs = win.performance.now() - start; inputEvents++;
     }, { signal: listeners.signal });
-    input.addEventListener("compositionstart", () => { cancelWord(); wordInput = undefined; insertion = undefined; syncSelection(); composing = true; group = undefined; root.classList.add("st-composing"); scheduleCaret(); }, { signal: listeners.signal });
+    input.addEventListener("compositionstart", () => { cancelWord(); cancelCommandTimers(); wordInput = undefined; insertion = undefined; syncSelection(); composing = true; group = undefined; root.classList.add("st-composing"); scheduleCaret(); }, { signal: listeners.signal });
     input.addEventListener("compositionend", () => { composing = false; root.classList.remove("st-composing"); commit("insertCompositionText"); }, { signal: listeners.signal });
     input.addEventListener("select", syncSelection, { signal: listeners.signal });
     // Tab can reset the browser range after focus dispatch. It changes focus, not model selection.
@@ -488,7 +491,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             if (composing && input.value !== context.text) conflict("composition-detached");
             composing = false; stopDrag();
             if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
-            commandTimers.forEach(timer => win.clearTimeout(timer)); commandTimers.clear();
+            cancelCommandTimers();
             listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); input.value = ""; viewport.destroy(); if (!options.view) view.dispose();
         } });
 }

@@ -37,7 +37,10 @@ bracket pairing/skipping, clipboard events and shared undo/redo. Typing and adja
 group per mount/view; clipboard, composition and structural commands have separate history
 boundaries. Large indentation plans yield every 256 lines against a captured immutable buffer
 and reject changes to the revision, selection or tab target before applying one transaction.
-The final transaction is still proportional to the number of changed lines.
+Starting composition cancels queued command timers, including pending indentation. Cancelling
+composition does not revive that command even when the revision and selection stay unchanged.
+Staged input can then commit as one composition transaction. The automated race checks do not
+qualify native IME behavior. The final transaction is still proportional to changed lines.
 
 Ordinary text and line-break input capture the native replacement range, document revision
 and model selection in `beforeinput`. The following `input` uses that range only when the
