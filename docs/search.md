@@ -31,6 +31,20 @@ shared undo unit. Edits during planning cancel the old operation and restart sea
 new snapshot. The final transaction remains synchronous and proportional to changed ranges;
 yielding planning does not qualify large replace-all latency or memory.
 
+After replace-all finishes, focus returns to its captured editor only if no new element gained
+focus since the command began. A scoped focus listener records these changes and is removed
+on destruction. Disabling the invoking button can clear browser focus without another element
+gaining it. Moving focus to a configuration field while planning keeps later typing in that
+field; the replacement still targets its original document and view.
+
+Starting composition cancels a queued replace-all through the existing generation and timer
+cancellation path. Immediate composition cancellation cannot revive that older plan. The
+unchanged source keeps its valid search index, so a fresh command can run after composition
+ends. A new replace-all request during active composition is rejected. Composition can then
+commit as its own history unit; stale-context recovery for unrelated edits remains in place.
+The controller removes its composition listener on destruction. Synthetic event tests verify
+these staging rules and do not qualify native IME behavior.
+
 The controller retains an explicit resource lease and subscribes only to its document and tab
 state. Destroy it before discarding the associated view. Cancellation clears the index and
 does not automatically resume on later typing. Disposed or expired controllers cannot address

@@ -11,11 +11,11 @@ export type FindController = Readonly<{ state: Observable<FindSnapshot>; setQuer
 export function createFindController(workspace: Workspace, tabId: TabId, editor: EditingCandidate): FindController {
     const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
     if (!tab || tab.surface.kind !== "text" || tab.surface.documentId !== editor.view.documentId || !workspace.ownsDocumentView(editor.view)) throw new Error("Find requires the captured document view.");
-    const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId), lease = workspace.acquire(resource.id), win = editor.element.ownerDocument.defaultView!;
+    const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId), lease = workspace.acquire(resource.id), owner = editor.element.ownerDocument, win = owner.defaultView!;
     const scope = new NotificationScope(() => {}), initial = workspace.document(documentId);
     const store = new Store<FindSnapshot>(Object.freeze({ query: "", revision: initial.revision, status: "idle", count: 0, scanned: 0, length: initial.buffer.length,
         current: null, preview: Object.freeze([]), message: "", maxScanStepMs: 0, replaceTransactionMs: 0 }), scope);
-    let disposed = false, timer: number | undefined, cursor: LiteralSearch | undefined, generation = 0;
+    let disposed = false, timer: number | undefined, cursor: LiteralSearch | undefined, generation = 0, focusGeneration = 0;
     let pages: number[][] = [], count = 0;
     const valid = () => !disposed && lease.active() && workspace.resolveTab(target) !== undefined && workspace.ownsDocumentView(editor.view)
         && workspace.observeDocument(documentId).getSnapshot() !== undefined && !editor.snapshot().disposed;
@@ -70,7 +70,8 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         scope.assertWritable(); if (typeof replacement !== "string") throw new TypeError("Expected replacement text.");
         const state = store.get(); if (!valid() || state.status !== "ready" || !count) return;
         if (!canEdit()) { publish({ message: "read-only" }); return; }
-        stop(); const token = generation, positions = pages, total = count, edits: TextEdit[] = [], selection = editor.view.getSnapshot().selection; let index = 0;
+        if (editor.snapshot().composing) { publish({ message: "Finish composition before replacing." }); return; }
+        stop(); const token = generation, focusToken = focusGeneration, positions = pages, total = count, edits: TextEdit[] = [], selection = editor.view.getSnapshot().selection; let index = 0;
         publish({ status: "replacing", message: "" });
         const step = () => {
             if (token !== generation) return;
@@ -82,10 +83,19 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
             publish({ replaceTransactionMs: win.performance.now() - started });
             if (!result.applied) { publish({ status: "ready", message: result.reason }); return; }
             if (workspace.document(documentId).revision === state.revision) publish({ status: "ready" });
-            publish({ message: `Replaced ${total} matches.` }); editor.focus();
+            publish({ message: `Replaced ${total} matches.` });
+            if (focusGeneration === focusToken) editor.focus();
         }; later(step);
     };
-    const subscriptions = [workspace.observeDocument(documentId).subscribe(() => {
+    // Disabling the command button can clear activeElement without a new focus choice.
+    const focusChanged = () => { focusGeneration++; };
+    owner.addEventListener("focusin", focusChanged);
+    const compositionStarted = () => {
+        if (store.get().status !== "replacing") return;
+        stop(); publish({ status: "ready", message: "Replacement cancelled for composition." });
+    };
+    editor.input.addEventListener("compositionstart", compositionStarted);
+    const subscriptions = [() => owner.removeEventListener("focusin", focusChanged), () => editor.input.removeEventListener("compositionstart", compositionStarted), workspace.observeDocument(documentId).subscribe(() => {
         if (store.get().status === "cancelled" && valid()) { const current = workspace.document(documentId); publish({ revision: current.revision, length: current.buffer.length }); }
         else restart(store.get().query);
     }), workspace.tabState.subscribe(() => { if (!valid()) { stop(); pages = []; count = 0; publish({ status: "expired", count: 0, preview: Object.freeze([]), message: "View is unavailable." }); } })];
