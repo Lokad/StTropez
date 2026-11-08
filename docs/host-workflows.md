@@ -160,6 +160,12 @@ consuming application still owns durable recovery, navigation and unload policy.
 
 ## Commands, permission changes and clipboard
 
+Ctrl+S or Cmd+S in a source editor invokes the host's existing captured-save command without
+moving focus or changing selection. Primary, secondary and comparison-working views share
+this route; configuration fields keep their own keyboard behavior. Active composition,
+expired view targets and detached inputs do not dispatch a save. Repeated keydown events do
+not enqueue repeated saves. The view binding removes the listener during unmount/disposal.
+
 Multiline indentation checks editability before it schedules any planning work. A Tab or
 Shift+Tab pressed while the view is read-only cannot become a deferred edit after the host
 restores permission. Commands that begin editable still capture their document revision and

@@ -1,5 +1,5 @@
 import { applyTextEdits, exportText, PositionMap, textDifference } from "../index.ts";
-import type { DocumentSnapshot, DocumentView, EditKind, PositionMapping, Selection, TextBuffer, Workspace, TabId } from "../index.ts";
+import type { Affinity, DocumentSnapshot, DocumentView, EditKind, PositionMapping, Selection, TextBuffer, Workspace, TabId } from "../index.ts";
 import { captureNativeInsertion, resolveNativeInsertion } from "./input-target.ts";
 import type { NativeInsertionTarget } from "./input-target.ts";
 export { mountTextViewport } from "./viewport.ts";
@@ -11,7 +11,8 @@ export type { FindController, FindSnapshot } from "./find.ts";
 export { mountTextComparison } from "./comparison.ts";
 export type { TextComparison } from "./comparison.ts";
 
-export type ViewState = Selection & Readonly<{ scrollTop: number; scrollLeft: number }>;
+export type ViewState = Selection & Readonly<{ scrollTop: number; scrollLeft: number;
+    horizontalAnchor?: Readonly<{ revision: number; offset: number; affinity: Affinity; left: number }> }>;
 export type MountedEditor = Readonly<{ element: HTMLTextAreaElement; view: DocumentView;
     captureView: () => ViewState; restoreView: (state: ViewState) => void; destroy: () => void }>;
 type Projection = Readonly<{ text: string; mapping: PositionMapping; hasCR: boolean }>;

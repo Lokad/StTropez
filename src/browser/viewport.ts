@@ -65,6 +65,8 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     let renders = 0, firstLine = 0, lastLine = 0, partialRows = 0, textUnits = 0, readUnits = 0, lastRenderMs = 0;
     let anchor: Readonly<{ revision: number; offset: number; topRemainder: number; leftRemainder: number }> | undefined;
     let reveal: Readonly<{ revision: number; offset: number; horizontal: "center" | "nearest"; vertical: "center" | "nearest"; affinity: Affinity }> | undefined;
+    let horizontalAnchor: ViewState["horizontalAnchor"];
+    let fragmentPlacement: Readonly<{ revision: number; line: number; from: number; to: number; left: number; shift: number }> | undefined;
     let measuredWidth = 0, measuredFont = "", measuredRevision: number | null = null;
     const rows = new Map<number, HTMLDivElement>();
     const geometries = new Map<number, ReturnType<typeof rowGeometry>>();
@@ -92,7 +94,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         if ((position.top !== undefined && !Number.isFinite(position.top)) || (position.left !== undefined && !Number.isFinite(position.left))) throw new RangeError("Invalid scroll position.");
         if (position.top !== undefined) top = Math.max(0, position.top);
         if (position.left !== undefined) left = Math.max(0, position.left);
-        anchor = undefined;
+        anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
         schedule();
     };
     const documentChanged = () => {
@@ -107,7 +109,10 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             anchor = current.change?.previousRevision === anchor.revision
                 ? { ...anchor, revision: current.revision, offset: current.change.mapping.map(anchor.offset, "before").offset } : undefined;
             if (reveal && current.change?.previousRevision === reveal.revision) reveal = { ...reveal, revision: current.revision, offset: current.change.mapping.map(reveal.offset, reveal.affinity).offset };
-        } else if (!current) { anchor = undefined; reveal = undefined; }
+            if (horizontalAnchor) horizontalAnchor = current.change?.previousRevision === horizontalAnchor.revision
+                ? { ...horizontalAnchor, revision: current.revision, offset: current.change.mapping.map(horizontalAnchor.offset, horizontalAnchor.affinity).offset } : undefined;
+            fragmentPlacement = undefined;
+        } else if (!current) { anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined; }
         schedule();
     };
     const read = (buffer: TextBuffer, from: number, to: number): string => { readUnits += to - from; return buffer.slice(from, to); };
@@ -115,6 +120,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         const margin = Math.min(padding, visible / 4);
         return start < scroll + margin ? Math.max(0, start - margin) : start + size > scroll + visible - margin ? Math.max(0, start + size - visible + margin) : scroll;
     };
+    const horizontalPosition = (value: number): number => { const margin = Math.min(padding, width / 4); return Math.max(margin, Math.min(width - margin, value)); };
     const row = (buffer: TextBuffer, line: number): Row => {
         const start = buffer.offsetAt(line), end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) - 1 : buffer.length;
         const displayEnd = line + 1 < buffer.lineCount && end > start && read(buffer, end - 1, end) === "\r" ? end - 1 : end;
@@ -173,7 +179,9 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             if (!element) { element = owner.createElement("div"); element.className = "st-viewport-row"; rows.set(item.line, element); layer.append(element); }
             element.dataset.line = String(item.line); element.dataset.from = String(item.from); element.dataset.to = String(item.to);
             element.dataset.complete = String(item.complete);
-            element.style.transform = `translate(${item.left}px, ${padding + item.line * lineHeight - top}px)`;
+            const placement = fragmentPlacement, shift = placement?.revision === document.revision && placement.line === item.line
+                && placement.from === item.from && placement.to === item.to && placement.left === left ? placement.shift : 0;
+            element.style.transform = `translate(${item.left + shift}px, ${padding + item.line * lineHeight - top}px)`;
             element.style.height = `${lineHeight}px`;
             const from = Math.max(item.from, Math.min(item.to, low)), to = Math.max(from, Math.min(item.to, high));
             const presented = { documentId, revision: document.revision, line: item.line, lineStart: document.buffer.offsetAt(item.line), from: item.from, to: item.to, text: item.text };
@@ -208,7 +216,31 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         // are scheduled for the next frame, without alternating reads and writes for each row.
         const measured = Math.max(0, ...[...rows.values()].filter(element => element.dataset.complete === "true").map(element => element.getBoundingClientRect().width));
         if (measured > measuredWidth + .01) { measuredWidth = measured; if (measuredWidth + padding * 2 > x.extent + .01) schedule(); }
-        if (requested?.revision === document.revision) {
+        const requestedRow = requested?.revision === document.revision ? rows.get(document.buffer.lineAt(requested.offset)) : undefined;
+        if (requestedRow?.dataset.complete === "false") {
+            const caret = coordinates(requested!.offset, requested!.affinity), rectangle = root.getBoundingClientRect();
+            if (caret) {
+                const actual = caret.left - rectangle.left, desired = requested!.horizontal === "center" ? width / 2 : horizontalPosition(actual);
+                if (Math.abs(desired - actual) > 1) horizontalAnchor = { revision: document.revision, offset: requested!.offset, affinity: requested!.affinity, left: desired };
+            }
+        }
+        // A partial row has no measured global horizontal origin. Move only its bounded
+        // fragment to expose the requested native caret; keep the logical scroll map intact.
+        if (horizontalAnchor?.revision === document.revision) {
+            const at = horizontalAnchor, line = document.buffer.lineAt(at.offset), item = next.find(item => item.line === line), element = rows.get(line);
+            if (item && !item.complete && element && at.offset >= item.from && at.offset <= item.to) {
+                const caret = coordinates(at.offset, at.affinity), rectangle = root.getBoundingClientRect();
+                if (caret) {
+                    const desired = horizontalPosition(at.left), delta = desired - (caret.left - rectangle.left);
+                    if (Math.abs(delta) > 1) {
+                        const prior = fragmentPlacement, shift = (prior?.revision === document.revision && prior.line === line && prior.from === item.from
+                            && prior.to === item.to && prior.left === left ? prior.shift : 0) + delta;
+                        element.style.transform = `translate(${item.left + shift}px, ${padding + line * lineHeight - top}px)`;
+                        fragmentPlacement = { revision: document.revision, line, from: item.from, to: item.to, left, shift };
+                    }
+                }
+            }
+        } else if (requested?.revision === document.revision && requestedRow?.dataset.complete === "true") {
             const caret = coordinates(requested.offset, requested.affinity), rectangle = root.getBoundingClientRect();
             if (caret) {
                 const actual = caret.left - rectangle.left + left;
@@ -223,12 +255,12 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     root.addEventListener("scroll", () => {
         const newTop = y.toLogical(root.scrollTop), newLeft = x.toLogical(root.scrollLeft);
         // Ignore quantization from writes to native fractional/scaled scroll offsets.
-        if (Math.abs(root.scrollTop - y.toPhysical(top)) > 1 || Math.abs(root.scrollLeft - x.toPhysical(left)) > 1) { top = newTop; left = newLeft; anchor = undefined; schedule(); }
+        if (Math.abs(root.scrollTop - y.toPhysical(top)) > 1 || Math.abs(root.scrollLeft - x.toPhysical(left)) > 1) { top = newTop; left = newLeft; anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined; schedule(); }
     }, { signal: listeners.signal });
     root.addEventListener("wheel", event => {
         const factor = event.deltaMode === 1 ? lineHeight : event.deltaMode === 2 ? height : 1;
         const nextTop = position(y, top + (event.shiftKey ? 0 : event.deltaY) * factor), nextLeft = position(x, left + (event.shiftKey ? event.deltaY : event.deltaX) * factor);
-        if (nextTop !== top || nextLeft !== left) { event.preventDefault(); top = nextTop; left = nextLeft; anchor = undefined; schedule(); }
+        if (nextTop !== top || nextLeft !== left) { event.preventDefault(); top = nextTop; left = nextLeft; anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined; schedule(); }
     }, { passive: false, signal: listeners.signal });
     root.addEventListener("keydown", event => {
         if (event.target !== root || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -270,12 +302,21 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         },
         flush,
         scrollTo: setScroll,
-        captureView: () => Object.freeze({ ...view.getSnapshot().selection, scrollTop: top, scrollLeft: left }),
-        restoreView: (state: ViewState) => { if (disposed) return; view.setSelection(workspace.document(documentId).revision, state); setScroll({ top: state.scrollTop, left: state.scrollLeft }); },
+        captureView: () => Object.freeze({ ...view.getSnapshot().selection, scrollTop: top, scrollLeft: left,
+            ...(horizontalAnchor ? { horizontalAnchor: Object.freeze({ ...horizontalAnchor }) } : {}) }),
+        restoreView: (state: ViewState) => {
+            if (disposed) return; const document = workspace.document(documentId), value = state.horizontalAnchor;
+            if (value && (!Number.isSafeInteger(value.revision) || value.revision < 0 || !Number.isSafeInteger(value.offset) || value.offset < 0
+                || !Number.isFinite(value.left) || value.left < 0 || value.affinity !== "before" && value.affinity !== "after")) throw new RangeError("Invalid horizontal view anchor.");
+            if (value?.revision === document.revision && value.offset > document.buffer.length) throw new RangeError("Horizontal view anchor is outside the document.");
+            view.setSelection(document.revision, state); setScroll({ top: state.scrollTop, left: state.scrollLeft });
+            if (value?.revision === document.revision) horizontalAnchor = { ...value };
+        },
         revealOffset: (offset: number, options: RevealOptions = {}) => {
             if (disposed) return; const document = workspace.document(documentId); document.buffer.lineAt(offset);
             const horizontal = options.horizontal ?? "center", vertical = options.vertical ?? "center", affinity = options.affinity ?? "after";
             if (![horizontal, vertical].every(value => value === "center" || value === "nearest") || affinity !== "after" && affinity !== "before") throw new RangeError("Invalid reveal options.");
+            horizontalAnchor = undefined; fragmentPlacement = undefined;
             reveal = { revision: document.revision, offset, horizontal, vertical, affinity }; schedule();
         },
         snapshot: () => Object.freeze({ revision: renderedRevision, selection: renderedSelection, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, lastRenderMs,
@@ -283,7 +324,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent, pending: frame !== undefined, disposed }),
         destroy: () => {
             if (disposed) return; disposed = true; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
-            observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined;
+            observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             renderedRevision = null; renderedSelection = null; partialRows = 0; textUnits = 0; readUnits = 0; layer.replaceChildren(); root.replaceChildren(); root.remove();
             if (!options.view) view.dispose();
         } });

@@ -33,6 +33,7 @@ for (const host of ["plain", "react"] as const) for (const reply of ["unchanged"
             input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", data: "東京", isComposing: true }));
         });
         await expect(primary).toHaveValue(nativeAttempt); expect(await source(page)).toBe(original);
+        await primary.press("Control+s"); expect((await snapshot(page)).pendingSaves).toEqual(before.pendingSaves);
         // Deliver without moving focus; a clicked control could end a real composition first.
         await page.evaluate(() => window.hostFixture.finishSave());
         await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1");

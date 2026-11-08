@@ -52,3 +52,42 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     expect((await snapshot(page)).source.exports).toBe(0); await page.evaluate(() => window.hostFixture.dispose()); const stopped = await snapshot(page);
     expect(stopped.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(stopped.hostSubscriptions).toBe(0);
 });
+
+for (const host of ["plain", "react"]) test(`${host} bounded long-context reveal keeps the caret visible through clicking, typing and remount`, async ({ page }) => {
+    page.on("pageerror", error => { throw error; });
+    await page.goto(`/hosts/${host}/?editor=candidate`);
+    await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);
+    const input = page.getByRole("textbox", { name: "Primary source", exact: true });
+    // Match the reproduced editing session: focus precedes programmatic range setup.
+    await input.focus();
+    const visible = () => input.evaluate(node => {
+        const root = node.closest<HTMLElement>(".st-editing-candidate")!, caret = root.querySelector<HTMLElement>(".st-input-caret")!;
+        const r = root.getBoundingClientRect(), c = caret.getBoundingClientRect();
+        return !caret.hidden && c.left >= r.left && c.left < r.left + root.clientWidth && c.top >= r.top && c.top < r.top + root.clientHeight;
+    });
+    for (const original of ["x".repeat(4096), "\t".repeat(4096), "\t中e\u0301".repeat(1024)]) {
+        await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]);
+            f.selectSource("primary", f.snapshot().source.revision, { anchor: 2047, head: 2047 }); }, original);
+        await input.press("ArrowRight"); await ready(page); await expect.poll(visible).toBe(true);
+        expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 2048, head: 2048 });
+        const point = await input.evaluate(node => { const r = node.closest(".st-editing-candidate")!.querySelector(".st-input-caret")!.getBoundingClientRect();
+            return { x: r.left - .25, y: r.top + r.height / 2 }; });
+        await page.mouse.click(point.x, point.y); await ready(page);
+        expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 2048, head: 2048 });
+        await input.press("Control+End"); await ready(page); await expect.poll(visible).toBe(true);
+        await input.pressSequentially("z"); await ready(page); await expect.poll(visible).toBe(true);
+        expect(await page.evaluate(n => window.hostFixture.range(0, n), original.length + 1)).toBe(original + "z");
+        await input.press("Control+z"); await ready(page); await expect.poll(visible).toBe(true);
+        expect(await page.evaluate(n => window.hostFixture.range(0, n), original.length)).toBe(original);
+        const before = await snapshot(page);
+        await page.evaluate(() => window.hostFixture.unmount()); await page.evaluate(() => window.hostFixture.mount());
+        await ready(page); await input.focus(); await expect.poll(visible).toBe(true);
+        const after = await snapshot(page); expect(after.history).toEqual(before.history);
+        expect(after.bindings.views.map(v => v.selection)).toEqual(before.bindings.views.map(v => v.selection));
+        expect(after.bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollLeft).toBe(before.bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollLeft);
+        expect(after.source.exports).toBe(0);
+        expect(after.bindings.views.every(v => v.metrics!.inputUnits <= 2600 && v.metrics!.viewport.rows < 100 && v.metrics!.viewport.readUnits < 20000)).toBe(true);
+    }
+    await page.evaluate(() => window.hostFixture.dispose()); const stopped = await snapshot(page);
+    expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0);
+});

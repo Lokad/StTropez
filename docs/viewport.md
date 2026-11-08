@@ -59,6 +59,14 @@ and measured horizontal origin of the full line. Contextual long-line indexing a
 wrapping and native composition positioning remain qualification work. The longest-line
 metadata remains useful independently of that later geometry choice. LF ends rows; a CR before LF
 is omitted from display, while an ordinary lone CR is shown as a control symbol.
+
+Explicit reveal keeps the requested caret visible inside a partial row using that fragment's
+native geometry. A local translation corrects wide tabs or mixed text without changing the
+estimated logical scroll map or reading the whole line. Manual scrolling clears this placement.
+`captureView` retains an optional immutable `horizontalAnchor` containing the source revision,
+offset, affinity and viewport position; `restoreView` ignores an anchor from another revision.
+This preserves same-revision remounts without claiming a measured global horizontal origin or
+complete contextual shaping. Complete rows continue to use their ordinary measured scroll path.
 The [cooperative paragraph index](bidi.md) can resolve the complete requested range in bounded
 advances, with captured revision/tab guards. Its development controls exercise that stage
 independently. The renderer still needs exact global font advances and shaping before it can

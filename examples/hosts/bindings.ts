@@ -1,6 +1,6 @@
 import { mountEditingCandidate, mountTextComparison, mountTextEditor } from "../../src/browser/index.ts";
 import type { EditingCandidate, MountedEditor, TextComparison, ViewportSnapshot, ViewState } from "../../src/browser/index.ts";
-import type { ComparisonBaseline, ComparisonTicket, DocumentId, DocumentView, Selection } from "../../src/index.ts";
+import type { ComparisonBaseline, ComparisonTicket, DocumentId, DocumentView, Selection, TabId } from "../../src/index.ts";
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../editing/presentation.ts";
 import { HostLanguageTools } from "./language.ts";
@@ -61,8 +61,21 @@ export class ViewBindings {
         const documentId = this.review.working.view.documentId;
         this.reviewListeners = new AbortController();
         this.review.working.input.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: this.reviewListeners.signal });
+        const working = this.review.working;
+        this.bindSaveShortcut(working.input, this.controller.viewTab("primary"), () => working.snapshot().composing, this.reviewListeners.signal);
         this.unwatchReference = this.controller.comparisonReference.subscribe(() => this.updateReference());
     };
+    private bindSaveShortcut(input: HTMLTextAreaElement, tabId: TabId, composing: () => boolean, signal: AbortSignal): void {
+        const workspace = this.controller.workspace, target = workspace.captureTab(tabId);
+        input.addEventListener("keydown", event => {
+            if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "s"
+                || event.defaultPrevented || event.isComposing || input.disabled || !input.isConnected || composing()) return;
+            const tab = workspace.resolveTab(target);
+            if (tab?.surface.kind !== "text" || tab.surface.documentId !== this.controller.source.documentId) return;
+            event.preventDefault();
+            if (!event.repeat) this.controller.save();
+        }, { signal });
+    }
     private beginReference(kind: "refresh" | "accept"): void {
         if (!this.review) return;
         try {
@@ -139,6 +152,7 @@ export class ViewBindings {
                 : { ...mountTextEditor(host, workspace, tabId, { ariaLabel, view }), metrics: () => null };
             const listeners = new AbortController();
             mounted.element.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
+            this.bindSaveShortcut(mounted.element, tabId, () => candidate?.snapshot().composing ?? false, listeners.signal);
             const editor: BoundEditor = { ...mounted, destroy: () => { try { detachLanguage?.(); mounted.destroy(); } finally { listeners.abort(); } } };
             const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView({ ...state, ...view.getSnapshot().selection });
             this.mounted.set(id, { editor, documentId }); this.mounts++;
