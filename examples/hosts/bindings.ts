@@ -54,7 +54,7 @@ export class ViewBindings {
         const detachLanguage = this.language.attach("comparison", this.controller.viewTab("primary"), this.review.working, presentation);
         this.detachReviewLanguage = () => { detachLanguage(); referencePresentation.clear(); };
         const state = this.states.get("comparison")?.get(view.documentId);
-        if (state) this.review.working.restoreView({ ...state, ...view.getSnapshot().selection });
+        if (state) this.review.working.restoreView(this.restoreState(state, view));
         if (this.referenceState?.baseline.buffer === baseline.buffer && this.referenceState.baseline.version === baseline.version)
             this.review.referenceViewport()?.restoreView(this.referenceState.state);
         else this.referenceState = undefined;
@@ -134,6 +134,15 @@ export class ViewBindings {
         const states = this.states.get(id) ?? new Map<DocumentId, ViewState>();
         states.set(documentId, state); this.states.set(id, states);
     }
+    private restoreState(state: ViewState, view: DocumentView): ViewState {
+        const selection = view.getSnapshot().selection, at = state.horizontalAnchor;
+        // A caret anchor can follow the host-owned selection mapped during detach.
+        // Other viewport anchors retain their original revision and validation rules.
+        const followsCaret = at && at.offset === state.head && at.affinity === (state.headAffinity ?? "after");
+        return { ...state, ...selection, ...(followsCaret ? { horizontalAnchor: { ...at,
+            revision: this.controller.workspace.document(view.documentId).revision,
+            offset: selection.head, affinity: selection.headAffinity ?? "after" } } : {}) };
+    }
     private ref(id: "primary" | "secondary", ariaLabel: string): (host: HTMLDivElement | null) => void {
         return host => {
             this.detach(id);
@@ -154,7 +163,7 @@ export class ViewBindings {
             mounted.element.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
             this.bindSaveShortcut(mounted.element, tabId, () => candidate?.snapshot().composing ?? false, listeners.signal);
             const editor: BoundEditor = { ...mounted, destroy: () => { try { detachLanguage?.(); mounted.destroy(); } finally { listeners.abort(); } } };
-            const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView({ ...state, ...view.getSnapshot().selection });
+            const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView(this.restoreState(state, view));
             this.mounted.set(id, { editor, documentId }); this.mounts++;
         };
     }

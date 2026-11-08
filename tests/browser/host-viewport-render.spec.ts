@@ -60,12 +60,13 @@ for (const host of ["plain", "react"]) test(`${host} bounded long-context reveal
     const input = page.getByRole("textbox", { name: "Primary source", exact: true });
     // Match the reproduced editing session: focus precedes programmatic range setup.
     await input.focus();
-    const visible = () => input.evaluate(node => {
+    const visible = (target = input) => target.evaluate(node => {
         const root = node.closest<HTMLElement>(".st-editing-candidate")!, caret = root.querySelector<HTMLElement>(".st-input-caret")!;
         const r = root.getBoundingClientRect(), c = caret.getBoundingClientRect();
         return !caret.hidden && c.left >= r.left && c.left < r.left + root.clientWidth && c.top >= r.top && c.top < r.top + root.clientHeight;
     });
     for (const original of ["x".repeat(4096), "\t".repeat(4096), "\t中e\u0301".repeat(1024)]) {
+        await input.focus();
         await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]);
             f.selectSource("primary", f.snapshot().source.revision, { anchor: 2047, head: 2047 }); }, original);
         await input.press("ArrowRight"); await ready(page); await expect.poll(visible).toBe(true);
@@ -87,6 +88,30 @@ for (const host of ["plain", "react"]) test(`${host} bounded long-context reveal
         expect(after.bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollLeft).toBe(before.bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollLeft);
         expect(after.source.exports).toBe(0);
         expect(after.bindings.views.every(v => v.metrics!.inputUnits <= 2600 && v.metrics!.viewport.rows < 100 && v.metrics!.viewport.readUnits < 20000)).toBe(true);
+        await page.evaluate(() => window.hostFixture.unmount());
+        await page.evaluate(() => { const f = window.hostFixture;
+            f.editSource(f.snapshot().source.revision, [{ from: 0, to: 0, insert: "q" }]);
+            f.editSource(f.snapshot().source.revision, [{ from: 0, to: 1, insert: "r" }]); });
+        const detachedHistory = (await snapshot(page)).history;
+        await page.evaluate(() => window.hostFixture.mount()); await ready(page);
+        await input.evaluate(node => node.focus({ preventScroll: true })); await expect.poll(() => visible()).toBe(true);
+        expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 4097, head: 4097 });
+        expect((await snapshot(page)).history).toEqual(detachedHistory);
+        await input.pressSequentially("z"); await ready(page); await input.press("Control+z"); await ready(page);
+        expect(await page.evaluate(n => window.hostFixture.range(0, n), original.length + 1)).toBe("r" + original);
+        const comparison = page.getByRole("textbox", { name: "Comparison working source", exact: true });
+        await comparison.evaluate(node => node.focus({ preventScroll: true }));
+        await comparison.press("Control+End"); await ready(page); await expect.poll(() => visible(comparison)).toBe(true);
+        await page.evaluate(() => window.hostFixture.unmount());
+        await page.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: 0, insert: "s" }]); });
+        const comparisonHistory = (await snapshot(page)).history;
+        await page.evaluate(() => window.hostFixture.mount()); await ready(page);
+        await comparison.evaluate(node => node.focus({ preventScroll: true })); await expect.poll(() => visible(comparison)).toBe(true);
+        expect((await snapshot(page)).bindings.comparison!.selection).toMatchObject({ anchor: 4098, head: 4098 });
+        expect((await snapshot(page)).history).toEqual(comparisonHistory);
+        await comparison.pressSequentially("z"); await ready(page); await comparison.press("Control+z"); await ready(page);
+        expect(await page.evaluate(n => window.hostFixture.range(0, n), original.length + 2)).toBe("sr" + original);
+        expect((await snapshot(page)).source.exports).toBe(0);
     }
     await page.evaluate(() => window.hostFixture.dispose()); const stopped = await snapshot(page);
     expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0);

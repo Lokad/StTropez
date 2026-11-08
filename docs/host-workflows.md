@@ -28,6 +28,11 @@ lose a selection during unmount. Restoring a view combines its saved scroll posi
 the retained, revision-mapped selection. React uses stable refs and explicit root lifecycle
 calls; no effect manages editor or application state.
 
+When a bounded view's horizontal placement follows its caret, the host restores that placement
+using the retained selection mapped through edits made during detach. Primary, secondary and
+comparison-working views use the same rule. An anchor for a different viewport point keeps its
+original revision; the host does not relabel arbitrary stale geometry as current.
+
 Plain scene rendering compares structural layout plus tab ID/generation. Status, navigation,
 modal and independent form/progress updates leave the editor DOM mounted. Changing a tab's
 surface remounts the correct captured document even when the surface remains text. React's
