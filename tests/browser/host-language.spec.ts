@@ -112,6 +112,49 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
         expect((await snapshot(page)).requestInput!.sourceRevision).toBeGreaterThan(captured!.sourceRevision);
         await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 });
     });
+    test("whole-word find replaces only indexed words through comparison, save and remount", async ({ page }) => {
+        const original = "cat scatter cat_ cat2 cat\r\ncafé cafe\u0301 cat\u200d \u{10400}cat cat!";
+        // Seed exact model CRLF; native textarea fill normalization differs across engines.
+        await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
+        await ready(page); await primary(page).press("Control+f");
+        const query = page.getByRole("textbox", { name: "Find source", exact: true }), replacement = page.getByRole("textbox", { name: "Replacement", exact: true });
+        const wholeWord = page.getByRole("checkbox", { name: "Whole word", exact: true }), status = page.getByLabel("Find status", { exact: true });
+        await query.fill("cat"); await expect(status).toContainText(`${original.split("cat").length - 1} matches · ready`);
+        await wholeWord.check(); await expect(status).toContainText("3 matches · ready"); await replacement.fill("dog");
+        const middle = original.indexOf("cat\r"), embedded = original.indexOf("scatter") + 1, before = await snapshot(page);
+        await page.evaluate(from => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: from, head: from + 3 }); }, embedded); await ready(page);
+        await page.getByRole("button", { name: "Replace current", exact: true }).click();
+        expect(await text(page)).toBe(original); expect((await snapshot(page)).source.revision).toBe(before.source.revision);
+        expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: middle, head: middle + 3 });
+        await page.getByRole("button", { name: "Replace current", exact: true }).click(); await expect(status).toContainText("2 matches · ready");
+        const changed = original.slice(0, middle) + "dog" + original.slice(middle + 3);
+        expect(await text(page)).toBe(changed); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
+        await secondary(page).press("Control+z"); expect(await text(page)).toBe(original);
+        await secondary(page).press("Control+Shift+z"); expect(await text(page)).toBe(changed);
+        await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);
+        const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });
+        await working.press("Control+f"); await expect(wholeWord).toBeChecked(); await expect(status).toContainText("2 matches · ready");
+        const reference = (await snapshot(page)).bindings.comparison!.baseline!.version;
+        await replacement.fill("$&"); const planned = await snapshot(page);
+        await page.getByRole("button", { name: "Replace all", exact: true }).click(); await ready(page);
+        const last = changed.lastIndexOf("cat!"), tailChanged = changed.slice(0, last) + "$&" + changed.slice(last + 3), expected = "$&" + tailChanged.slice(3);
+        await expect.poll(() => text(page)).toBe(expected);
+        expect((await snapshot(page)).history.undoDepth).toBe(planned.history.undoDepth + 1);
+        expect((await snapshot(page)).source.exports).toBe(0);
+        await working.press("Control+z"); expect(await text(page)).toBe(changed);
+        await working.press("Control+Shift+z"); expect(await text(page)).toBe(expected);
+        await working.press("Control+s"); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
+        await working.press("Control+End"); await working.pressSequentially(" later");
+        await page.getByRole("button", { name: "Finish save", exact: true }).click(); await expect.poll(async () => (await snapshot(page)).pendingCommands).toBe(0);
+        expect(await text(page)).toBe(expected + " later"); await working.press("Control+z"); expect(await text(page)).toBe(expected);
+        expect((await snapshot(page)).source.dirty).toBe(false);
+        await page.evaluate(() => window.hostFixture.unmount()); await page.evaluate(() => window.hostFixture.mount()); await ready(page);
+        await working.press("Control+f"); await expect(wholeWord).toBeChecked(); await expect(status).toContainText("0 matches · ready");
+        expect((await snapshot(page)).bindings.comparison!.baseline!.version).toBe(reference);
+        expect(await page.evaluate(() => window.hostFixture.referenceRange(0, 5))).toBe("start"); expect(await text(page)).toBe(expected);
+        await page.evaluate(() => window.hostFixture.dispose()); const stopped = await snapshot(page);
+        expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0);
+    });
     test("100k-line highlighting, worker requests and keyboard search stay bounded with review mounted", async ({ page }) => {
         await page.evaluate(() => { const fixture = window.hostFixture; fixture.editSource(fixture.snapshot().source.revision,
             [{ from: 0, to: fixture.snapshot().source.length, insert: "const saMORE = 123; // TODO\n".repeat(100_000) }]); });
@@ -122,6 +165,8 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
         expect(session.provider.postedUnits).toBeLessThanOrEqual(4096); expect(session.presentation.cachedLines).toBeLessThanOrEqual(128);
         expect(s.bindings.views.every(v => v.metrics!.inputUnits <= 2600 && v.metrics!.viewport.rows < 50)).toBe(true);
         await primary(page).press("Control+f"); await page.getByRole("textbox", { name: "Find source", exact: true }).fill("TODO");
+        await expect(page.getByLabel("Find status", { exact: true })).toContainText("100000 matches · ready");
+        await page.getByRole("checkbox", { name: "Whole word", exact: true }).check();
         await expect(page.getByLabel("Find status", { exact: true })).toContainText("100000 matches · ready");
         await page.getByRole("textbox", { name: "Find source", exact: true }).press("Escape"); await expect(primary(page)).toBeFocused();
         expect((await snapshot(page)).source.exports).toBe(0); await page.evaluate(() => window.hostFixture.dispose());

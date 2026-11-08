@@ -210,6 +210,11 @@ from the find fields cancels and returns focus. Search and replacement reuse the
 cooperative controller and shared history. These keyboard routes are automated pilot evidence;
 native IME and assistive-technology qualification remain separate.
 
+**Whole word** restricts literal matches using the code-word boundary policy in
+[search](search.md). The option survives source/comparison command routing and remount. Current
+replacement requires an indexed whole-word match; selecting a substring cannot bypass the
+option. Changing the option cancels queued replacement planning before rescanning.
+
 The host language controller exposes one stable observable handle with immutable snapshots.
 Plain and pure React views render those snapshots and call commands. Stable editor refs own
 mounting; React effects do not synchronize editor or application state. Each provider request

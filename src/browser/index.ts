@@ -7,7 +7,7 @@ export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RevealO
 export { mountEditingCandidate } from "./editing-candidate.ts";
 export type { EditingCandidate } from "./editing-candidate.ts";
 export { createFindController } from "./find.ts";
-export type { FindController, FindSnapshot } from "./find.ts";
+export type { FindController, FindSnapshot, FindOptions } from "./find.ts";
 export { mountTextComparison } from "./comparison.ts";
 export type { TextComparison } from "./comparison.ts";
 

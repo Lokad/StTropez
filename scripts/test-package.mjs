@@ -190,9 +190,12 @@ try {
     await candidateInput.pressSequentially("q"); assert.equal(await page.evaluate(() => window.consumer.text()), "edited q package"); assert.equal((await page.evaluate(() => window.consumer.history())).undoDepth, wordUndoDepth + 1);
     await candidateInput.press("Control+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "edited restored package");
     await page.waitForFunction(() => document.querySelector("#candidate .consumer-token")?.textContent === "restored");
+    await page.evaluate(() => { window.consumer.findOptions({ wholeWord: true }); window.consumer.find("stored"); });
+    await page.waitForFunction(() => window.consumer.findState().status === "ready");
+    assert.equal((await page.evaluate(() => window.consumer.findState())).count, 0);
     await page.evaluate(() => window.consumer.find("restored"));
     await page.waitForFunction(() => window.consumer.findState().status === "ready");
-    const find = await page.evaluate(() => window.consumer.findState()); assert.equal(find.count, 1);
+    const find = await page.evaluate(() => window.consumer.findState()); assert.equal(find.count, 1); assert.equal(find.wholeWord, true);
     await page.evaluate(() => window.consumer.replaceAll("packed"));
     await page.waitForFunction(() => window.consumer.findState().status === "ready" && window.consumer.findState().count === 0);
     assert.equal(await page.evaluate(() => window.consumer.text()), "edited packed package");

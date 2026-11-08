@@ -76,6 +76,7 @@ function LanguageTools() {
             <button onClick={() => tools.selectDiagnostic(index)}>{diagnostic.from}: {diagnostic.message}</button></li>)}</ul>
         <label>Find source<input ref={tools.queryRef} value={state.query} onChange={event => tools.setQuery(event.currentTarget.value)} onKeyDown={event => languageFieldKey(event.nativeEvent, tools, false)} /></label>
         <label>Replacement<input ref={tools.replacementRef} value={state.replacement} onChange={event => tools.setReplacement(event.currentTarget.value)} onKeyDown={event => languageFieldKey(event.nativeEvent, tools, true)} /></label>
+        <label><input type="checkbox" checked={state.wholeWord} onChange={event => tools.setWholeWord(event.currentTarget.checked)} />Whole word</label>
         <output aria-label="Find status">{findText(tools)}</output>
         <div>{languageActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
     </section>;

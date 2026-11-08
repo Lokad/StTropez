@@ -11,6 +11,7 @@ section { padding: 12px; border: 1px solid #8193a7; background: white; min-width
 .host-review .st-comparison-panes > section { background: transparent; }
 .host-review .st-comparison-editor { height: 260px; }
 label { display: block; } input { display: block; width: 90%; padding: 7px; margin-top: 6px; }
+input[type="checkbox"] { display: inline-block; width: auto; padding: 0; margin-right: 6px; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .host-language { margin-top: 16px; }
 .host-language h2 { font-size: 17px; }

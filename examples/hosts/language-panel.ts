@@ -41,9 +41,12 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
         field.addEventListener("keydown", event => languageFieldKey(event, tools, index === 1), { signal: listeners.signal }); return { label, field };
     });
     tools.queryRef(fields[0]!.field); tools.replacementRef(fields[1]!.field);
+    const wholeLabel = owner.createElement("label"), wholeWord = owner.createElement("input");
+    wholeWord.type = "checkbox"; wholeLabel.append(wholeWord, "Whole word");
+    wholeWord.addEventListener("change", () => tools.setWholeWord(wholeWord.checked), { signal: listeners.signal });
     const buttons = languageActions(tools).map(action => { const button = owner.createElement("button"); button.textContent = action.label;
         button.addEventListener("click", action.invoke, { signal: listeners.signal }); nav.append(button); return button; });
-    host.append(heading, help, status, choices, diagnostics, ...fields.map(f => f.label), findStatus, nav);
+    host.append(heading, help, status, choices, diagnostics, ...fields.map(f => f.label), wholeLabel, findStatus, nav);
     const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
     const render = () => {
         const state = tools.state.getSnapshot(); setText(status, state.provider?.message ?? "Focus a source view to use language actions.");
@@ -63,6 +66,7 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
         setText(findStatus, findText(tools));
         if (fields[0]!.field.value !== state.query) fields[0]!.field.value = state.query;
         if (fields[1]!.field.value !== state.replacement) fields[1]!.field.value = state.replacement;
+        wholeWord.checked = state.wholeWord;
     };
     const unsubscribe = tools.state.subscribe(render); render();
     return () => { unsubscribe(); listeners.abort(); tools.queryRef(null); tools.replacementRef(null); host.replaceChildren(); };

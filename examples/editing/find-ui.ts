@@ -6,15 +6,18 @@ import type { EditingPresentation } from "./presentation.ts";
 export function mountFindUI(workspace: Workspace, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation) {
     const find = createFindController(workspace, tab, editor), listeners = new AbortController(), owner = editor.element.ownerDocument;
     const query = owner.getElementById("find-query") as HTMLInputElement, replacement = owner.getElementById("replacement") as HTMLInputElement;
+    const wholeWord = owner.getElementById("find-whole-word") as HTMLInputElement;
     const controls = ["find-next", "find-previous", "replace-current", "replace-all"].map(id => owner.getElementById(id) as HTMLButtonElement);
     const render = () => {
         const state = find.state.getSnapshot(), changed = presentation.search?.revision !== state.revision || presentation.search.ranges !== state.preview;
         presentation.search = { revision: state.revision, ranges: state.preview };
         owner.getElementById("find-status")!.textContent = state.message || (state.status === "searching" ? `Searching… ${state.count} matches` : `${state.count} matches · ${state.status}`);
         for (const control of controls) control.disabled = state.status !== "ready" || !state.count;
+        wholeWord.checked = state.wholeWord;
         if (changed) editor.viewport.invalidate();
     };
     query.addEventListener("input", () => find.setQuery(query.value), { signal: listeners.signal });
+    wholeWord.addEventListener("change", () => find.setOptions({ wholeWord: wholeWord.checked }), { signal: listeners.signal });
     for (const field of [query, replacement]) field.addEventListener("keydown", event => {
         if (event.key === "Escape") { event.preventDefault(); find.cancel(); editor.focus(); }
         else if (event.key === "Enter" || event.key === "F3") { event.preventDefault();

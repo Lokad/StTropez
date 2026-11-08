@@ -167,7 +167,7 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
         candidate.viewport.revealOffset(candidate.view.getSnapshot().selection.head, { horizontal: "nearest", vertical: "nearest" });
         return { offset: step.offset, advances, runOffset, runAdvances, exports: buffer.readMetrics().textExports };
     },
-    find: find.setQuery, findState: find.state.getSnapshot, replaceAll: find.replaceAll,
+    find: find.setQuery, findOptions: find.setOptions, findState: find.state.getSnapshot, replaceAll: find.replaceAll,
     history: () => workspace.observeHistory(documentId).getSnapshot(),
     storage: () => {
         const imported = importText("a😀\r\nb", "lf"), original = TextBuffer.from(imported.text);

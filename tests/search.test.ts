@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { LiteralSearch, TextBuffer } from "../src/index.ts";
-function all(buffer: TextBuffer, query: string, budget = 3) {
-    const cursor = new LiteralSearch(buffer, query), matches = [];
+import type { LiteralSearchOptions } from "../src/index.ts";
+function all(buffer: TextBuffer, query: string, budget = 3, options?: LiteralSearchOptions) {
+    const cursor = new LiteralSearch(buffer, query, options ?? 0), matches = [];
     for (;;) { const step = cursor.next(budget, 2); assert.ok(step.readUnits <= budget); matches.push(...step.matches); if (step.done) return matches; }
 }
 test("literal search crosses piece/step boundaries, preserves UTF-16/newlines and does not export", () => {
@@ -14,6 +15,50 @@ test("literal search crosses piece/step boundaries, preserves UTF-16/newlines an
     }
     assert.equal(buffer.diagnostics().textExports, 0);
     assert.deepEqual(all(TextBuffer.from("aaaaa"), "aa"), [{ from: 0, to: 2 }, { from: 2, to: 4 }]);
+});
+
+test("whole-word search checks Unicode neighbours outside scan bounds and preserves overlapping candidates", () => {
+    const text = "cat scatter cat_ cat2 café cafe\u0301 😀 cat\u200d \u{10400}cat cat\r\ncat! xa!a!a ";
+    let buffer = TextBuffer.from(text);
+    // Produce piece boundaries inside the query and a supplementary neighbour.
+    buffer = buffer.replace(1, 1, "!").replace(1, 2, "");
+    const expected = [0, text.lastIndexOf("cat\r"), text.lastIndexOf("cat!")].map(from => ({ from, to: from + 3 }));
+    for (const budget of [1, 2, 7, 32]) assert.deepEqual(all(buffer, "cat", budget, { wholeWord: true }), expected);
+    assert.deepEqual(all(buffer, "a!a", 1, { wholeWord: true }), [{ from: text.lastIndexOf("a!a"), to: text.lastIndexOf("a!a") + 3 }]);
+    assert.deepEqual(all(buffer, "cafe", 1, { wholeWord: true }), []);
+    assert.deepEqual(all(TextBuffer.from("xcaty cat!"), "cat", 1, { wholeWord: true, from: 1, to: 4 }), []);
+    assert.deepEqual(all(TextBuffer.from("xcaty cat!"), "cat", 1, { wholeWord: true, from: 6, to: 9 }), [{ from: 6, to: 9 }]);
+    for (const query of ["\ud83d", "\ude00"]) assert.deepEqual(all(TextBuffer.from("😀 😀"), query, 1, { wholeWord: true }), []);
+    assert.deepEqual(all(TextBuffer.from("😀 😀"), "😀", 1, { wholeWord: true }), [{ from: 0, to: 2 }, { from: 3, to: 5 }]);
+    const pending = new LiteralSearch(buffer, "cat", { wholeWord: true }); pending.next(3); pending.dispose();
+    assert.deepEqual(pending.next(1), { done: true, scanned: 3, readUnits: 0, matches: [] });
+    assert.throws(() => new LiteralSearch(buffer, "cat", { wholeWord: "yes" as unknown as boolean }), TypeError);
+    assert.equal(buffer.readMetrics().textExports, 0);
+});
+
+test("fragmented whole-word scans agree with an independent flat code-point oracle at tiny budgets", () => {
+    const word = /^[\p{L}\p{N}\p{Pc}\p{M}\u200c\u200d]$/u;
+    function oracle(text: string, query: string) {
+        const boundaries = new Set([0]); let offset = 0;
+        for (const point of text) { offset += point.length; boundaries.add(offset); }
+        const result = []; let from = text.indexOf(query);
+        while (from >= 0) {
+            const to = from + query.length, before = Array.from(text.slice(0, from)).at(-1) ?? "", after = Array.from(text.slice(to))[0] ?? "";
+            const accept = boundaries.has(from) && boundaries.has(to) && !word.test(before) && !word.test(after);
+            if (accept) result.push({ from, to });
+            from = text.indexOf(query, from + (accept ? query.length : 1));
+        }
+        return result;
+    }
+    let seed = 0x73a1, text = "cat cat_ e\u0301 café Ελληνικά 漢字 😀 \u{10400}cat a!a ".repeat(4), buffer = TextBuffer.from(text);
+    const next = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0);
+    for (let index = 0; index < 80; index++) {
+        const from = next() % (text.length + 1), to = Math.min(text.length, from + next() % 3), insert = ["cat", "_", "😀", "\u0301", " ", "a!a"][next() % 6]!;
+        text = text.slice(0, from) + insert + text.slice(to); buffer = buffer.replace(from, to, insert);
+        const query = ["cat", "a!a", "é", "😀", "漢", "e\u0301"][next() % 6]!;
+        assert.deepEqual(all(buffer, query, 1 + next() % 9, { wholeWord: true }), oracle(text, query));
+    }
+    assert.equal(buffer.readMetrics().textExports, 0);
 });
 test("adversarial prefixes, match/read budgets, ranged scans and disposal stay explicit", () => {
     const buffer = TextBuffer.from("a".repeat(100_000) + "b"), cursor = new LiteralSearch(buffer, "aaaaab", 4);

@@ -7,6 +7,8 @@ type Kind = "word" | "space" | "symbol" | "extend";
 type Unit = Readonly<{ from: number; to: number; kind: Kind; control: boolean }>;
 type Counters = { work: number; yielded: number; reads: number };
 const kind = (text: string): Kind => /^[\p{M}\u200c\u200d]$/u.test(text) ? "extend" : /^\p{White_Space}$/u.test(text) ? "space" : /^[\p{L}\p{N}\p{Pc}]$/u.test(text) ? "word" : "symbol";
+/** Search boundaries use the same code-word constituents, including attached marks/joiners. */
+export const wordConstituent = (text: string): boolean => { const value = kind(text); return value === "word" || value === "extend"; };
 const asciiKind = (code: number): Exclude<Kind, "extend"> => code === 32 || code >= 9 && code <= 13 ? "space"
     : code >= 48 && code <= 57 || code >= 65 && code <= 90 || code >= 97 && code <= 122 || code === 95 ? "word" : "symbol";
 function* units(buffer: TextBuffer, start: number, direction: -1 | 1, counters: Counters, bounds: Readonly<{ from: number; to: number }>): Generator<Unit> {

@@ -8,14 +8,14 @@ import { HostCell } from "../shared/observable.ts";
 
 type Session = { id: string; editor: EditingCandidate; tab: TabId; presentation: EditingPresentation;
     provider: ReturnType<typeof createProviderController>; find?: FindController; stopFind?: () => void; initialized: boolean };
-type LanguageSnapshot = Readonly<{ view: string | null; provider: ProviderSnapshot | null; find: FindSnapshot | null; query: string; replacement: string }>;
+type LanguageSnapshot = Readonly<{ view: string | null; provider: ProviderSnapshot | null; find: FindSnapshot | null; query: string; replacement: string; wholeWord: boolean }>;
 
 /** Host-owned tools follow an explicit mounted view; delayed commands never consult focus later. */
 export class HostLanguageTools {
     private readonly workspace: Workspace;
     private readonly sessions = new Map<string, Session>();
     private active: Session | undefined;
-    private readonly cell = new HostCell<LanguageSnapshot>({ view: null, provider: null, find: null, query: "", replacement: "" });
+    private readonly cell = new HostCell<LanguageSnapshot>({ view: null, provider: null, find: null, query: "", replacement: "", wholeWord: false });
     readonly state = this.cell.observable;
     private queryElement: HTMLInputElement | null = null;
     private replacementElement: HTMLInputElement | null = null;
@@ -72,7 +72,8 @@ export class HostLanguageTools {
                 if (this.active === session) this.publish(); };
             session.stopFind = session.find.state.subscribe(update);
         }
-        const state = session.find.state.getSnapshot(), query = this.cell.get().query;
+        const state = session.find.state.getSnapshot(), { query, wholeWord } = this.cell.get();
+        if (state.wholeWord !== wholeWord) session.find.setOptions({ wholeWord });
         if (state.query !== query || state.status === "cancelled") session.find.setQuery(query);
         return session.find;
     }
@@ -83,6 +84,7 @@ export class HostLanguageTools {
     readonly disconnect = (): void => { this.active?.provider.disconnect(); };
     readonly reconnect = (): void => { if (this.active) { this.active.initialized = true; this.active.provider.connect(); } };
     readonly setQuery = (query: string): void => { this.cell.set({ ...this.cell.get(), query }); this.ensureFind(); };
+    readonly setWholeWord = (wholeWord: boolean): void => { this.cell.set({ ...this.cell.get(), wholeWord }); this.ensureFind(); };
     readonly setReplacement = (replacement: string): void => { this.cell.set({ ...this.cell.get(), replacement }); };
     readonly next = (): void => { this.ensureFind()?.next(); };
     readonly previous = (): void => { this.ensureFind()?.next(-1); };
