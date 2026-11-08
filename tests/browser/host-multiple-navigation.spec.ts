@@ -26,7 +26,8 @@ async function mount(page: Page, host: string, text: string): Promise<void> {
 
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} every range keeps independent columns through navigation and read-only movement`, async ({ page }) => {
     test.setTimeout(60000);
-    const gap = large ? 100000 : 0, rows = ["0123456789", "ab", "ABCDEFGHIJKL", "", ...Array<string>(gap).fill("filler"), "abcdefghij", "x", "ZYXWVUTSRQP"];
+    // Line endings are CRLF; the final CR is literal content and End must include it.
+    const gap = large ? 100000 : 0, rows = ["0123456789", "ab", "ABCDEFGHIJKL", "", ...Array<string>(gap).fill("filler"), "abcdefghij", "x", "ZYXWVUTSRQP\r"];
     const starts: number[] = []; let length = 0; for (const row of rows) { starts.push(length); length += row.length + 2; }
     const original = rows.join("\r\n"), secondLine = gap + 4; await mount(page, host, original);
     const before = await snapshot(page), originalRanges = [{ anchor: 8, head: 8 }, { anchor: starts[secondLine]! + 3, head: starts[secondLine]! + 3 }];

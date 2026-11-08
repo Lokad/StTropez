@@ -218,8 +218,13 @@ try {
     const multipleColumn = await page.evaluate(() => window.consumer.multipleColumn(1)); assert.equal(multipleColumn.caret.offset, 1); assert.ok(multipleColumn.column > 0);
     await multipleEditor.press("Escape"); await page.waitForFunction(() => !window.consumer.multipleInput().pending);
     assert.deepEqual((await page.evaluate(() => window.consumer.multipleInput())).selectionSet.ranges, [multipleNavigation.selectionSet.ranges[multipleNavigation.selectionSet.primary]]);
+    await page.evaluate(() => window.consumer.prepareMultipleEnd()); await page.waitForFunction(() => !window.consumer.multipleInput().pending);
+    await multipleEditor.press("End"); await page.waitForFunction(() => !window.consumer.multipleInput().pending);
+    const multipleLiteralEnd = await page.evaluate(() => window.consumer.multipleInput());
+    assert.equal(multipleLiteralEnd.text, "a\r\nb\r"); assert.equal(multipleLiteralEnd.exports, 0);
+    assert.deepEqual(multipleLiteralEnd.selectionSet.ranges.map(({ anchor, head }) => ({ anchor, head })), [{ anchor: 1, head: 1 }, { anchor: 5, head: 5 }]);
     const multipleReleased = await page.evaluate(() => window.consumer.finishMultipleInput()); assert.deepEqual(multipleReleased, { views: 0, leases: 0 });
-    const multipleInput = { before: multipleBefore, after: multipleAfter, undone: multipleUndone, navigation: multipleNavigation, column: multipleColumn, released: multipleReleased };
+    const multipleInput = { before: multipleBefore, after: multipleAfter, undone: multipleUndone, navigation: multipleNavigation, column: multipleColumn, literalEnd: multipleLiteralEnd, released: multipleReleased };
     await page.evaluate(() => window.consumer.replaceAll("packed"));
     await page.waitForFunction(() => window.consumer.findState().status === "ready" && window.consumer.findState().count === 0);
     assert.equal(await page.evaluate(() => window.consumer.text()), "edited packed package");

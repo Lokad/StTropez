@@ -180,7 +180,8 @@ the primary range and cancels pending commands; Escape followed by Tab or Shift+
 the editor. Captured dragging belongs to its complete set, revision and mounted tab.
 
 Arrow, word, line/document and page commands operate on every range, retaining extension anchors
-and bidi affinities. Vertical movement remembers each range's measured pixel column across short
+and bidi affinities. End excludes CR from a CRLF line ending; a literal CR at EOF remains reachable
+content. Vertical movement remembers each range's measured pixel column across short
 lines, until another selection, edit or layout breaks that sequence. Targets are normalized and
 published once; coalesced ranges inherit their owner's column. Large sets yield between planning
 turns and expire after captured-set, revision, layout or lifecycle changes. Only the primary target

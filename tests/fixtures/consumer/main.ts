@@ -39,6 +39,11 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
             pending: state.pendingCaret || state.pendingGrapheme || state.pendingWord || viewport.pending, commits: state.commits, exports: document.buffer.readMetrics().textExports }; },
     multipleColumn: (offset: number) => { const editor = multipleInput!.editor, column = editor.viewport.columnAt(offset);
         return { column, caret: column === undefined ? undefined : editor.viewport.caretAtColumn(0, column) }; },
+    prepareMultipleEnd: () => { const { model, source, editor } = multipleInput!, before = model.document(source.documentId);
+        const result = model.edit({ documentId: source.documentId, expectedRevision: before.revision, origin: "human",
+            edits: [{ from: 0, to: before.buffer.length, insert: "a\r\nb\r" }], view: editor.view,
+            selectionSet: createSelectionSet(5, [{ anchor: 0, head: 0 }, { anchor: 3, head: 3 }]), history: { kind: "replace" } });
+        if (!result.applied) throw new Error("End target setup rejected."); },
     finishMultipleInput: () => { const { model, source, tab, host, editor } = multipleInput!; editor.destroy(); host.remove(); model.close(tab); model.releaseResource(source.id, true); multipleInput = undefined;
         return { views: model.diagnostics().views, leases: model.diagnostics().leases }; },
     readonlyIndent: async (outdent: boolean) => {

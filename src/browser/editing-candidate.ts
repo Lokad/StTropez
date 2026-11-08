@@ -375,7 +375,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 const line = buffer.lineAt(range.head);
                 let offset = documentBoundary ? key === "Home" ? 0 : buffer.length : key === "Home" ? buffer.offsetAt(line)
                     : line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) - 1 : buffer.length;
-                if (!documentBoundary && key === "End" && offset > buffer.offsetAt(line) && buffer.slice(offset - 1, offset) === "\r") offset--;
+                if (!documentBoundary && key === "End" && line + 1 < buffer.lineCount && offset > buffer.offsetAt(line) && buffer.slice(offset - 1, offset) === "\r") offset--;
                 done(moved(range, offset, extend)); return;
             }
             const direction = key === "ArrowLeft" ? -1 : 1;
