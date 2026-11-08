@@ -143,6 +143,13 @@ view removal. Removal emits recovery before owned listeners are disconnected. Th
 qualify native IME behavior. Native-device input, reconversion, screen readers and clipboard
 policy remain explicit acceptance gates.
 
+A captured save can also settle while composition is staged. An unchanged reply leaves the
+draft available to commit as one shared undo transaction. A canonical reply that changes the
+document rejects the stale composition and retains its attempted native text and captured
+document/revision in recovery. Recovery survives remount without overwriting the canonical
+source or changing the immutable comparison reference. Native draft text uses textarea newline
+normalization; the document retains its original CRLF source.
+
 Full fixture disposal unmounts DOM, removes listeners/subscriptions, cancels deferred ports and
 awaits the controller's tracked command settlement. A queued save reaching its port after
 disposal settles locally instead of adding another unresolved request. Pending command leases
