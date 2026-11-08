@@ -156,8 +156,27 @@ Viewport snapshots identify the complete set that was painted. Highlights inters
 with bounded rows; the editing candidate paints visible secondary carets using its existing native
 row geometry ([native range rectangles](https://www.w3.org/TR/cssom-view/#extensions-to-the-range-interface)).
 Offscreen ranges create no DOM nodes or text reads. Native textareas project only
-the primary range. Multiple-caret creation gestures, all-range commands and input routing remain
-implementation work; these view APIs alone do not establish usable multiple-selection editing.
+the primary range. The bounded candidate now captures the complete set, revision and native context
+for `beforeinput` and composition. An exact primary selection replacement supplies literal text for
+one original-coordinate edit plan across every range. Adjacent typing/deletion groups require the
+same complete resulting set and revision. Composition stages in the primary textarea and commits
+once; cancellation publishes no edit. A stale set/revision or a native rewrite outside the selected
+primary range is rejected with recovery text. This does not qualify IME reconversion or native devices.
+
+Backspace/Delete and word deletion plan every target before publishing, use existing bounded Unicode
+cursors, and merge overlapping targets (including carets inside one grapheme). Large sets yield
+between planning turns; changing any captured range, revision, capability or composition invalidates
+the plan. Clipboard copy joins nonempty selected fragments in source order with LF; cut removes them
+in one transaction. Plain paste replicates the same literal text at every range, preserving supplied
+CRLF. It does not distribute lines among carets. Real OS/menu clipboard remains unverified.
+
+Tab inserts four spaces at every collapsed caret. With any nonempty range, indentation/outdent
+operates on the union of touched lines once, including lines with secondary carets; a range ending at
+the next line's start excludes that next line. Bracket pairing/skipping considers each collapsed
+caret's following character and preserves the resulting complete set in one transaction.
+Multiple-caret creation gestures and remaining all-range navigation still need implementation and
+integrated qualification. These APIs and input checks alone do not complete the usable multiple-
+selection workflow. The native textarea baseline continues to edit only its primary range.
 The native text-control [selection API](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#textFieldSelection)
 supplies the primary input projection. The project model reuses its own mappings, transactions
 and history to represent the additional ranges without an editor/runtime dependency.

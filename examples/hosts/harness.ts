@@ -23,6 +23,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         referenceRange: (from: number, to: number) => bindings.referenceRange(from, to),
         selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => bindings.selectSource(id, revision, selection),
         selectSourceSet: (id: "primary" | "secondary" | "comparison", revision: number, ranges: readonly Selection[], primary = 0) => bindings.selectSourceSet(id, revision, ranges, primary),
+        setSourceReadOnly: (value: boolean) => controller.workspace.setCapabilities(controller.source.id, { edit: value ? ["host"] : ["human", "host", "agent"], save: true, run: true }),
         setProviderDelay: (delay: number) => bindings.language.setDelay(delay), faultProviderNext: (fault: "malformed" | "failure") => bindings.language.faultNext(fault),
         requestProvider: bindings.language.request,
         unmount, mount: attach, dispose });
@@ -38,6 +39,7 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; mode
     referenceRange: (from: number, to: number) => string | undefined;
     selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => boolean;
     selectSourceSet: (id: "primary" | "secondary" | "comparison", revision: number, ranges: readonly Selection[], primary?: number) => boolean;
+    setSourceReadOnly: (value: boolean) => void;
     setProviderDelay: (delay: number) => void; faultProviderNext: (fault: "malformed" | "failure") => void;
     requestProvider: () => void;
     unmount: () => void; mount: () => void; dispose: () => Promise<void> }> } }

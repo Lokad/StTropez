@@ -31,6 +31,14 @@ These numeric signatures are weakly memoized by immutable line metadata and reta
 on their own. No normalization or hash-only equality is introduced. Adjacent unmatched regions
 coalesce before scalar trimming, so optional signatures cannot split a contiguous review hunk.
 
+After 64 frontier distances in a region of at least 64 lines per side, alignment can check for
+at most one shared exact short-line token. Its longest common subsequence is precisely the
+smaller occurrence count, so greedy matching preserves the minimal line edit distance while
+avoiding a large frontier for repeated-row deletion or scattered changes. The optional check
+declines after 64 distinct left-side tokens, a long row, or a second shared token, then resumes
+general exact bisection. Small-edit searches retain their existing ownership shortcuts. This
+addresses a reproduced 100k-line review stall; it introduces no heuristic equality or dependency.
+
 Alignment consumes maximal exact matching line prefixes and suffixes. Immutable node/backing
 proofs can skip whole matching spans, including inside bisection searches. Unproved rows still
 use exact comparisons, so repeated-line ties do not depend on storage identity. An unterminated

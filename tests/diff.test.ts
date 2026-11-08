@@ -34,6 +34,39 @@ test("line alignment agrees with a dynamic-programming edit-distance oracle", ()
     }
 });
 
+test("imbalanced repeated-row alignment remains minimal with one shared token and exact fallbacks", () => {
+    let seed = 9917; const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
+    const collision = ["F\"]:`#\"/Q\n", "S/:hvp6FJ\n"];
+    for (let trial = 0; trial < 24; trial++) {
+        const left = ["common é😀\r\n", "left\n", collision[0]!], right = ["common é😀\r\n", "right\n", collision[1]!];
+        if (trial % 3 === 1) right[2] = left[2]!; // Two shared tokens must use the general exact algorithm.
+        if (trial % 3 === 2) left[0] = right[0] = "x".repeat(300) + "\n"; // No short-token identity.
+        const a = Array.from({ length: 256 }, () => left[random(left.length)]!), b = Array.from({ length: 96 }, () => right[random(right.length)]!);
+        let previous = new Uint16Array(b.length + 1);
+        for (const row of a) { const next = new Uint16Array(previous.length);
+            for (let j = 1; j < next.length; j++) next[j] = row === b[j - 1] ? previous[j - 1]! + 1 : Math.max(previous[j]!, next[j - 1]!);
+            previous = next; }
+        const result = diff(a.join(""), b.join("")); assert.equal(result.lineEdits, a.length + b.length - 2 * previous.at(-1)!);
+    }
+});
+
+test("large repeated-row removal and scattered changes complete in bounded work and reconstruct both variants", () => {
+    const line = "const sample = 123;\r\n", original = "old\n" + line.repeat(100000) + "tail\n", baseline = TextBuffer.from(original);
+    const removed = baseline.apply([{ from: 0, to: 3, insert: "new" }, { from: 4 + 50 * line.length, to: 4 + 24000 * line.length, insert: "changed" },
+        ...Array.from({ length: 32 }, (_, i) => { const at = 4 + (50000 + i) * line.length + 5; return { from: at, to: at, insert: "xy" }; })]).buffer;
+    const scattered = baseline.apply(Array.from({ length: 1024 }, (_, i) => { const at = 4 + (i < 32 ? i : 50000 + i) * line.length + 5; return { from: at, to: at, insert: "z" }; })).buffer;
+    for (const working of [removed, scattered]) {
+    const job = new TextDiff(baseline, working); let result = job.next(4096), calls = 1;
+    while (result.status === "running") { const work = result.work; result = job.next(4096); assert.ok(result.work - work <= 4864); assert.ok(++calls < 2048); }
+    assert.equal(result.status, "ready"); const changed = working.slice(0, working.length); let forward = original, reverse = changed;
+    for (const hunk of [...result.hunks].reverse()) {
+        forward = forward.slice(0, hunk.baseline.from) + changed.slice(hunk.working.from, hunk.working.to) + forward.slice(hunk.baseline.to);
+        reverse = reverse.slice(0, hunk.working.from) + original.slice(hunk.baseline.from, hunk.baseline.to) + reverse.slice(hunk.working.to);
+    }
+    assert.equal(forward, changed); assert.equal(reverse, original); assert.equal(baseline.readMetrics().textExports + working.readMetrics().textExports, 0); job.dispose();
+    }
+});
+
 test("comparison yields within a long line, never exports full text and cancels retained work", () => {
     // Independent backing forces a genuine long scan even when shared-span proofs exist.
     const a = TextBuffer.from("x".repeat(1_000_000)), b = TextBuffer.from("x".repeat(500_000) + "y" + "x".repeat(499_999));

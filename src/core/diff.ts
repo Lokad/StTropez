@@ -79,7 +79,39 @@ function* disjoint(left: Index, right: Index, region: Region, stats: Stats): Gen
     for (let bi = region.b0; bi < region.b1; bi++) { if (signatures.has(yield* lineHash(right, bi, yield* getLine(right, bi, stats), stats))) return false; if (tick(stats)) yield; }
     return true;
 }
-function* bisect(a: Index, b: Index, region: Region, stats: Stats): Generator<void, readonly [number, number]> {
+/** If the shared alphabet has at most one exact short-line token, greedy matching is
+ * a longest common subsequence: its length is the smaller occurrence count. This
+ * avoids an edit-distance frontier proportional to a large insertion/deletion delta. */
+function* singleTokenAlignment(left: Index, right: Index, region: Region, stats: Stats): Generator<void, readonly Region[] | undefined> {
+    const tokens = new Set<string>();
+    for (let ai = region.a0; ai < region.a1; ai++) {
+        const token = (yield* getLine(left, ai, stats)).token;
+        if (token === undefined) return; tokens.add(token);
+        if (tokens.size > 64) return; // Optional exact shortcut; retain general alignment otherwise.
+        if (tick(stats)) yield;
+    }
+    let common: string | undefined;
+    for (let bi = region.b0; bi < region.b1; bi++) {
+        const token = (yield* getLine(right, bi, stats)).token;
+        if (token === undefined) return;
+        stats.lineComparisons++;
+        if (tokens.has(token)) { if (common !== undefined && common !== token) return; common = token; }
+        if (tick(stats)) yield;
+    }
+    if (common === undefined) return [region];
+    const changes: Region[] = []; let a0 = region.a0, b0 = region.b0, ai = a0, bi = b0;
+    while (ai < region.a1 && bi < region.b1) {
+        while (ai < region.a1 && (yield* getLine(left, ai, stats)).token !== common) { ai++; if (tick(stats)) yield; }
+        while (bi < region.b1 && (yield* getLine(right, bi, stats)).token !== common) { bi++; if (tick(stats)) yield; }
+        if (ai === region.a1 || bi === region.b1) break;
+        if (a0 < ai || b0 < bi) changes.push({ a0, a1: ai, b0, b1: bi });
+        const count = yield* commonLines(left, right, { a0: ai, a1: region.a1, b0: bi, b1: region.b1 }, false, stats);
+        ai += count; bi += count; a0 = ai; b0 = bi;
+    }
+    if (a0 < region.a1 || b0 < region.b1) changes.push({ a0, a1: region.a1, b0, b1: region.b1 });
+    return changes;
+}
+function* bisect(a: Index, b: Index, region: Region, stats: Stats): Generator<void, readonly [number, number] | Readonly<{ changes: readonly Region[] }>> {
     const n = region.a1 - region.a0, m = region.b1 - region.b0, maximum = Math.ceil((n + m) / 2), origin = maximum + 1, delta = n - m;
     const forward = new Int32Array(maximum * 2 + 3), reverse = new Int32Array(maximum * 2 + 3);
     for (let index = 0; index < forward.length; index++) { forward[index] = -1; reverse[index] = -1; if (tick(stats, 2)) yield; }
@@ -90,6 +122,12 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats): Generator<vo
         return Math.max(valid(insert) ? insert : -1, valid(remove) ? remove : -1);
     };
     for (let distance = 0; distance <= maximum; distance++) {
+        // Preserve cheap small-edit searches and ownership proofs. Only after a bounded
+        // frontier effort, try the exact repeated-token case before expanding further.
+        if (distance === 64 && Math.min(n, m) >= 64) {
+            const changes = yield* singleTokenAlignment(a, b, region, stats);
+            if (changes) return { changes };
+        }
         for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
             let x = start(forward, diagonal), y = x - diagonal;
             if (x >= 0) { const same = yield* commonLines(a, b, { a0: region.a0 + x, a1: region.a1, b0: region.b0 + y, b1: region.b1 }, false, stats); x += same; y += same; }
@@ -139,7 +177,9 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
             if (matchA < 0) append({ a0, a1, b0, b1 });
             else { tasks.push({ a0: matchA + 1, a1, b0: matchB + 1, b1 }); tasks.push({ a0, a1: matchA, b0, b1: matchB }); }
         } else {
-            const [ai, bi] = yield* bisect(left, right, { a0, a1, b0, b1 }, stats);
+            const split = yield* bisect(left, right, { a0, a1, b0, b1 }, stats);
+            if ("changes" in split) { split.changes.forEach(append); continue; }
+            const [ai, bi] = split;
             if ((ai === a0 && bi === b0) || (ai === a1 && bi === b1)) throw new Error("Comparison split did not make progress.");
             tasks.push({ a0: ai, a1, b0: bi, b1 }); tasks.push({ a0, a1: ai, b0, b1: bi });
         }

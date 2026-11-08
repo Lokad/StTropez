@@ -3,15 +3,15 @@ import assert from "node:assert/strict";
 import { captureNativeInsertion, resolveNativeInsertion } from "../src/browser/input-target.ts";
 
 test("native insertion keeps the captured caret or selected range through repeated text", () => {
-    for (const c of [
+    for (const type of ["insertText", "insertReplacementText", "insertFromPaste", "insertCompositionText"]) for (const c of [
         { before: "abconst", from: 2, to: 2, data: "c", after: "abcconst", end: 3 },
         { before: "xxxx", from: 1, to: 1, data: "x", after: "xxxxx", end: 2 },
         { before: "abc", from: 1, to: 2, data: "b", after: "abc", end: 2 },
         { before: "ab😀cd", from: 2, to: 4, data: "😀", after: "ab😀cd", end: 4 },
     ]) {
-        const target = captureNativeInsertion({ value: c.before, selectionStart: c.from, selectionEnd: c.to }, "insertText", c.data)!;
+        const target = captureNativeInsertion({ value: c.before, selectionStart: c.from, selectionEnd: c.to }, type, type === "insertCompositionText" || type === "insertFromPaste" ? null : c.data)!;
         assert.ok(Object.isFrozen(target));
-        assert.deepEqual(resolveNativeInsertion(target, { value: c.after, selectionStart: c.end, selectionEnd: c.end }, "insertText"), { from: c.from, to: c.to, insert: c.data });
+        assert.deepEqual(resolveNativeInsertion(target, { value: c.after, selectionStart: c.end, selectionEnd: c.end }, type), { from: c.from, to: c.to, insert: c.data });
     }
 });
 

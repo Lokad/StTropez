@@ -1,5 +1,5 @@
-import { PositionMap, textDifference, WordCursor, createGraphemeCursor } from "../index.ts";
-import type { Affinity, DocumentView, EditKind, Selection, TabId, TextBuffer, TextEdit, Workspace, GraphemeCursor, GraphemeIndex } from "../index.ts";
+import { PositionMap, textDifference, WordCursor, createGraphemeCursor, createSelectionSet, planSelectionEdits } from "../index.ts";
+import type { Affinity, DocumentView, EditKind, Selection, SelectionSet, TabId, TextBuffer, TextEdit, Workspace, GraphemeCursor, GraphemeIndex } from "../index.ts";
 import type { ViewState } from "./index.ts";
 import { inputContext } from "./input-context.ts";
 import { localAsciiGraphemePoint } from "../core/grapheme-point.ts";
@@ -50,22 +50,29 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     let wordScanSteps = 0, maxWordScanStepMs = 0;
     let graphemeScanSteps = 0, maxGraphemeScanStepMs = 0;
     let visualMoves = 0;
-    let group: Readonly<{ type: string; edge: number; time: number; key: string }> | undefined;
+    let group: Readonly<{ type: string; revision: number; selectionSet: SelectionSet; time: number; key: string }> | undefined;
     let drag: Readonly<{ pointer: number; anchor: number; anchorAffinity: Affinity; revision: number; x: number; y: number; selection: Selection }> | undefined;
     let dragFrame: number | undefined, dragTime: number | undefined, dragScrollFrames = 0, maxDragScrollStepMs = 0;
     const commandTimers = new Set<number>();
     let wordJob: Readonly<{ cursor: WordCursor; revision: number; selection: Selection }> | undefined, wordTimer: number | undefined;
-    type CommandCapture = Readonly<{ buffer: TextBuffer; revision: number; selection: Selection; deleting: boolean }>;
+    type CommandCapture = Readonly<{ buffer: TextBuffer; revision: number; selection: Selection; selectionSet: SelectionSet; deleting: boolean }>;
     let graphemeJob: Readonly<{ cursor: GraphemeCursor; capture: CommandCapture; purpose: "word" | "word-selection" | "grapheme" }> | undefined, graphemeTimer: number | undefined;
     let graphemeCache: Readonly<{ buffer: TextBuffer; from: number; to: number; index: GraphemeIndex }> | undefined;
-    let wordInput: Readonly<{ revision: number; selection: Selection; direction: -1 | 1 }> | undefined;
-    let insertion: Readonly<{ revision: number; selection: Selection; target: NativeInsertionTarget; contextFrom: number }> | undefined;
+    type InputCapture = Readonly<{ revision: number; selectionSet: SelectionSet; context: InputContext; target?: NativeInsertionTarget }>;
+    let wordInput: Readonly<{ revision: number; selectionSet: SelectionSet; direction: -1 | 1; word: boolean }> | undefined;
+    let insertion: InputCapture | undefined, composition: InputCapture | undefined;
+    let projectedSet = view.getSnapshot().selectionSet;
+    let rangeCommand: Readonly<{ capture: CommandCapture; purpose: "word" | "grapheme" }> | undefined, rangeTimer: number | undefined;
     const apple = /Mac|iPhone|iPad|iPod/.test(win.navigator.platform);
-    function cancelWord(): void {
+    function cancelScans(): void {
         wordJob?.cursor.dispose(); wordJob = undefined;
         if (wordTimer !== undefined) { win.clearTimeout(wordTimer); commandTimers.delete(wordTimer); wordTimer = undefined; }
         graphemeJob?.cursor.dispose(); graphemeJob = undefined;
         if (graphemeTimer !== undefined) { win.clearTimeout(graphemeTimer); commandTimers.delete(graphemeTimer); graphemeTimer = undefined; }
+    }
+    function cancelWord(): void {
+        cancelScans(); rangeCommand = undefined;
+        if (rangeTimer !== undefined) { win.clearTimeout(rangeTimer); commandTimers.delete(rangeTimer); rangeTimer = undefined; }
     }
     function cancelCommandTimers(): void {
         commandTimers.forEach(timer => win.clearTimeout(timer)); commandTimers.clear();
@@ -111,10 +118,11 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         input.readOnly = !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null;
         input.setAttribute("aria-busy", String(state.state === "loading"));
         if (!input.disabled && !composing) {
-            const document = workspace.document(documentId), selected = view.getSnapshot().selection;
+            const document = workspace.document(documentId), { selection: selected, selectionSet } = view.getSnapshot();
             if (graphemeCache?.buffer !== document.buffer) graphemeCache = undefined;
-            if (graphemeJob && (graphemeJob.capture.revision !== document.revision || graphemeJob.capture.selection !== selected)) cancelWord();
-            context = inputContext(document.buffer, selected); revision = document.revision;
+            const capture = rangeCommand?.capture ?? graphemeJob?.capture;
+            if (capture && (capture.revision !== document.revision || capture.selectionSet !== selectionSet || capture.deleting && input.readOnly)) cancelWord();
+            context = inputContext(document.buffer, selected); revision = document.revision; projectedSet = selectionSet;
             if (input.value !== context.text) input.value = context.text;
             const anchor = context.nativeAnchor, head = context.nativeHead;
             if (input.selectionStart !== Math.min(anchor, head) || input.selectionEnd !== Math.max(anchor, head)
@@ -128,7 +136,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const anchor = context.toModel(backward ? input.selectionEnd : input.selectionStart), head = context.toModel(backward ? input.selectionStart : input.selectionEnd);
         const current = view.getSnapshot(); if (current.revision === revision && current.selection.anchor === anchor && current.selection.head === head) return;
         selecting = true;
-        try { view.setSelection(revision, { anchor, head }); }
+        try { if (view.setSelection(revision, { anchor, head })) projectedSet = view.getSnapshot().selectionSet; }
         finally { selecting = false; }
         scheduleCaret();
     }
@@ -137,40 +145,60 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         input.dispatchEvent(new CustomEvent("sttropez-conflict", { bubbles: true, detail: Object.freeze({ documentId, expectedRevision, reason,
             attemptedText: input.value, contextFrom, ...(edit ? { attemptedEdit: Object.freeze({ ...edit }) } : {}) }) }));
     };
-    function apply(edits: readonly TextEdit[], selection: Selection, kind: EditKind, type?: string, expectedRevision = revision): void {
+    function apply(edits: readonly TextEdit[], selection: Selection | SelectionSet, kind: EditKind, type?: string, expectedRevision = revision): void {
         if (disposed) return;
         cancelWord(); preferredX = undefined;
         if (!workspace.resolveTab(target)) { conflict("expired-view", edits[0]); refresh(); return; }
         let key: string | undefined;
-        if (type && edits.length === 1) {
-            const edit = edits[0]!, now = win.performance.now();
-            const adjacent = group?.type === type && now - group.time < 1000 && (type === "deleteContentBackward" ? edit.to === group.edge : edit.from === group.edge);
+        const now = win.performance.now(), before = view.getSnapshot().selectionSet;
+        if (type) {
+            const adjacent = group?.type === type && group.revision === expectedRevision && group.selectionSet === before && now - group.time < 1000;
             key = adjacent ? group!.key : `${view.id}:${scope}:${++serial}`;
-            group = { type, edge: edit.from + edit.insert.length, time: now, key };
         } else group = undefined;
         committing = true;
         try {
-            const result = workspace.edit({ documentId, expectedRevision, origin: "human", edits, view, selection,
+            const result = workspace.edit({ documentId, expectedRevision, origin: "human", edits, view,
+                ...("ranges" in selection ? { selectionSet: selection } : { selection }),
                 history: { kind, ...(key ? { group: key } : {}) } });
-            if (result.applied) { commits++; viewport.revealOffset(selection.head); }
+            if (result.applied) { commits++; const after = view.getSnapshot(); viewport.revealOffset(after.selection.head);
+                if (type && key) group = { type, revision: result.revision, selectionSet: after.selectionSet, time: now, key }; }
             else conflict(result.reason, edits[0]);
         } finally { committing = false; refresh(); }
     }
-    function commit(type: string): void {
-        const captured = insertion; insertion = undefined;
+    function captureInput(type: string, data: string | null): InputCapture {
+        const target = captureNativeInsertion(input, type, data);
+        return { revision, selectionSet: view.getSnapshot().selectionSet, context, ...(target ? { target } : {}) };
+    }
+    function commit(type: string, captured = insertion ?? { revision, selectionSet: projectedSet, context }): void {
+        insertion = undefined;
         if (disposed || composing) return;
         if (type === "historyUndo" || type === "historyRedo") { history(type === "historyUndo" ? "undo" : "redo"); return; }
-        if (captured && (captured.revision !== revision || captured.selection !== view.getSnapshot().selection)) {
-            conflict("stale-text-input", undefined, captured.revision, captured.contextFrom); refresh(); return;
+        const projection = captured.context;
+        if (input.value === projection.text && input.selectionStart === (captured.target?.from ?? Math.min(projection.nativeAnchor, projection.nativeHead))
+            && input.selectionEnd === (captured.target?.to ?? Math.max(projection.nativeAnchor, projection.nativeHead))) { refresh(); return; }
+        if ((captured.target && captured.target.before !== projection.text) || captured.revision !== workspace.observeDocument(documentId).getSnapshot()?.revision || captured.selectionSet !== view.getSnapshot().selectionSet) {
+            conflict(type === "insertCompositionText" && captured.revision !== workspace.observeDocument(documentId).getSnapshot()?.revision ? "stale-revision" : "stale-text-input", undefined, captured.revision, projection.from); refresh(); return;
         }
-        const edit = captured && resolveNativeInsertion(captured.target, input, type) || textDifference(context.text, input.value);
+        const native = captured.target && resolveNativeInsertion(captured.target, input, type);
+        const edit = native || textDifference(projection.text, input.value);
         if (!edit) { refresh(); return; }
-        const from = context.toModel(edit.from), to = edit.from === edit.to ? from : context.toModel(edit.to), delta = edit.insert.length - (to - from);
-        const map = (offset: number) => offset <= edit.from ? context.toModel(offset)
-            : offset >= edit.from + edit.insert.length ? context.toModel(offset - edit.insert.length + edit.to - edit.from) + delta : from + offset - edit.from;
-        const backward = input.selectionDirection === "backward", selection = { anchor: map(backward ? input.selectionEnd : input.selectionStart), head: map(backward ? input.selectionStart : input.selectionEnd) };
+        const from = projection.toModel(edit.from), to = edit.from === edit.to ? from : projection.toModel(edit.to), delta = edit.insert.length - (to - from);
         const typing = type === "insertText" && !edit.insert.includes("\n"), deleting = type === "deleteContentBackward" || type === "deleteContentForward";
-        apply([{ from, to, insert: edit.insert }], selection, typing ? "typing" : deleting ? "delete" : type === "insertCompositionText" ? "composition" : "replace", typing || deleting ? type : undefined);
+        const kind = typing ? "typing" : deleting ? "delete" : type === "insertCompositionText" ? "composition" : type === "insertFromPaste" ? "paste" : "replace";
+        if (captured.selectionSet.ranges.length > 1) {
+            const selected = captured.selectionSet.ranges[captured.selectionSet.primary]!;
+            // A native textarea describes one primary target. Replicate only an exact captured
+            // selection replacement; neighbouring autocorrection/reconversion needs its own plan.
+            if (from !== Math.min(selected.anchor, selected.head) || to !== Math.max(selected.anchor, selected.head)) {
+                conflict("unsupported-multiple-input-target", { from, to, insert: edit.insert }, captured.revision, projection.from); refresh(); return;
+            }
+            const plan = planSelectionEdits(workspace.document(documentId).buffer.length, captured.selectionSet, edit.insert);
+            apply(plan.edits, plan.selectionSet, kind, typing || deleting ? type : undefined, captured.revision); return;
+        }
+        const map = (offset: number) => offset <= edit.from ? projection.toModel(offset)
+            : offset >= edit.from + edit.insert.length ? projection.toModel(offset - edit.insert.length + edit.to - edit.from) + delta : from + offset - edit.from;
+        const backward = input.selectionDirection === "backward", selection = { anchor: map(backward ? input.selectionEnd : input.selectionStart), head: map(backward ? input.selectionStart : input.selectionEnd) };
+        apply([{ from, to, insert: edit.insert }], selection, kind, typing || deleting ? type : undefined, captured.revision);
     }
     function history(direction: "undo" | "redo"): void {
         if (disposed) return; cancelWord(); group = undefined; syncSelection();
@@ -187,12 +215,12 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         viewport.revealOffset(offset, { horizontal: "nearest", vertical: "nearest", affinity }); refresh();
     }
     function replaceSelection(insert: string, kind: EditKind, type?: string): void {
-        const selected = view.getSnapshot().selection, from = Math.min(selected.anchor, selected.head), to = Math.max(selected.anchor, selected.head), head = from + insert.length;
-        apply([{ from, to, insert }], { anchor: head, head }, kind, type);
+        const document = workspace.document(documentId), plan = planSelectionEdits(document.buffer.length, view.getSnapshot().selectionSet, insert);
+        apply(plan.edits, plan.selectionSet, kind, type, document.revision);
     }
-    const validCommand = (capture: CommandCapture) => !disposed && !composing && !input.disabled && !(capture.deleting && input.readOnly) && !!workspace.resolveTab(target) && workspace.observeDocument(documentId).getSnapshot()?.revision === capture.revision && view.getSnapshot().selection === capture.selection;
+    const validCommand = (capture: CommandCapture) => !disposed && !composing && !input.disabled && !(capture.deleting && input.readOnly) && !!workspace.resolveTab(target) && workspace.observeDocument(documentId).getSnapshot()?.revision === capture.revision && view.getSnapshot().selectionSet === capture.selectionSet;
     function withGraphemes(capture: CommandCapture, offset: number, side: -1 | 1, purpose: "word" | "word-selection" | "grapheme", done: (point: GraphemePoint) => void): void {
-        cancelWord(); if (!validCommand(capture)) return;
+        cancelScans(); if (!validCommand(capture)) return;
         const local = localAsciiGraphemePoint(capture.buffer, offset);
         if (local) { done(local); return; }
         const point = (index: GraphemeIndex): GraphemePoint => Object.freeze({ offset, floor: index.floor(offset), ceil: index.ceil(offset), preceding: index.preceding(offset), following: index.following(offset) });
@@ -213,26 +241,69 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             } finally { if (purpose === "word-selection") maxWordSelectionTurnMs = Math.max(maxWordSelectionTurnMs, win.performance.now() - started); }
         }; step();
     }
+    function commandCapture(deleting: boolean): CommandCapture {
+        const document = workspace.document(documentId), { selection, selectionSet } = view.getSnapshot();
+        return { buffer: document.buffer, revision: document.revision, selection, selectionSet, deleting };
+    }
+    function eachRange(capture: CommandCapture, purpose: "word" | "grapheme", resolve: (range: Selection, done: (range: Selection) => void) => void,
+        done: (ranges: readonly Selection[]) => void): void {
+        const job = { capture, purpose }; rangeCommand = job;
+        const ranges: Selection[] = []; let index = 0, pumping = false, waiting = false;
+        const active = () => rangeCommand === job && validCommand(capture);
+        const pump = () => {
+            if (!active()) { if (rangeCommand === job) cancelWord(); return; }
+            const began = win.performance.now(); let count = 0; pumping = true;
+            while (index < capture.selectionSet.ranges.length && !waiting && count++ < 64 && win.performance.now() - began < 4) {
+                waiting = true;
+                resolve(capture.selectionSet.ranges[index]!, range => {
+                    if (!active()) return;
+                    ranges.push(range); index++; waiting = false; if (!pumping) pump();
+                });
+            }
+            pumping = false;
+            if (!active()) return;
+            if (index === capture.selectionSet.ranges.length) { rangeCommand = undefined; done(ranges); }
+            else if (!waiting) { const timer = win.setTimeout(() => { commandTimers.delete(timer); if (rangeCommand === job) rangeTimer = undefined; pump(); }, 0);
+                rangeTimer = timer; commandTimers.add(timer); }
+        }; pump();
+    }
+    function finishRanges(capture: CommandCapture, ranges: readonly Selection[], type?: string): void {
+        if (!validCommand(capture)) return;
+        const selections = createSelectionSet(capture.buffer.length, ranges, capture.selectionSet.primary);
+        if (capture.deleting) { const plan = planSelectionEdits(capture.buffer.length, selections, "");
+            apply(plan.edits, plan.selectionSet, "delete", type, capture.revision); }
+        else { cancelWord(); group = undefined; view.setSelections(capture.revision, selections.ranges, selections.primary);
+            const selected = view.getSnapshot().selection;
+            viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" }); refresh(); }
+    }
+    function moved(range: Selection, offset: number, extend: boolean, affinity: Affinity = "after"): Selection {
+        return { anchor: extend ? range.anchor : offset, head: offset, anchorAffinity: extend ? range.anchorAffinity ?? "after" : affinity, headAffinity: affinity };
+    }
     function grapheme(direction: -1 | 1, deleting: boolean, extend = false): void {
         cancelWord(); if (disposed || composing || input.disabled || deleting && input.readOnly) return; syncSelection();
-        const document = workspace.document(documentId), selection = view.getSnapshot().selection, capture = { buffer: document.buffer, revision: document.revision, selection, deleting }, offset = selection.head;
-        graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
-        withGraphemes(capture, offset, direction, "grapheme", point => {
-            if (deleting) { const from = direction < 0 && point.floor === offset ? point.preceding ?? offset : point.floor, to = direction > 0 ? point.following ?? offset : point.ceil;
-                apply([{ from, to, insert: "" }], { anchor: from, head: from }, "delete", direction < 0 ? "deleteContentBackward" : "deleteContentForward", capture.revision); }
-            else move(direction < 0 ? point.preceding ?? offset : point.following ?? offset, extend);
-        });
+        const capture = commandCapture(deleting); graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
+        eachRange(capture, "grapheme", (range, done) => {
+            if (range.anchor !== range.head && (deleting || !extend)) {
+                done(deleting ? range : moved(range, direction < 0 ? Math.min(range.anchor, range.head) : Math.max(range.anchor, range.head), false)); return;
+            }
+            const offset = range.head;
+            withGraphemes(capture, offset, direction, "grapheme", point => {
+                if (deleting) { const from = direction < 0 && point.floor === offset ? point.preceding ?? offset : point.floor, to = direction > 0 ? point.following ?? offset : point.ceil;
+                    done({ anchor: from, head: to }); }
+                else done(moved(range, direction < 0 ? point.preceding ?? offset : point.following ?? offset, extend));
+            });
+        }, ranges => finishRanges(capture, ranges, deleting ? direction < 0 ? "deleteContentBackward" : "deleteContentForward" : undefined));
     }
     function word(direction: -1 | 1, deleting: boolean, extend = false): void {
         cancelWord(); if (disposed || composing || input.disabled || deleting && input.readOnly) return;
         group = undefined; preferredX = undefined; syncSelection();
-        const document = workspace.document(documentId), selected = view.getSnapshot().selection;
-        if (deleting && selected.anchor !== selected.head) { replaceSelection("", "delete"); return; }
         wordScanSteps = 0; maxWordScanStepMs = 0; graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
-        const capture = { buffer: document.buffer, revision: document.revision, selection: selected, deleting };
+        const capture = commandCapture(deleting);
+        eachRange(capture, "word", (selected, done) => {
+        if (deleting && selected.anchor !== selected.head) { done(selected); return; }
         withGraphemes(capture, selected.head, deleting ? direction < 0 ? 1 : -1 : direction, "word", point => {
         const start = (deleting ? -direction : direction) < 0 ? point.floor : point.ceil;
-        const job = { cursor: new WordCursor(document.buffer, start, direction), revision: document.revision, selection: selected }; wordJob = job;
+        const job = { cursor: new WordCursor(capture.buffer, start, direction), revision: capture.revision, selection: selected }; wordJob = job;
         const step = () => {
             if (wordJob !== job) return;
             const current = workspace.observeDocument(documentId).getSnapshot();
@@ -246,17 +317,17 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             }
             withGraphemes(capture, result.offset!, direction, "word", point => {
             const end = direction < 0 ? point.floor : point.ceil;
-            if (deleting) { const from = Math.min(start, end), to = Math.max(start, end); apply([{ from, to, insert: "" }], { anchor: from, head: from }, "delete", undefined, job.revision); }
-            else move(end, extend);
+            done(deleting ? { anchor: Math.min(start, end), head: Math.max(start, end) } : moved(selected, end, extend));
             });
         }; step();
         });
+        }, ranges => finishRanges(capture, ranges));
     }
     function selectWord(offset: number): void {
         cancelWord(); if (disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
         stopDrag(); group = undefined; preferredX = undefined; focus(); syncSelection();
         const document = workspace.document(documentId), buffer = document.buffer, selected = view.getSnapshot().selection;
-        const capture = { buffer, revision: document.revision, selection: selected, deleting: false };
+        const capture = { buffer, revision: document.revision, selection: selected, selectionSet: view.getSnapshot().selectionSet, deleting: false };
         const line = buffer.lineAt(offset), from = buffer.offsetAt(line);
         let to = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) - 1 : buffer.length;
         if (line + 1 < buffer.lineCount && to > from && buffer.slice(to - 1, to) === "\r") to--;
@@ -311,54 +382,80 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     }
     function indent(outdent: boolean): void {
         if (disposed || composing || input.disabled || input.readOnly) return;
-        const document = workspace.document(documentId), buffer = document.buffer, selected = view.getSnapshot().selection;
-        const low = Math.min(selected.anchor, selected.head), high = Math.max(selected.anchor, selected.head);
-        if (!outdent && low === high) { replaceSelection("    ", "replace"); return; }
-        const first = buffer.lineAt(low), last = buffer.lineAt(high > low && buffer.offsetAt(buffer.lineAt(high)) === high ? high - 1 : high);
-        const edits: TextEdit[] = []; let line = first;
+        cancelWord();
+        const capture = commandCapture(true), buffer = capture.buffer;
+        if (!outdent && capture.selectionSet.ranges.every(range => range.anchor === range.head)) { replaceSelection("    ", "replace"); return; }
+        const intervals: { first: number; last: number }[] = [];
+        for (const range of capture.selectionSet.ranges) {
+            const low = Math.min(range.anchor, range.head), high = Math.max(range.anchor, range.head);
+            const first = buffer.lineAt(low), last = buffer.lineAt(high > low && buffer.offsetAt(buffer.lineAt(high)) === high ? high - 1 : high), previous = intervals.at(-1);
+            if (previous && first <= previous.last + 1) previous.last = Math.max(previous.last, last); else intervals.push({ first, last });
+        }
+        const edits: TextEdit[] = []; let interval = 0, line = intervals[0]!.first;
         // Plan large selections in yielding chunks against the captured immutable buffer/revision.
         const step = () => {
             if (disposed) return;
-            if (!workspace.resolveTab(target) || workspace.document(documentId).revision !== document.revision || view.getSnapshot().selection !== selected) { conflict("stale-indent-command"); return; }
-            const stop = Math.min(last + 1, line + 256);
-            for (; line < stop; line++) {
+            if (!validCommand(capture)) { conflict("stale-indent-command"); return; }
+            let countLines = 0;
+            for (; interval < intervals.length && countLines < 256; countLines++) {
                 const from = buffer.offsetAt(line), prefix = buffer.slice(from, Math.min(buffer.length, from + 4));
                 const count = prefix.startsWith("\t") ? 1 : /^ {0,4}/.exec(prefix)![0].length;
                 if (!outdent || count) edits.push({ from, to: from + (outdent ? count : 0), insert: outdent ? "" : "    " });
+                if (++line > intervals[interval]!.last && ++interval < intervals.length) line = intervals[interval]!.first;
             }
-            if (line <= last) {
+            if (interval < intervals.length) {
                 const timer = win.setTimeout(() => { commandTimers.delete(timer); step(); }, 0); commandTimers.add(timer);
             } else if (edits.length) {
                 const mapping = new PositionMap(buffer.length, edits);
-                apply(edits, { anchor: mapping.map(selected.anchor, "after").offset, head: mapping.map(selected.head, "after").offset }, "replace", undefined, document.revision);
+                const result = createSelectionSet(mapping.newLength, capture.selectionSet.ranges.map(range => ({ anchor: mapping.map(range.anchor, "after").offset,
+                    head: mapping.map(range.head, "after").offset })), capture.selectionSet.primary);
+                apply(edits, result, "replace", undefined, capture.revision);
             }
         }; group = undefined; step();
     }
+    function bracket(key: string): boolean {
+        if (input.readOnly) return false;
+        const { selectionSet } = view.getSnapshot(); if (selectionSet.ranges.some(range => range.anchor !== range.head)) return false;
+        const buffer = workspace.document(documentId).buffer, closing = { "(": ")", "[": "]", "{": "}" }[key];
+        if (!closing && ![")", "]", "}"].includes(key)) return false;
+        let delta = 0, handled = false; const carets: Selection[] = [];
+        const edits = selectionSet.ranges.map(range => {
+            const next = buffer.slice(range.head, Math.min(buffer.length, range.head + 1));
+            const pair = closing && (!next || /[\s)\]}]/.test(next)), skip = !closing && next === key;
+            const insert = pair ? key + closing : skip ? "" : key;
+            const head = range.head + delta + (pair || skip ? 1 : insert.length); delta += insert.length;
+            carets.push({ anchor: head, head }); handled ||= !!pair || skip;
+            return { from: range.head, to: range.head, insert };
+        });
+        if (!handled) return false;
+        if (edits.every(edit => edit.insert === "")) finishRanges(commandCapture(false), carets);
+        else apply(edits, createSelectionSet(buffer.length + delta, carets, selectionSet.primary), "typing"); return true;
+    }
     input.addEventListener("beforeinput", event => {
         wordInput = undefined; insertion = undefined;
-        if (!composing && (event.inputType === "deleteWordBackward" || event.inputType === "deleteWordForward")) {
-            syncSelection(); const direction = event.inputType === "deleteWordBackward" ? -1 : 1;
-            if (event.cancelable) { event.preventDefault(); word(direction, true); }
-            else wordInput = { revision, selection: view.getSnapshot().selection, direction };
+        if (!composing && ["deleteWordBackward", "deleteWordForward", "deleteContentBackward", "deleteContentForward"].includes(event.inputType)) {
+            syncSelection(); const direction = event.inputType.endsWith("Backward") ? -1 : 1, wholeWord = event.inputType.startsWith("deleteWord");
+            if (event.cancelable) { event.preventDefault(); (wholeWord ? word : grapheme)(direction, true); }
+            else wordInput = { revision, selectionSet: view.getSnapshot().selectionSet, direction, word: wholeWord };
         } else if (!composing && event.cancelable && (event.inputType === "historyUndo" || event.inputType === "historyRedo")) { event.preventDefault(); history(event.inputType === "historyUndo" ? "undo" : "redo"); }
         else syncSelection();
         if (!composing && !event.isComposing && !input.disabled && !input.readOnly && input.value === context.text) {
-            const target = captureNativeInsertion(input, event.inputType, event.data);
-            if (target) insertion = { revision, selection: view.getSnapshot().selection, target, contextFrom: context.from };
+            insertion = captureInput(event.inputType, event.data);
         }
     }, { signal: listeners.signal });
     input.addEventListener("input", event => {
         const start = win.performance.now(), type = (event as InputEvent).inputType;
-        if (!composing && (type === "deleteWordBackward" || type === "deleteWordForward")) {
+        if (!composing && ["deleteWordBackward", "deleteWordForward", "deleteContentBackward", "deleteContentForward"].includes(type)) {
             const captured = wordInput; wordInput = undefined;
-            if (!captured || input.disabled || input.readOnly || !workspace.resolveTab(target) || captured.direction !== (type === "deleteWordBackward" ? -1 : 1)
-                || captured.revision !== revision || captured.selection !== view.getSnapshot().selection) { conflict("stale-word-input"); refresh(); }
-            else { refresh(); word(captured.direction, true); }
+            if (!captured || input.disabled || input.readOnly || !workspace.resolveTab(target) || captured.direction !== (type.endsWith("Backward") ? -1 : 1)
+                || captured.revision !== revision || captured.selectionSet !== view.getSnapshot().selectionSet) { conflict(type.startsWith("deleteWord") ? "stale-word-input" : "stale-delete-input"); refresh(); }
+            else { refresh(); (captured.word ? word : grapheme)(captured.direction, true); }
         } else commit(type);
         lastInputMs = win.performance.now() - start; inputEvents++;
     }, { signal: listeners.signal });
-    input.addEventListener("compositionstart", () => { cancelWord(); cancelCommandTimers(); wordInput = undefined; insertion = undefined; syncSelection(); composing = true; group = undefined; root.classList.add("st-composing"); scheduleCaret(); }, { signal: listeners.signal });
-    input.addEventListener("compositionend", () => { composing = false; root.classList.remove("st-composing"); commit("insertCompositionText"); }, { signal: listeners.signal });
+    input.addEventListener("compositionstart", () => { cancelWord(); cancelCommandTimers(); wordInput = undefined; insertion = undefined; syncSelection();
+        composition = captureInput("insertCompositionText", null); composing = true; group = undefined; root.classList.add("st-composing"); scheduleCaret(); }, { signal: listeners.signal });
+    input.addEventListener("compositionend", () => { const captured = composition; composition = undefined; composing = false; root.classList.remove("st-composing"); commit("insertCompositionText", captured); }, { signal: listeners.signal });
     input.addEventListener("select", syncSelection, { signal: listeners.signal });
     // Tab can reset the browser range after focus dispatch. It changes focus, not model selection.
     input.addEventListener("keyup", event => { if (event.key === "Tab") refresh(); else syncSelection(); }, { signal: listeners.signal });
@@ -403,15 +500,9 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         }
         preferredX = undefined;
         if (!command && !event.altKey && (event.key === "Backspace" || event.key === "Delete")) {
-            event.preventDefault(); const from = Math.min(selected.anchor, selected.head), to = Math.max(selected.anchor, selected.head), backward = event.key === "Backspace";
-            if (from === to) grapheme(backward ? -1 : 1, true);
-            else apply([{ from, to, insert: "" }], { anchor: from, head: from }, "delete", backward ? "deleteContentBackward" : "deleteContentForward");
+            event.preventDefault(); grapheme(event.key === "Backspace" ? -1 : 1, true);
         } else if (event.key === "Tab" && !command && !event.altKey) { event.preventDefault(); indent(event.shiftKey); }
-        else if (!command && !event.altKey && selected.anchor === selected.head && !input.readOnly) {
-            const closing = { "(": ")", "[": "]", "{": "}" }[event.key], next = buffer.slice(selected.head, Math.min(buffer.length, selected.head + 1));
-            if (closing && (!next || /[\s)\]}]/.test(next))) { event.preventDefault(); apply([{ from: selected.head, to: selected.head, insert: event.key + closing }], { anchor: selected.head + 1, head: selected.head + 1 }, "typing"); }
-            else if ([")", "]", "}"].includes(event.key) && next === event.key) { event.preventDefault(); move(selected.head + 1, false); }
-        }
+        else if (!command && !event.altKey && bracket(event.key)) event.preventDefault();
     }
     input.addEventListener("keydown", event => {
         const started = win.performance.now(); keydownEvents++;
@@ -493,12 +584,14 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     root.addEventListener("lostpointercapture", stopDrag, { signal: listeners.signal });
     for (const type of ["copy", "cut", "paste"] as const) input.addEventListener(type, event => {
         if (composing || !event.clipboardData) return;
-        event.preventDefault(); syncSelection(); group = undefined;
-        const selected = view.getSnapshot().selection;
+        event.preventDefault(); cancelWord(); syncSelection(); group = undefined;
+        const selections = view.getSnapshot().selectionSet;
         if (type === "paste") replaceSelection(event.clipboardData.getData("text/plain"), "paste");
         else {
             if (type === "cut" && input.readOnly) return;
-            event.clipboardData.setData("text/plain", workspace.document(documentId).buffer.slice(Math.min(selected.anchor, selected.head), Math.max(selected.anchor, selected.head)));
+            const buffer = workspace.document(documentId).buffer;
+            event.clipboardData.setData("text/plain", selections.ranges.filter(range => range.anchor !== range.head)
+                .map(range => buffer.slice(Math.min(range.anchor, range.head), Math.max(range.anchor, range.head))).join("\n"));
             if (type === "cut") replaceSelection("", "delete");
         }
     }, { signal: listeners.signal });
@@ -509,10 +602,10 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state: ViewState) => { viewport.restoreView(state); refresh(); },
         snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, keydownEvents, lastKeydownMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs, pendingCaret: frame !== undefined,
-            pendingDragScroll: dragFrame !== undefined, dragScrollFrames, maxDragScrollStepMs, commits, conflicts, composing, pendingWord: wordJob !== undefined || graphemeJob?.purpose === "word" || graphemeJob?.purpose === "word-selection", wordScanSteps, maxWordScanStepMs, pendingGrapheme: graphemeJob !== undefined, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves, disposed }),
+            pendingDragScroll: dragFrame !== undefined, dragScrollFrames, maxDragScrollStepMs, commits, conflicts, composing, pendingWord: rangeCommand?.purpose === "word" || wordJob !== undefined || graphemeJob?.purpose === "word" || graphemeJob?.purpose === "word-selection", wordScanSteps, maxWordScanStepMs, pendingGrapheme: rangeCommand?.purpose === "grapheme" || graphemeJob !== undefined, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves, disposed }),
         destroy: () => {
             if (disposed) return; disposed = true;
-            cancelWord(); wordInput = undefined; insertion = undefined; graphemeCache = undefined;
+            cancelWord(); wordInput = undefined; insertion = undefined; composition = undefined; graphemeCache = undefined;
             if (composing && input.value !== context.text) conflict("composition-detached");
             composing = false; stopDrag();
             if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;

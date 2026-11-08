@@ -205,6 +205,15 @@ try {
         assert.deepEqual(state.captured, selectionSets.before); assert.deepEqual(state.fullSet, selectionSets.before);
         assert.equal(state.legacy.ranges.length, 1); assert.equal(state.legacy.ranges[0].anchor, 2); assert.equal(state.legacy.ranges[0].head, 2);
     }
+    await page.evaluate(() => window.consumer.beginMultipleInput()); await page.waitForFunction(() => !window.consumer.multipleInput().pending);
+    const multipleBefore = await page.evaluate(() => window.consumer.multipleInput()), multipleEditor = page.getByRole("textbox", { name: "Restored multiple input", exact: true });
+    await multipleEditor.pressSequentially("xy"); await page.waitForFunction(() => !window.consumer.multipleInput().pending);
+    const multipleAfter = await page.evaluate(() => window.consumer.multipleInput()); assert.equal(multipleAfter.text, "xybcxy"); assert.equal(multipleAfter.revision, 2); assert.equal(multipleAfter.commits, 2); assert.equal(multipleAfter.exports, 0);
+    await multipleEditor.press("Control+z"); await page.waitForFunction(() => !window.consumer.multipleInput().pending);
+    const multipleUndone = await page.evaluate(() => window.consumer.multipleInput()); assert.equal(multipleUndone.text, "abcd"); assert.deepEqual(multipleUndone.selectionSet, multipleBefore.selectionSet);
+    await multipleEditor.press("Control+Shift+z"); assert.equal((await page.evaluate(() => window.consumer.multipleInput())).text, "xybcxy");
+    const multipleReleased = await page.evaluate(() => window.consumer.finishMultipleInput()); assert.deepEqual(multipleReleased, { views: 0, leases: 0 });
+    const multipleInput = { before: multipleBefore, after: multipleAfter, undone: multipleUndone, released: multipleReleased };
     await page.evaluate(() => window.consumer.replaceAll("packed"));
     await page.waitForFunction(() => window.consumer.findState().status === "ready" && window.consumer.findState().count === 0);
     assert.equal(await page.evaluate(() => window.consumer.text()), "edited packed package");
@@ -275,7 +284,7 @@ try {
         consumer, browser: browser.version(), node: process.version, dotnet: dotnet(["--version"]).trim(),
         typescript: JSON.parse(await readFile("node_modules/typescript/package.json", "utf8")).version,
         esbuild: JSON.parse(await readFile("node_modules/esbuild/package.json", "utf8")).version,
-        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, selectionSets, comparison, readonlyIndent, saveReview, style, errors }, null, 2));
+        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, selectionSets, multipleInput, comparison, readonlyIndent, saveReview, style, errors }, null, 2));
     console.log("Restored package: declarations, storage/mappings, modules, visible CSS and actual edit passed. Evidence: artifacts/package/");
     console.log(`Isolated consumer retained for inspection: ${consumer}`);
     await page.close();

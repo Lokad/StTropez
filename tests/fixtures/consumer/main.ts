@@ -24,7 +24,21 @@ const comparisonView = workspace.createDocumentView(comparisonResource.documentI
 const reviewDecorate = (line: PresentedLine) => [{ from: line.from, to: line.to, className: "consumer-review-token" }];
 const reviewOptions = { view: comparisonView, workingDecorate: reviewDecorate, baselineDecorate: reviewDecorate };
 let comparison = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonTab, { buffer: TextBuffer.from("baseline\r\n"), version: "reference-1" }, reviewOptions);
+function mountMultipleInput() {
+    const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "multiple-input", variant: "working" }, "Multiple input", { value: "abcd" });
+    const tab = model.open({ kind: "text", documentId: source.documentId }, "multiple-input"), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
+    const editor = mountEditingCandidate(host, model, tab, { ariaLabel: "Restored multiple input" }); editor.focus();
+    editor.view.setSelections(0, [{ anchor: 0, head: 1 }, { anchor: 4, head: 3 }], 1);
+    return { model, source, tab, host, editor };
+}
+let multipleInput: ReturnType<typeof mountMultipleInput> | undefined;
 Object.assign(window, { consumer: { text: () => workspace.document(documentId).text,
+    beginMultipleInput: () => { if (multipleInput) throw new Error("Multiple input already mounted."); multipleInput = mountMultipleInput(); },
+    multipleInput: () => { const { model, source, editor } = multipleInput!, document = model.document(source.documentId), state = editor.snapshot(), viewport = editor.viewport.snapshot();
+        return { text: document.buffer.slice(0, document.buffer.length), selectionSet: editor.view.getSnapshot().selectionSet, revision: document.revision,
+            pending: state.pendingCaret || viewport.pending, commits: state.commits, exports: document.buffer.readMetrics().textExports }; },
+    finishMultipleInput: () => { const { model, source, tab, host, editor } = multipleInput!; editor.destroy(); host.remove(); model.close(tab); model.releaseResource(source.id, true); multipleInput = undefined;
+        return { views: model.diagnostics().views, leases: model.diagnostics().leases }; },
     readonlyIndent: async (outdent: boolean) => {
         const model = new Workspace(), text = "    const sample = 1;\r\n".repeat(1024), source = model.createTextResource({ scope: "consumer", resource: "readonly-indent", variant: "working" }, "Locked command", { value: text });
         const tab = model.open({ kind: "text", documentId: source.documentId }, "locked-command"), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
