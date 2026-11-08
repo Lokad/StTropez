@@ -60,6 +60,34 @@ test("multiple edits before a frame map the scroll anchor and shared undo restor
     expect((await page.evaluate(() => window.viewportFixture.snapshot())).primary.scrollTop).toBeCloseTo(before.primary.scrollTop, 3); await checkRows(page);
 });
 
+test("full selection sets paint bounded ranges and round-trip while legacy states restore one range", async ({ page }) => {
+    const ranges = [{ anchor: 1, head: 4 }, { anchor: 10, head: 8, anchorAffinity: "before" as const, headAffinity: "after" as const }, { anchor: 1_200_000, head: 1_200_000 }];
+    await page.evaluate(value => window.viewportFixture.select("primary", value, 1), ranges); await ready(page);
+    const captured = await page.evaluate(() => window.viewportFixture.capture("primary"));
+    expect(captured.selectionSet?.primary).toBe(1); expect(captured.selectionSet?.ranges).toHaveLength(3);
+    expect(captured).toMatchObject({ anchor: 10, head: 8, anchorAffinity: "before", headAffinity: "after" });
+    const first = page.locator('#primary .st-viewport-row[data-line="0"]');
+    expect(await first.locator(".st-viewport-selected").allTextContents()).toEqual(await page.evaluate(() => [window.viewportFixture.range(1, 4), window.viewportFixture.range(8, 10)]));
+    expect(await page.evaluate(() => { const f = window.viewportFixture, state = f.capture("primary"), s = f.snapshot().primary;
+        return Object.isFrozen(state) && Object.isFrozen(state.selectionSet) && Object.isFrozen(state.selectionSet!.ranges)
+            && s.selectionSet === state.selectionSet && s.selection === s.selectionSet!.ranges[s.selectionSet!.primary]; })).toBe(true);
+    await page.evaluate(state => { const f = window.viewportFixture; f.select("primary", [{ anchor: 12, head: 12 }]); f.restore("primary", state); }, captured); await ready(page);
+    expect((await page.evaluate(() => window.viewportFixture.snapshot())).primary.selectionSet).toEqual(captured.selectionSet);
+    await page.evaluate(state => window.viewportFixture.restore("secondary", { ...state, anchor: 0, head: 0 }), captured); await ready(page);
+    await expect.poll(() => page.evaluate(() => window.viewportFixture.snapshot().secondary.selectionSet)).toEqual(captured.selectionSet);
+    expect((await page.evaluate(() => window.viewportFixture.snapshot())).secondary.selection).toEqual(captured.selectionSet!.ranges[1]);
+    const invalid = await page.evaluate(state => { const f = window.viewportFixture, before = f.capture("primary");
+        try { f.restore("primary", { ...state, selectionSet: { ranges: [{ anchor: -1, head: 0 }], primary: 0 } }); return false; }
+        catch { return JSON.stringify(f.capture("primary")) === JSON.stringify(before); } }, captured);
+    expect(invalid).toBe(true);
+    await page.evaluate(state => { const { selectionSet: _, ...legacy } = state;
+        window.viewportFixture.restore("primary", { ...legacy, anchor: 12, head: 12 }); }, captured); await ready(page);
+    const after = await page.evaluate(() => window.viewportFixture.snapshot());
+    expect(after.primary.selectionSet).toMatchObject({ primary: 0, ranges: [{ anchor: 12, head: 12 }] });
+    expect(after.secondary.selectionSet).toEqual(captured.selectionSet); expect(after.document!.exports).toBe(0);
+    expect(after.primary.rows).toBeLessThan(40); expect(after.primary.readUnits).toBeLessThan(8000);
+});
+
 test("resize, font metrics and tall rows keep scaled vertical scrolling reachable", async ({ page }) => {
     await page.evaluate(() => window.viewportFixture.resize(480, 240, "100px"));
     await expect.poll(() => page.evaluate(() => window.viewportFixture.snapshot().primary.lineHeight)).toBe(100); await ready(page);

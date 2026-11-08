@@ -147,8 +147,17 @@ An edit may supply `selectionSet` or `selection`, with a live initiating view. E
 range and result set is validated before a multi-document transaction publishes. Undo/redo
 restore the initiating view's complete captured set and map other retained views independently.
 
-This is the headless foundation. Browser multiple-caret gestures, rendering and input routing
-remain implementation work; the existing browser adapters still operate on the primary range.
+Browser `captureView()` includes the immutable `selectionSet`. `restoreView()` restores it when
+present; legacy states without it restore a single range from `anchor`/`head`. With a set, those
+legacy fields are only a compatibility copy; the set determines the primary range. Hosts that
+retain mapped document views during detach must use the retained **whole set** when restoring
+cached scroll state. Restoring stale cached secondary ranges would overwrite detached edits.
+Viewport snapshots identify the complete set that was painted. Highlights intersect every range
+with bounded rows; the editing candidate paints visible secondary carets using its existing native
+row geometry ([native range rectangles](https://www.w3.org/TR/cssom-view/#extensions-to-the-range-interface)).
+Offscreen ranges create no DOM nodes or text reads. Native textareas project only
+the primary range. Multiple-caret creation gestures, all-range commands and input routing remain
+implementation work; these view APIs alone do not establish usable multiple-selection editing.
 The native text-control [selection API](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#textFieldSelection)
 supplies the primary input projection. The project model reuses its own mappings, transactions
 and history to represent the additional ranges without an editor/runtime dependency.

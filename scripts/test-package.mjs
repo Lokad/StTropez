@@ -200,6 +200,11 @@ try {
     assert.equal(selectionSets.changed, "XbcX"); assert.equal(selectionSets.restored, "abcd");
     assert.deepEqual(selectionSets.restoredSet, selectionSets.before); assert.equal(selectionSets.after.ranges.length, 2); assert.equal(selectionSets.after.primary, 1);
     assert.equal(selectionSets.alias, true); assert.equal(selectionSets.views, 0); assert.equal(selectionSets.leases, 0);
+    assert.equal(selectionSets.browserSelections.length, 3);
+    for (const state of selectionSets.browserSelections) {
+        assert.deepEqual(state.captured, selectionSets.before); assert.deepEqual(state.fullSet, selectionSets.before);
+        assert.equal(state.legacy.ranges.length, 1); assert.equal(state.legacy.ranges[0].anchor, 2); assert.equal(state.legacy.ranges[0].head, 2);
+    }
     await page.evaluate(() => window.consumer.replaceAll("packed"));
     await page.waitForFunction(() => window.consumer.findState().status === "ready" && window.consumer.findState().count === 0);
     assert.equal(await page.evaluate(() => window.consumer.text()), "edited packed package");

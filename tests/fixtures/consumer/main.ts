@@ -179,8 +179,18 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
         model.undo({ documentId: source.documentId, expectedRevision: 1 });
         const restored = model.document(source.documentId).buffer.slice(0, 4), restoredSet = view.getSnapshot().selectionSet;
         const alias = view.getSnapshot().selection === restoredSet.ranges[restoredSet.primary];
+        const tab = model.open({ kind: "text", documentId: source.documentId }, "sets"), container = document.createElement("div"); document.body.append(container);
+        const mounts = [mountTextEditor(container, model, tab, { view }), mountEditingCandidate(container, model, tab, { view }), mountTextViewport(container, model, tab, { view })];
+        const states = mounts.map(editor => editor.captureView());
+        const browserSelections = mounts.map((editor, index) => {
+            const state = states[index]!; view.setSelection(2, { anchor: 0, head: 0 });
+            editor.restoreView({ ...state, anchor: 0, head: 0 }); const fullSet = view.getSnapshot().selectionSet;
+            const { selectionSet: _, ...legacy } = state; editor.restoreView({ ...legacy, anchor: 2, head: 2 });
+            return { captured: state.selectionSet, fullSet, legacy: view.getSnapshot().selectionSet };
+        });
+        mounts.forEach(editor => editor.destroy()); container.remove(); model.close(tab);
         view.dispose(); model.releaseResource(source.id, true);
-        return { before, after, restoredSet, changed, restored, alias, views: model.diagnostics().views, leases: model.diagnostics().leases };
+        return { before, after, restoredSet, changed, restored, alias, browserSelections, views: model.diagnostics().views, leases: model.diagnostics().leases };
     },
     storage: () => {
         const imported = importText("a😀\r\nb", "lf"), original = TextBuffer.from(imported.text);

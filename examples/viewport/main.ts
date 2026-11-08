@@ -1,7 +1,7 @@
 import { Workspace } from "../../src/index.ts";
-import type { TextEdit } from "../../src/index.ts";
+import type { Selection, TextEdit } from "../../src/index.ts";
 import { mountTextViewport, mountTextEditor } from "../../src/browser/index.ts";
-import type { MountedEditor } from "../../src/browser/index.ts";
+import type { MountedEditor, ViewState } from "../../src/browser/index.ts";
 import { corpus, corpusIds } from "../../tests/fixtures/workloads.ts";
 import type { CorpusId } from "../../tests/fixtures/workloads.ts";
 import "./style.css";
@@ -42,6 +42,9 @@ pane("workload").addEventListener("change", event => load((event.currentTarget a
 const status = () => { const current = workspace.document(source.documentId); pane("status").textContent = `${current.buffer.lineCount.toLocaleString()} lines · Revision ${current.revision}`; };
 const unsubscribe = workspace.observeDocument(source.documentId).subscribe(status); status();
 const fixture = { ready: true, load, edit, background,
+    select: (which: "primary" | "secondary", ranges: readonly Selection[], primary = 0) => views[which].view.setSelections(workspace.document(source.documentId).revision, ranges, primary),
+    capture: (which: "primary" | "secondary") => views[which].captureView(),
+    restore: (which: "primary" | "secondary", state: ViewState) => views[which].restoreView(state),
     replacePrimary: () => workspace.replace(primaryTab, { kind: "panel", resourceId: progress.id, panelType: "progress" }),
     scroll: (which: "primary" | "secondary", top: number, left: number) => views[which].scrollTo({ top, left }),
     reveal: (which: "primary" | "secondary", offset: number) => views[which].revealOffset(offset),

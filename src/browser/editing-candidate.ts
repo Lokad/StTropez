@@ -28,7 +28,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     try { viewport = mountTextViewport(host, workspace, tabId, { ...options, view }); }
     catch (error) { if (!options.view) view.dispose(); throw error; }
     const root = viewport.element;
-    const owner = host.ownerDocument, win = owner.defaultView!, input = owner.createElement("textarea"), caret = owner.createElement("div"), help = owner.createElement("span");
+    const owner = host.ownerDocument, win = owner.defaultView!, input = owner.createElement("textarea"), caret = owner.createElement("div"), secondaryCarets = owner.createElement("div"), help = owner.createElement("span");
+    const caretNodes: HTMLDivElement[] = [];
     const scope = ++nextMount, listeners = new AbortController();
     root.classList.add("st-editing-candidate"); root.tabIndex = -1;
     root.querySelector(".st-viewport-layer")!.setAttribute("aria-hidden", "true");
@@ -38,7 +39,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     input.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
     input.setAttribute("aria-multiline", "true"); input.setAttribute("autocapitalize", "off");
     help.id = `st-input-help-${scope}`; help.className = "st-input-help"; help.textContent = "Tab inserts indentation. Press Escape, then Tab or Shift+Tab to leave the editor.";
-    input.setAttribute("aria-describedby", help.id); caret.className = "st-input-caret"; caret.setAttribute("aria-hidden", "true"); root.append(input, caret, help);
+    input.setAttribute("aria-describedby", help.id); caret.className = "st-input-caret"; caret.setAttribute("aria-hidden", "true");
+    secondaryCarets.setAttribute("aria-hidden", "true"); root.append(input, caret, secondaryCarets, help);
     let revision = workspace.document(documentId).revision, context: InputContext = inputContext(workspace.document(documentId).buffer, view.getSnapshot().selection);
     let disposed = false, composing = false, selecting = false, committing = false, escaped = false;
     let frame: number | undefined, commits = 0, conflicts = 0, serial = 0, preferredX: number | undefined, inputEvents = 0, lastInputMs = 0;
@@ -71,7 +73,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     const scheduleCaret = () => { if (!disposed && frame === undefined) frame = win.requestAnimationFrame(positionCaret); };
     function positionCaret(): void {
         frame = undefined; if (disposed) return;
-        const selected = view.getSnapshot().selection, point = viewport.coordsAt(selected.head, selected.headAffinity), rectangle = root.getBoundingClientRect();
+        const { selection: selected, selectionSet } = view.getSnapshot(), point = viewport.coordsAt(selected.head, selected.headAffinity), rectangle = root.getBoundingClientRect();
         const visible = point && point.left >= rectangle.left && point.left < rectangle.left + root.clientWidth
             && point.top + point.height > rectangle.top && point.top < rectangle.top + root.clientHeight;
         caret.hidden = !visible || selected.anchor !== selected.head || composing || owner.activeElement !== input;
@@ -79,6 +81,29 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const left = Math.max(0, Math.min(root.clientWidth - 2, (point?.left ?? rectangle.left) - rectangle.left));
         const top = Math.max(0, Math.min(root.clientHeight - 24, (point?.top ?? rectangle.top) - rectangle.top));
         for (const element of [input, caret]) { element.style.left = `${root.scrollLeft + left}px`; element.style.top = `${root.scrollTop + top}px`; element.style.height = `${point?.height ?? viewport.snapshot().lineHeight}px`; }
+        const state = viewport.snapshot(), buffer = workspace.observeDocument(documentId).getSnapshot()?.buffer;
+        const points = [];
+        if (!composing && owner.activeElement === input && buffer && state.selectionSet === selectionSet && state.lastLine > state.firstLine) {
+            const from = buffer.offsetAt(state.firstLine), to = state.lastLine < buffer.lineCount ? buffer.offsetAt(state.lastLine) : buffer.length;
+            // Heads of normalized disjoint ranges are ordered. Measure only visible candidates,
+            // using the same bounded native row geometry as the primary caret.
+            let low = 0, high = selectionSet.ranges.length;
+            while (low < high) { const middle = (low + high) >>> 1;
+                if (selectionSet.ranges[middle]!.head < from) low = middle + 1; else high = middle; }
+            for (let index = low; index < selectionSet.ranges.length; index++) {
+                const range = selectionSet.ranges[index]!; if (range.head > to) break;
+                if (index === selectionSet.primary || range.anchor !== range.head) continue;
+                const at = viewport.coordsAt(range.head, range.headAffinity);
+                if (at && at.left >= rectangle.left && at.left < rectangle.left + root.clientWidth
+                    && at.top + at.height > rectangle.top && at.top < rectangle.top + root.clientHeight) points.push(at);
+            }
+        }
+        while (caretNodes.length > points.length) caretNodes.pop()!.remove();
+        points.forEach((at, index) => {
+            let node = caretNodes[index];
+            if (!node) { node = owner.createElement("div"); node.className = "st-input-secondary-caret"; caretNodes.push(node); secondaryCarets.append(node); }
+            node.style.left = `${root.scrollLeft + at.left - rectangle.left}px`; node.style.top = `${root.scrollTop + at.top - rectangle.top}px`; node.style.height = `${at.height}px`;
+        });
     }
     function refresh(): void {
         if (disposed || selecting || committing) return;
@@ -492,6 +517,6 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             composing = false; stopDrag();
             if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
             cancelCommandTimers();
-            listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); input.value = ""; viewport.destroy(); if (!options.view) view.dispose();
+            listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); input.value = ""; caretNodes.length = 0; secondaryCarets.replaceChildren(); viewport.destroy(); if (!options.view) view.dispose();
         } });
 }

@@ -1,4 +1,4 @@
-import type { DocumentId, DocumentSnapshot, DocumentView, Selection, TabId, TextBuffer, Workspace } from "../index.ts";
+import type { DocumentId, DocumentSnapshot, DocumentView, Selection, SelectionSet, TabId, TextBuffer, Workspace } from "../index.ts";
 import type { ViewState } from "./index.ts";
 import { scrollAxis } from "./scroll.ts";
 import type { ScrollAxis } from "./scroll.ts";
@@ -6,7 +6,7 @@ import { rowGeometry } from "./text-geometry.ts";
 import type { CaretRectangle } from "./text-geometry.ts";
 import type { Affinity } from "../index.ts";
 
-export type ViewportSnapshot = Readonly<{ revision: number | null; selection: Selection | null; renders: number; firstLine: number; lastLine: number;
+export type ViewportSnapshot = Readonly<{ revision: number | null; selection: Selection | null; selectionSet: SelectionSet | null; renders: number; firstLine: number; lastLine: number;
     rows: number; partialRows: number; textUnits: number; readUnits: number; lastRenderMs: number; scrollTop: number; scrollLeft: number; width: number; height: number;
     lineHeight: number; columnWidth: number; verticalExtent: number; horizontalExtent: number;
     physicalHeight: number; physicalWidth: number; pending: boolean; disposed: boolean }>;
@@ -62,6 +62,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     let top = 0, left = 0, width = 0, height = 0, lineHeight = 22.4, columnWidth = 8.4;
     let x = scrollAxis(0, 0), y = scrollAxis(0, 0), renderedRevision: number | null = null;
     let renderedSelection: Selection | null = null;
+    let renderedSelectionSet: SelectionSet | null = null;
     let renders = 0, firstLine = 0, lastLine = 0, partialRows = 0, textUnits = 0, readUnits = 0, lastRenderMs = 0;
     let anchor: Readonly<{ revision: number; offset: number; topRemainder: number; leftRemainder: number }> | undefined;
     let reveal: Readonly<{ revision: number; offset: number; horizontal: "center" | "nearest"; vertical: "center" | "nearest"; affinity: Affinity }> | undefined;
@@ -146,7 +147,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             layer.replaceChildren(); rows.clear(); geometries.clear(); measuredWidth = 0; measuredRevision = null; spacer.style.width = "0px"; spacer.style.height = "0px";
             layer.style.transform = "none"; layer.style.width = "0px"; layer.style.height = "0px";
             root.setAttribute("aria-disabled", "true"); root.setAttribute("aria-busy", String(resource.getSnapshot().state === "loading"));
-            previous = undefined; anchor = undefined; renderedRevision = null; renderedSelection = null; partialRows = 0; textUnits = 0; readUnits = 0; firstLine = 0; lastLine = 0; return;
+            previous = undefined; anchor = undefined; renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; firstLine = 0; lastLine = 0; return;
         }
         if (measuredRevision !== document.revision) { measuredWidth = 0; measuredRevision = document.revision; }
         if (anchor?.revision === document.revision) {
@@ -165,7 +166,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         top = position(y, top); left = position(x, left); readUnits = 0;
         firstLine = Math.min(document.buffer.lineCount - 1, Math.max(0, Math.floor((top - padding) / lineHeight) - overscanLines));
         lastLine = Math.min(document.buffer.lineCount, Math.ceil((top + height) / lineHeight) + overscanLines);
-        const selected = view.getSnapshot().selection, low = Math.min(selected.anchor, selected.head), high = Math.max(selected.anchor, selected.head);
+        const { selection: selected, selectionSet } = view.getSnapshot();
         const next: Row[] = []; for (let line = firstLine; line < lastLine; line++) next.push(row(document.buffer, line));
         partialRows = next.filter(row => !row.complete).length;
         spacer.style.width = `${x.physicalExtent}px`; spacer.style.height = `${y.physicalExtent}px`;
@@ -183,35 +184,44 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
                 && placement.from === item.from && placement.to === item.to && placement.left === left ? placement.shift : 0;
             element.style.transform = `translate(${item.left + shift}px, ${padding + item.line * lineHeight - top}px)`;
             element.style.height = `${lineHeight}px`;
-            const from = Math.max(item.from, Math.min(item.to, low)), to = Math.max(from, Math.min(item.to, high));
+            // Normalized ranges are ordered and disjoint. Seek directly to this bounded row;
+            // offscreen ranges add no text reads, decoration boundaries or DOM nodes.
+            let low = 0, high = selectionSet.ranges.length;
+            while (low < high) { const middle = (low + high) >>> 1, range = selectionSet.ranges[middle]!;
+                if (Math.max(range.anchor, range.head) <= item.from) low = middle + 1; else high = middle; }
+            const selections: { from: number; to: number }[] = [];
+            for (let index = low; index < selectionSet.ranges.length; index++) {
+                const range = selectionSet.ranges[index]!, from = Math.max(item.from, Math.min(range.anchor, range.head)), to = Math.min(item.to, Math.max(range.anchor, range.head));
+                if (from >= item.to) break;
+                if (from < to) selections.push({ from, to });
+            }
             const presented = { documentId, revision: document.revision, line: item.line, lineStart: document.buffer.offsetAt(item.line), from: item.from, to: item.to, text: item.text };
             const lineClass = options.lineClass?.(presented);
             element.className = "st-viewport-row" + (lineClass && /^[a-zA-Z][\w-]{0,63}$/.test(lineClass) ? ` ${lineClass}` : "");
             const decorations = options.decorate?.(presented);
-            if (decorations?.length) {
-                const ranges = decorations.filter(range => Number.isSafeInteger(range.from) && Number.isSafeInteger(range.to) && range.from >= 0 && range.to <= document.buffer.length && range.from < range.to
+            if (decorations?.length || selections.length) {
+                const ranges = (decorations ?? []).filter(range => Number.isSafeInteger(range.from) && Number.isSafeInteger(range.to) && range.from >= 0 && range.to <= document.buffer.length && range.from < range.to
                     && range.from < item.to && range.to > item.from && /^[a-zA-Z][\w-]{0,63}$/.test(range.className));
                 const boundaries = new Set([item.from, item.to]);
-                if (from < to) { boundaries.add(from); boundaries.add(to); }
+                for (const range of selections) { boundaries.add(range.from); boundaries.add(range.to); }
                 for (const range of ranges) { boundaries.add(Math.max(item.from, range.from)); boundaries.add(Math.min(item.to, range.to)); }
                 const offsets = [...boundaries].sort((a, b) => a - b), children: RowPart[] = [];
+                let selectedIndex = 0;
                 for (let index = 0; index + 1 < offsets.length; index++) {
                     const start = offsets[index]!, end = offsets[index + 1]!, classes = ranges.filter(range => range.from < end && range.to > start).map(range => range.className);
-                    if (start >= from && end <= to && from < to) classes.push("st-viewport-selected");
+                    while (selectedIndex < selections.length && selections[selectedIndex]!.to <= start) selectedIndex++;
+                    if (selections[selectedIndex] && start >= selections[selectedIndex]!.from && end <= selections[selectedIndex]!.to) classes.push("st-viewport-selected");
                     const text = item.text.slice(start - item.from, end - item.from);
                     children.push({ text, className: classes.join(" ") });
                 }
                 renderRowChildren(element, children);
-            } else if (from < to) {
-                renderRowChildren(element, [{ text: item.text.slice(0, from - item.from), className: "" },
-                    { text: item.text.slice(from - item.from, to - item.from), className: "st-viewport-selected" }, { text: item.text.slice(to - item.from), className: "" }]);
             } else renderRowChildren(element, [{ text: item.text, className: "" }]);
             textUnits += item.text.length;
         }
         for (const [line, element] of rows) if (line < firstLine || line >= lastLine) { element.remove(); rows.delete(line); }
         next.forEach((item, index) => { const element = rows.get(item.line)!; if (layer.children.item(index) !== element) layer.insertBefore(element, layer.children.item(index)); });
         root.removeAttribute("aria-disabled"); root.setAttribute("aria-busy", "false"); root.dataset.revision = String(document.revision);
-        renderedRevision = document.revision; renderedSelection = selected; previous = document; renders++; geometries.clear();
+        renderedRevision = document.revision; renderedSelection = selected; renderedSelectionSet = selectionSet; previous = document; renders++; geometries.clear();
         // A bounded batch of native shaping measurements follows the row writes. Extent corrections
         // are scheduled for the next frame, without alternating reads and writes for each row.
         const measured = Math.max(0, ...[...rows.values()].filter(element => element.dataset.complete === "true").map(element => element.getBoundingClientRect().width));
@@ -302,14 +312,17 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         },
         flush,
         scrollTo: setScroll,
-        captureView: () => Object.freeze({ ...view.getSnapshot().selection, scrollTop: top, scrollLeft: left,
-            ...(horizontalAnchor ? { horizontalAnchor: Object.freeze({ ...horizontalAnchor }) } : {}) }),
+        captureView: () => { const { selection, selectionSet } = view.getSnapshot();
+            return Object.freeze({ ...selection, selectionSet, scrollTop: top, scrollLeft: left,
+                ...(horizontalAnchor ? { horizontalAnchor: Object.freeze({ ...horizontalAnchor }) } : {}) }); },
         restoreView: (state: ViewState) => {
             if (disposed) return; const document = workspace.document(documentId), value = state.horizontalAnchor;
             if (value && (!Number.isSafeInteger(value.revision) || value.revision < 0 || !Number.isSafeInteger(value.offset) || value.offset < 0
                 || !Number.isFinite(value.left) || value.left < 0 || value.affinity !== "before" && value.affinity !== "after")) throw new RangeError("Invalid horizontal view anchor.");
             if (value?.revision === document.revision && value.offset > document.buffer.length) throw new RangeError("Horizontal view anchor is outside the document.");
-            view.setSelection(document.revision, state); setScroll({ top: state.scrollTop, left: state.scrollLeft });
+            if (state.selectionSet) view.setSelections(document.revision, state.selectionSet.ranges, state.selectionSet.primary);
+            else view.setSelection(document.revision, state);
+            setScroll({ top: state.scrollTop, left: state.scrollLeft });
             if (value?.revision === document.revision) horizontalAnchor = { ...value };
         },
         revealOffset: (offset: number, options: RevealOptions = {}) => {
@@ -319,13 +332,13 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             horizontalAnchor = undefined; fragmentPlacement = undefined;
             reveal = { revision: document.revision, offset, horizontal, vertical, affinity }; schedule();
         },
-        snapshot: () => Object.freeze({ revision: renderedRevision, selection: renderedSelection, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, lastRenderMs,
+        snapshot: () => Object.freeze({ revision: renderedRevision, selection: renderedSelection, selectionSet: renderedSelectionSet, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, lastRenderMs,
             scrollTop: top, scrollLeft: left, width, height, lineHeight, columnWidth, verticalExtent: y.extent, horizontalExtent: x.extent,
             physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent, pending: frame !== undefined, disposed }),
         destroy: () => {
             if (disposed) return; disposed = true; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
-            renderedRevision = null; renderedSelection = null; partialRows = 0; textUnits = 0; readUnits = 0; layer.replaceChildren(); root.replaceChildren(); root.remove();
+            renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; layer.replaceChildren(); root.replaceChildren(); root.remove();
             if (!options.view) view.dispose();
         } });
 }

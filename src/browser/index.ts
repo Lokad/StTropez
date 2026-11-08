@@ -1,5 +1,5 @@
 import { applyTextEdits, exportText, PositionMap, textDifference } from "../index.ts";
-import type { Affinity, DocumentSnapshot, DocumentView, EditKind, PositionMapping, Selection, TextBuffer, Workspace, TabId } from "../index.ts";
+import type { Affinity, DocumentSnapshot, DocumentView, EditKind, PositionMapping, Selection, SelectionSet, TextBuffer, Workspace, TabId } from "../index.ts";
 import { captureNativeInsertion, resolveNativeInsertion } from "./input-target.ts";
 import type { NativeInsertionTarget } from "./input-target.ts";
 export { mountTextViewport } from "./viewport.ts";
@@ -12,6 +12,7 @@ export { mountTextComparison } from "./comparison.ts";
 export type { TextComparison } from "./comparison.ts";
 
 export type ViewState = Selection & Readonly<{ scrollTop: number; scrollLeft: number;
+    selectionSet?: SelectionSet;
     horizontalAnchor?: Readonly<{ revision: number; offset: number; affinity: Affinity; left: number }> }>;
 export type MountedEditor = Readonly<{ element: HTMLTextAreaElement; view: DocumentView;
     captureView: () => ViewState; restoreView: (state: ViewState) => void; destroy: () => void }>;
@@ -149,9 +150,12 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
         resource.metadata.subscribe(refresh), workspace.tabState.subscribe(refresh)];
     refresh();
     return Object.freeze({ element: input, view,
-        captureView: () => { syncSelection(); return Object.freeze({ ...view.getSnapshot().selection, scrollTop: input.scrollTop, scrollLeft: input.scrollLeft }); },
+        captureView: () => { syncSelection(); const { selection, selectionSet } = view.getSnapshot();
+            return Object.freeze({ ...selection, selectionSet, scrollTop: input.scrollTop, scrollLeft: input.scrollLeft }); },
         restoreView: (state: ViewState) => {
-            view.setSelection(revision, state); refresh(); input.scrollTop = state.scrollTop; input.scrollLeft = state.scrollLeft;
+            if (state.selectionSet) view.setSelections(revision, state.selectionSet.ranges, state.selectionSet.primary);
+            else view.setSelection(revision, state);
+            refresh(); input.scrollTop = state.scrollTop; input.scrollLeft = state.scrollLeft;
         }, destroy: () => {
             if (destroyed) return; syncSelection(); destroyed = true; insertion = undefined;
             if (composing && input.value !== rendered.text) conflict("composition-detached");

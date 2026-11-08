@@ -105,6 +105,10 @@ export class ViewBindings {
     selectSource(id: "primary" | "secondary", revision: number, selection: Selection): boolean {
         return this.mounted.get(id)?.editor.view.setSelection(revision, selection) ?? false;
     }
+    selectSourceSet(id: "primary" | "secondary" | "comparison", revision: number, ranges: readonly Selection[], primary = 0): boolean {
+        const view = id === "comparison" ? this.review?.working.view : this.mounted.get(id)?.editor.view;
+        return view?.setSelections(revision, ranges, primary) ?? false;
+    }
     constructor(controller: HostController, editor: HostEditor = "native") {
         this.controller = controller; this.editor = editor; this.language = new HostLanguageTools(controller.workspace);
         this.primary = this.ref("primary", "Primary source");
@@ -135,11 +139,11 @@ export class ViewBindings {
         states.set(documentId, state); this.states.set(id, states);
     }
     private restoreState(state: ViewState, view: DocumentView): ViewState {
-        const selection = view.getSnapshot().selection, at = state.horizontalAnchor;
+        const { selection, selectionSet } = view.getSnapshot(), at = state.horizontalAnchor;
         // A caret anchor can follow the host-owned selection mapped during detach.
         // Other viewport anchors retain their original revision and validation rules.
         const followsCaret = at && at.offset === state.head && at.affinity === (state.headAffinity ?? "after");
-        return { ...state, ...selection, ...(followsCaret ? { horizontalAnchor: { ...at,
+        return { ...state, ...selection, selectionSet, ...(followsCaret ? { horizontalAnchor: { ...at,
             revision: this.controller.workspace.document(view.documentId).revision,
             offset: selection.head, affinity: selection.headAffinity ?? "after" } } : {}) };
     }
@@ -184,11 +188,11 @@ export class ViewBindings {
             referenceIsWorkingBuffer: comparison.baseline !== null && comparison.baseline.buffer === comparison.working?.buffer,
             progress: comparison.progress && { work: comparison.progress.work, readUnits: comparison.progress.readUnits,
                 lineComparisons: comparison.progress.lineComparisons, lineEdits: comparison.progress.lineEdits },
-            viewId: this.review!.working.view.id, selection: this.review!.working.view.getSnapshot().selection,
+            viewId: this.review!.working.view.id, selection: this.review!.working.view.getSnapshot().selection, selectionSet: this.review!.working.view.getSnapshot().selectionSet,
             baseline: comparison.baseline && { version: comparison.baseline.version, epoch: comparison.baseline.epoch, length: comparison.baseline.buffer.length },
             hunks: comparison.hunks.length, pending: this.reviewTickets.map(ticket => ({ kind: ticket.kind, revision: ticket.capture.working.revision, current: ticket.isCurrent() })),
             result: this.reviewResult, work: this.review!.snapshot(), input: this.review!.working.snapshot(),
             workingViewport: this.review!.working.viewport.snapshot(), referenceViewport: this.review!.referenceViewport()?.snapshot() } : null,
         views: [...this.mounted].map(([id, { editor, documentId }]) => ({ id, documentId, viewId: editor.view.id,
-            selection: editor.view.getSnapshot().selection, focused: editor.element.ownerDocument.activeElement === editor.element, metrics: editor.metrics() })) }; }
+            selection: editor.view.getSnapshot().selection, selectionSet: editor.view.getSnapshot().selectionSet, focused: editor.element.ownerDocument.activeElement === editor.element, metrics: editor.metrics() })) }; }
 }
