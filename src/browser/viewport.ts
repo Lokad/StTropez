@@ -7,7 +7,7 @@ import type { CaretRectangle } from "./text-geometry.ts";
 import type { Affinity } from "../index.ts";
 
 export type ViewportSnapshot = Readonly<{ revision: number | null; selection: Selection | null; selectionSet: SelectionSet | null; renders: number; firstLine: number; lastLine: number;
-    rows: number; partialRows: number; textUnits: number; readUnits: number; navigationReadUnits: number; navigationRows: number; lastRenderMs: number; scrollTop: number; scrollLeft: number; width: number; height: number;
+    rows: number; partialRows: number; textUnits: number; readUnits: number; navigationReadUnits: number; navigationRows: number; navigationBatches: number; navigationPreparedRows: number; maxNavigationBatchRows: number; lastRenderMs: number; scrollTop: number; scrollLeft: number; width: number; height: number;
     lineHeight: number; columnWidth: number; verticalExtent: number; horizontalExtent: number;
     physicalHeight: number; physicalWidth: number; pending: boolean; disposed: boolean }>;
 export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentView;
@@ -19,6 +19,7 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     collapseVisual: (from: number, to: number, direction: -1 | 1, reveal?: boolean) => CaretRectangle | undefined;
     columnAt: (offset: number, affinity?: Affinity) => number | undefined;
     caretAtColumn: (line: number, column: number) => Readonly<Pick<CaretRectangle, "offset" | "affinity" | "revision">> | undefined;
+    prepareNavigationRows: (lines: readonly number[]) => () => void;
     flush: () => void;
     invalidate: () => void;
     revealOffset: (offset: number, options?: RevealOptions) => void; snapshot: () => ViewportSnapshot; destroy: () => void }>;
@@ -67,10 +68,13 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     let renderedSelection: Selection | null = null;
     let renderedSelectionSet: SelectionSet | null = null;
     let renders = 0, firstLine = 0, lastLine = 0, partialRows = 0, textUnits = 0, readUnits = 0, lastRenderMs = 0;
-    let navigationReadUnits = 0, navigationRows = 0;
+    let navigationReadUnits = 0, navigationRows = 0, navigationBatches = 0, maxNavigationBatchRows = 0;
     const commandMeasure = owner.createElement("div"), commandRow = owner.createElement("div");
     commandMeasure.className = "st-viewport-command-measure"; commandMeasure.setAttribute("aria-hidden", "true"); commandMeasure.append(commandRow);
     let commandGeometry: ReturnType<typeof rowGeometry> | undefined;
+    type CommandRow = { item: Row; element: HTMLDivElement; geometry?: ReturnType<typeof rowGeometry> };
+    let preparedRows: Readonly<{ revision: number; selectionSet: SelectionSet; element: HTMLDivElement; rows: Map<number, CommandRow> }> | undefined;
+    const clearPreparedRows = () => { if (preparedRows) { preparedRows.element.remove(); preparedRows.element.replaceChildren(); preparedRows.rows.clear(); preparedRows = undefined; } };
     let anchor: Readonly<{ revision: number; offset: number; topRemainder: number; leftRemainder: number }> | undefined;
     let reveal: Readonly<{ revision: number; offset: number; horizontal: "center" | "nearest"; vertical: "center" | "nearest"; affinity: Affinity }> | undefined;
     let horizontalAnchor: ViewState["horizontalAnchor"];
@@ -99,6 +103,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         schedule();
     };
     const documentChanged = () => {
+        clearPreparedRows();
         const current = workspace.observeDocument(documentId).getSnapshot();
         if (current && previous && current.revision !== previous.revision) {
             if (!anchor) {
@@ -166,6 +171,46 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     type MeasuredRow = Readonly<{ complete: boolean; flow: -1 | 1; point: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
         visual: (offset: number, affinity: Affinity, direction: -1 | 1) => CaretRectangle | undefined;
         edge: (direction: -1 | 1, low?: number, high?: number) => CaretRectangle; nearest: (column: number) => CaretRectangle }>;
+    function measuredRow(entry: CommandRow, revision: number, rectangle: DOMRect): MeasuredRow {
+        const { item, element } = entry, start = workspace.document(documentId).buffer.offsetAt(item.line);
+        const value = entry.geometry ??= rowGeometry(element, 0, revision, lineHeight), bounds = element.getBoundingClientRect(), origin = padding + (item.from - start) * columnWidth;
+        const mapped = (point: CaretRectangle): CaretRectangle => Object.freeze({ ...point, offset: point.offset + item.from,
+            left: rectangle.left + origin + point.left - bounds.left - left, top: rectangle.top + padding + item.line * lineHeight - top + point.top - bounds.top });
+        const optional = (point: CaretRectangle | undefined) => point && mapped(point);
+        return { complete: item.complete, flow: win.getComputedStyle(element).direction === "rtl" ? -1 : 1,
+            point: (offset, affinity) => optional(value.point(offset - item.from, affinity)),
+            visual: (offset, affinity, direction) => optional(value.visual(offset - item.from, affinity, direction)),
+            edge: (direction, low = item.from, high = item.to) => mapped(value.edge(direction, low - item.from, high - item.from)),
+            nearest: column => mapped(value.nearest(bounds.left + column - origin)) };
+    }
+    function prepareNavigationRows(lines: readonly number[]): () => void {
+        clearPreparedRows(); const document = workspace.observeDocument(documentId).getSnapshot();
+        if (disposed || !workspace.resolveTab(target) || document?.revision !== renderedRevision) return () => {};
+        if (lines.length > 64 || lines.some(line => !Number.isSafeInteger(line) || line < 0 || line >= document.buffer.lineCount)) throw new RangeError("Invalid navigation row batch.");
+        const element = owner.createElement("div"), batchRows = new Map<number, CommandRow>(), selectionSet = view.getSnapshot().selectionSet;
+        element.className = "st-viewport-command-measure"; element.setAttribute("aria-hidden", "true");
+        for (const line of lines) {
+            if (batchRows.has(line) || rows.get(line)?.dataset.complete === "true") continue;
+            const buffer = document.buffer, start = buffer.offsetAt(line), end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
+            // Complete short rows have a known origin. Contextual windows keep the existing fallback.
+            if (end - start > 514) continue;
+            const item = row(buffer, line, left, true); if (!item.complete) continue;
+            const node = owner.createElement("div"); paintRow(node, item, document, selectionSet); node.style.height = `${lineHeight}px`;
+            element.append(node); batchRows.set(line, { item, element: node });
+        }
+        // Identical painted rows already reuse the single-row probe's native geometry. Keep
+        // that path instead of measuring separate copies of repeated text in a batch.
+        const keys = new Map<CommandRow, string>(), counts = new Map<string, number>();
+        for (const entry of batchRows.values()) { const key = entry.element.className + "\0" + entry.element.innerHTML;
+            keys.set(entry, key); counts.set(key, (counts.get(key) ?? 0) + 1); }
+        for (const [line, entry] of batchRows) if (counts.get(keys.get(entry)!)! > 1) { entry.element.remove(); batchRows.delete(line); }
+        if (!batchRows.size) return () => {};
+        // All writes precede native geometry reads. Keep the bounded batch across yielding turns;
+        // the command owns its release, while document changes and destruction release eagerly.
+        const batch = { revision: document.revision, selectionSet, element, rows: batchRows }; preparedRows = batch;
+        root.append(element); navigationRows += batchRows.size; navigationBatches++; maxNavigationBatchRows = Math.max(maxNavigationBatchRows, batchRows.size);
+        return () => { if (preparedRows === batch) clearPreparedRows(); };
+    }
     function withRow<T>(line: number, scrollLeft: number, offset: number | undefined, complete: boolean, work: (row: MeasuredRow) => T): T | undefined {
         const document = workspace.observeDocument(documentId).getSnapshot();
         if (disposed || !workspace.resolveTab(target) || document?.revision !== renderedRevision) return;
@@ -176,6 +221,8 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             return work({ ...value, complete: existing.dataset.complete === "true", flow: win.getComputedStyle(existing).direction === "rtl" ? -1 : 1,
                 nearest: column => value.nearest(rectangle.left + column - left) });
         }
+        if (preparedRows && (preparedRows.revision !== document.revision || preparedRows.selectionSet !== view.getSnapshot().selectionSet)) clearPreparedRows();
+        const prepared = preparedRows?.rows.get(line); if (prepared) return work(measuredRow(prepared, document.revision, rectangle));
         const buffer = document.buffer, start = buffer.offsetAt(line), end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
         if (complete && end - start > 514) return;
         const item = row(buffer, line, scrollLeft, true); if (complete && !item.complete) return;
@@ -183,17 +230,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         commandRow.style.height = `${lineHeight}px`; root.append(commandMeasure); navigationRows++;
         try {
             if (changed || !commandGeometry) commandGeometry = rowGeometry(commandRow, 0, document.revision, lineHeight);
-            const value = commandGeometry, bounds = commandRow.getBoundingClientRect(), origin = padding + (item.from - start) * columnWidth;
-            const mapped = (point: CaretRectangle): CaretRectangle => Object.freeze({ ...point, offset: point.offset + item.from,
-                left: rectangle.left + origin + point.left - bounds.left - left, top: rectangle.top + padding + line * lineHeight - top + point.top - bounds.top });
-            const optional = (point: CaretRectangle | undefined) => point && mapped(point);
-            // Only one bounded row is attached during this synchronous callback. Equal rendered
-            // parts can reuse the existing native geometry; no scroll/reveal or model write occurs.
-            return work({ complete: item.complete, flow: win.getComputedStyle(commandRow).direction === "rtl" ? -1 : 1,
-                point: (offset, affinity) => optional(value.point(offset - item.from, affinity)),
-                visual: (offset, affinity, direction) => optional(value.visual(offset - item.from, affinity, direction)),
-                edge: (direction, low = item.from, high = item.to) => mapped(value.edge(direction, low - item.from, high - item.from)),
-                nearest: column => mapped(value.nearest(bounds.left + column - origin)) });
+            return work(measuredRow({ item, element: commandRow, geometry: commandGeometry }, document.revision, rectangle));
         } finally { commandMeasure.remove(); }
     }
     const rowForOffset = <T>(offset: number, revealRow: boolean, work: (row: MeasuredRow) => T): T | undefined => {
@@ -322,6 +359,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     const subscriptions = [workspace.observeDocument(documentId).subscribe(documentChanged), view.subscribe(schedule), resource.metadata.subscribe(schedule), workspace.tabState.subscribe(schedule)];
     schedule();
     return Object.freeze({ element: root, view,
+        prepareNavigationRows,
         invalidate: schedule,
         coordsAt: coordinates,
         hitTest: (clientX: number, clientY: number) => {
@@ -382,13 +420,14 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             horizontalAnchor = undefined; fragmentPlacement = undefined;
             reveal = { revision: document.revision, offset, horizontal, vertical, affinity }; schedule();
         },
-        snapshot: () => Object.freeze({ revision: renderedRevision, selection: renderedSelection, selectionSet: renderedSelectionSet, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, navigationReadUnits, navigationRows, lastRenderMs,
+        snapshot: () => Object.freeze({ revision: renderedRevision, selection: renderedSelection, selectionSet: renderedSelectionSet, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, navigationReadUnits, navigationRows, navigationBatches, navigationPreparedRows: preparedRows?.rows.size ?? 0, maxNavigationBatchRows, lastRenderMs,
             scrollTop: top, scrollLeft: left, width, height, lineHeight, columnWidth, verticalExtent: y.extent, horizontalExtent: x.extent,
             physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent, pending: frame !== undefined, disposed }),
         destroy: () => {
             if (disposed) return; disposed = true; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
-            commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove();
+            commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove(); clearPreparedRows();
+            navigationBatches = 0; maxNavigationBatchRows = 0;
             renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; navigationReadUnits = 0; navigationRows = 0; layer.replaceChildren(); root.replaceChildren(); root.remove();
             if (!options.view) view.dispose();
         } });

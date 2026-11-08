@@ -123,28 +123,38 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
 
 for (const host of ["plain", "react"]) test(`${host} 1024-range navigation yields atomically and expires captured work`, async ({ page }) => {
     test.setTimeout(90000);
-    const row = "0123456789", text = Array(100000).fill(row).join("\r\n"), ranges = Array.from({ length: 1024 }, (_, index) => ({ anchor: index * 80 * 12 + 4, head: index * 80 * 12 + 4 }));
+    const text = Array.from({ length: 100000 }, (_, index) => String(index).padStart(6, "0") + "6789").join("\r\n"), ranges = Array.from({ length: 1024 }, (_, index) => ({ anchor: index * 80 * 12 + 4, head: index * 80 * 12 + 4 }));
     await mount(page, host, text); await select(page, ranges);
     const before = await snapshot(page), began = before.bindings.views.find(v => v.id === "primary")!.metrics!.viewport;
-    const pending = await input(page).evaluate(node => { node.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })); const s = window.hostFixture.snapshot(); return { pending: s.bindings.views.find(v => v.id === "primary")!.metrics!.pendingGrapheme, ranges: s.bindings.views.find(v => v.id === "primary")!.selectionSet.ranges }; });
-    expect(pending.pending).toBe(true); expect(coords(pending.ranges)).toEqual(ranges); await ready(page);
+    const pending = await input(page).evaluate(node => { node.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })); const v = window.hostFixture.snapshot().bindings.views.find(v => v.id === "primary")!; return { pending: v.metrics!.pendingGrapheme, preparation: v.metrics!.navigationPreparationMs, reads: v.metrics!.viewport.navigationReadUnits, ranges: v.selectionSet.ranges }; });
+    expect(pending.pending).toBe(true); expect(pending.preparation).toBe(0); expect(pending.reads).toBe(began.navigationReadUnits); expect(coords(pending.ranges)).toEqual(ranges); await ready(page);
     const after = await snapshot(page), state = after.bindings.views.find(v => v.id === "primary")!;
     expect(coords(state.selectionSet.ranges)).toEqual(ranges.map(range => ({ anchor: range.anchor + 12, head: range.head + 12 })));
     expect(state.metrics!.viewport.navigationReadUnits - began.navigationReadUnits).toBeLessThan(60000); expect(state.metrics!.viewport.firstLine).toBeLessThan(100);
-    for (const change of ["selection", "revision", "layout", "remount"] as const) {
+    expect(state.metrics!.navigationTurns).toBeGreaterThan(1); expect(state.metrics!.navigationWorkMs).toBeGreaterThanOrEqual(state.metrics!.maxNavigationTurnMs);
+    expect(state.metrics!.viewport.navigationBatches).toBeGreaterThan(began.navigationBatches); expect(state.metrics!.viewport.maxNavigationBatchRows).toBeLessThanOrEqual(64); expect(state.metrics!.viewport.navigationPreparedRows).toBe(0);
+    for (const phase of ["queued", "prepared"] as const) for (const change of ["selection", "revision", "layout", "remount"] as const) {
         await select(page, ranges);
-        const capture = await input(page).evaluate((node, change) => {
-            const f = window.hostFixture; node.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true, cancelable: true }));
-            const pending = f.snapshot().bindings.views.find(v => v.id === "primary")!.metrics!.pendingGrapheme;
+        const capture = await input(page).evaluate((node, { change, phase }) => new Promise<{ pending: boolean; prepared: number; set: ReturnType<typeof window.hostFixture.snapshot>["bindings"]["views"][number]["selectionSet"] }>(resolve => {
+            const f = window.hostFixture, alter = () => {
+            const state = f.snapshot().bindings.views.find(v => v.id === "primary")!, pending = state.metrics!.pendingGrapheme, prepared = state.metrics!.viewport.navigationPreparedRows;
             if (change === "selection") f.selectSourceSet("primary", f.snapshot().source.revision, [rangesAt(4), rangesAt(24)], 0);
             else if (change === "revision") f.editSource(f.snapshot().source.revision, [{ from: 0, to: 0, insert: "!" }]);
             else if (change === "layout") (node.parentElement as HTMLElement).style.letterSpacing = "1px";
             else { f.unmount(); f.mount(); }
-            return { pending, set: f.snapshot().bindings.views.find(v => v.id === "primary")!.selectionSet };
+            resolve({ pending, prepared, set: f.snapshot().bindings.views.find(v => v.id === "primary")!.selectionSet });
+            };
+            if (phase === "prepared") { const observer = new MutationObserver(() => {
+                if (f.snapshot().bindings.views.find(v => v.id === "primary")!.metrics!.viewport.navigationPreparedRows) { observer.disconnect(); alter(); }
+            }); observer.observe(node.parentElement!, { childList: true }); }
+            node.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true, cancelable: true }));
+            if (phase === "queued") alter();
             function rangesAt(head: number) { return { anchor: head, head }; }
-        }, change);
+        }), { change, phase });
         expect(capture.pending).toBe(true); await ready(page);
+        expect(capture.prepared > 0).toBe(phase === "prepared");
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet).toEqual(capture.set);
+        expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.navigationPreparedRows).toBe(0);
     }
     expect((await snapshot(page)).source.exports).toBe(0); await page.evaluate(() => window.hostFixture.dispose());
     expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });

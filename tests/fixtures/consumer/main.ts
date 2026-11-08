@@ -37,8 +37,9 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
     multipleInput: () => { const { model, source, editor } = multipleInput!, document = model.document(source.documentId), state = editor.snapshot(), viewport = editor.viewport.snapshot();
         return { text: document.buffer.slice(0, document.buffer.length), selectionSet: editor.view.getSnapshot().selectionSet, revision: document.revision,
             pending: state.pendingCaret || state.pendingGrapheme || state.pendingWord || viewport.pending, commits: state.commits, exports: document.buffer.readMetrics().textExports }; },
-    multipleColumn: (offset: number) => { const editor = multipleInput!.editor, column = editor.viewport.columnAt(offset);
-        return { column, caret: column === undefined ? undefined : editor.viewport.caretAtColumn(0, column) }; },
+    multipleColumn: (offset: number) => { const editor = multipleInput!.editor, release = editor.viewport.prepareNavigationRows([0]);
+        try { const column = editor.viewport.columnAt(offset); return { column, caret: column === undefined ? undefined : editor.viewport.caretAtColumn(0, column) }; }
+        finally { release(); } },
     prepareMultipleEnd: () => { const { model, source, editor } = multipleInput!, before = model.document(source.documentId);
         const result = model.edit({ documentId: source.documentId, expectedRevision: before.revision, origin: "human",
             edits: [{ from: 0, to: before.buffer.length, insert: "a\r\nb\r" }], view: editor.view,

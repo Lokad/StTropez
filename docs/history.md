@@ -155,7 +155,7 @@ cached scroll state. Restoring stale cached secondary ranges would overwrite det
 Viewport snapshots identify the complete set that was painted. Highlights intersect every range
 with bounded rows; the editing candidate paints visible secondary carets using its existing native
 row geometry ([native range rectangles](https://www.w3.org/TR/cssom-view/#extensions-to-the-range-interface)).
-Offscreen ranges create no DOM nodes or text reads. Native textareas project only
+Painting offscreen ranges creates no DOM nodes or text reads. Native textareas project only
 the primary range. The bounded candidate now captures the complete set, revision and native context
 for `beforeinput` and composition. An exact primary selection replacement supplies literal text for
 one original-coordinate edit plan across every range. Adjacent typing/deletion groups require the
@@ -185,10 +185,23 @@ content. Vertical movement remembers each range's measured pixel column across s
 lines, until another selection, edit or layout breaks that sequence. Targets are normalized and
 published once; coalesced ranges inherit their owner's column. Large sets yield between planning
 turns and expire after captured-set, revision, layout or lifecycle changes. Only the primary target
-is revealed. Offscreen short rows reuse native row geometry through one bounded temporary hidden
-row; `navigationRows`/`navigationReadUnits` count those reads separately from render `readUnits`.
+is revealed. Multi-range commands capture their complete set/revision before yielding viewport
+preparation. Planning writes up to 64 complete short rows before reading their existing native
+geometry, retaining the batch across bounded planning turns. Identical painted rows keep the
+single-row geometry reuse path; contextual long rows keep their existing fallback. Batches are
+released on completion, cancellation, document change and destruction. `navigationBatches`,
+`navigationPreparedRows` and `maxNavigationBatchRows` expose allocation bounds; `navigationRows`
+and `navigationReadUnits` count command work separately from render `readUnits`.
 `columnAt` and `caretAtColumn` expose logical pixel columns independent of scrolling. Contextual
 long-line origin and shaping limits remain those described in [viewport.md](viewport.md).
+
+`navigationTurns`, `maxNavigationTurnMs` and `navigationWorkMs` measure synchronous navigation
+initialization and complete scheduled navigation callbacks, including timer housekeeping, validation,
+row preparation, scanning and final publication. Nested work is counted once. The separate
+`navigationPreparationMs` is only the initial viewport/primary-geometry preparation substage.
+`lastKeydownMs` measures the key handler; yielding continuations run later. These elapsed clocks
+exclude later caret/render frames except synchronous flushes inside a measured callback. Readiness
+and complete automation/action proxies include that later work. None measures CPU or display latency.
 The native textarea baseline continues to edit only its primary range.
 The native text-control [selection API](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#textFieldSelection)
 supplies the primary input projection. The project model reuses its own mappings, transactions

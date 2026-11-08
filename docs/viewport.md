@@ -21,6 +21,14 @@ rendering, scroll changes nor metadata updates access `DocumentSnapshot.text` or
 Unrelated resource notifications do not schedule a frame. Multiple changes coalesce into one
 animation frame, while each revision's map updates the retained scroll anchor synchronously.
 
+`prepareNavigationRows(lines)` accepts at most 64 valid line indices and returns an explicit release
+function. It writes complete short command rows before native geometry reads, without revealing them.
+Identical painted rows keep the existing single-probe reuse path; long contextual windows also keep
+their existing path. The batch belongs to its captured document revision and complete selection set.
+Release it after the command or cancellation. A newer batch supersedes the old one; an old release
+function cannot clear a newer batch. Document changes and viewport destruction release rows eagerly,
+including their native geometry references. These command reads are separate from render `readUnits`.
+
 The buffer now caches raw UTF-16 prefix/suffix/longest-line lengths in its AVL nodes. Immutable
 backings also contain a range-maximum index over gaps between LF offsets, so splitting an old
 backing can query its longest internal line without scanning its line array. Construction
