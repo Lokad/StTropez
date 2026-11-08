@@ -258,6 +258,57 @@ async function workflow(page, original, activeCase, screenshot) {
         final, disposed, workflowAutomationProxyMs: performance.now() - started };
 }
 
+async function proveCompiledTextDrag(browser, baseUrl) {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }), errors = [];
+    page.on("pageerror", error => errors.push(error.message));
+    const original = "alpha\r\nbeta tail", expected = "\r\n tail", targetText = "target", inserted = "taalpha\nbetarget";
+    const read = () => page.evaluate(() => { const f = window.hostFixture, state = f.snapshot(); return { state, target: f.transferSnapshot(), text: f.range(0, state.source.length) }; });
+    const ready = () => page.waitForFunction(() => { const f = window.hostFixture, state = f.snapshot(), target = f.transferSnapshot();
+        return state.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.viewport.pending
+            && v.metrics.viewport.revision === (v.documentId === target.documentId ? target.revision : state.source.revision) && v.metrics.viewport.selectionSet === v.selectionSet); });
+    const point = (name, offset) => page.locator(`.st-editing-candidate:has(> textarea[aria-label="${name}"])`).evaluate((element, offset) => {
+        const row = [...element.querySelectorAll(".st-viewport-row")].find(row => Number(row.dataset.from) <= offset && Number(row.dataset.to) > offset);
+        if (!row) throw new Error("Compiled drag point is not rendered.");
+        let local = offset - Number(row.dataset.from); const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            if (local >= node.length) { local -= node.length; continue; }
+            const range = document.createRange(); range.setStart(node, local); range.setEnd(node, local + 1); const box = range.getBoundingClientRect();
+            return { x: box.left + box.width * .1, y: box.top + box.height / 2 };
+        }
+        throw new Error("Compiled drag has no text point.");
+    }, offset);
+    try {
+        await page.goto(new URL("/hosts/react/?editor=candidate", baseUrl).href);
+        await page.waitForFunction(() => window.hostFixture?.ready);
+        await page.evaluate(({ original, targetText }) => { const f = window.hostFixture;
+            f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: original }]); f.openTransferTarget(targetText);
+            f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 5, head: 0 }, { anchor: 7, head: 11 }], 1);
+            f.selectSourceSet("secondary", f.transferSnapshot().revision, [{ anchor: 1, head: 0 }, { anchor: 5, head: 5 }], 1);
+            window.compiledDragAudit = []; for (const type of ["dragstart", "drop"]) document.addEventListener(type, event => window.compiledDragAudit.push({ type, trusted: event.isTrusted }), { once: true });
+        }, { original, targetText }); await ready();
+        const before = await read(), a = await point("Primary source", 1), b = await point("Secondary source", 2);
+        await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move(a.x + 8, a.y, { steps: 3 });
+        await page.mouse.move(b.x, b.y, { steps: 10 }); await page.mouse.move(b.x, b.y); await page.mouse.up(); await ready();
+        const after = await read(), audit = await page.evaluate(() => window.compiledDragAudit), refused = browser.browserType().name() === "webkit";
+        assert.ok(audit.some(event => event.type === "dragstart" && event.trusted));
+        if (refused) { assert.equal(after.text, original); assert.deepEqual(after.target, before.target); assert.deepEqual(after.state.history, before.state.history); }
+        else {
+            assert.ok(audit.some(event => event.type === "drop" && event.trusted)); assert.equal(after.text, expected); assert.equal(after.target.text, inserted);
+            assert.equal(after.state.history.undoDepth, before.state.history.undoDepth + 1); assert.equal(after.target.history.undoDepth, before.target.history.undoDepth + 1);
+            await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await ready(); const undo = await read();
+            assert.equal(undo.text, original); assert.equal(undo.target.text, targetText); assert.deepEqual(undo.state.bindings.views.map(v => v.selectionSet), before.state.bindings.views.map(v => v.selectionSet));
+            await page.getByRole("textbox", { name: "Primary source", exact: true }).press("Control+Shift+z"); await ready(); const redo = await read();
+            assert.equal(redo.text, expected); assert.equal(redo.target.text, inserted);
+        }
+        assert.equal(after.state.source.exports, 0); assert.equal(after.target.exports, 0); assert.deepEqual(errors, []);
+        await page.evaluate(() => window.hostFixture.dispose()); const disposed = await page.evaluate(() => window.hostFixture.snapshot());
+        for (const key of ["views", "leases", "subscriptions"]) assert.equal(disposed.diagnostics[key], 0);
+        return { source: "restored-compiled-assets", browser: browser.browserType().name(), audit, moveAndLinkedHistoryQualified: !refused, tokenlessRefusalQualified: refused,
+            nativeMove: refused ? "unverified; automated transport strips the internal token" : "automated gesture verified; OS/application transfers unverified",
+            completeSetsRestored: !refused, zeroCompleteExports: true, disposed: { views: 0, leases: 0, subscriptions: 0 }, errors, note: "One qualitative fresh-page proof, outside all existing point/workflow clocks. No latency or native-device claim." };
+    } finally { await page.close(); }
+}
+
 // Reuses the existing React application and local service ports; no editor implementation lives here.
 export async function runPackagedReactPilot(browser, baseUrl, { directory, packageSha256, benchmark = false }) {
     const source = await sourceIdentity(), warmup = benchmark ? 3 : 0, measured = benchmark ? 10 : 1, cases = [], errors = [], completedSamples = [];
@@ -289,8 +340,9 @@ export async function runPackagedReactPilot(browser, baseUrl, { directory, packa
                 workflowAutomationProxyMs: measure(sample => sample.workflowAutomationProxyMs), targets,
                 assessment: { handlerMet: pointHandler.p95 <= targets.inputHandlerMs, readinessMet: pointReady.p95 <= targets.readinessMs, pointActionMet: pointAction.p95 <= targets.pointActionMs }, warmupSamples, samples });
         }
+        const textDrag = benchmark ? null : await proveCompiledTextDrag(browser, baseUrl);
         assert.equal((await sourceIdentity()).sha256, source.sha256);
-        await writeFile(`${directory}/react-${benchmark ? "bench-" : ""}${browser.browserType().name()}.json`, JSON.stringify({ source, packageSha256, benchmark, environment: { ...environment(), browser: browser.version() }, cases, errors,
+        await writeFile(`${directory}/react-${benchmark ? "bench-" : ""}${browser.browserType().name()}.json`, JSON.stringify({ source, packageSha256, benchmark, environment: { ...environment(), browser: browser.version() }, cases, textDrag, errors,
             boundaries: "Restored compiled assets and the existing development React host under Strict Mode. Initial mount/setup is separate; workflow starts at association/proposal request and ends after explicit disposal. Actual typing, deferred save/failure/conflict/canonical replies, shared history, Run, configuration, remount and references use original host ports. Point q alone has handler/readiness/action targets, with the shared all-pane/caret/scans/diff/reference/two-frame probe. Handler elapsed is not CPU; workflow includes transport, controls, exact-source oracles and local settlement, with no imposed service delay. Fresh page per workflow; warmups/raw samples retained. Semantic screenshots are outside point clocks and included in semantic workflow; repeated workflows omit screenshots. No native IME/OSclipboard/AT/display, startup tail, browser heap-retention or production qualification." }, null, 2));
     } catch (error) {
         const failureId = Date.now();

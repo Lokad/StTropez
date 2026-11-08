@@ -9,6 +9,7 @@ import type { NativeInsertionTarget } from "./input-target.ts";
 import type { InputContext } from "./input-context.ts";
 import { mountTextViewport } from "./viewport.ts";
 import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
+import { mountTextDragDrop } from "./text-drag-drop.ts";
 
 export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport;
     focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
@@ -603,8 +604,14 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         event.preventDefault(); selectWord(point.offset, event.altKey);
         } finally { lastWordSelectionMs = win.performance.now() - began; maxWordSelectionTurnMs = Math.max(maxWordSelectionTurnMs, lastWordSelectionMs); }
     }, { signal: listeners.signal });
+    const textDrag = mountTextDragDrop({ workspace, tab: target, view, viewport, input,
+        available: () => !disposed && !composing && !input.disabled,
+        beforeStart: () => { stopDrag(); cancelWord(); cancelCommandTimers(); preferred = undefined; group = undefined; },
+        afterDrop: offset => { commits++; viewport.revealOffset(offset); focus(); refresh(); },
+        rejected: reason => { conflict(reason); refresh(); } });
     root.addEventListener("pointerdown", event => {
         if (event.button !== 0 || disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
+        if (textDrag.arm(event)) return;
         if (event.target === input && !event.altKey && view.getSnapshot().selectionSet.ranges.length === 1) return;
         const point = viewport.hitTest(event.clientX, event.clientY); if (!point) return;
         event.preventDefault(); stopDrag(); cancelWord(); preferred = undefined; focus(); group = undefined;
@@ -695,7 +702,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             if (disposed) return; disposed = true;
             cancelWord(); wordInput = undefined; insertion = undefined; composition = undefined; graphemeCache = undefined; preferred = undefined;
             if (composing && input.value !== context.text) conflict("composition-detached");
-            composing = false; stopDrag();
+            composing = false; stopDrag(); textDrag.destroy();
             if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
             cancelCommandTimers();
             listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); input.value = ""; caretNodes.length = 0; secondaryCarets.replaceChildren(); viewport.destroy(); if (!options.view) view.dispose();

@@ -207,6 +207,25 @@ The native text-control [selection API](https://html.spec.whatwg.org/multipage/f
 supplies the primary input projection. The project model reuses its own mappings, transactions
 and history to represent the additional ranges without an editor/runtime dependency.
 
+Dragging a painted selection captures its source tab generation, document revision, complete
+selection set and raw selected fragments. A plain click still collapses the selection; Alt/Shift
+gestures keep their existing selection behavior. The bounded candidate supplies plain text and an
+opaque transfer token using the [HTML drag data store](https://html.spec.whatwg.org/multipage/dnd.html#the-drag-data-store).
+Protected dragover inspects types only. Drop validates the token and the last accepted target
+view/revision/model offset, independently of focus and the target's current selection. A transport
+that loses the token during an active internal drag is refused, preserving the captured source.
+The current automated WebKit transport exhibits that loss; its native token-preserving move remains
+unverified. Synthetic event guards do not qualify that native path or OS/application transfers.
+
+Same-workspace editable sources move by default; Ctrl (Option on Apple platforms) requests a copy.
+Read-only sources and other workspaces copy. Selected fragments retain raw text and join with LF,
+as in the plain clipboard policy. Same-document moves use one original-coordinate edit plan;
+cross-document moves reuse linked atomic workspace history. Undo restores the complete initiating
+sets. There is no deletion on dragend. External text inserts literally at the accepted model offset;
+HTML is never interpreted and unsupported file drops do not navigate the editor. Preview text is
+capped at 160 units; the separate drop caret and bounded edge-scroll frame are removed on cancellation,
+revision/lifecycle invalidation and disposal. These browser-owned protocols add no runtime dependency.
+
 The native textarea displays LF and maps its selection/replacement coordinates back to raw
 model text. Editing an unrelated range preserves CRLF; deleting a displayed CRLF newline removes
 both model units, and undo restores them. New native line breaks use LF; the host can explicitly

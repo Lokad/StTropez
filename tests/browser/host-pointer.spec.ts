@@ -84,7 +84,8 @@ for (const host of ["plain", "react"]) test.describe(`${host} pointer gesture ow
         await root(page).evaluate((node, id) => { node.dispatchEvent(new PointerEvent("pointercancel", { pointerId: id, bubbles: true })); }, pointer);
         expect(await root(page).evaluate((node, id) => node.hasPointerCapture(id), pointer)).toBe(false); const cancelled = selection(await state(page));
         await move(page, 16); expect(selection(await state(page))).toEqual(cancelled); await page.mouse.up();
-        const revisionPointer = await begin(page, 3); await page.evaluate(() => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: s.source.length, to: s.source.length, insert: "!" }]); }); await ready(page);
+        // Begin outside the painted selection: dragging selected text now starts a text transfer.
+        const revisionPointer = await begin(page, 1); await page.evaluate(() => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: s.source.length, to: s.source.length, insert: "!" }]); }); await ready(page);
         const changed = selection(await state(page)); await move(page, 15); expect(selection(await state(page))).toEqual(changed);
         expect(await root(page).evaluate((node, id) => node.hasPointerCapture(id), revisionPointer)).toBe(false); await page.mouse.move(10, 10); await page.mouse.up();
         await begin(page, 2); await page.evaluate(() => window.hostFixture.unmount()); await page.mouse.move(10, 10); await page.evaluate(() => window.hostFixture.mount()); await ready(page);

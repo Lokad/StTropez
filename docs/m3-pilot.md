@@ -41,6 +41,10 @@ while it is in flight. **Finish save** trims trailing whitespace in its canonica
    adds selections. Move them with arrows or page keys, then type to replace every range together.
    Shift+click extends the primary range; Escape keeps only that range. Escape followed by Tab leaves
    the candidate editor for the surrounding host controls.
+   Drag painted selected text to move the selected fragments. During the drag, hold Ctrl (Option on
+   Apple platforms) to copy. Read-only sources copy. If the browser loses the internal transfer token,
+   the drop is refused and source text stays intact; native token-preserving movement in the current
+   WebKit evaluation environment remains unverified.
 2. Choose **Open source review**. Edit the working pane, then use **Next change** and
    **Use baseline**. Undo the reversion to restore your correction. The reference stays
    immutable while the working pane shares the source document and history.
