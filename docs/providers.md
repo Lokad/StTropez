@@ -37,6 +37,10 @@ and edit-lease rules are checked by the core transaction again at acceptance. Ac
 or replacement creates one separate shared history unit and maps surviving diagnostic ranges
 through that exact edit; a no-op preserves the revision and diagnostics. Later human edits clear
 stale presentation. Diagnostic navigation uses explicit ranges and revisions, never later focus.
+Diagnostic selection refuses active composition before changing model selection, revealing a range
+or moving focus. It retains the diagnostic result: cancellation allows the same command afterward,
+while a committed text edit expires the result and requires a fresh request. This reuses the host's
+existing composition boundary for completion and comparison commands; it adds no runtime service.
 
 Worker startup/error, malformed results, timeout and disconnect leave local editing/highlighting
 available. Reconnect requires a new real worker result; no local fallback satisfies that path.

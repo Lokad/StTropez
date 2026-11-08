@@ -88,6 +88,7 @@ export function createProviderController(workspace: Workspace, tabId: TabId, edi
     const selectDiagnostic = (index: number): boolean => {
         const diagnostic = diagnostics[index];
         if (!diagnostic || !valid() || workspace.document(documentId).revision !== diagnosticRevision) return false;
+        if (editor.snapshot().composing) { render("Finish composition before selecting a diagnostic."); return false; }
         if (!editor.view.setSelection(diagnosticRevision, { anchor: diagnostic.from, head: diagnostic.to })) return false;
         editor.viewport.revealOffset(diagnostic.from); editor.focus(); return true;
     };
