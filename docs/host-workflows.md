@@ -113,7 +113,7 @@ after replacing the reviewed reference. The fixture's external-writer control ch
 synthetic service state, not the local document. No application service is integrated.
 
 `bench:save-conflicts` records full conflict/read/retry workflows with 20 Hz host traffic and a
-point edit while all three working views and the remote reference are mounted. Handler CPU,
+point edit while all three working views and the remote reference are mounted. Adapter-handler elapsed time,
 document-capture-beforeinput to exact model/selection/diff/view readiness across two frames,
 and complete keyboard-action automation are separate measurements. Stage/workflow timings
 include controls, typing during deferred responses and settlement. The fixture imposes no
@@ -229,7 +229,7 @@ run outside timed intervals, and actual candidate mounts are required.
 The full-workflow and disposal numbers include browser automation transport, controls,
 deferred response settlement and readiness polling, including completed diff work and current
 working/reference viewports. They are automation proxies. Synchronous
-proposal acceptance/notification CPU and selected candidate input-handler observations are
+proposal acceptance/notification elapsed time and selected candidate input-handler observations are
 separate fields; ordinary editing has its own benchmark. These desktop diagnostics establish
 neither physical presentation latency nor production tails, retained-memory budgets or a
 production renderer choice. Native input and accessibility qualification remain open.

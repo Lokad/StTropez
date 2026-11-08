@@ -99,15 +99,17 @@ layout stage. Global font shaping and measured window origins remain unqualified
 rendering continues to expose partial rows and its current geometry limits.
 
 `npm run bench:bidi` records three warmups and twenty measured samples for four headless
-workloads and four actual browser key conditions. Kernel CPU, synchronous command CPU and
-key-to-frame-ready proxy remain separate. Guards require complete rows, visual movement,
+workloads and four actual browser key conditions. Kernel elapsed time, capture-to-target-bubble keydown elapsed time and
+key-to-frame-ready proxy remain separate. The field named `handlerMs` is the event observation
+span; it includes the adapter and synchronous listeners between those endpoints. It is separate
+from the adapter's own `lastKeydownMs` and does not measure process CPU time. Guards require complete rows, visual movement,
 unchanged text/revision, bounded native context and zero exports. Raw samples and source/display
 provenance stay in ignored `artifacts/bench/bidi/`. The long-paragraph kernel case measures the
 utility's proportional cost; it does not qualify cooperative browser layout or presentation.
 
 `npm run bench:paragraph` measures four cooperative kernel conditions (three warmups, twenty
 measured runs) and two actual browser jobs (three warmups, ten measured runs). It records raw
-advance/turn CPU, work/read counts, frame progress and overall readiness separately. Post-GC
+advance/turn elapsed time, work/read counts, frame progress and overall readiness separately. Post-GC
 heap differences retain the final index and raw samples; they are process observations rather
 than isolated byte counts or production retention budgets. The browser guards check exact
 captured ranges, live frames, unchanged revisions, bounded DOM/native input and zero exports.

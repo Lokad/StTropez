@@ -5,16 +5,23 @@ the native control. `window.hostFixture.snapshot()` includes mounted view identi
 bounded input/viewport metrics, captured Run metadata, command settlement and recovery metadata.
 Raw recovered text and Run values require explicit readers. Inspection records both modes,
 failed acknowledgement, typing through Run and a rejected composition recovery preview.
-`bench:hosts` writes complete-workflow automation proxies and proposal transaction CPU separately
+`bench:hosts` writes complete-workflow automation proxies and proposal transaction elapsed time separately
 under `artifacts/bench/hosts/`, with source/environment identity and raw samples.
 
 The `/comparison/` development fixture exposes `window.comparisonFixture`: captured identities,
 reference epoch/version, exact hunk ranges, revision, bounded viewport/input metrics, ticket
 counts and disposal diagnostics. Text is available only through explicit range readers.
 Inspection writes `comparison.png`, `comparison-whitespace.png` and `comparison.json`.
-`bench:comparison` records exact alignment CPU, maximum cooperative-step time and browser
+`bench:comparison` records exact alignment elapsed time, maximum cooperative-step time and browser
 readiness proxies separately, with raw samples and source/environment identity. It does not
 infer physical presentation, native input qualification or production tail latency.
+
+Clocks based on `performance.now()` report elapsed time between their endpoints, including
+any delays within that span. They do not measure process CPU time. Keep adapter handlers,
+capture-to-bubble observations, complete callbacks, inner-loop maxima, readiness and complete
+automation actions separate. Sampling profiles estimate observed stacks over elapsed intervals;
+inclusive weights can overlap and must not be added as independent durations. Older reports
+retain their original values and labels; interpret their clock boundaries from the producer.
 
 See [performance.md](performance.md) for the StTropez performance assessment, bottlenecks,
 workload matrix and measurement policy.

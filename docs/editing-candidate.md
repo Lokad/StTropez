@@ -199,6 +199,6 @@ word movement/deletion and page keys in large and Unicode/CRLF documents. It ret
 warmups, twenty measured kernel scans and ten measured browser commands per condition.
 Assertions cover exact model destinations/text/revisions, bounded native context and zero exports.
 Snapshots expose `pendingWord`, `wordScanSteps` and `maxWordScanStepMs` for the last word scan;
-scan CPU excludes final boundary normalization, model commit and rendering. The separate
+scan-loop elapsed time excludes final boundary normalization, model commit and rendering. The separate
 key-to-frame-ready value includes scheduling/polling and both views, and measures no physical
 input or presentation. Raw samples and provenance stay in ignored `artifacts/bench/navigation/`.

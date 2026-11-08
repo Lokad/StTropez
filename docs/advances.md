@@ -54,7 +54,7 @@ twenty measured runs. It separates append, seal, prefix/window lookup, persisten
 immutable flat-prefix-array update. Input/reference generation precedes timing. Construction
 loop clocks include instrumentation. Replacement starts from already measured values and
 excludes shaping, source mapping and rendering. Read counters and shared numeric-slot retention
-are checked with raw CPU samples and source/environment metadata. Desktop diagnostics and
+are checked with raw elapsed-time samples and source/environment metadata. Desktop diagnostics and
 one-index GC observations do not qualify production or long-session memory.
 
 [Owned font data](fonts.md) can now provide nominal cmap/hmtx values and separately versioned

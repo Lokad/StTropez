@@ -39,7 +39,7 @@ the frozen prior implementation with the current path; that local research stays
 measured batches. Five default rounds cover dense 100/10k/100k-line changes, sparse huge-line
 changes, a point edit over a fragmented buffer, Unicode, large insertions and repeated
 same-position inserts. Construction, traversal
-and scanner CPU have separate samples. Full chunk/string, mapping and metadata validation,
+and scanner elapsed time have separate samples. Full chunk/string, mapping and metadata validation,
 explicit GC and structural-retention checks stay outside timed intervals. Runtime selection
 is asserted. Browser global replacement remains covered by `bench:services`; the final atomic
 transaction is synchronous, so these measurements do not certify input/presentation latency.

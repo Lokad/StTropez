@@ -73,7 +73,7 @@ Use three complementary layers:
 3. Whole-workspace scenarios: type while diagnostics arrive, a form changes, background status
    updates run, or a comparison opens. Distinguish service/network latency from local input
    latency. Use screenshots and Playwright traces for behavioral review; Chrome performance
-   traces and profiles supply CPU/layout attribution.
+   traces and profiles supply stack/layout attribution with their measurement boundaries.
 
 [Event Timing](https://developer.mozilla.org/en-US/docs/Web/API/PerformanceEventTiming) can
 separate input delay and processing time from the duration through the next paint. Its
@@ -81,7 +81,7 @@ duration is rounded to 8 ms and the observer's minimum threshold is 16 ms; it ca
 sub-4-ms model budget or establish that unreported interactions cost zero. Check support and
 report missing metrics explicitly. Continuous scrolling also needs frame/layout measurements.
 [Chrome's Performance panel](https://developer.chrome.com/docs/devtools/performance/reference)
-can inspect the recorded interactions and CPU/layout/paint work. A browser paint estimate is
+can inspect the recorded interactions and script/layout/paint work. A browser paint estimate is
 not a physical keyboard-to-monitor measurement.
 
 `npm run bench` now writes separate headless model and browser reports. `bench:model` runs
@@ -102,12 +102,12 @@ count/history/undo and no-export guards. Offset-index memory is proportional to 
 Planning yields; the final bulk transaction still scales with changed ranges. Its 100,000-line
 case is a single diagnostic, with no percentile/adoption claim. A real worker reply is required
 independently of local highlighting so fallback cannot satisfy the provider guard.
-`bench:bulk` isolates the actual tree's multi-range construction, traversal and scanner CPU in
+`bench:bulk` isolates the actual tree's multi-range construction, traversal and scanner elapsed time in
 fresh Node processes, with full oracle checks outside timing. Dense packing trades some copied
 backing/index units for fewer nodes; sparse-subtree sharing and retained roots have separate
 guards. This measured TypeScript kernel work precedes optional worker/WASM experiments.
 
-`bench:comparison` measures exact line alignment over immutable snapshots. Headless total CPU
+`bench:comparison` measures exact line alignment over immutable snapshots. Headless total elapsed time
 and cooperative-step maxima are separate from browser controller-step time and scheduled
 readiness proxies. Reconstruction checks occur outside timing. Normal/10,000-line/Unicode
 browser cases repeat; 100,000-line and huge-line browser cases are diagnostic observations.
@@ -117,7 +117,7 @@ bound allocator/GC pauses or qualify adversarial repeated-line tail latency.
 `bench:hosts` exercises full request/correction/save/acknowledgement/Run sequences in plain
 and React hosts with two views, a typed form and 20 Hz progress. Each native/candidate and
 normal/10,000-line condition uses three warmups and ten measured workflows. Proposal
-acceptance/notification CPU is separate from automation/readiness proxies. Explicit host
+acceptance/notification elapsed time is separate from automation/readiness proxies. Explicit host
 captures export their exact snapshots; routine candidate rendering stays bounded. See the
 [workflow contract](host-workflows.md) for metric limits and recovery/disposal behavior.
 
@@ -187,7 +187,7 @@ p95 below 4 ms on reference hardware leaves some room for the host and browser, 
 guarantee either frame rate. An ordinary interaction target below 50 ms is a separate,
 provisional end-to-end objective. Define workload and hardware before adopting either as a gate.
 
-The [M3 pilot](m3-pilot.md) defines separate initial budgets for handler CPU, interaction
+The [M3 pilot](m3-pilot.md) defines separate initial budgets for handler elapsed time, interaction
 readiness and complete automation actions. `bench:editing` reports these as `inputHandlerMs`,
 `beforeInputToFrameProxyMs` and `completeActionProxyMs`. Readiness verifies exact inserted
 text, revision, primary selection and both rendered view revisions across two consecutive
