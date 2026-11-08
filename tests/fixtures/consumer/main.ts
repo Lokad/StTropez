@@ -36,7 +36,9 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
     beginMultipleInput: () => { if (multipleInput) throw new Error("Multiple input already mounted."); multipleInput = mountMultipleInput(); },
     multipleInput: () => { const { model, source, editor } = multipleInput!, document = model.document(source.documentId), state = editor.snapshot(), viewport = editor.viewport.snapshot();
         return { text: document.buffer.slice(0, document.buffer.length), selectionSet: editor.view.getSnapshot().selectionSet, revision: document.revision,
-            pending: state.pendingCaret || viewport.pending, commits: state.commits, exports: document.buffer.readMetrics().textExports }; },
+            pending: state.pendingCaret || state.pendingGrapheme || state.pendingWord || viewport.pending, commits: state.commits, exports: document.buffer.readMetrics().textExports }; },
+    multipleColumn: (offset: number) => { const editor = multipleInput!.editor, column = editor.viewport.columnAt(offset);
+        return { column, caret: column === undefined ? undefined : editor.viewport.caretAtColumn(0, column) }; },
     finishMultipleInput: () => { const { model, source, tab, host, editor } = multipleInput!; editor.destroy(); host.remove(); model.close(tab); model.releaseResource(source.id, true); multipleInput = undefined;
         return { views: model.diagnostics().views, leases: model.diagnostics().leases }; },
     readonlyIndent: async (outdent: boolean) => {

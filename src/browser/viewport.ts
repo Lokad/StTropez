@@ -7,7 +7,7 @@ import type { CaretRectangle } from "./text-geometry.ts";
 import type { Affinity } from "../index.ts";
 
 export type ViewportSnapshot = Readonly<{ revision: number | null; selection: Selection | null; selectionSet: SelectionSet | null; renders: number; firstLine: number; lastLine: number;
-    rows: number; partialRows: number; textUnits: number; readUnits: number; lastRenderMs: number; scrollTop: number; scrollLeft: number; width: number; height: number;
+    rows: number; partialRows: number; textUnits: number; readUnits: number; navigationReadUnits: number; navigationRows: number; lastRenderMs: number; scrollTop: number; scrollLeft: number; width: number; height: number;
     lineHeight: number; columnWidth: number; verticalExtent: number; horizontalExtent: number;
     physicalHeight: number; physicalWidth: number; pending: boolean; disposed: boolean }>;
 export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentView;
@@ -15,24 +15,27 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     scrollTo: (position: Readonly<{ top?: number; left?: number }>) => void;
     coordsAt: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
     hitTest: (clientX: number, clientY: number) => CaretRectangle | undefined;
-    moveVisual: (offset: number, affinity: Affinity, direction: -1 | 1) => CaretRectangle | undefined;
-    collapseVisual: (from: number, to: number, direction: -1 | 1) => CaretRectangle | undefined;
+    moveVisual: (offset: number, affinity: Affinity, direction: -1 | 1, reveal?: boolean) => CaretRectangle | undefined;
+    collapseVisual: (from: number, to: number, direction: -1 | 1, reveal?: boolean) => CaretRectangle | undefined;
+    columnAt: (offset: number, affinity?: Affinity) => number | undefined;
+    caretAtColumn: (line: number, column: number) => Readonly<Pick<CaretRectangle, "offset" | "affinity" | "revision">> | undefined;
     flush: () => void;
     invalidate: () => void;
     revealOffset: (offset: number, options?: RevealOptions) => void; snapshot: () => ViewportSnapshot; destroy: () => void }>;
 type Row = Readonly<{ line: number; from: number; to: number; text: string; left: number; complete: boolean }>;
 type RowPart = Readonly<{ text: string; className: string }>;
-function renderRowChildren(element: HTMLElement, parts: readonly RowPart[]): void {
+function renderRowChildren(element: HTMLElement, parts: readonly RowPart[]): boolean {
     if (element.childNodes.length === parts.length && parts.every((part, index) => {
         const node = element.childNodes.item(index); if (!node || node.textContent !== part.text) return false;
         return part.className ? node.nodeName === "SPAN" && (node as HTMLSpanElement).className === part.className
             && node.childNodes.length === 1 && node.firstChild?.nodeType === Node.TEXT_NODE : node.nodeType === Node.TEXT_NODE;
-    })) return;
+    })) return false;
     const owner = element.ownerDocument;
     element.replaceChildren(...parts.map(part => {
         if (!part.className) return owner.createTextNode(part.text);
         const span = owner.createElement("span"); span.className = part.className; span.textContent = part.text; return span;
     }));
+    return true;
 }
 export type InlineDecoration = Readonly<{ from: number; to: number; className: string }>;
 export type PresentedLine = Readonly<{ documentId: DocumentId; revision: number; line: number; lineStart: number; from: number; to: number; text: string }>;
@@ -64,6 +67,10 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     let renderedSelection: Selection | null = null;
     let renderedSelectionSet: SelectionSet | null = null;
     let renders = 0, firstLine = 0, lastLine = 0, partialRows = 0, textUnits = 0, readUnits = 0, lastRenderMs = 0;
+    let navigationReadUnits = 0, navigationRows = 0;
+    const commandMeasure = owner.createElement("div"), commandRow = owner.createElement("div");
+    commandMeasure.className = "st-viewport-command-measure"; commandMeasure.setAttribute("aria-hidden", "true"); commandMeasure.append(commandRow);
+    let commandGeometry: ReturnType<typeof rowGeometry> | undefined;
     let anchor: Readonly<{ revision: number; offset: number; topRemainder: number; leftRemainder: number }> | undefined;
     let reveal: Readonly<{ revision: number; offset: number; horizontal: "center" | "nearest"; vertical: "center" | "nearest"; affinity: Affinity }> | undefined;
     let horizontalAnchor: ViewState["horizontalAnchor"];
@@ -82,13 +89,6 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     };
     const schedule = () => { if (!disposed && frame === undefined) frame = win.requestAnimationFrame(render); };
     const flush = () => { if (disposed) return; if (frame !== undefined) { win.cancelAnimationFrame(frame); frame = undefined; } render(); };
-    const completeRow = (offset: number): HTMLDivElement | undefined => {
-        const document = workspace.observeDocument(documentId).getSnapshot();
-        if (disposed || !workspace.resolveTab(target) || document?.revision !== renderedRevision) return;
-        const line = document.buffer.lineAt(offset); let element = rows.get(line);
-        if (!element) { reveal = { revision: document.revision, offset, horizontal: "nearest", vertical: "nearest", affinity: "after" }; flush(); element = rows.get(line); }
-        return document.revision === workspace.observeDocument(documentId).getSnapshot()?.revision && element?.dataset.complete === "true" ? element : undefined;
-    };
     const position = (axis: ScrollAxis, value: number): number => Math.min(axis.maximum, Math.max(0, value));
     const setScroll = (position: Readonly<{ top?: number; left?: number }>) => {
         if (disposed) return;
@@ -122,19 +122,90 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         return start < scroll + margin ? Math.max(0, start - margin) : start + size > scroll + visible - margin ? Math.max(0, start + size - visible + margin) : scroll;
     };
     const horizontalPosition = (value: number): number => { const margin = Math.min(padding, width / 4); return Math.max(margin, Math.min(width - margin, value)); };
-    const row = (buffer: TextBuffer, line: number): Row => {
+    const row = (buffer: TextBuffer, line: number, scrollLeft = left, navigation = false): Row => {
+        const readRow = navigation ? (buffer: TextBuffer, from: number, to: number) => { navigationReadUnits += to - from; return buffer.slice(from, to); } : read;
         const start = buffer.offsetAt(line), end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) - 1 : buffer.length;
-        const displayEnd = line + 1 < buffer.lineCount && end > start && read(buffer, end - 1, end) === "\r" ? end - 1 : end;
-        let from = Math.min(displayEnd, start + Math.max(0, Math.floor((left - padding) / columnWidth) - overscanUnits));
-        let to = Math.min(displayEnd, start + Math.max(0, Math.ceil((left + width) / columnWidth) + overscanUnits));
+        const displayEnd = line + 1 < buffer.lineCount && end > start && readRow(buffer, end - 1, end) === "\r" ? end - 1 : end;
+        let from = Math.min(displayEnd, start + Math.max(0, Math.floor((scrollLeft - padding) / columnWidth) - overscanUnits));
+        let to = Math.min(displayEnd, start + Math.max(0, Math.ceil((scrollLeft + width) / columnWidth) + overscanUnits));
         if (displayEnd - start <= 512) { from = start; to = displayEnd; }
         // Do not split a surrogate pair at the edges of the bounded text window.
-        if (from > start && from < displayEnd) { const pair = read(buffer, from - 1, from + 1); if (/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(pair)) from--; }
-        if (to > from && to < displayEnd) { const pair = read(buffer, to - 1, to + 1); if (/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(pair)) to++; }
-        return { line, from, to, text: read(buffer, from, to).replaceAll("\r", "␍"), left: padding + (from - start) * columnWidth - left, complete: from === start && to === displayEnd };
+        if (from > start && from < displayEnd) { const pair = readRow(buffer, from - 1, from + 1); if (/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(pair)) from--; }
+        if (to > from && to < displayEnd) { const pair = readRow(buffer, to - 1, to + 1); if (/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(pair)) to++; }
+        return { line, from, to, text: readRow(buffer, from, to).replaceAll("\r", "␍"), left: padding + (from - start) * columnWidth - scrollLeft, complete: from === start && to === displayEnd };
+    };
+    const paintRow = (element: HTMLDivElement, item: Row, document: DocumentSnapshot, selectionSet: SelectionSet): boolean => {
+        element.dataset.line = String(item.line); element.dataset.from = String(item.from); element.dataset.to = String(item.to); element.dataset.complete = String(item.complete);
+        let low = 0, high = selectionSet.ranges.length;
+        while (low < high) { const middle = (low + high) >>> 1, range = selectionSet.ranges[middle]!;
+            if (Math.max(range.anchor, range.head) <= item.from) low = middle + 1; else high = middle; }
+        const selections: { from: number; to: number }[] = [];
+        for (let index = low; index < selectionSet.ranges.length; index++) {
+            const range = selectionSet.ranges[index]!, from = Math.max(item.from, Math.min(range.anchor, range.head)), to = Math.min(item.to, Math.max(range.anchor, range.head));
+            if (from >= item.to) break; if (from < to) selections.push({ from, to });
+        }
+        const presented = { documentId, revision: document.revision, line: item.line, lineStart: document.buffer.offsetAt(item.line), from: item.from, to: item.to, text: item.text };
+        const lineClass = options.lineClass?.(presented), className = "st-viewport-row" + (lineClass && /^[a-zA-Z][\w-]{0,63}$/.test(lineClass) ? ` ${lineClass}` : "");
+        const changed = element.className !== className; element.className = className;
+        const decorations = options.decorate?.(presented);
+        if (!decorations?.length && !selections.length) return renderRowChildren(element, [{ text: item.text, className: "" }]) || changed;
+        const ranges = (decorations ?? []).filter(range => Number.isSafeInteger(range.from) && Number.isSafeInteger(range.to) && range.from >= 0 && range.to <= document.buffer.length && range.from < range.to
+            && range.from < item.to && range.to > item.from && /^[a-zA-Z][\w-]{0,63}$/.test(range.className));
+        const boundaries = new Set([item.from, item.to]);
+        for (const range of selections) { boundaries.add(range.from); boundaries.add(range.to); }
+        for (const range of ranges) { boundaries.add(Math.max(item.from, range.from)); boundaries.add(Math.min(item.to, range.to)); }
+        const offsets = [...boundaries].sort((a, b) => a - b), children: RowPart[] = []; let selectedIndex = 0;
+        for (let index = 0; index + 1 < offsets.length; index++) {
+            const start = offsets[index]!, end = offsets[index + 1]!, classes = ranges.filter(range => range.from < end && range.to > start).map(range => range.className);
+            while (selectedIndex < selections.length && selections[selectedIndex]!.to <= start) selectedIndex++;
+            if (selections[selectedIndex] && start >= selections[selectedIndex]!.from && end <= selections[selectedIndex]!.to) classes.push("st-viewport-selected");
+            children.push({ text: item.text.slice(start - item.from, end - item.from), className: classes.join(" ") });
+        }
+        return renderRowChildren(element, children) || changed;
+    };
+    type MeasuredRow = Readonly<{ complete: boolean; flow: -1 | 1; point: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
+        visual: (offset: number, affinity: Affinity, direction: -1 | 1) => CaretRectangle | undefined;
+        edge: (direction: -1 | 1, low?: number, high?: number) => CaretRectangle; nearest: (column: number) => CaretRectangle }>;
+    function withRow<T>(line: number, scrollLeft: number, offset: number | undefined, complete: boolean, work: (row: MeasuredRow) => T): T | undefined {
+        const document = workspace.observeDocument(documentId).getSnapshot();
+        if (disposed || !workspace.resolveTab(target) || document?.revision !== renderedRevision) return;
+        const existing = rows.get(line), rectangle = root.getBoundingClientRect();
+        if (existing && (existing.dataset.complete === "true" || !complete && scrollLeft === left
+            && (offset === undefined || offset >= Number(existing.dataset.from) && offset <= Number(existing.dataset.to)))) {
+            const value = geometry(existing);
+            return work({ ...value, complete: existing.dataset.complete === "true", flow: win.getComputedStyle(existing).direction === "rtl" ? -1 : 1,
+                nearest: column => value.nearest(rectangle.left + column - left) });
+        }
+        const buffer = document.buffer, start = buffer.offsetAt(line), end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
+        if (complete && end - start > 514) return;
+        const item = row(buffer, line, scrollLeft, true); if (complete && !item.complete) return;
+        const changed = paintRow(commandRow, item, document, view.getSnapshot().selectionSet);
+        commandRow.style.height = `${lineHeight}px`; root.append(commandMeasure); navigationRows++;
+        try {
+            if (changed || !commandGeometry) commandGeometry = rowGeometry(commandRow, 0, document.revision, lineHeight);
+            const value = commandGeometry, bounds = commandRow.getBoundingClientRect(), origin = padding + (item.from - start) * columnWidth;
+            const mapped = (point: CaretRectangle): CaretRectangle => Object.freeze({ ...point, offset: point.offset + item.from,
+                left: rectangle.left + origin + point.left - bounds.left - left, top: rectangle.top + padding + line * lineHeight - top + point.top - bounds.top });
+            const optional = (point: CaretRectangle | undefined) => point && mapped(point);
+            // Only one bounded row is attached during this synchronous callback. Equal rendered
+            // parts can reuse the existing native geometry; no scroll/reveal or model write occurs.
+            return work({ complete: item.complete, flow: win.getComputedStyle(commandRow).direction === "rtl" ? -1 : 1,
+                point: (offset, affinity) => optional(value.point(offset - item.from, affinity)),
+                visual: (offset, affinity, direction) => optional(value.visual(offset - item.from, affinity, direction)),
+                edge: (direction, low = item.from, high = item.to) => mapped(value.edge(direction, low - item.from, high - item.from)),
+                nearest: column => mapped(value.nearest(bounds.left + column - origin)) });
+        } finally { commandMeasure.remove(); }
+    }
+    const rowForOffset = <T>(offset: number, revealRow: boolean, work: (row: MeasuredRow) => T): T | undefined => {
+        const document = workspace.observeDocument(documentId).getSnapshot();
+        if (disposed || !workspace.resolveTab(target) || document?.revision !== renderedRevision) return;
+        const line = document.buffer.lineAt(offset);
+        if (revealRow && !rows.has(line)) { reveal = { revision: document.revision, offset, horizontal: "nearest", vertical: "nearest", affinity: "after" }; flush(); }
+        return withRow(line, left, offset, true, work);
     };
     function render(): void {
         frame = undefined; if (disposed) return;
+        commandGeometry = undefined;
         const started = win.performance.now();
         // Read container metrics before writing rows; bounded shaping reads follow the writes.
         width = root.clientWidth; height = root.clientHeight;
@@ -178,44 +249,11 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         for (const item of next) {
             let element = rows.get(item.line);
             if (!element) { element = owner.createElement("div"); element.className = "st-viewport-row"; rows.set(item.line, element); layer.append(element); }
-            element.dataset.line = String(item.line); element.dataset.from = String(item.from); element.dataset.to = String(item.to);
-            element.dataset.complete = String(item.complete);
             const placement = fragmentPlacement, shift = placement?.revision === document.revision && placement.line === item.line
                 && placement.from === item.from && placement.to === item.to && placement.left === left ? placement.shift : 0;
             element.style.transform = `translate(${item.left + shift}px, ${padding + item.line * lineHeight - top}px)`;
             element.style.height = `${lineHeight}px`;
-            // Normalized ranges are ordered and disjoint. Seek directly to this bounded row;
-            // offscreen ranges add no text reads, decoration boundaries or DOM nodes.
-            let low = 0, high = selectionSet.ranges.length;
-            while (low < high) { const middle = (low + high) >>> 1, range = selectionSet.ranges[middle]!;
-                if (Math.max(range.anchor, range.head) <= item.from) low = middle + 1; else high = middle; }
-            const selections: { from: number; to: number }[] = [];
-            for (let index = low; index < selectionSet.ranges.length; index++) {
-                const range = selectionSet.ranges[index]!, from = Math.max(item.from, Math.min(range.anchor, range.head)), to = Math.min(item.to, Math.max(range.anchor, range.head));
-                if (from >= item.to) break;
-                if (from < to) selections.push({ from, to });
-            }
-            const presented = { documentId, revision: document.revision, line: item.line, lineStart: document.buffer.offsetAt(item.line), from: item.from, to: item.to, text: item.text };
-            const lineClass = options.lineClass?.(presented);
-            element.className = "st-viewport-row" + (lineClass && /^[a-zA-Z][\w-]{0,63}$/.test(lineClass) ? ` ${lineClass}` : "");
-            const decorations = options.decorate?.(presented);
-            if (decorations?.length || selections.length) {
-                const ranges = (decorations ?? []).filter(range => Number.isSafeInteger(range.from) && Number.isSafeInteger(range.to) && range.from >= 0 && range.to <= document.buffer.length && range.from < range.to
-                    && range.from < item.to && range.to > item.from && /^[a-zA-Z][\w-]{0,63}$/.test(range.className));
-                const boundaries = new Set([item.from, item.to]);
-                for (const range of selections) { boundaries.add(range.from); boundaries.add(range.to); }
-                for (const range of ranges) { boundaries.add(Math.max(item.from, range.from)); boundaries.add(Math.min(item.to, range.to)); }
-                const offsets = [...boundaries].sort((a, b) => a - b), children: RowPart[] = [];
-                let selectedIndex = 0;
-                for (let index = 0; index + 1 < offsets.length; index++) {
-                    const start = offsets[index]!, end = offsets[index + 1]!, classes = ranges.filter(range => range.from < end && range.to > start).map(range => range.className);
-                    while (selectedIndex < selections.length && selections[selectedIndex]!.to <= start) selectedIndex++;
-                    if (selections[selectedIndex] && start >= selections[selectedIndex]!.from && end <= selections[selectedIndex]!.to) classes.push("st-viewport-selected");
-                    const text = item.text.slice(start - item.from, end - item.from);
-                    children.push({ text, className: classes.join(" ") });
-                }
-                renderRowChildren(element, children);
-            } else renderRowChildren(element, [{ text: item.text, className: "" }]);
+            paintRow(element, item, document, selectionSet);
             textUnits += item.text.length;
         }
         for (const [line, element] of rows) if (line < firstLine || line >= lastLine) { element.remove(); rows.delete(line); }
@@ -296,19 +334,31 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             }
             return element ? geometry(element).nearest(clientX) : undefined;
         },
-        moveVisual: (offset: number, affinity: Affinity, direction: -1 | 1) => {
-            const row = completeRow(offset); if (!row) return;
-            const measured = geometry(row), before = measured.point(offset, "before"), after = measured.point(offset, "after"); if (!before || !after) return;
+        moveVisual: (offset: number, affinity: Affinity, direction: -1 | 1, revealRow = true) => rowForOffset(offset, revealRow, measured => {
+            const before = measured.point(offset, "before"), after = measured.point(offset, "after"); if (!before || !after) return;
             if (before.offset !== offset && after.offset !== offset) return direction * before.left > direction * after.left ? before : after;
             const next = measured.visual(offset, affinity, direction); if (next) return next;
-            const buffer = workspace.document(documentId).buffer, flow = win.getComputedStyle(row).direction === "rtl" ? -1 : 1, line = buffer.lineAt(offset) + direction * flow;
+            const buffer = workspace.document(documentId).buffer, line = buffer.lineAt(offset) + direction * measured.flow;
             if (line < 0 || line >= buffer.lineCount) return measured.edge(direction);
-            const neighbor = completeRow(buffer.offsetAt(line)); return neighbor ? geometry(neighbor).edge(direction < 0 ? 1 : -1) : undefined;
+            return rowForOffset(buffer.offsetAt(line), revealRow, neighbor => neighbor.edge(direction < 0 ? 1 : -1));
+        }),
+        collapseVisual: (from: number, to: number, direction: -1 | 1, revealRow = true) => rowForOffset(from, revealRow, first => direction * first.flow < 0
+            ? first.edge(direction, from, to) : rowForOffset(to, revealRow, last => last.edge(direction, from, to))),
+        columnAt: (offset: number, affinity: Affinity = "after") => {
+            const document = workspace.observeDocument(documentId).getSnapshot();
+            if (disposed || !workspace.resolveTab(target) || document?.revision !== renderedRevision) return;
+            const visible = coordinates(offset, affinity), rectangle = root.getBoundingClientRect();
+            if (visible) return visible.left - rectangle.left + left;
+            const line = document.buffer.lineAt(offset), scroll = Math.max(0, padding + (offset - document.buffer.offsetAt(line)) * columnWidth - width / 2);
+            return withRow(line, scroll, offset, false, measured => { const point = measured.point(offset, affinity); return point && point.left - rectangle.left + left; });
         },
-        collapseVisual: (from: number, to: number, direction: -1 | 1) => {
-            const first = completeRow(from); if (!first) return;
-            const flow = win.getComputedStyle(first).direction === "rtl" ? -1 : 1, row = direction * flow < 0 ? first : completeRow(to);
-            return row ? geometry(row).edge(direction, from, to) : undefined;
+        caretAtColumn: (line: number, column: number) => {
+            const document = workspace.observeDocument(documentId).getSnapshot();
+            if (disposed || !workspace.resolveTab(target) || document?.revision !== renderedRevision) return;
+            if (!Number.isSafeInteger(line) || line < 0 || line >= document.buffer.lineCount || !Number.isFinite(column)) throw new RangeError("Invalid navigation column.");
+            const scroll = column < left || column > left + width ? Math.max(0, column - width / 2) : left;
+            return withRow(line, scroll, undefined, false, measured => { const point = measured.nearest(column);
+                return Object.freeze({ offset: point.offset, affinity: point.affinity, revision: point.revision }); });
         },
         flush,
         scrollTo: setScroll,
@@ -332,13 +382,14 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             horizontalAnchor = undefined; fragmentPlacement = undefined;
             reveal = { revision: document.revision, offset, horizontal, vertical, affinity }; schedule();
         },
-        snapshot: () => Object.freeze({ revision: renderedRevision, selection: renderedSelection, selectionSet: renderedSelectionSet, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, lastRenderMs,
+        snapshot: () => Object.freeze({ revision: renderedRevision, selection: renderedSelection, selectionSet: renderedSelectionSet, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, navigationReadUnits, navigationRows, lastRenderMs,
             scrollTop: top, scrollLeft: left, width, height, lineHeight, columnWidth, verticalExtent: y.extent, horizontalExtent: x.extent,
             physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent, pending: frame !== undefined, disposed }),
         destroy: () => {
             if (disposed) return; disposed = true; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
-            renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; layer.replaceChildren(); root.replaceChildren(); root.remove();
+            commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove();
+            renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; navigationReadUnits = 0; navigationRows = 0; layer.replaceChildren(); root.replaceChildren(); root.remove();
             if (!options.view) view.dispose();
         } });
 }

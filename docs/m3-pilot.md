@@ -9,7 +9,7 @@ fixture results are supporting evidence; they do not replace an integrated host 
 
 | Criterion | Required behavior and evidence |
 | --- | --- |
-| Editing | Actual keyboard typing, single selection, word/line/grapheme navigation and deletion, multiline indentation, paired brackets, clipboard paths, read-only transitions and focus escape preserve exact text and selection. |
+| Editing | Actual keyboard typing, single and multiple selections, word/line/grapheme/page navigation and deletion, multiline indentation, paired brackets, clipboard paths, read-only transitions and focus escape preserve exact text and selection. |
 | History | Undo/redo is shared across views, reverses each command as one intended transaction, returns to the saved baseline, and preserves later human corrections around programmatic edits. |
 | Saving | Captured saves, server-version conflicts, retry/canonical replies and dirty state are visible and correct while typing continues. Stale responses never overwrite newer work or retarget another tab. |
 | Review | The same host exposes an immutable reference and editable working comparison, hunk navigation/reversion, captured refresh/acceptance and shared history. Reference, saved and proposal versions stay distinct. |
@@ -37,7 +37,9 @@ while it is in flight. **Finish save** trims trailing whitespace in its canonica
 
 1. In **Primary source**, type a correction, select text with Shift+Arrow and replace it.
    Check the shared text in **Secondary source**. Use Ctrl+Z and Ctrl+Shift+Z to undo and redo;
-   the views share history and retain independent selections. Escape followed by Tab leaves
+   the views share history and retain independent selections. Alt+click adds carets and Alt+drag
+   adds selections. Move them with arrows or page keys, then type to replace every range together.
+   Shift+click extends the primary range; Escape keeps only that range. Escape followed by Tab leaves
    the candidate editor for the surrounding host controls.
 2. Choose **Open source review**. Edit the working pane, then use **Next change** and
    **Use baseline**. Undo the reversion to restore your correction. The reference stays

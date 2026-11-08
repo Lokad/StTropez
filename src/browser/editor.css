@@ -33,6 +33,7 @@
 .st-viewport-layer { position: absolute; top: 0; left: 0; overflow: hidden; contain: strict; }
 .st-viewport-row { position: absolute; top: 0; left: 0; white-space: pre; direction: var(--st-text-direction, ltr); }
 .st-viewport-measure { position: absolute; top: 0; left: 0; visibility: hidden; white-space: pre; pointer-events: none; }
+.st-viewport-command-measure { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; contain: strict; visibility: hidden; pointer-events: none; }
 .st-viewport-selected { background: var(--st-selection, #24496b); }
 .st-editing-candidate { cursor: text; user-select: none; }
 .st-input-context { position: absolute; width: 1px; min-height: 1px; box-sizing: border-box; padding: 0; margin: 0; border: 0; resize: none; overflow: hidden;

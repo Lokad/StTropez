@@ -212,8 +212,14 @@ try {
     await multipleEditor.press("Control+z"); await page.waitForFunction(() => !window.consumer.multipleInput().pending);
     const multipleUndone = await page.evaluate(() => window.consumer.multipleInput()); assert.equal(multipleUndone.text, "abcd"); assert.deepEqual(multipleUndone.selectionSet, multipleBefore.selectionSet);
     await multipleEditor.press("Control+Shift+z"); assert.equal((await page.evaluate(() => window.consumer.multipleInput())).text, "xybcxy");
+    await multipleEditor.press("Shift+ArrowLeft"); await page.waitForFunction(() => !window.consumer.multipleInput().pending);
+    const multipleNavigation = await page.evaluate(() => window.consumer.multipleInput());
+    assert.deepEqual(multipleNavigation.selectionSet.ranges.map(({ anchor, head }) => ({ anchor, head })), [{ anchor: 2, head: 1 }, { anchor: 6, head: 5 }]);
+    const multipleColumn = await page.evaluate(() => window.consumer.multipleColumn(1)); assert.equal(multipleColumn.caret.offset, 1); assert.ok(multipleColumn.column > 0);
+    await multipleEditor.press("Escape"); await page.waitForFunction(() => !window.consumer.multipleInput().pending);
+    assert.deepEqual((await page.evaluate(() => window.consumer.multipleInput())).selectionSet.ranges, [multipleNavigation.selectionSet.ranges[multipleNavigation.selectionSet.primary]]);
     const multipleReleased = await page.evaluate(() => window.consumer.finishMultipleInput()); assert.deepEqual(multipleReleased, { views: 0, leases: 0 });
-    const multipleInput = { before: multipleBefore, after: multipleAfter, undone: multipleUndone, released: multipleReleased };
+    const multipleInput = { before: multipleBefore, after: multipleAfter, undone: multipleUndone, navigation: multipleNavigation, column: multipleColumn, released: multipleReleased };
     await page.evaluate(() => window.consumer.replaceAll("packed"));
     await page.waitForFunction(() => window.consumer.findState().status === "ready" && window.consumer.findState().count === 0);
     assert.equal(await page.evaluate(() => window.consumer.text()), "edited packed package");

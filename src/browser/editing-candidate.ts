@@ -38,20 +38,20 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     input.setAttribute("form", "");
     input.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
     input.setAttribute("aria-multiline", "true"); input.setAttribute("autocapitalize", "off");
-    help.id = `st-input-help-${scope}`; help.className = "st-input-help"; help.textContent = "Tab inserts indentation. Press Escape, then Tab or Shift+Tab to leave the editor.";
+    help.id = `st-input-help-${scope}`; help.className = "st-input-help"; help.textContent = "Alt+click or Alt+drag adds a caret or selection. Escape keeps the primary selection. Tab inserts indentation. Press Escape, then Tab or Shift+Tab to leave the editor.";
     input.setAttribute("aria-describedby", help.id); caret.className = "st-input-caret"; caret.setAttribute("aria-hidden", "true");
     secondaryCarets.setAttribute("aria-hidden", "true"); root.append(input, caret, secondaryCarets, help);
     let revision = workspace.document(documentId).revision, context: InputContext = inputContext(workspace.document(documentId).buffer, view.getSnapshot().selection);
     let disposed = false, composing = false, selecting = false, committing = false, escaped = false;
-    let frame: number | undefined, commits = 0, conflicts = 0, serial = 0, preferredX: number | undefined, inputEvents = 0, lastInputMs = 0;
+    let frame: number | undefined, commits = 0, conflicts = 0, serial = 0, inputEvents = 0, lastInputMs = 0;
     let keydownEvents = 0, lastKeydownMs = 0;
     let wordSelectionEvents = 0, lastWordSelectionMs = 0, maxWordSelectionTurnMs = 0;
-    let preferredSelection: Selection | undefined, preferredColumnWidth = 0;
+    let preferred: Readonly<{ selections: SelectionSet; revision: number; layout: string; columns: readonly (number | undefined)[] }> | undefined;
     let wordScanSteps = 0, maxWordScanStepMs = 0;
     let graphemeScanSteps = 0, maxGraphemeScanStepMs = 0;
     let visualMoves = 0;
     let group: Readonly<{ type: string; revision: number; selectionSet: SelectionSet; time: number; key: string }> | undefined;
-    let drag: Readonly<{ pointer: number; anchor: number; anchorAffinity: Affinity; revision: number; x: number; y: number; selection: Selection }> | undefined;
+    let drag: Readonly<{ pointer: number; anchor: number; anchorAffinity: Affinity; revision: number; x: number; y: number; selectionSet: SelectionSet; baseRanges: readonly Selection[] }> | undefined;
     let dragFrame: number | undefined, dragTime: number | undefined, dragScrollFrames = 0, maxDragScrollStepMs = 0;
     const commandTimers = new Set<number>();
     let wordJob: Readonly<{ cursor: WordCursor; revision: number; selection: Selection }> | undefined, wordTimer: number | undefined;
@@ -147,7 +147,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     };
     function apply(edits: readonly TextEdit[], selection: Selection | SelectionSet, kind: EditKind, type?: string, expectedRevision = revision): void {
         if (disposed) return;
-        cancelWord(); preferredX = undefined;
+        cancelWord(); preferred = undefined;
         if (!workspace.resolveTab(target)) { conflict("expired-view", edits[0]); refresh(); return; }
         let key: string | undefined;
         const now = win.performance.now(), before = view.getSnapshot().selectionSet;
@@ -209,11 +209,6 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         refresh();
     }
     const focus = () => { if (!disposed) { input.focus({ preventScroll: true }); scheduleCaret(); } };
-    function move(offset: number, extend: boolean, affinity: Affinity = "after"): void {
-        cancelWord(); group = undefined; const selected = view.getSnapshot().selection;
-        view.setSelection(revision, { anchor: extend ? selected.anchor : offset, head: offset, anchorAffinity: extend ? selected.anchorAffinity ?? "after" : affinity, headAffinity: affinity });
-        viewport.revealOffset(offset, { horizontal: "nearest", vertical: "nearest", affinity }); refresh();
-    }
     function replaceSelection(insert: string, kind: EditKind, type?: string): void {
         const document = workspace.document(documentId), plan = planSelectionEdits(document.buffer.length, view.getSnapshot().selectionSet, insert);
         apply(plan.edits, plan.selectionSet, kind, type, document.revision);
@@ -246,12 +241,12 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         return { buffer: document.buffer, revision: document.revision, selection, selectionSet, deleting };
     }
     function eachRange(capture: CommandCapture, purpose: "word" | "grapheme", resolve: (range: Selection, done: (range: Selection) => void) => void,
-        done: (ranges: readonly Selection[]) => void): void {
+        done: (ranges: readonly Selection[]) => void, validLayout: () => boolean = () => true): void {
         const job = { capture, purpose }; rangeCommand = job;
         const ranges: Selection[] = []; let index = 0, pumping = false, waiting = false;
         const active = () => rangeCommand === job && validCommand(capture);
         const pump = () => {
-            if (!active()) { if (rangeCommand === job) cancelWord(); return; }
+            if (!active() || !validLayout()) { if (rangeCommand === job) cancelWord(); return; }
             const began = win.performance.now(); let count = 0; pumping = true;
             while (index < capture.selectionSet.ranges.length && !waiting && count++ < 64 && win.performance.now() - began < 4) {
                 waiting = true;
@@ -262,12 +257,12 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             }
             pumping = false;
             if (!active()) return;
-            if (index === capture.selectionSet.ranges.length) { rangeCommand = undefined; done(ranges); }
+            if (index === capture.selectionSet.ranges.length) { rangeCommand = undefined; if (validLayout()) done(ranges); }
             else if (!waiting) { const timer = win.setTimeout(() => { commandTimers.delete(timer); if (rangeCommand === job) rangeTimer = undefined; pump(); }, 0);
                 rangeTimer = timer; commandTimers.add(timer); }
         }; pump();
     }
-    function finishRanges(capture: CommandCapture, ranges: readonly Selection[], type?: string): void {
+    function finishRanges(capture: CommandCapture, ranges: readonly Selection[], type?: string): SelectionSet | undefined {
         if (!validCommand(capture)) return;
         const selections = createSelectionSet(capture.buffer.length, ranges, capture.selectionSet.primary);
         if (capture.deleting) { const plan = planSelectionEdits(capture.buffer.length, selections, "");
@@ -275,6 +270,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         else { cancelWord(); group = undefined; view.setSelections(capture.revision, selections.ranges, selections.primary);
             const selected = view.getSnapshot().selection;
             viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" }); refresh(); }
+        return view.getSnapshot().selectionSet;
     }
     function moved(range: Selection, offset: number, extend: boolean, affinity: Affinity = "after"): Selection {
         return { anchor: extend ? range.anchor : offset, head: offset, anchorAffinity: extend ? range.anchorAffinity ?? "after" : affinity, headAffinity: affinity };
@@ -296,7 +292,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     }
     function word(direction: -1 | 1, deleting: boolean, extend = false): void {
         cancelWord(); if (disposed || composing || input.disabled || deleting && input.readOnly) return;
-        group = undefined; preferredX = undefined; syncSelection();
+        group = undefined; preferred = undefined; syncSelection();
         wordScanSteps = 0; maxWordScanStepMs = 0; graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
         const capture = commandCapture(deleting);
         eachRange(capture, "word", (selected, done) => {
@@ -323,9 +319,9 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         });
         }, ranges => finishRanges(capture, ranges));
     }
-    function selectWord(offset: number): void {
+    function selectWord(offset: number, add = false): void {
         cancelWord(); if (disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
-        stopDrag(); group = undefined; preferredX = undefined; focus(); syncSelection();
+        stopDrag(); group = undefined; preferred = undefined; focus(); syncSelection();
         const document = workspace.document(documentId), buffer = document.buffer, selected = view.getSnapshot().selection;
         const capture = { buffer, revision: document.revision, selection: selected, selectionSet: view.getSnapshot().selectionSet, deleting: false };
         const line = buffer.lineAt(offset), from = buffer.offsetAt(line);
@@ -357,28 +353,73 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             scan(Math.min(to, probe + width), -1, left => scan(probe, 1, right => {
                 withGraphemes(capture, left, -1, "word-selection", low => withGraphemes(capture, right, 1, "word-selection", high => {
                     if (!validCommand(capture)) return;
-                    view.setSelection(capture.revision, { anchor: Math.max(from, low.floor), head: Math.min(to, high.ceil) }); refresh();
+                    const range = { anchor: Math.max(from, low.floor), head: Math.min(to, high.ceil) };
+                    if (add) view.setSelections(capture.revision, [...capture.selectionSet.ranges, range], capture.selectionSet.ranges.length);
+                    else view.setSelection(capture.revision, range);
+                    refresh();
                 }));
             }));
         });
     }
+    function navigationLayout(): string {
+        const style = win.getComputedStyle(root), state = viewport.snapshot();
+        return [root.clientWidth, root.clientHeight, state.width, state.height, state.lineHeight, state.columnWidth, style.font, style.letterSpacing,
+            style.wordSpacing, style.tabSize, style.direction, style.getPropertyValue("--st-text-direction"), style.fontFeatureSettings, style.fontVariationSettings, owner.fonts.status].join("|");
+    }
+    function horizontal(key: string, extend: boolean, documentBoundary = false): void {
+        cancelWord(); preferred = undefined; viewport.flush();
+        graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
+        const capture = commandCapture(false), layout = navigationLayout(), buffer = capture.buffer;
+        eachRange(capture, "grapheme", (range, done) => {
+            if (key === "Home" || key === "End") {
+                const line = buffer.lineAt(range.head);
+                let offset = documentBoundary ? key === "Home" ? 0 : buffer.length : key === "Home" ? buffer.offsetAt(line)
+                    : line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) - 1 : buffer.length;
+                if (!documentBoundary && key === "End" && offset > buffer.offsetAt(line) && buffer.slice(offset - 1, offset) === "\r") offset--;
+                done(moved(range, offset, extend)); return;
+            }
+            const direction = key === "ArrowLeft" ? -1 : 1;
+            const point = !extend && range.anchor !== range.head
+                ? viewport.collapseVisual(Math.min(range.anchor, range.head), Math.max(range.anchor, range.head), direction, false)
+                : viewport.moveVisual(range.head, range.headAffinity ?? "after", direction, false);
+            if (point) { visualMoves++; done(moved(range, point.offset, extend, point.affinity)); return; }
+            if (!extend && range.anchor !== range.head) { done(moved(range, direction < 0 ? Math.min(range.anchor, range.head) : Math.max(range.anchor, range.head), false)); return; }
+            withGraphemes(capture, range.head, direction, "grapheme", at => done(moved(range, direction < 0 ? at.preceding ?? range.head : at.following ?? range.head, extend)));
+        }, ranges => finishRanges(capture, ranges), () => navigationLayout() === layout);
+    }
     function vertical(direction: -1 | 1, page: boolean, extend: boolean): void {
-        cancelWord(); viewport.flush(); let state = viewport.snapshot(); const selected = view.getSnapshot().selection;
-        let point = viewport.coordsAt(selected.head, selected.headAffinity);
-        if (!point) { viewport.revealOffset(selected.head); viewport.flush(); state = viewport.snapshot(); point = viewport.coordsAt(selected.head, selected.headAffinity); }
-        if (!point) return;
-        if (selected !== preferredSelection || state.columnWidth !== preferredColumnWidth) preferredX = undefined;
-        const buffer = workspace.document(documentId).buffer, line = buffer.lineAt(selected.head), count = page ? Math.max(1, Math.floor(state.height / state.lineHeight) - 1) : 1;
-        const nextLine = Math.max(0, Math.min(buffer.lineCount - 1, line + direction * count));
-        if (nextLine === line) { preferredX = undefined; preferredSelection = undefined; move(direction < 0 ? 0 : buffer.length, extend); return; }
-        const rectangle = root.getBoundingClientRect(); preferredX ??= point.left - rectangle.left + state.scrollLeft;
-        const delta = (nextLine - line) * state.lineHeight, targetTop = point.top - rectangle.top + delta;
-        let top = page ? state.scrollTop + delta : state.scrollTop;
-        if (!page) { if (targetTop < 0) top += targetTop; else if (targetTop + point.height > state.height) top += targetTop + point.height - state.height; }
-        const left = preferredX < state.scrollLeft || preferredX > state.scrollLeft + state.width ? Math.max(0, preferredX - state.width / 2) : state.scrollLeft;
-        viewport.scrollTo({ top, left }); viewport.flush(); const next = viewport.snapshot();
-        const hit = viewport.hitTest(rectangle.left + preferredX - next.scrollLeft, point.top + point.height / 2 + delta - (next.scrollTop - state.scrollTop));
-        if (hit) { move(hit.offset, extend, hit.affinity); preferredSelection = view.getSnapshot().selection; preferredColumnWidth = state.columnWidth; }
+        cancelWord(); viewport.flush();
+        const capture = commandCapture(false), buffer = capture.buffer, selected = capture.selection;
+        if (!viewport.coordsAt(selected.head, selected.headAffinity)) { viewport.revealOffset(selected.head); viewport.flush(); }
+        const state = viewport.snapshot(), layout = navigationLayout();
+        const prior = preferred?.selections === capture.selectionSet && preferred.revision === capture.revision && preferred.layout === layout ? preferred.columns : undefined;
+        const columns: (number | undefined)[] = [], count = page ? Math.max(1, Math.floor(state.height / state.lineHeight) - 1) : 1;
+        let index = 0, pageDelta = 0;
+        eachRange(capture, "grapheme", (range, done) => {
+            const at = index++, line = buffer.lineAt(range.head), next = Math.max(0, Math.min(buffer.lineCount - 1, line + direction * count));
+            if (at === capture.selectionSet.primary) pageDelta = (next - line) * state.lineHeight;
+            if (next === line) { columns.push(undefined); done(moved(range, direction < 0 ? 0 : buffer.length, extend)); return; }
+            const column = prior?.[at] ?? viewport.columnAt(range.head, range.headAffinity);
+            const hit = column === undefined ? undefined : viewport.caretAtColumn(next, column);
+            columns.push(column); done(hit ? moved(range, hit.offset, extend, hit.affinity) : range);
+        }, ranges => {
+            if (page) viewport.scrollTo({ top: state.scrollTop + pageDelta });
+            const selections = finishRanges(capture, ranges); if (!selections) return;
+            // Normalization may reorder/coalesce targets. Carry the owning range's column,
+            // using the same primary/first-supplied ownership as the public selection model.
+            const ordered = ranges.map((range, at) => ({ from: Math.min(range.anchor, range.head), to: Math.max(range.anchor, range.head), at }))
+                .sort((a, b) => a.from - b.from || a.to - b.to || a.at - b.at);
+            let cursor = 0;
+            const nextColumns = selections.ranges.map(range => {
+                const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head); let ownerIndex = Infinity;
+                while (cursor < ordered.length && ordered[cursor]!.from >= from && ordered[cursor]!.to <= to) {
+                    const at = ordered[cursor++]!.at;
+                    if (at === capture.selectionSet.primary || ownerIndex !== capture.selectionSet.primary && at < ownerIndex) ownerIndex = at;
+                }
+                return columns[ownerIndex];
+            });
+            preferred = { selections, revision: capture.revision, layout, columns: nextColumns };
+        }, () => navigationLayout() === layout);
     }
     function indent(outdent: boolean): void {
         if (disposed || composing || input.disabled || input.readOnly) return;
@@ -463,11 +504,17 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     input.addEventListener("blur", () => { syncSelection(); group = undefined; scheduleCaret(); }, { signal: listeners.signal });
     function keydown(event: KeyboardEvent): void {
         if (composing || event.isComposing) return;
+        if (["Shift", "Control", "Meta", "Alt"].includes(event.key)) return;
         const command = (event.ctrlKey || event.metaKey) && !event.altKey, key = event.key.toLowerCase();
         if (command && (key === "z" || (event.ctrlKey && key === "y"))) { event.preventDefault(); history(event.shiftKey || key === "y" ? "redo" : "undo"); return; }
-        if (command && key === "a") { event.preventDefault(); cancelWord(); const length = workspace.document(documentId).buffer.length; view.setSelection(revision, { anchor: 0, head: length }); refresh(); return; }
-        if (command && (event.key === "Home" || event.key === "End")) { event.preventDefault(); preferredX = undefined; move(event.key === "Home" ? 0 : workspace.document(documentId).buffer.length, event.shiftKey); return; }
-        if (event.key === "Escape") { escaped = true; return; }
+        if (command && key === "a") { event.preventDefault(); cancelWord(); preferred = undefined; const length = workspace.document(documentId).buffer.length; view.setSelection(revision, { anchor: 0, head: length }); refresh(); return; }
+        if (command && (event.key === "Home" || event.key === "End")) { event.preventDefault(); syncSelection(); horizontal(event.key, event.shiftKey, true); return; }
+        if (event.key === "Escape") {
+            cancelWord(); cancelCommandTimers(); preferred = undefined;
+            const state = view.getSnapshot();
+            if (state.selectionSet.ranges.length > 1) { event.preventDefault(); view.setSelection(revision, state.selection); refresh(); }
+            escaped = true; return;
+        }
         // Backward focus traversal presses Shift before Tab.
         if (escaped && event.key === "Shift") return;
         if (event.key === "Tab" && escaped) { escaped = false; return; }
@@ -476,29 +523,13 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (wordModifier && ["ArrowLeft", "ArrowRight", "Backspace", "Delete"].includes(event.key)) {
             event.preventDefault(); word(event.key === "ArrowLeft" || event.key === "Backspace" ? -1 : 1, event.key === "Backspace" || event.key === "Delete", event.shiftKey); return;
         }
-        const selected = view.getSnapshot().selection, buffer = workspace.document(documentId).buffer;
         if (!event.altKey && !command && ["ArrowUp", "ArrowDown", "PageUp", "PageDown"].includes(event.key)) {
             event.preventDefault(); vertical(event.key === "ArrowUp" || event.key === "PageUp" ? -1 : 1, event.key.startsWith("Page"), event.shiftKey); return;
         }
         if (!event.altKey && !command && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
-            event.preventDefault(); let offset = selected.head;
-            if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-                const direction = event.key === "ArrowLeft" ? -1 : 1;
-                viewport.flush();
-                const point = !event.shiftKey && selected.anchor !== selected.head
-                    ? viewport.collapseVisual(Math.min(selected.anchor, selected.head), Math.max(selected.anchor, selected.head), direction)
-                    : viewport.moveVisual(offset, selected.headAffinity ?? "after", direction);
-                if (point) { visualMoves++; preferredX = undefined; move(point.offset, event.shiftKey, point.affinity); return; }
-                if (event.shiftKey || selected.anchor === selected.head) { preferredX = undefined; grapheme(direction, false, event.shiftKey); return; }
-                offset = direction < 0 ? Math.min(selected.anchor, selected.head) : Math.max(selected.anchor, selected.head);
-                preferredX = undefined;
-            } else if (event.key === "Home" || event.key === "End") {
-                const line = buffer.lineAt(offset); offset = event.key === "Home" ? buffer.offsetAt(line) : line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) - 1 : buffer.length;
-                if (event.key === "End" && offset > 0 && buffer.slice(offset - 1, offset) === "\r") offset--; preferredX = undefined;
-            }
-            move(offset, event.shiftKey); return;
+            event.preventDefault(); horizontal(event.key, event.shiftKey); return;
         }
-        preferredX = undefined;
+        preferred = undefined;
         if (!command && !event.altKey && (event.key === "Backspace" || event.key === "Delete")) {
             event.preventDefault(); grapheme(event.key === "Backspace" ? -1 : 1, true);
         } else if (event.key === "Tab" && !command && !event.altKey) { event.preventDefault(); indent(event.shiftKey); }
@@ -514,17 +545,19 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         wordSelectionEvents++;
         if (event.button !== 0 || disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
         const point = viewport.hitTest(event.clientX, event.clientY); if (!point) return;
-        event.preventDefault(); selectWord(point.offset);
+        event.preventDefault(); selectWord(point.offset, event.altKey);
         } finally { lastWordSelectionMs = win.performance.now() - began; maxWordSelectionTurnMs = Math.max(maxWordSelectionTurnMs, lastWordSelectionMs); }
     }, { signal: listeners.signal });
     root.addEventListener("pointerdown", event => {
-        if (event.button !== 0 || event.target === input) return;
+        if (event.button !== 0 || disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
+        if (event.target === input && !event.altKey && view.getSnapshot().selectionSet.ranges.length === 1) return;
         const point = viewport.hitTest(event.clientX, event.clientY); if (!point) return;
-        event.preventDefault(); cancelWord(); preferredX = undefined; focus(); group = undefined;
-        const selected = view.getSnapshot().selection, anchor = event.shiftKey ? selected.anchor : point.offset;
-        const anchorAffinity = event.shiftKey ? selected.anchorAffinity ?? "after" : point.affinity;
-        view.setSelection(revision, { anchor, head: point.offset, anchorAffinity, headAffinity: point.affinity }); refresh();
-        drag = { pointer: event.pointerId, anchor, anchorAffinity, revision, x: event.clientX, y: event.clientY, selection: view.getSnapshot().selection }; root.setPointerCapture(event.pointerId);
+        event.preventDefault(); stopDrag(); cancelWord(); preferred = undefined; focus(); group = undefined;
+        const state = view.getSnapshot(), extending = event.shiftKey && !event.altKey;
+        const anchor = extending ? state.selection.anchor : point.offset, anchorAffinity = extending ? state.selection.anchorAffinity ?? "after" : point.affinity;
+        const baseRanges = event.altKey ? state.selectionSet.ranges : extending ? state.selectionSet.ranges.filter((_, index) => index !== state.selectionSet.primary) : [];
+        view.setSelections(revision, [...baseRanges, { anchor, head: point.offset, anchorAffinity, headAffinity: point.affinity }], baseRanges.length); refresh();
+        drag = { pointer: event.pointerId, anchor, anchorAffinity, revision, x: event.clientX, y: event.clientY, selectionSet: view.getSnapshot().selectionSet, baseRanges }; root.setPointerCapture(event.pointerId);
     }, { signal: listeners.signal });
     root.addEventListener("pointermove", event => {
         if (drag?.pointer !== event.pointerId) return;
@@ -533,7 +566,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     }, { signal: listeners.signal });
     function validDrag(): boolean {
         return !!drag && !disposed && !composing && !input.disabled && root.isConnected && root.clientWidth > 0 && root.clientHeight > 0
-            && drag.revision === revision && drag.selection === view.getSnapshot().selection && !!workspace.resolveTab(target) && root.hasPointerCapture(drag.pointer);
+            && drag.revision === revision && drag.selectionSet === view.getSnapshot().selectionSet && !!workspace.resolveTab(target) && root.hasPointerCapture(drag.pointer);
     }
     function dragBounds(): Readonly<{ left: number; right: number; top: number; bottom: number }> {
         const rectangle = root.getBoundingClientRect(), left = rectangle.left + root.clientLeft, top = rectangle.top + root.clientTop;
@@ -543,8 +576,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const current = drag; if (!current) return; const bounds = dragBounds();
         const point = viewport.hitTest(Math.max(bounds.left, Math.min(bounds.right - 1, current.x)), Math.max(bounds.top, Math.min(bounds.bottom - 1, current.y)));
         if (!point) return;
-        view.setSelection(current.revision, { anchor: current.anchor, head: point.offset, anchorAffinity: current.anchorAffinity, headAffinity: point.affinity });
-        if (drag === current) drag = { ...current, selection: view.getSnapshot().selection }; refresh();
+        view.setSelections(current.revision, [...current.baseRanges, { anchor: current.anchor, head: point.offset, anchorAffinity: current.anchorAffinity, headAffinity: point.affinity }], current.baseRanges.length);
+        if (drag === current) drag = { ...current, selectionSet: view.getSnapshot().selectionSet }; refresh();
     }
     function dragVelocity(): Readonly<{ x: number; y: number }> {
         if (!drag) return { x: 0, y: 0 }; const bounds = dragBounds(), metrics = viewport.snapshot();
@@ -605,7 +638,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             pendingDragScroll: dragFrame !== undefined, dragScrollFrames, maxDragScrollStepMs, commits, conflicts, composing, pendingWord: rangeCommand?.purpose === "word" || wordJob !== undefined || graphemeJob?.purpose === "word" || graphemeJob?.purpose === "word-selection", wordScanSteps, maxWordScanStepMs, pendingGrapheme: rangeCommand?.purpose === "grapheme" || graphemeJob !== undefined, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves, disposed }),
         destroy: () => {
             if (disposed) return; disposed = true;
-            cancelWord(); wordInput = undefined; insertion = undefined; composition = undefined; graphemeCache = undefined;
+            cancelWord(); wordInput = undefined; insertion = undefined; composition = undefined; graphemeCache = undefined; preferred = undefined;
             if (composing && input.value !== context.text) conflict("composition-detached");
             composing = false; stopDrag();
             if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;

@@ -174,9 +174,21 @@ Tab inserts four spaces at every collapsed caret. With any nonempty range, inden
 operates on the union of touched lines once, including lines with secondary carets; a range ending at
 the next line's start excludes that next line. Bracket pairing/skipping considers each collapsed
 caret's following character and preserves the resulting complete set in one transaction.
-Multiple-caret creation gestures and remaining all-range navigation still need implementation and
-integrated qualification. These APIs and input checks alone do not complete the usable multiple-
-selection workflow. The native textarea baseline continues to edit only its primary range.
+Alt+click adds a caret; Alt+drag adds a range; Alt+double-click adds a word. Shift+click extends the
+primary range while retaining the others. Ordinary click starts one selection. Escape keeps only
+the primary range and cancels pending commands; Escape followed by Tab or Shift+Tab still leaves
+the editor. Captured dragging belongs to its complete set, revision and mounted tab.
+
+Arrow, word, line/document and page commands operate on every range, retaining extension anchors
+and bidi affinities. Vertical movement remembers each range's measured pixel column across short
+lines, until another selection, edit or layout breaks that sequence. Targets are normalized and
+published once; coalesced ranges inherit their owner's column. Large sets yield between planning
+turns and expire after captured-set, revision, layout or lifecycle changes. Only the primary target
+is revealed. Offscreen short rows reuse native row geometry through one bounded temporary hidden
+row; `navigationRows`/`navigationReadUnits` count those reads separately from render `readUnits`.
+`columnAt` and `caretAtColumn` expose logical pixel columns independent of scrolling. Contextual
+long-line origin and shaping limits remain those described in [viewport.md](viewport.md).
+The native textarea baseline continues to edit only its primary range.
 The native text-control [selection API](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#textFieldSelection)
 supplies the primary input projection. The project model reuses its own mappings, transactions
 and history to represent the additional ranges without an editor/runtime dependency.
