@@ -45,6 +45,13 @@ commit as its own history unit; stale-context recovery for unrelated edits remai
 The controller removes its composition listener on destruction. Synthetic event tests verify
 these staging rules and do not qualify native IME behavior.
 
+Next/previous match and current replacement also reject a host command during active
+composition, preserving both the staged selection and document revision. Rejection keeps the
+search index available. After composition ends, a fresh command can navigate or replace using
+the current source. Unrelated external edits retain the existing stale-context recovery rules.
+Late replacement calls on a destroyed controller, expired tab or disposed view remain inert,
+including while its editor still reports composition; they do not publish new Find state.
+
 The controller retains an explicit resource lease and subscribes only to its document and tab
 state. Destroy it before discarding the associated view. Cancellation clears the index and
 does not automatically resume on later typing. Disposed or expired controllers cannot address

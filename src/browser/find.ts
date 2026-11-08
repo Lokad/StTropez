@@ -50,6 +50,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     const next = (direction: 1 | -1 = 1): boolean => {
         scope.assertWritable(); if (direction !== 1 && direction !== -1) throw new RangeError("Invalid search direction.");
         const state = store.get(); if (!valid() || state.status !== "ready" || !count) return false;
+        if (editor.snapshot().composing) { publish({ message: "Finish composition before navigating." }); return false; }
         const selected = editor.view.getSnapshot().selection, bound = direction === 1 ? Math.max(selected.anchor, selected.head) : Math.min(selected.anchor, selected.head);
         let low = 0, high = count;
         while (low < high) { const middle = (low + high) >>> 1; if (offsetAt(middle) < bound) low = middle + 1; else high = middle; }
@@ -59,6 +60,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     };
     const replaceCurrent = (replacement: string): boolean => {
         scope.assertWritable(); if (typeof replacement !== "string") throw new TypeError("Expected replacement text.");
+        if (editor.snapshot().composing && valid()) { publish({ message: "Finish composition before replacing." }); return false; }
         const match = currentRange(); if (!match) return next();
         const head = match.from + replacement.length;
         const result = workspace.edit({ documentId, expectedRevision: store.get().revision, origin: "human", edits: [{ ...match, insert: replacement }], view: editor.view,
