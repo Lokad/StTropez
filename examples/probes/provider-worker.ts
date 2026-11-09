@@ -10,12 +10,15 @@ import { validateActionInput } from "./actions.ts";
 import type { ActionInput, ActionResult } from "./actions.ts";
 import { validateLinksInput } from "./links.ts";
 import type { LinksInput, LinksResult } from "./links.ts";
+import { validateColorsInput } from "./colors.ts";
+import type { ColorFault, ColorsResult, ColorPresentationsResult } from "./colors.ts";
 
 let project: ProviderProject | undefined, navigationFault: "malformed" | "failure" | undefined;
 let loseCommandAcknowledgement = false;
 let signatureFault: SignatureInput["fault"];
 let actionFault: ActionInput["fault"];
 let linksFault: LinksInput["fault"];
+let colorsFault: ColorFault | undefined;
 
 // Host worker entry. Owners control their lanes; deferred replies exercise stale-result rejection.
 globalThis.addEventListener("message", (event: MessageEvent<string>) => {
@@ -24,7 +27,23 @@ globalThis.addEventListener("message", (event: MessageEvent<string>) => {
         try {
             if (!project) { if (decoded.operation !== "project-hello" || !("epoch" in decoded) || typeof decoded.epoch !== "number") throw new Error("Initialize the provider."); project = new ProviderProject(decoded.epoch); }
             const reply = project.handle(decoded);
-            if (decoded.operation === "project-links" && "input" in decoded) {
+            if (decoded.operation === "project-colors" && "input" in decoded) {
+                const input = validateColorsInput(decoded.input); colorsFault = input.fault;
+                setTimeout(() => { if (input.fault === "failure") throw new Error("Synthetic colors failure"); globalThis.postMessage(JSON.stringify(reply)); }, input.delay);
+            } else if (reply.operation === "project-colors-result") {
+                const result = reply.result as ColorsResult;
+                globalThis.postMessage(JSON.stringify(colorsFault === "malformed" ? { ...reply, result: { ...result, colors: [...result.colors, { from: -1, to: 0, text: "invalid", label: "invalid", color: { red: 2, green: 0, blue: 0, alpha: 1 } }] } }
+                    : colorsFault === "incomplete" ? { ...reply, result: { ...result, complete: false } }
+                    : colorsFault === "markup" ? { ...reply, result: { ...result, colors: result.colors.map((color, i) => i ? color : { ...color, label: '<img src="invalid" onerror="window.colorExecuted = true">' }) } } : reply));
+            } else if (decoded.operation === "project-color-presentations" && "input" in decoded) {
+                const input = validateColorsInput(decoded.input), result = reply.result as ColorPresentationsResult;
+                setTimeout(() => {
+                    if (input.fault === "failure") throw new Error("Synthetic presentation failure");
+                    globalThis.postMessage(JSON.stringify(input.fault === "incomplete" ? { ...reply, result: { ...result, complete: false } }
+                        : input.fault === "malformed" ? { ...reply, result: { ...result, presentations: result.presentations.map((p, i) => i !== result.presentations.length - 1 ? p : { ...p, edits: [{ document: result.document, revision: result.revision, edits: [{ from: result.from, to: result.to, insert: "#123456" }, { from: -1, to: 0, insert: "invalid late edit" }] }] }) } }
+                        : input.fault === "markup" ? { ...reply, result: { ...result, presentations: result.presentations.map((p, i) => i ? p : { ...p, label: '<img src="invalid" onerror="window.colorExecuted = true">' }) } } : reply));
+                }, input.delay);
+            } else if (decoded.operation === "project-links" && "input" in decoded) {
                 const input = validateLinksInput(decoded.input); linksFault = input.fault;
                 setTimeout(() => { if (input.fault === "failure") throw new Error("Synthetic links failure"); globalThis.postMessage(JSON.stringify(reply)); }, input.delay);
             } else if (reply.operation === "project-links-result") {

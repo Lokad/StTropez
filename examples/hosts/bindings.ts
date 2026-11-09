@@ -9,6 +9,7 @@ import { HostTablePaste } from "./table-paste.ts";
 import { HostDomainTools } from "./domain.ts";
 import { HostNavigationTools } from "./navigation.ts";
 import { HostProjectTools } from "./project.ts";
+import { HostDocumentColors } from "./document-colors.ts";
 import { HostDocumentLinks } from "./document-links.ts";
 import { HostActionsTools } from "./code-actions.ts";
 import { HostRenameTools } from "./rename.ts";
@@ -39,6 +40,7 @@ export class ViewBindings {
     readonly rename: HostRenameTools;
     readonly actions: HostActionsTools;
     readonly links: HostDocumentLinks;
+    readonly colors: HostDocumentColors;
     private detachReviewLanguage: (() => void) | undefined;
     private referenceState: Readonly<{ baseline: ComparisonBaseline; state: ViewState }> | undefined;
     private reviewStatus: HTMLOutputElement | undefined;
@@ -82,7 +84,8 @@ export class ViewBindings {
         const detachRename = this.rename.attach("comparison", this.controller.viewTab("primary"), this.review.working);
         const detachActions = this.actions.attach("comparison", this.controller.viewTab("primary"), this.review.working);
         const detachLinks = this.links.attach("comparison", this.controller.viewTab("primary"), this.review.working);
-        this.detachReviewLanguage = () => { detachLinks(); detachActions(); detachRename(); detachSignature(); detachProject(); detachNavigation(); detachDomain(); detachPaste(); detachHover(); detachLanguage(); referencePresentation.clear(); };
+        const detachColors = this.colors.attach("comparison", this.controller.viewTab("primary"), this.review.working, presentation);
+        this.detachReviewLanguage = () => { detachColors(); detachLinks(); detachActions(); detachRename(); detachSignature(); detachProject(); detachNavigation(); detachDomain(); detachPaste(); detachHover(); detachLanguage(); referencePresentation.clear(); };
         const state = this.states.get("comparison")?.get(view.documentId);
         if (state) this.review.working.restoreView(this.restoreState(state, view));
         if (this.referenceState?.baseline.buffer === baseline.buffer && this.referenceState.baseline.version === baseline.version)
@@ -173,6 +176,7 @@ export class ViewBindings {
         };
         this.navigation = new HostNavigationTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
         this.project = new HostProjectTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
+        this.colors = new HostDocumentColors(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
         this.links = new HostDocumentLinks(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
         this.actions = new HostActionsTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
         this.rename = new HostRenameTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
@@ -246,6 +250,7 @@ export class ViewBindings {
             const detachRename = candidate ? this.rename.attach(id, tabId, candidate) : undefined;
             const detachActions = candidate ? this.actions.attach(id, tabId, candidate) : undefined;
             const detachLinks = candidate ? this.links.attach(id, tabId, candidate) : undefined;
+            const detachColors = candidate ? this.colors.attach(id, tabId, candidate, presentation) : undefined;
             const mounted: BoundEditor = candidate ? { element: candidate.input, view, captureView: candidate.captureView,
                 restoreView: candidate.restoreView, destroy: candidate.destroy,
                 metrics: () => ({ ...candidate.snapshot(), viewport: candidate.viewport.snapshot() }) }
@@ -253,7 +258,7 @@ export class ViewBindings {
             const listeners = new AbortController();
             mounted.element.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
             this.bindSaveShortcut(mounted.element, tabId, () => candidate?.snapshot().composing ?? false, listeners.signal);
-            const editor: BoundEditor = { ...mounted, destroy: () => { try { detachLinks?.(); detachActions?.(); detachRename?.(); detachSignature?.(); detachProject?.(); detachNavigation?.(); detachDomain?.(); detachPaste?.(); detachHover?.(); detachLanguage?.(); mounted.destroy(); } finally { listeners.abort(); } } };
+            const editor: BoundEditor = { ...mounted, destroy: () => { try { detachColors?.(); detachLinks?.(); detachActions?.(); detachRename?.(); detachSignature?.(); detachProject?.(); detachNavigation?.(); detachDomain?.(); detachPaste?.(); detachHover?.(); detachLanguage?.(); mounted.destroy(); } finally { listeners.abort(); } } };
             const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView(this.restoreState(state, view));
             this.mounted.set(id, { editor, documentId, candidate }); this.mounts++;
         };
@@ -266,12 +271,12 @@ export class ViewBindings {
     unmount(): void { for (const id of [...this.mounted.keys()]) this.detach(id); }
     dispose(): void {
         this.stopInputCapture();
-        this.comparison(null); this.unmount(); this.links.dispose(); this.actions.dispose(); this.rename.dispose(); this.signature.dispose(); this.project.dispose(); this.navigation.dispose(); this.domain.dispose(); for (const selections of this.selections.values()) for (const view of selections.values()) view.dispose();
+        this.comparison(null); this.unmount(); this.colors.dispose(); this.links.dispose(); this.actions.dispose(); this.rename.dispose(); this.signature.dispose(); this.project.dispose(); this.navigation.dispose(); this.domain.dispose(); for (const selections of this.selections.values()) for (const view of selections.values()) view.dispose();
         this.selections.clear(); this.states.clear(); this.referenceState = undefined;
     }
     debug() {
         const comparison = this.review?.controller.getSnapshot();
-        return { editor: this.editor, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size, language: this.language.debug(), hover: this.hover.debug(), tablePaste: this.tablePaste.debug(), domain: this.domain.debug(), navigation: this.navigation.debug(), project: this.project.debug(), rename: this.rename.debug(), actions: this.actions.debug(), links: this.links.debug(), signature: this.signature.debug(),
+        return { editor: this.editor, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size, language: this.language.debug(), hover: this.hover.debug(), tablePaste: this.tablePaste.debug(), domain: this.domain.debug(), navigation: this.navigation.debug(), project: this.project.debug(), rename: this.rename.debug(), actions: this.actions.debug(), links: this.links.debug(), colors: this.colors.debug(), signature: this.signature.debug(),
         comparison: comparison ? { status: comparison.status, generation: comparison.generation, workingRevision: comparison.working?.revision,
             referenceIsWorkingBuffer: comparison.baseline !== null && comparison.baseline.buffer === comparison.working?.buffer,
             progress: comparison.progress && { work: comparison.progress.work, readUnits: comparison.progress.readUnits,

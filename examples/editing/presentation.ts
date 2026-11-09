@@ -12,6 +12,7 @@ export class EditingPresentation {
     search: Readonly<{ revision: number; ranges: readonly SearchMatch[] }> | undefined;
     diagnostics: Readonly<{ revision: number; ranges: readonly SearchMatch[] }> | undefined;
     domain: Readonly<{ revision: number; index: DomainAnnotationIndex }> | undefined;
+    colors: Readonly<{ revision: number; index: DomainAnnotationIndex }> | undefined;
     readonly decorate = (line: PresentedLine): readonly InlineDecoration[] => {
         let cached = this.cache.get(line.line);
         if (!cached || cached.text !== line.text) { cached = { text: line.text, tokens: tokenizeLine(line.text) }; this.lexedLines++; this.lexedUnits += line.text.length; }
@@ -22,8 +23,9 @@ export class EditingPresentation {
             if (snapshot?.revision === line.revision) for (const range of snapshot.ranges) if (range.from < line.to && range.to > line.from) decorations.push({ ...range, className });
         }
         if (this.domain?.revision === line.revision) for (const range of this.domain.index.query(line.from, line.to)) decorations.push({ from: range.from, to: range.to, className: "st-domain-note" });
+        if (this.colors?.revision === line.revision) for (const range of this.colors.index.query(line.from, line.to)) decorations.push({ from: range.from, to: range.to, className: "st-document-color" });
         return decorations;
     };
     snapshot() { return { cachedLines: this.cache.size, lexedLines: this.lexedLines, lexedUnits: this.lexedUnits }; }
-    clear(): void { this.cache.clear(); this.search = undefined; this.diagnostics = undefined; this.domain = undefined; }
+    clear(): void { this.cache.clear(); this.search = undefined; this.diagnostics = undefined; this.domain = undefined; this.colors = undefined; }
 }

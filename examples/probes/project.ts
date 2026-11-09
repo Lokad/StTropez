@@ -9,6 +9,8 @@ import { ModuleActionCursor, validateActionInput } from "./actions.ts";
 import type { ActionInput } from "./actions.ts";
 import { ModuleLinksCursor, validateLinksInput } from "./links.ts";
 import type { LinksInput } from "./links.ts";
+import { DocumentColorsCursor, validateColorsInput, validateColorPresentationInput, provideColorPresentations } from "./colors.ts";
+import type { ColorsInput } from "./colors.ts";
 export const projectProtocolVersion = 1;
 export type ProjectPacket = Readonly<{ version: number; epoch: number; sequence: number; operation: string; [key: string]: unknown }>;
 type Document = Readonly<{ revision: number; buffer: TextBuffer }>;
@@ -34,6 +36,9 @@ export class ProviderProject {
     private lastAction = 0;
     private links: { input: LinksInput; cursor: ModuleLinksCursor } | undefined;
     private lastLinks = 0;
+    private colors: { input: ColorsInput; cursor: DocumentColorsCursor } | undefined;
+    private lastColors = 0;
+    private lastColorPresentation = 0;
     constructor(epoch: number) { if (!integer(epoch) || !epoch) throw new Error("Invalid provider epoch."); this.epoch = epoch; }
     handle(value: unknown): ProjectPacket {
         if (!record(value) || value.version !== projectProtocolVersion || value.epoch !== this.epoch || value.sequence !== this.sequence + 1 || typeof value.operation !== "string") throw new Error("Invalid protocol version, epoch or sequence.");
@@ -52,6 +57,8 @@ export class ProviderProject {
             return { operation: "project-command-result", request: command.input.id, applied: value.applied, reason: value.reason, registered: this.registered };
         }
         if (this.command) throw new Error("Acknowledge the server request before another operation.");
+        if (value.operation === "project-colors-next") return this.advanceColors(value);
+        if (this.colors) throw new Error("Complete the color scan before another operation.");
         if (value.operation === "project-links-next") return this.advanceLinks(value);
         if (this.links) throw new Error("Complete the links scan before another operation.");
         if (value.operation === "project-action-next") return this.advanceAction(value);
@@ -82,6 +89,17 @@ export class ProviderProject {
             return ack("commit", stage.document, stage.revision, stage.length, stage.received);
         }
         if (this.stage) throw new Error("Complete the document transfer before another operation.");
+        if (value.operation === "project-colors" || value.operation === "project-color-presentations") {
+            const capture = validateColorsInput(value.input), doc = this.documents.get(capture.document);
+            if (!doc || doc.revision !== capture.revision || doc.buffer.length !== capture.length) throw new Error("Color source is not synchronized.");
+            if (value.operation === "project-colors") {
+                if (capture.id <= this.lastColors) throw new Error("Repeated color discovery."); this.lastColors = capture.id; this.colors = { input: capture, cursor: new DocumentColorsCursor(capture, doc.buffer) };
+                return { operation: "project-colors-progress", request: capture.id, work: 0 };
+            }
+            if (capture.id <= this.lastColorPresentation) throw new Error("Repeated color presentation.");
+            const input = validateColorPresentationInput(value.input, doc.buffer), result = provideColorPresentations(input); this.lastColorPresentation = input.id;
+            return { operation: "project-color-presentations-result", request: input.id, result };
+        }
         if (value.operation === "project-links") {
             const input = validateLinksInput(value.input), doc = this.documents.get(input.document);
             if (input.id <= this.lastLinks || !doc || doc.revision !== input.revision || doc.buffer.length !== input.length) throw new Error("Link source is not synchronized or request is repeated.");
@@ -160,8 +178,13 @@ export class ProviderProject {
         const step = q.cursor.next(); if (!step.result) return { operation: "project-links-progress", request: q.input.id, work: step.work };
         this.links = undefined; return { operation: "project-links-result", request: q.input.id, work: step.work, result: step.result };
     }
+    private advanceColors(value: Record<string, unknown>): Readonly<{ operation: string; [key: string]: unknown }> {
+        const q = this.colors; if (!q || value.request !== q.input.id) throw new Error("Invalid colors continuation.");
+        const step = q.cursor.next(); if (!step.result) return { operation: "project-colors-progress", request: q.input.id, work: step.work };
+        this.colors = undefined; return { operation: "project-colors-result", request: q.input.id, work: step.work, result: step.result };
+    }
     buffer(document: string): TextBuffer | undefined { return this.documents.get(document)?.buffer; }
     snapshot() { return Object.freeze({ version: projectProtocolVersion, epoch: this.epoch, sequence: this.sequence, units: this.units, staging: !!this.stage, querying: !!this.query,
-        registered: this.registered, serverPending: !!this.command, signaturePending: !!this.signature, actionPending: !!this.action, linksPending: !!this.links,
+        registered: this.registered, serverPending: !!this.command, signaturePending: !!this.signature, actionPending: !!this.action, linksPending: !!this.links, colorsPending: !!this.colors,
         documents: Object.freeze([...this.documents].map(([document, value]) => Object.freeze({ document, revision: value.revision, length: value.buffer.length }))) }); }
 }

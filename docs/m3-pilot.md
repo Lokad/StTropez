@@ -64,6 +64,10 @@ while it is in flight. **Finish save** trims trailing whitespace in its canonica
    qualify a general language service or screen-reader announcement behavior.
    Type `lookup(`, `format(` or `café(` to open local signature help, or press
    Ctrl/Cmd+Shift+Space in a source/comparison working pane. The current parameter is highlighted;
+   For a color literal such as '#abc' or 'rgba(1,2,3,.5)', press F6 or **Discover document colors**.
+   Inspect a result, edit **Proposed color**, press Enter, choose **Color presentation**, review
+   **Proposed color edits** and explicitly **Apply captured color**. [Color policy](document-colors.md)
+   describes safe swatches/markers, alpha, bounds, shared history and the remaining semantic/native gaps.
    To follow a module link, choose **Add module companion**, then discover an exact
    'import "sample-utils";' line with F4 or **Discover module links**. Tab/Enter activates a
    resolved result; Shift+F4 returns to the captured source and complete selections.

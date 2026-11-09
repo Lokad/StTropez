@@ -71,7 +71,8 @@ explicit; [captured signature help](signature-help.md) now runs in the versioned
 [Captured lexical rename](rename.md) reuses that worker transport and atomic workspace edits with an explicit paged preview.
 [Captured module-import actions](code-actions.md) reuse the existing domain planner and batch validator in that worker with explicit preview/confirmation.
 [Captured module links](document-links.md) reuse that bounded import-line scan and captured host aliases for explicit internal resource reveal.
-General semantic resolution and rename/actions/links and other language workflows remain
+[Captured colors/presentations](document-colors.md) reuse the interval index and batch edit path, with normalized numeric channels and explicit confirmed edits.
+General semantic resolution and rename/actions/links/colors and other language workflows remain
 separate required work.
 
 The complete response is validated before publication, then rendered only as text. Escape,

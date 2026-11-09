@@ -11,6 +11,8 @@ import { validateActionInput, validateActionResult } from "../probes/actions.ts"
 import type { ActionInput } from "../probes/actions.ts";
 import { validateLinksInput, validateLinksResult } from "../probes/links.ts";
 import type { LinksInput } from "../probes/links.ts";
+import { validateColorsInput, validateColorsResult, validateColorPresentationInput, validateColorPresentationsResult } from "../probes/colors.ts";
+import type { ColorsInput, ColorPresentationInput } from "../probes/colors.ts";
 export type NavigationMetrics = { created: number; posted: number; received: number; transferred: number; maxChunk: number; completed: number; failed: number; terminated: number;
     opened: number; changed: number; closed: number; reused: number; snapshotUnits: number; deltaUnits: number; planningTurns: number; rejected: number };
 export type SyncFault = "version" | "epoch" | "sequence" | "revision";
@@ -149,7 +151,24 @@ export function createNavigationClient(clock: Pick<Window, "setTimeout" | "clear
             }
         });
     };
-    return Object.freeze({ run, command, signature, action, links,
+    const colors = (capture: ColorsInput, buffer: TextBuffer, progress: (work: number) => void) => {
+        const input = validateColorsInput(capture);
+        return execute([input], new Map([[input.document, buffer]]), async () => {
+            let reply = await exchange("project-colors", { input }), work = 0;
+            for (;;) {
+                if (reply.request !== input.id) throw new Error("Invalid captured colors identity.");
+                if (reply.operation === "project-colors-result") { if (reply.work !== input.length) throw new Error("Incomplete color scan."); const result = validateColorsResult(reply.result, input, buffer); counts.completed++; return result; }
+                if (reply.operation !== "project-colors-progress" || typeof reply.work !== "number" || !Number.isSafeInteger(reply.work) || reply.work < work || reply.work > input.length) throw new Error("Invalid colors progress.");
+                work = reply.work; progress(work); reply = await exchange("project-colors-next", { request: input.id });
+            }
+        });
+    };
+    const colorPresentations = (capture: ColorPresentationInput, buffer: TextBuffer) => {
+        const input = validateColorPresentationInput(capture, buffer);
+        return execute([input], new Map([[input.document, buffer]]), async () => { const reply = await exchange("project-color-presentations", { input });
+            if (reply.operation !== "project-color-presentations-result" || reply.request !== input.id) throw new Error("Invalid presentation response identity."); const result = validateColorPresentationsResult(reply.result, input); counts.completed++; return result; });
+    };
+    return Object.freeze({ run, command, signature, action, links, colors, colorPresentations,
         faultIdle: () => { if (!worker || !connected || busy) return false; counts.posted++; worker.postMessage("{"); return true; },
         snapshot: () => Object.freeze({ connected, busy, disposed, version: projectProtocolVersion, epoch, sequence,
         documents: Object.freeze([...cache].map(([document, doc]) => Object.freeze({ document, revision: doc.revision, length: doc.buffer.length }))) }),

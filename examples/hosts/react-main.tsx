@@ -11,6 +11,7 @@ import { findText, foldText, languageActions, languageFieldKey } from "./languag
 import { domainActions } from "./domain-panel.ts";
 import { navigationActions } from "./navigation-panel.ts";
 import { projectActions } from "./project-panel.ts";
+import { documentColorActions, documentColorDescription, documentColorLabel, colorEditLabel } from "./document-colors-panel.ts";
 import { documentLinkActions, documentLinkDescription, documentLinkLabel, documentLinkDetails } from "./document-links-panel.ts";
 import { actionsControls, actionsDescription, actionTarget } from "./actions-panel.ts";
 import { renameActions, renameDescription, renameTarget } from "./rename-panel.ts";
@@ -125,7 +126,17 @@ function TablePasteTools() {
         <button disabled={state.status !== "converting"} onClick={tools.cancel}>Cancel table paste</button></section>;
 }
 function App() {
-    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentLinksTools /><SignatureTools /><SymbolInfo /></>;
+    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentLinksTools /><DocumentColorsTools /><SignatureTools /><SymbolInfo /></>;
+}
+function DocumentColorsTools() {
+    const tools = bindings.colors, s = useObserved(tools.state);
+    return <section className="host-language" aria-label="Document colors"><h2>Document colors</h2><p>{documentColorDescription}</p>
+        <output aria-label="Document color status" aria-live="polite">{s.message}</output><div>{documentColorActions(tools).map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
+        <ul ref={tools.bindList} tabIndex={-1} aria-label="Document color results">{s.colors.map(color => <li key={color.from}><span className="host-color-swatch" aria-hidden="true" style={{backgroundColor: color.css}} /><button disabled={s.pending} aria-pressed={s.selected === color.ordinal} onClick={() => tools.inspect(s.token, color.ordinal)}>{documentColorLabel(color)}</button></li>)}</ul>
+        <label>Proposed color <input ref={tools.bindValue} type="text" maxLength={96} value={s.value} onChange={event => tools.setValue(event.currentTarget.value)} /></label><span className="host-color-swatch" aria-hidden="true" style={{backgroundColor: s.css ?? "transparent"}} />
+        <button disabled={!s.canPreview || s.pending} onClick={tools.preview}>Preview color presentations</button><label>Color presentation <select disabled={!s.choices.length || s.pending} value={s.presentation} onChange={event => tools.setPresentation(event.currentTarget.value)}>{s.choices.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
+        <button disabled={!s.canApply || s.pending} onClick={() => tools.apply(s.token, s.previewToken, s.presentation)}>Apply captured color</button><ol aria-label="Proposed color edits">{s.edits.map((at,i) => <li key={i}><pre>{colorEditLabel(at)}</pre></li>)}</ol>
+        {s.changed && <button disabled={s.pending || s.token !== null} onClick={tools.openChanged}>Open color changes in {s.changed.title}</button>}</section>;
 }
 function DocumentLinksTools() {
     const tools = bindings.links, s = useObserved(tools.state);
