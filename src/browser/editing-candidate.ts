@@ -426,17 +426,24 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 rangeTimer = timer; commandTimers.add(timer); }
         });
     }
+    function boundaryOffset(buffer: TextBuffer, head: number, key: string, documentBoundary: boolean): number {
+        if (documentBoundary) return key === "Home" ? 0 : buffer.length;
+        const line = buffer.lineAt(head), start = buffer.offsetAt(line);
+        if (key === "Home") return start;
+        let end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) - 1 : buffer.length;
+        if (line + 1 < buffer.lineCount && end > start && buffer.slice(end - 1, end) === "\r") end--;
+        return end;
+    }
     function horizontal(key: string, extend: boolean, documentBoundary = false): void {
         preferred = undefined;
         graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
         // Indexed endpoints need no geometry. Finish bounded sets before the next input,
         // which would otherwise cancel queued navigation and edit the previous ranges.
-        if (documentBoundary && view.getSnapshot().selectionSet.ranges.length <= 32) {
+        if ((key === "Home" || key === "End") && view.getSnapshot().selectionSet.ranges.length <= 32) {
             cancelWord(); navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
             navigationTurn(() => {
                 const capture = commandCapture(false); if (!validCommand(capture)) return;
-                const offset = key === "Home" ? 0 : capture.buffer.length;
-                finishRanges(capture, capture.selectionSet.ranges.map(range => moved(range, offset, extend)));
+                finishRanges(capture, capture.selectionSet.ranges.map(range => moved(range, boundaryOffset(capture.buffer, range.head, key, documentBoundary), extend)));
             }); return;
         }
         beginNavigation((capture, style) => {
@@ -446,11 +453,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         navigationPreparationMs = win.performance.now() - began;
         eachRange(capture, "grapheme", (range, done) => {
             if (key === "Home" || key === "End") {
-                const line = buffer.lineAt(range.head);
-                let offset = documentBoundary ? key === "Home" ? 0 : buffer.length : key === "Home" ? buffer.offsetAt(line)
-                    : line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) - 1 : buffer.length;
-                if (!documentBoundary && key === "End" && line + 1 < buffer.lineCount && offset > buffer.offsetAt(line) && buffer.slice(offset - 1, offset) === "\r") offset--;
-                done(moved(range, offset, extend)); return;
+                done(moved(range, boundaryOffset(buffer, range.head, key, documentBoundary), extend)); return;
             }
             const direction = key === "ArrowLeft" ? -1 : 1;
             const point = !extend && range.anchor !== range.head

@@ -109,8 +109,9 @@ per timer turn, stopping sooner after four milliseconds of elapsed scan time. A 
 the final model transaction can exceed that scheduling threshold. Revision, selection identity
 and tab generation are checked before every turn. Typing, another navigation command,
 composition or disposal cancels pending scans. The final edit also rechecks current capability.
-Ctrl/Cmd+Home/End resolves the indexed document endpoint synchronously for at most 32 ranges,
-including Shift extension and read-only movement. Immediate subsequent typing uses the new
+Home/End resolves the indexed logical line endpoint synchronously for at most 32 ranges;
+Ctrl/Cmd uses the document endpoint. Both preserve Shift extension and read-only movement.
+End excludes CRLF separators and includes a final literal CR. Immediate subsequent typing uses the new
 normalized selections. Larger sets retain the cooperative command/cancellation path. This
 bounded shortcut does not qualify general unpaced sequences of asynchronous navigation.
 Non-cancellable native word deletion requires a matching captured `beforeinput` target; stale,

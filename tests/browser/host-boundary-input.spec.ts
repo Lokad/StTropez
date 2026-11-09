@@ -21,30 +21,33 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
     for (const name of ["Open source review", "Capture review acceptance", "Finish review acceptance"]) await page.getByRole("button", { name, exact: true }).click();
     await ready(page);
-    for (const view of ["primary", "comparison"] as const) for (const key of ["Home", "End"] as const) for (const extend of [false, true]) {
+    for (const view of ["primary", "comparison"] as const) for (const documentBoundary of [true, false]) for (const key of ["Home", "End"] as const) for (const extend of [false, true]) {
         const input = page.getByRole("textbox", { name: view === "primary" ? "Primary source" : "Comparison working source", exact: true }); await input.focus();
         const ranges = [{ anchor: 3, head: 2 }, { anchor: original.length - 3, head: original.length - 1 }];
         expect(await page.evaluate(({ view, ranges }) => { const f = window.hostFixture; return f.selectSourceSet(view, f.snapshot().source.revision, ranges, 1); }, { view, ranges })).toBe(true); await ready(page);
         const before = await snapshot(page), endpoint = key === "Home" ? 0 : original.length;
         // One browser task, with no timer/automation round trip between navigation and input.
         // The synthetic edit sequence is deliberate; later keyboard typing uses the trusted path.
-        const result = await input.evaluate((node, { key, extend }) => {
+        const result = await input.evaluate((node, { key, extend, documentBoundary }) => {
             const input = node as HTMLTextAreaElement, f = window.hostFixture;
-            input.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, shiftKey: extend, bubbles: true, cancelable: true }));
+            input.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: documentBoundary, shiftKey: extend, bubbles: true, cancelable: true }));
             const s = f.snapshot(), v = input.getAttribute("aria-label") === "Primary source" ? s.bindings.views.find(v => v.id === "primary")! : s.bindings.comparison!;
             const selectionSet = v.selectionSet!, pending = "metrics" in v ? v.metrics!.pendingGrapheme : v.input.pendingGrapheme;
             input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "!", bubbles: true, cancelable: true }));
             input.setRangeText("!", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "!", bubbles: true }));
             return { selectionSet, pending };
-        }, { key, extend });
+        }, { key, extend, documentBoundary });
         expect(result.pending).toBe(false);
         const owner = ranges[1]!;
-        expect(result.selectionSet.primary).toBe(0); expect(result.selectionSet.ranges).toHaveLength(1);
-        expect(result.selectionSet.ranges[0]).toMatchObject({ anchor: extend ? key === "Home" ? owner.anchor : ranges[0]!.anchor : endpoint, head: endpoint });
-        // Shift ranges overlap at the shared boundary; the primary range owns direction/affinity.
-        const from = extend ? key === "Home" ? 0 : ranges[0]!.anchor : endpoint;
-        const to = extend ? key === "Home" ? owner.anchor : original.length : endpoint;
-        const expected = original.slice(0, from) + "!" + original.slice(to); await ready(page); await exact(page, expected);
+        // Document extensions overlap/coalesce; line extensions stay independent.
+        const lineHeads = key === "Home" ? [0, original.length - 5] : [original.indexOf("\r\n"), original.length];
+        const destinations = documentBoundary ? [{ anchor: extend ? key === "Home" ? owner.anchor : ranges[0]!.anchor : endpoint, head: endpoint }]
+            : ranges.map((range, i) => ({ anchor: extend ? range.anchor : lineHeads[i]!, head: lineHeads[i]! }));
+        expect(result.selectionSet.primary).toBe(documentBoundary ? 0 : 1);
+        expect(result.selectionSet.ranges.map(({ anchor, head }) => ({ anchor, head }))).toEqual(destinations);
+        let expected = original;
+        for (const range of destinations.slice().reverse()) { const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head); expected = expected.slice(0, from) + "!" + expected.slice(to); }
+        await ready(page); await exact(page, expected);
         const after = await snapshot(page); expect(after.source.revision).toBe(before.source.revision + 1); expect(after.history.undoDepth).toBe(before.history.undoDepth + 1);
         expect(after.source.exports).toBe(0); expect(after.bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
         expect(after.bindings.views.every(v => v.metrics!.inputUnits <= 2600 && v.metrics!.viewport.rows < 100)).toBe(true);
@@ -58,12 +61,19 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await page.evaluate(() => { const f = window.hostFixture, n = f.snapshot().source.length;
         f.selectSourceSet("primary", f.snapshot().source.revision, Array.from({ length: 32 }, (_, i) => ({ anchor: Math.floor(i * (n - 1) / 32), head: Math.floor(i * (n - 1) / 32) })), 17); f.setSourceReadOnly(true);
     }); await ready(page); const readonly = await snapshot(page);
-    const movement = await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(node => {
-        node.dispatchEvent(new KeyboardEvent("keydown", { key: "End", ctrlKey: true, bubbles: true, cancelable: true }));
-        return window.hostFixture.snapshot().bindings.views.find(v => v.id === "primary")!;
-    });
-    expect(movement.metrics!.pendingGrapheme).toBe(false); expect(movement.selectionSet.ranges).toHaveLength(1); expect(movement.selection).toMatchObject({ anchor: original.length, head: original.length });
-    await page.getByRole("textbox", { name: "Primary source", exact: true }).pressSequentially("x"); await exact(page, original); expect((await snapshot(page)).history).toEqual(readonly.history);
+    for (const documentBoundary of [false, true]) {
+        const movement = await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate((node, ctrlKey) => {
+            node.dispatchEvent(new KeyboardEvent("keydown", { key: "End", ctrlKey, bubbles: true, cancelable: true }));
+            return window.hostFixture.snapshot().bindings.views.find(v => v.id === "primary")!;
+        }, documentBoundary);
+        const ends = readonly.bindings.views.find(v => v.id === "primary")!.selectionSet.ranges.map(({ head }) => {
+            if (documentBoundary) return original.length;
+            const lf = original.indexOf("\n", head); return lf < 0 ? original.length : original[lf - 1] === "\r" ? lf - 1 : lf;
+        });
+        expect(movement.metrics!.pendingGrapheme).toBe(false);
+        expect(movement.selectionSet.ranges.map(r => r.head)).toEqual([...new Set(ends)].sort((a, b) => a - b));
+        await page.getByRole("textbox", { name: "Primary source", exact: true }).pressSequentially("x"); await exact(page, original); expect((await snapshot(page)).history).toEqual(readonly.history);
+    }
     await page.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await page.getByRole("textbox", { name: "Primary source", exact: true }).pressSequentially("x"); await ready(page); await exact(page, original + "x");
     await page.evaluate(() => window.hostFixture.dispose()); const end = await snapshot(page); expect(end.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(end.hostSubscriptions).toBe(0);
 });
