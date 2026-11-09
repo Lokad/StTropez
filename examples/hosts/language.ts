@@ -20,6 +20,7 @@ export class HostLanguageTools {
     private active: Session | undefined;
     private detachedOwner: DetachedOwner | undefined;
     private stopFolds: (() => void) | undefined;
+    private navigation: { session: Session; stop: () => void } | undefined;
     private foldSerial = 0;
     private readonly cell = new HostCell<LanguageSnapshot>({ readOnlyReference: false, view: null, provider: null, find: null, folds: null, foldMessage: "", query: "", replacement: "", wholeWord: false, matchCase: true, regularExpression: false });
     readonly state = this.cell.observable;
@@ -28,7 +29,7 @@ export class HostLanguageTools {
     private toolsElement: HTMLElement | null = null;
     readonly queryRef = (element: HTMLInputElement | null): void => { this.queryElement = element; };
     readonly replacementRef = (element: HTMLInputElement | null): void => { this.replacementElement = element; };
-    readonly toolsRef = (element: HTMLElement | null): void => { this.toolsElement = element; };
+    readonly toolsRef = (element: HTMLElement | null): void => { if (this.toolsElement !== element) this.cancelNavigation(); this.toolsElement = element; };
     private retired = { posted: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, failed: 0, postedUnits: 0 };
     constructor(workspace: Workspace, saveShortcut: SaveShortcut) { this.workspace = workspace; this.saveShortcut = saveShortcut; }
     private publish(): void {
@@ -39,6 +40,7 @@ export class HostLanguageTools {
     private activate(session: Session, initialize = true): void {
         this.detachedOwner = undefined;
         if (this.active !== session) {
+            this.cancelNavigation();
             this.stopFolds?.(); this.active?.provider?.cancel(); this.active?.find?.cancel(); this.active = session;
             let revision = session.editor.view.folding.getSnapshot().revision;
             this.stopFolds = session.editor.view.folding.subscribe(() => {
@@ -60,7 +62,7 @@ export class HostLanguageTools {
         // A new attachment owns new jobs. Restoring the logical context starts none and never focuses.
         if (compatible && !this.active) this.activate(session, false);
     }
-    clearRetainedView(): void { this.detachedOwner = undefined; }
+    clearRetainedView(): void { this.cancelNavigation(); this.detachedOwner = undefined; }
     attach(id: string, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation): () => void {
         if (this.sessions.has(id)) throw new Error("Language view already mounted.");
         const provider = createProviderController(this.workspace, tab, editor, { autoConnect: false });
@@ -100,12 +102,57 @@ export class HostLanguageTools {
     }
     private findKey(event: KeyboardEvent, session: Session): boolean {
         if ((event.ctrlKey || event.metaKey) && !event.altKey && ["f", "h"].includes(event.key.toLowerCase())) {
+            this.cancelNavigation();
             event.preventDefault(); this.activate(session); this.ensureFind();
             const field = session.reference || event.key.toLowerCase() === "f" ? this.queryElement : this.replacementElement;
             field?.focus(); field?.select(); return true;
         }
-        if (event.key === "F3") { event.preventDefault(); this.activate(session); this.ensureFind()?.next(event.shiftKey ? -1 : 1); return true; }
+        if (event.key === "F3") { event.preventDefault(); this.activate(session); this.navigate(session, event.shiftKey ? -1 : 1); return true; }
         return false;
+    }
+    private cancelNavigation(session?: Session): void {
+        if (!session || this.navigation?.session === session) this.navigation?.stop();
+    }
+    private navigate(session: Session, direction: 1 | -1): void {
+        this.cancelNavigation();
+        const find = this.ensureFind(); if (!find) return;
+        const captured = find.state.getSnapshot();
+        if (captured.status === "ready") { find.next(direction); return; }
+        if (captured.status !== "searching") return;
+        const editor = session.editor, owner = editor.element.ownerDocument, clock = owner.defaultView!, origin = owner.activeElement;
+        if (!(origin instanceof clock.HTMLElement) || !editor.element.contains(origin) && !this.toolsElement?.contains(origin)) return;
+        const selections = editor.view.getSnapshot().selectionSet, listeners = new AbortController(), stops: (() => void)[] = [];
+        let stopped = false, queued = false;
+        const stop = () => { if (stopped) return; stopped = true; listeners.abort(); for (const unsubscribe of stops) unsubscribe();
+            if (this.navigation?.stop === stop) this.navigation = undefined; };
+        const current = () => {
+            const state = find.state.getSnapshot(), tab = this.workspace.resolveTab(session.target);
+            return this.active === session && this.sessions.get(session.id) === session && session.find === find
+                && origin.isConnected && owner.activeElement === origin && !(origin.closest("button,input,select,textarea") ?? origin).matches(":disabled")
+                && editor.element.isConnected && !editor.snapshot().disposed && !editor.snapshot().composing && this.workspace.ownsDocumentView(editor.view)
+                && tab?.surface.kind === "text" && tab.surface.documentId === editor.view.documentId
+                && this.workspace.document(editor.view.documentId).revision === captured.revision && editor.view.getSnapshot().selectionSet === selections
+                && state.revision === captured.revision && state.query === captured.query && state.wholeWord === captured.wholeWord
+                && state.matchCase === captured.matchCase && state.regularExpression === captured.regularExpression
+                && (state.status === "searching" || state.status === "ready");
+        };
+        const changed = () => {
+            if (stopped) return;
+            if (!current()) { stop(); return; }
+            if (!queued && find.state.getSnapshot().status === "ready") {
+                queued = true;
+                // Observable delivery rejects reentrant commands. Revalidate after the delivery ends.
+                clock.queueMicrotask(() => { if (stopped) return; const valid = current(); stop(); if (valid) find.next(direction); });
+            }
+        };
+        this.navigation = { session, stop };
+        origin.addEventListener("blur", stop, { signal: listeners.signal });
+        origin.addEventListener("input", stop, { signal: listeners.signal });
+        origin.addEventListener("compositionstart", stop, { signal: listeners.signal });
+        editor.input.addEventListener("compositionstart", stop, { signal: listeners.signal });
+        clock.addEventListener("blur", stop, { signal: listeners.signal });
+        stops.push(find.state.subscribe(changed), this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.subscribe(changed), this.workspace.tabState.subscribe(changed));
+        changed();
     }
     private toolsSession(event: KeyboardEvent): { session: Session; control: HTMLElement } | undefined {
         const root = this.toolsElement, target = event.target, realm = root?.ownerDocument.defaultView, session = this.active;
@@ -131,6 +178,7 @@ export class HostLanguageTools {
         let detached = false;
         return () => {
             if (detached) return; detached = true;
+            this.cancelNavigation(session);
             if (this.active === session) {
                 this.detachedOwner = Object.freeze({ id: session.id, target: session.target, documentId: session.editor.view.documentId, ...(session.reference ? { reference: session.reference } : {}) });
                 this.stopFolds?.(); this.stopFolds = undefined;
@@ -164,13 +212,13 @@ export class HostLanguageTools {
     readonly cancel = (): void => { this.active?.provider?.cancel(); };
     readonly disconnect = (): void => { this.active?.provider?.disconnect(); };
     readonly reconnect = (): void => { if (this.active) { this.active.initialized = true; this.active.provider?.connect(); } };
-    readonly setQuery = (query: string): void => { this.cell.set({ ...this.cell.get(), query }); this.ensureFind(); };
-    readonly setWholeWord = (wholeWord: boolean): void => { this.cell.set({ ...this.cell.get(), wholeWord }); this.ensureFind(); };
-    readonly setMatchCase = (matchCase: boolean): void => { this.cell.set({ ...this.cell.get(), matchCase }); this.ensureFind(); };
-    readonly setRegularExpression = (regularExpression: boolean): void => { this.cell.set({ ...this.cell.get(), regularExpression }); this.ensureFind(); };
+    readonly setQuery = (query: string): void => { this.cancelNavigation(); this.cell.set({ ...this.cell.get(), query }); this.ensureFind(); };
+    readonly setWholeWord = (wholeWord: boolean): void => { this.cancelNavigation(); this.cell.set({ ...this.cell.get(), wholeWord }); this.ensureFind(); };
+    readonly setMatchCase = (matchCase: boolean): void => { this.cancelNavigation(); this.cell.set({ ...this.cell.get(), matchCase }); this.ensureFind(); };
+    readonly setRegularExpression = (regularExpression: boolean): void => { this.cancelNavigation(); this.cell.set({ ...this.cell.get(), regularExpression }); this.ensureFind(); };
     readonly setReplacement = (replacement: string): void => { this.cell.set({ ...this.cell.get(), replacement }); };
-    readonly next = (): void => { this.ensureFind()?.next(); };
-    readonly previous = (): void => { this.ensureFind()?.next(-1); };
+    readonly next = (): void => { if (this.active) this.navigate(this.active, 1); };
+    readonly previous = (): void => { if (this.active) this.navigate(this.active, -1); };
     readonly replaceCurrent = (): void => { if (this.active?.reference) return; this.ensureFind()?.replaceCurrent(this.cell.get().replacement); };
     readonly replaceAll = (): void => { if (this.active?.reference) return; this.ensureFind()?.replaceAll(this.cell.get().replacement); };
     readonly cancelFind = (): void => { this.active?.find?.cancel(); this.active?.editor.focus(); };
@@ -214,6 +262,6 @@ export class HostLanguageTools {
     selectDiagnostic(index: number): void { this.active?.provider?.selectDiagnostic(index); }
     setDelay(value: number): void { this.active?.provider?.setDelay(value); }
     faultNext(value: "malformed" | "failure"): void { this.active?.provider?.faultNext(value); }
-    debug() { return { active: this.active?.id ?? null, subscriptions: this.cell.count(), referenceFind: [...this.sessions.values()].filter(s => s.reference).map(s => ({ id: s.id, documentId: s.editor.view.documentId, viewId: s.editor.view.id, find: s.find?.state.getSnapshot() ?? null })), sessions: [...this.sessions.values()].flatMap(s => s.provider ? [{ id: s.id, documentId: s.editor.view.documentId,
+    debug() { return { active: this.active?.id ?? null, navigationPending: !!this.navigation, subscriptions: this.cell.count(), referenceFind: [...this.sessions.values()].filter(s => s.reference).map(s => ({ id: s.id, documentId: s.editor.view.documentId, viewId: s.editor.view.id, find: s.find?.state.getSnapshot() ?? null })), sessions: [...this.sessions.values()].flatMap(s => s.provider ? [{ id: s.id, documentId: s.editor.view.documentId,
         viewId: s.editor.view.id, foldRegions: s.editor.view.folding.getSnapshot().regions.length, collapsedFolds: s.editor.view.folding.getSnapshot().index.collapsedCount, provider: s.provider.snapshot(), presentation: s.presentation.snapshot() }] : []), retired: { ...this.retired } }; }
 }

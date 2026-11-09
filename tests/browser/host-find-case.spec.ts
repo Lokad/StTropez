@@ -39,7 +39,7 @@ test(`${host} ${large ? "100k" : "normal"} match-case find keeps Unicode ranges,
     expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
     await source(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, original);
     await source(page, "Comparison working source").press("Control+f"); await expect(matchCase).not.toBeChecked(); await expect(wholeWord).toBeChecked(); await expect(status).toContainText("3 matches · ready");
-    await query.fill("𐐨"); await expect(status).toContainText("2 matches · ready"); await click(page, "Find next");
+    await query.fill("𐐨"); await expect(status).toContainText("2 matches · ready"); await query.press("Escape"); const current = source(page, "Comparison working source"); await current.press("Control+Home"); await current.press("F3"); await expect(status).toContainText("2 matches · ready"); await ready(page); await expect.poll(async () => (await snapshot(page)).bindings.comparison!.selection.anchor).toBe(original.indexOf("𐐀")); expect((await snapshot(page)).bindings.language.navigationPending).toBe(false);
     const selected = (await snapshot(page)).bindings.comparison!.selection; expect(selected.head - selected.anchor).toBe(2);
     expect(await page.evaluate(({ from, to }) => window.hostFixture.range(from, to), { from: selected.anchor, to: selected.head })).toMatch(/^[𐐀𐐨]$/u);
     await query.fill("k"); await expect(status).toContainText("3 matches · ready"); await replacement.fill("dog"); const planned = await snapshot(page);

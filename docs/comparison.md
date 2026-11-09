@@ -44,7 +44,10 @@ The evaluation hosts attach Find to this reference lifecycle without creating a 
 session. Ctrl+F searches the immutable source, including offscreen text; Ctrl+H opens the same
 read-only Find field. These Find/Replace shortcuts and F3/Shift+F3 also work from enabled controls
 in the owned language/Find tool region. F3/Shift+F3 and query Enter navigate source ranges, reveal folded matches and
-return to the reference input; Escape also returns there. Literal, whole-word, match-case and
+return to the reference input; Escape also returns there. A keyboard navigation request made
+while the index is scanning retains its captured source, query/options, revision, complete selections
+and focus. Only the latest pending direction is retained; expiry never redirects or refocuses a
+later view. Literal, whole-word, match-case and
 actual-worker regex search reuse the existing Find controller. Match previews and visible markers
 stay bounded. The query/options are host UI preferences; jobs, markers and selections capture their
 own reference resource and view. Replacement fields/actions are disabled, and reference commands
