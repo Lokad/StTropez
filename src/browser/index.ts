@@ -11,7 +11,7 @@ export type { FindController, FindSnapshot, FindOptions, FindBackend, FindQueryC
 export { createRegexFindBackend } from "./regex-find.ts";
 export type { RegexFindBackendOptions } from "./regex-find.ts";
 export { mountTextComparison } from "./comparison.ts";
-export type { TextComparison } from "./comparison.ts";
+export type { TextComparison, ComparisonReferenceView } from "./comparison.ts";
 
 export type ViewState = Selection & Readonly<{ scrollTop: number; scrollLeft: number;
     verticalAnchor?: Readonly<{ revision: number; offset: number; topRemainder: number; aligned?: true }>;

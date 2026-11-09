@@ -1,18 +1,18 @@
 import type { HostLanguageTools } from "./language.ts";
 
 export function languageActions(tools: HostLanguageTools) {
-    const state = tools.state.getSnapshot(), available = state.view !== null, offered = state.provider?.offerText != null, found = state.find?.status === "ready" && state.find.count > 0;
+    const state = tools.state.getSnapshot(), available = state.view !== null, providerAvailable = state.provider !== null, offered = state.provider?.offerText != null, found = state.find?.status === "ready" && state.find.count > 0;
     return [
-        { label: "Request completion", invoke: tools.request, disabled: !available },
+        { label: "Request completion", invoke: tools.request, disabled: !providerAvailable },
         { label: "Insert completion", invoke: tools.insert, disabled: !offered },
         { label: "Replace completion", invoke: tools.replace, disabled: !offered },
-        { label: "Cancel request", invoke: tools.cancel, disabled: !available },
+        { label: "Cancel request", invoke: tools.cancel, disabled: !providerAvailable },
         { label: "Disconnect provider", invoke: tools.disconnect, disabled: !state.provider?.connected },
-        { label: "Reconnect provider", invoke: tools.reconnect, disabled: !available },
+        { label: "Reconnect provider", invoke: tools.reconnect, disabled: !providerAvailable },
         { label: "Find next", invoke: tools.next, disabled: !found },
         { label: "Find previous", invoke: tools.previous, disabled: !found },
-        { label: "Replace current", invoke: tools.replaceCurrent, disabled: !found },
-        { label: "Replace all", invoke: tools.replaceAll, disabled: !found },
+        { label: "Replace current", invoke: tools.replaceCurrent, disabled: !found || state.readOnlyReference },
+        { label: "Replace all", invoke: tools.replaceAll, disabled: !found || state.readOnlyReference },
         { label: "Cancel find", invoke: tools.cancelFind, disabled: !available },
         { label: "Fold selected lines", invoke: tools.foldSelection, disabled: !available },
         { label: "Expand all folds", invoke: tools.expandFolds, disabled: !state.folds?.index.collapsedCount },
@@ -20,8 +20,8 @@ export function languageActions(tools: HostLanguageTools) {
     ] as const;
 }
 export function findText(tools: HostLanguageTools): string {
-    const state = tools.state.getSnapshot().find;
-    return state ? state.message || `${state.count} matches · ${state.status}` : "Find in the active source view.";
+    const active = tools.state.getSnapshot(), state = active.find;
+    return state ? state.message || `${active.readOnlyReference ? "Read-only reference · " : ""}${state.count} matches · ${state.status}` : "Find in the active source view.";
 }
 export function foldText(tools: HostLanguageTools): string {
     const state = tools.state.getSnapshot(), count = state.folds?.index.collapsedCount ?? 0;
@@ -62,7 +62,7 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
     host.append(heading, help, status, choices, diagnostics, ...fields.map(f => f.label), wholeLabel, caseLabel, regexLabel, findStatus, foldStatus, nav);
     const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
     const render = () => {
-        const state = tools.state.getSnapshot(); setText(status, state.provider?.message ?? "Focus a source view to use language actions.");
+        const state = tools.state.getSnapshot(); setText(status, state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider?.message ?? "Focus a source view to use language actions.");
         const offered = state.provider?.offerText;
         if (offered != null) {
             if (choices.childElementCount !== 1 || choices.firstElementChild?.textContent !== offered) {
@@ -80,6 +80,7 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
         setText(foldStatus, foldText(tools));
         if (fields[0]!.field.value !== state.query) fields[0]!.field.value = state.query;
         if (fields[1]!.field.value !== state.replacement) fields[1]!.field.value = state.replacement;
+        fields[1]!.field.disabled = state.readOnlyReference;
         wholeWord.checked = state.wholeWord; matchCase.checked = state.matchCase; regularExpression.checked = state.regularExpression;
     };
     const unsubscribe = tools.state.subscribe(render); render();

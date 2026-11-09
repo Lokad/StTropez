@@ -89,7 +89,21 @@ export class ViewBindings {
         const detachActions = this.actions.attach("comparison", this.controller.viewTab("primary"), this.review.working);
         const detachLinks = this.links.attach("comparison", this.controller.viewTab("primary"), this.review.working);
         const detachColors = this.colors.attach("comparison", this.controller.viewTab("primary"), this.review.working, presentation);
-        this.detachReviewLanguage = () => { detachColors(); detachLinks(); detachActions(); detachRename(); detachSignature(); detachProject(); detachNavigation(); detachDomain(); detachPaste(); detachHover(); detachLanguage(); referencePresentation.clear(); };
+        let detachReferenceFind: (() => void) | undefined;
+        let resumeReferenceFind = false;
+        const reviewReference = this.review.reference;
+        const syncReferenceFind = () => {
+            const active = this.language.state.getSnapshot().view;
+            resumeReferenceFind = active === "reference" || resumeReferenceFind && active === null;
+            detachReferenceFind?.(); detachReferenceFind = undefined; referencePresentation.clear();
+            const value = reviewReference.getSnapshot();
+            if (value) {
+                detachReferenceFind = this.language.attachReferenceFind("reference", value.target, value.editor, referencePresentation, resumeReferenceFind);
+                resumeReferenceFind = false;
+            }
+        };
+        const stopReferenceFind = reviewReference.subscribe(syncReferenceFind); syncReferenceFind();
+        this.detachReviewLanguage = () => { stopReferenceFind(); detachReferenceFind?.(); detachColors(); detachLinks(); detachActions(); detachRename(); detachSignature(); detachProject(); detachNavigation(); detachDomain(); detachPaste(); detachHover(); detachLanguage(); referencePresentation.clear(); };
         const state = this.states.get("comparison")?.get(view.documentId);
         if (state) this.review.working.restoreView(this.restoreState(state, view));
         if (this.referenceState?.baseline.buffer === baseline.buffer && this.referenceState.baseline.version === baseline.version)

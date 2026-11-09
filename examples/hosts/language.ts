@@ -7,8 +7,8 @@ import { EditingPresentation } from "../editing/presentation.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type Session = { id: string; editor: EditingCandidate; tab: TabId; target: TabTarget; presentation: EditingPresentation;
-    provider: ReturnType<typeof createProviderController>; find?: FindController; stopFind?: () => void; initialized: boolean };
-type LanguageSnapshot = Readonly<{ view: string | null; provider: ProviderSnapshot | null; find: FindSnapshot | null; folds: FoldingSnapshot | null; foldMessage: string; query: string; replacement: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean }>;
+    provider?: ReturnType<typeof createProviderController>; reference?: true; find?: FindController; stopFind?: () => void; initialized: boolean };
+type LanguageSnapshot = Readonly<{ readOnlyReference: boolean; view: string | null; provider: ProviderSnapshot | null; find: FindSnapshot | null; folds: FoldingSnapshot | null; foldMessage: string; query: string; replacement: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean }>;
 
 /** Host-owned tools follow an explicit mounted view; delayed commands never consult focus later. */
 export class HostLanguageTools {
@@ -17,7 +17,7 @@ export class HostLanguageTools {
     private active: Session | undefined;
     private stopFolds: (() => void) | undefined;
     private foldSerial = 0;
-    private readonly cell = new HostCell<LanguageSnapshot>({ view: null, provider: null, find: null, folds: null, foldMessage: "", query: "", replacement: "", wholeWord: false, matchCase: true, regularExpression: false });
+    private readonly cell = new HostCell<LanguageSnapshot>({ readOnlyReference: false, view: null, provider: null, find: null, folds: null, foldMessage: "", query: "", replacement: "", wholeWord: false, matchCase: true, regularExpression: false });
     readonly state = this.cell.observable;
     private queryElement: HTMLInputElement | null = null;
     private replacementElement: HTMLInputElement | null = null;
@@ -27,19 +27,19 @@ export class HostLanguageTools {
     constructor(workspace: Workspace) { this.workspace = workspace; }
     private publish(): void {
         const previous = this.cell.get(), folds = this.active?.editor.view.folding.getSnapshot() ?? null;
-        this.cell.set({ ...previous, view: this.active?.id ?? null, provider: this.active?.provider.state.getSnapshot() ?? null,
+        this.cell.set({ ...previous, readOnlyReference: this.active?.reference === true, view: this.active?.id ?? null, provider: this.active?.provider?.state.getSnapshot() ?? null,
             find: this.active?.find?.state.getSnapshot() ?? null, folds, foldMessage: folds === previous.folds ? previous.foldMessage : "" });
     }
     private activate(session: Session): void {
         if (this.active !== session) {
-            this.stopFolds?.(); this.active?.provider.cancel(); this.active?.find?.cancel(); this.active = session;
+            this.stopFolds?.(); this.active?.provider?.cancel(); this.active?.find?.cancel(); this.active = session;
             let revision = session.editor.view.folding.getSnapshot().revision;
             this.stopFolds = session.editor.view.folding.subscribe(() => {
-                const current = session.editor.view.folding.getSnapshot(); if (current.revision === revision) session.provider.cancel(); revision = current.revision;
+                const current = session.editor.view.folding.getSnapshot(); if (current.revision === revision) session.provider?.cancel(); revision = current.revision;
                 if (this.active === session) this.publish();
             }); this.cell.set({ ...this.cell.get(), foldMessage: "" });
         }
-        if (!session.initialized) { session.initialized = true; session.provider.connect(); }
+        if (!session.initialized) { session.initialized = true; session.provider?.connect(); }
         this.publish();
     }
     attach(id: string, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation): () => void {
@@ -59,20 +59,43 @@ export class HostLanguageTools {
             if (event.isComposing || editor.snapshot().composing || event.defaultPrevented) return;
             if ((event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && (event.code === "BracketLeft" || event.code === "BracketRight")) {
                 event.preventDefault(); this.activate(session); if (event.code === "BracketLeft") this.foldSelection(); else this.expandFolds();
-            } else if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.code === "Space" || ["f", "h"].includes(event.key.toLowerCase()))) {
-                event.preventDefault(); this.activate(session);
-                if (event.code === "Space") provider.request();
-                else { this.ensureFind(); const field = event.key.toLowerCase() === "h" ? this.replacementElement : this.queryElement; field?.focus(); field?.select(); }
-            } else if (event.key === "F3") { event.preventDefault(); this.activate(session); this.ensureFind()?.next(event.shiftKey ? -1 : 1); }
+            } else if (this.findKey(event, session)) return;
+            else if ((event.ctrlKey || event.metaKey) && !event.altKey && event.code === "Space") { event.preventDefault(); this.activate(session); provider.request(); }
             else if (event.altKey && event.key === "Enter" && provider.state.getSnapshot().offerText !== null) { event.preventDefault(); provider.apply("replace"); }
             else if (event.key === "Escape" && (provider.state.getSnapshot().pending || provider.state.getSnapshot().offerText !== null)) { event.preventDefault(); provider.cancel(); }
         }, { signal: listeners.signal });
-        update(); let detached = false;
+        update(); return this.detachSession(session, listeners, unsubscribe);
+    }
+    attachReferenceFind(id: string, target: TabTarget, editor: EditingCandidate, presentation: EditingPresentation, resume = false): () => void {
+        if (this.sessions.has(id)) throw new Error("Find view already mounted.");
+        const tab = this.workspace.resolveTab(target);
+        if (tab?.surface.kind !== "text" || tab.surface.documentId !== editor.view.documentId || !this.workspace.ownsDocumentView(editor.view)) throw new Error("Reference Find requires its captured view.");
+        const session: Session = { id, tab: target.id, target, editor, presentation, initialized: true, reference: true }, listeners = new AbortController();
+        this.sessions.set(id, session);
+        editor.input.addEventListener("focus", () => this.activate(session), { signal: listeners.signal });
+        editor.input.addEventListener("keydown", event => { if (!event.defaultPrevented && !event.isComposing && !editor.snapshot().composing) this.findKey(event, session); }, { signal: listeners.signal });
+        // Keep the logical field target after replacement, without starting old work or moving focus.
+        if (resume) this.activate(session);
+        return this.detachSession(session, listeners);
+    }
+    private findKey(event: KeyboardEvent, session: Session): boolean {
+        if ((event.ctrlKey || event.metaKey) && !event.altKey && ["f", "h"].includes(event.key.toLowerCase())) {
+            event.preventDefault(); this.activate(session); this.ensureFind();
+            const field = session.reference || event.key.toLowerCase() === "f" ? this.queryElement : this.replacementElement;
+            field?.focus(); field?.select(); return true;
+        }
+        if (event.key === "F3") { event.preventDefault(); this.activate(session); this.ensureFind()?.next(event.shiftKey ? -1 : 1); return true; }
+        return false;
+    }
+    private detachSession(session: Session, listeners: AbortController, unsubscribe: () => void = () => {}): () => void {
+        let detached = false;
         return () => {
+            if (detached) return; detached = true;
             if (this.active === session) { this.stopFolds?.(); this.stopFolds = undefined; }
-            if (detached) return; detached = true; unsubscribe(); listeners.abort(); session.stopFind?.(); session.find?.destroy();
-            const counts = provider.snapshot(); for (const key of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[key] += counts[key];
-            provider.destroy(); presentation.clear(); this.sessions.delete(id); if (this.active === session) this.active = undefined; this.publish();
+            unsubscribe(); listeners.abort(); session.stopFind?.(); session.find?.destroy();
+            const counts = session.provider?.snapshot(); if (counts) for (const key of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[key] += counts[key];
+            session.provider?.destroy(); session.presentation.clear(); this.sessions.delete(session.id);
+            if (this.active === session) this.active = undefined; this.publish();
         };
     }
     private ensureFind(): FindController | undefined {
@@ -92,12 +115,12 @@ export class HostLanguageTools {
         if (state.query !== query || state.status === "cancelled") session.find.setQuery(query);
         return session.find;
     }
-    readonly request = (): void => { this.active?.provider.request(); };
-    readonly insert = (): void => { this.active?.provider.apply("insert"); };
-    readonly replace = (): void => { this.active?.provider.apply("replace"); };
-    readonly cancel = (): void => { this.active?.provider.cancel(); };
-    readonly disconnect = (): void => { this.active?.provider.disconnect(); };
-    readonly reconnect = (): void => { if (this.active) { this.active.initialized = true; this.active.provider.connect(); } };
+    readonly request = (): void => { this.active?.provider?.request(); };
+    readonly insert = (): void => { this.active?.provider?.apply("insert"); };
+    readonly replace = (): void => { this.active?.provider?.apply("replace"); };
+    readonly cancel = (): void => { this.active?.provider?.cancel(); };
+    readonly disconnect = (): void => { this.active?.provider?.disconnect(); };
+    readonly reconnect = (): void => { if (this.active) { this.active.initialized = true; this.active.provider?.connect(); } };
     readonly setQuery = (query: string): void => { this.cell.set({ ...this.cell.get(), query }); this.ensureFind(); };
     readonly setWholeWord = (wholeWord: boolean): void => { this.cell.set({ ...this.cell.get(), wholeWord }); this.ensureFind(); };
     readonly setMatchCase = (matchCase: boolean): void => { this.cell.set({ ...this.cell.get(), matchCase }); this.ensureFind(); };
@@ -105,8 +128,8 @@ export class HostLanguageTools {
     readonly setReplacement = (replacement: string): void => { this.cell.set({ ...this.cell.get(), replacement }); };
     readonly next = (): void => { this.ensureFind()?.next(); };
     readonly previous = (): void => { this.ensureFind()?.next(-1); };
-    readonly replaceCurrent = (): void => { this.ensureFind()?.replaceCurrent(this.cell.get().replacement); };
-    readonly replaceAll = (): void => { this.ensureFind()?.replaceAll(this.cell.get().replacement); };
+    readonly replaceCurrent = (): void => { if (this.active?.reference) return; this.ensureFind()?.replaceCurrent(this.cell.get().replacement); };
+    readonly replaceAll = (): void => { if (this.active?.reference) return; this.ensureFind()?.replaceAll(this.cell.get().replacement); };
     readonly cancelFind = (): void => { this.active?.find?.cancel(); this.active?.editor.focus(); };
     readonly focusEditor = (): void => { this.active?.editor.focus(); };
     private foldTarget(): Session | undefined {
@@ -145,9 +168,9 @@ export class HostLanguageTools {
         session.editor.viewport.revealOffset(session.editor.view.getSnapshot().selection.head, { horizontal: "nearest", vertical: "nearest" }); session.editor.focus();
         this.cell.set({ ...this.cell.get(), foldMessage: "All folds expanded." });
     };
-    selectDiagnostic(index: number): void { this.active?.provider.selectDiagnostic(index); }
-    setDelay(value: number): void { this.active?.provider.setDelay(value); }
-    faultNext(value: "malformed" | "failure"): void { this.active?.provider.faultNext(value); }
-    debug() { return { active: this.active?.id ?? null, subscriptions: this.cell.count(), sessions: [...this.sessions.values()].map(s => ({ id: s.id, documentId: s.editor.view.documentId,
-        viewId: s.editor.view.id, foldRegions: s.editor.view.folding.getSnapshot().regions.length, collapsedFolds: s.editor.view.folding.getSnapshot().index.collapsedCount, provider: s.provider.snapshot(), presentation: s.presentation.snapshot() })), retired: { ...this.retired } }; }
+    selectDiagnostic(index: number): void { this.active?.provider?.selectDiagnostic(index); }
+    setDelay(value: number): void { this.active?.provider?.setDelay(value); }
+    faultNext(value: "malformed" | "failure"): void { this.active?.provider?.faultNext(value); }
+    debug() { return { active: this.active?.id ?? null, subscriptions: this.cell.count(), referenceFind: [...this.sessions.values()].filter(s => s.reference).map(s => ({ id: s.id, documentId: s.editor.view.documentId, viewId: s.editor.view.id, find: s.find?.state.getSnapshot() ?? null })), sessions: [...this.sessions.values()].flatMap(s => s.provider ? [{ id: s.id, documentId: s.editor.view.documentId,
+        viewId: s.editor.view.id, foldRegions: s.editor.view.folding.getSnapshot().regions.length, collapsedFolds: s.editor.view.folding.getSnapshot().index.collapsedCount, provider: s.provider.snapshot(), presentation: s.presentation.snapshot() }] : []), retired: { ...this.retired } }; }
 }

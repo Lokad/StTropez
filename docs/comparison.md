@@ -21,6 +21,13 @@ their scroll and selection requires the same immutable reference buffer and vers
 and pending-input snapshot; `referenceViewport()` remains available for view geometry. Reference
 replacement disposes the old candidate and its pending navigation, pointer and input work. Callers
 must resolve the current handle after refresh. Focusing the reference viewport also enters its input.
+The stable `reference` observable publishes an immutable `{ editor, target, epoch, version }`
+reference-view handle. `target` is the captured tab identity; it is separate from the buffer version,
+view and document revision. The observable publishes `undefined` before releasing an old editor or
+display resource, then publishes the replacement handle. Hosts cancel attached jobs and listeners
+at this boundary and unsubscribe when the comparison unmounts. `referenceSubscriptions` in the
+comparison work snapshot supports lifecycle diagnostics.
+
 
 Reference arrows, word/line/page commands, whole-source selection and pointer ranges use real
 source coordinates, including beyond the rendered window. Copy reads the explicit selected source
@@ -33,6 +40,19 @@ remain available while the working source is read-only or independently edited.
 The evaluation hosts route Ctrl+S from the current reference input to the captured working source.
 The reference is never a save target. Run controls remain host-owned and capture the working
 source/configuration. Replacing a reference cannot retarget old input events or save shortcuts.
+The evaluation hosts attach Find to this reference lifecycle without creating a language-provider
+session. Ctrl+F searches the immutable source, including offscreen text; Ctrl+H opens the same
+read-only Find field. F3/Shift+F3 and field Enter navigate source ranges, reveal folded matches and
+return to the reference input; Escape also returns there. Literal, whole-word, match-case and
+actual-worker regex search reuse the existing Find controller. Match previews and visible markers
+stay bounded. The query/options are host UI preferences; jobs, markers and selections capture their
+own reference resource and view. Replacement fields/actions are disabled, and reference commands
+reject replacement independently of the UI. Working Find/replace and Save/Run retain their scope.
+Reference refresh cancels its old Find/regex work. If Find still targets the reference, fresh field
+input targets the replacement view; replacement alone starts no search and moves no focus.
+Switching to a working view keeps that owner. Unmount clears ownership. Late results cannot
+target a later focused source.
+
 Synthetic clipboard/composition checks exercise model guards; native OS/application clipboard,
 IME/reconversion/dead keys and assistive-technology qualification remain separate.
 
