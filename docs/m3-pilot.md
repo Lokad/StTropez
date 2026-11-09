@@ -62,6 +62,9 @@ in its canonical reply. Reloading starts a new fixture; this is not durable stor
    expire the confirmation.
 3. Focus a source editor or a control in its owned language/Find tools (text fields, options or
    navigation buttons) and press Ctrl+S or Cmd+S. Reference Find saves the working source.
+   Ctrl/Cmd+F/H and F3/Shift+F3 also work from any enabled control in that owned region.
+   Enter/Shift+Enter in the query navigates matches; Enter in Replacement replaces the current
+   working match. Enter on buttons retains their normal action. Reference replacement stays disabled.
    Escape from any enabled owned tool control cancels Find and returns to its captured source,
    preserving complete selections and history. The focused Save control keeps focus; held-key repeats
    do not enqueue additional saves. Type additional source text before choosing

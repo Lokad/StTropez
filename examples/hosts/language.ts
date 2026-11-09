@@ -116,13 +116,16 @@ export class HostLanguageTools {
         if (tab?.surface.kind !== "text" || tab.surface.documentId !== session.editor.view.documentId) return;
         return { session, control: target };
     }
-    readonly saveFromTools = (event: KeyboardEvent): void => {
-        const owned = this.toolsSession(event);
-        if (owned) this.saveShortcut(event, owned.control, owned.session.saveTarget, () => owned.session.editor.snapshot().composing);
-    };
-    readonly escapeFromTools = (event: KeyboardEvent): void => {
+    readonly keyFromTools = (event: KeyboardEvent): void => {
+        const key = event.key.toLowerCase(), modified = event.ctrlKey || event.metaKey;
+        const save = modified && key === "s", find = key === "f3" || modified && !event.altKey && (key === "f" || key === "h");
+        const replacement = event.target === this.replacementElement, enter = key === "enter" && (replacement || event.target === this.queryElement);
+        if (!save && !find && !enter && key !== "escape") return;
         const owned = this.toolsSession(event); if (!owned) return;
-        event.preventDefault(); owned.session.find?.cancel(); owned.session.editor.focus();
+        if (save) this.saveShortcut(event, owned.control, owned.session.saveTarget, () => owned.session.editor.snapshot().composing);
+        else if (find) this.findKey(event, owned.session);
+        else if (enter) { event.preventDefault(); if (replacement) this.replaceCurrent(); else if (event.shiftKey) this.previous(); else this.next(); }
+        else { event.preventDefault(); owned.session.find?.cancel(); owned.session.editor.focus(); }
     };
     private detachSession(session: Session, listeners: AbortController, unsubscribe: () => void = () => {}): () => void {
         let detached = false;

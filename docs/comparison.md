@@ -42,7 +42,8 @@ The reference is never a save target. Run controls remain host-owned and capture
 source/configuration. Replacing a reference cannot retarget old input events or save shortcuts.
 The evaluation hosts attach Find to this reference lifecycle without creating a language-provider
 session. Ctrl+F searches the immutable source, including offscreen text; Ctrl+H opens the same
-read-only Find field. F3/Shift+F3 and field Enter navigate source ranges, reveal folded matches and
+read-only Find field. These Find/Replace shortcuts and F3/Shift+F3 also work from enabled controls
+in the owned language/Find tool region. F3/Shift+F3 and query Enter navigate source ranges, reveal folded matches and
 return to the reference input; Escape also returns there. Literal, whole-word, match-case and
 actual-worker regex search reuse the existing Find controller. Match previews and visible markers
 stay bounded. The query/options are host UI preferences; jobs, markers and selections capture their

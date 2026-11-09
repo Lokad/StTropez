@@ -31,8 +31,11 @@ test(`${host} ${large ? "100k" : "normal"} match-case find keeps Unicode ranges,
     const matchCase = page.getByRole("checkbox", { name: "Match case", exact: true }), wholeWord = page.getByRole("checkbox", { name: "Whole word", exact: true }), status = page.getByLabel("Find status", { exact: true });
     await expect(matchCase).toBeChecked(); await query.fill("k"); await expect(status).toContainText("1 matches · ready");
     await matchCase.uncheck(); await expect(status).toContainText("4 matches · ready"); await wholeWord.check(); await expect(status).toContainText("3 matches · ready");
-    await click(page, "Find next"); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 0, head: 1 });
-    await replacement.fill("$&"); const before = await snapshot(page); await click(page, "Replace current"); await ready(page); await exact(page, "$&" + original.slice(1));
+    await wholeWord.press("F3"); await ready(page); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 0, head: 1 });
+    await replacement.press("F3"); await ready(page); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 2, head: 3 });
+    await page.getByRole("button", { name: "Find previous", exact: true }).press("Shift+F3"); await ready(page); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 0, head: 1 });
+    await page.getByRole("button", { name: "Find next", exact: true }).press("Control+f"); await expect(query).toBeFocused(); expect(await query.evaluate(n => n instanceof HTMLInputElement && n.selectionStart === 0 && n.selectionEnd === n.value.length)).toBe(true);
+    await wholeWord.press("Control+h"); await expect(replacement).toBeFocused(); await replacement.fill("$&"); const before = await snapshot(page); await replacement.press("Enter"); await ready(page); await exact(page, "$&" + original.slice(1));
     expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
     await source(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, original);
     await source(page, "Comparison working source").press("Control+f"); await expect(matchCase).not.toBeChecked(); await expect(wholeWord).toBeChecked(); await expect(status).toContainText("3 matches · ready");

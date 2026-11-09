@@ -27,15 +27,8 @@ export function foldText(tools: HostLanguageTools): string {
     const state = tools.state.getSnapshot(), count = state.folds?.index.collapsedCount ?? 0;
     return state.foldMessage || `${count} folded ${count === 1 ? "region" : "regions"}.`;
 }
-export function languageFieldKey(event: KeyboardEvent, tools: HostLanguageTools, replacement: boolean): void {
-    if (event.isComposing) return;
-    if (event.key === "Enter" || event.key === "F3") { event.preventDefault();
-        if (event.key === "Enter" && replacement) tools.replaceCurrent(); else if (event.shiftKey) tools.previous(); else tools.next(); }
-}
 export function languageToolsKey(event: KeyboardEvent, tools: HostLanguageTools): void {
-    if (event.defaultPrevented || event.isComposing) return;
-    if (event.key === "Escape") tools.escapeFromTools(event);
-    else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") tools.saveFromTools(event);
+    tools.keyFromTools(event);
 }
 
 /** Plain host's own controls; editor descendants are mounted by ViewBindings. */
@@ -50,7 +43,7 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
     const fields = ["Find source", "Replacement"].map((name, index) => {
         const label = owner.createElement("label"), field = owner.createElement("input"); label.textContent = name; label.append(field);
         field.addEventListener("input", () => index ? tools.setReplacement(field.value) : tools.setQuery(field.value), { signal: listeners.signal });
-        field.addEventListener("keydown", event => languageFieldKey(event, tools, index === 1), { signal: listeners.signal }); return { label, field };
+        return { label, field };
     });
     tools.queryRef(fields[0]!.field); tools.replacementRef(fields[1]!.field);
     const wholeLabel = owner.createElement("label"), wholeWord = owner.createElement("input");

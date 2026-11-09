@@ -7,7 +7,7 @@ import { HostController } from "./controller.ts";
 import { hostEditor, ViewBindings } from "./bindings.ts";
 import { actions, conflictText, statusText } from "./actions.ts";
 import { installHostHarness } from "./harness.ts";
-import { findText, foldText, languageActions, languageFieldKey, languageToolsKey } from "./language-panel.ts";
+import { findText, foldText, languageActions, languageToolsKey } from "./language-panel.ts";
 import { domainActions } from "./domain-panel.ts";
 import { navigationActions } from "./navigation-panel.ts";
 import { projectActions } from "./project-panel.ts";
@@ -94,8 +94,8 @@ function LanguageTools() {
         <ul role="listbox" aria-label="Completion choices">{state.provider?.offerText != null ? <li role="option" aria-selected="true">{state.provider.offerText}</li> : null}</ul>
         <ul aria-label="Source diagnostics">{state.provider?.diagnostics.map((diagnostic, index) => <li key={`${diagnostic.from}:${diagnostic.to}:${index}`}>
             <button onClick={() => tools.selectDiagnostic(index)}>{diagnostic.from}: {diagnostic.message}</button></li>)}</ul>
-        <label>Find source<input ref={tools.queryRef} value={state.query} onChange={event => tools.setQuery(event.currentTarget.value)} onKeyDown={event => languageFieldKey(event.nativeEvent, tools, false)} /></label>
-        <label>Replacement<input ref={tools.replacementRef} disabled={state.readOnlyReference} value={state.replacement} onChange={event => tools.setReplacement(event.currentTarget.value)} onKeyDown={event => languageFieldKey(event.nativeEvent, tools, true)} /></label>
+        <label>Find source<input ref={tools.queryRef} value={state.query} onChange={event => tools.setQuery(event.currentTarget.value)} /></label>
+        <label>Replacement<input ref={tools.replacementRef} disabled={state.readOnlyReference} value={state.replacement} onChange={event => tools.setReplacement(event.currentTarget.value)} /></label>
         <label><input type="checkbox" checked={state.wholeWord} onChange={event => tools.setWholeWord(event.currentTarget.checked)} />Whole word</label>
         <label><input type="checkbox" checked={state.matchCase} onChange={event => tools.setMatchCase(event.currentTarget.checked)} />Match case</label>
         <label><input type="checkbox" checked={state.regularExpression} onChange={event => tools.setRegularExpression(event.currentTarget.checked)} />Regular expression</label>
