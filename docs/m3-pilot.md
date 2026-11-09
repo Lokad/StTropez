@@ -62,7 +62,8 @@ in its canonical reply. Reloading starts a new fixture; this is not durable stor
    expire the confirmation.
 3. Focus a source editor or a control in its owned language/Find tools (text fields, options or
    navigation buttons) and press Ctrl+S or Cmd+S. Reference Find saves the working source.
-   The focused control keeps focus; held-key repeats
+   Escape from any enabled owned tool control cancels Find and returns to its captured source,
+   preserving complete selections and history. The focused Save control keeps focus; held-key repeats
    do not enqueue additional saves. Type additional source text before choosing
    **Finish save**. The captured revision is saved; later typing remains present and unsaved.
    Undo the later typing to return to the saved capture, then redo it. Use text without trailing

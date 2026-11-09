@@ -29,12 +29,13 @@ export function foldText(tools: HostLanguageTools): string {
 }
 export function languageFieldKey(event: KeyboardEvent, tools: HostLanguageTools, replacement: boolean): void {
     if (event.isComposing) return;
-    if (event.key === "Escape") { event.preventDefault(); tools.cancelFind(); }
-    else if (event.key === "Enter" || event.key === "F3") { event.preventDefault();
+    if (event.key === "Enter" || event.key === "F3") { event.preventDefault();
         if (event.key === "Enter" && replacement) tools.replaceCurrent(); else if (event.shiftKey) tools.previous(); else tools.next(); }
 }
 export function languageToolsKey(event: KeyboardEvent, tools: HostLanguageTools): void {
-    if (!event.defaultPrevented && !event.isComposing && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") tools.saveFromTools(event);
+    if (event.defaultPrevented || event.isComposing) return;
+    if (event.key === "Escape") tools.escapeFromTools(event);
+    else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") tools.saveFromTools(event);
 }
 
 /** Plain host's own controls; editor descendants are mounted by ViewBindings. */

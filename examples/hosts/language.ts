@@ -107,13 +107,22 @@ export class HostLanguageTools {
         if (event.key === "F3") { event.preventDefault(); this.activate(session); this.ensureFind()?.next(event.shiftKey ? -1 : 1); return true; }
         return false;
     }
-    readonly saveFromTools = (event: KeyboardEvent): void => {
+    private toolsSession(event: KeyboardEvent): { session: Session; control: HTMLElement } | undefined {
         const root = this.toolsElement, target = event.target, realm = root?.ownerDocument.defaultView, session = this.active;
-        if (!root?.isConnected || !realm || !(target instanceof realm.HTMLElement) || !root.contains(target) || !session
-            || !session.editor.element.isConnected || session.editor.snapshot().disposed || !this.workspace.ownsDocumentView(session.editor.view)) return;
+        if (event.defaultPrevented || event.isComposing || !root?.isConnected || !realm || !(target instanceof realm.HTMLElement) || !root.contains(target) || !session
+            || (target.closest("button,input,select,textarea") ?? target).matches(":disabled") || !session.editor.element.isConnected
+            || session.editor.snapshot().disposed || session.editor.snapshot().composing || !this.workspace.ownsDocumentView(session.editor.view)) return;
         const tab = this.workspace.resolveTab(session.target);
         if (tab?.surface.kind !== "text" || tab.surface.documentId !== session.editor.view.documentId) return;
-        this.saveShortcut(event, target, session.saveTarget, () => session.editor.snapshot().composing);
+        return { session, control: target };
+    }
+    readonly saveFromTools = (event: KeyboardEvent): void => {
+        const owned = this.toolsSession(event);
+        if (owned) this.saveShortcut(event, owned.control, owned.session.saveTarget, () => owned.session.editor.snapshot().composing);
+    };
+    readonly escapeFromTools = (event: KeyboardEvent): void => {
+        const owned = this.toolsSession(event); if (!owned) return;
+        event.preventDefault(); owned.session.find?.cancel(); owned.session.editor.focus();
     };
     private detachSession(session: Session, listeners: AbortController, unsubscribe: () => void = () => {}): () => void {
         let detached = false;

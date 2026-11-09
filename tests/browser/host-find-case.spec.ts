@@ -45,7 +45,9 @@ test(`${host} ${large ? "100k" : "normal"} match-case find keeps Unicode ranges,
     expect((await snapshot(page)).history.undoDepth).toBe(planned.history.undoDepth + 1); expect((await snapshot(page)).source.exports).toBe(0);
     await source(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, original);
     await source(page, "Secondary source").press("Control+Shift+z"); await ready(page); await exact(page, changed);
-    const working = source(page, "Comparison working source"); await working.press("Control+f"); const saveControl = host === "plain" ? large ? replacement : wholeWord : large ? query : matchCase; await saveControl.focus(); await saveControl.press("Control+s"); await expect(saveControl).toBeFocused(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
+    const working = source(page, "Comparison working source"); await working.press("Control+f"); const saveControl = host === "plain" ? large ? replacement : wholeWord : large ? query : matchCase; const beforeExit = await snapshot(page); await saveControl.press("Escape"); await ready(page); await expect(working).toBeFocused();
+    const afterExit = await snapshot(page); expect(afterExit.bindings.comparison!.selectionSet).toEqual(beforeExit.bindings.comparison!.selectionSet); expect(afterExit.history).toEqual(beforeExit.history); expect(afterExit.source.revision).toBe(beforeExit.source.revision);
+    await working.press("Control+f"); await expect(status).toContainText("0 matches · ready"); await saveControl.focus(); await saveControl.press("Control+s"); await expect(saveControl).toBeFocused(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
     expect((await snapshot(page)).pendingSaves[0]!.length).toBe(changed.length);
     await working.press("Control+End"); await working.pressSequentially(" later"); await click(page, "Finish save");
     await expect.poll(async () => (await snapshot(page)).pendingCommands).toBe(0); await ready(page); await exact(page, changed + " later");
