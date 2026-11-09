@@ -21,9 +21,10 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
     for (const name of ["Open source review", "Capture review acceptance", "Finish review acceptance"]) await page.getByRole("button", { name, exact: true }).click();
     await ready(page);
-    for (const view of ["primary", "comparison"] as const) for (const documentBoundary of [true, false]) for (const key of ["Home", "End"] as const) for (const extend of [false, true]) {
+    for (const view of ["primary", "comparison"] as const) for (const mode of ["document", "line", "arrow"]) for (const key of ["Home", "End"] as const) for (const extend of [false, true]) {
+        const documentBoundary = mode === "document", arrow = mode === "arrow", commandKey = arrow ? key === "Home" ? "ArrowLeft" : "ArrowRight" : key;
         const input = page.getByRole("textbox", { name: view === "primary" ? "Primary source" : "Comparison working source", exact: true }); await input.focus();
-        const ranges = [{ anchor: 3, head: 2 }, { anchor: original.length - 3, head: original.length - 1 }];
+        const ranges = [{ anchor: 3, head: 2 }, arrow ? { anchor: original.length - 4, head: original.length - 3 } : { anchor: original.length - 3, head: original.length - 1 }];
         expect(await page.evaluate(({ view, ranges }) => { const f = window.hostFixture; return f.selectSourceSet(view, f.snapshot().source.revision, ranges, 1); }, { view, ranges })).toBe(true); await ready(page);
         const before = await snapshot(page), endpoint = key === "Home" ? 0 : original.length;
         // One browser task, with no timer/automation round trip between navigation and input.
@@ -36,13 +37,15 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
             input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "!", bubbles: true, cancelable: true }));
             input.setRangeText("!", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "!", bubbles: true }));
             return { selectionSet, pending };
-        }, { key, extend, documentBoundary });
+        }, { key: commandKey, extend, documentBoundary });
         expect(result.pending).toBe(false);
         const owner = ranges[1]!;
         // Document extensions overlap/coalesce; line extensions stay independent.
         const lineHeads = key === "Home" ? [0, original.length - 5] : [original.indexOf("\r\n"), original.length];
+        const arrowHeads = ranges.map(range => extend ? range.head + (key === "Home" ? -1 : 1) : (key === "Home" ? Math.min : Math.max)(range.anchor, range.head));
+        const heads = arrow ? arrowHeads : lineHeads;
         const destinations = documentBoundary ? [{ anchor: extend ? key === "Home" ? owner.anchor : ranges[0]!.anchor : endpoint, head: endpoint }]
-            : ranges.map((range, i) => ({ anchor: extend ? range.anchor : lineHeads[i]!, head: lineHeads[i]! }));
+            : ranges.map((range, i) => ({ anchor: extend ? range.anchor : heads[i]!, head: heads[i]! }));
         expect(result.selectionSet.primary).toBe(documentBoundary ? 0 : 1);
         expect(result.selectionSet.ranges.map(({ anchor, head }) => ({ anchor, head }))).toEqual(destinations);
         let expected = original;
@@ -74,6 +77,23 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
         expect(movement.selectionSet.ranges.map(r => r.head)).toEqual([...new Set(ends)].sort((a, b) => a - b));
         await page.getByRole("textbox", { name: "Primary source", exact: true }).pressSequentially("x"); await exact(page, original); expect((await snapshot(page)).history).toEqual(readonly.history);
     }
-    await page.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await page.getByRole("textbox", { name: "Primary source", exact: true }).pressSequentially("x"); await ready(page); await exact(page, original + "x");
+    // Thirty-two separated short-row carets must also finish ArrowRight before input.
+    const heads: number[] = [];
+    if (large) for (let i = 0; i < 32; i++) heads.push(original.indexOf("\n") + 1 + i * 3000 * "const unchanged = 123;\r\n".length + 6);
+    else for (let i = 0; heads.length < 32 && i + 1 < original.length; i++) if (/[ -~]/.test(original[i]!) && /[ -~]/.test(original[i + 1]!)) heads.push(i);
+    expect(heads).toHaveLength(32);
+    await page.evaluate(heads => { const f = window.hostFixture; f.setSourceReadOnly(false); f.selectSourceSet("primary", f.snapshot().source.revision, heads.map(head => ({ anchor: head, head })), 17); }, heads); await ready(page);
+    const moved = await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(node => {
+        const input = node as HTMLTextAreaElement;
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+        const state = window.hostFixture.snapshot().bindings.views.find(v => v.id === "primary")!;
+        input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "!", bubbles: true, cancelable: true }));
+        input.setRangeText("!", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "!", bubbles: true }));
+        return { pending: state.metrics!.pendingGrapheme, heads: state.selectionSet.ranges.map(r => r.head) };
+    });
+    expect(moved.pending).toBe(false); expect(moved.heads).toEqual(heads.map(head => head + 1));
+    let expected = original; for (const head of heads.slice().reverse()) expected = expected.slice(0, head + 1) + "!" + expected.slice(head + 1);
+    await ready(page); await exact(page, expected); await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await ready(page); await exact(page, original);
+    const primary = page.getByRole("textbox", { name: "Primary source", exact: true }); await primary.press("Control+End"); await primary.pressSequentially("x"); await ready(page); await exact(page, original + "x");
     await page.evaluate(() => window.hostFixture.dispose()); const end = await snapshot(page); expect(end.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(end.hostSubscriptions).toBe(0);
 });

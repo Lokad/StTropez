@@ -114,6 +114,12 @@ Ctrl/Cmd uses the document endpoint. Both preserve Shift extension and read-only
 End excludes CRLF separators and includes a final literal CR. Immediate subsequent typing uses the new
 normalized selections. Larger sets retain the cooperative command/cancellation path. This
 bounded shortcut does not qualify general unpaced sequences of asynchronous navigation.
+Horizontal arrows also finish at most 32 ranges before subsequent input when their endpoint,
+adjacent logical and visible rows fit the existing 514-unit short-row bound. Native preparation
+still uses batches of 16 ranges; complete short contexts use the existing grapheme fallback.
+The bounded path includes preparation in the key handler. It has no elapsed-time guarantee.
+Long contextual rows and larger sets retain cooperative cancellation; their command/input
+ordering remains a pilot gap. Inner preparation counters are not complete handler or interaction latency.
 Non-cancellable native word deletion requires a matching captured `beforeinput` target; stale,
 unmatched or capability-blocked attempts emit recovery rather than applying a bounded-context deletion to the model.
 

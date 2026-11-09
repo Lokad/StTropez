@@ -270,7 +270,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     }
     function eachRange(capture: CommandCapture, purpose: "word" | "grapheme", resolve: (range: Selection, done: (range: Selection) => void) => void,
         done: (ranges: readonly Selection[]) => void,
-        options: Readonly<{ validLayout?: () => boolean; prepare?: (ranges: readonly Selection[]) => () => void; batchSize?: number; navigation?: boolean }> = {}): void {
+        options: Readonly<{ validLayout?: () => boolean; prepare?: (ranges: readonly Selection[]) => () => void; batchSize?: number; navigation?: boolean; inline?: boolean }> = {}): void {
         let release: (() => void) | undefined, batchEnd = options.prepare ? 0 : capture.selectionSet.ranges.length;
         const validLayout = options.validLayout ?? (() => true), turn = options.navigation ? navigationTurn : (work: () => void) => work();
         const job = { capture, purpose, release: () => { release?.(); release = undefined; } }; rangeCommand = job;
@@ -281,7 +281,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             const began = win.performance.now(); let count = 0; pumping = true;
             if (options.prepare && index === batchEnd) { job.release(); batchEnd = Math.min(capture.selectionSet.ranges.length, index + (options.batchSize ?? 32));
                 release = options.prepare(capture.selectionSet.ranges.slice(index, batchEnd)); }
-            while (index < batchEnd && !waiting && count++ < 64 && win.performance.now() - began < 4) {
+            while (index < batchEnd && !waiting && count++ < 64 && (options.inline || win.performance.now() - began < 4)) {
                 waiting = true;
                 resolve(capture.selectionSet.ranges[index]!, range => {
                     if (!active()) return;
@@ -291,6 +291,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             pumping = false;
             if (!active()) return;
             if (index === capture.selectionSet.ranges.length) { job.release(); rangeCommand = undefined; if (validLayout()) done(ranges); }
+            else if (!waiting && options.inline) pump();
             else if (!waiting) { const timer = win.setTimeout(() => turn(() => { commandTimers.delete(timer); if (rangeCommand === job) rangeTimer = undefined; pump(); }), 0);
                 rangeTimer = timer; commandTimers.add(timer); }
         }); pump();
@@ -410,21 +411,35 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const state = viewport.snapshot();
         return [navigationStyle(), root.clientWidth, root.clientHeight, state.width, state.height, state.lineHeight, state.columnWidth, view.folding.getSnapshot().generation].join("|");
     }
-    function beginNavigation(prepare: (capture: CommandCapture, style: string) => void): void {
+    function beginNavigation(prepare: (capture: CommandCapture, style: string, inline: boolean) => void, canInline?: (capture: CommandCapture) => boolean): void {
         cancelWord(); navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
         navigationTurn(() => {
             const capture = commandCapture(false), style = navigationStyle(), job = { capture, purpose: "grapheme" as const, release: () => {} };
             if (!validCommand(capture)) return; rangeCommand = job;
+            const inline = canInline?.(capture) ?? false;
             const initialize = () => {
                 if (rangeCommand !== job) return;
                 if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
-                prepare(capture, style);
+                prepare(capture, style, inline);
                 if (rangeCommand === job) cancelWord();
             };
-            if (capture.selectionSet.ranges.length === 1) initialize();
+            if (capture.selectionSet.ranges.length === 1 || inline) initialize();
             else { const timer = win.setTimeout(() => navigationTurn(() => { commandTimers.delete(timer); if (rangeCommand === job) rangeTimer = undefined; initialize(); }), 0);
                 rangeTimer = timer; commandTimers.add(timer); }
         });
+    }
+    function shortHorizontal(capture: CommandCapture): boolean {
+        // At most32 ranges and bounded native rows; longer contexts keep cooperative scans.
+        if (capture.selectionSet.ranges.length > 32) return false;
+        const buffer = capture.buffer, folds = view.folding.getSnapshot().index, lines = new Set<number>();
+        for (const range of capture.selectionSet.ranges) {
+            const line = buffer.lineAt(range.head), row = folds.rowAt(line);
+            lines.add(line); lines.add(buffer.lineAt(range.anchor));
+            if (line) lines.add(line - 1); if (line + 1 < buffer.lineCount) lines.add(line + 1);
+            if (row) lines.add(folds.lineAt(row - 1)); if (row + 1 < folds.visibleLineCount) lines.add(folds.lineAt(row + 1));
+        }
+        for (const line of lines) if ((line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length) - buffer.offsetAt(line) > 514) return false;
+        return true;
     }
     function boundaryOffset(buffer: TextBuffer, head: number, key: string, documentBoundary: boolean): number {
         if (documentBoundary) return key === "Home" ? 0 : buffer.length;
@@ -446,7 +461,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 finishRanges(capture, capture.selectionSet.ranges.map(range => moved(range, boundaryOffset(capture.buffer, range.head, key, documentBoundary), extend)));
             }); return;
         }
-        beginNavigation((capture, style) => {
+        beginNavigation((capture, style, inline) => {
         const began = win.performance.now(); viewport.flush();
         if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
         const layout = navigationLayout(), buffer = capture.buffer, arrows = key === "ArrowLeft" || key === "ArrowRight", foldIndex = view.folding.getSnapshot().index;
@@ -462,7 +477,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             if (point) { visualMoves++; done(moved(range, point.offset, extend, point.affinity)); return; }
             if (!extend && range.anchor !== range.head) { done(moved(range, direction < 0 ? Math.min(range.anchor, range.head) : Math.max(range.anchor, range.head), false)); return; }
             withGraphemes(capture, range.head, direction, "grapheme", at => done(moved(range, direction < 0 ? at.preceding ?? range.head : at.following ?? range.head, extend)), navigationTurn);
-        }, ranges => finishRanges(capture, ranges), { validLayout: () => navigationLayout() === layout, navigation: true, ...(arrows && capture.selectionSet.ranges.length > 1 ? {
+        }, ranges => finishRanges(capture, ranges), { validLayout: () => navigationLayout() === layout, navigation: true, inline, ...(arrows && capture.selectionSet.ranges.length > 1 ? {
             batchSize: 16, prepare: (ranges: readonly Selection[]) => {
                 const lines = new Set<number>();
                 for (const range of ranges) {
@@ -472,7 +487,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 }
                 return viewport.prepareNavigationRows([...lines]);
             } } : {}) });
-        });
+        }, shortHorizontal);
     }
     function vertical(direction: -1 | 1, page: boolean, extend: boolean): void {
         beginNavigation((capture, style) => {
