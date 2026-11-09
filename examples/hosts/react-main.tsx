@@ -7,7 +7,7 @@ import { HostController } from "./controller.ts";
 import { hostEditor, ViewBindings } from "./bindings.ts";
 import { actions, conflictText, statusText } from "./actions.ts";
 import { installHostHarness } from "./harness.ts";
-import { findText, languageActions, languageFieldKey } from "./language-panel.ts";
+import { findText, foldText, languageActions, languageFieldKey } from "./language-panel.ts";
 import "./style.css";
 
 const controller = new HostController(), bindings = new ViewBindings(controller, hostEditor());
@@ -92,6 +92,7 @@ function LanguageTools() {
         <label><input type="checkbox" checked={state.matchCase} onChange={event => tools.setMatchCase(event.currentTarget.checked)} />Match case</label>
         <label><input type="checkbox" checked={state.regularExpression} onChange={event => tools.setRegularExpression(event.currentTarget.checked)} />Regular expression</label>
         <output aria-label="Find status">{findText(tools)}</output>
+        <output aria-label="Fold status" aria-live="polite">{foldText(tools)}</output>
         <div>{languageActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
     </section>;
 }

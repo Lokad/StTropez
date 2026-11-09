@@ -1,0 +1,132 @@
+import type { TextBuffer } from "./text-buffer.ts";
+import type { PositionMapping } from "./positions.ts";
+import type { SelectionSet } from "./selections.ts";
+import type { Observable } from "./observable.ts";
+
+/** Host-owned raw anchors include a visible header and at least one complete body row. */
+export type FoldRange = Readonly<{ id: string; from: number; to: number; collapsed?: boolean }>;
+export type FoldRegion = Readonly<{ id: string; from: number; to: number; lineFrom: number; lineTo: number; collapsed: boolean }>;
+export type FoldVersion = Readonly<{ revision: number; generation: number }>;
+export type FoldingSnapshot = FoldVersion & Readonly<{ regions: readonly FoldRegion[]; index: FoldIndex }>;
+export type DocumentFolding = Observable<FoldingSnapshot> & Readonly<{
+    setRanges: (expected: FoldVersion, ranges: readonly FoldRange[]) => boolean;
+    setCollapsed: (expected: FoldVersion, id: string, collapsed: boolean) => boolean;
+    reveal: (expected: FoldVersion, from: number, to?: number) => boolean;
+    revealSelection: (expected: FoldVersion) => boolean;
+}>;
+const empty: readonly FoldRegion[] = Object.freeze([]);
+const integer = (value: number) => Number.isSafeInteger(value) && value >= 0;
+function region(buffer: TextBuffer, id: string, from: number, to: number, collapsed: boolean): FoldRegion | undefined {
+    if (!integer(from) || !integer(to) || from >= to || to > buffer.length) return;
+    const lineFrom = buffer.lineAt(from), lineTo = buffer.lineAt(to - 1) + 1;
+    return lineFrom + 1 < lineTo ? Object.freeze({ id, from, to, lineFrom, lineTo, collapsed }) : undefined;
+}
+export function sameFoldRegions(a: readonly FoldRegion[], b: readonly FoldRegion[]): boolean {
+    return a === b || a.length === b.length && a.every((r, i) => { const s = b[i]!; return r.id === s.id && r.from === s.from && r.to === s.to && r.collapsed === s.collapsed && r.lineFrom === s.lineFrom && r.lineTo === s.lineTo; });
+}
+export function createFoldRegions(buffer: TextBuffer, ranges: readonly FoldRange[], previous: readonly FoldRegion[] = empty): readonly FoldRegion[] {
+    if (!Array.isArray(ranges)) throw new TypeError("Expected fold ranges.");
+    const prior = new Map(previous.map(r => [r.id, r])), ids = new Set<string>();
+    const regions = ranges.map(r => {
+        if (!r || typeof r.id !== "string" || !r.id.length || r.id.length > 256 || ids.has(r.id) || r.collapsed !== undefined && typeof r.collapsed !== "boolean") throw new TypeError("Expected unique fold identities and boolean state.");
+        ids.add(r.id); const value = region(buffer, r.id, r.from, r.to, r.collapsed ?? prior.get(r.id)?.collapsed ?? false);
+        if (!value) throw new RangeError("A fold needs a header and at least one body row."); return value;
+    }).sort((a, b) => a.lineFrom - b.lineFrom || b.lineTo - a.lineTo);
+    const stack: FoldRegion[] = [];
+    for (let i = 0; i < regions.length; i++) {
+        const r = regions[i]!; if (i && regions[i - 1]!.lineFrom === r.lineFrom) throw new RangeError("A fold header has one identity.");
+        while (stack.length && r.lineFrom >= stack.at(-1)!.lineTo) stack.pop();
+        if (stack.length && r.lineTo > stack.at(-1)!.lineTo) throw new RangeError("Fold regions must nest or remain disjoint."); stack.push(r);
+    }
+    return sameFoldRegions(previous, regions) ? previous : regions.length ? Object.freeze(regions) : empty;
+}
+/** View metadata follows document mappings. Degenerate/merged headers cease to be folds. */
+export function mapFoldRegions(buffer: TextBuffer, mapping: PositionMapping, regions: readonly FoldRegion[]): readonly FoldRegion[] {
+    if (!regions.length) return regions;
+    const mapped: FoldRegion[] = [], headers = new Map<number, number>(), stack: number[] = [];
+    for (const r of regions) {
+        const from = mapping.map(r.from, "after"), to = mapping.map(r.to, "before");
+        const next = region(buffer, r.id, from.offset, to.offset, r.collapsed && !from.deleted && !to.deleted);
+        if (!next) continue;
+        const existing = headers.get(next.lineFrom);
+        if (existing !== undefined) { mapped[existing] = Object.freeze({ ...mapped[existing]!, collapsed: false }); continue; }
+        while (stack.length && next.lineFrom >= mapped[stack.at(-1)!]!.lineTo) stack.pop();
+        const parent = stack.at(-1);
+        if (parent !== undefined && next.lineTo > mapped[parent]!.lineTo) {
+            // Removing a boundary newline can merge formerly disjoint headers. Do not
+            // publish a crossing projection or keep the merged boundary hidden.
+            mapped[parent] = Object.freeze({ ...mapped[parent]!, collapsed: false }); continue;
+        }
+        headers.set(next.lineFrom, mapped.length); stack.push(mapped.length); mapped.push(next);
+    }
+    return sameFoldRegions(regions, mapped) ? regions : mapped.length ? Object.freeze(mapped) : empty;
+}
+export function revealFoldRange(buffer: TextBuffer, regions: readonly FoldRegion[], from: number, to = from, index?: FoldIndex): readonly FoldRegion[] {
+    if (!integer(from) || !integer(to) || to < from || to > buffer.length) throw new RangeError("Invalid fold reveal range.");
+    if (index?.collapsedCount === 0) return regions;
+    const first = buffer.lineAt(from), last = buffer.lineAt(to > from ? to - 1 : to) + 1; let changed = false;
+    const next = regions.map(r => { if (!r.collapsed || r.lineFrom + 1 >= last || r.lineTo <= first) return r;
+        changed = true; return Object.freeze({ ...r, collapsed: false }); });
+    return changed ? Object.freeze(next) : regions;
+}
+export function revealSelectionFolds(buffer: TextBuffer, regions: readonly FoldRegion[], selections: SelectionSet, index?: FoldIndex): readonly FoldRegion[] {
+    if (index?.collapsedCount === 0) return regions;
+    if (index && !selections.ranges.some(r => index.hiddenBy(buffer.lineAt(r.anchor)) || index.hiddenBy(buffer.lineAt(r.head)))) return regions;
+    if (!regions.some(r => r.collapsed)) return regions;
+    const lines = [...new Set(selections.ranges.flatMap(r => [buffer.lineAt(r.anchor), buffer.lineAt(r.head)]))].sort((a, b) => a - b); let changed = false;
+    const next = regions.map(r => {
+        if (!r.collapsed) return r; let low = 0, high = lines.length;
+        while (low < high) { const mid = (low + high) >>> 1; if (lines[mid]! < r.lineFrom + 1) low = mid + 1; else high = mid; }
+        if (low === lines.length || lines[low]! >= r.lineTo) return r;
+        changed = true; return Object.freeze({ ...r, collapsed: false });
+    }); return changed ? Object.freeze(next) : regions;
+}
+
+type Hidden = Readonly<{ from: number; to: number; before: number; owner: FoldRegion }>;
+/** One interval per outer collapsed fold; no array proportional to document line count. */
+export class FoldIndex {
+    readonly lineCount: number;
+    readonly visibleLineCount: number;
+    readonly collapsedCount: number;
+    readonly regions: readonly FoldRegion[];
+    readonly #hidden: readonly Hidden[];
+    constructor(lineCount: number, regions: readonly FoldRegion[]) {
+        if (!Number.isSafeInteger(lineCount) || lineCount < 1) throw new RangeError("Invalid fold line count.");
+        this.lineCount = lineCount; this.regions = Object.freeze(regions.map(r => Object.freeze({ ...r })));
+        const hidden: Hidden[] = []; let removed = 0, prior = -1, collapsed = 0; const stack: number[] = [], ids = new Set<string>();
+        for (const r of this.regions) {
+            if (typeof r.id !== "string" || !r.id.length || r.id.length > 256 || ids.has(r.id) || !integer(r.from) || !integer(r.to) || r.from >= r.to
+                || typeof r.collapsed !== "boolean" || !integer(r.lineFrom) || !integer(r.lineTo) || r.lineFrom <= prior || r.lineTo > lineCount || r.lineTo <= r.lineFrom + 1) throw new RangeError("Invalid fold row interval.");
+            ids.add(r.id);
+            prior = r.lineFrom; while (stack.length && r.lineFrom >= stack.at(-1)!) stack.pop();
+            if (stack.length && r.lineTo > stack.at(-1)!) throw new RangeError("Crossing fold rows."); stack.push(r.lineTo);
+            if (r.collapsed) collapsed++;
+            if (!r.collapsed || hidden.length && r.lineFrom < hidden.at(-1)!.to) continue;
+            hidden.push(Object.freeze({ from: r.lineFrom + 1, to: r.lineTo, before: removed, owner: r })); removed += r.lineTo - r.lineFrom - 1;
+        }
+        this.visibleLineCount = lineCount - removed; this.collapsedCount = collapsed; this.#hidden = Object.freeze(hidden); Object.freeze(this);
+    }
+    #at(line: number): Hidden | undefined {
+        if (!integer(line) || line >= this.lineCount) throw new RangeError("Invalid source line.");
+        let low = 0, high = this.#hidden.length;
+        while (low < high) { const mid = (low + high) >>> 1; if (this.#hidden[mid]!.from <= line) low = mid + 1; else high = mid; }
+        return this.#hidden[low - 1];
+    }
+    hiddenBy(line: number): FoldRegion | undefined { const h = this.#at(line); return h && line < h.to ? h.owner : undefined; }
+    rowAt(line: number): number { const h = this.#at(line); return !h ? line : line < h.to ? h.from - h.before - 1 : line - h.before - (h.to - h.from); }
+    lineAt(row: number): number {
+        if (!integer(row) || row >= this.visibleLineCount) throw new RangeError("Invalid visible row.");
+        let low = 0, high = this.#hidden.length;
+        while (low < high) { const mid = (low + high) >>> 1, h = this.#hidden[mid]!; if (h.from - h.before <= row) low = mid + 1; else high = mid; }
+        const h = this.#hidden[low - 1]; return row + (h ? h.before + h.to - h.from : 0);
+    }
+    headerAt(line: number): FoldRegion | undefined {
+        if (!integer(line) || line >= this.lineCount) throw new RangeError("Invalid source line.");
+        let low = 0, high = this.regions.length;
+        while (low < high) { const mid = (low + high) >>> 1; if (this.regions[mid]!.lineFrom < line) low = mid + 1; else high = mid; }
+        const r = this.regions[low]; return r?.lineFrom === line ? r : undefined;
+    }
+}
+export function foldingSnapshot(buffer: TextBuffer, revision: number, generation: number, regions: readonly FoldRegion[], previous?: FoldingSnapshot): FoldingSnapshot {
+    return Object.freeze({ revision, generation, regions, index: previous && previous.regions === regions && previous.index.lineCount === buffer.lineCount ? previous.index : new FoldIndex(buffer.lineCount, regions) });
+}

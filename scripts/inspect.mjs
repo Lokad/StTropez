@@ -145,6 +145,20 @@ try {
         await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-regex-error.png`, fullPage: true });
         await harness.page.evaluate(() => window.hostFixture.dispose());
     }
+    for (const mode of ["plain", "react"]) {
+        await harness.page.goto(new URL(`/hosts/${mode}/?editor=candidate`, harness.page.url()).href);
+        await harness.page.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: "header\r\nhidden one\r\nhidden two\r\nfooter" }]); });
+        await harness.page.getByRole("button", { name: "Open source review", exact: true }).click();
+        await harness.page.getByRole("textbox", { name: "Primary source", exact: true }).focus();
+        await harness.page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 32 }]); });
+        await harness.page.getByRole("button", { name: "Fold selected lines", exact: true }).click();
+        await harness.page.waitForFunction(() => { const s = window.hostFixture.snapshot(), p = s.bindings.views.find(v => v.id === "primary"), c = s.bindings.comparison;
+            return p.metrics.viewport.visibleLines === 2 && !p.metrics.viewport.pending && c.status === "ready" && !c.workingViewport.pending && !c.referenceViewport.pending; });
+        const disclosure = harness.page.getByRole("button", { name: "Expand lines 2–3", exact: true }); await disclosure.focus();
+        await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-folding.png`, fullPage: true });
+        await writeFile(`artifacts/inspect/host-${mode}-folding.json`, JSON.stringify(await harness.page.evaluate(() => window.hostFixture.snapshot()), null, 2));
+        await harness.page.evaluate(() => window.hostFixture.dispose());
+    }
     await harness.page.goto(new URL("/viewport/", harness.page.url()).href);
     await harness.page.waitForFunction(() => { const state = window.viewportFixture?.snapshot(); return state && state.primary.revision !== null && !state.primary.pending; });
     await harness.page.screenshot({ path: "artifacts/inspect/viewport-lines.png", fullPage: true });

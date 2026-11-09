@@ -33,6 +33,54 @@ function mountMultipleInput() {
 }
 let multipleInput: ReturnType<typeof mountMultipleInput> | undefined;
 Object.assign(window, { consumer: { text: () => workspace.document(documentId).text,
+    foldingPilot: async () => {
+        const original = "header\r\n" + "const unchanged = 123;\r\n".repeat(100000) + "footer", footer = original.length - 6;
+        const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "folding", variant: "working" }, "Folded source", { value: original });
+        const tab = model.open({ kind: "text", documentId: source.documentId }, "folded"), view = model.createDocumentView(source.documentId), peer = model.createDocumentView(source.documentId);
+        const host = document.createElement("div"), otherHost = document.createElement("div"); host.style.height = "180px"; otherHost.style.height = "180px"; document.body.append(host, otherHost);
+        let editor = mountEditingCandidate(host, model, tab, { view, ariaLabel: "Restored folding" });
+        const other = mountEditingCandidate(otherHost, model, tab, { view: peer, ariaLabel: "Restored fold peer" });
+        const wait = async () => { const deadline = performance.now() + 10000;
+            while ([editor, other].some(e => { const s = e.snapshot(), p = e.viewport.snapshot(); return s.pendingCaret || s.pendingWord || s.pendingGrapheme || s.pendingDragScroll || p.pending
+                || p.revision !== model.document(source.documentId).revision || p.selectionSet !== e.view.getSnapshot().selectionSet || p.foldGeneration !== e.view.folding.getSnapshot().generation; })) {
+                if (performance.now() > deadline) throw new Error("Compiled folding did not settle."); await new Promise(resolve => setTimeout(resolve, 0));
+            } };
+        const exact = () => { const b = model.document(source.documentId).buffer; if (b.length !== original.length) throw new Error("Compiled fold undo changed length.");
+            for (let from = 0; from < original.length; from += 32768) if (b.slice(from, Math.min(b.length, from + 32768)) !== original.slice(from, from + 32768)) throw new Error("Compiled fold undo changed text."); };
+        try {
+            view.setSelections(0, [{ anchor: 0, head: 0 }, { anchor: original.length, head: original.length }]);
+            const initial = view.folding.getSnapshot();
+            if (!view.folding.setRanges(initial, [{ id: "body", from: 0, to: footer, collapsed: true }]) || view.folding.setCollapsed(initial, "body", false)) throw new Error("Compiled folding did not enforce captured versions.");
+            editor.focus(); await wait();
+            if (editor.viewport.snapshot().rows !== 2 || editor.viewport.snapshot().visibleLines !== 2 || peer.folding.getSnapshot().index.collapsedCount) throw new Error("Compiled folded projection is not bounded or independent.");
+            // This synthetic dispatch proves the shipped command route; native device qualification is separate.
+            editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })); await wait();
+            if (view.getSnapshot().selection.head !== footer || view.getSnapshot().selectionSet.ranges.length !== 2) throw new Error("Compiled folded navigation lost a target or secondary caret.");
+            const at = Math.floor(footer / 2); model.edit({ documentId: source.documentId, expectedRevision: 0, origin: "host", edits: [{ from: at, to: at, insert: "x\r\n" }] }); await wait();
+            if (editor.viewport.snapshot().visibleLines !== 2) throw new Error("Compiled folded edit exposed hidden rows.");
+            model.undo({ documentId: source.documentId, expectedRevision: 1 }); await wait(); exact();
+            const saved = editor.captureView(), retired = editor; editor.destroy();
+            editor = mountEditingCandidate(host, model, tab, { view, ariaLabel: "Restored folding" }); editor.restoreView(saved); editor.focus(); await wait();
+            if (editor.viewport.snapshot().visibleLines !== 2 || view.getSnapshot().selectionSet.ranges.length !== 2) throw new Error("Compiled remount lost folds or complete selections.");
+            const fresh = model.createDocumentView(source.documentId), freshHost = document.createElement("div"); freshHost.style.height = "180px"; document.body.append(freshHost);
+            const restored = mountEditingCandidate(freshHost, model, tab, { view: fresh });
+            try {
+                restored.restoreView(saved); restored.viewport.flush(); if (fresh.folding.getSnapshot().index.visibleLineCount !== 2) throw new Error("Compiled fresh view did not restore captured folds.");
+                const current = fresh.folding.getSnapshot(); fresh.folding.setCollapsed(current, "body", false); restored.restoreView(saved);
+                if (fresh.folding.getSnapshot().index.collapsedCount) throw new Error("A stale capture overwrote newer fold state.");
+            } finally { restored.destroy(); fresh.dispose(); freshHost.remove(); }
+            view.setSelection(model.document(source.documentId).revision, { anchor: at, head: at });
+            editor.viewport.revealOffset(at, { horizontal: "nearest", vertical: "nearest" }); await wait();
+            if (view.folding.getSnapshot().index.collapsedCount || !editor.viewport.coordsAt(at)) throw new Error("Compiled explicit selection did not reveal its row.");
+            if (model.document(source.documentId).buffer.readMetrics().textExports) throw new Error("Compiled folding exported the source value.");
+            if (retired.viewport.coordsAt(0) !== undefined || retired.viewport.columnAt(0) !== undefined) throw new Error("Retired compiled geometry remained active.");
+        } finally { editor.destroy(); other.destroy(); host.remove(); otherHost.remove(); view.dispose(); peer.dispose(); model.close(tab); model.releaseResource(source.id, true); }
+        if (editor.viewport.coordsAt(0) !== undefined || editor.viewport.columnAt(0) !== undefined || editor.viewport.caretAtColumn(0, 0) !== undefined) throw new Error("Released compiled geometry queried a missing source.");
+        const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled fold resources leaked.");
+        return { units: original.length, visibleRows: 2, independentViews: true, capturedVersions: true, completeSets: true, navigation: true,
+            mappedUndo: true, retainedRemount: true, freshRestore: true, newerStatePreserved: true, revealedSelection: true, zeroCompleteExports: true,
+            disposedGeometryInert: true, keyboardDispatch: "synthetic-event", released: { views, leases, subscriptions } };
+    },
     regexPilot: async () => {
         const original = "foobar foo foo_ K k K_ 𐐀 𐐨\r\n" + "const unchanged = 123;\r\n".repeat(100000);
         const expected = "[foobar] [foo] foo_ [K] [k] K_ [𐐀] [𐐨]\r\n" + original.slice(original.indexOf("\n") + 1);

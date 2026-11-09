@@ -146,6 +146,9 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect(await secondary.evaluate((node: HTMLTextAreaElement) => [node.selectionStart, node.selectionEnd])).toEqual([7, 8]);
             await page.getByRole("button", { name: "Toggle views", exact: true }).click(); await expect(primary).toHaveCount(0);
             await page.getByRole("button", { name: "Toggle views", exact: true }).click(); await expect(primary).toHaveValue("abcdefghij");
+            // First focus attaches active-only language/fold observation. Compare typing
+            // against that steady state; unmount below still requires every listener gone.
+            await primary.focus();
             const ready = await page.evaluate(() => window.hostFixture.snapshot());
             await primary.press("End"); await primary.pressSequentially(" more typing");
             await expect(secondary).toHaveValue("abcdefghij more typing");

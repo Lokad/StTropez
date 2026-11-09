@@ -44,6 +44,11 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     secondaryCarets.setAttribute("aria-hidden", "true"); root.append(input, caret, secondaryCarets, help);
     let revision = workspace.document(documentId).revision, context: InputContext = inputContext(workspace.document(documentId).buffer, view.getSnapshot().selection);
     let disposed = false, composing = false, selecting = false, committing = false, escaped = false;
+    const escapeState = (value: boolean) => {
+        if (escaped === value) return;
+        escaped = value; root.toggleAttribute("data-st-tab-escape", value);
+        for (const button of root.querySelectorAll<HTMLButtonElement>(".st-fold-button")) button.tabIndex = value ? -1 : 0;
+    };
     const descriptions = new Map<string, number>();
     const renderDescriptions = () => input.setAttribute("aria-describedby", [help.id, ...[...descriptions.keys()].filter(id => id !== help.id)].join(" "));
     const describe = (id: string): (() => void) => {
@@ -114,6 +119,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             for (let index = low; index < selectionSet.ranges.length; index++) {
                 const range = selectionSet.ranges[index]!; if (range.head > to) break;
                 if (index === selectionSet.primary || range.anchor !== range.head) continue;
+                if (view.folding.getSnapshot().index.hiddenBy(buffer.lineAt(range.head))) continue;
                 const at = viewport.coordsAt(range.head, range.headAffinity);
                 if (at && at.left >= rectangle.left && at.left < rectangle.left + root.clientWidth
                     && at.top + at.height > rectangle.top && at.top < rectangle.top + root.clientHeight) points.push(at);
@@ -402,7 +408,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     }
     function navigationLayout(): string {
         const state = viewport.snapshot();
-        return [navigationStyle(), root.clientWidth, root.clientHeight, state.width, state.height, state.lineHeight, state.columnWidth].join("|");
+        return [navigationStyle(), root.clientWidth, root.clientHeight, state.width, state.height, state.lineHeight, state.columnWidth, view.folding.getSnapshot().generation].join("|");
     }
     function beginNavigation(prepare: (capture: CommandCapture, style: string) => void): void {
         cancelWord(); navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
@@ -426,7 +432,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         beginNavigation((capture, style) => {
         const began = win.performance.now(); viewport.flush();
         if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
-        const layout = navigationLayout(), buffer = capture.buffer, arrows = key === "ArrowLeft" || key === "ArrowRight";
+        const layout = navigationLayout(), buffer = capture.buffer, arrows = key === "ArrowLeft" || key === "ArrowRight", foldIndex = view.folding.getSnapshot().index;
         navigationPreparationMs = win.performance.now() - began;
         eachRange(capture, "grapheme", (range, done) => {
             if (key === "Home" || key === "End") {
@@ -449,7 +455,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 for (const range of ranges) {
                     const line = buffer.lineAt(range.head); lines.add(line);
                     if (!extend && range.anchor !== range.head) lines.add(buffer.lineAt(range.anchor));
-                    else { if (line) lines.add(line - 1); if (line + 1 < buffer.lineCount) lines.add(line + 1); }
+                    else { const row = foldIndex.rowAt(line); if (row) lines.add(foldIndex.lineAt(row - 1)); if (row + 1 < foldIndex.visibleLineCount) lines.add(foldIndex.lineAt(row + 1)); }
                 }
                 return viewport.prepareNavigationRows([...lines]);
             } } : {}) });
@@ -461,14 +467,14 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const buffer = capture.buffer, selected = capture.selection;
         if (!viewport.coordsAt(selected.head, selected.headAffinity)) { viewport.revealOffset(selected.head); viewport.flush(); }
         if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
-        const state = viewport.snapshot(), layout = navigationLayout();
+        const state = viewport.snapshot(), layout = navigationLayout(), foldIndex = view.folding.getSnapshot().index;
         const prior = preferred?.selections === capture.selectionSet && preferred.revision === capture.revision && preferred.layout === layout ? preferred.columns : undefined;
         const columns: (number | undefined)[] = [], count = page ? Math.max(1, Math.floor(state.height / state.lineHeight) - 1) : 1;
         navigationPreparationMs = win.performance.now() - began;
         let index = 0, pageDelta = 0;
         eachRange(capture, "grapheme", (range, done) => {
-            const at = index++, line = buffer.lineAt(range.head), next = Math.max(0, Math.min(buffer.lineCount - 1, line + direction * count));
-            if (at === capture.selectionSet.primary) pageDelta = (next - line) * state.lineHeight;
+            const at = index++, line = buffer.lineAt(range.head), row = foldIndex.rowAt(line), next = foldIndex.lineAt(Math.max(0, Math.min(foldIndex.visibleLineCount - 1, row + direction * count)));
+            if (at === capture.selectionSet.primary) pageDelta = (foldIndex.rowAt(next) - row) * state.lineHeight;
             if (next === line) { columns.push(undefined); done(moved(range, direction < 0 ? 0 : buffer.length, extend)); return; }
             const column = prior?.[at] ?? viewport.columnAt(range.head, range.headAffinity);
             const hit = column === undefined ? undefined : viewport.caretAtColumn(next, column);
@@ -492,7 +498,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             preferred = { selections, revision: capture.revision, layout, columns: nextColumns };
         }, { validLayout: () => navigationLayout() === layout, navigation: true, ...(capture.selectionSet.ranges.length > 1 ? {
             prepare: (ranges: readonly Selection[]) => viewport.prepareNavigationRows([...new Set(ranges.flatMap(range => {
-                const line = buffer.lineAt(range.head); return [line, Math.max(0, Math.min(buffer.lineCount - 1, line + direction * count))];
+                const line = buffer.lineAt(range.head), row = foldIndex.rowAt(line); return [line, foldIndex.lineAt(Math.max(0, Math.min(foldIndex.visibleLineCount - 1, row + direction * count)))];
             }))]) } : {}) });
         });
     }
@@ -549,6 +555,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     }
     input.addEventListener("beforeinput", event => {
         wordInput = undefined; insertion = undefined;
+        if (!composing) view.folding.revealSelection(view.folding.getSnapshot());
         if (!composing && ["deleteWordBackward", "deleteWordForward", "deleteContentBackward", "deleteContentForward"].includes(event.inputType)) {
             syncSelection(); const direction = event.inputType.endsWith("Backward") ? -1 : 1, wholeWord = event.inputType.startsWith("deleteWord");
             if (event.cancelable) { event.preventDefault(); (wholeWord ? word : grapheme)(direction, true); }
@@ -570,16 +577,21 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         lastInputMs = win.performance.now() - start; inputEvents++;
     }, { signal: listeners.signal });
     input.addEventListener("compositionstart", () => { cancelWord(); cancelCommandTimers(); wordInput = undefined; insertion = undefined; syncSelection();
-        composition = captureInput("insertCompositionText", null); composing = true; group = undefined; root.classList.add("st-composing"); scheduleCaret(); }, { signal: listeners.signal });
-    input.addEventListener("compositionend", () => { const captured = composition; composition = undefined; composing = false; root.classList.remove("st-composing"); commit("insertCompositionText", captured); }, { signal: listeners.signal });
+        view.folding.revealSelection(view.folding.getSnapshot());
+        composition = captureInput("insertCompositionText", null); composing = true; group = undefined; root.classList.add("st-composing"); viewport.invalidate(); scheduleCaret(); }, { signal: listeners.signal });
+    input.addEventListener("compositionend", () => { const captured = composition; composition = undefined; composing = false; root.classList.remove("st-composing"); viewport.invalidate(); commit("insertCompositionText", captured); }, { signal: listeners.signal });
     input.addEventListener("select", syncSelection, { signal: listeners.signal });
     // Tab can reset the browser range after focus dispatch. It changes focus, not model selection.
     input.addEventListener("keyup", event => { if (event.key === "Tab") refresh(); else syncSelection(); }, { signal: listeners.signal });
     input.addEventListener("focus", scheduleCaret, { signal: listeners.signal });
-    input.addEventListener("blur", () => { syncSelection(); group = undefined; scheduleCaret(); }, { signal: listeners.signal });
+    input.addEventListener("blur", () => { syncSelection(); group = undefined; scheduleCaret();
+        // Restore disclosure tab stops after the browser has completed focus traversal.
+        if (escaped) queueMicrotask(() => { if (!disposed) escapeState(false); }); }, { signal: listeners.signal });
     function keydown(event: KeyboardEvent): void {
         if (composing || event.isComposing) return;
         if (["Shift", "Control", "Meta", "Alt"].includes(event.key)) return;
+        if (escaped && event.key !== "Escape" && event.key !== "Tab") escapeState(false);
+        view.folding.revealSelection(view.folding.getSnapshot());
         const command = (event.ctrlKey || event.metaKey) && !event.altKey, key = event.key.toLowerCase();
         if (command && (key === "z" || (event.ctrlKey && key === "y"))) { event.preventDefault(); history(event.shiftKey || key === "y" ? "redo" : "undo"); return; }
         if (command && key === "a") { event.preventDefault(); cancelWord(); preferred = undefined; const length = workspace.document(documentId).buffer.length; view.setSelection(revision, { anchor: 0, head: length }); refresh(); return; }
@@ -588,12 +600,12 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             cancelWord(); cancelCommandTimers(); preferred = undefined;
             const state = view.getSnapshot();
             if (state.selectionSet.ranges.length > 1) { event.preventDefault(); view.setSelection(revision, state.selection); refresh(); }
-            escaped = true; return;
+            escapeState(true); return;
         }
         // Backward focus traversal presses Shift before Tab.
         if (escaped && event.key === "Shift") return;
-        if (event.key === "Tab" && escaped) { escaped = false; return; }
-        escaped = false; syncSelection();
+        if (event.key === "Tab" && escaped) return;
+        escapeState(false); syncSelection();
         const wordModifier = !event.metaKey && (event.ctrlKey && !event.altKey || apple && event.altKey && !event.ctrlKey);
         if (wordModifier && ["ArrowLeft", "ArrowRight", "Backspace", "Delete"].includes(event.key)) {
             event.preventDefault(); word(event.key === "ArrowLeft" || event.key === "Backspace" ? -1 : 1, event.key === "Backspace" || event.key === "Delete", event.shiftKey); return;
@@ -699,6 +711,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     for (const type of ["copy", "cut", "paste"] as const) input.addEventListener(type, event => {
         if (composing || !event.clipboardData) return;
         event.preventDefault(); cancelWord(); syncSelection(); group = undefined;
+        if (type !== "copy") view.folding.revealSelection(view.folding.getSnapshot());
         const selections = view.getSnapshot().selectionSet;
         if (type === "paste") replaceSelection(event.clipboardData.getData("text/plain"), "paste");
         else {
@@ -710,7 +723,12 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         }
     }, { signal: listeners.signal });
     root.addEventListener("sttropez-render", scheduleCaret, { signal: listeners.signal });
-    const subscriptions = [workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(refresh), resource.metadata.subscribe(refresh), workspace.tabState.subscribe(refresh)];
+    root.addEventListener("sttropez-focus-source", focus, { signal: listeners.signal });
+    let observedFoldRevision = view.folding.getSnapshot().revision;
+    const subscriptions = [workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(refresh),
+        view.folding.subscribe(() => { const revision = view.folding.getSnapshot().revision;
+            if (revision === observedFoldRevision) { cancelWord(); stopDrag(); preferred = undefined; group = undefined; }
+            observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh), workspace.tabState.subscribe(refresh)];
     refresh();
     return Object.freeze({ element: root, input, view, viewport, focus, describe,
         captureView: () => { syncSelection(); return viewport.captureView(); },

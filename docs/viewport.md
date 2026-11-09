@@ -1,7 +1,8 @@
 # Bounded text viewport
 
 `mountTextViewport` is a read-only DOM projection over an indexed workspace document. It is
-the first M3 rendering layer, separate from the native `mountTextEditor` control. Local native
+the first M3 rendering layer, separate from the native `mountTextEditor` control. Per-view
+[folding](folding.md) projects visible source rows without changing raw document positions. Local native
 text geometry now supplies `coordsAt` and `hitTest`; the separate experimental
 [`mountEditingCandidate`](editing-candidate.md) adds bounded input. Completion UI and a qualified
 screen-reader editing contract remain open. This component does not select an input engine.

@@ -125,6 +125,8 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
         selected = index; selectedGeneration = generation; const document = reference.view.getSnapshot();
         reference.view.setSelection(document.revision, { anchor: hunk.baseline.from, head: hunk.baseline.to });
         controller.view.setSelection(current.working.revision, { anchor: hunk.working.from, head: hunk.working.to });
+        reference.view.folding.reveal(reference.view.folding.getSnapshot(), hunk.baseline.from, hunk.baseline.to);
+        working.view.folding.reveal(working.view.folding.getSnapshot(), hunk.working.from, hunk.working.to);
         reference.revealOffset(hunk.baseline.from); working.viewport.revealOffset(hunk.working.from); render(); return true;
     }
     previous.addEventListener("click", () => selectHunk(state.generation, (selected < 0 ? state.hunks.length - 1 : selected - 1 + state.hunks.length) % state.hunks.length), { signal: listeners.signal });

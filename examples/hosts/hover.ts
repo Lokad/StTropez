@@ -73,6 +73,7 @@ export class HostHoverTools {
     }
     inspectCaret(id: string): boolean {
         const session = this.sessions.get(id); if (!session) return false;
+        session.editor.view.folding.revealSelection(session.editor.view.folding.getSnapshot()); session.editor.viewport.flush();
         const selected = session.editor.view.getSnapshot();
         return this.inspect(session, selected.revision, selected.selection.head, selected.selection.headAffinity ?? "after", "keyboard");
     }

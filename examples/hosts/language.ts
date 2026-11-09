@@ -1,21 +1,23 @@
 import { createFindController, createRegexFindBackend } from "../../src/browser/index.ts";
 import type { EditingCandidate, FindController, FindSnapshot } from "../../src/browser/index.ts";
-import type { TabId, Workspace } from "../../src/index.ts";
+import type { FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { createProviderController } from "../editing/provider-controller.ts";
 import type { ProviderSnapshot } from "../editing/provider-controller.ts";
 import { EditingPresentation } from "../editing/presentation.ts";
 import { HostCell } from "../shared/observable.ts";
 
-type Session = { id: string; editor: EditingCandidate; tab: TabId; presentation: EditingPresentation;
+type Session = { id: string; editor: EditingCandidate; tab: TabId; target: TabTarget; presentation: EditingPresentation;
     provider: ReturnType<typeof createProviderController>; find?: FindController; stopFind?: () => void; initialized: boolean };
-type LanguageSnapshot = Readonly<{ view: string | null; provider: ProviderSnapshot | null; find: FindSnapshot | null; query: string; replacement: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean }>;
+type LanguageSnapshot = Readonly<{ view: string | null; provider: ProviderSnapshot | null; find: FindSnapshot | null; folds: FoldingSnapshot | null; foldMessage: string; query: string; replacement: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean }>;
 
 /** Host-owned tools follow an explicit mounted view; delayed commands never consult focus later. */
 export class HostLanguageTools {
     private readonly workspace: Workspace;
     private readonly sessions = new Map<string, Session>();
     private active: Session | undefined;
-    private readonly cell = new HostCell<LanguageSnapshot>({ view: null, provider: null, find: null, query: "", replacement: "", wholeWord: false, matchCase: true, regularExpression: false });
+    private stopFolds: (() => void) | undefined;
+    private foldSerial = 0;
+    private readonly cell = new HostCell<LanguageSnapshot>({ view: null, provider: null, find: null, folds: null, foldMessage: "", query: "", replacement: "", wholeWord: false, matchCase: true, regularExpression: false });
     readonly state = this.cell.observable;
     private queryElement: HTMLInputElement | null = null;
     private replacementElement: HTMLInputElement | null = null;
@@ -24,18 +26,26 @@ export class HostLanguageTools {
     private retired = { posted: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, failed: 0, postedUnits: 0 };
     constructor(workspace: Workspace) { this.workspace = workspace; }
     private publish(): void {
-        this.cell.set({ ...this.cell.get(), view: this.active?.id ?? null, provider: this.active?.provider.state.getSnapshot() ?? null,
-            find: this.active?.find?.state.getSnapshot() ?? null });
+        const previous = this.cell.get(), folds = this.active?.editor.view.folding.getSnapshot() ?? null;
+        this.cell.set({ ...previous, view: this.active?.id ?? null, provider: this.active?.provider.state.getSnapshot() ?? null,
+            find: this.active?.find?.state.getSnapshot() ?? null, folds, foldMessage: folds === previous.folds ? previous.foldMessage : "" });
     }
     private activate(session: Session): void {
-        if (this.active !== session) { this.active?.provider.cancel(); this.active?.find?.cancel(); this.active = session; }
+        if (this.active !== session) {
+            this.stopFolds?.(); this.active?.provider.cancel(); this.active?.find?.cancel(); this.active = session;
+            let revision = session.editor.view.folding.getSnapshot().revision;
+            this.stopFolds = session.editor.view.folding.subscribe(() => {
+                const current = session.editor.view.folding.getSnapshot(); if (current.revision === revision) session.provider.cancel(); revision = current.revision;
+                if (this.active === session) this.publish();
+            }); this.cell.set({ ...this.cell.get(), foldMessage: "" });
+        }
         if (!session.initialized) { session.initialized = true; session.provider.connect(); }
         this.publish();
     }
     attach(id: string, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation): () => void {
         if (this.sessions.has(id)) throw new Error("Language view already mounted.");
         const provider = createProviderController(this.workspace, tab, editor, { autoConnect: false });
-        const session: Session = { id, tab, editor, presentation, provider, initialized: false }, listeners = new AbortController();
+        const session: Session = { id, tab, target: this.workspace.captureTab(tab), editor, presentation, provider, initialized: false }, listeners = new AbortController();
         this.sessions.set(id, session);
         const update = () => {
             const state = provider.state.getSnapshot(), previous = presentation.diagnostics;
@@ -47,7 +57,9 @@ export class HostLanguageTools {
         editor.input.addEventListener("focus", () => this.activate(session), { signal: listeners.signal });
         editor.input.addEventListener("keydown", event => {
             if (event.isComposing || editor.snapshot().composing || event.defaultPrevented) return;
-            if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.code === "Space" || ["f", "h"].includes(event.key.toLowerCase()))) {
+            if ((event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && (event.code === "BracketLeft" || event.code === "BracketRight")) {
+                event.preventDefault(); this.activate(session); if (event.code === "BracketLeft") this.foldSelection(); else this.expandFolds();
+            } else if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.code === "Space" || ["f", "h"].includes(event.key.toLowerCase()))) {
                 event.preventDefault(); this.activate(session);
                 if (event.code === "Space") provider.request();
                 else { this.ensureFind(); const field = event.key.toLowerCase() === "h" ? this.replacementElement : this.queryElement; field?.focus(); field?.select(); }
@@ -57,6 +69,7 @@ export class HostLanguageTools {
         }, { signal: listeners.signal });
         update(); let detached = false;
         return () => {
+            if (this.active === session) { this.stopFolds?.(); this.stopFolds = undefined; }
             if (detached) return; detached = true; unsubscribe(); listeners.abort(); session.stopFind?.(); session.find?.destroy();
             const counts = provider.snapshot(); for (const key of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[key] += counts[key];
             provider.destroy(); presentation.clear(); this.sessions.delete(id); if (this.active === session) this.active = undefined; this.publish();
@@ -96,9 +109,45 @@ export class HostLanguageTools {
     readonly replaceAll = (): void => { this.ensureFind()?.replaceAll(this.cell.get().replacement); };
     readonly cancelFind = (): void => { this.active?.find?.cancel(); this.active?.editor.focus(); };
     readonly focusEditor = (): void => { this.active?.editor.focus(); };
+    private foldTarget(): Session | undefined {
+        const session = this.active; if (!session) return;
+        const tab = this.workspace.resolveTab(session.target);
+        if (tab?.surface.kind !== "text" || tab.surface.documentId !== session.editor.view.documentId || !this.workspace.ownsDocumentView(session.editor.view)
+            || !session.editor.element.isConnected || session.editor.snapshot().disposed) return;
+        if (session.editor.snapshot().composing) { this.cell.set({ ...this.cell.get(), foldMessage: "Finish composition before folding." }); return; }
+        return session;
+    }
+    readonly foldSelection = (): void => {
+        const session = this.foldTarget(); if (!session) return;
+        const { editor } = session, document = this.workspace.document(editor.view.documentId), selected = editor.view.getSnapshot().selectionSet;
+        const current = editor.view.folding.getSnapshot(), ranges: FoldRange[] = [...current.regions], ids = new Set(ranges.map(r => r.id)); let count = 0;
+        const selections = selected.ranges.map(selection => {
+            const low = Math.min(selection.anchor, selection.head), high = Math.max(selection.anchor, selection.head), first = document.buffer.lineAt(low), last = document.buffer.lineAt(high > low ? high - 1 : high);
+            let existing: FoldRegion | undefined;
+            for (const r of current.regions) { if (first === last ? r.lineFrom <= first && first < r.lineTo : r.lineFrom === first) existing = r; }
+            if (first === last && !existing) return selection;
+            const from = existing && first === last ? existing.from : document.buffer.offsetAt(first);
+            const to = existing && first === last ? existing.to : last + 1 < document.buffer.lineCount ? document.buffer.offsetAt(last + 1) : document.buffer.length;
+            let id = existing?.id; if (!id) { do { id = `selection-fold-${++this.foldSerial}`; } while (ids.has(id)); ids.add(id); }
+            const at = ranges.findIndex(r => r.id === id); if (at < 0) ranges.push({ id, from, to, collapsed: true }); else ranges[at] = { id, from, to, collapsed: true };
+            count++; const head = document.buffer.offsetAt(document.buffer.lineAt(from)); return { anchor: head, head };
+        });
+        if (!count) { this.cell.set({ ...this.cell.get(), foldMessage: "Select multiple lines to create a fold." }); return; }
+        try {
+            if (!editor.view.folding.setRanges(current, ranges)) return;
+            editor.view.setSelections(document.revision, selections, selected.primary); editor.viewport.revealOffset(editor.view.getSnapshot().selection.head, { horizontal: "nearest", vertical: "nearest" }); editor.focus();
+            this.cell.set({ ...this.cell.get(), foldMessage: `Folded ${count} ${count === 1 ? "region" : "regions"}.` });
+        } catch (error) { if (!(error instanceof RangeError)) throw error; this.cell.set({ ...this.cell.get(), foldMessage: "Select nested or separate line regions." }); }
+    };
+    readonly expandFolds = (): void => {
+        const session = this.foldTarget(); if (!session) return; const folds = session.editor.view.folding, current = folds.getSnapshot();
+        if (!folds.setRanges(current, current.regions.map(r => ({ ...r, collapsed: false })))) return;
+        session.editor.viewport.revealOffset(session.editor.view.getSnapshot().selection.head, { horizontal: "nearest", vertical: "nearest" }); session.editor.focus();
+        this.cell.set({ ...this.cell.get(), foldMessage: "All folds expanded." });
+    };
     selectDiagnostic(index: number): void { this.active?.provider.selectDiagnostic(index); }
     setDelay(value: number): void { this.active?.provider.setDelay(value); }
     faultNext(value: "malformed" | "failure"): void { this.active?.provider.faultNext(value); }
     debug() { return { active: this.active?.id ?? null, subscriptions: this.cell.count(), sessions: [...this.sessions.values()].map(s => ({ id: s.id, documentId: s.editor.view.documentId,
-        viewId: s.editor.view.id, provider: s.provider.snapshot(), presentation: s.presentation.snapshot() })), retired: { ...this.retired } }; }
+        viewId: s.editor.view.id, foldRegions: s.editor.view.folding.getSnapshot().regions.length, collapsedFolds: s.editor.view.folding.getSnapshot().index.collapsedCount, provider: s.provider.snapshot(), presentation: s.presentation.snapshot() })), retired: { ...this.retired } }; }
 }

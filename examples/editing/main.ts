@@ -1,5 +1,5 @@
 import { Workspace } from "../../src/index.ts";
-import type { Selection, TextEdit } from "../../src/index.ts";
+import type { FoldRange, Selection, TextEdit } from "../../src/index.ts";
 import { mountEditingCandidate } from "../../src/browser/index.ts";
 import { corpus, corpusIds } from "../../tests/fixtures/workloads.ts";
 import { EditingPresentation } from "./presentation.ts";
@@ -35,6 +35,8 @@ pane("undo").addEventListener("click", () => history("undo"), { signal: listener
 const status = () => { const current = workspace.document(source.documentId); pane("status").textContent = `${current.buffer.lineCount.toLocaleString()} lines · Revision ${current.revision}`; };
 const unsubscribe = workspace.observeDocument(source.documentId).subscribe(status); status();
 const fixture = { ready: true, setText, edit, select, history,
+    folds: (ranges: readonly FoldRange[], which: "primary" | "secondary" = "primary") => { const f = editors[which].view.folding; return f.setRanges(f.getSnapshot(), ranges); },
+    folding: (which: "primary" | "secondary" = "primary") => editors[which].view.folding.getSnapshot(),
     analyzeParagraph: paragraph.start, analyzeCurrentLine: paragraph.currentLine, cancelParagraph: paragraph.cancel, paragraphLevel: paragraph.levelAt, paragraphOffset: paragraph.offsetAt,
     setProviderDelay: provider.setDelay, faultProviderNext: provider.faultNext,
     requestProvider: provider.request, cancelProvider: provider.cancel,

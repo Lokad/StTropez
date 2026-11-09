@@ -216,12 +216,12 @@ export class ViewBindings {
             referenceIsWorkingBuffer: comparison.baseline !== null && comparison.baseline.buffer === comparison.working?.buffer,
             progress: comparison.progress && { work: comparison.progress.work, readUnits: comparison.progress.readUnits,
                 lineComparisons: comparison.progress.lineComparisons, lineEdits: comparison.progress.lineEdits },
-            viewId: this.review!.working.view.id, selection: this.review!.working.view.getSnapshot().selection, selectionSet: this.review!.working.view.getSnapshot().selectionSet,
+            viewId: this.review!.working.view.id, foldGeneration: this.review!.working.view.folding.getSnapshot().generation, selection: this.review!.working.view.getSnapshot().selection, selectionSet: this.review!.working.view.getSnapshot().selectionSet,
             baseline: comparison.baseline && { version: comparison.baseline.version, epoch: comparison.baseline.epoch, length: comparison.baseline.buffer.length },
             hunks: comparison.hunks.length, pending: this.reviewTickets.map(ticket => ({ kind: ticket.kind, revision: ticket.capture.working.revision, current: ticket.isCurrent() })),
             result: this.reviewResult, work: this.review!.snapshot(), input: this.review!.working.snapshot(),
             discards: this.discardTickets.map(({ ticket, variantGeneration }) => ({ revision: ticket.capture.working.revision, current: ticket.isCurrent() && this.controller.variants.state.getSnapshot().generation === variantGeneration })),
             workingViewport: this.review!.working.viewport.snapshot(), referenceViewport: this.review!.referenceViewport()?.snapshot() } : null,
-        views: [...this.mounted].map(([id, { editor, documentId }]) => ({ id, documentId, viewId: editor.view.id,
+        views: [...this.mounted].map(([id, { editor, documentId }]) => ({ id, documentId, viewId: editor.view.id, foldGeneration: editor.view.folding.getSnapshot().generation,
             selection: editor.view.getSnapshot().selection, selectionSet: editor.view.getSnapshot().selectionSet, focused: editor.element.ownerDocument.activeElement === editor.element, metrics: editor.metrics() })) }; }
 }

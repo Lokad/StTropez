@@ -1,5 +1,5 @@
 import { applyTextEdits, exportText, PositionMap, textDifference } from "../index.ts";
-import type { Affinity, DocumentSnapshot, DocumentView, EditKind, PositionMapping, Selection, SelectionSet, TextBuffer, Workspace, TabId } from "../index.ts";
+import type { Affinity, DocumentId, DocumentSnapshot, DocumentView, EditKind, FoldRange, PositionMapping, Selection, SelectionSet, TextBuffer, Workspace, TabId, ViewId } from "../index.ts";
 import { captureNativeInsertion, resolveNativeInsertion } from "./input-target.ts";
 import type { NativeInsertionTarget } from "./input-target.ts";
 export { mountTextViewport } from "./viewport.ts";
@@ -15,6 +15,7 @@ export type { TextComparison } from "./comparison.ts";
 
 export type ViewState = Selection & Readonly<{ scrollTop: number; scrollLeft: number;
     selectionSet?: SelectionSet;
+    folding?: Readonly<{ documentId: DocumentId; viewId: ViewId; revision: number; generation: number; regions: readonly FoldRange[] }>;
     horizontalAnchor?: Readonly<{ revision: number; offset: number; affinity: Affinity; left: number }> }>;
 export type MountedEditor = Readonly<{ element: HTMLTextAreaElement; view: DocumentView;
     captureView: () => ViewState; restoreView: (state: ViewState) => void; destroy: () => void }>;

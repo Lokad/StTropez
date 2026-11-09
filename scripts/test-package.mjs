@@ -202,6 +202,8 @@ try {
     const caseFind = await page.evaluate(() => window.consumer.findState()); assert.equal(caseFind.count, 1); assert.equal(caseFind.matchCase, false); assert.equal(caseFind.wholeWord, true);
     const regex = await page.evaluate(() => window.consumer.regexPilot());
     assert.equal(regex.actualWorker, true); assert.equal(regex.zeroCompleteExports, true); assert.deepEqual(regex.released, { views: 0, leases: 0, subscriptions: 0 });
+    const folding = await page.evaluate(() => window.consumer.foldingPilot());
+    assert.equal(folding.visibleRows, 2); assert.equal(folding.newerStatePreserved, true); assert.deepEqual(folding.released, { views: 0, leases: 0, subscriptions: 0 });
     const selectionSets = await page.evaluate(() => window.consumer.selectionSets());
     assert.equal(selectionSets.changed, "XbcX"); assert.equal(selectionSets.restored, "abcd");
     assert.deepEqual(selectionSets.restoredSet, selectionSets.before); assert.equal(selectionSets.after.ranges.length, 2); assert.equal(selectionSets.after.primary, 1);
@@ -303,7 +305,7 @@ try {
         consumer, browser: browser.version(), node: process.version, dotnet: dotnet(["--version"]).trim(),
         typescript: JSON.parse(await readFile("node_modules/typescript/package.json", "utf8")).version,
         esbuild: JSON.parse(await readFile("node_modules/esbuild/package.json", "utf8")).version,
-        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, caseFind, regex, selectionSets, multipleInput, comparison, readonlyIndent, findAuthority, saveReview, style, errors }, null, 2));
+        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, caseFind, regex, folding, selectionSets, multipleInput, comparison, readonlyIndent, findAuthority, saveReview, style, errors }, null, 2));
     console.log("Restored package: declarations, storage/mappings, modules, visible CSS and actual edit passed. Evidence: artifacts/package/");
     console.log(`Isolated consumer retained for inspection: ${consumer}`);
     await page.close();

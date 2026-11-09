@@ -4,7 +4,7 @@ import { HostCell } from "../shared/observable.ts";
 import { validateHoverResult } from "../probes/hover.ts";
 import type { HoverInput } from "../probes/hover.ts";
 
-type Capture = Readonly<{ input: HoverInput; from: number; selectionSet: SelectionSet; startsInWord: boolean; endsInWord: boolean; lease: ResourceLease }>;
+type Capture = Readonly<{ input: HoverInput; from: number; selectionSet: SelectionSet; foldGeneration: number; startsInWord: boolean; endsInWord: boolean; lease: ResourceLease }>;
 export type HoverSnapshot = Readonly<{ status: "idle" | "pending" | "ready" | "empty" | "failed" | "disconnected" | "expired" | "disposed";
     message: string; revision: number | null; range: Readonly<{ from: number; to: number }> | null; text: string }>;
 
@@ -17,7 +17,8 @@ export function createHoverController(workspace: Workspace, tabId: TabId, editor
     let worker: Worker | undefined, pending: Capture | undefined, capture: Capture | undefined, timer: number | undefined, disposed = false, sequence = 0, intent = 0, epoch = 0, delay = 0, fault: HoverInput["fault"];
     let subscriptions: (() => void)[] = [];
     const valid = () => !disposed && workspace.resolveTab(target) !== undefined && workspace.ownsDocumentView(editor.view) && !editor.snapshot().disposed && resource.getSnapshot().state === "ready";
-    const current = (value: Capture) => valid() && workspace.document(documentId).revision === value.input.revision && editor.view.getSnapshot().selectionSet === value.selectionSet;
+    const current = (value: Capture) => valid() && workspace.document(documentId).revision === value.input.revision && editor.view.getSnapshot().selectionSet === value.selectionSet
+        && editor.view.folding.getSnapshot().generation === value.foldGeneration;
     const release = () => { pending?.lease.release(); pending = undefined; if (timer !== undefined) win.clearTimeout(timer); timer = undefined; };
     const clear = (status: HoverSnapshot["status"], message: string) => { intent++; release(); capture = undefined;
         for (const stop of subscriptions.splice(0)) stop(); cell.set({ status, message, revision: null, range: null, text: "" }); };
@@ -55,7 +56,8 @@ export function createHoverController(workspace: Workspace, tabId: TabId, editor
     function request(expectedRevision: number, offset: number): boolean {
         if (!valid()) return false;
         const document = workspace.document(documentId);
-        if (document.revision !== expectedRevision || !Number.isSafeInteger(offset) || offset < 0 || offset > document.buffer.length || editor.snapshot().composing) return false;
+        if (document.revision !== expectedRevision || !Number.isSafeInteger(offset) || offset < 0 || offset > document.buffer.length || editor.snapshot().composing
+            || editor.view.folding.getSnapshot().index.hiddenBy(document.buffer.lineAt(offset))) return false;
         clear("idle", "Reading captured symbol information."); if (!connect()) return false;
         const buffer = document.buffer; let from = Math.max(0, offset - 2047), to = Math.min(buffer.length, offset + 2047);
         const high = (value: string) => /^[\ud800-\udbff]$/.test(value), low = (value: string) => /^[\udc00-\udfff]$/.test(value);
@@ -63,9 +65,9 @@ export function createHoverController(workspace: Workspace, tabId: TabId, editor
         if (to < buffer.length && high(buffer.slice(to - 1, to)) && low(buffer.slice(to, to + 1))) to++;
         const input: HoverInput = Object.freeze({ operation: "hover", id: ++sequence, revision: document.revision, text: buffer.slice(from, to), offset: offset - from, delay, ...(fault ? { fault } : {}) }); fault = undefined;
         const word = /^[\p{L}\p{N}\p{Pc}\p{M}\u200c\u200d]$/u, points = Array.from(input.text), before = Array.from(buffer.slice(Math.max(0, from - 2), from)).at(-1) ?? "", after = Array.from(buffer.slice(to, Math.min(buffer.length, to + 2)))[0] ?? "";
-        pending = Object.freeze({ input, from, selectionSet: editor.view.getSnapshot().selectionSet, lease: workspace.acquire(resource.id),
+        pending = Object.freeze({ input, from, selectionSet: editor.view.getSnapshot().selectionSet, foldGeneration: editor.view.folding.getSnapshot().generation, lease: workspace.acquire(resource.id),
             startsInWord: from > 0 && word.test(before) && word.test(points[0] ?? ""), endsInWord: to < buffer.length && word.test(after) && word.test(points.at(-1) ?? "") });
-        subscriptions = [workspace.observeDocument(documentId).subscribe(invalidate), editor.view.subscribe(invalidate), workspace.tabState.subscribe(invalidate)];
+        subscriptions = [workspace.observeDocument(documentId).subscribe(invalidate), editor.view.subscribe(invalidate), editor.view.folding.subscribe(invalidate), workspace.tabState.subscribe(invalidate)];
         counts.posted++; counts.postedUnits += input.text.length;
         try { worker!.postMessage(JSON.stringify(input)); } catch { counts.failed++; disconnect(); return false; }
         cell.set({ status: "pending", message: "Reading captured symbol information.", revision: document.revision, range: null, text: "" });

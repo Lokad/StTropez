@@ -14,12 +14,18 @@ export function languageActions(tools: HostLanguageTools) {
         { label: "Replace current", invoke: tools.replaceCurrent, disabled: !found },
         { label: "Replace all", invoke: tools.replaceAll, disabled: !found },
         { label: "Cancel find", invoke: tools.cancelFind, disabled: !available },
+        { label: "Fold selected lines", invoke: tools.foldSelection, disabled: !available },
+        { label: "Expand all folds", invoke: tools.expandFolds, disabled: !state.folds?.index.collapsedCount },
         { label: "Return to source", invoke: tools.focusEditor, disabled: !available }
     ] as const;
 }
 export function findText(tools: HostLanguageTools): string {
     const state = tools.state.getSnapshot().find;
     return state ? state.message || `${state.count} matches · ${state.status}` : "Find in the active source view.";
+}
+export function foldText(tools: HostLanguageTools): string {
+    const state = tools.state.getSnapshot(), count = state.folds?.index.collapsedCount ?? 0;
+    return state.foldMessage || `${count} folded ${count === 1 ? "region" : "regions"}.`;
 }
 export function languageFieldKey(event: KeyboardEvent, tools: HostLanguageTools, replacement: boolean): void {
     if (event.isComposing) return;
@@ -52,7 +58,8 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
     regularExpression.addEventListener("change", () => tools.setRegularExpression(regularExpression.checked), { signal: listeners.signal });
     const buttons = languageActions(tools).map(action => { const button = owner.createElement("button"); button.textContent = action.label;
         button.addEventListener("click", action.invoke, { signal: listeners.signal }); nav.append(button); return button; });
-    host.append(heading, help, status, choices, diagnostics, ...fields.map(f => f.label), wholeLabel, caseLabel, regexLabel, findStatus, nav);
+    const foldStatus = owner.createElement("output"); foldStatus.setAttribute("aria-label", "Fold status"); foldStatus.setAttribute("aria-live", "polite");
+    host.append(heading, help, status, choices, diagnostics, ...fields.map(f => f.label), wholeLabel, caseLabel, regexLabel, findStatus, foldStatus, nav);
     const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
     const render = () => {
         const state = tools.state.getSnapshot(); setText(status, state.provider?.message ?? "Focus a source view to use language actions.");
@@ -70,6 +77,7 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
         }
         for (const [index, action] of languageActions(tools).entries()) { const button = buttons[index]!; if (button.disabled !== action.disabled) button.disabled = action.disabled; }
         setText(findStatus, findText(tools));
+        setText(foldStatus, foldText(tools));
         if (fields[0]!.field.value !== state.query) fields[0]!.field.value = state.query;
         if (fields[1]!.field.value !== state.replacement) fields[1]!.field.value = state.replacement;
         wholeWord.checked = state.wholeWord; matchCase.checked = state.matchCase; regularExpression.checked = state.regularExpression;

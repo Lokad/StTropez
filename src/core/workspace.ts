@@ -9,6 +9,8 @@ import { createSelectionSet, mapSelectionSet, sameSelectionSet } from "./selecti
 import type { SelectionSet } from "./selections.ts";
 import { NotificationScope, Store } from "./observable.ts";
 import type { Observable } from "./observable.ts";
+import { createFoldRegions, foldingSnapshot, mapFoldRegions, revealFoldRange, revealSelectionFolds } from "./folding.ts";
+import type { DocumentFolding, FoldingSnapshot, FoldVersion } from "./folding.ts";
 import { equalValue, snapshotValue } from "./values.ts";
 import type { Immutable, SnapshotValue } from "./values.ts";
 import { emptyAgentState, sameProposal } from "./agent.ts";
@@ -47,6 +49,7 @@ export type DocumentChange = Readonly<{ previousRevision: number; transactionId:
     kind: EditKind | "undo" | "redo"; mapping: PositionMapping }>;
 export type DocumentViewSnapshot = Readonly<{ documentId: DocumentId; revision: number; selection: Selection; selectionSet: SelectionSet }>;
 export type DocumentView = Observable<DocumentViewSnapshot> & Readonly<{ id: ViewId; documentId: DocumentId;
+    folding: DocumentFolding;
     setSelection: (expectedRevision: number, selection: Selection) => boolean;
     setSelections: (expectedRevision: number, selections: readonly Selection[], primary?: number) => boolean; dispose: () => void }>;
 export type Surface = Readonly<
@@ -98,7 +101,7 @@ type ResourceRecord = {
     state: Store<ResourceSnapshot<SnapshotValue>>; metadata: Store<ResourceMetadata>;
     document: Store<DocumentSnapshot | undefined>; saved: SnapshotValue | undefined;
     buffer: TextBuffer | null; savedBuffer: TextBuffer | null; change: DocumentChange | null; history: Store<HistorySnapshot>;
-    views: Map<ViewId, { handle: DocumentView; state: Store<DocumentViewSnapshot>; lease: ResourceLease }>;
+    views: Map<ViewId, { handle: DocumentView; state: Store<DocumentViewSnapshot>; folds: Store<FoldingSnapshot>; lease: ResourceLease }>;
     leases: Set<symbol>; operations: Map<string | symbol, Operation>; nextOperation: number;
     saveReservations: number; saving: symbol | null;
     editLease: EditLease | null; agent: Store<AgentSnapshot>; proposalLease: ResourceLease | null;
@@ -231,19 +234,41 @@ export class Workspace {
         const document = this.document(id), record = this.documents.get(id)!;
         const selections = "ranges" in initial ? createSelectionSet(document.buffer.length, initial.ranges, initial.primary) : createSelectionSet(document.buffer.length, [initial]);
         const state = new Store<DocumentViewSnapshot>(viewSnapshot(id, document.revision, selections), this.scope);
+        const folds = new Store<FoldingSnapshot>(foldingSnapshot(document.buffer, document.revision, 0, Object.freeze([])), this.scope);
         const viewId = `view-${++this.nextId}` as ViewId, retention = Symbol("view"); record.leases.add(retention);
         const lease = Object.freeze({ resourceId: record.handle.id, active: () => record.leases.has(retention), release: () => { record.leases.delete(retention); } });
+        const foldTarget = (expected: FoldVersion) => record.views.has(viewId) && record.state.get().state === "ready" && expected !== null && typeof expected === "object"
+            && record.state.get().revision === expected.revision && folds.get().generation === expected.generation;
+        const setFoldRegions = (regions: FoldingSnapshot["regions"]): boolean => {
+            const previous = folds.get(); if (regions === previous.regions) return true;
+            this.scope.assertWritable(); this.history.seal(id); const changed = new Set<Store<unknown>>();
+            folds.set(foldingSnapshot(record.buffer!, previous.revision, previous.generation + 1, regions, previous), changed); this.scope.deliver([...changed]); return true;
+        };
+        const folding: DocumentFolding = Object.freeze({ ...folds.observable,
+            setRanges: (expected, ranges) => foldTarget(expected) && setFoldRegions(createFoldRegions(record.buffer!, ranges, folds.get().regions)),
+            setCollapsed: (expected, id, collapsed) => {
+                if (!foldTarget(expected)) return false;
+                if (typeof id !== "string" || typeof collapsed !== "boolean") throw new TypeError("Expected a fold identity and boolean state.");
+                const previous = folds.get().regions, region = previous.find(r => r.id === id); if (!region) return false; if (region.collapsed === collapsed) return true;
+                return setFoldRegions(Object.freeze(previous.map(r => r === region ? Object.freeze({ ...r, collapsed }) : r)));
+            },
+            reveal: (expected, from, to) => foldTarget(expected) && setFoldRegions(revealFoldRange(record.buffer!, folds.get().regions, from, to, folds.get().index)),
+            revealSelection: expected => foldTarget(expected) && setFoldRegions(revealSelectionFolds(record.buffer!, folds.get().regions, state.get().selectionSet, folds.get().index)) });
         const setSelections = (expectedRevision: number, ranges: readonly Selection[], primary = 0): boolean => {
             if (!record.views.has(viewId) || record.state.get().state !== "ready" || record.state.get().revision !== expectedRevision) return false;
             const next = createSelectionSet(record.buffer!.length, ranges, primary), previous = state.get();
-            if (sameSelectionSet(next, previous.selectionSet)) return true;
+            const priorFolds = folds.get(), revealed = revealSelectionFolds(record.buffer!, priorFolds.regions, next, priorFolds.index);
+            if (sameSelectionSet(next, previous.selectionSet) && revealed === priorFolds.regions) return true;
             this.scope.assertWritable(); this.history.seal(id);
-            const changed = new Set<Store<unknown>>(); state.set(viewSnapshot(id, previous.revision, next), changed); this.scope.deliver([...changed]); return true;
+            const changed = new Set<Store<unknown>>();
+            if (revealed !== priorFolds.regions) folds.set(foldingSnapshot(record.buffer!, expectedRevision, priorFolds.generation + 1, revealed, priorFolds), changed);
+            if (!sameSelectionSet(next, previous.selectionSet)) state.set(viewSnapshot(id, previous.revision, next), changed);
+            this.scope.deliver([...changed]); return true;
         };
-        const handle: DocumentView = Object.freeze({ ...state.observable, id: viewId, documentId: id,
+        const handle: DocumentView = Object.freeze({ ...state.observable, id: viewId, documentId: id, folding,
             setSelection: (expectedRevision: number, value: Selection) => setSelections(expectedRevision, [value]), setSelections,
             dispose: () => { record.views.delete(viewId); lease.release(); } });
-        record.views.set(viewId, { handle, state, lease }); return handle;
+        record.views.set(viewId, { handle, state, folds, lease }); return handle;
     }
     captureResource(id: ResourceId): ResourceTarget {
         this.requireResource(id); return Object.freeze({ workspace: this.lifetime, id });
@@ -296,6 +321,13 @@ export class Workspace {
         for (const change of prepared) {
             if (change.before !== change.after) this.commitText(change.record, change.after, change.mapping, first.origin, kind, transactionId, changed,
                 change.view && change.afterSelections ? { viewId: change.view.handle.id, selectionSet: change.afterSelections } : undefined);
+            if (change.before === change.after && change.view && change.afterSelections) {
+                const priorFolds = change.view.folds.get(), revealed = revealSelectionFolds(change.before, priorFolds.regions, change.afterSelections, priorFolds.index);
+                if (revealed !== priorFolds.regions) {
+                    this.history.seal(change.request.documentId);
+                    change.view.folds.set(foldingSnapshot(change.before, change.record.state.get().revision, priorFolds.generation + 1, revealed, priorFolds), changed);
+                }
+            }
             if (change.view && change.afterSelections && !sameSelectionSet(change.view.state.get().selectionSet, change.afterSelections)) {
                 if (change.before === change.after) this.history.seal(change.request.documentId);
                 change.view.state.set(viewSnapshot(change.request.documentId, change.record.state.get().revision, change.afterSelections), changed);
@@ -337,8 +369,12 @@ export class Workspace {
         record.buffer = buffer;
         record.change = Object.freeze({ previousRevision: current.revision, mapping, transactionId, origin, kind });
         this.setRecord(record, readySnapshot({ ...current.metadata, dirty: record.savedBuffer === null || !buffer.equals(record.savedBuffer) }, revision, buffer), changed);
-        for (const view of record.views.values()) view.state.set(viewSnapshot(record.documentId!, revision,
-            override?.viewId === view.handle.id ? override.selectionSet : mapSelectionSet(mapping, view.state.get().selectionSet)), changed);
+        for (const view of record.views.values()) {
+            const selections = override?.viewId === view.handle.id ? override.selectionSet : mapSelectionSet(mapping, view.state.get().selectionSet);
+            const priorFolds = view.folds.get(), regions = revealSelectionFolds(buffer, mapFoldRegions(buffer, mapping, priorFolds.regions), selections);
+            view.folds.set(foldingSnapshot(buffer, revision, priorFolds.generation + 1, regions, priorFolds), changed);
+            view.state.set(viewSnapshot(record.documentId!, revision, selections), changed);
+        }
     }
     private syncHistory(changed: Set<Store<unknown>>): void {
         for (const [id, record] of this.documents) {

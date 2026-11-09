@@ -46,6 +46,22 @@ test("deferred invalidation releases old leases without cancelling a newer captu
         assert.equal(f.hover.state.getSnapshot().status, "expired"); assert.equal(f.workspace.diagnostics().leases, f.leasesBefore); assert.equal(f.hover.request(1, 8), false);
     } finally { f.finish(); }
 });
+test("fold visibility expires captured symbol replies without requiring a text or selection change", async () => {
+    const f = fixture("const alpha\r\nconst beta\r\nend");
+    try {
+        const folds = f.view.folding, buffer = f.workspace.document(f.documentId).buffer;
+        folds.setRanges(folds.getSnapshot(), [{ id: "body", from: 0, to: buffer.offsetAt(2) }]);
+        f.hover.request(0, 2); const worker = f.workers[0]!, old = worker.sent[0]!;
+        folds.setCollapsed(folds.getSnapshot(), "body", true); await Promise.resolve();
+        assert.equal(f.hover.state.getSnapshot().status, "expired"); assert.equal(f.workspace.diagnostics().leases, f.leasesBefore);
+        assert.equal(f.hover.request(0, buffer.offsetAt(1) + 2), false); assert.equal(worker.sent.length, 1);
+        f.view.setSelection(0, { anchor: buffer.offsetAt(1) + 2, head: buffer.offsetAt(1) + 2 });
+        assert.equal(folds.getSnapshot().regions[0]!.collapsed, false); assert.equal(f.hover.request(0, buffer.offsetAt(1) + 2), true);
+        worker.reply(provideHover(old)); assert.equal(f.hover.state.getSnapshot().status, "pending"); worker.reply(provideHover(worker.sent.at(-1)!));
+        assert.equal(f.hover.state.getSnapshot().status, "ready"); assert.equal(buffer.readMetrics().textExports, 0);
+    } finally { f.finish(); }
+});
+
 test("hover aligns bounded windows, validates whole payloads, recovers workers and expires timed out requests", () => {
     const text = " ".repeat(3000) + "𐐀" + " ".repeat(2045) + "const" + " ".repeat(2042) + "𐐀" + " ".repeat(4000), f = fixture(text);
     try {

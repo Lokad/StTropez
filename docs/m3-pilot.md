@@ -65,6 +65,12 @@ while it is in flight. **Finish save** trims trailing whitespace in its canonica
 2. Choose **Open source review**. Edit the working pane, then use **Next change** and
    **Use baseline**. Undo the reversion to restore your correction. The reference stays
    immutable while the working pane shares the source document and history.
+   Select several source lines and choose **Fold selected lines** (Ctrl/Cmd+Shift+[).
+   The header stays visible; Arrow/Page skips the body. The other source view and comparison
+   remain independent. Find, explicit selections and hunk navigation reveal hidden targets.
+   **Expand all folds** (Ctrl/Cmd+Shift+]) opens the current view. Header buttons support
+   Enter/Space and Escape; source Escape then Tab/Shift+Tab still exits to host controls.
+   [Fold semantics and limits](folding.md) describe edits, history and remount behavior.
    **Keep draft version** retains the current committed text. Choose a saved, server, draft or
    historical entry in **Review version**, then **Finish version load**; typing can continue while
    it loads. Selection changes the reference while Save and Run keep using the working source.

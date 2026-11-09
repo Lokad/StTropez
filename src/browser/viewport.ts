@@ -5,8 +5,12 @@ import type { ScrollAxis } from "./scroll.ts";
 import { rowGeometry } from "./text-geometry.ts";
 import type { CaretRectangle } from "./text-geometry.ts";
 import type { Affinity } from "../index.ts";
+import { createFoldRegions, FoldIndex } from "../core/folding.ts";
+import { sameSelectionSet } from "../core/selections.ts";
+const emptyIndex = new FoldIndex(1, []);
 
 export type ViewportSnapshot = Readonly<{ revision: number | null; selection: Selection | null; selectionSet: SelectionSet | null; renders: number; firstLine: number; lastLine: number;
+    foldGeneration: number; visibleLines: number; collapsedFolds: number;
     rows: number; partialRows: number; textUnits: number; readUnits: number; navigationReadUnits: number; navigationRows: number; navigationBatches: number; navigationPreparedRows: number; maxNavigationBatchRows: number; lastRenderMs: number; scrollTop: number; scrollLeft: number; width: number; height: number;
     lineHeight: number; columnWidth: number; verticalExtent: number; horizontalExtent: number;
     physicalHeight: number; physicalWidth: number; pending: boolean; disposed: boolean }>;
@@ -61,15 +65,16 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     const view = options.view ?? workspace.createDocumentView(documentId), owner = host.ownerDocument, browserWindow = owner.defaultView;
     if (!browserWindow) { if (!options.view) view.dispose(); throw new Error("Viewport requires an attached browser document."); }
     const win = browserWindow;
-    const root = owner.createElement("div"), spacer = owner.createElement("div"), layer = owner.createElement("div"), probe = owner.createElement("span");
+    const root = owner.createElement("div"), spacer = owner.createElement("div"), layer = owner.createElement("div"), probe = owner.createElement("span"), foldLayer = owner.createElement("div");
     root.className = "st-viewport"; root.tabIndex = 0; root.setAttribute("role", "region"); root.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
     spacer.className = "st-viewport-spacer"; spacer.setAttribute("aria-hidden", "true");
     layer.className = "st-viewport-layer"; probe.className = "st-viewport-measure"; probe.textContent = "M".repeat(64); probe.setAttribute("aria-hidden", "true");
-    root.append(spacer, layer, probe); host.append(root);
+    foldLayer.className = "st-fold-controls"; const foldButtons = new Map<string, HTMLButtonElement>();
+    root.append(spacer, layer, probe, foldLayer); host.append(root);
     const listeners = new AbortController(), padding = 12;
     let frame: number | undefined, disposed = false, previous: DocumentSnapshot | undefined;
     let top = 0, left = 0, width = 0, height = 0, lineHeight = 22.4, columnWidth = 8.4;
-    let x = scrollAxis(0, 0), y = scrollAxis(0, 0), renderedRevision: number | null = null;
+    let x = scrollAxis(0, 0), y = scrollAxis(0, 0), renderedRevision: number | null = null, renderedIndex = view.folding.getSnapshot().index, renderedFoldGeneration = -1, observedFoldRevision = view.folding.getSnapshot().revision;
     let renderedSelection: Selection | null = null;
     let renderedSelectionSet: SelectionSet | null = null;
     let renders = 0, firstLine = 0, lastLine = 0, partialRows = 0, textUnits = 0, readUnits = 0, lastRenderMs = 0;
@@ -81,7 +86,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     let preparedRows: Readonly<{ revision: number; selectionSet: SelectionSet; element: HTMLDivElement; rows: Map<number, CommandRow> }> | undefined;
     const clearPreparedRows = () => { if (preparedRows) { preparedRows.element.remove(); preparedRows.element.replaceChildren(); preparedRows.rows.clear(); preparedRows = undefined; } };
     let anchor: Readonly<{ revision: number; offset: number; topRemainder: number; leftRemainder: number }> | undefined;
-    let reveal: Readonly<{ revision: number; offset: number; horizontal: "center" | "nearest"; vertical: "center" | "nearest"; affinity: Affinity }> | undefined;
+    let reveal: Readonly<{ revision: number; foldGeneration: number; offset: number; horizontal: "center" | "nearest"; vertical: "center" | "nearest"; affinity: Affinity }> | undefined;
     let horizontalAnchor: ViewState["horizontalAnchor"];
     let fragmentPlacement: Readonly<{ revision: number; line: number; from: number; to: number; left: number; shift: number }> | undefined;
     let measuredWidth = 0, measuredFont = "", measuredRevision: number | null = null;
@@ -94,7 +99,11 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     const coordinates = (offset: number, affinity: Affinity = "after"): CaretRectangle | undefined => {
         if (disposed || !workspace.resolveTab(target)) return undefined;
         const document = workspace.observeDocument(documentId).getSnapshot();
-        if (document?.revision !== renderedRevision) return undefined;
+        if (document?.revision !== renderedRevision || view.folding.getSnapshot().generation !== renderedFoldGeneration
+            || !Number.isSafeInteger(offset) || offset < 0 || offset > document.buffer.length) return undefined;
+        const hidden = renderedIndex.hiddenBy(document.buffer.lineAt(offset));
+        if (hidden) { const header = rows.get(hidden.lineFrom), point = header && geometry(header).point(Number(header.dataset.to), "before");
+            return point ? Object.freeze({ ...point, offset, affinity }) : undefined; }
         for (const element of rows.values()) if (offset >= Number(element.dataset.from) && offset <= Number(element.dataset.to) + 1) {
             const at = rowCaretOffset(document.buffer, Number(element.dataset.to), offset); if (at === undefined) continue;
             const point = geometry(element).point(at, affinity); return point && at !== offset ? Object.freeze({ ...point, offset }) : point;
@@ -117,10 +126,10 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         const current = workspace.observeDocument(documentId).getSnapshot();
         if (current && previous && current.revision !== previous.revision) {
             if (!anchor) {
-                const line = Math.min(previous.buffer.lineCount - 1, Math.max(0, Math.floor((top - padding) / lineHeight)));
+                const visibleRow = Math.min(renderedIndex.visibleLineCount - 1, Math.max(0, Math.floor((top - padding) / lineHeight))), line = renderedIndex.lineAt(visibleRow);
                 const start = previous.buffer.offsetAt(line), end = line + 1 < previous.buffer.lineCount ? previous.buffer.offsetAt(line + 1) - 1 : previous.buffer.length;
                 const offset = Math.min(end, start + Math.floor(left / columnWidth));
-                anchor = { revision: previous.revision, offset, topRemainder: top - line * lineHeight, leftRemainder: left - (offset - start) * columnWidth };
+                anchor = { revision: previous.revision, offset, topRemainder: top - visibleRow * lineHeight, leftRemainder: left - (offset - start) * columnWidth };
             }
             anchor = current.change?.previousRevision === anchor.revision
                 ? { ...anchor, revision: current.revision, offset: current.change.mapping.map(anchor.offset, "before").offset } : undefined;
@@ -130,6 +139,20 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             fragmentPlacement = undefined;
         } else if (!current) { anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined; }
         schedule();
+    };
+    const foldsChanged = () => {
+        clearPreparedRows();
+        const folds = view.folding.getSnapshot(), documentAdvanced = folds.revision !== observedFoldRevision; observedFoldRevision = folds.revision;
+        if (documentAdvanced) {
+            if (reveal) reveal = { ...reveal, foldGeneration: folds.generation };
+            schedule(); return;
+        }
+        if (previous && !anchor && previous.revision === workspace.observeDocument(documentId).getSnapshot()?.revision) {
+            const visibleRow = Math.min(renderedIndex.visibleLineCount - 1, Math.max(0, Math.floor((top - padding) / lineHeight))), line = renderedIndex.lineAt(visibleRow);
+            anchor = { revision: previous.revision, offset: previous.buffer.offsetAt(line), topRemainder: top - visibleRow * lineHeight, leftRemainder: left };
+        }
+        if (reveal && reveal.foldGeneration !== folds.generation) reveal = undefined;
+        horizontalAnchor = undefined; fragmentPlacement = undefined; schedule();
     };
     const read = (buffer: TextBuffer, from: number, to: number): string => { readUnits += to - from; return buffer.slice(from, to); };
     const expose = (start: number, size: number, scroll: number, visible: number): number => {
@@ -185,7 +208,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         const { item, element } = entry, buffer = workspace.document(documentId).buffer, start = buffer.offsetAt(item.line);
         const value = entry.geometry ??= rowGeometry(element, 0, revision, lineHeight), bounds = element.getBoundingClientRect(), origin = padding + (item.from - start) * columnWidth;
         const mapped = (point: CaretRectangle): CaretRectangle => Object.freeze({ ...point, offset: point.offset + item.from,
-            left: rectangle.left + origin + point.left - bounds.left - left, top: rectangle.top + padding + item.line * lineHeight - top + point.top - bounds.top });
+            left: rectangle.left + origin + point.left - bounds.left - left, top: rectangle.top + padding + renderedIndex.rowAt(item.line) * lineHeight - top + point.top - bounds.top });
         const optional = (point: CaretRectangle | undefined) => point && mapped(point);
         return { complete: item.complete, flow: win.getComputedStyle(element).direction === "rtl" ? -1 : 1,
             point: (offset, affinity) => {
@@ -247,10 +270,12 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         } finally { commandMeasure.remove(); }
     }
     const rowForOffset = <T>(offset: number, revealRow: boolean, work: (row: MeasuredRow) => T): T | undefined => {
+        if (disposed || !workspace.resolveTab(target)) return;
+        if (revealRow) { view.folding.reveal(view.folding.getSnapshot(), offset); if (view.folding.getSnapshot().generation !== renderedFoldGeneration) flush(); }
         const document = workspace.observeDocument(documentId).getSnapshot();
         if (disposed || !workspace.resolveTab(target) || document?.revision !== renderedRevision) return;
         const line = document.buffer.lineAt(offset);
-        if (revealRow && !rows.has(line)) { reveal = { revision: document.revision, offset, horizontal: "nearest", vertical: "nearest", affinity: "after" }; flush(); }
+        if (revealRow && !rows.has(line)) { reveal = { revision: document.revision, foldGeneration: view.folding.getSnapshot().generation, offset, horizontal: "nearest", vertical: "nearest", affinity: "after" }; flush(); }
         return withRow(line, left, offset, true, work);
     };
     function render(): void {
@@ -268,27 +293,30 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             layer.replaceChildren(); rows.clear(); geometries.clear(); measuredWidth = 0; measuredRevision = null; spacer.style.width = "0px"; spacer.style.height = "0px";
             layer.style.transform = "none"; layer.style.width = "0px"; layer.style.height = "0px";
             root.setAttribute("aria-disabled", "true"); root.setAttribute("aria-busy", String(resource.getSnapshot().state === "loading"));
-            previous = undefined; anchor = undefined; renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; firstLine = 0; lastLine = 0; return;
+            previous = undefined; anchor = undefined; renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; firstLine = 0; lastLine = 0;
+            renderedIndex = emptyIndex; renderedFoldGeneration = -1; foldButtons.clear(); foldLayer.replaceChildren(); return;
         }
+        const folds = view.folding.getSnapshot(), index = folds.index;
         if (measuredRevision !== document.revision) { measuredWidth = 0; measuredRevision = document.revision; }
         if (anchor?.revision === document.revision) {
             const line = document.buffer.lineAt(anchor.offset);
-            top = line * lineHeight + anchor.topRemainder; left = (anchor.offset - document.buffer.offsetAt(line)) * columnWidth + anchor.leftRemainder;
+            top = index.rowAt(line) * lineHeight + anchor.topRemainder; left = (anchor.offset - document.buffer.offsetAt(line)) * columnWidth + anchor.leftRemainder;
         } else if (previous && previous.revision !== document.revision && document.change === null) { top = 0; left = 0; }
-        if (reveal?.revision === document.revision) {
+        if (reveal?.revision === document.revision && reveal.foldGeneration === folds.generation) {
             const line = document.buffer.lineAt(reveal.offset);
-            top = reveal.vertical === "nearest" ? expose(padding + line * lineHeight, lineHeight, top, height) : Math.max(0, line * lineHeight - height / 2);
+            top = reveal.vertical === "nearest" ? expose(padding + index.rowAt(line) * lineHeight, lineHeight, top, height) : Math.max(0, index.rowAt(line) * lineHeight - height / 2);
             const estimated = padding + (reveal.offset - document.buffer.offsetAt(line)) * columnWidth;
             left = reveal.horizontal === "nearest" ? expose(estimated, 1, left, width) : Math.max(0, estimated - width / 2);
         }
         const requested = reveal; anchor = undefined; reveal = undefined;
         x = scrollAxis(Math.max(document.buffer.longestLineLength * columnWidth, measuredWidth) + padding * 2, width);
-        y = scrollAxis(document.buffer.lineCount * lineHeight + padding * 2, height);
+        y = scrollAxis(index.visibleLineCount * lineHeight + padding * 2, height);
         top = position(y, top); left = position(x, left); readUnits = 0;
-        firstLine = Math.min(document.buffer.lineCount - 1, Math.max(0, Math.floor((top - padding) / lineHeight) - overscanLines));
-        lastLine = Math.min(document.buffer.lineCount, Math.ceil((top + height) / lineHeight) + overscanLines);
+        const firstRow = Math.min(index.visibleLineCount - 1, Math.max(0, Math.floor((top - padding) / lineHeight) - overscanLines));
+        const lastRow = Math.min(index.visibleLineCount, Math.max(firstRow + 1, Math.ceil((top + height) / lineHeight) + overscanLines));
+        firstLine = index.lineAt(firstRow); lastLine = index.lineAt(lastRow - 1) + 1;
         const { selection: selected, selectionSet } = view.getSnapshot();
-        const next: Row[] = []; for (let line = firstLine; line < lastLine; line++) next.push(row(document.buffer, line));
+        const next: Row[] = []; for (let visible = firstRow; visible < lastRow; visible++) next.push(row(document.buffer, index.lineAt(visible)));
         partialRows = next.filter(row => !row.complete).length;
         spacer.style.width = `${x.physicalExtent}px`; spacer.style.height = `${y.physicalExtent}px`;
         const physicalLeft = x.toPhysical(left), physicalTop = y.toPhysical(top);
@@ -301,15 +329,37 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             if (!element) { element = owner.createElement("div"); element.className = "st-viewport-row"; rows.set(item.line, element); layer.append(element); }
             const placement = fragmentPlacement, shift = placement?.revision === document.revision && placement.line === item.line
                 && placement.from === item.from && placement.to === item.to && placement.left === left ? placement.shift : 0;
-            element.style.transform = `translate(${item.left + shift}px, ${padding + item.line * lineHeight - top}px)`;
+            element.style.transform = `translate(${item.left + shift}px, ${padding + index.rowAt(item.line) * lineHeight - top}px)`;
             element.style.height = `${lineHeight}px`;
             paintRow(element, item, document, selectionSet);
             textUnits += item.text.length;
         }
-        for (const [line, element] of rows) if (line < firstLine || line >= lastLine) { element.remove(); rows.delete(line); }
+        const visibleLines = new Set(next.map(item => item.line));
+        for (const [line, element] of rows) if (!visibleLines.has(line)) { element.remove(); rows.delete(line); }
         next.forEach((item, index) => { const element = rows.get(item.line)!; if (layer.children.item(index) !== element) layer.insertBefore(element, layer.children.item(index)); });
         root.removeAttribute("aria-disabled"); root.setAttribute("aria-busy", "false"); root.dataset.revision = String(document.revision);
-        renderedRevision = document.revision; renderedSelection = selected; renderedSelectionSet = selectionSet; previous = document; renders++; geometries.clear();
+        renderedRevision = document.revision; renderedSelection = selected; renderedSelectionSet = selectionSet; previous = document; renderedIndex = index; renderedFoldGeneration = folds.generation; renders++; geometries.clear();
+        const visibleFolds = new Set<string>(), orderedButtons: HTMLButtonElement[] = [];
+        for (const item of next) {
+            const region = index.headerAt(item.line); if (!region) continue; visibleFolds.add(region.id);
+            let button = foldButtons.get(region.id);
+            if (!button) {
+                button = owner.createElement("button"); button.type = "button"; button.className = "st-fold-button";
+                foldButtons.set(region.id, button); foldLayer.append(button);
+            }
+            orderedButtons.push(button);
+            button.dataset.fold = region.id; button.dataset.revision = String(document.revision); button.dataset.generation = String(folds.generation);
+            const label = `${region.collapsed ? "Expand" : "Collapse"} lines ${region.lineFrom + 2}–${region.lineTo}`;
+            button.setAttribute("aria-label", label); button.title = label; button.setAttribute("aria-expanded", String(!region.collapsed)); button.textContent = region.collapsed ? "▸" : "▾";
+            button.disabled = root.classList.contains("st-composing");
+            button.tabIndex = root.hasAttribute("data-st-tab-escape") ? -1 : 0;
+            button.style.left = `${physicalLeft + 1}px`; button.style.top = `${physicalTop + padding + index.rowAt(item.line) * lineHeight - top}px`; button.style.height = `${lineHeight}px`;
+        }
+        for (const [id, button] of foldButtons) if (!visibleFolds.has(id)) {
+            const focused = owner.activeElement === button; button.remove(); foldButtons.delete(id);
+            if (focused) root.dispatchEvent(new CustomEvent("sttropez-focus-source"));
+        }
+        orderedButtons.forEach((button, index) => { if (foldLayer.children.item(index) !== button) foldLayer.insertBefore(button, foldLayer.children.item(index)); });
         // A bounded batch of native shaping measurements follows the row writes. Extent corrections
         // are scheduled for the next frame, without alternating reads and writes for each row.
         const measured = Math.max(0, ...[...rows.values()].filter(element => element.dataset.complete === "true").map(element => element.getBoundingClientRect().width));
@@ -333,7 +383,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
                     if (Math.abs(delta) > 1) {
                         const prior = fragmentPlacement, shift = (prior?.revision === document.revision && prior.line === line && prior.from === item.from
                             && prior.to === item.to && prior.left === left ? prior.shift : 0) + delta;
-                        element.style.transform = `translate(${item.left + shift}px, ${padding + line * lineHeight - top}px)`;
+                        element.style.transform = `translate(${item.left + shift}px, ${padding + index.rowAt(line) * lineHeight - top}px)`;
                         fragmentPlacement = { revision: document.revision, line, from: item.from, to: item.to, left, shift };
                     }
                 }
@@ -350,6 +400,19 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         lastRenderMs = win.performance.now() - started;
         root.dispatchEvent(new CustomEvent("sttropez-render"));
     }
+    const foldButton = (target: EventTarget | null): HTMLButtonElement | undefined => {
+        const button = (target as Element | null)?.closest?.("button.st-fold-button") as HTMLButtonElement | null | undefined;
+        return button && foldLayer.contains(button) ? button : undefined;
+    };
+    foldLayer.addEventListener("pointerdown", event => { if (foldButton(event.target)) event.stopPropagation(); }, { signal: listeners.signal });
+    foldLayer.addEventListener("click", event => {
+        const button = foldButton(event.target); if (!button) return; event.stopPropagation();
+        if (disposed || !workspace.resolveTab(target) || root.classList.contains("st-composing")) return;
+        view.folding.setCollapsed({ revision: Number(button.dataset.revision), generation: Number(button.dataset.generation) }, button.dataset.fold!, button.getAttribute("aria-expanded") === "true");
+    }, { signal: listeners.signal });
+    foldLayer.addEventListener("keydown", event => { if (event.key === "Escape" && foldButton(event.target)) {
+        event.preventDefault(); if (!disposed && workspace.resolveTab(target)) root.dispatchEvent(new CustomEvent("sttropez-focus-source"));
+    } }, { signal: listeners.signal });
     root.addEventListener("scroll", () => {
         const newTop = y.toLogical(root.scrollTop), newLeft = x.toLogical(root.scrollLeft);
         // Ignore quantization from writes to native fractional/scaled scroll offsets.
@@ -369,7 +432,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     const observer = new ResizeObserver(schedule); observer.observe(root); observer.observe(probe);
     owner.fonts.addEventListener("loadingdone", schedule, { signal: listeners.signal });
     owner.fonts.addEventListener("loadingerror", schedule, { signal: listeners.signal });
-    const subscriptions = [workspace.observeDocument(documentId).subscribe(documentChanged), view.subscribe(schedule), resource.metadata.subscribe(schedule), workspace.tabState.subscribe(schedule)];
+    const subscriptions = [workspace.observeDocument(documentId).subscribe(documentChanged), view.subscribe(schedule), view.folding.subscribe(foldsChanged), resource.metadata.subscribe(schedule), workspace.tabState.subscribe(schedule)];
     schedule();
     return Object.freeze({ element: root, view,
         prepareNavigationRows,
@@ -389,24 +452,29 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             const before = measured.point(offset, "before"), after = measured.point(offset, "after"); if (!before || !after) return;
             if (before.offset !== offset && after.offset !== offset) return direction * before.left > direction * after.left ? before : after;
             const next = measured.visual(offset, affinity, direction); if (next) return next;
-            const buffer = workspace.document(documentId).buffer, line = buffer.lineAt(offset) + direction * measured.flow;
-            if (line < 0 || line >= buffer.lineCount) return measured.edge(direction);
+            const buffer = workspace.document(documentId).buffer, at = renderedIndex.rowAt(buffer.lineAt(offset)) + direction * measured.flow;
+            if (at < 0 || at >= renderedIndex.visibleLineCount) return measured.edge(direction);
+            const line = renderedIndex.lineAt(at);
             return rowForOffset(buffer.offsetAt(line), revealRow, neighbor => neighbor.edge(direction < 0 ? 1 : -1));
         }),
         collapseVisual: (from: number, to: number, direction: -1 | 1, revealRow = true) => rowForOffset(from, revealRow, first => direction * first.flow < 0
             ? first.edge(direction, from, to) : rowForOffset(to, revealRow, last => last.edge(direction, from, to))),
         columnAt: (offset: number, affinity: Affinity = "after") => {
+            if (disposed || !workspace.resolveTab(target)) return;
             const document = workspace.observeDocument(documentId).getSnapshot();
-            if (disposed || !workspace.resolveTab(target) || document?.revision !== renderedRevision) return;
+            if (document?.revision !== renderedRevision || view.folding.getSnapshot().generation !== renderedFoldGeneration) return;
             const visible = coordinates(offset, affinity), rectangle = root.getBoundingClientRect();
             if (visible) return visible.left - rectangle.left + left;
-            const line = document.buffer.lineAt(offset), scroll = Math.max(0, padding + (offset - document.buffer.offsetAt(line)) * columnWidth - width / 2);
-            return withRow(line, scroll, offset, false, measured => { const point = measured.point(offset, affinity); return point && point.left - rectangle.left + left; });
+            const originalLine = document.buffer.lineAt(offset), hidden = renderedIndex.hiddenBy(originalLine), line = hidden?.lineFrom ?? originalLine;
+            const projected = hidden ? row(document.buffer, line).to : offset, scroll = Math.max(0, padding + (projected - document.buffer.offsetAt(line)) * columnWidth - width / 2);
+            return withRow(line, scroll, projected, false, measured => { const point = measured.point(projected, affinity); return point && point.left - rectangle.left + left; });
         },
         caretAtColumn: (line: number, column: number) => {
+            if (disposed || !workspace.resolveTab(target)) return;
             const document = workspace.observeDocument(documentId).getSnapshot();
-            if (disposed || !workspace.resolveTab(target) || document?.revision !== renderedRevision) return;
+            if (document?.revision !== renderedRevision || view.folding.getSnapshot().generation !== renderedFoldGeneration) return;
             if (!Number.isSafeInteger(line) || line < 0 || line >= document.buffer.lineCount || !Number.isFinite(column)) throw new RangeError("Invalid navigation column.");
+            if (renderedIndex.hiddenBy(line)) return;
             const scroll = column < left || column > left + width ? Math.max(0, column - width / 2) : left;
             return withRow(line, scroll, undefined, false, measured => { const point = measured.nearest(column);
                 return Object.freeze({ offset: point.offset, affinity: point.affinity, revision: point.revision }); });
@@ -414,26 +482,34 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         flush,
         scrollTo: setScroll,
         captureView: () => { const { selection, selectionSet } = view.getSnapshot();
+            const folds = view.folding.getSnapshot();
             return Object.freeze({ ...selection, selectionSet, scrollTop: top, scrollLeft: left,
+                folding: Object.freeze({ documentId, viewId: view.id, revision: folds.revision, generation: folds.generation, regions: folds.regions }),
                 ...(horizontalAnchor ? { horizontalAnchor: Object.freeze({ ...horizontalAnchor }) } : {}) }); },
         restoreView: (state: ViewState) => {
-            if (disposed) return; const document = workspace.document(documentId), value = state.horizontalAnchor;
+            if (disposed || !workspace.resolveTab(target)) return; const document = workspace.document(documentId), value = state.horizontalAnchor;
             if (value && (!Number.isSafeInteger(value.revision) || value.revision < 0 || !Number.isSafeInteger(value.offset) || value.offset < 0
                 || !Number.isFinite(value.left) || value.left < 0 || value.affinity !== "before" && value.affinity !== "after")) throw new RangeError("Invalid horizontal view anchor.");
             if (value?.revision === document.revision && value.offset > document.buffer.length) throw new RangeError("Horizontal view anchor is outside the document.");
-            if (state.selectionSet) view.setSelections(document.revision, state.selectionSet.ranges, state.selectionSet.primary);
-            else view.setSelection(document.revision, state);
+            const folds = view.folding.getSnapshot(), saved = state.folding;
+            const restoreFolds = saved && saved.documentId === documentId && saved.revision === document.revision && saved.viewId !== view.id && folds.generation === 0 && !folds.regions.length;
+            if (restoreFolds) createFoldRegions(document.buffer, saved.regions);
+            if (state.selectionSet) { if (!sameSelectionSet(state.selectionSet, view.getSnapshot().selectionSet)) view.setSelections(document.revision, state.selectionSet.ranges, state.selectionSet.primary); }
+            else if (state.anchor !== view.getSnapshot().selection.anchor || state.head !== view.getSnapshot().selection.head
+                || state.anchorAffinity !== view.getSnapshot().selection.anchorAffinity || state.headAffinity !== view.getSnapshot().selection.headAffinity) view.setSelection(document.revision, state);
+            if (restoreFolds) view.folding.setRanges(folds, saved.regions);
             setScroll({ top: state.scrollTop, left: state.scrollLeft });
             if (value?.revision === document.revision) horizontalAnchor = { ...value };
         },
         revealOffset: (offset: number, options: RevealOptions = {}) => {
-            if (disposed) return; const document = workspace.document(documentId); document.buffer.lineAt(offset);
+            if (disposed || !workspace.resolveTab(target)) return; const document = workspace.document(documentId); document.buffer.lineAt(offset);
             const horizontal = options.horizontal ?? "center", vertical = options.vertical ?? "center", affinity = options.affinity ?? "after";
             if (![horizontal, vertical].every(value => value === "center" || value === "nearest") || affinity !== "after" && affinity !== "before") throw new RangeError("Invalid reveal options.");
+            view.folding.reveal(view.folding.getSnapshot(), offset);
             horizontalAnchor = undefined; fragmentPlacement = undefined;
-            reveal = { revision: document.revision, offset, horizontal, vertical, affinity }; schedule();
+            reveal = { revision: document.revision, foldGeneration: view.folding.getSnapshot().generation, offset, horizontal, vertical, affinity }; schedule();
         },
-        snapshot: () => Object.freeze({ revision: renderedRevision, selection: renderedSelection, selectionSet: renderedSelectionSet, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, navigationReadUnits, navigationRows, navigationBatches, navigationPreparedRows: preparedRows?.rows.size ?? 0, maxNavigationBatchRows, lastRenderMs,
+        snapshot: () => Object.freeze({ revision: renderedRevision, selection: renderedSelection, selectionSet: renderedSelectionSet, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, foldGeneration: renderedFoldGeneration, visibleLines: previous ? renderedIndex.visibleLineCount : 0, collapsedFolds: previous ? renderedIndex.collapsedCount : 0, navigationReadUnits, navigationRows, navigationBatches, navigationPreparedRows: preparedRows?.rows.size ?? 0, maxNavigationBatchRows, lastRenderMs,
             scrollTop: top, scrollLeft: left, width, height, lineHeight, columnWidth, verticalExtent: y.extent, horizontalExtent: x.extent,
             physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent, pending: frame !== undefined, disposed }),
         destroy: () => {
@@ -441,6 +517,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove(); clearPreparedRows();
             navigationBatches = 0; maxNavigationBatchRows = 0;
+            renderedIndex = emptyIndex; renderedFoldGeneration = -1; foldButtons.clear(); foldLayer.replaceChildren();
             renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; navigationReadUnits = 0; navigationRows = 0; layer.replaceChildren(); root.replaceChildren(); root.remove();
             if (!options.view) view.dispose();
         } });
