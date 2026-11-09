@@ -8,12 +8,25 @@ position, units read, completion flag and frozen matches. The caller supplies sc
 `dispose` ends scanning and releases the piece iterator. Pattern preparation is linear in the
 query length; scan budgets describe work units, rather than hard elapsed-time deadlines.
 
+`matchCase: false` enables locale-independent Unicode simple-fold comparison over code points.
+For example, `k` matches `K` and `K`, sigma matches final sigma, and supplementary case pairs
+match across pieces. It does not expand `ß` to `ss`, normalize combining sequences, or apply
+locale-specific casing. Returned bounds always address the original UTF-16 buffer. Paired
+surrogates are read together in this mode; a clipped/unpaired surrogate remains literal.
+
+The existing streaming matcher retains bounded read/match budgets. A query-sized ring records
+raw starts; navigation and replacement retain actual starts and ends, without assuming folded
+characters have the query’s UTF-16 width. Fixed single-code-point native comparisons supply
+simple-fold equivalence using the engine’s Unicode case data; there is no general regex execution over document text, new dependency
+or copied folding table. Query preprocessing remains synchronous and proportional to query
+length. Cancellation/disposal releases the caseless matcher and pending surrogate state.
+
 `new LiteralSearch(buffer, query, { from, to, wholeWord: true })` restricts matches to whole
 code words. The legacy numeric `from, to` arguments remain supported. The option uses the same
 constituents as code-word navigation: Unicode letters, numbers, connector punctuation, combining
 marks and join controls U+200C/U+200D. Both neighbouring code points must be non-constituents
-or document edges. A match cannot split a surrogate pair. This is case-sensitive and does not
-normalize text or apply dictionary/locale word rules. The
+or document edges. A match cannot split a surrogate pair. Whole-word and match-case options
+combine independently; word boundaries do not normalize text or apply dictionary/locale rules. The
 [Unicode segmentation guidance](https://www.unicode.org/reports/tr29/#Word_Boundaries) describes
 the broader language-dependent boundary choices.
 
@@ -24,7 +37,7 @@ Rejected matches retain the matcher prefix so that a later overlapping candidate
 considered. Accepted matches remain non-overlapping. Cancellation releases pending context.
 
 The existing piece iterator, position mappings, versioned transactions and history are reused.
-There was no project matcher to reuse. The small original prefix matcher carries partial
+The original prefix matcher and its code-point counterpart carry partial
 matches across pieces and scheduling steps; a whole-string platform search would require the
 document export this path is intended to avoid. Whole-word filtering reuses the existing matcher
 and code-word classification; a whole-string regular expression would bypass the piece/budget
@@ -32,27 +45,28 @@ contract. No external search/editor runtime is included.
 
 `createFindController(workspace, tabId, editingCandidate)` supplies browser scheduling and a
 stable immutable `state` observable. It scans up to 32,768 units or 8,192 matches per timer turn.
-The controller retains all matching start offsets in 1,024-entry pages for binary navigation,
+The controller retains all matching start/end pairs in 1,024-match pages for binary navigation,
 while `preview` exposes only the first 200 ranges for bounded decorations. The preview cap never
 limits the count, navigation or replacement. Index memory is proportional to match count and
 is released on query changes, cancellation, expiry or destruction. This is explicit global
 search work, outside the ordinary editing path.
 
-`setQuery`, `setOptions({ wholeWord })`, `next(1 | -1)`, `replaceCurrent`, `replaceAll`, `cancel` and `destroy` are explicit
+`setQuery`, `setOptions({ wholeWord, matchCase })`, `next(1 | -1)`, `replaceCurrent`, `replaceAll`, `cancel` and `destroy` are explicit
 commands. Navigation waits for a completed index, wraps, and uses the captured document view.
-Replacing a current selection requires an exact literal match; otherwise the command selects
+Replacing a current selection requires a literal match under the current options; otherwise the command selects
 the next match. Whole-word replacement additionally requires the selection to be in the current
 match index, so selecting a substring inside a larger word does not make it replaceable.
 Replacement text is literal, including `$&`, `$1` and raw newline sequences.
-Replace-all planning yields every 1,024 edits and checks captured revision, selection and tab
+Replace-all planning yields every 1,024 edits and checks captured revision, complete selection set and tab
 generation. One core transaction applies all ranges, rechecks capabilities and records one
 shared undo unit. Edits during planning cancel the old operation and restart search over the
 new snapshot. The final transaction remains synchronous and proportional to changed ranges;
 yielding planning does not qualify large replace-all latency or memory.
 
 Changing options cancels a queued replacement through the existing generation/timer guards
-and scans the unchanged source again. Snapshots expose an immutable `wholeWord` flag. Both host
-find panels and the editing fixture expose a **Whole word** checkbox; the host keeps the option
+and scans the unchanged source again. Snapshots expose immutable `wholeWord` and
+`matchCase` flags. Unspecified options use the defaults (`wholeWord: false`, `matchCase: true`).
+Both host find panels and the editing fixture expose **Whole word** and **Match case** checkboxes; the host keeps the option
 when commands move between source/comparison views and when views remount.
 
 After replace-all finishes, focus returns to its captured editor only if no new element gained

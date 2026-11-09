@@ -82,3 +82,46 @@ test("seeded fragmented snapshots agree with the platform literal-search oracle"
     }
     assert.equal(buffer.diagnostics().textExports, 0);
 });
+
+test("case-insensitive literals preserve raw spans across pieces and tiny read budgets", () => {
+    const text = "k K K σ Σ ς i I ı İ ss SS ß 𐐀 𐐨 é É a.b [X] 😀 \ud800!\udc00", buffer = TextBuffer.from(text).replace(1, 1, "!").replace(1, 2, "");
+    const quote = (query: string) => Array.from(query, point => `\\u{${point.codePointAt(0)!.toString(16)}}`).join("");
+    for (const query of ["k", "σ", "i", "ss", "ß", "𐐀", "é", "é", "A.B", "[x]", "😀", "\ud800", "\udc00"]) {
+        const expected = [...text.matchAll(new RegExp(quote(query), "giu"))].map(match => ({ from: match.index, to: match.index + match[0].length }));
+        for (const budget of [1, 2, 7, 32]) assert.deepEqual(all(buffer, query, budget, { matchCase: false }), expected, `${JSON.stringify(query)} budget ${budget}`);
+    }
+    const pair = TextBuffer.from("x\ud801").replace(2, 2, "\udc00x");
+    assert.ok([...pair.chunks()].some(chunk => chunk.endsWith("\ud801")));
+    assert.deepEqual(all(pair, "𐐨", 1, { matchCase: false }), [{ from: 1, to: 3 }]);
+    assert.deepEqual(all(TextBuffer.from("AaAAA"), "aa", 1, { matchCase: false }), [{ from: 0, to: 2 }, { from: 2, to: 4 }]);
+    assert.deepEqual(all(TextBuffer.from("k K K"), "k"), [{ from: 0, to: 1 }]);
+    const pending = new LiteralSearch(TextBuffer.from("𐐀"), "𐐨", { matchCase: false }); pending.next(1); pending.dispose();
+    assert.deepEqual(pending.next(1), { done: true, scanned: 1, readUnits: 0, matches: [] });
+    assert.throws(() => new LiteralSearch(buffer, "k", { matchCase: "no" as unknown as boolean }), TypeError);
+    assert.equal(buffer.readMetrics().textExports, 0);
+});
+
+test("fragmented caseless whole-word scans agree with an independent Unicode regex oracle", () => {
+    const word = /^[\p{L}\p{N}\p{Pc}\p{M}\u200c\u200d]$/u;
+    function oracle(text: string, query: string, wholeWord: boolean) {
+        const pattern = new RegExp(Array.from(query, point => `\\u{${point.codePointAt(0)!.toString(16)}}`).join(""), "giu"), matches = [];
+        for (let found = pattern.exec(text); found; found = pattern.exec(text)) {
+            const from = found.index, to = from + found[0].length, before = Array.from(text.slice(0, from)).at(-1) ?? "", after = Array.from(text.slice(to))[0] ?? "";
+            if (!wholeWord || !word.test(before) && !word.test(after)) matches.push({ from, to });
+            else pattern.lastIndex = from + String.fromCodePoint(text.codePointAt(from)!).length;
+        }
+        return matches;
+    }
+    let seed = 0x71ba, text = "k K_ K𐐀 𐐨 SS ß a!A!a é É 😀 ".repeat(4), buffer = TextBuffer.from(text);
+    const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0);
+    for (let index = 0; index < 100; index++) {
+        const from = random() % (text.length + 1), to = Math.min(text.length, from + random() % 3), insert = ["K", "K", "𐐀", "σ", "\ud800", " ", "a!a"][random() % 7]!;
+        text = text.slice(0, from) + insert + text.slice(to); buffer = buffer.replace(from, to, insert);
+        const query = ["k", "𐐨", "ss", "Σ", "a!A", "é", "\ud800"][random() % 7]!, wholeWord = random() % 2 === 0;
+        assert.deepEqual(all(buffer, query, 1 + random() % 7, { matchCase: false, wholeWord }), oracle(text, query, wholeWord));
+    }
+    const ranged = TextBuffer.from("xKy K!");
+    assert.deepEqual(all(ranged, "k", 1, { matchCase: false, wholeWord: true, from: 1, to: 2 }), []);
+    assert.deepEqual(all(ranged, "k", 1, { matchCase: false, wholeWord: true, from: 4, to: 5 }), [{ from: 4, to: 5 }]);
+    assert.equal(buffer.readMetrics().textExports, 0);
+});

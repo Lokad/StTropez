@@ -96,7 +96,8 @@ try {
         await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-language.png`, fullPage: true });
         await writeFile(`artifacts/inspect/host-${mode}-language.json`, JSON.stringify(await harness.page.evaluate(() => window.hostFixture.snapshot()), null, 2));
         await input.press("Alt+Enter"); await input.press("Control+f");
-        await harness.page.getByRole("textbox", { name: "Find source", exact: true }).fill("TODO");
+        await harness.page.getByRole("checkbox", { name: "Match case", exact: true }).uncheck();
+        await harness.page.getByRole("textbox", { name: "Find source", exact: true }).fill("todo");
         await harness.page.waitForFunction(() => document.querySelector('[aria-label="Find status"]').textContent.includes("1 matches · ready"));
         await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-find.png`, fullPage: true });
         if (await harness.page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length)) !== "const sample = 123; // TODO\n😀 const value = 2;") throw new Error("Host inspection lost completion correction.");

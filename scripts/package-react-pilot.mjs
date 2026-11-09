@@ -314,9 +314,22 @@ export async function proveCompiledTextDrag(browser, baseUrl) {
         await primary.press("Control+Shift+z"); await ready(); const redoDiscard = await read(); assert.equal(redoDiscard.text, base);
         const variantDiscard = { compiledPublicReversion: true, oneUndoUnit: true, completeSetRestored: true, zeroCompleteExports: redoDiscard.state.source.exports === 0 };
         assert.equal(redoDiscard.state.source.exports, 0); assert.equal(after.target.exports, 0); assert.deepEqual(errors, []);
+        const caseText = "K k K_ 𐐀 𐐨\r\nlast";
+        await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, caseText); await ready();
+        await primary.press("Control+Home"); await primary.press("Control+f");
+        const query = page.getByRole("textbox", { name: "Find source", exact: true }), status = page.getByLabel("Find status", { exact: true });
+        await query.fill("k"); await status.filter({ hasText: "1 matches · ready" }).waitFor();
+        await page.getByRole("checkbox", { name: "Match case", exact: true }).uncheck(); await status.filter({ hasText: "3 matches · ready" }).waitFor();
+        await page.getByRole("checkbox", { name: "Whole word", exact: true }).check(); await status.filter({ hasText: "2 matches · ready" }).waitFor();
+        await page.getByRole("textbox", { name: "Replacement", exact: true }).fill("        await page.evaluate(() => window.hostFixture.dispose()); const disposed ="); const beforeCase = await read();
+        await click("Replace all"); await status.filter({ hasText: "Replaced 2 matches." }).waitFor(); await ready();
+        const caseChanged = await read(); assert.equal(caseChanged.text, "        await page.evaluate(() => window.hostFixture.dispose()); const disposed =         await page.evaluate(() => window.hostFixture.dispose()); const disposed =" + caseText.slice(3)); assert.equal(caseChanged.state.history.undoDepth, beforeCase.state.history.undoDepth + 1);
+        await page.getByRole("textbox", { name: "Comparison working source", exact: true }).press("Control+z"); await ready(); assert.equal((await read()).text, caseText);
+        await primary.press("Control+Shift+z"); await ready(); assert.equal((await read()).text, caseChanged.text); assert.equal((await read()).state.source.exports, 0);
+        const caseFind = { compiledOptions: true, unicodeRawSpans: true, literalReplacement: true, sharedUndoRedo: true, zeroCompleteExports: true };
         await page.evaluate(() => window.hostFixture.dispose()); const disposed = await page.evaluate(() => window.hostFixture.snapshot());
         for (const key of ["views", "leases", "subscriptions"]) assert.equal(disposed.diagnostics[key], 0);
-        return { source: "restored-compiled-assets", browser: browser.browserType().name(), audit, moveAndLinkedHistoryQualified: !refused, tokenlessRefusalQualified: refused, variantDiscard,
+        return { source: "restored-compiled-assets", browser: browser.browserType().name(), audit, moveAndLinkedHistoryQualified: !refused, tokenlessRefusalQualified: refused, variantDiscard, caseFind,
             nativeMove: refused ? "unverified; automated transport strips the internal token" : "automated gesture verified; OS/application transfers unverified",
             completeSetsRestored: !refused, zeroCompleteExports: true, disposed: { views: 0, leases: 0, subscriptions: 0 }, errors, note: "One qualitative fresh-page proof, outside all existing point/workflow clocks. No latency or native-device claim." };
     } finally { await page.close(); }

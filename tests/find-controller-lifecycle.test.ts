@@ -62,3 +62,49 @@ for (const lifetime of ["destroyed", "expired", "view-disposed"] as const) for (
             assert.equal(workspace.diagnostics().views, 0); assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0);
         }
     });
+
+test("case options retain raw Unicode matches, cancel captured plans and preserve complete shared history", () => {
+    const workspace = new Workspace(), original = "K k K_ 𐐀 𐐨 café café SS ß", documentId = workspace.createDocument({ scope: "find", resource: "case", variant: "working" }, "Source", original);
+    const tab = workspace.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId), peer = workspace.createDocumentView(documentId);
+    const tasks = new Map<number, () => void>(); let serial = 0;
+    const owner = Object.assign(new EventTarget(), { defaultView: { performance,
+        setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
+    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), snapshot: () => ({ composing: false, disposed: false }),
+        viewport: { revealOffset: () => {} }, focus: () => {} } as unknown as EditingCandidate;
+    const find = createFindController(workspace, tab, editor), text = () => { const buffer = workspace.document(documentId).buffer; return buffer.slice(0, buffer.length); };
+    const runOne = () => { const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); };
+    const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 100); runOne(); } };
+    try {
+        find.setQuery("k"); assert.equal(find.state.getSnapshot().matchCase, true);
+        find.setOptions({ matchCase: false }); drain(); assert.equal(find.state.getSnapshot().count, 3);
+        const before = workspace.document(documentId), history = workspace.observeHistory(documentId).getSnapshot();
+        find.replaceAll("x"); find.setOptions({ matchCase: false, wholeWord: true }); drain();
+        assert.equal(find.state.getSnapshot().count, 2); assert.equal(workspace.document(documentId), before); assert.deepEqual(workspace.observeHistory(documentId).getSnapshot(), history);
+        view.setSelections(before.revision, [{ anchor: 0, head: 1 }, { anchor: original.length, head: original.length }]);
+        const set = view.getSnapshot().selectionSet;
+        assert.equal(find.replaceCurrent("x"), true); drain(); assert.equal(text(), "x" + original.slice(1));
+        assert.equal(workspace.observeHistory(documentId).getSnapshot().undoDepth, history.undoDepth + 1);
+        assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).applied, true); drain();
+        assert.equal(text(), original); assert.deepEqual(view.getSnapshot().selectionSet, set);
+        find.setQuery("𐐨"); drain(); assert.equal(find.state.getSnapshot().count, 2); assert.equal(find.next(), true);
+        assert.equal(view.getSnapshot().selection.anchor, original.indexOf("𐐀")); assert.equal(view.getSnapshot().selection.head, original.indexOf("𐐀") + 2);
+        find.replaceAll("Ω"); drain(); assert.equal(text(), original.replace("𐐀", "Ω").replace("𐐨", "Ω"));
+        assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).applied, true); drain(); assert.equal(text(), original);
+        const many = "K k K_\n".repeat(1100);
+        workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision, origin: "human", edits: [{ from: 0, to: original.length, insert: many }] });
+        find.setOptions({ matchCase: false }); find.setQuery("k"); drain(); assert.equal(find.state.getSnapshot().count, 3300);
+        find.next(-1); assert.equal(view.getSnapshot().selection.anchor, many.lastIndexOf("K"));
+        const revision = workspace.document(documentId).revision; find.replaceAll("x"); runOne();
+        const primary = view.getSnapshot().selection;
+        view.setSelections(revision, [primary, { anchor: many.length, head: many.length }]); drain();
+        assert.equal(workspace.document(documentId).revision, revision); assert.equal(text(), many);
+        const complete = view.getSnapshot().selectionSet, depth = workspace.observeHistory(documentId).getSnapshot().undoDepth;
+        find.replaceAll("x"); drain(); assert.equal(text(), "x x x_\n".repeat(1100)); assert.equal(workspace.observeHistory(documentId).getSnapshot().undoDepth, depth + 1);
+        assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).applied, true); drain(); assert.equal(text(), many); assert.deepEqual(view.getSnapshot().selectionSet, complete);
+        assert.equal(workspace.document(documentId).buffer.readMetrics().textExports, 0);
+        assert.throws(() => find.setOptions({ matchCase: "yes" as unknown as boolean }), TypeError);
+    } finally {
+        find.destroy(); view.dispose(); peer.dispose(); workspace.close(tab);
+        assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().views, 0);
+    }
+});

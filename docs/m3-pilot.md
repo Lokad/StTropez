@@ -45,6 +45,9 @@ while it is in flight. **Finish save** trims trailing whitespace in its canonica
    Apple platforms) to copy. Read-only sources copy. If the browser loses the internal transfer token,
    the drop is refused and source text stays intact; native token-preserving movement in the current
    WebKit evaluation environment remains unverified.
+   Ctrl+F opens source find. **Match case** starts checked; clear it for Unicode caseless
+   literals and combine it with **Whole word**. These choices follow the working view and
+   survive remount; replacement text remains literal.
 2. Choose **Open source review**. Edit the working pane, then use **Next change** and
    **Use baseline**. Undo the reversion to restore your correction. The reference stays
    immutable while the working pane shares the source document and history.
