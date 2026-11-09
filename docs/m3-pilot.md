@@ -66,8 +66,10 @@ in its canonical reply. Reloading starts a new fixture; this is not durable stor
    Enter/Shift+Enter in the query navigates matches. During scanning, F3/query Enter retain the
    latest requested direction and navigate once when that captured index is ready. Query/options,
    text, complete selection, focus, composition or view changes expire the request; it cannot
-   move a different view or steal later focus. Enter in Replacement replaces the current
-   working match. Enter on buttons retains their normal action. Reference replacement stays disabled.
+   move a different view or steal later focus. Replacement Enter also waits for a captured index,
+   retaining its replacement text and edit authority; subsequent field input or authority changes
+   expire it. A selected current match is replaced as one undoable command; otherwise it selects
+   the next match. Enter on buttons retains their normal action. Reference replacement stays disabled.
    Escape from any enabled owned tool control cancels Find and returns to its captured source,
    preserving complete selections and history. The focused Save control keeps focus; held-key repeats
    do not enqueue additional saves. Type additional source text before choosing

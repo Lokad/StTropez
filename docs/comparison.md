@@ -51,7 +51,8 @@ later view. Literal, whole-word, match-case and
 actual-worker regex search reuse the existing Find controller. Match previews and visible markers
 stay bounded. The query/options are host UI preferences; jobs, markers and selections capture their
 own reference resource and view. Replacement fields/actions are disabled, and reference commands
-reject replacement independently of the UI. Working Find/replace and Save/Run retain their scope.
+reject replacement independently of the UI. Working Replacement Enter can wait for its index
+with captured replacement text and edit authority; field input or authority changes expire it. Working Find/replace and Save/Run retain their scope.
 Ctrl/Command+S from enabled text fields, options or navigation controls in the evaluation hosts'
 owned language/Find tool region uses the same captured save guard as the pane. Reference Find explicitly saves the working source; it never saves the
 immutable reference. Stale, detached, unowned, disabled or composing contexts cannot start a
