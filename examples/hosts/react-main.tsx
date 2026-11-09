@@ -8,6 +8,7 @@ import { hostEditor, ViewBindings } from "./bindings.ts";
 import { actions, conflictText, statusText } from "./actions.ts";
 import { installHostHarness } from "./harness.ts";
 import { findText, foldText, languageActions, languageFieldKey } from "./language-panel.ts";
+import { domainActions } from "./domain-panel.ts";
 import "./style.css";
 
 const controller = new HostController(), bindings = new ViewBindings(controller, hostEditor());
@@ -111,7 +112,16 @@ function TablePasteTools() {
         <button disabled={state.status !== "converting"} onClick={tools.cancel}>Cancel table paste</button></section>;
 }
 function App() {
-    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><SymbolInfo /></>;
+    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><DomainTools /><SymbolInfo /></>;
+}
+function DomainTools() {
+    const tools = bindings.domain, state = useObserved(tools.state);
+    return <section className="host-language" aria-label="Domain tools"><h2>Domain tools</h2>
+        <output aria-label="Domain command status" aria-live="polite">{state.message}</output>
+        <progress aria-label="Domain discovery progress" hidden={state.status !== "running"} max={Math.max(1, state.total)} value={state.work} />
+        <div>{domainActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        <ul aria-label="Domain annotations">{state.annotations.map(note => <li key={`${state.token}:${state.revision}:${note.id}`}>
+            <button onClick={() => tools.reveal(state.token!, state.revision!, note.id)}>{note.label}</button></li>)}</ul></section>;
 }
 let root: Root | undefined;
 const unmount = () => { root?.unmount(); root = undefined; };

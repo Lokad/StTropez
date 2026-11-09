@@ -62,6 +62,12 @@ while it is in flight. **Finish save** trims trailing whitespace in its canonica
    Pointer inspection keeps the current host focus. Results are plain text from a bounded local
    worker fixture, limited to 4,096 units of context and names up to 256 units. This does not
    qualify a general language service or screen-reader announcement behavior.
+   In either source view or the comparison working pane, **Discover domain regions**
+   finds the local fixture's paired `// #region id Label` / `// #endregion id`
+   markers. **Collapse domain regions** preserves independent manual folds; annotation
+   buttons reveal their captured ranges. **Insert catalogue import** is one shared
+   undoable edit. Discovery/import replies reject stale revisions and authority.
+   The [domain workflow](domain.md) records fixture policy, bounds and native gaps.
 2. Choose **Open source review**. Edit the working pane, then use **Next change** and
    **Use baseline**. Undo the reversion to restore your correction. The reference stays
    immutable while the working pane shares the source document and history.

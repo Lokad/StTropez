@@ -6,6 +6,7 @@ import { EditingPresentation } from "../editing/presentation.ts";
 import { HostLanguageTools } from "./language.ts";
 import { HostHoverTools } from "./hover.ts";
 import { HostTablePaste } from "./table-paste.ts";
+import { HostDomainTools } from "./domain.ts";
 
 export type HostEditor = "native" | "candidate";
 type BoundEditor = MountedEditor & Readonly<{ metrics: () => null | ReturnType<EditingCandidate["snapshot"]> & Readonly<{ viewport: ViewportSnapshot }> }>;
@@ -25,6 +26,7 @@ export class ViewBindings {
     readonly language: HostLanguageTools;
     readonly hover: HostHoverTools;
     readonly tablePaste: HostTablePaste;
+    readonly domain: HostDomainTools;
     private detachReviewLanguage: (() => void) | undefined;
     private referenceState: Readonly<{ baseline: ComparisonBaseline; state: ViewState }> | undefined;
     private reviewStatus: HTMLOutputElement | undefined;
@@ -61,7 +63,8 @@ export class ViewBindings {
         const detachLanguage = this.language.attach("comparison", this.controller.viewTab("primary"), this.review.working, presentation);
         const detachHover = this.hover.attach("comparison", this.controller.viewTab("primary"), this.review.working);
         const detachPaste = this.tablePaste.attach("comparison", this.controller.viewTab("primary"), this.review.working);
-        this.detachReviewLanguage = () => { detachPaste(); detachHover(); detachLanguage(); referencePresentation.clear(); };
+        const detachDomain = this.domain.attach("comparison", this.controller.viewTab("primary"), this.review.working, presentation);
+        this.detachReviewLanguage = () => { detachDomain(); detachPaste(); detachHover(); detachLanguage(); referencePresentation.clear(); };
         const state = this.states.get("comparison")?.get(view.documentId);
         if (state) this.review.working.restoreView(this.restoreState(state, view));
         if (this.referenceState?.baseline.buffer === baseline.buffer && this.referenceState.baseline.version === baseline.version)
@@ -143,6 +146,8 @@ export class ViewBindings {
     constructor(controller: HostController, editor: HostEditor = "native") {
         this.controller = controller; this.editor = editor; this.language = new HostLanguageTools(controller.workspace); this.hover = new HostHoverTools(controller.workspace);
         this.tablePaste = new HostTablePaste(controller.workspace, editor === "candidate");
+        this.domain = new HostDomainTools(controller.workspace, documentId => !(this.review?.working.view.documentId === documentId && (this.review.working.snapshot().pendingInput || this.review.working.snapshot().composing))
+            && ![...this.mounted.values()].some(value => { const metrics = value.editor.metrics(); return value.documentId === documentId && (metrics?.pendingInput || metrics?.composing); }));
         this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.review?.working.snapshot().pendingInput
             && ![...this.mounted.values()].some(value => value.editor.metrics()?.pendingInput));
         this.primary = this.ref("primary", "Primary source");
@@ -195,6 +200,7 @@ export class ViewBindings {
             const detachLanguage = candidate ? this.language.attach(id, tabId, candidate, presentation) : undefined;
             const detachHover = candidate ? this.hover.attach(id, tabId, candidate) : undefined;
             const detachPaste = candidate ? this.tablePaste.attach(id, tabId, candidate) : undefined;
+            const detachDomain = candidate ? this.domain.attach(id, tabId, candidate, presentation) : undefined;
             const mounted: BoundEditor = candidate ? { element: candidate.input, view, captureView: candidate.captureView,
                 restoreView: candidate.restoreView, destroy: candidate.destroy,
                 metrics: () => ({ ...candidate.snapshot(), viewport: candidate.viewport.snapshot() }) }
@@ -202,7 +208,7 @@ export class ViewBindings {
             const listeners = new AbortController();
             mounted.element.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
             this.bindSaveShortcut(mounted.element, tabId, () => candidate?.snapshot().composing ?? false, listeners.signal);
-            const editor: BoundEditor = { ...mounted, destroy: () => { try { detachPaste?.(); detachHover?.(); detachLanguage?.(); mounted.destroy(); } finally { listeners.abort(); } } };
+            const editor: BoundEditor = { ...mounted, destroy: () => { try { detachDomain?.(); detachPaste?.(); detachHover?.(); detachLanguage?.(); mounted.destroy(); } finally { listeners.abort(); } } };
             const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView(this.restoreState(state, view));
             this.mounted.set(id, { editor, documentId }); this.mounts++;
         };
@@ -215,12 +221,12 @@ export class ViewBindings {
     unmount(): void { for (const id of [...this.mounted.keys()]) this.detach(id); }
     dispose(): void {
         this.stopInputCapture();
-        this.comparison(null); this.unmount(); for (const selections of this.selections.values()) for (const view of selections.values()) view.dispose();
+        this.comparison(null); this.unmount(); this.domain.dispose(); for (const selections of this.selections.values()) for (const view of selections.values()) view.dispose();
         this.selections.clear(); this.states.clear(); this.referenceState = undefined;
     }
     debug() {
         const comparison = this.review?.controller.getSnapshot();
-        return { editor: this.editor, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size, language: this.language.debug(), hover: this.hover.debug(), tablePaste: this.tablePaste.debug(),
+        return { editor: this.editor, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size, language: this.language.debug(), hover: this.hover.debug(), tablePaste: this.tablePaste.debug(), domain: this.domain.debug(),
         comparison: comparison ? { status: comparison.status, generation: comparison.generation, workingRevision: comparison.working?.revision,
             referenceIsWorkingBuffer: comparison.baseline !== null && comparison.baseline.buffer === comparison.working?.buffer,
             progress: comparison.progress && { work: comparison.progress.work, readUnits: comparison.progress.readUnits,

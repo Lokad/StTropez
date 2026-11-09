@@ -4,6 +4,10 @@
 StTropez owns their view state, mapping, visible-row index and disclosure controls. This small
 TypeScript implementation reuses the text buffer, position maps and viewport rather than adding
 a runtime dependency. It does not parse a language or discover domain folds.
+The [host-domain fixture](domain.md) demonstrates captured asynchronous discovery
+and annotations outside the runtime. Hosts can call public `createFoldRegions`
+to validate a complete response and preserve prior identity/collapse state before
+publishing it through the view's fold handle.
 
 ```ts
 const folds = view.folding;

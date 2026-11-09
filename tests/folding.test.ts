@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { FoldIndex, TextBuffer, Workspace } from "../src/index.ts";
-import { createFoldRegions } from "../src/core/folding.ts";
+import { FoldIndex, TextBuffer, Workspace, createFoldRegions } from "../src/index.ts";
 
 test("nested collapsed rows keep independent child state and index visible rows without losing raw lines", () => {
     const buffer = TextBuffer.from("header\r\nchild\nbody\nend\nnext\nlast"), ranges = createFoldRegions(buffer, [
