@@ -51,6 +51,7 @@ export class ViewBindings {
     private reviewResult = "No reference command";
     private unwatchReference: (() => void) | undefined;
     private referenceGeneration = -1;
+    private reviewScrollLinked = false;
     readonly primary: (host: HTMLDivElement | null) => void;
     readonly secondary: (host: HTMLDivElement | null) => void;
     readonly comparison = (host: HTMLDivElement | null): void => {
@@ -58,6 +59,7 @@ export class ViewBindings {
         for (const ticket of this.reviewTickets.splice(0)) ticket.cancel();
         for (const { ticket } of this.discardTickets.splice(0)) ticket.cancel();
         if (this.review) {
+            this.reviewScrollLinked = this.review.snapshot().scrollLinked;
             const baseline = this.review.controller.getSnapshot().baseline, reference = this.review.referenceViewport();
             if (baseline && reference) this.referenceState = { baseline, state: reference.captureView() };
             if (this.review.controller.getSnapshot().working) this.retainState("comparison", this.review.working.view.documentId, this.review.working.captureView());
@@ -73,7 +75,7 @@ export class ViewBindings {
         const view = this.retainedView("comparison", this.controller.source.documentId);
         const presentation = new EditingPresentation(), referencePresentation = new EditingPresentation();
         this.review = mountTextComparison(host, this.controller.workspace, this.controller.viewTab("primary"),
-            baseline, { ariaLabel: "Source review", view, workingDecorate: presentation.decorate, baselineDecorate: referencePresentation.decorate });
+            baseline, { ariaLabel: "Source review", view, scrollLinked: this.reviewScrollLinked, workingDecorate: presentation.decorate, baselineDecorate: referencePresentation.decorate });
         const detachLanguage = this.language.attach("comparison", this.controller.viewTab("primary"), this.review.working, presentation);
         const detachHover = this.hover.attach("comparison", this.controller.viewTab("primary"), this.review.working);
         const detachPaste = this.tablePaste.attach("comparison", this.controller.viewTab("primary"), this.review.working);

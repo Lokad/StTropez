@@ -6,20 +6,23 @@ import { mountEditingCandidate } from "./editing-candidate.ts";
 import type { EditingCandidate } from "./editing-candidate.ts";
 import { mountTextViewport } from "./viewport.ts";
 import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.ts";
+import { createComparisonScroll } from "./comparison-scroll.ts";
 
 export type TextComparison = Readonly<{
     element: HTMLDivElement; controller: ComparisonController; working: EditingCandidate;
     referenceViewport: () => TextViewport | undefined;
-    snapshot: () => Readonly<{ generation: number; steps: number; advances: number; maxStepMs: number; totalStepMs: number; disposed: boolean }>;
+    snapshot: () => Readonly<{ generation: number; steps: number; advances: number; maxStepMs: number; totalStepMs: number; scrollLinked: boolean; pendingScroll: boolean; disposed: boolean }>;
+    setScrollLinked: (linked: boolean) => void;
     selectHunk: (generation: number, index: number) => boolean; destroy: () => void;
 }>;
 let nextMount = 0;
 /** Two independently virtualized panes. Hosts own reference retrieval, acceptance, saving and execution. */
 export function mountTextComparison(host: HTMLElement, workspace: Workspace, workingTab: TabId, baseline: ComparisonBaseline,
-    options: Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView;
+    options: Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView; scrollLinked?: boolean;
         workingDecorate?: (line: PresentedLine) => readonly InlineDecoration[]; baselineDecorate?: (line: PresentedLine) => readonly InlineDecoration[] }> = {}): TextComparison {
     const budget = options.workBudget ?? 32768;
     if (!Number.isSafeInteger(budget) || budget < 512) throw new RangeError("Comparison budget must be at least 512.");
+    if (options.scrollLinked !== undefined && typeof options.scrollLinked !== "boolean") throw new TypeError("Expected a scroll-link preference.");
     const owner = host.ownerDocument, win = owner.defaultView;
     if (!win) throw new Error("Comparison requires an attached browser document.");
     const controller = createComparisonController(workspace, workingTab, baseline, options), mount = ++nextMount;
@@ -28,6 +31,8 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     controls.className = "st-comparison-controls"; panes.className = "st-comparison-panes";
     const button = (label: string) => { const result = owner.createElement("button"); result.type = "button"; result.textContent = label; controls.append(result); return result; };
     const previous = button("Previous change"), next = button("Next change"), revert = button("Use baseline");
+    const linkLabel = owner.createElement("label"), link = owner.createElement("input"); link.type = "checkbox";
+    linkLabel.append(link, " Link review scrolling"); controls.append(linkLabel);
     const status = owner.createElement("output"); status.setAttribute("aria-live", "polite"); controls.append(status);
     const pane = (label: string) => {
         const section = owner.createElement("section"), heading = owner.createElement("h3"), content = owner.createElement("div");
@@ -60,6 +65,10 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     let working: EditingCandidate;
     try { working = mountEditingCandidate(workingPane.content, workspace, workingTab, { view: controller.view, ariaLabel: "Comparison working source", decorate: decorate("working"), lineClass: lineClass("working") }); }
     catch (error) { root.remove(); controller.dispose(); throw error; }
+    const scroll = createComparisonScroll(win, working.viewport, () => reference, controller.getSnapshot, () => {
+        const input = working.snapshot(); return !input.composing && !input.pendingInput && !input.pendingCommand;
+    });
+    const setScrollLinked = (value: boolean) => { scroll.setLinked(value); link.checked = scroll.snapshot().linked; };
     function clearReference(): void {
         reference?.destroy(); reference = undefined;
         if (displayTarget && workspace.resolveTab(displayTarget)) workspace.close(displayTarget.id);
@@ -79,6 +88,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
             reference = mountTextViewport(referencePane.content, workspace, displayTab, { ariaLabel: "Comparison baseline source", decorate: decorate("baseline"), lineClass: lineClass("baseline") });
         } else if (!state.baseline && reference) clearReference();
         if (root.dataset.status !== state.status) root.dataset.status = state.status;
+        link.disabled = !state.baseline || !state.working; scroll.update();
         const generation = String(state.generation); if (root.dataset.generation !== generation) root.dataset.generation = generation;
         setText(referencePane.heading, state.baseline ? `Baseline · ${state.baseline.version}` : "Baseline unavailable");
         setText(workingPane.heading, state.working ? `Working · revision ${state.working.revision}` : "Working unavailable");
@@ -133,13 +143,14 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     next.addEventListener("click", () => selectHunk(state.generation, (selected + 1) % state.hunks.length), { signal: listeners.signal });
     revert.addEventListener("click", () => { if (!working.snapshot().composing) controller.revert(state.generation, selected); }, { signal: listeners.signal });
     working.input.addEventListener("compositionstart", schedule, { signal: listeners.signal }); working.input.addEventListener("compositionend", schedule, { signal: listeners.signal });
+    link.addEventListener("change", () => setScrollLinked(link.checked), { signal: listeners.signal });
     const unsubscribe = controller.subscribe(schedule), unsubscribeWorkspace = workspace.subscribe(schedule);
     function destroy(): void {
         if (disposed) return; disposed = true; if (timer !== undefined) win!.clearTimeout(timer);
-        unsubscribe(); unsubscribeWorkspace(); listeners.abort(); working.destroy(); clearReference(); controller.dispose();
+        unsubscribe(); unsubscribeWorkspace(); listeners.abort(); scroll.dispose(); working.destroy(); clearReference(); controller.dispose();
         state = controller.getSnapshot(); selected = -1; root.remove();
     }
-    try { render(); schedule(); } catch (error) { destroy(); throw error; }
-    return Object.freeze({ element: root, controller, working, referenceViewport: () => reference, selectHunk,
-        snapshot: () => Object.freeze({ generation: measuredGeneration, steps, advances, maxStepMs, totalStepMs, disposed }), destroy });
+    try { render(); setScrollLinked(options.scrollLinked ?? false); schedule(); } catch (error) { destroy(); throw error; }
+    return Object.freeze({ element: root, controller, working, referenceViewport: () => reference, selectHunk, setScrollLinked,
+        snapshot: () => Object.freeze({ generation: measuredGeneration, steps, advances, maxStepMs, totalStepMs, scrollLinked: scroll.snapshot().linked, pendingScroll: scroll.snapshot().pending, disposed }), destroy });
 }

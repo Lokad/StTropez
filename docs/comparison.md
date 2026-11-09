@@ -151,9 +151,31 @@ Commands run outside notification delivery; subscribers render or schedule subse
 
 Previous/next navigation selects and reveals both ranges. Row colors include insertion points
 and empty rows; a bounded selected-change preview makes spaces, tabs, CR and LF explicit.
-Only the selected preview is rendered, even with many hunks. Scrolling remains independent;
-aligned filler rows, synchronized scrolling, inline merge conflicts and advanced review are
-outside this slice. The host owns refresh/acceptance controls and transport errors.
+Only the selected preview is rendered, even with many hunks. Scrolling is independent by default.
+**Link review scrolling** optionally keeps corresponding vertical positions together in either
+direction. Hosts can set `scrollLinked` when mounting or call `setScrollLinked(boolean)`;
+`snapshot().scrollLinked` and `pendingScroll` expose the preference and queued view work.
+The evaluation hosts retain the preference across explicit remounts. Horizontal offsets, focus,
+complete selections, source history and the immutable reference remain independent.
+
+The link reuses completed diff ranges and the existing fold/scroll indexes. Unchanged rows retain
+their fractional alignment; changed rows interpolate between their captured line coordinates.
+Inserted/deleted rows project to the opposite anchor. At a line-start insertion, the after edge
+keeps the following unchanged row aligned; an insertion inside a row retains its unchanged prefix.
+Raw hunk endpoints preserve the true newline delta, including same-line edits and unterminated
+final rows. This original logarithmic projection adds no parser, buffer scan/export or dependency.
+Folds project to visible headers without expanding them. Each pane clamps at its own scroll limit,
+so positions near unequal document ends can differ. No filler rows or pixel-perfect row alignment
+are introduced; inline merge conflicts and advanced review remain later work.
+
+Coordination waits for a ready comparison and current viewport revisions/folds. A queued frame
+captures the comparison snapshot and reference view; edits, reference replacement, changed folds,
+disable and disposal invalidate it. Pending input/navigation or composition pauses coordination.
+The clamped logical target position suppresses delayed programmatic scroll feedback. Resize and
+fold changes reuse bounded frame scheduling; horizontal scrolling does not move the other pane.
+The host owns refresh/acceptance controls and transport errors. Native IME, accessibility and
+physical-display qualification remain separate; scroll callback work is not complete interaction
+latency.
 
 Hosts may supply independent `workingDecorate` and `baselineDecorate` callbacks for bounded
 visible fragments. Their decorations compose with changed ranges, preserving both classes

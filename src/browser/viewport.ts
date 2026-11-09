@@ -8,6 +8,8 @@ import type { Affinity } from "../index.ts";
 import { createFoldRegions, FoldIndex } from "../core/folding.ts";
 import { sameSelectionSet } from "../core/selections.ts";
 const emptyIndex = new FoldIndex(1, []);
+/** Shared by view-only scroll coordination; this is independent of source coordinates. */
+export const viewportPadding = 12;
 
 export type ViewportSnapshot = Readonly<{ revision: number | null; selection: Selection | null; selectionSet: SelectionSet | null; renders: number; firstLine: number; lastLine: number;
     foldGeneration: number; visibleLines: number; collapsedFolds: number;
@@ -71,7 +73,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     layer.className = "st-viewport-layer"; probe.className = "st-viewport-measure"; probe.textContent = "M".repeat(64); probe.setAttribute("aria-hidden", "true");
     foldLayer.className = "st-fold-controls"; const foldButtons = new Map<string, HTMLButtonElement>();
     root.append(spacer, layer, probe, foldLayer); host.append(root);
-    const listeners = new AbortController(), padding = 12;
+    const listeners = new AbortController(), padding = viewportPadding;
     let frame: number | undefined, disposed = false, previous: DocumentSnapshot | undefined;
     let top = 0, left = 0, width = 0, height = 0, lineHeight = 22.4, columnWidth = 8.4;
     let x = scrollAxis(0, 0), y = scrollAxis(0, 0), renderedRevision: number | null = null, renderedIndex = view.folding.getSnapshot().index, renderedFoldGeneration = -1, observedFoldRevision = view.folding.getSnapshot().revision;

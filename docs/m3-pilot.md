@@ -40,6 +40,9 @@ in its canonical reply. Reloading starts a new fixture; this is not durable stor
 2. Choose **Open source review**. Edit **Comparison working source**, choose **Next change**,
    then **Use baseline**. Undo the reversion to restore your correction. The reference stays
    immutable while the working pane shares source text and history.
+   Enable **Link review scrolling** to follow corresponding vertical positions in either pane;
+   clear it for independent scrolling. Selections, horizontal offsets and reference identity stay
+   independent. [Comparison policy](comparison.md) describes changed-block, fold and endpoint limits.
    **Keep draft version** captures the committed text. Choose a saved, server, draft or historical
    entry in **Review version**, then **Finish version load**. Typing may continue during the load;
    Save and Run keep targeting the working source. **Discard reviewed changes** followed by
