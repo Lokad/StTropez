@@ -48,6 +48,11 @@ actual-worker regex search reuse the existing Find controller. Match previews an
 stay bounded. The query/options are host UI preferences; jobs, markers and selections capture their
 own reference resource and view. Replacement fields/actions are disabled, and reference commands
 reject replacement independently of the UI. Working Find/replace and Save/Run retain their scope.
+Ctrl/Command+S from the evaluation hosts' owned Find/Replacement fields uses the same captured
+save guard as the pane. Reference Find explicitly saves the working source; it never saves the
+immutable reference. Stale, detached, unowned, disabled or composing contexts cannot start a
+field save. Held-key repeats do not add duplicate saves. The field keeps focus while saving;
+later typing remains separate from the captured revision.
 Reference refresh cancels its old Find/regex work. If Find still targets the reference, fresh field
 input targets the replacement view; replacement alone starts no search and moves no focus.
 Switching to a working view keeps that owner. Unmount releases jobs and live ownership; compatible

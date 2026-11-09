@@ -78,6 +78,7 @@ export class ViewBindings {
         const presentation = new EditingPresentation(), referencePresentation = new EditingPresentation();
         this.review = mountTextComparison(host, this.controller.workspace, this.controller.viewTab("primary"),
             baseline, { ariaLabel: "Source review", view, scrollLinked: this.reviewScrollLinked, rowsAligned: this.reviewRowsAligned, workingDecorate: presentation.decorate, baselineDecorate: referencePresentation.decorate });
+        const review = this.review, saveTarget = this.controller.workspace.captureTab(this.controller.viewTab("primary"));
         const detachLanguage = this.language.attach("comparison", this.controller.viewTab("primary"), this.review.working, presentation);
         const detachHover = this.hover.attach("comparison", this.controller.viewTab("primary"), this.review.working);
         const detachPaste = this.tablePaste.attach("comparison", this.controller.viewTab("primary"), this.review.working);
@@ -91,15 +92,15 @@ export class ViewBindings {
         const detachColors = this.colors.attach("comparison", this.controller.viewTab("primary"), this.review.working, presentation);
         let detachReferenceFind: (() => void) | undefined;
         let resumeReferenceFind = false;
-        const reviewReference = this.review.reference;
+        const reviewReference = review.reference;
         const syncReferenceFind = () => {
             const active = this.language.state.getSnapshot().view;
             resumeReferenceFind = active === "reference" || resumeReferenceFind && active === null;
             detachReferenceFind?.(); detachReferenceFind = undefined; referencePresentation.clear();
             const value = reviewReference.getSnapshot();
             if (value) {
-                const reference = this.review!.controller.getSnapshot().baseline!;
-                detachReferenceFind = this.language.attachReferenceFind("reference", value.target, value.editor, referencePresentation, reference, resumeReferenceFind);
+                const reference = review.controller.getSnapshot().baseline!;
+                detachReferenceFind = this.language.attachReferenceFind("reference", value.target, value.editor, referencePresentation, reference, saveTarget, resumeReferenceFind);
                 resumeReferenceFind = false;
             }
         };
@@ -115,7 +116,6 @@ export class ViewBindings {
         this.review.working.input.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: this.reviewListeners.signal });
         const working = this.review.working;
         this.bindSaveShortcut(working.input, this.controller.viewTab("primary"), () => working.snapshot().composing, this.reviewListeners.signal);
-        const review = this.review, saveTarget = this.controller.workspace.captureTab(this.controller.viewTab("primary"));
         review.element.addEventListener("keydown", event => {
             const reference = review.referenceEditor();
             if (reference && event.target === reference.input) this.handleSaveShortcut(event, reference.input, saveTarget, () => reference.snapshot().composing);
@@ -126,7 +126,7 @@ export class ViewBindings {
         const target = this.controller.workspace.captureTab(tabId);
         input.addEventListener("keydown", event => this.handleSaveShortcut(event, input, target, composing), { signal });
     }
-    private handleSaveShortcut(event: KeyboardEvent, input: HTMLTextAreaElement, target: TabTarget, composing: () => boolean): void {
+    private handleSaveShortcut(event: KeyboardEvent, input: HTMLInputElement | HTMLTextAreaElement, target: TabTarget, composing: () => boolean): void {
         if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "s"
             || event.defaultPrevented || event.isComposing || input.disabled || !input.isConnected || composing()) return;
         const tab = this.controller.workspace.resolveTab(target);
@@ -190,7 +190,8 @@ export class ViewBindings {
         return view?.setSelections(revision, ranges, primary) ?? false;
     }
     constructor(controller: HostController, editor: HostEditor = "native") {
-        this.controller = controller; this.editor = editor; this.language = new HostLanguageTools(controller.workspace);
+        this.controller = controller; this.editor = editor;
+        this.language = new HostLanguageTools(controller.workspace, (event, field, target, composing) => this.handleSaveShortcut(event, field, target, composing));
         this.hover = new HostHoverTools(controller.workspace, kind => { if (kind === "pointer") return !this.signature?.state.getSnapshot().visible; this.signature?.dismiss(); return true; });
         this.tablePaste = new HostTablePaste(controller.workspace, editor === "candidate");
         this.domain = new HostDomainTools(controller.workspace, documentId => !this.tablePaste.hasPendingInput(documentId) && !(this.review?.working.view.documentId === documentId && (this.review.working.snapshot().pendingInput || this.review.working.snapshot().composing))

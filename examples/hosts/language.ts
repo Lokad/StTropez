@@ -6,14 +6,16 @@ import type { ProviderSnapshot } from "../editing/provider-controller.ts";
 import { EditingPresentation } from "../editing/presentation.ts";
 import { HostCell } from "../shared/observable.ts";
 
-type Session = { id: string; editor: EditingCandidate; tab: TabId; target: TabTarget; presentation: EditingPresentation;
+type Session = { id: string; editor: EditingCandidate; tab: TabId; target: TabTarget; saveTarget: TabTarget; presentation: EditingPresentation;
     provider?: ReturnType<typeof createProviderController>; reference?: ComparisonBaseline; find?: FindController; stopFind?: () => void; initialized: boolean };
 type DetachedOwner = Readonly<{ id: string; target: TabTarget; documentId: DocumentId; reference?: ComparisonBaseline }>;
+type SaveShortcut = (event: KeyboardEvent, field: HTMLInputElement, target: TabTarget, composing: () => boolean) => void;
 type LanguageSnapshot = Readonly<{ readOnlyReference: boolean; view: string | null; provider: ProviderSnapshot | null; find: FindSnapshot | null; folds: FoldingSnapshot | null; foldMessage: string; query: string; replacement: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean }>;
 
 /** Host-owned tools follow an explicit mounted view; delayed commands never consult focus later. */
 export class HostLanguageTools {
     private readonly workspace: Workspace;
+    private readonly saveShortcut: SaveShortcut;
     private readonly sessions = new Map<string, Session>();
     private active: Session | undefined;
     private detachedOwner: DetachedOwner | undefined;
@@ -26,7 +28,7 @@ export class HostLanguageTools {
     readonly queryRef = (element: HTMLInputElement | null): void => { this.queryElement = element; };
     readonly replacementRef = (element: HTMLInputElement | null): void => { this.replacementElement = element; };
     private retired = { posted: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, failed: 0, postedUnits: 0 };
-    constructor(workspace: Workspace) { this.workspace = workspace; }
+    constructor(workspace: Workspace, saveShortcut: SaveShortcut) { this.workspace = workspace; this.saveShortcut = saveShortcut; }
     private publish(): void {
         const previous = this.cell.get(), folds = this.active?.editor.view.folding.getSnapshot() ?? null;
         this.cell.set({ ...previous, readOnlyReference: this.active?.reference !== undefined, view: this.active?.id ?? null, provider: this.active?.provider?.state.getSnapshot() ?? null,
@@ -60,7 +62,7 @@ export class HostLanguageTools {
     attach(id: string, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation): () => void {
         if (this.sessions.has(id)) throw new Error("Language view already mounted.");
         const provider = createProviderController(this.workspace, tab, editor, { autoConnect: false });
-        const session: Session = { id, tab, target: this.workspace.captureTab(tab), editor, presentation, provider, initialized: false }, listeners = new AbortController();
+        const target = this.workspace.captureTab(tab), session: Session = { id, tab, target, saveTarget: target, editor, presentation, provider, initialized: false }, listeners = new AbortController();
         this.sessions.set(id, session);
         const update = () => {
             const state = provider.state.getSnapshot(), previous = presentation.diagnostics;
@@ -81,12 +83,12 @@ export class HostLanguageTools {
         }, { signal: listeners.signal });
         update(); this.resume(session); return this.detachSession(session, listeners, unsubscribe);
     }
-    attachReferenceFind(id: string, target: TabTarget, editor: EditingCandidate, presentation: EditingPresentation, baseline: ComparisonBaseline, resume = false): () => void {
+    attachReferenceFind(id: string, target: TabTarget, editor: EditingCandidate, presentation: EditingPresentation, baseline: ComparisonBaseline, saveTarget: TabTarget, resume = false): () => void {
         if (this.sessions.has(id)) throw new Error("Find view already mounted.");
         const tab = this.workspace.resolveTab(target);
         if (tab?.surface.kind !== "text" || tab.surface.documentId !== editor.view.documentId || !this.workspace.ownsDocumentView(editor.view)
             || this.workspace.document(editor.view.documentId).buffer !== baseline.buffer) throw new Error("Reference Find requires its captured view and baseline.");
-        const session: Session = { id, tab: target.id, target, editor, presentation, initialized: true, reference: baseline }, listeners = new AbortController();
+        const session: Session = { id, tab: target.id, target, saveTarget, editor, presentation, initialized: true, reference: baseline }, listeners = new AbortController();
         this.sessions.set(id, session);
         editor.input.addEventListener("focus", () => this.activate(session), { signal: listeners.signal });
         editor.input.addEventListener("keydown", event => { if (!event.defaultPrevented && !event.isComposing && !editor.snapshot().composing) this.findKey(event, session); }, { signal: listeners.signal });
@@ -103,6 +105,13 @@ export class HostLanguageTools {
         if (event.key === "F3") { event.preventDefault(); this.activate(session); this.ensureFind()?.next(event.shiftKey ? -1 : 1); return true; }
         return false;
     }
+    readonly saveFromField = (event: KeyboardEvent): void => {
+        const session = this.active, field = event.target === this.queryElement ? this.queryElement : event.target === this.replacementElement ? this.replacementElement : null;
+        if (!session || !field || !session.editor.element.isConnected || session.editor.snapshot().disposed || !this.workspace.ownsDocumentView(session.editor.view)) return;
+        const tab = this.workspace.resolveTab(session.target);
+        if (tab?.surface.kind !== "text" || tab.surface.documentId !== session.editor.view.documentId) return;
+        this.saveShortcut(event, field, session.saveTarget, () => session.editor.snapshot().composing);
+    };
     private detachSession(session: Session, listeners: AbortController, unsubscribe: () => void = () => {}): () => void {
         let detached = false;
         return () => {
