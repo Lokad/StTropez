@@ -1,5 +1,5 @@
 import { planSelectionEdits } from "../../src/index.ts";
-import type { ResourceLease, SelectionSet, TabId, TabTarget, TextResourceHandle, Workspace } from "../../src/index.ts";
+import type { DocumentId, ResourceLease, SelectionSet, TabId, TabTarget, TextResourceHandle, Workspace } from "../../src/index.ts";
 import type { EditingCandidate } from "../../src/browser/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import { TableTextFormatter, tableLimits, tsvTokens } from "../shared/table-text.ts";
@@ -22,6 +22,7 @@ export class HostTablePaste {
     private commitMs = 0;
     private elapsedMs = 0;
     readonly state;
+    hasPendingInput(documentId: DocumentId): boolean { return this.job?.session.editor.view.documentId === documentId; }
     constructor(workspace: Workspace, available = true) {
         this.workspace = workspace;
         this.cell = new HostCell<TablePasteSnapshot>({ available, enabled: false, status: "idle", view: null, work: 0, outputUnits: 0, rows: 0, columns: 0,

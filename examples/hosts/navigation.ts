@@ -1,0 +1,156 @@
+import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, Workspace } from "../../src/index.ts";
+import type { EditingCandidate } from "../../src/browser/index.ts";
+import { createNavigationClient } from "../editing/navigation-client.ts";
+import type { NavigationMetrics } from "../editing/navigation-client.ts";
+import { navigationLimits, navigationSymbol, validateNavigationInput } from "../probes/navigation.ts";
+import type { NavigationInput, NavigationLocation } from "../probes/navigation.ts";
+import { HostCell } from "../shared/observable.ts";
+
+type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
+type Source = { document: DocumentSnapshot; authority: string };
+type Job = { id: number; origin: Session; selections: SelectionSet; folds: number; input: NavigationInput; sources: Map<string, Source>; targets: Map<string, Session>;
+    client: ReturnType<typeof createNavigationClient> | undefined; leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; navigated: boolean; locations: readonly NavigationLocation[] };
+export type NavigationNote = NavigationLocation & Readonly<{ ordinal: number; title: string; line: number; column: number }>;
+export type NavigationSnapshot = Readonly<{ available: boolean; view: string | null; requestView: string | null; token: number | null; status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired";
+    message: string; work: number; total: number; includeDeclaration: boolean; locations: readonly NavigationNote[]; count: number; truncated: boolean; page: number; canReturn: boolean }>;
+let sessionSerial = 0;
+
+/** Host-owned project navigation; results carry identities, never a future focus target. */
+export class HostNavigationTools {
+    private readonly workspace: Workspace;
+    private readonly canCapture: (id: DocumentId) => boolean;
+    private readonly present: (id: DocumentId) => EditingCandidate | undefined;
+    private readonly sessions = new Map<number, Session>();
+    private active: Session | undefined;
+    private job: Job | undefined;
+    private sequence = 0;
+    private presenting = false;
+    private disposed = false;
+    private companion: DocumentId | undefined;
+    private delay = 0;
+    private fault: NavigationInput["fault"];
+    private readonly cell = new HostCell<NavigationSnapshot>({ available: false, view: null, requestView: null, token: null, status: "idle", message: "Focus a candidate source to navigate symbols.", work: 0, total: 0, includeDeclaration: true, locations: [], count: 0, truncated: false, page: 0, canReturn: false });
+    readonly state = this.cell.observable;
+    private readonly metrics = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0 };
+    private readonly worker: NavigationMetrics = { created: 0, posted: 0, received: 0, transferred: 0, maxChunk: 0, completed: 0, failed: 0, terminated: 0 };
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined) { this.workspace = workspace; this.canCapture = canCapture; this.present = present; }
+    private available(session: Session): boolean {
+        const tab = this.workspace.resolveTab(session.target), editor = session.editor;
+        return !this.disposed && this.sessions.get(session.token) === session && editor.element.isConnected && !editor.snapshot().disposed && this.workspace.ownsDocumentView(editor.view)
+            && tab?.surface.kind === "text" && tab.surface.documentId === editor.view.documentId && this.workspace.observeDocument(editor.view.documentId).getSnapshot() !== undefined;
+    }
+    private authority(id: DocumentId): string {
+        const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]);
+    }
+    private publish(patch: Partial<NavigationSnapshot> = {}): void {
+        const job = this.job, state = { ...this.cell.get(), ...patch }, locations = job?.ready ? job.locations.slice(state.page * navigationLimits.page, (state.page + 1) * navigationLimits.page).map((at, index) => {
+            const doc = job.sources.get(at.document)!.document, line = doc.buffer.lineAt(at.from);
+            return { ...at, ordinal: state.page * navigationLimits.page + index, title: doc.title.slice(0, 128), line: line + 1, column: at.from - doc.buffer.offsetAt(line) + 1 };
+        }) : [];
+        this.cell.set({ ...state, available: !!this.active && this.available(this.active), view: this.active?.id ?? null, requestView: job?.origin.id ?? null, token: job?.id ?? null,
+            locations, count: job?.locations.length ?? 0, canReturn: !!job?.navigated });
+    }
+    private current(job: Job): boolean {
+        if (this.job !== job || job.invalid || this.disposed) return false;
+        try { for (const source of job.sources.values()) {
+            if (this.workspace.observeDocument(source.document.id).getSnapshot()?.revision !== source.document.revision || this.authority(source.document.id) !== source.authority) return false;
+        } } catch { return false; }
+        return job.ready || this.available(job.origin) && job.origin.editor.view.getSnapshot().selectionSet === job.selections
+            && job.origin.editor.view.folding.getSnapshot().generation === job.folds && this.canCapture(job.origin.editor.view.documentId);
+    }
+    private invalidate(job: Job): void {
+        job.invalid = true;
+        // Core notifications cannot release leases. Latch immediately, release afterward.
+        queueMicrotask(() => { if (this.job === job) { this.metrics.expired++; this.clear("expired", "Captured navigation changed; request fresh results."); } });
+    }
+    private releasePending(job: Job): void {
+        job.client?.dispose(); job.client = undefined; job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer);
+        job.leases.splice(0).forEach(lease => lease.release());
+    }
+    private clear(status: NavigationSnapshot["status"], message: string): void {
+        const job = this.job; this.job = undefined;
+        if (job) { job.invalid = true; job.stops.splice(0).forEach(stop => stop()); this.releasePending(job); }
+        this.publish({ status, message, work: 0, total: 0, page: 0, truncated: false });
+    }
+    readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.clear("idle", "Symbol navigation dismissed."); };
+    attach(id: string, tab: TabId, editor: EditingCandidate): () => void {
+        const session: Session = { token: ++sessionSerial, id, target: this.workspace.captureTab(tab), editor }, listeners = new AbortController(); this.sessions.set(session.token, session);
+        editor.input.addEventListener("focus", () => { this.active = session; this.publish(); }, { signal: listeners.signal });
+        editor.input.addEventListener("keydown", event => {
+            if (event.defaultPrevented || event.isComposing || editor.snapshot().composing) return;
+            if (event.key === "F12" && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); event.stopImmediatePropagation(); this.active = session; this.start(event.shiftKey ? "references" : "definition", true); }
+            else if (event.key === "Escape" && this.job) { event.preventDefault(); event.stopImmediatePropagation(); this.cancel(); }
+        }, { capture: true, signal: listeners.signal });
+        for (const name of ["compositionstart", "beforeinput", "paste", "cut"] as const) editor.input.addEventListener(name, () => {
+            if (!this.presenting && this.job?.sources.has(editor.view.documentId)) this.cancel();
+        }, { signal: listeners.signal });
+        let detached = false;
+        return () => { if (detached) return; detached = true; if (!this.presenting && this.job) this.cancel(); listeners.abort(); this.sessions.delete(session.token);
+            if (this.active === session) this.active = undefined; this.publish(); };
+    }
+    readonly findDefinition = (): void => this.start("definition", false);
+    readonly findReferences = (): void => this.start("references", false);
+    private start(kind: NavigationInput["kind"], keyboard: boolean): void {
+        const origin = this.active;
+        if (!origin || !this.available(origin)) { this.publish({ message: "Focus an available candidate source." }); return; }
+        if (!this.canCapture(origin.editor.view.documentId)) { this.publish({ message: "Finish pending input, navigation or composition first." }); return; }
+        this.cancel(); const selected = origin.editor.view.getSnapshot(), document = this.workspace.document(origin.editor.view.documentId), symbol = navigationSymbol(document.buffer, selected.selection.head);
+        if (!symbol) { this.publish({ status: "empty", message: "No bounded symbol at this position." }); return; }
+        const documents = this.workspace.getSnapshot().documents.filter(doc => doc.key.variant === "working"), sources = new Map(documents.map(doc => [doc.id as string, { document: doc, authority: this.authority(doc.id) }]));
+        if (!sources.has(document.id)) { this.publish({ status: "failed", message: "This source is outside the host navigation scope." }); return; }
+        let input: NavigationInput;
+        try { input = validateNavigationInput({ operation: "navigation-start", id: ++this.sequence, kind, symbol, includeDeclaration: this.cell.get().includeDeclaration, delay: this.delay,
+            documents: documents.map(doc => ({ document: doc.id, revision: doc.revision, length: doc.buffer.length })), ...(this.fault ? { fault: this.fault } : {}) }); }
+        catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Unsupported navigation capture." }); return; }
+        this.fault = undefined;
+        const targets = new Map<string, Session>(); for (const s of this.sessions.values()) if (this.available(s) && !targets.has(s.editor.view.documentId)) targets.set(s.editor.view.documentId, s); targets.set(document.id, origin);
+        const job: Job = { id: input.id, origin, selections: selected.selectionSet, folds: origin.editor.view.folding.getSnapshot().generation, input, sources, targets,
+            client: undefined, leases: [], stops: [], timer: 0, invalid: false, ready: false, navigated: false, locations: [] };
+        this.job = job; this.metrics.requested++; const win = origin.editor.element.ownerDocument.defaultView!;
+        try {
+            for (const { document: doc } of sources.values()) job.leases.push(this.workspace.acquire(doc.resourceId));
+            const changed = () => { if (!this.presenting && this.job === job && !this.current(job)) this.invalidate(job); };
+            for (const { document: doc } of sources.values()) job.stops.push(this.workspace.observeDocument(doc.id).subscribe(changed), this.workspace.resourceForDocument(doc.id).metadata.subscribe(changed));
+            job.stops.push(origin.editor.view.subscribe(changed), origin.editor.view.folding.subscribe(changed), this.workspace.tabState.subscribe(changed));
+            job.timer = win.setTimeout(() => { if (this.job === job && !job.ready) { this.metrics.failed++; this.clear("failed", "Navigation timed out; source is unchanged."); } }, 30000);
+            const total = input.documents.reduce((sum, doc) => sum + doc.length, 0);
+            this.publish({ status: "pending", message: `Finding ${kind === "definition" ? "definitions" : "references"} of ${symbol} from ${origin.id}.`, work: 0, total, page: 0, truncated: false });
+            job.client = createNavigationClient(win, this.worker);
+            void job.client.run(input, new Map([...sources].map(([id, source]) => [id, source.document.buffer])), work => { if (this.current(job)) this.publish({ work }); }).then(result => {
+                if (!this.current(job)) { if (this.job === job) this.invalidate(job); return; }
+                job.ready = true; job.locations = result.locations; this.releasePending(job); this.metrics.applied++;
+                this.publish({ status: result.locations.length ? "ready" : "empty", message: `${result.locations.length}${result.truncated ? "+" : ""} ${kind === "definition" ? "definition" : "reference"} locations for ${symbol} across ${sources.size} captured resources.`, truncated: result.truncated, work: total });
+                if (keyboard && kind === "definition" && result.locations.length === 1 && origin.editor.element.ownerDocument.activeElement === origin.editor.input) this.open(job.id, 0);
+            }).catch(error => { if (this.job !== job) return; this.metrics.failed++; this.clear("failed", error instanceof Error ? error.message : "Navigation failed; source is unchanged."); });
+        } catch (error) { this.metrics.failed++; this.clear("failed", error instanceof Error ? error.message : "Navigation is unavailable."); }
+    }
+    private place(job: Job, document: DocumentId, selections: SelectionSet | NavigationLocation): boolean {
+        if (!job.ready || !this.current(job) || !this.canCapture(document)) { this.publish({ message: "Finish pending input or request fresh navigation results." }); return false; }
+        this.presenting = true;
+        try {
+            const captured = job.targets.get(document), editor = captured && this.available(captured) ? captured.editor : this.present(document);
+            if (!editor || this.job !== job || !this.current(job) || editor.view.documentId !== document) { this.publish({ message: "The captured destination cannot be presented in an available candidate pane." }); return false; }
+            const revision = job.sources.get(document)!.document.revision;
+            const applied = "ranges" in selections ? editor.view.setSelections(revision, selections.ranges, selections.primary) : editor.view.setSelection(revision, { anchor: selections.from, head: selections.to });
+            if (!applied) return false; job.navigated = true; editor.viewport.revealOffset(editor.view.getSnapshot().selection.head); editor.focus(); this.publish(); return true;
+        } finally { this.presenting = false; }
+    }
+    open(token: number, ordinal: number): void {
+        const job = this.job; if (!job || job.id !== token || !Number.isSafeInteger(ordinal)) return; const at = job.locations[ordinal]; if (!at) return;
+        if (this.place(job, at.document as DocumentId, at)) this.publish({ message: `Opened a captured ${job.input.kind} location in ${job.sources.get(at.document)!.document.title.slice(0, 128)}.` });
+    }
+    readonly returnToOrigin = (): void => { const job = this.job; if (job?.navigated && this.place(job, job.origin.editor.view.documentId, job.selections)) this.publish({ message: "Returned to the captured origin and complete selection set." }); };
+    readonly nextPage = (): void => { const state = this.cell.get(); if ((state.page + 1) * navigationLimits.page < state.count) this.publish({ page: state.page + 1 }); };
+    readonly previousPage = (): void => { const state = this.cell.get(); if (state.page > 0) this.publish({ page: state.page - 1 }); };
+    setIncludeDeclaration(value: boolean): void { if (value === this.cell.get().includeDeclaration) return; this.cancel(); this.publish({ includeDeclaration: value }); }
+    readonly addCompanion = (): void => {
+        if (this.disposed) return; this.cancel();
+        this.companion ??= this.workspace.createTextResource({ scope: "host-fixture", resource: "navigation-companion", variant: "working" }, "Navigation companion", { value: "const catalogue = 1;\r\ncatalogue;\r\n" }).documentId;
+        this.publish({ message: "Navigation companion added. Find catalogue from a source view to open its captured definition." });
+    };
+    setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid navigation delay."); this.delay = value; }
+    faultNext(value: NonNullable<NavigationInput["fault"]>): void { this.fault = value; }
+    debug() { return { ...this.metrics, worker: { ...this.worker }, sessions: [...this.sessions.values()].map(s => ({ id: s.id, documentId: s.editor.view.documentId, token: s.token })), subscriptions: this.cell.count(),
+        pending: !!this.job && !this.job.ready, results: this.job?.locations.length ?? 0, scope: this.job?.sources.size ?? 0, companion: this.companion ?? null, disposed: this.disposed }; }
+    dispose(): void { if (this.disposed) return; this.cancel(); this.disposed = true; this.active = undefined; this.publish(); }
+}

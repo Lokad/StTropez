@@ -9,6 +9,7 @@ import { actions, conflictText, statusText } from "./actions.ts";
 import { installHostHarness } from "./harness.ts";
 import { findText, foldText, languageActions, languageFieldKey } from "./language-panel.ts";
 import { domainActions } from "./domain-panel.ts";
+import { navigationActions } from "./navigation-panel.ts";
 import "./style.css";
 
 const controller = new HostController(), bindings = new ViewBindings(controller, hostEditor());
@@ -112,7 +113,17 @@ function TablePasteTools() {
         <button disabled={state.status !== "converting"} onClick={tools.cancel}>Cancel table paste</button></section>;
 }
 function App() {
-    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><DomainTools /><SymbolInfo /></>;
+    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><SymbolInfo /></>;
+}
+function NavigationTools() {
+    const tools = bindings.navigation, state = useObserved(tools.state);
+    return <section className="host-language" aria-label="Symbol navigation"><h2>Symbol navigation</h2>
+        <output aria-label="Symbol navigation status" aria-live="polite">{state.message}</output>
+        <progress aria-label="Symbol navigation progress" hidden={state.status !== "pending"} max={Math.max(1, state.total)} value={state.work} />
+        <label><input type="checkbox" checked={state.includeDeclaration} onChange={event => tools.setIncludeDeclaration(event.currentTarget.checked)} />Include declarations in references</label>
+        <div>{navigationActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        <ul aria-label="Navigation results">{state.locations.map(note => <li key={`${state.token}:${note.ordinal}`}><button onClick={() => tools.open(state.token!, note.ordinal)}>
+            {note.title}:{note.line}:{note.column}{note.declaration ? " · declaration" : ""}</button></li>)}</ul></section>;
 }
 function DomainTools() {
     const tools = bindings.domain, state = useObserved(tools.state);

@@ -68,6 +68,12 @@ while it is in flight. **Finish save** trims trailing whitespace in its canonica
    buttons reveal their captured ranges. **Insert catalogue import** is one shared
    undoable edit. Discovery/import replies reject stale revisions and authority.
    The [domain workflow](domain.md) records fixture policy, bounds and native gaps.
+   **Find definition** / **Find references** and F12 / Shift+F12 search captured working
+   resources in a real local worker. Choose a result to reveal it, then **Return to
+   navigation origin** to restore the complete origin selection set. **Add navigation
+   companion** supplies an initially unmounted `catalogue` definition for trying a
+   cross-resource result. [Provider navigation](provider-navigation.md) describes the
+   lexical fixture, bounds, focus behavior and remaining language/native gaps.
 2. Choose **Open source review**. Edit the working pane, then use **Next change** and
    **Use baseline**. Undo the reversion to restore your correction. The reference stays
    immutable while the working pane shares the source document and history.

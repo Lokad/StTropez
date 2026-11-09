@@ -24,7 +24,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
     window.addEventListener("pagehide", () => { void dispose(); }, { once: true, signal: listeners.signal });
     controller.startBackground(); mount();
     const fixture = Object.freeze({ ready: true, mode, snapshot: () => { const state = controller.debug(), views = bindings.debug();
-        return { ...state, hostSubscriptions: state.hostSubscriptions + views.language.subscriptions + views.hover.subscriptions + views.tablePaste.subscriptions + views.domain.subscriptions, bindings: views, commits: commits() }; },
+        return { ...state, hostSubscriptions: state.hostSubscriptions + views.language.subscriptions + views.hover.subscriptions + views.tablePaste.subscriptions + views.domain.subscriptions + views.navigation.subscriptions, bindings: views, commits: commits() }; },
         editSource: (expectedRevision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: controller.source.documentId,
             expectedRevision, edits, origin: "host", history: { kind: "live" } }),
         deliverProposal: controller.deliverProposalText, runCapture: (index: number) => controller.runCapture(index), setPath: controller.setPath, recoveryText: () => controller.recoveryText(),
@@ -49,6 +49,8 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         requestProvider: bindings.language.request,
         setDomainDelay: (delay: number) => { if (!Number.isFinite(delay) || delay < 0 || delay > 10000) throw new RangeError("Invalid domain delay."); bindings.domain.fixture.delay = delay; },
         faultDomainNext: (fault: "malformed" | "failure" | "late") => { bindings.domain.fixture.fault = fault; },
+        setNavigationDelay: (delay: number) => bindings.navigation.setDelay(delay), faultNavigationNext: (fault: "malformed" | "failure") => bindings.navigation.faultNext(fault),
+        navigationDocument: (id: DocumentId) => { const doc = controller.workspace.document(id); return { revision: doc.revision, length: doc.buffer.length, text: doc.buffer.slice(0, Math.min(4096, doc.buffer.length)), exports: doc.buffer.readMetrics().textExports }; },
         inspectSymbol: (id: "primary" | "secondary" | "comparison") => bindings.hover.inspectCaret(id),
         setHoverDelay: (id: string, value: number) => bindings.hover.setDelay(id, value),
         faultHoverNext: (id: string, value: "malformed" | "failure" | "markup") => bindings.hover.faultNext(id, value),
@@ -73,6 +75,8 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; mode
     setProviderDelay: (delay: number) => void; faultProviderNext: (fault: "malformed" | "failure") => void;
     requestProvider: () => void;
     setDomainDelay: (delay: number) => void; faultDomainNext: (fault: "malformed" | "failure" | "late") => void;
+    setNavigationDelay: (delay: number) => void; faultNavigationNext: (fault: "malformed" | "failure") => void;
+    navigationDocument: (id: DocumentId) => Readonly<{ revision: number; length: number; text: string; exports: number }>;
     inspectSymbol: (id: "primary" | "secondary" | "comparison") => boolean;
     setHoverDelay: (id: string, value: number) => void;
     faultHoverNext: (id: string, value: "malformed" | "failure" | "markup") => void;

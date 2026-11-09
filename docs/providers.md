@@ -64,8 +64,11 @@ revision, complete selection set, tab generation and view identity. A bounded 4,
 aligns supplementary characters; a word crossing that window or exceeding 256 units has no offer.
 The local fixture supplies short identifier summaries, without a parser or application service.
 This deliberately reuses platform workers, the existing transport and editor geometry instead of
-adding a language client dependency. Signatures, definition/references, rename, actions and other
-language workflows remain separate required work.
+adding a language client dependency. The hosts also expose [captured definition/reference
+navigation](provider-navigation.md) through a streaming worker lane, including unmounted
+working resources, safe paged locations and complete-set return. Its local lexical policy is
+explicit; signatures, semantic resolution, rename, actions and other language workflows remain
+separate required work.
 
 The complete response is validated before publication, then rendered only as text. Escape,
 typing, composition, changed selection/revision and unmount cancel the captured presentation;

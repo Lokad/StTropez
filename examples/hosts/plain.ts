@@ -7,6 +7,7 @@ import { mountHoverPanel } from "./hover-panel.ts";
 import { mountVariantPanel } from "./variant-panel.ts";
 import { mountTablePastePanel } from "./table-panel.ts";
 import { mountDomainPanel } from "./domain-panel.ts";
+import { mountNavigationPanel } from "./navigation-panel.ts";
 
 export function mountPlain(host: HTMLElement, controller: HostController, bindings: ViewBindings): () => void {
     const listeners = new AbortController(), subscriptions: (() => void)[] = [];
@@ -36,7 +37,9 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const language = document.createElement("section"); language.setAttribute("aria-label", "Language and find tools"); language.className = "host-language";
     const tablePaste = document.createElement("section"); tablePaste.className = "host-language"; tablePaste.setAttribute("aria-label", "Table paste tools");
     const domain = document.createElement("section"); domain.className = "host-language"; domain.setAttribute("aria-label", "Domain tools");
-    host.replaceChildren(nav, status, recovery, conflict, scene, review, language, tablePaste, domain, modal);
+    const navigation = document.createElement("section"); navigation.className = "host-language"; navigation.setAttribute("aria-label", "Symbol navigation");
+    host.replaceChildren(nav, status, recovery, conflict, scene, review, language, tablePaste, domain, navigation, modal);
+    const destroyNavigation = mountNavigationPanel(navigation, bindings.navigation);
     const destroyDomain = mountDomainPanel(domain, bindings.domain);
     const destroyTablePaste = mountTablePastePanel(tablePaste, bindings.tablePaste);
     const destroyLanguage = mountLanguagePanel(language, bindings.language);
@@ -104,5 +107,5 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         controller.saveConflict.subscribe(updateConflict), controller.source.metadata.subscribe(updateConflict),
         controller.layout.subscribe(updateConflict), controller.comparisonReference.subscribe(updateConflict));
     renderScene(); renderReview(); updateStatus(); updateRecovery(); updateConflict();
-    return () => { destroyDomain(); destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
+    return () => { destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
 }
