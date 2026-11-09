@@ -1,0 +1,35 @@
+import { test, expect } from "@playwright/test";
+
+test("host-cancelled copy/cut/paste preserve captured text, clipboard ownership and selections", async ({ page }) => {
+    await page.goto("/editing/");
+    const result = await page.evaluate(() => {
+        const f = window.editingFixture; f.setText("before\r\nend"); f.select("primary", { anchor: 3, head: 1 }); f.focus("primary");
+        const input = document.querySelector('textarea[aria-label="Primary source"]')!, original = f.snapshot(), events = [];
+        for (const type of ["copy", "cut", "paste"] as const) {
+            input.addEventListener(type, event => { const e = event as ClipboardEvent; e.clipboardData!.setData("text/plain", "host-owned"); e.preventDefault(); }, { capture: true, once: true });
+            const data = new DataTransfer(), event = new ClipboardEvent(type, { clipboardData: data, bubbles: true, cancelable: true }); input.dispatchEvent(event);
+            events.push({ type, text: f.range(0, f.snapshot().document!.length), clipboard: event.clipboardData!.getData("text/plain"), prevented: event.defaultPrevented });
+        }
+        return { events, before: original.primary.selection, after: f.snapshot().primary.selection, revisionBefore: original.document!.revision, revisionAfter: f.snapshot().document!.revision, exports: f.snapshot().document!.exports };
+    });
+    expect(result.events).toEqual(["copy", "cut", "paste"].map(type => ({ type, text: "before\r\nend", clipboard: "host-owned", prevented: true })));
+    expect(result.after).toEqual(result.before); expect(result.revisionAfter).toBe(result.revisionBefore); expect(result.exports).toBe(0);
+    await page.evaluate(() => window.editingFixture.dispose()); expect((await page.evaluate(() => window.editingFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+});
+
+test("empty or nontext clipboard payloads cannot turn a selected range into a deletion", async ({ page }) => {
+    await page.goto("/editing/");
+    const result = await page.evaluate(() => {
+        const f = window.editingFixture; f.setText("before\r\nend"); f.select("primary", { anchor: 3, head: 1 }); f.focus("primary");
+        const input = document.querySelector('textarea[aria-label="Primary source"]')!, before = f.snapshot();
+        for (const kind of ["empty", "html", "file"] as const) {
+            const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }), data = event.clipboardData!;
+            if (kind === "empty") data.setData("text/plain", ""); if (kind === "html") data.setData("text/html", "<b>no plain text</b>");
+            if (kind === "file") data.items.add(new File(["bytes"], "sample.bin", { type: "application/octet-stream" }));
+            input.dispatchEvent(event);
+        }
+        return { text: f.range(0, f.snapshot().document!.length), revisionBefore: before.document!.revision, revisionAfter: f.snapshot().document!.revision, before: before.primary.selection, after: f.snapshot().primary.selection, exports: f.snapshot().document!.exports };
+    });
+    expect(result.text).toBe("before\r\nend"); expect(result.revisionAfter).toBe(result.revisionBefore); expect(result.after).toEqual(result.before); expect(result.exports).toBe(0);
+    await page.evaluate(() => window.editingFixture.dispose());
+});

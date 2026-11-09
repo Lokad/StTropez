@@ -33,6 +33,26 @@ function mountMultipleInput() {
 }
 let multipleInput: ReturnType<typeof mountMultipleInput> | undefined;
 Object.assign(window, { consumer: { text: () => workspace.document(documentId).text,
+    clipboardBoundary: () => {
+        const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "clipboard-boundary", variant: "working" }, "Source", { value: "before\r\nend" });
+        const tab = model.open({ kind: "text", documentId: source.documentId }, "clipboard"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
+        const editor = mountEditingCandidate(host, model, tab), original = "before\r\nend";
+        try {
+            editor.view.setSelections(0, [{ anchor: 3, head: 1 }, { anchor: 10, head: 8 }], 1); const selections = editor.view.getSnapshot().selectionSet;
+            for (const type of ["copy", "cut", "paste"] as const) {
+                editor.input.addEventListener(type, event => { event.clipboardData!.setData("text/plain", "host-owned"); event.preventDefault(); }, { capture: true, once: true });
+                const event = new ClipboardEvent(type, { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }); editor.input.dispatchEvent(event);
+                if (event.clipboardData!.getData("text/plain") !== "host-owned") throw new Error("Compiled editor overwrote host clipboard ownership.");
+            }
+            for (const type of ["text/plain", "text/html"]) { const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }); event.clipboardData!.setData(type, type === "text/html" ? "<b>no plain text</b>" : "");
+                editor.input.dispatchEvent(event); }
+            const d = model.document(source.documentId);
+            if (d.revision || d.buffer.slice(0, d.buffer.length) !== original || editor.view.getSnapshot().selectionSet !== selections || model.observeHistory(source.documentId).getSnapshot().undoDepth) throw new Error("Compiled canceled/empty clipboard input changed text, complete selections or history.");
+            if (d.buffer.readMetrics().textExports) throw new Error("Compiled clipboard boundary exported text.");
+        } finally { editor.destroy(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
+        const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled clipboard resources leaked.");
+        return { cancelledOwnership: true, emptyPayloadNoDeletion: true, completeSets: true, noHistory: true, zeroExports: true, events: "synthetic", released: { views, leases, subscriptions } };
+    },
     foldingPilot: async () => {
         const original = "header\r\n" + "const unchanged = 123;\r\n".repeat(100000) + "footer", footer = original.length - 6;
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "folding", variant: "working" }, "Folded source", { value: original });

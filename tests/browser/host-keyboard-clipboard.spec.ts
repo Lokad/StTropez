@@ -100,6 +100,29 @@ async function isolatedClipboard(baseURL: string | undefined, info: TestInfo, ru
 
 const normal = "const café = 'é 😀';\r\nconst end = 123;";
 const unverifiedBackend = "Only the guarded Chromium headless shell has a verified process-local clipboard backend; other engines and OS/browser-menu paths remain unverified.";
+for (const host of ["plain", "react"] as const) test(`${host} trusted HTML table paste converts the actual clipboard and keeps captured save and undo`, async ({ browserName, baseURL }, info) => {
+    test.skip(browserName !== "chromium", unverifiedBackend);
+    await isolatedClipboard(baseURL, info, async page => {
+        await mount(page, host, "candidate", "source");
+        await page.getByRole("checkbox", { name: "Paste tables as CSV", exact: true }).check();
+        await page.evaluate(() => {
+            const wrapper = document.createElement("div"); wrapper.contentEditable = "true"; wrapper.id = "known-table-clipboard-source"; wrapper.tabIndex = 0;
+            wrapper.innerHTML = '<table><tr><th>city</th><th>value</th></tr><tr><td>東京</td><td>A,&quot;B&quot;</td></tr></table>'; document.body.append(wrapper);
+            wrapper.focus(); const range = document.createRange(); range.selectNodeContents(wrapper); const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+        });
+        await page.keyboard.press("Control+c"); await primary(page).focus(); await select(page, 0, 6);
+        await primary(page).evaluate(node => node.addEventListener("paste", event => Object.assign(globalThis, { tableNativePaste: { htmlUnits: (event as ClipboardEvent).clipboardData?.getData("text/html").length ?? 0, trusted: event.isTrusted } }), { capture: true, once: true }));
+        const before = await snapshot(page); await primary(page).press("Control+v");
+        await expect.poll(async () => (await snapshot(page)).bindings.tablePaste.status).toBe("applied"); await ready(page);
+        await exact(page, '"city","value"\r\n"東京","A,""B"""');
+        const audit = await page.evaluate(() => (globalThis as unknown as { tableNativePaste: { htmlUnits: number; trusted: boolean } }).tableNativePaste);
+        expect(audit.trusted).toBe(true); expect(audit.htmlUnits).toBeGreaterThan(0);
+        expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
+        await page.evaluate(() => window.hostFixture.finishSave()); await ready(page); expect((await snapshot(page)).source.dirty).toBe(true);
+        await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await ready(page); await exact(page, "source"); expect((await snapshot(page)).source.dirty).toBe(false);
+        await dispose(page, info);
+    });
+});
 for (const host of ["plain", "react"] as const) for (const editor of ["native", "candidate"] as const) {
     for (const corpus of editor === "candidate" ? ["normal", "lines-100000"] : ["normal"]) {
         test(`${host} ${editor} ${corpus} trusted clipboard preserves selections, captured save and shared history`, async ({ browserName, baseURL }, info) => {

@@ -9,6 +9,12 @@ The project had no bounded context/coordinate adapter to reuse. This small origi
 uses platform text ranges and segmentation; embedding an external editing runtime would conflict
 with the zero-dependency distribution requirement. No reference implementation is imported.
 
+Hosts can intercept clipboard events on the public input in the capture phase and cancel them
+with `preventDefault()`. The candidate then leaves clipboard data and source mutation to the
+host, cancels queued navigation/grouping work, and stops a delegated cut/paste drag. Empty or
+unsupported nontext literal paste is a no-op, including when source text is selected. The
+[table-paste host](table-paste.md) exercises a captured conversion through this boundary.
+
 The native context contains up to 256 UTF-16 units around either side of a selection and up to
 2,048 selected units. Larger selections become one selected placeholder, with reversible maps
 to the real range. The adapter normalizes only that context to native LF coordinates and maps

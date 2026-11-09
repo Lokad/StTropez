@@ -71,6 +71,10 @@ while it is in flight. **Finish save** trims trailing whitespace in its canonica
    **Expand all folds** (Ctrl/Cmd+Shift+]) opens the current view. Header buttons support
    Enter/Space and Escape; source Escape then Tab/Shift+Tab still exits to host controls.
    [Fold semantics and limits](folding.md) describe edits, history and remount behavior.
+   Enable **Paste tables as CSV** to paste a spreadsheet/text table into the captured source
+   selections. The host prefers a single HTML table, then tab-separated plain text. Conversion
+   is one shared undo command; Escape or **Cancel table paste** stops pending work. Clear the
+   option for literal paste. [Table paste](table-paste.md) lists formats, limits and native gaps.
    **Keep draft version** retains the current committed text. Choose a saved, server, draft or
    historical entry in **Review version**, then **Finish version load**; typing can continue while
    it loads. Selection changes the reference while Save and Run keep using the working source.

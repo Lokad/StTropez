@@ -102,8 +102,16 @@ function SymbolInfo() {
         onPointerEnter={bindings.hover.enterPopup} onPointerLeave={bindings.hover.leavePopup} onPointerDown={event => event.preventDefault()}>
         <pre>{state.text || state.message}</pre><span>Escape dismisses symbol information.</span></div>;
 }
+function TablePasteTools() {
+    const tools = bindings.tablePaste, state = useObserved(tools.state);
+    return <section className="host-language" aria-label="Table paste tools"><label><input type="checkbox" checked={state.enabled} disabled={!state.available}
+        onChange={event => tools.setEnabled(event.currentTarget.checked)} />Paste tables as CSV</label>
+        <output aria-label="Table paste status" aria-live="polite">{state.message}</output>
+        <progress aria-label="Table conversion progress" hidden={state.status !== "converting"} />
+        <button disabled={state.status !== "converting"} onClick={tools.cancel}>Cancel table paste</button></section>;
+}
 function App() {
-    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><SymbolInfo /></>;
+    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><SymbolInfo /></>;
 }
 let root: Root | undefined;
 const unmount = () => { root?.unmount(); root = undefined; };

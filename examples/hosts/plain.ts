@@ -5,6 +5,7 @@ import type { TabSnapshot } from "../../src/index.ts";
 import { mountLanguagePanel } from "./language-panel.ts";
 import { mountHoverPanel } from "./hover-panel.ts";
 import { mountVariantPanel } from "./variant-panel.ts";
+import { mountTablePastePanel } from "./table-panel.ts";
 
 export function mountPlain(host: HTMLElement, controller: HostController, bindings: ViewBindings): () => void {
     const listeners = new AbortController(), subscriptions: (() => void)[] = [];
@@ -32,7 +33,9 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         conflictStatus.textContent = conflictText(controller); finishRemote.disabled = state?.review !== "loading";
         retry.disabled = !controller.canSaveReviewedSource(); };
     const language = document.createElement("section"); language.setAttribute("aria-label", "Language and find tools"); language.className = "host-language";
-    host.replaceChildren(nav, status, recovery, conflict, scene, review, language, modal);
+    const tablePaste = document.createElement("section"); tablePaste.className = "host-language"; tablePaste.setAttribute("aria-label", "Table paste tools");
+    host.replaceChildren(nav, status, recovery, conflict, scene, review, language, tablePaste, modal);
+    const destroyTablePaste = mountTablePastePanel(tablePaste, bindings.tablePaste);
     const destroyLanguage = mountLanguagePanel(language, bindings.language);
     const destroyHover = mountHoverPanel(host, bindings.hover);
     const updateStatus = () => {
@@ -98,5 +101,5 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         controller.saveConflict.subscribe(updateConflict), controller.source.metadata.subscribe(updateConflict),
         controller.layout.subscribe(updateConflict), controller.comparisonReference.subscribe(updateConflict));
     renderScene(); renderReview(); updateStatus(); updateRecovery(); updateConflict();
-    return () => { destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
+    return () => { destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
 }

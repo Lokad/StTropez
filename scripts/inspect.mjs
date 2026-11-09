@@ -157,6 +157,20 @@ try {
         const disclosure = harness.page.getByRole("button", { name: "Expand lines 2–3", exact: true }); await disclosure.focus();
         await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-folding.png`, fullPage: true });
         await writeFile(`artifacts/inspect/host-${mode}-folding.json`, JSON.stringify(await harness.page.evaluate(() => window.hostFixture.snapshot()), null, 2));
+        await harness.page.getByRole("checkbox", { name: "Paste tables as CSV", exact: true }).check();
+        const tableInput = harness.page.getByRole("textbox", { name: "Primary source", exact: true }); await tableInput.focus();
+        await harness.page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: f.snapshot().source.length }]); });
+        await tableInput.evaluate(node => { const data = new DataTransfer(); data.setData("text/plain", "unused\tfallback"); data.setData("text/html", '<table><tr><th>city</th><th>value</th></tr><tr><td>東京</td><td>A,&quot;B&quot;</td></tr></table>');
+            node.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true })); });
+        await harness.page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return s.bindings.tablePaste.status === "applied" && s.bindings.comparison.status === "ready" && s.bindings.views.every(v => !v.metrics.viewport.pending) && !s.bindings.comparison.workingViewport.pending; });
+        const csv = '"city","value"\r\n"東京","A,""B"""';
+        if (await harness.page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length)) !== csv) throw new Error("Table paste inspection lost exact quoted CSV.");
+        await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-table-paste.png`, fullPage: true });
+        await writeFile(`artifacts/inspect/host-${mode}-table-paste.json`, JSON.stringify(await harness.page.evaluate(() => window.hostFixture.snapshot()), null, 2));
+        await tableInput.evaluate(node => { const data = new DataTransfer(); data.setData("text/plain", "a\tb\nc"); node.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true })); });
+        await harness.page.waitForFunction(() => window.hostFixture.snapshot().bindings.tablePaste.status === "failed");
+        if (await harness.page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length)) !== csv) throw new Error("Failed table paste altered the source.");
+        await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-table-paste-error.png`, fullPage: true });
         await harness.page.evaluate(() => window.hostFixture.dispose());
     }
     await harness.page.goto(new URL("/viewport/", harness.page.url()).href);

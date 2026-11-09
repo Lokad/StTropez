@@ -709,11 +709,12 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     root.addEventListener("pointerup", stopDrag, { signal: listeners.signal }); root.addEventListener("pointercancel", stopDrag, { signal: listeners.signal });
     root.addEventListener("lostpointercapture", stopDrag, { signal: listeners.signal });
     for (const type of ["copy", "cut", "paste"] as const) input.addEventListener(type, event => {
+        if (event.defaultPrevented) { cancelWord(); group = undefined; if (type !== "copy") stopDrag(); return; }
         if (composing || !event.clipboardData) return;
         event.preventDefault(); cancelWord(); syncSelection(); group = undefined;
         if (type !== "copy") view.folding.revealSelection(view.folding.getSnapshot());
         const selections = view.getSnapshot().selectionSet;
-        if (type === "paste") replaceSelection(event.clipboardData.getData("text/plain"), "paste");
+        if (type === "paste") { const text = event.clipboardData.getData("text/plain"); if (text.length) replaceSelection(text, "paste"); }
         else {
             if (type === "cut" && input.readOnly) return;
             const buffer = workspace.document(documentId).buffer;
