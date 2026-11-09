@@ -1,11 +1,15 @@
 import type { TextBuffer } from "../../src/index.ts";
 import { navigationLimits, validateNavigationResult } from "../probes/navigation.ts";
-import type { NavigationInput, NavigationResult } from "../probes/navigation.ts";
+import type { NavigationDocument, NavigationInput, NavigationResult } from "../probes/navigation.ts";
 import { projectProtocolVersion } from "../probes/project.ts";
+import { validateProjectCommand, validateProjectServerRequest } from "../probes/project-commands.ts";
+import type { ProjectCommand, ProjectOutcome, ProjectServerRequest } from "../probes/project-commands.ts";
 import { ProjectChangeCursor } from "./project-change.ts";
 export type NavigationMetrics = { created: number; posted: number; received: number; transferred: number; maxChunk: number; completed: number; failed: number; terminated: number;
     opened: number; changed: number; closed: number; reused: number; snapshotUnits: number; deltaUnits: number; planningTurns: number; rejected: number };
 export type SyncFault = "version" | "epoch" | "sequence" | "revision";
+export function navigationMetrics(): NavigationMetrics { return { created: 0, posted: 0, received: 0, transferred: 0, maxChunk: 0, completed: 0, failed: 0, terminated: 0,
+    opened: 0, changed: 0, closed: 0, reused: 0, snapshotUnits: 0, deltaUnits: 0, planningTurns: 0, rejected: 0 }; }
 type Reply = Readonly<Record<string, unknown>>;
 type Cached = { revision: number; buffer: TextBuffer };
 let connectionSerial = 0;
@@ -47,12 +51,12 @@ export function createNavigationClient(clock: Pick<Window, "setTimeout" | "clear
         if (reply.operation !== "project-ack" || reply.action !== action || reply.document !== document || reply.revision !== revision || reply.length !== length || reply.received !== received) throw new Error("Invalid captured document acknowledgement.");
     };
     const yieldPlanning = () => new Promise<void>((resolve, reject) => { pause = { reject, timer: clock.setTimeout(() => { pause = undefined; resolve(); }, 0) }; });
-    const run = async (input: NavigationInput, buffers: ReadonlyMap<string, TextBuffer>, progress: (units: number) => void, fault?: SyncFault): Promise<NavigationResult> => {
+    const execute = async <T>(documents: readonly NavigationDocument[], buffers: ReadonlyMap<string, TextBuffer>, body: (fault?: SyncFault) => Promise<T>, fault?: SyncFault): Promise<T> => {
         if (busy || disposed) throw new Error("Navigation lane is unavailable."); busy = true;
         try {
-            await connect(); const requested = new Set(input.documents.map(doc => doc.document));
+            await connect(); const requested = new Set(documents.map(doc => doc.document));
             for (const [document, old] of cache) if (!requested.has(document)) { ack(await exchange("project-close", { document, revision: old.revision }), "close", document, old.revision, 0, 0); cache.delete(document); counts.closed++; }
-            for (const doc of input.documents) {
+            for (const doc of documents) {
                 const buffer = buffers.get(doc.document), old = cache.get(doc.document); if (!buffer || buffer.length !== doc.length) throw new Error("Missing captured source.");
                 if (old?.revision === doc.revision) { if (old.buffer !== buffer) throw new Error("A provider revision cannot change its buffer."); counts.reused++; continue; }
                 let from = 0, to = old?.buffer.length ?? 0, insertFrom = 0, insertTo = buffer.length;
@@ -74,6 +78,10 @@ export function createNavigationClient(clock: Pick<Window, "setTimeout" | "clear
                 ack(await exchange("project-commit", { document: doc.document, revision: doc.revision }), "commit", doc.document, doc.revision, doc.length, units);
                 cache.set(doc.document, { revision: doc.revision, buffer }); if (old) counts.changed++; else counts.opened++; changed();
             }
+            return await body(fault);
+        } catch (error) { if (!disposed) counts.failed++; fail(error instanceof Error ? error : new Error("Navigation request failed.")); throw error; } finally { busy = false; }
+    };
+    const run = (input: NavigationInput, buffers: ReadonlyMap<string, TextBuffer>, progress: (units: number) => void, fault?: SyncFault): Promise<NavigationResult> => execute(input.documents, buffers, async fault => {
             let queryInput = input;
             if (fault === "revision") { queryInput = { ...input, documents: input.documents.map((doc, i) => i ? doc : { ...doc, revision: doc.revision + 1 }) }; fault = undefined; }
             let reply = await exchange("project-query", { input: queryInput }, fault), work = 0;
@@ -84,9 +92,23 @@ export function createNavigationClient(clock: Pick<Window, "setTimeout" | "clear
                 if (reply.operation !== "project-query-progress" || typeof reply.work !== "number" || !Number.isSafeInteger(reply.work) || reply.work < work || reply.work > total) throw new Error("Invalid query progress.");
                 work = reply.work; progress(work); reply = await exchange("project-query-next", { request: input.id });
             }
-        } catch (error) { if (!disposed) counts.failed++; fail(error instanceof Error ? error : new Error("Navigation request failed.")); throw error; } finally { busy = false; }
+    }, fault);
+    const command = (capture: ProjectCommand, buffers: ReadonlyMap<string, TextBuffer>, accept: (request: ProjectServerRequest) => ProjectOutcome) => {
+        const input = validateProjectCommand(capture);
+        return execute(input.documents, buffers, async () => {
+            let reply = await exchange("project-command", { input });
+            if (input.kind !== "status") {
+                const request = validateProjectServerRequest(reply, input), outcome = accept(request);
+                reply = await exchange("project-server-result", { request: input.id, ...outcome });
+                if (reply.applied !== outcome.applied || reply.reason !== outcome.reason) throw new Error("Invalid server outcome acknowledgement.");
+            }
+            if (reply.operation !== "project-command-result" || reply.request !== input.id || typeof reply.applied !== "boolean" || typeof reply.reason !== "string" || reply.reason.length > 256 || typeof reply.registered !== "boolean") throw new Error("Invalid project command result.");
+            counts.completed++; return Object.freeze({ applied: reply.applied, reason: reply.reason, registered: reply.registered });
+        });
     };
-    return Object.freeze({ run, snapshot: () => Object.freeze({ connected, busy, disposed, version: projectProtocolVersion, epoch, sequence,
+    return Object.freeze({ run, command,
+        faultIdle: () => { if (!worker || !connected || busy) return false; counts.posted++; worker.postMessage("{"); return true; },
+        snapshot: () => Object.freeze({ connected, busy, disposed, version: projectProtocolVersion, epoch, sequence,
         documents: Object.freeze([...cache].map(([document, doc]) => Object.freeze({ document, revision: doc.revision, length: doc.buffer.length }))) }),
         dispose: () => { if (disposed) return; disposed = true; fail(new Error("Navigation request cancelled.")); } });
 }

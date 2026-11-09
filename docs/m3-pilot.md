@@ -77,6 +77,12 @@ while it is in flight. **Finish save** trims trailing whitespace in its canonica
    **Disconnect navigation provider** keeps local editing available; **Reconnect navigation
    provider** enables a fresh synchronized request. Between successful requests, the worker
    reuses unchanged working resources and receives bounded versioned changes.
+   Under **Workspace provider**, register the local review command and request its edits.
+   The worker proposes a bounded header/footer batch across captured working resources;
+   one undo in a participating view reverses the accepted batch. Use a **Last applied
+   provider edits** button to open an initially unmounted changed resource. Unregister or
+   disconnect to remove the capability. [Server edits](server-edits.md) describes the
+   fixture, stale/authority checks, acknowledgement failure and remaining protocol gaps.
 2. Choose **Open source review**. Edit the working pane, then use **Next change** and
    **Use baseline**. Undo the reversion to restore your correction. The reference stays
    immutable while the working pane shares the source document and history.

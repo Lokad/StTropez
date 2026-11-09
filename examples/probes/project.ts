@@ -1,6 +1,8 @@
 import { TextBuffer } from "../../src/index.ts";
 import { NavigationSession, navigationLimits, validateNavigationInput } from "./navigation.ts";
 import type { NavigationInput } from "./navigation.ts";
+import { reviewCapability, reviewHeader, reviewFooter, validateProjectCommand } from "./project-commands.ts";
+import type { ProjectCommand, ProjectServerRequest } from "./project-commands.ts";
 export const projectProtocolVersion = 1;
 export type ProjectPacket = Readonly<{ version: number; epoch: number; sequence: number; operation: string; [key: string]: unknown }>;
 type Document = Readonly<{ revision: number; buffer: TextBuffer }>;
@@ -18,6 +20,9 @@ export class ProviderProject {
     private units = 0;
     private stage: Stage | undefined;
     private query: Query | undefined;
+    private registered = false;
+    private command: { input: ProjectCommand; method: ProjectServerRequest["method"] } | undefined;
+    private lastCommand = 0;
     constructor(epoch: number) { if (!integer(epoch) || !epoch) throw new Error("Invalid provider epoch."); this.epoch = epoch; }
     handle(value: unknown): ProjectPacket {
         if (!record(value) || value.version !== projectProtocolVersion || value.epoch !== this.epoch || value.sequence !== this.sequence + 1 || typeof value.operation !== "string") throw new Error("Invalid protocol version, epoch or sequence.");
@@ -28,6 +33,14 @@ export class ProviderProject {
         const ack = (action: string, document?: string, revision?: number, length?: number, received?: number) => ({ operation: "project-ack", action, ...(document === undefined ? {} : { document, revision, length, received }) });
         if (value.operation === "project-hello") { if (this.opened) throw new Error("Provider already initialized."); this.opened = true; return ack("hello"); }
         if (!this.opened) throw new Error("Initialize the provider before documents.");
+        if (value.operation === "project-server-result") {
+            const command = this.command;
+            if (!command || value.request !== command.input.id || typeof value.applied !== "boolean" || typeof value.reason !== "string" || value.reason.length > 256) throw new Error("Invalid server request acknowledgement.");
+            if (value.applied && command.method !== "edit") this.registered = command.method === "register";
+            this.command = undefined;
+            return { operation: "project-command-result", request: command.input.id, applied: value.applied, reason: value.reason, registered: this.registered };
+        }
+        if (this.command) throw new Error("Acknowledge the server request before another operation.");
         if (value.operation === "project-query-next") return this.advanceQuery(value);
         if (this.query) throw new Error("Complete the query before mutating documents.");
         if (value.operation === "project-open" || value.operation === "project-change") {
@@ -52,6 +65,24 @@ export class ProviderProject {
             return ack("commit", stage.document, stage.revision, stage.length, stage.received);
         }
         if (this.stage) throw new Error("Complete the document transfer before another operation.");
+        if (value.operation === "project-command") {
+            const input = validateProjectCommand(value.input);
+            if (input.id <= this.lastCommand) throw new Error("Duplicate project command.");
+            const documents = input.documents.map(doc => { const current = this.documents.get(doc.document);
+                if (!current || current.revision !== doc.revision || current.buffer.length !== doc.length) throw new Error("Command document is not synchronized."); return current; });
+            if (input.kind === "register" ? this.registered : input.kind !== "status" && !this.registered) throw new Error("Capability registration is not current.");
+            this.lastCommand = input.id;
+            if (input.kind === "status") return { operation: "project-command-result", request: input.id, applied: true, reason: `Provider has ${documents.length} synchronized working resources.`, registered: this.registered };
+            const method = input.kind === "review" ? "edit" : input.kind;
+            const edits = method === "edit" ? input.documents.flatMap((doc, i) => {
+                const buffer = documents[i]!.buffer;
+                if (buffer.slice(0, Math.min(buffer.length, reviewHeader.length)) === reviewHeader && buffer.slice(Math.max(0, buffer.length - reviewFooter.length), buffer.length) === reviewFooter) return [];
+                return [{ document: doc.document, revision: doc.revision, edits: buffer.length ? [{ from: 0, to: 0, insert: reviewHeader }, { from: buffer.length, to: buffer.length, insert: reviewFooter }]
+                    : [{ from: 0, to: 0, insert: reviewHeader + reviewFooter }] }];
+            }) : [];
+            this.command = { input, method };
+            return { operation: "project-server-request", request: input.id, method, capability: reviewCapability, edits };
+        }
         if (value.operation === "project-close") {
             if (!identity(value.document)) throw new Error("Invalid document close."); const old = this.documents.get(value.document);
             if (!old || old.revision !== value.revision) throw new Error("Invalid document close revision.");
@@ -81,5 +112,6 @@ export class ProviderProject {
     }
     buffer(document: string): TextBuffer | undefined { return this.documents.get(document)?.buffer; }
     snapshot() { return Object.freeze({ version: projectProtocolVersion, epoch: this.epoch, sequence: this.sequence, units: this.units, staging: !!this.stage, querying: !!this.query,
+        registered: this.registered, serverPending: !!this.command,
         documents: Object.freeze([...this.documents].map(([document, value]) => Object.freeze({ document, revision: value.revision, length: value.buffer.length }))) }); }
 }

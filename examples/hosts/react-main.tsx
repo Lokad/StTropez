@@ -10,6 +10,7 @@ import { installHostHarness } from "./harness.ts";
 import { findText, foldText, languageActions, languageFieldKey } from "./language-panel.ts";
 import { domainActions } from "./domain-panel.ts";
 import { navigationActions } from "./navigation-panel.ts";
+import { projectActions } from "./project-panel.ts";
 import "./style.css";
 
 const controller = new HostController(), bindings = new ViewBindings(controller, hostEditor());
@@ -113,7 +114,15 @@ function TablePasteTools() {
         <button disabled={state.status !== "converting"} onClick={tools.cancel}>Cancel table paste</button></section>;
 }
 function App() {
-    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><SymbolInfo /></>;
+    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><SymbolInfo /></>;
+}
+function ProjectTools() {
+    const tools = bindings.project, state = useObserved(tools.state);
+    return <section className="host-language" aria-label="Workspace provider"><h2>Workspace provider</h2>
+        <output aria-label="Workspace provider status" aria-live="polite">{state.message}</output>
+        <div>{projectActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        {state.changes.length > 0 && <p>Last applied provider edits</p>}
+        <ul aria-label="Provider changed resources">{state.changes.map(c => <li key={c.document}><button disabled={state.pending} onClick={() => tools.openChanged(c.document)}>Open provider changes in {c.title}</button></li>)}</ul></section>;
 }
 function NavigationTools() {
     const tools = bindings.navigation, state = useObserved(tools.state);

@@ -8,6 +8,7 @@ import { mountVariantPanel } from "./variant-panel.ts";
 import { mountTablePastePanel } from "./table-panel.ts";
 import { mountDomainPanel } from "./domain-panel.ts";
 import { mountNavigationPanel } from "./navigation-panel.ts";
+import { mountProjectPanel } from "./project-panel.ts";
 
 export function mountPlain(host: HTMLElement, controller: HostController, bindings: ViewBindings): () => void {
     const listeners = new AbortController(), subscriptions: (() => void)[] = [];
@@ -38,7 +39,9 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const tablePaste = document.createElement("section"); tablePaste.className = "host-language"; tablePaste.setAttribute("aria-label", "Table paste tools");
     const domain = document.createElement("section"); domain.className = "host-language"; domain.setAttribute("aria-label", "Domain tools");
     const navigation = document.createElement("section"); navigation.className = "host-language"; navigation.setAttribute("aria-label", "Symbol navigation");
-    host.replaceChildren(nav, status, recovery, conflict, scene, review, language, tablePaste, domain, navigation, modal);
+    const project = document.createElement("section"); project.className = "host-language"; project.setAttribute("aria-label", "Workspace provider");
+    host.replaceChildren(nav, status, recovery, conflict, scene, review, language, tablePaste, domain, navigation, project, modal);
+    const destroyProject = mountProjectPanel(project, bindings.project);
     const destroyNavigation = mountNavigationPanel(navigation, bindings.navigation);
     const destroyDomain = mountDomainPanel(domain, bindings.domain);
     const destroyTablePaste = mountTablePastePanel(tablePaste, bindings.tablePaste);
@@ -107,5 +110,5 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         controller.saveConflict.subscribe(updateConflict), controller.source.metadata.subscribe(updateConflict),
         controller.layout.subscribe(updateConflict), controller.comparisonReference.subscribe(updateConflict));
     renderScene(); renderReview(); updateStatus(); updateRecovery(); updateConflict();
-    return () => { destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
+    return () => { destroyProject(); destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
 }

@@ -56,6 +56,7 @@ snapshot and delta units. Command/input-handler timings and complete transport/q
 readiness are separate clocks; functional deadlines and single observations establish no tail or
 physical-display qualification.
 
-Full external-protocol compatibility, dynamic registration, server-initiated edits/custom messages
-and broader language semantics remain required. Native IME, OS clipboard and accessibility
-qualification remain unverified where applicable.
+The [workspace command fixture](server-edits.md) uses the same client in a separately owned lane
+for acknowledged local registration, captured server edits and custom status messages. Full
+external-protocol compatibility and broader language semantics remain required. Native IME,
+OS clipboard and accessibility qualification remain unverified where applicable.

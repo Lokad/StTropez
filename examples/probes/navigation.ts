@@ -24,14 +24,19 @@ export function validateNavigationInput(value: unknown): NavigationInput {
         || typeof value.symbol !== "string" || !symbol(value.symbol) || !Array.isArray(value.documents) || !value.documents.length || value.documents.length > navigationLimits.documents
         || typeof value.includeDeclaration !== "boolean" || typeof value.delay !== "number" || !Number.isFinite(value.delay) || value.delay < 0 || value.delay > 1000
         || value.fault !== undefined && value.fault !== "malformed" && value.fault !== "failure") throw new Error("Invalid navigation capture.");
+    const documents = validateNavigationDocuments(value.documents);
+    return Object.freeze({ operation: "navigation-start", id: value.id, kind: value.kind, symbol: value.symbol, documents, includeDeclaration: value.includeDeclaration, delay: value.delay,
+        ...(value.fault === undefined ? {} : { fault: value.fault }) });
+}
+export function validateNavigationDocuments(value: unknown): readonly NavigationDocument[] {
+    if (!Array.isArray(value) || !value.length || value.length > navigationLimits.documents) throw new Error("Invalid project documents.");
     const ids = new Set<string>(); let units = 0;
-    const documents = value.documents.map((doc: unknown) => {
+    const documents = value.map((doc: unknown) => {
         if (!record(doc) || typeof doc.document !== "string" || !doc.document.length || doc.document.length > 128 || ids.has(doc.document) || !integer(doc.revision) || !integer(doc.length)
             || (units += doc.length) > navigationLimits.sourceUnits) throw new Error("Navigation supports at most 100 documents and 16 Mi UTF-16 units.");
         ids.add(doc.document); return Object.freeze({ document: doc.document, revision: doc.revision, length: doc.length });
     });
-    return Object.freeze({ operation: "navigation-start", id: value.id, kind: value.kind, symbol: value.symbol, documents: Object.freeze(documents), includeDeclaration: value.includeDeclaration, delay: value.delay,
-        ...(value.fault === undefined ? {} : { fault: value.fault }) });
+    return Object.freeze(documents);
 }
 
 /** Streaming lexical fixture, not a language parser or a text mirror. */

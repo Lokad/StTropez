@@ -52,6 +52,10 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         setNavigationDelay: (delay: number) => bindings.navigation.setDelay(delay), faultNavigationNext: (fault: "malformed" | "failure") => bindings.navigation.faultNext(fault),
         faultNavigationSyncNext: (fault: "version" | "epoch" | "sequence" | "revision") => bindings.navigation.faultSyncNext(fault),
         releaseNavigationCompanion: () => bindings.navigation.releaseCompanion(),
+        setProjectDelay: (value: number) => bindings.project.setDelay(value), faultProjectNext: (value: "malformed" | "failure" | "ack") => bindings.project.faultNext(value),
+        faultIdleProject: () => bindings.project.faultIdle(),
+        setProjectTargetReadOnly: (id: DocumentId, value: boolean) => { const resource = controller.workspace.resourceForDocument(id), metadata = resource.metadata.getSnapshot();
+            controller.workspace.setCapabilities(resource.id, { ...metadata.capabilities, edit: value ? ["host"] : ["human", "host", "agent"] }); },
         navigationDocument: (id: DocumentId) => { const doc = controller.workspace.document(id); return { revision: doc.revision, length: doc.buffer.length, text: doc.buffer.slice(0, Math.min(4096, doc.buffer.length)), exports: doc.buffer.readMetrics().textExports }; },
         inspectSymbol: (id: "primary" | "secondary" | "comparison") => bindings.hover.inspectCaret(id),
         setHoverDelay: (id: string, value: number) => bindings.hover.setDelay(id, value),
@@ -79,6 +83,9 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; mode
     setDomainDelay: (delay: number) => void; faultDomainNext: (fault: "malformed" | "failure" | "late") => void;
     setNavigationDelay: (delay: number) => void; faultNavigationNext: (fault: "malformed" | "failure") => void;
     faultNavigationSyncNext: (fault: "version" | "epoch" | "sequence" | "revision") => void; releaseNavigationCompanion: () => boolean;
+    setProjectDelay: (value: number) => void; faultProjectNext: (value: "malformed" | "failure" | "ack") => void;
+    faultIdleProject: () => boolean;
+    setProjectTargetReadOnly: (id: DocumentId, value: boolean) => void;
     navigationDocument: (id: DocumentId) => Readonly<{ revision: number; length: number; text: string; exports: number }>;
     inspectSymbol: (id: "primary" | "secondary" | "comparison") => boolean;
     setHoverDelay: (id: string, value: number) => void;
