@@ -7,22 +7,26 @@ import type { EditingCandidate } from "./editing-candidate.ts";
 import { mountTextViewport } from "./viewport.ts";
 import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.ts";
 import { createComparisonScroll } from "./comparison-scroll.ts";
+import { createComparisonAlignment } from "./comparison-alignment.ts";
+import type { ComparisonAlignmentSnapshot } from "./comparison-alignment.ts";
 
 export type TextComparison = Readonly<{
     element: HTMLDivElement; controller: ComparisonController; working: EditingCandidate;
     referenceViewport: () => TextViewport | undefined;
-    snapshot: () => Readonly<{ generation: number; steps: number; advances: number; maxStepMs: number; totalStepMs: number; scrollLinked: boolean; pendingScroll: boolean; disposed: boolean }>;
+    snapshot: () => Readonly<{ generation: number; steps: number; advances: number; maxStepMs: number; totalStepMs: number; scrollLinked: boolean; pendingScroll: boolean; rowsAligned: boolean; alignment: ComparisonAlignmentSnapshot; disposed: boolean }>;
     setScrollLinked: (linked: boolean) => void;
+    setRowsAligned: (aligned: boolean) => void;
     selectHunk: (generation: number, index: number) => boolean; destroy: () => void;
 }>;
 let nextMount = 0;
 /** Two independently virtualized panes. Hosts own reference retrieval, acceptance, saving and execution. */
 export function mountTextComparison(host: HTMLElement, workspace: Workspace, workingTab: TabId, baseline: ComparisonBaseline,
-    options: Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView; scrollLinked?: boolean;
+    options: Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView; scrollLinked?: boolean; rowsAligned?: boolean;
         workingDecorate?: (line: PresentedLine) => readonly InlineDecoration[]; baselineDecorate?: (line: PresentedLine) => readonly InlineDecoration[] }> = {}): TextComparison {
     const budget = options.workBudget ?? 32768;
     if (!Number.isSafeInteger(budget) || budget < 512) throw new RangeError("Comparison budget must be at least 512.");
     if (options.scrollLinked !== undefined && typeof options.scrollLinked !== "boolean") throw new TypeError("Expected a scroll-link preference.");
+    if (options.rowsAligned !== undefined && typeof options.rowsAligned !== "boolean") throw new TypeError("Expected a row-alignment preference.");
     const owner = host.ownerDocument, win = owner.defaultView;
     if (!win) throw new Error("Comparison requires an attached browser document.");
     const controller = createComparisonController(workspace, workingTab, baseline, options), mount = ++nextMount;
@@ -33,6 +37,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     const previous = button("Previous change"), next = button("Next change"), revert = button("Use baseline");
     const linkLabel = owner.createElement("label"), link = owner.createElement("input"); link.type = "checkbox";
     linkLabel.append(link, " Link review scrolling"); controls.append(linkLabel);
+    const alignLabel = owner.createElement("label"), align = owner.createElement("input"); align.type = "checkbox"; alignLabel.append(align, " Align review rows"); controls.append(alignLabel);
     const status = owner.createElement("output"); status.setAttribute("aria-live", "polite"); controls.append(status);
     const pane = (label: string) => {
         const section = owner.createElement("section"), heading = owner.createElement("h3"), content = owner.createElement("div");
@@ -65,10 +70,12 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     let working: EditingCandidate;
     try { working = mountEditingCandidate(workingPane.content, workspace, workingTab, { view: controller.view, ariaLabel: "Comparison working source", decorate: decorate("working"), lineClass: lineClass("working") }); }
     catch (error) { root.remove(); controller.dispose(); throw error; }
+    const alignment = createComparisonAlignment(win, working, () => reference, controller.getSnapshot, schedule);
     const scroll = createComparisonScroll(win, working.viewport, () => reference, controller.getSnapshot, () => {
-        const input = working.snapshot(); return !input.composing && !input.pendingInput && !input.pendingCommand;
+        const input = working.snapshot(); return !input.composing && !input.pendingInput && !input.pendingCommand && !alignment.snapshot().pending;
     });
     const setScrollLinked = (value: boolean) => { scroll.setLinked(value); link.checked = scroll.snapshot().linked; };
+    const setRowsAligned = (value: boolean) => { const old = alignment.snapshot().enabled; alignment.setEnabled(value); align.checked = alignment.snapshot().enabled; if (value && !old) setScrollLinked(true); };
     function clearReference(): void {
         reference?.destroy(); reference = undefined;
         if (displayTarget && workspace.resolveTab(displayTarget)) workspace.close(displayTarget.id);
@@ -88,13 +95,14 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
             reference = mountTextViewport(referencePane.content, workspace, displayTab, { ariaLabel: "Comparison baseline source", decorate: decorate("baseline"), lineClass: lineClass("baseline") });
         } else if (!state.baseline && reference) clearReference();
         if (root.dataset.status !== state.status) root.dataset.status = state.status;
-        link.disabled = !state.baseline || !state.working; scroll.update();
+        link.disabled = align.disabled = !state.baseline || !state.working; alignment.update(); scroll.update();
         const generation = String(state.generation); if (root.dataset.generation !== generation) root.dataset.generation = generation;
         setText(referencePane.heading, state.baseline ? `Baseline · ${state.baseline.version}` : "Baseline unavailable");
         setText(workingPane.heading, state.working ? `Working · revision ${state.working.revision}` : "Working unavailable");
         const count = state.hunks.length; selected = selectedGeneration === state.generation ? Math.min(selected, count - 1) : -1;
         const hunk = selected >= 0 ? state.hunks[selected] : undefined;
-        setText(status, state.status === "ready" ? count ? `${hunk ? `Change ${selected + 1} of ${count}` : `${count} changes`}${hunk?.whitespaceOnly ? " · whitespace only" : ""}` : "No changes" : state.failure ?? `Comparison ${state.status}`);
+        const layout = alignment.snapshot(), message = state.status === "ready" ? count ? `${hunk ? `Change ${selected + 1} of ${count}` : `${count} changes`}${hunk?.whitespaceOnly ? " · whitespace only" : ""}` : "No changes" : state.failure ?? `Comparison ${state.status}`;
+        setText(status, message + (layout.pending ? " · preparing aligned rows" : layout.status === "failed" ? " · row alignment unavailable" : ""));
         const navigationDisabled = state.status !== "ready" || count === 0 || working.snapshot().composing;
         for (const button of [previous, next]) if (button.disabled !== navigationDisabled) button.disabled = navigationDisabled;
         const metadata = state.working ? workspace.resource(state.working.resourceId).metadata.getSnapshot() : undefined;
@@ -144,13 +152,14 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     revert.addEventListener("click", () => { if (!working.snapshot().composing) controller.revert(state.generation, selected); }, { signal: listeners.signal });
     working.input.addEventListener("compositionstart", schedule, { signal: listeners.signal }); working.input.addEventListener("compositionend", schedule, { signal: listeners.signal });
     link.addEventListener("change", () => setScrollLinked(link.checked), { signal: listeners.signal });
+    align.addEventListener("change", () => setRowsAligned(align.checked), { signal: listeners.signal });
     const unsubscribe = controller.subscribe(schedule), unsubscribeWorkspace = workspace.subscribe(schedule);
     function destroy(): void {
         if (disposed) return; disposed = true; if (timer !== undefined) win!.clearTimeout(timer);
-        unsubscribe(); unsubscribeWorkspace(); listeners.abort(); scroll.dispose(); working.destroy(); clearReference(); controller.dispose();
+        unsubscribe(); unsubscribeWorkspace(); listeners.abort(); scroll.dispose(); alignment.dispose(); working.destroy(); clearReference(); controller.dispose();
         state = controller.getSnapshot(); selected = -1; root.remove();
     }
-    try { render(); setScrollLinked(options.scrollLinked ?? false); schedule(); } catch (error) { destroy(); throw error; }
-    return Object.freeze({ element: root, controller, working, referenceViewport: () => reference, selectHunk, setScrollLinked,
-        snapshot: () => Object.freeze({ generation: measuredGeneration, steps, advances, maxStepMs, totalStepMs, scrollLinked: scroll.snapshot().linked, pendingScroll: scroll.snapshot().pending, disposed }), destroy });
+    try { render(); setRowsAligned(options.rowsAligned ?? false); setScrollLinked(options.scrollLinked ?? options.rowsAligned ?? false); schedule(); } catch (error) { destroy(); throw error; }
+    return Object.freeze({ element: root, controller, working, referenceViewport: () => reference, selectHunk, setScrollLinked, setRowsAligned,
+        snapshot: () => Object.freeze({ generation: measuredGeneration, steps, advances, maxStepMs, totalStepMs, scrollLinked: scroll.snapshot().linked, pendingScroll: scroll.snapshot().pending, rowsAligned: alignment.snapshot().enabled, alignment: alignment.snapshot(), disposed }), destroy });
 }

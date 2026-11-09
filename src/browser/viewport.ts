@@ -7,18 +7,24 @@ import type { CaretRectangle } from "./text-geometry.ts";
 import type { Affinity } from "../index.ts";
 import { createFoldRegions, FoldIndex } from "../core/folding.ts";
 import { sameSelectionSet } from "../core/selections.ts";
+import type { ComparisonRowIndex } from "../core/comparison-rows.ts";
+type RowIndex = FoldIndex | ComparisonRowIndex;
 const emptyIndex = new FoldIndex(1, []);
 /** Shared by view-only scroll coordination; this is independent of source coordinates. */
 export const viewportPadding = 12;
+export type ViewportComparisonRows = Readonly<{ documentId: DocumentId; revision: number; foldGeneration: number; id: number; lineHeight: number; index: ComparisonRowIndex }>;
 
 export type ViewportSnapshot = Readonly<{ revision: number | null; selection: Selection | null; selectionSet: SelectionSet | null; renders: number; firstLine: number; lastLine: number;
-    foldGeneration: number; visibleLines: number; collapsedFolds: number;
+    foldGeneration: number; visibleLines: number; collapsedFolds: number; visualRows: number; paddingRows: number; aligned: boolean; alignmentId: number | null; rowGeneration: number; naturalLineHeight: number;
     rows: number; partialRows: number; textUnits: number; readUnits: number; navigationReadUnits: number; navigationRows: number; navigationBatches: number; navigationPreparedRows: number; maxNavigationBatchRows: number; lastRenderMs: number; scrollTop: number; scrollLeft: number; width: number; height: number;
     lineHeight: number; columnWidth: number; verticalExtent: number; horizontalExtent: number;
     physicalHeight: number; physicalWidth: number; pending: boolean; disposed: boolean }>;
 export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentView;
     captureView: () => ViewState; restoreView: (state: ViewState) => void;
     scrollTo: (position: Readonly<{ top?: number; left?: number }>) => void;
+    setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean;
+    visualRowAt: (line: number) => number;
+    navigationLine: (line: number, direction: -1 | 1, count: number, page: boolean) => number;
     coordsAt: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
     hitTest: (clientX: number, clientY: number) => CaretRectangle | undefined;
     moveVisual: (offset: number, affinity: Affinity, direction: -1 | 1, reveal?: boolean) => CaretRectangle | undefined;
@@ -76,7 +82,8 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     const listeners = new AbortController(), padding = viewportPadding;
     let frame: number | undefined, disposed = false, previous: DocumentSnapshot | undefined;
     let top = 0, left = 0, width = 0, height = 0, lineHeight = 22.4, columnWidth = 8.4;
-    let x = scrollAxis(0, 0), y = scrollAxis(0, 0), renderedRevision: number | null = null, renderedIndex = view.folding.getSnapshot().index, renderedFoldGeneration = -1, observedFoldRevision = view.folding.getSnapshot().revision;
+    let x = scrollAxis(0, 0), y = scrollAxis(0, 0), renderedRevision: number | null = null, renderedIndex: RowIndex = view.folding.getSnapshot().index, renderedFoldGeneration = -1, observedFoldRevision = view.folding.getSnapshot().revision;
+    let comparisonRows: ViewportComparisonRows | undefined, rowGeneration = 0, renderedAlignmentId: number | null = null, naturalLineHeight = lineHeight;
     let renderedSelection: Selection | null = null;
     let renderedSelectionSet: SelectionSet | null = null;
     let renders = 0, firstLine = 0, lastLine = 0, partialRows = 0, textUnits = 0, readUnits = 0, lastRenderMs = 0;
@@ -87,12 +94,13 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     type CommandRow = { item: Row; element: HTMLDivElement; geometry?: ReturnType<typeof rowGeometry> };
     let preparedRows: Readonly<{ revision: number; selectionSet: SelectionSet; element: HTMLDivElement; rows: Map<number, CommandRow> }> | undefined;
     const clearPreparedRows = () => { if (preparedRows) { preparedRows.element.remove(); preparedRows.element.replaceChildren(); preparedRows.rows.clear(); preparedRows = undefined; } };
-    let anchor: Readonly<{ revision: number; offset: number; topRemainder: number; leftRemainder: number }> | undefined;
+    let anchor: Readonly<{ revision: number; offset: number; topRemainder: number; leftRemainder: number; aligned?: true }> | undefined;
     let reveal: Readonly<{ revision: number; foldGeneration: number; offset: number; horizontal: "center" | "nearest"; vertical: "center" | "nearest"; affinity: Affinity }> | undefined;
     let horizontalAnchor: ViewState["horizontalAnchor"];
     let fragmentPlacement: Readonly<{ revision: number; line: number; from: number; to: number; left: number; shift: number }> | undefined;
     let measuredWidth = 0, measuredFont = "", measuredRevision: number | null = null;
     const rows = new Map<number, HTMLDivElement>();
+    const paddingRows = new Map<number, HTMLDivElement>();
     const geometries = new Map<number, ReturnType<typeof rowGeometry>>();
     const geometry = (element: HTMLDivElement) => {
         const line = Number(element.dataset.line); let value = geometries.get(line);
@@ -115,6 +123,25 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     const schedule = () => { if (!disposed && frame === undefined) frame = win.requestAnimationFrame(render); };
     const flush = () => { if (disposed) return; if (frame !== undefined) { win.cancelAnimationFrame(frame); frame = undefined; } render(); };
     const position = (axis: ScrollAxis, value: number): number => Math.min(axis.maximum, Math.max(0, value));
+    const gapAt = (index: RowIndex, row: number) => "gapAt" in index ? index.gapAt(row) : undefined;
+    function verticalAnchor(): ViewState["verticalAnchor"] {
+        if (!previous || previous.revision !== workspace.observeDocument(documentId).getSnapshot()?.revision) return;
+        const at = Math.min(renderedIndex.visibleLineCount - 1, Math.max(0, Math.floor((top - padding) / lineHeight))), gap = gapAt(renderedIndex, at);
+        const offset = gap?.offset ?? previous.buffer.offsetAt(renderedIndex.lineAt(at));
+        // Padding maps to a real boundary; keep its distance from that SOURCE row, which
+        // may span several padding rows and therefore has a negative pixel remainder.
+        return { revision: previous.revision, offset, topRemainder: top - renderedIndex.rowAt(previous.buffer.lineAt(offset)) * lineHeight,
+            ...(renderedAlignmentId !== null ? { aligned: true } : {}) };
+    }
+    function setComparisonRows(value: ViewportComparisonRows | undefined): boolean {
+        if (disposed || !workspace.resolveTab(target)) return false;
+        const document = workspace.observeDocument(documentId).getSnapshot(), folds = view.folding.getSnapshot();
+        if (value && (!document || value.documentId !== documentId || value.revision !== document.revision || value.foldGeneration !== folds.generation || !value.index.matches(document.buffer, folds.index))) return false;
+        if (value && (!Number.isSafeInteger(value.id) || value.id < 1 || !Number.isFinite(value.lineHeight) || value.lineHeight <= 0)) throw new RangeError("Invalid comparison row capture.");
+        if (comparisonRows?.id === value?.id) return true;
+        const at = verticalAnchor(); if (at && !anchor) anchor = { revision: at.revision, offset: at.offset, topRemainder: at.topRemainder, leftRemainder: left - (at.offset - document!.buffer.offsetAt(document!.buffer.lineAt(at.offset))) * columnWidth };
+        comparisonRows = value && Object.freeze({ ...value }); rowGeneration++; clearPreparedRows(); schedule(); return true;
+    }
     const setScroll = (position: Readonly<{ top?: number; left?: number }>) => {
         if (disposed) return;
         if ((position.top !== undefined && !Number.isFinite(position.top)) || (position.left !== undefined && !Number.isFinite(position.left))) throw new RangeError("Invalid scroll position.");
@@ -130,8 +157,8 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             if (!anchor) {
                 const visibleRow = Math.min(renderedIndex.visibleLineCount - 1, Math.max(0, Math.floor((top - padding) / lineHeight))), line = renderedIndex.lineAt(visibleRow);
                 const start = previous.buffer.offsetAt(line), end = line + 1 < previous.buffer.lineCount ? previous.buffer.offsetAt(line + 1) - 1 : previous.buffer.length;
-                const offset = Math.min(end, start + Math.floor(left / columnWidth));
-                anchor = { revision: previous.revision, offset, topRemainder: top - visibleRow * lineHeight, leftRemainder: left - (offset - start) * columnWidth };
+                const offset = gapAt(renderedIndex, visibleRow)?.offset ?? Math.min(end, start + Math.floor(left / columnWidth));
+                anchor = { revision: previous.revision, offset, topRemainder: top - renderedIndex.rowAt(previous.buffer.lineAt(offset)) * lineHeight, leftRemainder: left - (offset - start) * columnWidth };
             }
             anchor = current.change?.previousRevision === anchor.revision
                 ? { ...anchor, revision: current.revision, offset: current.change.mapping.map(anchor.offset, "before").offset } : undefined;
@@ -151,7 +178,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         }
         if (previous && !anchor && previous.revision === workspace.observeDocument(documentId).getSnapshot()?.revision) {
             const visibleRow = Math.min(renderedIndex.visibleLineCount - 1, Math.max(0, Math.floor((top - padding) / lineHeight))), line = renderedIndex.lineAt(visibleRow);
-            anchor = { revision: previous.revision, offset: previous.buffer.offsetAt(line), topRemainder: top - visibleRow * lineHeight, leftRemainder: left };
+            anchor = { revision: previous.revision, offset: previous.buffer.offsetAt(line), topRemainder: top - renderedIndex.rowAt(line) * lineHeight, leftRemainder: left };
         }
         if (reveal && reveal.foldGeneration !== folds.generation) reveal = undefined;
         horizontalAnchor = undefined; fragmentPlacement = undefined; schedule();
@@ -233,7 +260,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             // Complete short rows have a known origin. Contextual windows keep the existing fallback.
             if (end - start > 514) continue;
             const item = row(buffer, line, left, true); if (!item.complete) continue;
-            const node = owner.createElement("div"); paintRow(node, item, document, selectionSet); node.style.height = `${lineHeight}px`;
+            const node = owner.createElement("div"); paintRow(node, item, document, selectionSet); node.style.height = `${lineHeight}px`; node.style.lineHeight = comparisonRows ? `${lineHeight}px` : "";
             element.append(node); batchRows.set(line, { item, element: node });
         }
         // Identical painted rows already reuse the single-row probe's native geometry. Keep
@@ -265,7 +292,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         if (complete && end - start > 514) return;
         const item = row(buffer, line, scrollLeft, true); if (complete && !item.complete) return;
         const changed = paintRow(commandRow, item, document, view.getSnapshot().selectionSet);
-        commandRow.style.height = `${lineHeight}px`; root.append(commandMeasure); navigationRows++;
+        commandRow.style.height = `${lineHeight}px`; commandRow.style.lineHeight = comparisonRows ? `${lineHeight}px` : ""; root.append(commandMeasure); navigationRows++;
         try {
             if (changed || !commandGeometry) commandGeometry = rowGeometry(commandRow, 0, document.revision, lineHeight);
             return work(measuredRow({ item, element: commandRow, geometry: commandGeometry }, document.revision, rectangle));
@@ -287,7 +314,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         // Read container metrics before writing rows; bounded shaping reads follow the writes.
         width = root.clientWidth; height = root.clientHeight;
         columnWidth = probe.getBoundingClientRect().width / 64 || 8.4;
-        const style = win.getComputedStyle(root); lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.6;
+        const style = win.getComputedStyle(root); naturalLineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.6; lineHeight = naturalLineHeight;
         const font = [style.fontFamily, style.fontSize, style.fontWeight, style.fontStyle, style.letterSpacing, style.tabSize].join("|");
         if (font !== measuredFont) { measuredWidth = 0; measuredFont = font; }
         const document = workspace.resolveTab(target) ? workspace.observeDocument(documentId).getSnapshot() : undefined;
@@ -296,11 +323,17 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             layer.style.transform = "none"; layer.style.width = "0px"; layer.style.height = "0px";
             root.setAttribute("aria-disabled", "true"); root.setAttribute("aria-busy", String(resource.getSnapshot().state === "loading"));
             previous = undefined; anchor = undefined; renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; firstLine = 0; lastLine = 0;
-            renderedIndex = emptyIndex; renderedFoldGeneration = -1; foldButtons.clear(); foldLayer.replaceChildren(); return;
+            renderedIndex = emptyIndex; renderedFoldGeneration = -1; renderedAlignmentId = null; comparisonRows = undefined; paddingRows.clear(); foldButtons.clear(); foldLayer.replaceChildren(); return;
         }
-        const folds = view.folding.getSnapshot(), index = folds.index;
+        const folds = view.folding.getSnapshot();
+        if (comparisonRows && (comparisonRows.revision !== document.revision || comparisonRows.foldGeneration !== folds.generation || !comparisonRows.index.matches(document.buffer, folds.index))) { comparisonRows = undefined; rowGeneration++; }
+        const index: RowIndex = comparisonRows?.index ?? folds.index;
+        if (comparisonRows) lineHeight = Math.max(naturalLineHeight, comparisonRows.lineHeight);
         if (measuredRevision !== document.revision) { measuredWidth = 0; measuredRevision = document.revision; }
-        if (anchor?.revision === document.revision) {
+        // A ref replay can paint source-only rows before cooperative alignment is ready.
+        // Retain the captured aligned source anchor until its intended grid exists.
+        const deferAnchor = anchor?.revision === document.revision && anchor.aligned === true && !comparisonRows;
+        if (anchor?.revision === document.revision && !deferAnchor) {
             const line = document.buffer.lineAt(anchor.offset);
             top = index.rowAt(line) * lineHeight + anchor.topRemainder; left = (anchor.offset - document.buffer.offsetAt(line)) * columnWidth + anchor.leftRemainder;
         } else if (previous && previous.revision !== document.revision && document.change === null) { top = 0; left = 0; }
@@ -310,7 +343,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             const estimated = padding + (reveal.offset - document.buffer.offsetAt(line)) * columnWidth;
             left = reveal.horizontal === "nearest" ? expose(estimated, 1, left, width) : Math.max(0, estimated - width / 2);
         }
-        const requested = reveal; anchor = undefined; reveal = undefined;
+        const requested = reveal; if (!deferAnchor || requested) anchor = undefined; reveal = undefined;
         x = scrollAxis(Math.max(document.buffer.longestLineLength * columnWidth, measuredWidth) + padding * 2, width);
         y = scrollAxis(index.visibleLineCount * lineHeight + padding * 2, height);
         top = position(y, top); left = position(x, left); readUnits = 0;
@@ -318,7 +351,8 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         const lastRow = Math.min(index.visibleLineCount, Math.max(firstRow + 1, Math.ceil((top + height) / lineHeight) + overscanLines));
         firstLine = index.lineAt(firstRow); lastLine = index.lineAt(lastRow - 1) + 1;
         const { selection: selected, selectionSet } = view.getSnapshot();
-        const next: Row[] = []; for (let visible = firstRow; visible < lastRow; visible++) next.push(row(document.buffer, index.lineAt(visible)));
+        const next: Row[] = [], blanks: number[] = [];
+        for (let visible = firstRow; visible < lastRow; visible++) { if (gapAt(index, visible)) blanks.push(visible); else next.push(row(document.buffer, index.lineAt(visible))); }
         partialRows = next.filter(row => !row.complete).length;
         spacer.style.width = `${x.physicalExtent}px`; spacer.style.height = `${y.physicalExtent}px`;
         const physicalLeft = x.toPhysical(left), physicalTop = y.toPhysical(top);
@@ -333,14 +367,21 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
                 && placement.from === item.from && placement.to === item.to && placement.left === left ? placement.shift : 0;
             element.style.transform = `translate(${item.left + shift}px, ${padding + index.rowAt(item.line) * lineHeight - top}px)`;
             element.style.height = `${lineHeight}px`;
+            element.style.lineHeight = comparisonRows ? `${lineHeight}px` : "";
             paintRow(element, item, document, selectionSet);
             textUnits += item.text.length;
         }
         const visibleLines = new Set(next.map(item => item.line));
         for (const [line, element] of rows) if (!visibleLines.has(line)) { element.remove(); rows.delete(line); }
         next.forEach((item, index) => { const element = rows.get(item.line)!; if (layer.children.item(index) !== element) layer.insertBefore(element, layer.children.item(index)); });
+        const visiblePadding = new Set(blanks);
+        for (const [at, element] of paddingRows) if (!visiblePadding.has(at)) { element.remove(); paddingRows.delete(at); }
+        for (const at of blanks) {
+            let element = paddingRows.get(at); if (!element) { element = owner.createElement("div"); element.className = "st-comparison-padding"; element.setAttribute("aria-hidden", "true"); paddingRows.set(at, element); layer.append(element); }
+            element.style.transform = `translate(0px, ${padding + at * lineHeight - top}px)`; element.style.height = `${lineHeight}px`; element.style.width = `${width}px`;
+        }
         root.removeAttribute("aria-disabled"); root.setAttribute("aria-busy", "false"); root.dataset.revision = String(document.revision);
-        renderedRevision = document.revision; renderedSelection = selected; renderedSelectionSet = selectionSet; previous = document; renderedIndex = index; renderedFoldGeneration = folds.generation; renders++; geometries.clear();
+        renderedRevision = document.revision; renderedSelection = selected; renderedSelectionSet = selectionSet; previous = document; renderedIndex = index; renderedFoldGeneration = folds.generation; renderedAlignmentId = comparisonRows?.id ?? null; renders++; geometries.clear();
         const visibleFolds = new Set<string>(), orderedButtons: HTMLButtonElement[] = [];
         for (const item of next) {
             const region = index.headerAt(item.line); if (!region) continue; visibleFolds.add(region.id);
@@ -443,6 +484,8 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         hitTest: (clientX: number, clientY: number) => {
             if (!Number.isFinite(clientX) || !Number.isFinite(clientY) || disposed || !workspace.resolveTab(target)
                 || workspace.observeDocument(documentId).getSnapshot()?.revision !== renderedRevision) return undefined;
+            const rectangle = root.getBoundingClientRect(), at = Math.max(0, Math.min(renderedIndex.visibleLineCount - 1, Math.floor((clientY - rectangle.top + top - padding) / lineHeight))), gap = gapAt(renderedIndex, at);
+            if (gap) return Object.freeze({ offset: gap.offset, affinity: "after", left: rectangle.left + padding - left, top: rectangle.top + padding + at * lineHeight - top, height: lineHeight, revision: renderedRevision!, padding: true });
             let element: HTMLDivElement | undefined, distance = Infinity;
             for (const candidate of rows.values()) {
                 const rectangle = candidate.getBoundingClientRect(), next = Math.max(rectangle.top - clientY, clientY - rectangle.bottom, 0);
@@ -454,9 +497,9 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             const before = measured.point(offset, "before"), after = measured.point(offset, "after"); if (!before || !after) return;
             if (before.offset !== offset && after.offset !== offset) return direction * before.left > direction * after.left ? before : after;
             const next = measured.visual(offset, affinity, direction); if (next) return next;
-            const buffer = workspace.document(documentId).buffer, at = renderedIndex.rowAt(buffer.lineAt(offset)) + direction * measured.flow;
-            if (at < 0 || at >= renderedIndex.visibleLineCount) return measured.edge(direction);
-            const line = renderedIndex.lineAt(at);
+            const buffer = workspace.document(documentId).buffer, source = view.folding.getSnapshot().index, at = source.rowAt(buffer.lineAt(offset)) + direction * measured.flow;
+            if (at < 0 || at >= source.visibleLineCount) return measured.edge(direction);
+            const line = source.lineAt(at);
             return rowForOffset(buffer.offsetAt(line), revealRow, neighbor => neighbor.edge(direction < 0 ? 1 : -1));
         }),
         collapseVisual: (from: number, to: number, direction: -1 | 1, revealRow = true) => rowForOffset(from, revealRow, first => direction * first.flow < 0
@@ -483,16 +526,30 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         },
         flush,
         scrollTo: setScroll,
+        setComparisonRows,
+        visualRowAt: line => renderedIndex.rowAt(line),
+        navigationLine: (line, direction, count, page) => {
+            if (!Number.isSafeInteger(count) || count < 1 || direction !== -1 && direction !== 1) throw new RangeError("Invalid row navigation.");
+            const index = page ? renderedIndex : view.folding.getSnapshot().index, at = Math.max(0, Math.min(index.visibleLineCount - 1, index.rowAt(line) + direction * count));
+            return "nextLine" in index ? index.nextLine(at, direction) : index.lineAt(at);
+        },
         captureView: () => { const { selection, selectionSet } = view.getSnapshot();
-            const folds = view.folding.getSnapshot();
+            // Ref replay may recapture an intermediate unaligned paint. Always retain source
+            // coordinates, and prefer an anchor that has not yet reached its first paint.
+            const folds = view.folding.getSnapshot(), vertical = anchor && anchor.revision === workspace.observeDocument(documentId).getSnapshot()?.revision
+                ? { revision: anchor.revision, offset: anchor.offset, topRemainder: anchor.topRemainder, ...(anchor.aligned || renderedAlignmentId !== null ? { aligned: true as const } : {}) }
+                : verticalAnchor();
             return Object.freeze({ ...selection, selectionSet, scrollTop: top, scrollLeft: left,
+                ...(vertical ? { verticalAnchor: Object.freeze(vertical) } : {}),
                 folding: Object.freeze({ documentId, viewId: view.id, revision: folds.revision, generation: folds.generation, regions: folds.regions }),
                 ...(horizontalAnchor ? { horizontalAnchor: Object.freeze({ ...horizontalAnchor }) } : {}) }); },
         restoreView: (state: ViewState) => {
-            if (disposed || !workspace.resolveTab(target)) return; const document = workspace.document(documentId), value = state.horizontalAnchor;
+            if (disposed || !workspace.resolveTab(target)) return; const document = workspace.document(documentId), value = state.horizontalAnchor, vertical = state.verticalAnchor;
             if (value && (!Number.isSafeInteger(value.revision) || value.revision < 0 || !Number.isSafeInteger(value.offset) || value.offset < 0
                 || !Number.isFinite(value.left) || value.left < 0 || value.affinity !== "before" && value.affinity !== "after")) throw new RangeError("Invalid horizontal view anchor.");
             if (value?.revision === document.revision && value.offset > document.buffer.length) throw new RangeError("Horizontal view anchor is outside the document.");
+            if (vertical && (!Number.isSafeInteger(vertical.revision) || vertical.revision < 0 || !Number.isSafeInteger(vertical.offset) || vertical.offset < 0 || !Number.isFinite(vertical.topRemainder) || vertical.aligned !== undefined && vertical.aligned !== true)) throw new RangeError("Invalid vertical view anchor.");
+            if (vertical?.revision === document.revision && vertical.offset > document.buffer.length) throw new RangeError("Vertical view anchor is outside the document.");
             const folds = view.folding.getSnapshot(), saved = state.folding;
             const restoreFolds = saved && saved.documentId === documentId && saved.revision === document.revision && saved.viewId !== view.id && folds.generation === 0 && !folds.regions.length;
             if (restoreFolds) createFoldRegions(document.buffer, saved.regions);
@@ -502,21 +559,22 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             if (restoreFolds) view.folding.setRanges(folds, saved.regions);
             setScroll({ top: state.scrollTop, left: state.scrollLeft });
             if (value?.revision === document.revision) horizontalAnchor = { ...value };
+            if (vertical?.revision === document.revision) anchor = { ...vertical, leftRemainder: left - (vertical.offset - document.buffer.offsetAt(document.buffer.lineAt(vertical.offset))) * columnWidth };
         },
         revealOffset: (offset: number, options: RevealOptions = {}) => {
             if (disposed || !workspace.resolveTab(target)) return; const document = workspace.document(documentId); document.buffer.lineAt(offset);
             const horizontal = options.horizontal ?? "center", vertical = options.vertical ?? "center", affinity = options.affinity ?? "after";
             if (![horizontal, vertical].every(value => value === "center" || value === "nearest") || affinity !== "after" && affinity !== "before") throw new RangeError("Invalid reveal options.");
             view.folding.reveal(view.folding.getSnapshot(), offset);
-            horizontalAnchor = undefined; fragmentPlacement = undefined;
+            anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             reveal = { revision: document.revision, foldGeneration: view.folding.getSnapshot().generation, offset, horizontal, vertical, affinity }; schedule();
         },
-        snapshot: () => Object.freeze({ revision: renderedRevision, selection: renderedSelection, selectionSet: renderedSelectionSet, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, foldGeneration: renderedFoldGeneration, visibleLines: previous ? renderedIndex.visibleLineCount : 0, collapsedFolds: previous ? renderedIndex.collapsedCount : 0, navigationReadUnits, navigationRows, navigationBatches, navigationPreparedRows: preparedRows?.rows.size ?? 0, maxNavigationBatchRows, lastRenderMs,
+        snapshot: () => Object.freeze({ revision: renderedRevision, selection: renderedSelection, selectionSet: renderedSelectionSet, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, foldGeneration: renderedFoldGeneration, visibleLines: previous ? view.folding.getSnapshot().index.visibleLineCount : 0, collapsedFolds: previous ? renderedIndex.collapsedCount : 0, visualRows: previous ? renderedIndex.visibleLineCount : 0, paddingRows: paddingRows.size, aligned: renderedAlignmentId !== null, alignmentId: renderedAlignmentId, rowGeneration, naturalLineHeight, navigationReadUnits, navigationRows, navigationBatches, navigationPreparedRows: preparedRows?.rows.size ?? 0, maxNavigationBatchRows, lastRenderMs,
             scrollTop: top, scrollLeft: left, width, height, lineHeight, columnWidth, verticalExtent: y.extent, horizontalExtent: x.extent,
             physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent, pending: frame !== undefined, disposed }),
         destroy: () => {
             if (disposed) return; disposed = true; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
-            observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
+            observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); paddingRows.clear(); comparisonRows = undefined; renderedAlignmentId = null; geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove(); clearPreparedRows();
             navigationBatches = 0; maxNavigationBatchRows = 0;
             renderedIndex = emptyIndex; renderedFoldGeneration = -1; foldButtons.clear(); foldLayer.replaceChildren();

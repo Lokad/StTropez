@@ -165,8 +165,8 @@ keeps the following unchanged row aligned; an insertion inside a row retains its
 Raw hunk endpoints preserve the true newline delta, including same-line edits and unterminated
 final rows. This original logarithmic projection adds no parser, buffer scan/export or dependency.
 Folds project to visible headers without expanding them. Each pane clamps at its own scroll limit,
-so positions near unequal document ends can differ. No filler rows or pixel-perfect row alignment
-are introduced; inline merge conflicts and advanced review remain later work.
+so positions near unequal document ends can differ. Enable row alignment below to give both panes
+the same vertical row grid. Inline merge conflicts and advanced review remain later work.
 
 Coordination waits for a ready comparison and current viewport revisions/folds. A queued frame
 captures the comparison snapshot and reference view; edits, reference replacement, changed folds,
@@ -176,6 +176,39 @@ fold changes reuse bounded frame scheduling; horizontal scrolling does not move 
 The host owns refresh/acceptance controls and transport errors. Native IME, accessibility and
 physical-display qualification remain separate; scroll callback work is not complete interaction
 latency.
+
+**Align review rows** optionally adds empty visual padding beside inserted/deleted rows.
+Hosts can pass `rowsAligned` or call `setRowsAligned(boolean)`; `snapshot().rowsAligned` retains
+the preference and `snapshot().alignment` reports preparation, pending work, run count or failure.
+Enabling alignment also enables linked scrolling. Hosts may subsequently disable linking while
+keeping the shared grid. Both preferences survive the evaluation hosts' stable-ref remounts.
+
+The grid reuses the completed exact diff. It zips source rows within each changed block and pads
+its shorter side; it does not search again for matching line bodies. Line terminators remain part
+of equality, including a body moved to an unterminated final row. Scalar-trimmed hunk endpoints
+expand to whole rows on both sides when either end lies inside a row. Empty documents, line-start
+insertions, deleted newlines and EOF boundaries retain real source coordinates. Collapsed folds
+remain independent: a row hidden on one side becomes padding there, and rows hidden on both sides
+are omitted. A common pitch uses the larger measured natural line height; this adds no shaping.
+
+Sparse runs contain source/visual coordinates, with work proportional to diff and fold boundaries
+rather than document or padding row count. A cooperative cursor publishes both layouts together
+against captured reference, working revision and fold snapshots. Edits, refresh, fold changes,
+disable and disposal cancel stale work. Publication waits for pending input, navigation, pointer
+gestures and composition to settle. Pending state reflects stale captures immediately. Only the
+visible row window creates DOM; padding is empty, nonfocusable and hidden from accessibility APIs.
+This is not native assistive-technology qualification.
+
+Padding contains no source characters. Clicking it chooses the adjacent source boundary or visible
+fold header; ordinary arrows skip padding and Page commands use the visual grid with real-source
+destinations. Exact text, complete selections, shared history and Save/Run targets remain source
+owned. View snapshots expose `visualRows`, `paddingRows`, `aligned`, `alignmentId`, `rowGeneration`
+and `naturalLineHeight`; `visibleLines` continues to count genuine fold-visible source rows.
+Versioned `verticalAnchor` view state preserves source position across layout changes and rapid
+ref remounts, including before the first paint. Its source-row pixel remainder retains positions
+inside padding; the optional `aligned: true` marker defers restoration until the shared grid
+exists, so provisional source-only paints cannot consume it. Explicit reveal/scroll overrides it. `setComparisonRows` rejects mismatched document,
+revision or fold captures. Hosts should normally use the comparison's alignment API instead.
 
 Hosts may supply independent `workingDecorate` and `baselineDecorate` callbacks for bounded
 visible fragments. Their decorations compose with changed ranges, preserving both classes

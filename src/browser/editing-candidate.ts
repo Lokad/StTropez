@@ -71,7 +71,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     let graphemeScanSteps = 0, maxGraphemeScanStepMs = 0;
     let visualMoves = 0;
     let group: Readonly<{ type: string; revision: number; selectionSet: SelectionSet; time: number; key: string }> | undefined;
-    let drag: Readonly<{ pointer: number; anchor: number; anchorAffinity: Affinity; revision: number; x: number; y: number; selectionSet: SelectionSet; baseRanges: readonly Selection[] }> | undefined;
+    let drag: Readonly<{ pointer: number; anchor: number; anchorAffinity: Affinity; revision: number; x: number; y: number; selectionSet: SelectionSet; baseRanges: readonly Selection[]; padding: boolean }> | undefined;
     let dragFrame: number | undefined, dragTime: number | undefined, dragScrollFrames = 0, maxDragScrollStepMs = 0;
     const commandTimers = new Set<number>();
     let wordJob: Readonly<{ cursor: WordCursor; revision: number; selection: Selection }> | undefined, wordTimer: number | undefined;
@@ -440,7 +440,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     }
     function navigationLayout(): string {
         const state = viewport.snapshot();
-        return [navigationStyle(), root.clientWidth, root.clientHeight, state.width, state.height, state.lineHeight, state.columnWidth, view.folding.getSnapshot().generation].join("|");
+        return [navigationStyle(), root.clientWidth, root.clientHeight, state.width, state.height, state.lineHeight, state.columnWidth, state.rowGeneration, view.folding.getSnapshot().generation].join("|");
     }
     function beginNavigation(prepare: (capture: CommandCapture, style: string, inline: boolean) => void, canInline?: (capture: CommandCapture) => boolean): void {
         cancelWord(); navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
@@ -482,6 +482,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (capture.selectionSet.ranges.length > 2) return false;
         // Page destinations use current viewport dimensions, including a pending resize.
         viewport.flush();
+        if (viewport.snapshot().aligned) return false;
         const buffer = capture.buffer, folds = view.folding.getSnapshot().index, count = verticalCount(page), lines = new Set<number>();
         for (const range of capture.selectionSet.ranges) {
             const line = buffer.lineAt(range.head), row = folds.rowAt(line);
@@ -543,14 +544,14 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const buffer = capture.buffer, selected = capture.selection;
         if (!viewport.coordsAt(selected.head, selected.headAffinity)) { viewport.revealOffset(selected.head); viewport.flush(); }
         if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
-        const state = viewport.snapshot(), layout = navigationLayout(), foldIndex = view.folding.getSnapshot().index;
+        const state = viewport.snapshot(), layout = navigationLayout();
         const prior = preferred?.selections === capture.selectionSet && preferred.revision === capture.revision && preferred.layout === layout ? preferred.columns : undefined;
         const columns: (number | undefined)[] = [], count = verticalCount(page);
         navigationPreparationMs = win.performance.now() - began;
         let index = 0, pageDelta = 0;
         eachRange(capture, "grapheme", (range, done) => {
-            const at = index++, line = buffer.lineAt(range.head), row = foldIndex.rowAt(line), next = foldIndex.lineAt(Math.max(0, Math.min(foldIndex.visibleLineCount - 1, row + direction * count)));
-            if (at === capture.selectionSet.primary) pageDelta = (foldIndex.rowAt(next) - row) * state.lineHeight;
+            const at = index++, line = buffer.lineAt(range.head), row = viewport.visualRowAt(line), next = viewport.navigationLine(line, direction, count, page);
+            if (at === capture.selectionSet.primary) pageDelta = (viewport.visualRowAt(next) - row) * state.lineHeight;
             if (next === line) { columns.push(undefined); done(moved(range, direction < 0 ? 0 : buffer.length, extend)); return; }
             const column = prior?.[at] ?? viewport.columnAt(range.head, range.headAffinity);
             const hit = column === undefined ? undefined : viewport.caretAtColumn(next, column);
@@ -575,7 +576,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         }, { validLayout: () => navigationLayout() === layout, navigation: true, inline, ...(capture.selectionSet.ranges.length > 1 ? {
             ...(capture.selectionSet.ranges.length <= 32 ? { batchSize: 16 } : {}),
             prepare: (ranges: readonly Selection[]) => viewport.prepareNavigationRows([...new Set(ranges.flatMap(range => {
-                const line = buffer.lineAt(range.head), row = foldIndex.rowAt(line); return [line, foldIndex.lineAt(Math.max(0, Math.min(foldIndex.visibleLineCount - 1, row + direction * count)))];
+                const line = buffer.lineAt(range.head); return [line, viewport.navigationLine(line, direction, count, page)];
             }))]) } : {}) });
         }, capture => shortVertical(capture, direction, page));
     }
@@ -866,7 +867,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const anchor = extending ? state.selection.anchor : point.offset, anchorAffinity = extending ? state.selection.anchorAffinity ?? "after" : point.affinity;
         const baseRanges = event.altKey ? state.selectionSet.ranges : extending ? state.selectionSet.ranges.filter((_, index) => index !== state.selectionSet.primary) : [];
         view.setSelections(revision, [...baseRanges, { anchor, head: point.offset, anchorAffinity, headAffinity: point.affinity }], baseRanges.length); refresh();
-        drag = { pointer: event.pointerId, anchor, anchorAffinity, revision, x: event.clientX, y: event.clientY, selectionSet: view.getSnapshot().selectionSet, baseRanges }; root.setPointerCapture(event.pointerId);
+        if (point.padding) viewport.revealOffset(point.offset, { horizontal: "nearest", vertical: "nearest", affinity: point.affinity });
+        drag = { pointer: event.pointerId, anchor, anchorAffinity, revision, x: event.clientX, y: event.clientY, selectionSet: view.getSnapshot().selectionSet, baseRanges, padding: point.padding === true }; root.setPointerCapture(event.pointerId);
     }, { signal: listeners.signal });
     root.addEventListener("pointermove", event => {
         if (drag?.pointer !== event.pointerId) return;
@@ -886,7 +888,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const point = viewport.hitTest(Math.max(bounds.left, Math.min(bounds.right - 1, current.x)), Math.max(bounds.top, Math.min(bounds.bottom - 1, current.y)));
         if (!point) return;
         view.setSelections(current.revision, [...current.baseRanges, { anchor: current.anchor, head: point.offset, anchorAffinity: current.anchorAffinity, headAffinity: point.affinity }], current.baseRanges.length);
-        if (drag === current) drag = { ...current, selectionSet: view.getSnapshot().selectionSet }; refresh();
+        if (drag === current) drag = { ...current, selectionSet: view.getSnapshot().selectionSet, padding: point.padding === true }; refresh();
     }
     function dragVelocity(): Readonly<{ x: number; y: number }> {
         if (!drag) return { x: 0, y: 0 }; const bounds = dragBounds(), metrics = viewport.snapshot();
@@ -919,8 +921,12 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     const stopDrag = (event?: PointerEvent) => {
         if (event && event.pointerId !== drag?.pointer) return;
         if (dragFrame !== undefined) win.cancelAnimationFrame(dragFrame); dragFrame = undefined; dragTime = undefined;
-        const pointer = drag?.pointer; drag = undefined;
+        const pointer = drag?.pointer, padding = drag?.padding; drag = undefined;
         if (pointer !== undefined && root.hasPointerCapture(pointer)) root.releasePointerCapture(pointer);
+        if (event?.type === "pointerup" && padding && !disposed && workspace.resolveTab(target)) {
+            const selected = view.getSnapshot().selection;
+            viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" });
+        }
     };
     root.addEventListener("pointerup", stopDrag, { signal: listeners.signal }); root.addEventListener("pointercancel", stopDrag, { signal: listeners.signal });
     root.addEventListener("lostpointercapture", stopDrag, { signal: listeners.signal });

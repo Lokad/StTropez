@@ -42,7 +42,10 @@ in its canonical reply. Reloading starts a new fixture; this is not durable stor
    immutable while the working pane shares source text and history.
    Enable **Link review scrolling** to follow corresponding vertical positions in either pane;
    clear it for independent scrolling. Selections, horizontal offsets and reference identity stay
-   independent. [Comparison policy](comparison.md) describes changed-block, fold and endpoint limits.
+   independent. Enable **Align review rows** to add empty padding beside unequal changed blocks;
+   it also enables linking. Clear alignment to return to source-only rows. Padding never edits the
+   source or expands a fold; arrows skip it and Page commands follow the shared visual grid.
+   [Comparison policy](comparison.md) describes changed-block, fold and endpoint limits.
    **Keep draft version** captures the committed text. Choose a saved, server, draft or historical
    entry in **Review version**, then **Finish version load**. Typing may continue during the load;
    Save and Run keep targeting the working source. **Discard reviewed changes** followed by

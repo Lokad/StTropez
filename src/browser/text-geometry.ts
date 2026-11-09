@@ -1,7 +1,7 @@
 import { resolveBidi, graphemeBoundaries } from "../index.ts";
 import type { Affinity } from "../index.ts";
 
-export type CaretRectangle = Readonly<{ offset: number; affinity: Affinity; left: number; top: number; height: number; revision: number }>;
+export type CaretRectangle = Readonly<{ offset: number; affinity: Affinity; left: number; top: number; height: number; revision: number; padding?: true }>;
 export { graphemeBoundaries };
 /** Geometry retains native shaping; resolved bidi levels distinguish the two sides of a logical boundary. */
 export function rowGeometry(element: HTMLElement, from: number, revision: number, lineHeight: number) {

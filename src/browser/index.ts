@@ -3,7 +3,7 @@ import type { Affinity, DocumentId, DocumentSnapshot, DocumentView, EditKind, Fo
 import { captureNativeInsertion, resolveNativeInsertion } from "./input-target.ts";
 import type { NativeInsertionTarget } from "./input-target.ts";
 export { mountTextViewport } from "./viewport.ts";
-export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RevealOptions, TextViewport, ViewportSnapshot } from "./viewport.ts";
+export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RevealOptions, TextViewport, ViewportSnapshot, ViewportComparisonRows } from "./viewport.ts";
 export { mountEditingCandidate } from "./editing-candidate.ts";
 export type { EditingCandidate } from "./editing-candidate.ts";
 export { createFindController } from "./find.ts";
@@ -14,6 +14,7 @@ export { mountTextComparison } from "./comparison.ts";
 export type { TextComparison } from "./comparison.ts";
 
 export type ViewState = Selection & Readonly<{ scrollTop: number; scrollLeft: number;
+    verticalAnchor?: Readonly<{ revision: number; offset: number; topRemainder: number; aligned?: true }>;
     selectionSet?: SelectionSet;
     folding?: Readonly<{ documentId: DocumentId; viewId: ViewId; revision: number; generation: number; regions: readonly FoldRange[] }>;
     horizontalAnchor?: Readonly<{ revision: number; offset: number; affinity: Affinity; left: number }> }>;
