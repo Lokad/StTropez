@@ -68,7 +68,8 @@ adding a language client dependency. The hosts also expose [captured definition/
 navigation](provider-navigation.md) through a streaming worker lane, including unmounted
 working resources, safe paged locations and complete-set return. Its local lexical policy is
 explicit; [captured signature help](signature-help.md) now runs in the versioned worker lane.
-General semantic resolution, rename, actions and other language workflows remain
+[Captured lexical rename](rename.md) reuses that worker transport and atomic workspace edits with an explicit paged preview.
+General semantic resolution and rename, actions and other language workflows remain
 separate required work.
 
 The complete response is validated before publication, then rendered only as text. Escape,

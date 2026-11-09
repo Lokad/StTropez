@@ -24,7 +24,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
     window.addEventListener("pagehide", () => { void dispose(); }, { once: true, signal: listeners.signal });
     controller.startBackground(); mount();
     const fixture = Object.freeze({ ready: true, mode, snapshot: () => { const state = controller.debug(), views = bindings.debug();
-        return { ...state, hostSubscriptions: state.hostSubscriptions + views.language.subscriptions + views.hover.subscriptions + views.tablePaste.subscriptions + views.domain.subscriptions + views.navigation.subscriptions, bindings: views, commits: commits() }; },
+        return { ...state, hostSubscriptions: state.hostSubscriptions + views.language.subscriptions + views.hover.subscriptions + views.tablePaste.subscriptions + views.domain.subscriptions + views.navigation.subscriptions + views.project.subscriptions + views.signature.subscriptions + views.rename.subscriptions, bindings: views, commits: commits() }; },
         editSource: (expectedRevision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: controller.source.documentId,
             expectedRevision, edits, origin: "host", history: { kind: "live" } }),
         deliverProposal: controller.deliverProposalText, runCapture: (index: number) => controller.runCapture(index), setPath: controller.setPath, recoveryText: () => controller.recoveryText(),
@@ -54,6 +54,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         releaseNavigationCompanion: () => bindings.navigation.releaseCompanion(),
         setProjectDelay: (value: number) => bindings.project.setDelay(value), faultProjectNext: (value: "malformed" | "failure" | "ack") => bindings.project.faultNext(value),
         setSignatureDelay: (value: number) => bindings.signature.setDelay(value), faultSignatureNext: (value: "malformed" | "failure" | "markup") => bindings.signature.faultNext(value), requestSignature: bindings.signature.inspect,
+        setRenameDelay: (value: number) => bindings.rename.setDelay(value), faultRenameNext: (value: "malformed" | "failure") => bindings.rename.faultNext(value), faultIdleRename: () => bindings.rename.faultIdle(),
         faultIdleSignature: () => bindings.signature.faultIdle(),
         faultIdleProject: () => bindings.project.faultIdle(),
         setProjectTargetReadOnly: (id: DocumentId, value: boolean) => { const resource = controller.workspace.resourceForDocument(id), metadata = resource.metadata.getSnapshot();
@@ -87,6 +88,7 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; mode
     faultNavigationSyncNext: (fault: "version" | "epoch" | "sequence" | "revision") => void; releaseNavigationCompanion: () => boolean;
     setProjectDelay: (value: number) => void; faultProjectNext: (value: "malformed" | "failure" | "ack") => void;
     setSignatureDelay: (value: number) => void; faultSignatureNext: (value: "malformed" | "failure" | "markup") => void; requestSignature: () => void;
+    setRenameDelay: (value: number) => void; faultRenameNext: (value: "malformed" | "failure") => void; faultIdleRename: () => boolean;
     faultIdleSignature: () => boolean;
     faultIdleProject: () => boolean;
     setProjectTargetReadOnly: (id: DocumentId, value: boolean) => void;

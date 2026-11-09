@@ -11,6 +11,7 @@ import { findText, foldText, languageActions, languageFieldKey } from "./languag
 import { domainActions } from "./domain-panel.ts";
 import { navigationActions } from "./navigation-panel.ts";
 import { projectActions } from "./project-panel.ts";
+import { renameActions, renameDescription, renameTarget } from "./rename-panel.ts";
 import { signatureActions } from "./signature-panel.ts";
 import "./style.css";
 
@@ -122,7 +123,16 @@ function TablePasteTools() {
         <button disabled={state.status !== "converting"} onClick={tools.cancel}>Cancel table paste</button></section>;
 }
 function App() {
-    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><SignatureTools /><SymbolInfo /></>;
+    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><SignatureTools /><SymbolInfo /></>;
+}
+function RenameTools() {
+    const tools = bindings.rename, s = useObserved(tools.state);
+    return <section className="host-language" aria-label="Rename preview"><h2>Rename preview</h2><p>{renameDescription}</p>
+        <output aria-label="Rename status" aria-live="polite">{s.message}</output>
+        <label>New identifier <input ref={tools.bindName} type="text" maxLength={256} value={s.name} onChange={event => tools.setName(event.currentTarget.value)} /></label>
+        <div>{renameActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        <ol aria-label="Captured rename targets" start={s.page * 64 + 1}>{s.locations.map(at => <li key={at.document + ":" + at.from}>{renameTarget(at, s.symbol, s.name)}</li>)}</ol>
+        <ul aria-label="Renamed resources">{s.changes.map(c => <li key={c.document}><button disabled={s.token !== null} onClick={() => tools.openChanged(c.document)}>Open renamed changes in {c.title}</button></li>)}</ul></section>;
 }
 function ProjectTools() {
     const tools = bindings.project, state = useObserved(tools.state);
