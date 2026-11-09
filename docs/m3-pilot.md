@@ -64,6 +64,10 @@ while it is in flight. **Finish save** trims trailing whitespace in its canonica
    qualify a general language service or screen-reader announcement behavior.
    Type `lookup(`, `format(` or `café(` to open local signature help, or press
    Ctrl/Cmd+Shift+Space in a source/comparison working pane. The current parameter is highlighted;
+   To preview a module-import action, press Ctrl/Cmd+. in a source or choose **Preview module action**.
+   Edit **Action module**, press Enter to refresh, review every proposed edit and explicitly choose
+   **Apply captured action**. Escape in the field returns to the source. [Action policy](code-actions.md)
+   describes bounds, idempotence, captured identity and the remaining semantic/native gaps.
    For a lexical rename, focus a source identifier and press F2 or **Prepare rename preview**,
    enter **New identifier**, review the captured targets and choose **Apply captured rename**.
    Open a changed resource to undo the whole batch. [Rename limits](rename.md) are explicit:

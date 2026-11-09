@@ -11,6 +11,7 @@ import { findText, foldText, languageActions, languageFieldKey } from "./languag
 import { domainActions } from "./domain-panel.ts";
 import { navigationActions } from "./navigation-panel.ts";
 import { projectActions } from "./project-panel.ts";
+import { actionsControls, actionsDescription, actionTarget } from "./actions-panel.ts";
 import { renameActions, renameDescription, renameTarget } from "./rename-panel.ts";
 import { signatureActions } from "./signature-panel.ts";
 import "./style.css";
@@ -123,7 +124,16 @@ function TablePasteTools() {
         <button disabled={state.status !== "converting"} onClick={tools.cancel}>Cancel table paste</button></section>;
 }
 function App() {
-    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><SignatureTools /><SymbolInfo /></>;
+    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><ActionsTools /><SignatureTools /><SymbolInfo /></>;
+}
+function ActionsTools() {
+    const tools = bindings.actions, s = useObserved(tools.state);
+    return <section className="host-language" aria-label="Code actions"><h2>Code actions</h2><p>{actionsDescription}</p>
+        <output aria-label="Code action status" aria-live="polite">{s.message}</output>
+        <label>Action module <input ref={tools.bindModule} type="text" maxLength={64} value={s.module} onChange={event => tools.setModule(event.currentTarget.value)} /></label>
+        <div>{actionsControls(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        <p aria-label="Captured action title">{s.title}</p><ol aria-label="Proposed action edits">{s.edits.map((at, i) => <li key={i}><pre>{actionTarget(at)}</pre></li>)}</ol>
+        {s.changed && <button disabled={s.token !== null} onClick={tools.openChanged}>Open action changes in {s.changed.title}</button>}</section>;
 }
 function RenameTools() {
     const tools = bindings.rename, s = useObserved(tools.state);

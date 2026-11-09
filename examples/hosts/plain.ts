@@ -9,6 +9,7 @@ import { mountTablePastePanel } from "./table-panel.ts";
 import { mountDomainPanel } from "./domain-panel.ts";
 import { mountNavigationPanel } from "./navigation-panel.ts";
 import { mountProjectPanel } from "./project-panel.ts";
+import { mountActionsPanel } from "./actions-panel.ts";
 import { mountRenamePanel } from "./rename-panel.ts";
 import { mountSignaturePanel } from "./signature-panel.ts";
 
@@ -43,7 +44,9 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const navigation = document.createElement("section"); navigation.className = "host-language"; navigation.setAttribute("aria-label", "Symbol navigation");
     const project = document.createElement("section"); project.className = "host-language"; project.setAttribute("aria-label", "Workspace provider");
     const rename = document.createElement("section"); rename.className = "host-language"; rename.setAttribute("aria-label", "Rename preview");
-    host.replaceChildren(nav, status, recovery, conflict, scene, review, language, tablePaste, domain, navigation, project, rename, modal);
+    const codeActions = document.createElement("section"); codeActions.className = "host-language"; codeActions.setAttribute("aria-label", "Code actions");
+    host.replaceChildren(nav, status, recovery, conflict, scene, review, language, tablePaste, domain, navigation, project, rename, codeActions, modal);
+    const destroyActions = mountActionsPanel(codeActions, bindings.actions);
     const destroyRename = mountRenamePanel(rename, bindings.rename);
     const destroyProject = mountProjectPanel(project, bindings.project);
     const destroyNavigation = mountNavigationPanel(navigation, bindings.navigation);
@@ -115,5 +118,5 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         controller.saveConflict.subscribe(updateConflict), controller.source.metadata.subscribe(updateConflict),
         controller.layout.subscribe(updateConflict), controller.comparisonReference.subscribe(updateConflict));
     renderScene(); renderReview(); updateStatus(); updateRecovery(); updateConflict();
-    return () => { destroyRename(); destroySignature(); destroyProject(); destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
+    return () => { destroyActions(); destroyRename(); destroySignature(); destroyProject(); destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
 }

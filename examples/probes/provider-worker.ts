@@ -6,10 +6,13 @@ import { ProviderProject, projectProtocolVersion } from "./project.ts";
 import { validateProjectCommand } from "./project-commands.ts";
 import { validateSignatureInput } from "./signature.ts";
 import type { SignatureInput, SignatureResult } from "./signature.ts";
+import { validateActionInput } from "./actions.ts";
+import type { ActionInput, ActionResult } from "./actions.ts";
 
 let project: ProviderProject | undefined, navigationFault: "malformed" | "failure" | undefined;
 let loseCommandAcknowledgement = false;
 let signatureFault: SignatureInput["fault"];
+let actionFault: ActionInput["fault"];
 
 // Host worker entry. Owners control their lanes; deferred replies exercise stale-result rejection.
 globalThis.addEventListener("message", (event: MessageEvent<string>) => {
@@ -18,7 +21,15 @@ globalThis.addEventListener("message", (event: MessageEvent<string>) => {
         try {
             if (!project) { if (decoded.operation !== "project-hello" || !("epoch" in decoded) || typeof decoded.epoch !== "number") throw new Error("Initialize the provider."); project = new ProviderProject(decoded.epoch); }
             const reply = project.handle(decoded);
-            if (decoded.operation === "project-signature" && "input" in decoded) {
+            if (decoded.operation === "project-action" && "input" in decoded) {
+                const input = validateActionInput(decoded.input); actionFault = input.fault;
+                setTimeout(() => { if (input.fault === "failure") throw new Error("Synthetic action failure"); globalThis.postMessage(JSON.stringify(reply)); }, input.delay);
+            } else if (reply.operation === "project-action-result") {
+                const result = reply.result as ActionResult, action = result.action;
+                globalThis.postMessage(JSON.stringify(actionFault === "malformed" ? { ...reply, result: { ...result, action: { ...action, disabled: null, edits: [{ document: result.document, revision: result.revision, edits: [{ from: 0, to: 0, insert: "valid prefix" }, { from: -1, to: 0, insert: "invalid late edit" }] }] } } }
+                    : actionFault === "incomplete" ? { ...reply, result: { ...result, complete: false } }
+                    : actionFault === "markup" ? { ...reply, result: { ...result, action: { ...action, title: '<img src="invalid" onerror="window.actionExecuted = true">' } } } : reply));
+            } else if (decoded.operation === "project-signature" && "input" in decoded) {
                 const input = validateSignatureInput(decoded.input); signatureFault = input.fault;
                 setTimeout(() => { if (input.fault === "failure") throw new Error("Synthetic signature failure"); globalThis.postMessage(JSON.stringify(reply)); }, input.delay);
             } else if (reply.operation === "project-signature-result") {

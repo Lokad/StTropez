@@ -7,6 +7,7 @@ export type DomainInput = Readonly<{ id: number; revision: number; buffer: TextB
 export type DomainResult = Readonly<{ id: number; revision: number; folds: readonly DomainFold[]; annotations: readonly DomainAnnotation[]; edits: readonly TextEdit[] }>;
 export type DomainProvider = Readonly<{ run: (input: DomainInput, signal: AbortSignal, progress: (units: number) => void) => Promise<unknown> }>;
 export const domainLimits = Object.freeze({ regions: 4096, labelUnits: 256, resultTextUnits: 65536, prefixUnits: 512, depth: 128 });
+export const validDomainModule = (value: string): boolean => /^[A-Za-z][A-Za-z0-9_./-]{0,63}$/.test(value);
 
 /** Local host fixture grammar, not a parser in the editor runtime.
  * Headers: // #region stable-id Label; closers: // #endregion stable-id.
@@ -33,7 +34,7 @@ export class DomainCursor {
     private readonly input: DomainInput;
     constructor(input: DomainInput) {
         this.input = input;
-        if (!/^[A-Za-z][A-Za-z0-9_./-]{0,63}$/.test(input.module)) throw new Error("Choose a bounded module identifier.");
+        if (!validDomainModule(input.module)) throw new Error("Choose a bounded module identifier.");
         this.chunks = input.buffer.chunks()[Symbol.iterator]();
     }
     private line(end: number): void {

@@ -7,6 +7,8 @@ import type { ProjectCommand, ProjectOutcome, ProjectServerRequest } from "../pr
 import { validateSignatureInput, validateSignatureResult } from "../probes/signature.ts";
 import type { SignatureInput } from "../probes/signature.ts";
 import { ProjectChangeCursor } from "./project-change.ts";
+import { validateActionInput, validateActionResult } from "../probes/actions.ts";
+import type { ActionInput } from "../probes/actions.ts";
 export type NavigationMetrics = { created: number; posted: number; received: number; transferred: number; maxChunk: number; completed: number; failed: number; terminated: number;
     opened: number; changed: number; closed: number; reused: number; snapshotUnits: number; deltaUnits: number; planningTurns: number; rejected: number };
 export type SyncFault = "version" | "epoch" | "sequence" | "revision";
@@ -121,7 +123,19 @@ export function createNavigationClient(clock: Pick<Window, "setTimeout" | "clear
             }
         });
     };
-    return Object.freeze({ run, command, signature,
+    const action = (capture: ActionInput, buffer: TextBuffer, progress: (work: number) => void) => {
+        const input = validateActionInput(capture);
+        return execute([{ document: input.document, revision: input.revision, length: input.length }], new Map([[input.document, buffer]]), async () => {
+            let reply = await exchange("project-action", { input }), work = 0;
+            for (;;) {
+                if (reply.request !== input.id) throw new Error("Invalid captured action identity.");
+                if (reply.operation === "project-action-result") { if (reply.work !== input.length) throw new Error("Incomplete action scan."); const result = validateActionResult(reply.result, input); counts.completed++; return result; }
+                if (reply.operation !== "project-action-progress" || typeof reply.work !== "number" || !Number.isSafeInteger(reply.work) || reply.work < work || reply.work > input.length) throw new Error("Invalid action progress.");
+                work = reply.work; progress(work); reply = await exchange("project-action-next", { request: input.id });
+            }
+        });
+    };
+    return Object.freeze({ run, command, signature, action,
         faultIdle: () => { if (!worker || !connected || busy) return false; counts.posted++; worker.postMessage("{"); return true; },
         snapshot: () => Object.freeze({ connected, busy, disposed, version: projectProtocolVersion, epoch, sequence,
         documents: Object.freeze([...cache].map(([document, doc]) => Object.freeze({ document, revision: doc.revision, length: doc.buffer.length }))) }),

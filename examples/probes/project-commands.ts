@@ -20,15 +20,20 @@ export function validateProjectServerRequest(v: unknown, input: ProjectCommand):
     const method = input.kind === "review" ? "edit" : input.kind;
     if (!record(v) || v.operation !== "project-server-request" || v.request !== input.id || v.method !== method || v.capability !== reviewCapability || !Array.isArray(v.edits)
         || v.edits.length > input.documents.length || method !== "edit" && v.edits.length !== 0) throw new Error("Invalid server request.");
+    return Object.freeze({ request: input.id, method: method as ProjectServerRequest["method"], capability: reviewCapability, edits: validateProjectEdits(v.edits, input.documents) });
+}
+/** Shared whole-batch gate for server edits and explicit host action previews. */
+export function validateProjectEdits(value: unknown, documents: readonly NavigationDocument[]): readonly ServerEdit[] {
+    if (!Array.isArray(value) || value.length > documents.length) throw new Error("Invalid edit targets.");
     const ids = new Set<string>(); let count = 0, units = 0;
-    const edits = v.edits.map((raw: unknown): ServerEdit => {
+    const edits = value.map((raw: unknown): ServerEdit => {
         if (!record(raw) || typeof raw.document !== "string" || ids.has(raw.document) || !Array.isArray(raw.edits) || !raw.edits.length) throw new Error("Invalid server edit target.");
-        const doc = input.documents.find(d => d.document === raw.document); if (!doc || raw.revision !== doc.revision) throw new Error("Stale server edit revision."); ids.add(raw.document);
+        const doc = documents.find(d => d.document === raw.document); if (!doc || raw.revision !== doc.revision) throw new Error("Stale server edit revision."); ids.add(raw.document);
         const changes = raw.edits.map((edit: unknown): TextEdit => {
             if (!record(edit) || typeof edit.from !== "number" || typeof edit.to !== "number" || typeof edit.insert !== "string" || ++count > 256 || (units += edit.insert.length) > 16384) throw new Error("Server edit batch exceeds bounds.");
             return Object.freeze({ from: edit.from, to: edit.to, insert: edit.insert });
         });
         validateTextEdits(doc.length, changes); return Object.freeze({ document: raw.document, revision: doc.revision, edits: Object.freeze(changes) });
     });
-    return Object.freeze({ request: input.id, method: method as ProjectServerRequest["method"], capability: reviewCapability, edits: Object.freeze(edits) });
+    return Object.freeze(edits);
 }

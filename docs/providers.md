@@ -69,7 +69,8 @@ navigation](provider-navigation.md) through a streaming worker lane, including u
 working resources, safe paged locations and complete-set return. Its local lexical policy is
 explicit; [captured signature help](signature-help.md) now runs in the versioned worker lane.
 [Captured lexical rename](rename.md) reuses that worker transport and atomic workspace edits with an explicit paged preview.
-General semantic resolution and rename, actions and other language workflows remain
+[Captured module-import actions](code-actions.md) reuse the existing domain planner and batch validator in that worker with explicit preview/confirmation.
+General semantic resolution and rename/actions and other language workflows remain
 separate required work.
 
 The complete response is validated before publication, then rendered only as text. Escape,
