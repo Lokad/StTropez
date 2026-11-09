@@ -60,8 +60,9 @@ in its canonical reply. Reloading starts a new fixture; this is not durable stor
    Save and Run keep targeting the working source. **Discard reviewed changes** followed by
    **Confirm reviewed discard** is one undoable command. Later text, review or ownership changes
    expire the confirmation.
-3. Focus a source editor or its owned **Find source**/**Replacement** field and press Ctrl+S
-   or Cmd+S. Reference Find saves the working source. The field keeps focus; held-key repeats
+3. Focus a source editor or a control in its owned language/Find tools (text fields, options or
+   navigation buttons) and press Ctrl+S or Cmd+S. Reference Find saves the working source.
+   The focused control keeps focus; held-key repeats
    do not enqueue additional saves. Type additional source text before choosing
    **Finish save**. The captured revision is saved; later typing remains present and unsaved.
    Undo the later typing to return to the saved capture, then redo it. Use text without trailing

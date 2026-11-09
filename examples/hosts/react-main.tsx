@@ -7,7 +7,7 @@ import { HostController } from "./controller.ts";
 import { hostEditor, ViewBindings } from "./bindings.ts";
 import { actions, conflictText, statusText } from "./actions.ts";
 import { installHostHarness } from "./harness.ts";
-import { findText, foldText, languageActions, languageFieldKey } from "./language-panel.ts";
+import { findText, foldText, languageActions, languageFieldKey, languageToolsKey } from "./language-panel.ts";
 import { domainActions } from "./domain-panel.ts";
 import { navigationActions } from "./navigation-panel.ts";
 import { projectActions } from "./project-panel.ts";
@@ -88,7 +88,7 @@ function ReviewVersions() {
 }
 function LanguageTools() {
     const tools = bindings.language, state = useObserved(tools.state);
-    return <section className="host-language" aria-label="Language and find tools"><h2>Language and find</h2>
+    return <section ref={tools.toolsRef} onKeyDown={event => languageToolsKey(event.nativeEvent, tools)} className="host-language" aria-label="Language and find tools"><h2>Language and find</h2>
         <p>Ctrl+Space requests completion; Alt+Enter replaces it. Ctrl+F finds, Ctrl+H replaces, F3 moves to the next match, and Escape returns to source. Ctrl+S saves the working source.</p>
         <output aria-label="Language status" aria-live="polite">{state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider?.message ?? "Focus a source view to use language actions."}</output>
         <ul role="listbox" aria-label="Completion choices">{state.provider?.offerText != null ? <li role="option" aria-selected="true">{state.provider.offerText}</li> : null}</ul>

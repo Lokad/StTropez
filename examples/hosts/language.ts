@@ -9,7 +9,7 @@ import { HostCell } from "../shared/observable.ts";
 type Session = { id: string; editor: EditingCandidate; tab: TabId; target: TabTarget; saveTarget: TabTarget; presentation: EditingPresentation;
     provider?: ReturnType<typeof createProviderController>; reference?: ComparisonBaseline; find?: FindController; stopFind?: () => void; initialized: boolean };
 type DetachedOwner = Readonly<{ id: string; target: TabTarget; documentId: DocumentId; reference?: ComparisonBaseline }>;
-type SaveShortcut = (event: KeyboardEvent, field: HTMLInputElement, target: TabTarget, composing: () => boolean) => void;
+type SaveShortcut = (event: KeyboardEvent, control: HTMLElement, target: TabTarget, composing: () => boolean) => void;
 type LanguageSnapshot = Readonly<{ readOnlyReference: boolean; view: string | null; provider: ProviderSnapshot | null; find: FindSnapshot | null; folds: FoldingSnapshot | null; foldMessage: string; query: string; replacement: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean }>;
 
 /** Host-owned tools follow an explicit mounted view; delayed commands never consult focus later. */
@@ -25,8 +25,10 @@ export class HostLanguageTools {
     readonly state = this.cell.observable;
     private queryElement: HTMLInputElement | null = null;
     private replacementElement: HTMLInputElement | null = null;
+    private toolsElement: HTMLElement | null = null;
     readonly queryRef = (element: HTMLInputElement | null): void => { this.queryElement = element; };
     readonly replacementRef = (element: HTMLInputElement | null): void => { this.replacementElement = element; };
+    readonly toolsRef = (element: HTMLElement | null): void => { this.toolsElement = element; };
     private retired = { posted: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, failed: 0, postedUnits: 0 };
     constructor(workspace: Workspace, saveShortcut: SaveShortcut) { this.workspace = workspace; this.saveShortcut = saveShortcut; }
     private publish(): void {
@@ -105,12 +107,13 @@ export class HostLanguageTools {
         if (event.key === "F3") { event.preventDefault(); this.activate(session); this.ensureFind()?.next(event.shiftKey ? -1 : 1); return true; }
         return false;
     }
-    readonly saveFromField = (event: KeyboardEvent): void => {
-        const session = this.active, field = event.target === this.queryElement ? this.queryElement : event.target === this.replacementElement ? this.replacementElement : null;
-        if (!session || !field || !session.editor.element.isConnected || session.editor.snapshot().disposed || !this.workspace.ownsDocumentView(session.editor.view)) return;
+    readonly saveFromTools = (event: KeyboardEvent): void => {
+        const root = this.toolsElement, target = event.target, realm = root?.ownerDocument.defaultView, session = this.active;
+        if (!root?.isConnected || !realm || !(target instanceof realm.HTMLElement) || !root.contains(target) || !session
+            || !session.editor.element.isConnected || session.editor.snapshot().disposed || !this.workspace.ownsDocumentView(session.editor.view)) return;
         const tab = this.workspace.resolveTab(session.target);
         if (tab?.surface.kind !== "text" || tab.surface.documentId !== session.editor.view.documentId) return;
-        this.saveShortcut(event, field, session.saveTarget, () => session.editor.snapshot().composing);
+        this.saveShortcut(event, target, session.saveTarget, () => session.editor.snapshot().composing);
     };
     private detachSession(session: Session, listeners: AbortController, unsubscribe: () => void = () => {}): () => void {
         let detached = false;

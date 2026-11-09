@@ -126,9 +126,10 @@ export class ViewBindings {
         const target = this.controller.workspace.captureTab(tabId);
         input.addEventListener("keydown", event => this.handleSaveShortcut(event, input, target, composing), { signal });
     }
-    private handleSaveShortcut(event: KeyboardEvent, input: HTMLInputElement | HTMLTextAreaElement, target: TabTarget, composing: () => boolean): void {
+    private handleSaveShortcut(event: KeyboardEvent, input: HTMLElement, target: TabTarget, composing: () => boolean): void {
         if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "s"
-            || event.defaultPrevented || event.isComposing || input.disabled || !input.isConnected || composing()) return;
+            || event.defaultPrevented || event.isComposing || !input.isConnected
+            || (input.closest("button,input,select,textarea") ?? input).matches(":disabled") || composing()) return;
         const tab = this.controller.workspace.resolveTab(target);
         if (tab?.surface.kind !== "text" || tab.surface.documentId !== this.controller.source.documentId) return;
         event.preventDefault();
