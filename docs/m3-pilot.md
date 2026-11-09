@@ -39,7 +39,10 @@ in its canonical reply. Reloading starts a new fixture; this is not durable stor
    selections. Escape followed by Tab or Shift+Tab leaves the candidate for host controls.
 2. Choose **Open source review**. Edit **Comparison working source**, choose **Next change**,
    then **Use baseline**. Undo the reversion to restore your correction. The reference stays
-   immutable while the working pane shares source text and history.
+   immutable while the working pane shares source text and history. Focus **Comparison baseline
+   source** to navigate, select and copy reference ranges; Ctrl+A selects its complete source even
+   when only a small window is painted. Typing/cut/paste cannot alter it. Ctrl+S there still captures
+   the working source in these evaluation hosts. Native clipboard and accessibility remain unverified.
    Enable **Link review scrolling** to follow corresponding vertical positions in either pane;
    clear it for independent scrolling. Selections, horizontal offsets and reference identity stay
    independent. Enable **Align review rows** to add empty padding beside unequal changed blocks;

@@ -2,7 +2,7 @@
 
 `createComparisonController` compares an immutable reference buffer/version with a captured
 working text tab. `mountTextComparison` displays both through bounded viewports and uses
-the experimental input candidate on the working side. `/comparison/` supplies deferred,
+the experimental input candidate on both sides: editable working text and a read-only reference. `/comparison/` supplies deferred,
 synthetic host responses. No retrieval, persistence, execution or application service is
 included in the package.
 
@@ -16,7 +16,25 @@ Browser mounts accept an optional host-owned working `DocumentView`, as the core
 already does. Destroying such a mount releases its jobs, DOM and reference display resource,
 while leaving that view registered for revision-mapped selection updates. The host disposes
 the view at its own lifetime boundary. Reference display views remain mount-owned; restoring
-their scroll and selection requires the same immutable reference buffer and version.
+their scroll and selection requires the same immutable reference buffer and version. Use
+`referenceEditor()` for the current read-only candidate and its `focus`, `captureView`, `restoreView`
+and pending-input snapshot; `referenceViewport()` remains available for view geometry. Reference
+replacement disposes the old candidate and its pending navigation, pointer and input work. Callers
+must resolve the current handle after refresh. Focusing the reference viewport also enters its input.
+
+Reference arrows, word/line/page commands, whole-source selection and pointer ranges use real
+source coordinates, including beyond the rendered window. Copy reads the explicit selected source
+ranges. The native textarea retains bounded context and compresses large selections; ordinary
+navigation does not export the reference or render its entire selection. Read-only typing, cut,
+paste and history commands cannot mutate the reference or working history. The resource denies
+all edit origins, saving and execution independently of its input presentation. Selection and copy
+remain available while the working source is read-only or independently edited.
+
+The evaluation hosts route Ctrl+S from the current reference input to the captured working source.
+The reference is never a save target. Run controls remain host-owned and capture the working
+source/configuration. Replacing a reference cannot retarget old input events or save shortcuts.
+Synthetic clipboard/composition checks exercise model guards; native OS/application clipboard,
+IME/reconversion/dead keys and assistive-technology qualification remain separate.
 
 ## Exact alignment and scheduling
 
@@ -170,8 +188,9 @@ the same vertical row grid. Inline merge conflicts and advanced review remain la
 
 Coordination waits for a ready comparison and current viewport revisions/folds. A queued frame
 captures the comparison snapshot and reference view; edits, reference replacement, changed folds,
-disable and disposal invalidate it. Pending input/navigation or composition pauses coordination.
-The clamped logical target position suppresses delayed programmatic scroll feedback. Resize and
+disable and disposal invalidate it. Pending input/navigation or composition in either pane pauses coordination.
+Rendered logical positions are observed as well as native scroll notifications. A scroll consumed
+while navigation is pending retains its initiating pane and resumes when input/viewport work settle. The clamped logical target suppresses delayed programmatic feedback. Resize and
 fold changes reuse bounded frame scheduling; horizontal scrolling does not move the other pane.
 The host owns refresh/acceptance controls and transport errors. Native IME, accessibility and
 physical-display qualification remain separate; scroll callback work is not complete interaction
@@ -195,7 +214,7 @@ Sparse runs contain source/visual coordinates, with work proportional to diff an
 rather than document or padding row count. A cooperative cursor publishes both layouts together
 against captured reference, working revision and fold snapshots. Edits, refresh, fold changes,
 disable and disposal cancel stale work. Publication waits for pending input, navigation, pointer
-gestures and composition to settle. Pending state reflects stale captures immediately. Only the
+gestures and composition in either pane to settle. Pending state reflects stale captures immediately. Only the
 visible row window creates DOM; padding is empty, nonfocusable and hidden from accessibility APIs.
 This is not native assistive-technology qualification.
 

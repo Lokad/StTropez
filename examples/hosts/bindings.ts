@@ -1,6 +1,6 @@
 import { mountEditingCandidate, mountTextComparison, mountTextEditor } from "../../src/browser/index.ts";
 import type { EditingCandidate, MountedEditor, TextComparison, ViewportSnapshot, ViewState } from "../../src/browser/index.ts";
-import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId } from "../../src/index.ts";
+import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId, TabTarget } from "../../src/index.ts";
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../editing/presentation.ts";
 import { HostLanguageTools } from "./language.ts";
@@ -62,7 +62,7 @@ export class ViewBindings {
         if (this.review) {
             this.reviewScrollLinked = this.review.snapshot().scrollLinked;
             this.reviewRowsAligned = this.review.snapshot().rowsAligned;
-            const baseline = this.review.controller.getSnapshot().baseline, reference = this.review.referenceViewport();
+            const baseline = this.review.controller.getSnapshot().baseline, reference = this.review.referenceEditor();
             if (baseline && reference) this.referenceState = { baseline, state: reference.captureView() };
             if (this.review.controller.getSnapshot().working) this.retainState("comparison", this.review.working.view.documentId, this.review.working.captureView());
         }
@@ -93,25 +93,31 @@ export class ViewBindings {
         const state = this.states.get("comparison")?.get(view.documentId);
         if (state) this.review.working.restoreView(this.restoreState(state, view));
         if (this.referenceState?.baseline.buffer === baseline.buffer && this.referenceState.baseline.version === baseline.version)
-            this.review.referenceViewport()?.restoreView(this.referenceState.state);
+            this.review.referenceEditor()?.restoreView(this.referenceState.state);
         else this.referenceState = undefined;
         const documentId = this.review.working.view.documentId;
         this.reviewListeners = new AbortController();
         this.review.working.input.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: this.reviewListeners.signal });
         const working = this.review.working;
         this.bindSaveShortcut(working.input, this.controller.viewTab("primary"), () => working.snapshot().composing, this.reviewListeners.signal);
+        const review = this.review, saveTarget = this.controller.workspace.captureTab(this.controller.viewTab("primary"));
+        review.element.addEventListener("keydown", event => {
+            const reference = review.referenceEditor();
+            if (reference && event.target === reference.input) this.handleSaveShortcut(event, reference.input, saveTarget, () => reference.snapshot().composing);
+        }, { signal: this.reviewListeners.signal });
         this.unwatchReference = this.controller.comparisonReference.subscribe(() => this.updateReference());
     };
     private bindSaveShortcut(input: HTMLTextAreaElement, tabId: TabId, composing: () => boolean, signal: AbortSignal): void {
-        const workspace = this.controller.workspace, target = workspace.captureTab(tabId);
-        input.addEventListener("keydown", event => {
-            if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "s"
-                || event.defaultPrevented || event.isComposing || input.disabled || !input.isConnected || composing()) return;
-            const tab = workspace.resolveTab(target);
-            if (tab?.surface.kind !== "text" || tab.surface.documentId !== this.controller.source.documentId) return;
-            event.preventDefault();
-            if (!event.repeat) this.controller.save();
-        }, { signal });
+        const target = this.controller.workspace.captureTab(tabId);
+        input.addEventListener("keydown", event => this.handleSaveShortcut(event, input, target, composing), { signal });
+    }
+    private handleSaveShortcut(event: KeyboardEvent, input: HTMLTextAreaElement, target: TabTarget, composing: () => boolean): void {
+        if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "s"
+            || event.defaultPrevented || event.isComposing || input.disabled || !input.isConnected || composing()) return;
+        const tab = this.controller.workspace.resolveTab(target);
+        if (tab?.surface.kind !== "text" || tab.surface.documentId !== this.controller.source.documentId) return;
+        event.preventDefault();
+        if (!event.repeat) this.controller.save();
     }
     private beginReference(kind: "refresh" | "accept"): void {
         if (!this.review) return;
@@ -286,9 +292,9 @@ export class ViewBindings {
             progress: comparison.progress && { work: comparison.progress.work, readUnits: comparison.progress.readUnits,
                 lineComparisons: comparison.progress.lineComparisons, lineEdits: comparison.progress.lineEdits },
             viewId: this.review!.working.view.id, foldGeneration: this.review!.working.view.folding.getSnapshot().generation, selection: this.review!.working.view.getSnapshot().selection, selectionSet: this.review!.working.view.getSnapshot().selectionSet,
-            baseline: comparison.baseline && { version: comparison.baseline.version, epoch: comparison.baseline.epoch, length: comparison.baseline.buffer.length },
+            baseline: comparison.baseline && { version: comparison.baseline.version, epoch: comparison.baseline.epoch, length: comparison.baseline.buffer.length, exports: comparison.baseline.buffer.readMetrics().textExports },
             hunks: comparison.hunks.length, pending: this.reviewTickets.map(ticket => ({ kind: ticket.kind, revision: ticket.capture.working.revision, current: ticket.isCurrent() })),
-            result: this.reviewResult, work: this.review!.snapshot(), input: this.review!.working.snapshot(),
+            result: this.reviewResult, work: this.review!.snapshot(), input: this.review!.working.snapshot(), referenceInput: this.review!.referenceEditor()?.snapshot() ?? null,
             discards: this.discardTickets.map(({ ticket, variantGeneration }) => ({ revision: ticket.capture.working.revision, current: ticket.isCurrent() && this.controller.variants.state.getSnapshot().generation === variantGeneration })),
             workingViewport: this.review!.working.viewport.snapshot(), referenceViewport: this.review!.referenceViewport()?.snapshot() } : null,
         views: [...this.mounted].map(([id, { editor, documentId }]) => ({ id, documentId, viewId: editor.view.id, foldGeneration: editor.view.folding.getSnapshot().generation,

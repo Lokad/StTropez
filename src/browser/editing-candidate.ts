@@ -39,7 +39,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     input.setAttribute("form", "");
     input.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
     input.setAttribute("aria-multiline", "true"); input.setAttribute("autocapitalize", "off");
-    help.id = `st-input-help-${scope}`; help.className = "st-input-help"; help.textContent = "Alt+click or Alt+drag adds a caret or selection. Escape keeps the primary selection. Tab inserts indentation. Press Escape, then Tab or Shift+Tab to leave the editor.";
+    const editingHelp = "Alt+click or Alt+drag adds a caret or selection. Escape keeps the primary selection. Tab inserts indentation. Press Escape, then Tab or Shift+Tab to leave the editor.";
+    help.id = `st-input-help-${scope}`; help.className = "st-input-help"; help.textContent = editingHelp;
     input.setAttribute("aria-describedby", help.id); caret.className = "st-input-caret"; caret.setAttribute("aria-hidden", "true");
     secondaryCarets.setAttribute("aria-hidden", "true"); root.append(input, caret, secondaryCarets, help);
     let revision = workspace.document(documentId).revision, context: InputContext = inputContext(workspace.document(documentId).buffer, view.getSnapshot().selection);
@@ -143,6 +144,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (disposed || selecting || committing) return;
         const state = resource.getSnapshot(); input.disabled = !workspace.resolveTab(target) || state.state !== "ready";
         input.readOnly = !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null;
+        const hint = input.readOnly ? "Read-only text. Navigate, select and copy. Press Escape, then Tab or Shift+Tab to leave the editor." : editingHelp;
+        if (help.textContent !== hint) help.textContent = hint;
         if (executingInput?.edit && input.readOnly) recoverInput(executingInput, "pending-input-expired");
         if (ordered && (!currentInput(ordered) || ordered.edit && input.readOnly)) cancelWord();
         input.setAttribute("aria-busy", String(state.state === "loading" || ordered !== undefined));

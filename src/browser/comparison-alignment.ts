@@ -10,12 +10,12 @@ let serial = 0;
 
 /** Cooperative, view-only publication against one immutable comparison/fold capture. */
 export function createComparisonAlignment(win: Window, working: EditingCandidate, reference: () => TextViewport | undefined,
-    getComparison: () => ComparisonSnapshot, changed: () => void) {
+    getComparison: () => ComparisonSnapshot, changed: () => void, referenceBusy: () => boolean) {
     let enabled = false, disposed = false, timer: number | undefined, cursor: ComparisonRowsCursor | undefined, capture: Capture | undefined, result: ComparisonRows | undefined;
     let status: "idle" | "building" | "waiting" | "ready" | "failed" = "idle", failure: string | undefined, work = 0, installedPitch = 0;
     let oldReference: TextViewport | undefined, referenceEvents: AbortController | undefined, stopReference: (() => void) | undefined;
     const events = new AbortController(), pointers = new Set<number>();
-    const stableInput = () => { const s = working.snapshot(); return !s.composing && !s.pendingCommand && !s.pendingInput && !s.pendingDragScroll && !pointers.size; };
+    const stableInput = () => { const s = working.snapshot(); return !s.composing && !s.pendingCommand && !s.pendingInput && !s.pendingDragScroll && !pointers.size && !referenceBusy(); };
     const cancel = () => { if (timer !== undefined) win.clearTimeout(timer); timer = undefined; cursor?.dispose(); cursor = undefined; };
     const schedule = () => { if (!disposed && enabled && timer === undefined) timer = win.setTimeout(step, 0); };
     const clear = () => { working.viewport.setComparisonRows(undefined); oldReference?.setComparisonRows(undefined); };
@@ -25,12 +25,13 @@ export function createComparisonAlignment(win: Window, working: EditingCandidate
         view.element.addEventListener("sttropez-render", () => {
             if (enabled && (!capture || !current(capture) || result && (status === "waiting" && stableInput() || pitch(capture) !== installedPitch))) schedule();
         }, { signal });
+        view.element.addEventListener("compositionend", schedule, { signal, capture: true });
         view.element.addEventListener("pointerdown", e => { if (enabled) pointers.add(e.pointerId); }, { signal, capture: true });
     }
     const releasePointer = (event: PointerEvent) => { if (pointers.delete(event.pointerId)) schedule(); };
     win.addEventListener("pointerup", releasePointer, { signal: events.signal, capture: true }); win.addEventListener("pointercancel", releasePointer, { signal: events.signal, capture: true });
     for (const type of ["blur", "dragend", "drop"] as const) win.addEventListener(type, () => { if (pointers.size) { pointers.clear(); schedule(); } }, { signal: events.signal });
-    working.input.addEventListener("compositionend", schedule, { signal: events.signal }); watch(working.viewport, events.signal);
+    watch(working.viewport, events.signal);
     const stopWorking = working.view.folding.subscribe(schedule);
     function update(): void {
         if (disposed) return;

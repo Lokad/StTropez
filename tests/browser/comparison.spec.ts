@@ -35,21 +35,21 @@ test("acceptance captures a revision while later keyboard input, focus and histo
     expect(final.baseline!.length).toBe(captured.working.length); expect(final.working.length).toBe(captured.working.length + 5);
     expect(final.working.id).toBe(identity.working.id); expect(final.viewId).toBe(identity.viewId);
     expect(final.working.metadata).toMatchObject({ serverVersion: "saved-1", dirty: true });
-    expect(await page.locator(".st-input-context").evaluate(input => document.activeElement === input)).toBe(true);
+    expect(await page.getByRole("textbox", { name: "Comparison working source", exact: true }).evaluate(input => document.activeElement === input)).toBe(true);
     expect(final.hunks.length).toBe(1); expect(final.working.exports).toBe(0); expect(final.baseline!.exports).toBe(0);
     await page.keyboard.press("ControlOrMeta+z"); await ready(page);
     expect((await page.evaluate(() => window.comparisonFixture.snapshot())).working.length).toBe(identity.working.length);
 });
 
 test("out-of-order refresh rejects old results and never replaces the mounted working editor", async ({ page }) => {
-    await page.locator(".st-input-context").evaluate(input => { input.dataset.retained = "yes"; });
+    await page.getByRole("textbox", { name: "Comparison working source", exact: true }).evaluate(input => { input.dataset.retained = "yes"; });
     const before = await page.evaluate(() => { const s = window.comparisonFixture.snapshot(); window.comparisonFixture.begin("refresh"); window.comparisonFixture.begin("refresh"); window.comparisonFixture.moveTab(); return s; });
     expect(await page.evaluate(() => window.comparisonFixture.finish("refresh", true))).toBe(true); await ready(page);
     const fresh = await page.evaluate(() => window.comparisonFixture.snapshot());
     expect(await page.evaluate(() => window.comparisonFixture.finish("refresh"))).toBe(false); await ready(page);
     const after = await page.evaluate(() => window.comparisonFixture.snapshot());
     expect(after.baseline).toEqual(fresh.baseline); expect(after.working).toEqual(before.working); expect(after.viewId).toBe(before.viewId);
-    await expect(page.locator(".st-input-context")).toHaveAttribute("data-retained", "yes");
+    await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toHaveAttribute("data-retained", "yes");
     expect(after.diagnostics).toMatchObject({ resources: 2, documents: 2, tabs: 2, views: 2, leases: 3 });
 });
 
