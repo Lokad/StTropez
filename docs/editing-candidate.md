@@ -70,7 +70,7 @@ normal command boundaries. Short horizontal/end-point commands and at most two s
 carets can still finish synchronously; larger vertical/page sets cooperate between batches.
 
 Pending input belongs to the captured document revision, immutable selection set, view and tab
-generation. Escape, changed authority/selection/revision, composition, clipboard commands and
+generation. Escape, changed authority/selection/revision, composition, copy/cut, host-owned paste and
 detachment cancel that continuation. Exact unapplied text is emitted through `sttropez-conflict`
 with its captured revision and `contextFrom: 0`; this payload is text to recover, not a replacement
 context or an instruction to apply it at offset zero. No automatic retargeting occurs. The queue
@@ -80,6 +80,13 @@ pending input settles, so those commands never capture a source before accepted 
 Yielding double-click word selection uses the same ordered capture. Typing replaces its completed
 word range, and undo restores that exact range; cancellation retains unapplied text. Native IME
 and clipboard device qualification remain open.
+
+Literal paste reads plain text during its clipboard event and joins pending ordered input.
+It uses the completed destination set, preserves raw CRLF/Unicode and keeps each paste as a
+separate undo command. Empty or unsupported literal payloads leave the pending command intact.
+Capture-phase host cancellation, including table conversion, keeps ownership of that clipboard
+event and cancels the candidate continuation with recovery of previously queued text. No native
+clipboard object is retained after dispatch and no OS clipboard qualification follows.
 
 Snapshots expose `pendingInput` and `queuedInputUnits` alongside command readiness. Measure
 `lastBeforeInputMs`, `lastInputMs` and `lastKeydownMs` as separate handler spans. A cancelled

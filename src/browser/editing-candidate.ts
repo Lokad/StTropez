@@ -661,7 +661,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             if (action.text.length) conflict("pending-input-limit-or-expiry", undefined, capture.revision, 0, action.text); return;
         }
         const last = pending.actions.at(-1);
-        if (last?.kind === "text" && action.kind === "text" && last.type === action.type && action.at - (last.at ?? action.at) < 1000) { last.text += action.text; last.at = action.at; }
+        if (last?.kind === "text" && action.kind === "text" && last.type === "insertText" && action.type === "insertText" && action.at - (last.at ?? action.at) < 1000) { last.text += action.text; last.at = action.at; }
         else pending.actions.push(action);
         pending.units += action.text.length; pending.edit ||= action.kind === "text" || action.edit;
         input.setAttribute("aria-busy", "true"); scheduleInput();
@@ -927,6 +927,12 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     for (const type of ["copy", "cut", "paste"] as const) input.addEventListener(type, event => {
         if (event.defaultPrevented) { cancelWord(); group = undefined; if (type !== "copy") stopDrag(); return; }
         if (composing || !event.clipboardData) return;
+        if (type === "paste" && (ordered || rangeCommand) && !input.disabled && !input.readOnly) {
+            event.preventDefault(); stopDrag();
+            const text = event.clipboardData.getData("text/plain");
+            if (text.length) appendInput({ kind: "text", text, type: "insertFromPaste" });
+            return;
+        }
         event.preventDefault(); cancelWord(); syncSelection(); group = undefined;
         if (type !== "copy") view.folding.revealSelection(view.folding.getSnapshot());
         const selections = view.getSnapshot().selectionSet;

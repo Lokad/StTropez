@@ -178,10 +178,10 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
     beginMultipleInput: () => { if (multipleInput) throw new Error("Multiple input already mounted."); multipleInput = mountMultipleInput(); },
     orderedInput: async () => {
         const results = [];
-        for (const kind of ["many-carets", "long-word", "pointer-word"]) {
+        for (const kind of ["many-carets", "long-word", "pointer-word", "paste-word"]) {
             const original = kind === "many-carets" ? Array<string>(100000).fill("0123456789").join("\r\n") : kind === "pointer-word" ? "x".repeat(2400000) : "a" + " ".repeat(1000000) + "next";
             const heads = kind === "many-carets" ? Array.from({ length: 1024 }, (_, i) => i * 80 * 12 + 4) : [0];
-            const destinations = kind === "many-carets" ? heads.map(head => head + 12) : [1000001], text = "😀é";
+            const destinations = kind === "many-carets" ? heads.map(head => head + 12) : [1000001], text = kind === "paste-word" ? "😀é\r\n" : "😀é";
             const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: kind, variant: "working" }, kind, { value: original });
             const tab = model.open({ kind: "text", documentId: source.documentId }, kind), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
             const editor = mountEditingCandidate(host, model, tab, { ariaLabel: "Restored ordered input" }), recovered: string[] = [];
@@ -190,11 +190,16 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
                 if (!s.pendingInput && !s.pendingWord && !s.pendingGrapheme && !s.pendingCaret && !editor.viewport.snapshot().pending) return;
                 if (turn >= 4000) throw new Error("Compiled ordered input did not settle."); await new Promise<void>(resolve => setTimeout(resolve, 1)); } };
             const command = () => {
-                if (kind !== "pointer-word") return editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: kind === "many-carets" ? "ArrowDown" : "ArrowRight", ctrlKey: kind === "long-word", bubbles: true, cancelable: true }));
+                if (kind !== "pointer-word") return editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: kind === "many-carets" ? "ArrowDown" : "ArrowRight", ctrlKey: kind === "long-word" || kind === "paste-word", bubbles: true, cancelable: true }));
                 const point = editor.viewport.coordsAt(8); if (!point) throw new Error("Missing compiled word point.");
                 return editor.element.dispatchEvent(new MouseEvent("dblclick", { button: 0, clientX: point.left + 1, clientY: point.top + point.height / 2, bubbles: true, cancelable: true }));
             };
-            const type = () => { if (editor.input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: text, bubbles: true, cancelable: true }))) throw new Error("Compiled input was not captured."); };
+            const type = () => {
+                if (kind === "paste-word") { const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+                    if (!event.clipboardData) throw new Error("Missing compiled clipboard fixture data."); event.clipboardData.setData("text/plain", text);
+                    if (editor.input.dispatchEvent(event)) throw new Error("Compiled paste was not captured."); }
+                else if (editor.input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: text, bubbles: true, cancelable: true }))) throw new Error("Compiled input was not captured.");
+            };
             try {
                 editor.focus(); editor.view.setSelections(0, heads.map(head => ({ anchor: head, head })), heads.length - 1); await ready(); command(); type();
                 if (!editor.snapshot().pendingInput || model.document(source.documentId).revision !== 0) throw new Error("Compiled command failed to yield/capture input.");

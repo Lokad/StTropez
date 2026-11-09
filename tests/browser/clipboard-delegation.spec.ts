@@ -31,5 +31,25 @@ test("empty or nontext clipboard payloads cannot turn a selected range into a de
         return { text: f.range(0, f.snapshot().document!.length), revisionBefore: before.document!.revision, revisionAfter: f.snapshot().document!.revision, before: before.primary.selection, after: f.snapshot().primary.selection, exports: f.snapshot().document!.exports };
     });
     expect(result.text).toBe("before\r\nend"); expect(result.revisionAfter).toBe(result.revisionBefore); expect(result.after).toEqual(result.before); expect(result.exports).toBe(0);
+    const delayed = await page.evaluate(() => {
+        const f = window.editingFixture, text = "a" + " ".repeat(1000000) + "next";
+        f.setText(text); f.select("primary", { anchor: 0, head: 0 }); f.focus("primary");
+        const input = document.querySelector('textarea[aria-label="Primary source"]')!;
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, bubbles: true, cancelable: true }));
+        if (!f.snapshot().primary.pendingWord) throw new Error("Word command did not yield.");
+        for (const kind of ["empty", "html", "file"] as const) {
+            const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }), data = event.clipboardData!;
+            if (kind === "empty") data.setData("text/plain", "");
+            if (kind === "html") data.setData("text/html", "<b>no plain text</b>");
+            if (kind === "file") data.items.add(new File(["bytes"], "sample.bin", { type: "application/octet-stream" }));
+            input.dispatchEvent(event);
+            if (!f.snapshot().primary.pendingWord) throw new Error("Empty paste cancelled navigation.");
+        }
+        return f.snapshot().document!.revision;
+    });
+    await expect.poll(() => page.evaluate(() => window.editingFixture.snapshot().primary.pendingWord)).toBe(false);
+    const after = await page.evaluate(() => window.editingFixture.snapshot());
+    expect(after.document).toMatchObject({ revision: delayed, length: 1000005, exports: 0 });
+    expect(after.primary.selection).toMatchObject({ anchor: 1000001, head: 1000001 });
     await page.evaluate(() => window.editingFixture.dispose());
 });
