@@ -99,7 +99,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
         expect(movement.selectionSet.ranges.map(r => r.head)).toEqual([...new Set(ends)].sort((a, b) => a - b));
         await page.getByRole("textbox", { name: "Primary source", exact: true }).pressSequentially("x"); await exact(page, original); expect((await snapshot(page)).history).toEqual(readonly.history);
     }
-    // Thirty-two separated short-row carets finish horizontal, vertical and page input.
+    // Cooperative vertical/page commands preserve immediate typing for thirty-two carets.
     const heads = Array.from({ length: 32 }, (_, i) => bodyStart + (31 + i * (large ? 3000 : 2)) * rowUnits + 6);
     for (const key of ["ArrowRight", "ArrowDown", "PageDown"]) {
     await page.evaluate(heads => { const f = window.hostFixture; f.setSourceReadOnly(false); f.selectSourceSet("primary", f.snapshot().source.revision, heads.map(head => ({ anchor: head, head })), 17); }, heads); await ready(page);
@@ -109,11 +109,12 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
         const input = node as HTMLTextAreaElement;
         input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
         const state = window.hostFixture.snapshot().bindings.views.find(v => v.id === "primary")!;
-        input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "!", bubbles: true, cancelable: true }));
-        input.setRangeText("!", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "!", bubbles: true }));
-        return { pending: state.metrics!.pendingGrapheme, heads: state.selectionSet.ranges.map(r => r.head) };
+        const accepted = input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "!", bubbles: true, cancelable: true }));
+        if (accepted) { input.setRangeText("!", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "!", bubbles: true })); }
+        return { pending: state.metrics!.pendingGrapheme, accepted, heads: state.selectionSet.ranges.map(r => r.head) };
     }, key);
-    expect(moved.pending).toBe(false); expect(moved.heads).toEqual(heads.map(head => head + delta));
+    if (moved.pending) expect(moved.accepted).toBe(false);
+    else expect(moved.heads).toEqual(heads.map(head => head + delta));
     let expected = original; for (const head of heads.slice().reverse()) expected = expected.slice(0, head + delta) + "!" + expected.slice(head + delta);
     await ready(page); await exact(page, expected); await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await ready(page); await exact(page, original);
     }

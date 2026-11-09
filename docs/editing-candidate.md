@@ -61,6 +61,32 @@ Projection-driven native selection events also preserve the model's existing aff
 the endpoints already match. Such an event does not seal another view's continuous typing
 group; a real selection change still establishes a history boundary.
 
+Keyboard movement/deletion and multiline indentation that yield retain subsequent text and
+recognized editing/navigation keys in order. Cancellable `beforeinput` supplies the text without
+mutating the native context; non-cancellable and input-only insertions reuse the captured native
+replacement checks. The completed command supplies the destination selection set. Adjacent text
+keeps its event-time history grouping, and queued undo/redo, brackets and indentation keep their
+normal command boundaries. Short horizontal/end-point commands and at most two short-row vertical
+carets can still finish synchronously; larger vertical/page sets cooperate between batches.
+
+Pending input belongs to the captured document revision, immutable selection set, view and tab
+generation. Escape, changed authority/selection/revision, composition, clipboard commands and
+detachment cancel that continuation. Exact unapplied text is emitted through `sttropez-conflict`
+with its captured revision and `contextFrom: 0`; this payload is text to recover, not a replacement
+context or an instruction to apply it at offset zero. No automatic retargeting occurs. The queue
+allows at most 256 actions and 65,536 UTF-16 units; overflow is recovered intact. The evaluation
+hosts retain recovery content and require Save, Run and new proposal requests to be retried after
+pending input settles, so those commands never capture a source before accepted typing lands.
+Pointer word-selection scans remain a separately captured command; native IME and clipboard
+device qualification remain open.
+
+Snapshots expose `pendingInput` and `queuedInputUnits` alongside command readiness. Measure
+`lastBeforeInputMs`, `lastInputMs` and `lastKeydownMs` as separate handler spans. A cancelled
+`beforeinput` has no subsequent native `input`; its stale `lastInputMs` is not a new sample.
+`maxQueuedInputTurnMs` covers the complete continuation callback, including final model commit
+and refresh. None of these clocks includes all-view readiness, a complete automation action or
+physical presentation; those require separate observations.
+
 Double-click selects the code-word, symbol or whitespace run under the measured source point.
 The range stays inside the clicked logical line, excludes its CRLF terminator and uses exact
 grapheme boundaries. The existing cooperative word cursor supplies run edges with

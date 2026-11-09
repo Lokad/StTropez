@@ -14,6 +14,7 @@ export function hostEditor(): HostEditor { return new URLSearchParams(location.s
 /** Stable refs own editor descendants; the controller and resource IDs survive every detach. */
 export class ViewBindings {
     private readonly controller: HostController;
+    private readonly stopInputCapture: () => void;
     private readonly mounted = new Map<string, { editor: BoundEditor; documentId: DocumentId }>();
     readonly editor: HostEditor;
     private readonly states = new Map<string, Map<DocumentId, ViewState>>();
@@ -142,6 +143,8 @@ export class ViewBindings {
     constructor(controller: HostController, editor: HostEditor = "native") {
         this.controller = controller; this.editor = editor; this.language = new HostLanguageTools(controller.workspace); this.hover = new HostHoverTools(controller.workspace);
         this.tablePaste = new HostTablePaste(controller.workspace, editor === "candidate");
+        this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.review?.working.snapshot().pendingInput
+            && ![...this.mounted.values()].some(value => value.editor.metrics()?.pendingInput));
         this.primary = this.ref("primary", "Primary source");
         this.secondary = this.ref("secondary", "Secondary source");
     }
@@ -211,6 +214,7 @@ export class ViewBindings {
     }
     unmount(): void { for (const id of [...this.mounted.keys()]) this.detach(id); }
     dispose(): void {
+        this.stopInputCapture();
         this.comparison(null); this.unmount(); for (const selections of this.selections.values()) for (const view of selections.values()) view.dispose();
         this.selections.clear(); this.states.clear(); this.referenceState = undefined;
     }

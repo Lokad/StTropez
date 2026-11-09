@@ -13,7 +13,7 @@ import { mountTextDragDrop } from "./text-drag-drop.ts";
 
 export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport;
     focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void; describe: (id: string) => () => void;
-    snapshot: () => Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; pendingCaret: boolean; pendingDragScroll: boolean; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; composing: boolean; pendingWord: boolean; wordScanSteps: number; maxWordScanStepMs: number; pendingGrapheme: boolean; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number; disposed: boolean }>;
+    snapshot: () => Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number; queuedInputTurns: number; maxQueuedInputTurnMs: number; queuedInputWorkMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; pendingCaret: boolean; pendingDragScroll: boolean; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; composing: boolean; pendingInput: boolean; queuedInputUnits: number; pendingWord: boolean; wordScanSteps: number; maxWordScanStepMs: number; pendingGrapheme: boolean; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number; disposed: boolean }>;
     destroy: () => void }>;
 let nextMount = 0;
 
@@ -62,6 +62,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         };
     };
     let frame: number | undefined, commits = 0, conflicts = 0, serial = 0, inputEvents = 0, lastInputMs = 0;
+    let beforeInputEvents = 0, lastBeforeInputMs = 0, queuedInputTurns = 0, maxQueuedInputTurnMs = 0, queuedInputWorkMs = 0;
     let keydownEvents = 0, lastKeydownMs = 0;
     let navigationTurns = 0, navigationPreparationMs = 0, maxNavigationTurnMs = 0, navigationWorkMs = 0, navigationDepth = 0;
     let wordSelectionEvents = 0, lastWordSelectionMs = 0, maxWordSelectionTurnMs = 0;
@@ -82,6 +83,11 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     let insertion: InputCapture | undefined, composition: InputCapture | undefined;
     let projectedSet = view.getSnapshot().selectionSet;
     let rangeCommand: Readonly<{ capture: CommandCapture; purpose: "word" | "grapheme"; release: () => void }> | undefined, rangeTimer: number | undefined;
+    type InputKey = { kind: "key"; key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; text: string; edit: boolean };
+    type InputIntent = (InputKey | { kind: "text"; text: string; type: string }) & { at?: number };
+    type OrderedInput = { capture: CommandCapture; purpose: "word" | "grapheme"; actions: InputIntent[]; units: number; edit: boolean; native: boolean; running?: InputIntent; cancelled?: boolean };
+    let ordered: OrderedInput | undefined, executingInput: OrderedInput | undefined, orderedTimer: number | undefined, drainingInput = false, replayTime: number | undefined;
+    let nativeOrder: { order: OrderedInput; capture: InputCapture; type: string; data: string | null; action?: InputKey; invalid: boolean; reported: boolean } | undefined;
     const apple = /Mac|iPhone|iPad|iPod/.test(win.navigator.platform);
     function cancelScans(): void {
         wordJob?.cursor.dispose(); wordJob = undefined;
@@ -92,6 +98,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     function cancelWord(): void {
         cancelScans(); rangeCommand?.release(); rangeCommand = undefined;
         if (rangeTimer !== undefined) { win.clearTimeout(rangeTimer); commandTimers.delete(rangeTimer); rangeTimer = undefined; }
+        const pending = takeInput(); if (pending) recoverInput(pending, "pending-input-cancelled");
     }
     function cancelCommandTimers(): void {
         commandTimers.forEach(timer => win.clearTimeout(timer)); commandTimers.clear();
@@ -136,7 +143,9 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (disposed || selecting || committing) return;
         const state = resource.getSnapshot(); input.disabled = !workspace.resolveTab(target) || state.state !== "ready";
         input.readOnly = !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null;
-        input.setAttribute("aria-busy", String(state.state === "loading"));
+        if (executingInput?.edit && input.readOnly) recoverInput(executingInput, "pending-input-expired");
+        if (ordered && (!currentInput(ordered) || ordered.edit && input.readOnly)) cancelWord();
+        input.setAttribute("aria-busy", String(state.state === "loading" || ordered !== undefined));
         if (!input.disabled && !composing) {
             const document = workspace.document(documentId), { selection: selected, selectionSet } = view.getSnapshot();
             if (graphemeCache?.buffer !== document.buffer) graphemeCache = undefined;
@@ -164,30 +173,32 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         finally { selecting = false; }
         scheduleCaret();
     }
-    const conflict = (reason: string, edit?: TextEdit, expectedRevision = revision, contextFrom = context.from) => {
+    const conflict = (reason: string, edit?: TextEdit, expectedRevision = revision, contextFrom = context.from, attemptedText = input.value) => {
         conflicts++; group = undefined;
         input.dispatchEvent(new CustomEvent("sttropez-conflict", { bubbles: true, detail: Object.freeze({ documentId, expectedRevision, reason,
-            attemptedText: input.value, contextFrom, ...(edit ? { attemptedEdit: Object.freeze({ ...edit }) } : {}) }) }));
+            attemptedText, contextFrom, ...(edit ? { attemptedEdit: Object.freeze({ ...edit }) } : {}) }) }));
     };
-    function apply(edits: readonly TextEdit[], selection: Selection | SelectionSet, kind: EditKind, type?: string, expectedRevision = revision): void {
-        if (disposed) return;
+    function apply(edits: readonly TextEdit[], selection: Selection | SelectionSet, kind: EditKind, type?: string, expectedRevision = revision, recoveryText?: string): boolean {
+        if (disposed) return false;
         cancelWord(); preferred = undefined;
-        if (!workspace.resolveTab(target)) { conflict("expired-view", edits[0]); refresh(); return; }
+        if (!workspace.resolveTab(target)) { conflict("expired-view", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
         let key: string | undefined;
-        const now = win.performance.now(), before = view.getSnapshot().selectionSet;
+        const now = replayTime ?? win.performance.now(), before = view.getSnapshot().selectionSet;
         if (type) {
             const adjacent = group?.type === type && group.revision === expectedRevision && group.selectionSet === before && now - group.time < 1000;
             key = adjacent ? group!.key : `${view.id}:${scope}:${++serial}`;
         } else group = undefined;
-        committing = true;
+        committing = true; let applied = false;
         try {
             const result = workspace.edit({ documentId, expectedRevision, origin: "human", edits, view,
                 ...("ranges" in selection ? { selectionSet: selection } : { selection }),
                 history: { kind, ...(key ? { group: key } : {}) } });
+            applied = result.applied;
             if (result.applied) { commits++; const after = view.getSnapshot(); viewport.revealOffset(after.selection.head);
                 if (type && key) group = { type, revision: result.revision, selectionSet: after.selectionSet, time: now, key }; }
-            else conflict(result.reason, edits[0]);
+            else conflict(result.reason, edits[0], expectedRevision, context.from, recoveryText);
         } finally { committing = false; refresh(); }
+        return applied;
     }
     function captureInput(type: string, data: string | null): InputCapture {
         const target = captureNativeInsertion(input, type, data);
@@ -296,14 +307,31 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 rangeTimer = timer; commandTimers.add(timer); }
         }); pump();
     }
+    function completeCaptured(capture: CommandCapture, work: () => boolean): boolean {
+        if (!validCommand(capture)) { cancelWord(); return false; }
+        const pending = ordered?.capture === capture ? takeInput() : undefined;
+        if (pending) executingInput = pending;
+        let applied = false;
+        try { applied = work(); return applied; }
+        finally {
+            if (pending && !pending.cancelled) {
+                if (applied && !disposed) { pending.capture = commandCapture(false); ordered = pending; scheduleInput(); }
+                else recoverInput(pending, "pending-input-expired");
+            }
+            if (executingInput === pending) executingInput = undefined;
+        }
+    }
     function finishRanges(capture: CommandCapture, ranges: readonly Selection[], type?: string): SelectionSet | undefined {
         if (!validCommand(capture)) return;
         const selections = createSelectionSet(capture.buffer.length, ranges, capture.selectionSet.primary);
+        completeCaptured(capture, () => {
         if (capture.deleting) { const plan = planSelectionEdits(capture.buffer.length, selections, "");
-            apply(plan.edits, plan.selectionSet, "delete", type, capture.revision); }
+            return apply(plan.edits, plan.selectionSet, "delete", type, capture.revision); }
         else { cancelWord(); group = undefined; view.setSelections(capture.revision, selections.ranges, selections.primary);
             const selected = view.getSnapshot().selection;
             viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" }); refresh(); }
+        return true;
+        });
         return view.getSnapshot().selectionSet;
     }
     function moved(range: Selection, offset: number, extend: boolean, affinity: Affinity = "after"): Selection {
@@ -448,7 +476,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const state = viewport.snapshot(); return page ? Math.max(1, Math.floor(state.height / state.lineHeight) - 1) : 1;
     }
     function shortVertical(capture: CommandCapture, direction: -1 | 1, page: boolean): boolean {
-        if (capture.selectionSet.ranges.length > 32) return false;
+        if (capture.selectionSet.ranges.length > 2) return false;
         // Page destinations use current viewport dimensions, including a pending resize.
         viewport.flush();
         const buffer = capture.buffer, folds = view.folding.getSnapshot().index, count = verticalCount(page), lines = new Set<number>();
@@ -542,7 +570,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             });
             preferred = { selections, revision: capture.revision, layout, columns: nextColumns };
         }, { validLayout: () => navigationLayout() === layout, navigation: true, inline, ...(capture.selectionSet.ranges.length > 1 ? {
-            ...(inline ? { batchSize: 16 } : {}),
+            ...(capture.selectionSet.ranges.length <= 32 ? { batchSize: 16 } : {}),
             prepare: (ranges: readonly Selection[]) => viewport.prepareNavigationRows([...new Set(ranges.flatMap(range => {
                 const line = buffer.lineAt(range.head), row = foldIndex.rowAt(line); return [line, foldIndex.lineAt(Math.max(0, Math.min(foldIndex.visibleLineCount - 1, row + direction * count)))];
             }))]) } : {}) });
@@ -560,10 +588,11 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             if (previous && first <= previous.last + 1) previous.last = Math.max(previous.last, last); else intervals.push({ first, last });
         }
         const edits: TextEdit[] = []; let interval = 0, line = intervals[0]!.first;
+        const job = { capture, purpose: "grapheme" as const, release: () => {} }; rangeCommand = job;
         // Plan large selections in yielding chunks against the captured immutable buffer/revision.
         const step = () => {
-            if (disposed) return;
-            if (!validCommand(capture)) { conflict("stale-indent-command"); return; }
+            if (disposed || rangeCommand !== job) return;
+            if (!validCommand(capture)) { cancelWord(); return; }
             let countLines = 0;
             for (; interval < intervals.length && countLines < 256; countLines++) {
                 const from = buffer.offsetAt(line), prefix = buffer.slice(from, Math.min(buffer.length, from + 4));
@@ -572,13 +601,14 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 if (++line > intervals[interval]!.last && ++interval < intervals.length) line = intervals[interval]!.first;
             }
             if (interval < intervals.length) {
-                const timer = win.setTimeout(() => { commandTimers.delete(timer); step(); }, 0); commandTimers.add(timer);
-            } else if (edits.length) {
+                const timer = win.setTimeout(() => { commandTimers.delete(timer); if (rangeCommand === job) rangeTimer = undefined; step(); }, 0); rangeTimer = timer; commandTimers.add(timer);
+            } else { rangeCommand = undefined; completeCaptured(capture, () => {
+                if (!edits.length) return true;
                 const mapping = new PositionMap(buffer.length, edits);
                 const result = createSelectionSet(mapping.newLength, capture.selectionSet.ranges.map(range => ({ anchor: mapping.map(range.anchor, "after").offset,
                     head: mapping.map(range.head, "after").offset })), capture.selectionSet.primary);
-                apply(edits, result, "replace", undefined, capture.revision);
-            }
+                return apply(edits, result, "replace", undefined, capture.revision);
+            }); }
         }; group = undefined; step();
     }
     function bracket(key: string): boolean {
@@ -599,8 +629,136 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (edits.every(edit => edit.insert === "")) finishRanges(commandCapture(false), carets);
         else apply(edits, createSelectionSet(buffer.length + delta, carets, selectionSet.primary), "typing"); return true;
     }
-    input.addEventListener("beforeinput", event => {
+    function takeInput(): OrderedInput | undefined {
+        if (orderedTimer !== undefined) { win.clearTimeout(orderedTimer); commandTimers.delete(orderedTimer); orderedTimer = undefined; }
+        const pending = ordered; ordered = undefined; return pending;
+    }
+    function recoverInput(pending: OrderedInput, reason: string): void {
+        if (pending.cancelled) return; pending.cancelled = true;
+        const committed = committing && workspace.observeDocument(documentId).getSnapshot()?.revision !== pending.capture.revision;
+        let text = (committed ? "" : pending.running?.text ?? "") + pending.actions.map(action => action.text).join(""); delete pending.running; pending.actions = []; pending.units = 0;
+        if (nativeOrder?.order === pending) { nativeOrder.invalid = true;
+            if (!nativeOrder.reported && nativeOrder.data !== null) { text += nativeOrder.data; nativeOrder.reported = true; } }
+        if (text.length) conflict(reason, undefined, pending.capture.revision, 0, text);
+        input.setAttribute("aria-busy", String(!disposed && resource.getSnapshot().state === "loading"));
+    }
+    function currentInput(pending: OrderedInput): boolean {
+        return !pending.cancelled && validCommand(pending.capture) && root.isConnected && workspace.ownsDocumentView(view) && !(pending.edit && input.readOnly);
+    }
+    function inputOrder(): OrderedInput | undefined {
+        if (ordered) return ordered;
+        if (!rangeCommand || !validCommand(rangeCommand.capture)) return;
+        return ordered = { capture: rangeCommand.capture, purpose: rangeCommand.purpose, actions: [], units: 0, edit: rangeCommand.capture.deleting, native: false };
+    }
+    function appendInput(action: InputIntent): void {
+        const pending = inputOrder(); if (!pending) return;
+        action.at = win.performance.now();
+        if (!currentInput(pending) || pending.actions.length >= 256 || pending.units + action.text.length > 65536) {
+            const capture = pending.capture; cancelWord();
+            if (action.text.length) conflict("pending-input-limit-or-expiry", undefined, capture.revision, 0, action.text); return;
+        }
+        const last = pending.actions.at(-1);
+        if (last?.kind === "text" && action.kind === "text" && last.type === action.type && action.at - (last.at ?? action.at) < 1000) { last.text += action.text; last.at = action.at; }
+        else pending.actions.push(action);
+        pending.units += action.text.length; pending.edit ||= action.kind === "text" || action.edit;
+        input.setAttribute("aria-busy", "true"); scheduleInput();
+    }
+    function scheduleInput(): void {
+        if (!ordered || rangeCommand || ordered.native || orderedTimer !== undefined) return;
+        const timer = win.setTimeout(() => { const began = win.performance.now();
+            try { commandTimers.delete(timer); if (orderedTimer === timer) orderedTimer = undefined; drainInput(); }
+            finally { const elapsed = win.performance.now() - began; queuedInputTurns++; queuedInputWorkMs += elapsed; maxQueuedInputTurnMs = Math.max(maxQueuedInputTurnMs, elapsed); }
+        }, 0);
+        orderedTimer = timer; commandTimers.add(timer);
+    }
+    function drainInput(): void {
+        const pending = takeInput(); if (!pending) return;
+        if (!currentInput(pending)) { recoverInput(pending, "pending-input-expired"); return; }
+        const began = win.performance.now(); let count = 0; drainingInput = true; executingInput = pending;
+        try {
+            while (pending.actions.length && count++ < 8 && win.performance.now() - began < 4) {
+                const action = pending.actions.shift()!; pending.running = action;
+                replayTime = action.at;
+                if (action.kind === "text") {
+                    const document = workspace.document(documentId), plan = planSelectionEdits(document.buffer.length, view.getSnapshot().selectionSet, action.text);
+                    const typing = action.type === "insertText" && !action.text.includes("\n");
+                    if (!apply(plan.edits, plan.selectionSet, typing ? "typing" : action.type === "insertFromPaste" ? "paste" : "replace", typing ? "insertText" : undefined, document.revision, action.text)) {
+                        delete pending.running; recoverInput(pending, "pending-input-rejected"); return;
+                    }
+                } else {
+                    const before = conflicts, event = new win.KeyboardEvent("keydown", { ...action, cancelable: true }); keydown(event);
+                    if (action.text && action.key !== "Tab" && !event.defaultPrevented) replaceSelection(action.text, "typing", "insertText");
+                    if (conflicts !== before) { recoverInput(pending, "pending-input-rejected"); return; }
+                }
+                replayTime = undefined; delete pending.running; pending.units -= action.text.length;
+                if (pending.cancelled || disposed) return;
+                if (rangeCommand) {
+                    if (pending.actions.length || pending.native || rangeCommand.capture.deleting) { pending.capture = rangeCommand.capture; pending.purpose = rangeCommand.purpose; ordered = pending; }
+                    return;
+                }
+                pending.capture = commandCapture(false);
+                if (!currentInput(pending)) { recoverInput(pending, "pending-input-expired"); return; }
+            }
+            if (pending.actions.length || pending.native) { ordered = pending; scheduleInput(); }
+        } catch { recoverInput(pending, "pending-input-failed"); }
+        finally { replayTime = undefined; if (executingInput === pending) executingInput = undefined; drainingInput = false;
+            input.setAttribute("aria-busy", String(ordered !== undefined || !disposed && resource.getSnapshot().state === "loading")); }
+    }
+    function inputKey(event: KeyboardEvent): InputKey | undefined {
+        const command = (event.ctrlKey || event.metaKey) && !event.altKey, key = event.key.toLowerCase();
+        const word = !event.metaKey && (event.ctrlKey && !event.altKey || apple && event.altKey && !event.ctrlKey);
+        const navigation = command && ["a", "home", "end"].includes(key) || word && ["ArrowLeft", "ArrowRight"].includes(event.key)
+            || !command && !event.altKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key);
+        const historyKey = command && (key === "z" || event.ctrlKey && key === "y"), deletion = (!command && !event.altKey || word) && ["Backspace", "Delete"].includes(event.key);
+        const tab = event.key === "Tab" && !escaped && !command && !event.altKey, bracketKey = !command && !event.altKey && "()[]{}".includes(event.key) && event.key.length === 1;
+        if (!navigation && !historyKey && !deletion && !tab && !bracketKey) return;
+        return { kind: "key", key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, shiftKey: event.shiftKey,
+            text: tab ? "\t" : bracketKey ? event.key : "", edit: !navigation };
+    }
+    function nativeIntent(type: string): InputKey | undefined {
+        const word = type.startsWith("deleteWord"), backward = type.endsWith("Backward");
+        if (["deleteWordBackward", "deleteWordForward", "deleteContentBackward", "deleteContentForward"].includes(type))
+            return { kind: "key", key: backward ? "Backspace" : "Delete", ctrlKey: word, metaKey: false, altKey: false, shiftKey: false, text: "", edit: true };
+        if (type === "historyUndo" || type === "historyRedo") return { kind: "key", key: "z", ctrlKey: true, metaKey: false, altKey: false, shiftKey: type === "historyRedo", text: "", edit: true };
+        return;
+    }
+    function captureOrderedInput(event: InputEvent): boolean {
+        if (composing || event.isComposing || input.disabled || input.readOnly || !ordered && !rangeCommand) return false;
+        const text = event.inputType === "insertText" || event.inputType === "insertLineBreak", action = nativeIntent(event.inputType);
+        if (!text && !action) return false;
+        const pending = inputOrder(); if (!pending) return false;
+        const data = event.inputType === "insertLineBreak" ? "\n" : event.data;
+        if (event.cancelable && (action || data !== null)) { event.preventDefault(); appendInput(action ?? { kind: "text", text: data!, type: event.inputType }); return true; }
+        pending.native = true; pending.edit = true;
+        nativeOrder = { order: pending, capture: captureInput(event.inputType, event.data), type: event.inputType, data, ...(action ? { action } : {}), invalid: false, reported: false };
+        input.setAttribute("aria-busy", "true"); return true;
+    }
+    function commitOrderedInput(event: InputEvent): boolean {
+        let pendingNative = nativeOrder; nativeOrder = undefined;
+        if (!pendingNative && !composing && !event.isComposing && (ordered || rangeCommand) && ["insertText", "insertLineBreak"].includes(event.inputType)) {
+            const pending = inputOrder(); if (!pending) return false;
+            pendingNative = { order: pending, capture: { revision, selectionSet: projectedSet, context, target: { type: event.inputType, before: context.text,
+                from: Math.min(context.nativeAnchor, context.nativeHead), to: Math.max(context.nativeAnchor, context.nativeHead), data: event.data } }, type: event.inputType, data: event.data, invalid: false, reported: false };
+        }
+        if (!pendingNative) return false;
+        const native = pendingNative, pending = native.order; pending.native = false;
+        if (native.invalid || ordered !== pending || !currentInput(pending) || event.inputType !== native.type) {
+            const text = event.data ?? native.data ?? input.value;
+            if (!native.reported || text !== native.data) conflict("pending-native-input-expired", undefined, native.capture.revision, 0, text);
+            if (ordered === pending) cancelWord(); refresh(); return true;
+        }
+        const projection = native.capture.context, edit = native.capture.target && resolveNativeInsertion(native.capture.target, input, event.inputType);
+        if (native.action) appendInput(native.action);
+        else if (edit && edit.from === Math.min(projection.nativeAnchor, projection.nativeHead) && edit.to === Math.max(projection.nativeAnchor, projection.nativeHead))
+            appendInput({ kind: "text", text: edit.insert, type: event.inputType });
+        else { cancelWord(); conflict("pending-native-input-target", undefined, native.capture.revision, 0, event.data ?? native.data ?? input.value); }
+        refresh(); scheduleInput(); return true;
+    }
+    function beforeInput(event: InputEvent): void {
         wordInput = undefined; insertion = undefined;
+        if (nativeOrder) { if (!nativeOrder.invalid) cancelWord(); nativeOrder = undefined; }
+        if (event.defaultPrevented) return;
+        if (captureOrderedInput(event)) return;
         if (!composing) view.folding.revealSelection(view.folding.getSnapshot());
         if (!composing && ["deleteWordBackward", "deleteWordForward", "deleteContentBackward", "deleteContentForward"].includes(event.inputType)) {
             syncSelection(); const direction = event.inputType.endsWith("Backward") ? -1 : 1, wholeWord = event.inputType.startsWith("deleteWord");
@@ -611,9 +769,13 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (!composing && !event.isComposing && !input.disabled && !input.readOnly && input.value === context.text) {
             insertion = captureInput(event.inputType, event.data);
         }
+    }
+    input.addEventListener("beforeinput", event => { const began = win.performance.now();
+        try { beforeInput(event); } finally { beforeInputEvents++; lastBeforeInputMs = win.performance.now() - began; }
     }, { signal: listeners.signal });
     input.addEventListener("input", event => {
         const start = win.performance.now(), type = (event as InputEvent).inputType;
+        if (commitOrderedInput(event as InputEvent)) { lastInputMs = win.performance.now() - start; inputEvents++; return; }
         if (!composing && ["deleteWordBackward", "deleteWordForward", "deleteContentBackward", "deleteContentForward"].includes(type)) {
             const captured = wordInput; wordInput = undefined;
             if (!captured || input.disabled || input.readOnly || !workspace.resolveTab(target) || captured.direction !== (type.endsWith("Backward") ? -1 : 1)
@@ -634,8 +796,13 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         // Restore disclosure tab stops after the browser has completed focus traversal.
         if (escaped) queueMicrotask(() => { if (!disposed) escapeState(false); }); }, { signal: listeners.signal });
     function keydown(event: KeyboardEvent): void {
-        if (composing || event.isComposing) return;
+        if (event.defaultPrevented || composing || event.isComposing) return;
         if (["Shift", "Control", "Meta", "Alt"].includes(event.key)) return;
+        if (!drainingInput && (ordered || rangeCommand) && event.key !== "Escape") {
+            const action = inputKey(event);
+            if (action && (!action.edit || !input.readOnly)) { event.preventDefault(); appendInput(action); return; }
+            if (!(event.ctrlKey || event.metaKey || event.altKey)) return;
+        }
         if (escaped && event.key !== "Escape" && event.key !== "Tab") escapeState(false);
         view.folding.revealSelection(view.folding.getSnapshot());
         const command = (event.ctrlKey || event.metaKey) && !event.altKey, key = event.key.toLowerCase();
@@ -780,11 +947,13 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     return Object.freeze({ element: root, input, view, viewport, focus, describe,
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state: ViewState) => { viewport.restoreView(state); refresh(); },
-        snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs, pendingCaret: frame !== undefined,
-            pendingDragScroll: dragFrame !== undefined, dragScrollFrames, maxDragScrollStepMs, commits, conflicts, composing, pendingWord: rangeCommand?.purpose === "word" || wordJob !== undefined || graphemeJob?.purpose === "word" || graphemeJob?.purpose === "word-selection", wordScanSteps, maxWordScanStepMs, pendingGrapheme: rangeCommand?.purpose === "grapheme" || graphemeJob !== undefined, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves, disposed }),
+        snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, queuedInputTurns, maxQueuedInputTurnMs, queuedInputWorkMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs, pendingCaret: frame !== undefined,
+            pendingDragScroll: dragFrame !== undefined, dragScrollFrames, maxDragScrollStepMs, commits, conflicts, composing, pendingInput: ordered !== undefined || executingInput !== undefined || rangeCommand?.capture.deleting === true,
+            queuedInputUnits: ordered?.units ?? 0, pendingWord: rangeCommand?.purpose === "word" || wordJob !== undefined || graphemeJob?.purpose === "word" || graphemeJob?.purpose === "word-selection" || ordered?.purpose === "word", wordScanSteps, maxWordScanStepMs, pendingGrapheme: rangeCommand?.purpose === "grapheme" || graphemeJob !== undefined || ordered?.purpose === "grapheme", graphemeScanSteps, maxGraphemeScanStepMs, visualMoves, disposed }),
         destroy: () => {
             if (disposed) return; disposed = true;
-            cancelWord(); wordInput = undefined; insertion = undefined; composition = undefined; graphemeCache = undefined; preferred = undefined;
+            if (executingInput) recoverInput(executingInput, "pending-input-detached");
+            cancelWord(); nativeOrder = undefined; wordInput = undefined; insertion = undefined; composition = undefined; graphemeCache = undefined; preferred = undefined;
             if (composing && input.value !== context.text) conflict("composition-detached");
             composing = false; stopDrag(); textDrag.destroy();
             if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;

@@ -118,7 +118,7 @@ test("very long graphemes delete whole and stale yielding indentation cannot ret
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
         window.editingFixture.edit([{ from: 0, to: 0, insert: "later " }]);
     });
-    await expect.poll(async () => (await state(page)).conflicts.at(-1)?.reason).toBe("stale-indent-command");
+    await expect.poll(async () => (await state(page)).primary.pendingGrapheme).toBe(false);
     expect((await state(page)).document!.length).toBe(2_400_006);
     expect(await page.evaluate(() => window.editingFixture.range(0, 6))).toBe("later ");
 });

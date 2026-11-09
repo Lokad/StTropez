@@ -57,6 +57,15 @@ export class HostController {
     private failNextAck = true;
     private timer: ReturnType<typeof setInterval> | undefined;
     private disposed = false;
+    private readonly inputCaptureGuards = new Set<() => boolean>();
+    registerInputCaptureGuard(ready: () => boolean): () => void {
+        if (this.disposed) return () => {};
+        this.inputCaptureGuards.add(ready); return () => { this.inputCaptureGuards.delete(ready); };
+    }
+    private sourceInputReady(): boolean {
+        if ([...this.inputCaptureGuards].every(ready => ready())) return true;
+        this.layoutCell.set({ ...this.layoutCell.get(), modal: { kind: "error", message: "Wait for pending typing to finish, then try the source command again." } }); return false;
+    }
     readonly variants = new ReviewVariants(this.workspace, this.source, {
         presentation: () => this.workspace.captureTab(this.primaryTab), reference: this.comparisonReference,
         saved: () => this.savedReference, server: () => ({ buffer: this.serverBuffer, version: `reference:server-${this.serverVersion}` }),
@@ -103,6 +112,7 @@ export class HostController {
     recoveryText(): string | null { return this.recoveryCell.get().items.at(-1)?.attemptedText ?? null; }
     readonly associate = (): void => this.safe(() => { this.workspace.associateAgent(this.source.id, "synthetic-agent"); });
     readonly requestAgent = (): void => this.safe(() => {
+        if (!this.sourceInputReady()) return;
         const configuration = this.connection.getSnapshot();
         if (configuration.state !== "ready") throw new Error("Configuration not ready.");
         const before = this.workspace.document(this.source.documentId);
@@ -142,6 +152,7 @@ export class HostController {
         this.saveSource();
     });
     private saveSource(review?: SaveReview): void {
+        if (!this.sourceInputReady()) return;
         const conflictId = this.conflictCell.get()?.id;
         let captured: SaveSubmission<string> | undefined;
         void this.track(this.commands.save(this.source, { save: submission => {
@@ -232,7 +243,7 @@ export class HostController {
         } }).catch(error => this.reportError(error)));
     });
     readonly run = async (): Promise<void> => {
-        if (this.disposed) return;
+        if (this.disposed || !this.sourceInputReady()) return;
         let started = false;
         await this.track(this.commands.run(this.source, this.connection, this.settingsCell.get(), { run: submission => {
             const pending = new Promise<void>((resolve, reject) => this.runs.push({ submission, resolve, reject })); started = true;
@@ -250,7 +261,7 @@ export class HostController {
         return submission ? { source: submission.source.value, configuration: submission.configuration.value, settings: submission.settings } : null;
     }
     readonly demonstrateOrdering = (): void => {
-        if (this.disposed) return;
+        if (this.disposed || !this.sourceInputReady()) return;
         const phases: string[] = [], write = this.settingsCell.enqueue({ mode: "inspect" });
         const document = this.workspace.document(this.source.documentId);
         const result = this.workspace.edit({ documentId: document.id, expectedRevision: document.revision, origin: "host",
@@ -334,10 +345,11 @@ export class HostController {
                 sourceLength: this.pendingAgent.input.source.value.length, configurationRevision: this.pendingAgent.input.context.configurationRevision } : null,
             proposalTransactionMs: this.proposalTransactionMs, pendingCommands: this.operations.size,
             inputRecovery: this.recoveryCell.get().items.map(item => ({ documentId: item.documentId, expectedRevision: item.expectedRevision, reason: item.reason, contextFrom: item.contextFrom, attemptedUnits: item.attemptedText.length })),
-            hostSubscriptions: this.layoutCell.count() + this.activityCell.count() + this.settingsCell.count() + this.recoveryCell.count() + this.referenceCell.count() + this.conflictCell.count(), loadPending: this.pendingLoad !== undefined, disposed: this.disposed };
+            hostSubscriptions: this.layoutCell.count() + this.activityCell.count() + this.settingsCell.count() + this.recoveryCell.count() + this.referenceCell.count() + this.conflictCell.count(), inputCaptureGuards: this.inputCaptureGuards.size, loadPending: this.pendingLoad !== undefined, disposed: this.disposed };
     }
     dispose(): Promise<void> {
         if (this.disposal) return this.disposal; this.disposed = true; this.variants.dispose();
+        this.inputCaptureGuards.clear();
         if (this.timer !== undefined) clearInterval(this.timer); this.timer = undefined;
         this.workspace.interruptAgent(this.source.id);
         this.workspace.detachAgent(this.source.id);

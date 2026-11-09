@@ -176,6 +176,39 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
         return { cases, source: "restored-compiled-assets", nativeQualified: false };
     },
     beginMultipleInput: () => { if (multipleInput) throw new Error("Multiple input already mounted."); multipleInput = mountMultipleInput(); },
+    orderedInput: async () => {
+        const results = [];
+        for (const kind of ["many-carets", "long-word"]) {
+            const original = kind === "many-carets" ? Array<string>(100000).fill("0123456789").join("\r\n") : "a" + " ".repeat(1000000) + "next";
+            const heads = kind === "many-carets" ? Array.from({ length: 1024 }, (_, i) => i * 80 * 12 + 4) : [0];
+            const destinations = kind === "many-carets" ? heads.map(head => head + 12) : [1000001], text = "😀é";
+            const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: kind, variant: "working" }, kind, { value: original });
+            const tab = model.open({ kind: "text", documentId: source.documentId }, kind), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
+            const editor = mountEditingCandidate(host, model, tab, { ariaLabel: "Restored ordered input" }), recovered: string[] = [];
+            editor.input.addEventListener("sttropez-conflict", event => recovered.push((event as CustomEvent<{ attemptedText: string }>).detail.attemptedText));
+            const ready = async () => { for (let turn = 0; ; turn++) { const s = editor.snapshot();
+                if (!s.pendingInput && !s.pendingWord && !s.pendingGrapheme && !s.pendingCaret && !editor.viewport.snapshot().pending) return;
+                if (turn >= 4000) throw new Error("Compiled ordered input did not settle."); await new Promise<void>(resolve => setTimeout(resolve, 1)); } };
+            const command = () => editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: kind === "many-carets" ? "ArrowDown" : "ArrowRight", ctrlKey: kind === "long-word", bubbles: true, cancelable: true }));
+            const type = () => { if (editor.input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: text, bubbles: true, cancelable: true }))) throw new Error("Compiled input was not captured."); };
+            try {
+                editor.focus(); editor.view.setSelections(0, heads.map(head => ({ anchor: head, head })), heads.length - 1); await ready(); command(); type();
+                if (!editor.snapshot().pendingInput || model.document(source.documentId).revision !== 0) throw new Error("Compiled command failed to yield/capture input.");
+                await ready(); const changed = model.document(source.documentId), parts: string[] = []; let from = 0;
+                for (const head of destinations) { parts.push(original.slice(from, head), text); from = head; } parts.push(original.slice(from)); const expected = parts.join("");
+                if (changed.buffer.length !== expected.length) throw new Error("Compiled ordered input length changed.");
+                for (let at = 0; at < expected.length; at += 32768) if (changed.buffer.slice(at, Math.min(expected.length, at + 32768)) !== expected.slice(at, at + 32768)) throw new Error("Compiled input used the wrong destination.");
+                if (model.observeHistory(source.documentId).getSnapshot().undoDepth !== 1 || changed.buffer.readMetrics().textExports !== 0 || recovered.length) throw new Error("Compiled input lost history/bounds.");
+                model.undo({ documentId: source.documentId, expectedRevision: changed.revision }); await ready();
+                if (editor.view.getSnapshot().selectionSet.ranges.some((range, i) => range.anchor !== destinations[i] || range.head !== destinations[i])) throw new Error("Compiled undo lost moved selections.");
+                const document = model.document(source.documentId); editor.view.setSelections(document.revision, heads.map(head => ({ anchor: head, head })), heads.length - 1); await ready(); command(); type(); editor.destroy();
+                if (recovered.length !== 1 || recovered[0] !== text || model.document(source.documentId).buffer !== document.buffer) throw new Error("Compiled detach lost pending input.");
+            } finally { editor.destroy(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
+            const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled ordered input leaked.");
+            results.push({ kind, exactText: true, sharedHistory: true, detachRecovery: true, exports: 0, released: { views, leases, subscriptions } });
+        }
+        return { cases: results, source: "restored-compiled-assets", nativeQualified: false };
+    },
     multipleInput: () => { const { model, source, editor } = multipleInput!, document = model.document(source.documentId), state = editor.snapshot(), viewport = editor.viewport.snapshot();
         return { text: document.buffer.slice(0, document.buffer.length), selectionSet: editor.view.getSnapshot().selectionSet, revision: document.revision,
             pending: state.pendingCaret || state.pendingGrapheme || state.pendingWord || viewport.pending, commits: state.commits, exports: document.buffer.readMetrics().textExports }; },

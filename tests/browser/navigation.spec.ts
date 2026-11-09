@@ -110,7 +110,7 @@ test("page movement preserves raw CRLF offsets and measured columns in horizonta
     expect((await snapshot(page)).document).toMatchObject({ exports: 0, revision: before.document!.revision });
 });
 
-test("typing cancels a pending word deletion and read-only transitions reject its final transaction", async ({ page }) => {
+test("pending word deletion orders typing and read-only transitions reject its final transaction", async ({ page }) => {
     await setup(page, "x".repeat(1_000_000)); const before = (await snapshot(page)).primary.commits;
     await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(node => {
         const input = node as HTMLTextAreaElement;
@@ -118,7 +118,11 @@ test("typing cancels a pending word deletion and read-only transitions reject it
         if (!window.editingFixture.snapshot().primary.pendingWord) throw new Error("Word command did not yield.");
         input.setRangeText("!", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { inputType: "insertText", bubbles: true }));
     }); await ready(page);
-    expect((await snapshot(page)).document).toMatchObject({ length: 1_000_001, exports: 0 }); expect((await snapshot(page)).primary.commits).toBe(before + 1);
+    expect((await snapshot(page)).document).toMatchObject({ length: 1, exports: 0 }); expect((await snapshot(page)).primary.commits).toBe(before + 2);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 1))).toBe("!");
+    await page.keyboard.press("Control+z"); await ready(page); expect((await snapshot(page)).document!.length).toBe(0);
+    await page.keyboard.press("Control+z"); await ready(page); expect((await snapshot(page)).document).toMatchObject({ length: 1_000_000, exports: 0 });
+    expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 0, head: 0 });
     await setup(page, "x".repeat(1_000_000)); const revision = (await snapshot(page)).document!.revision;
     await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(node => {
         node.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", ctrlKey: true, bubbles: true, cancelable: true })); window.editingFixture.readOnly(true);
