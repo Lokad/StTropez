@@ -1,4 +1,4 @@
-import { createFindController } from "../../src/browser/index.ts";
+import { createFindController, createRegexFindBackend } from "../../src/browser/index.ts";
 import type { EditingCandidate, FindController, FindSnapshot } from "../../src/browser/index.ts";
 import type { TabId, Workspace } from "../../src/index.ts";
 import { createProviderController } from "../editing/provider-controller.ts";
@@ -8,14 +8,14 @@ import { HostCell } from "../shared/observable.ts";
 
 type Session = { id: string; editor: EditingCandidate; tab: TabId; presentation: EditingPresentation;
     provider: ReturnType<typeof createProviderController>; find?: FindController; stopFind?: () => void; initialized: boolean };
-type LanguageSnapshot = Readonly<{ view: string | null; provider: ProviderSnapshot | null; find: FindSnapshot | null; query: string; replacement: string; wholeWord: boolean; matchCase: boolean }>;
+type LanguageSnapshot = Readonly<{ view: string | null; provider: ProviderSnapshot | null; find: FindSnapshot | null; query: string; replacement: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean }>;
 
 /** Host-owned tools follow an explicit mounted view; delayed commands never consult focus later. */
 export class HostLanguageTools {
     private readonly workspace: Workspace;
     private readonly sessions = new Map<string, Session>();
     private active: Session | undefined;
-    private readonly cell = new HostCell<LanguageSnapshot>({ view: null, provider: null, find: null, query: "", replacement: "", wholeWord: false, matchCase: true });
+    private readonly cell = new HostCell<LanguageSnapshot>({ view: null, provider: null, find: null, query: "", replacement: "", wholeWord: false, matchCase: true, regularExpression: false });
     readonly state = this.cell.observable;
     private queryElement: HTMLInputElement | null = null;
     private replacementElement: HTMLInputElement | null = null;
@@ -65,15 +65,17 @@ export class HostLanguageTools {
     private ensureFind(): FindController | undefined {
         const session = this.active; if (!session) return;
         if (!session.find) {
-            session.find = createFindController(this.workspace, session.tab, session.editor);
+            const clock = session.editor.element.ownerDocument.defaultView!;
+            session.find = createFindController(this.workspace, session.tab, session.editor, { regularExpression: createRegexFindBackend({ clock,
+                createWorker: () => new Worker("/regex-worker.js", { type: "module" }) }) });
             const update = () => { const state = session.find!.state.getSnapshot(), previous = session.presentation.search;
                 session.presentation.search = { revision: state.revision, ranges: state.preview };
                 if (previous?.revision !== state.revision || previous.ranges !== state.preview) session.editor.viewport.invalidate();
                 if (this.active === session) this.publish(); };
             session.stopFind = session.find.state.subscribe(update);
         }
-        const state = session.find.state.getSnapshot(), { query, wholeWord, matchCase } = this.cell.get();
-        if (state.wholeWord !== wholeWord || state.matchCase !== matchCase) session.find.setOptions({ wholeWord, matchCase });
+        const state = session.find.state.getSnapshot(), { query, wholeWord, matchCase, regularExpression } = this.cell.get();
+        if (state.wholeWord !== wholeWord || state.matchCase !== matchCase || state.regularExpression !== regularExpression) session.find.setOptions({ wholeWord, matchCase, regularExpression });
         if (state.query !== query || state.status === "cancelled") session.find.setQuery(query);
         return session.find;
     }
@@ -86,6 +88,7 @@ export class HostLanguageTools {
     readonly setQuery = (query: string): void => { this.cell.set({ ...this.cell.get(), query }); this.ensureFind(); };
     readonly setWholeWord = (wholeWord: boolean): void => { this.cell.set({ ...this.cell.get(), wholeWord }); this.ensureFind(); };
     readonly setMatchCase = (matchCase: boolean): void => { this.cell.set({ ...this.cell.get(), matchCase }); this.ensureFind(); };
+    readonly setRegularExpression = (regularExpression: boolean): void => { this.cell.set({ ...this.cell.get(), regularExpression }); this.ensureFind(); };
     readonly setReplacement = (replacement: string): void => { this.cell.set({ ...this.cell.get(), replacement }); };
     readonly next = (): void => { this.ensureFind()?.next(); };
     readonly previous = (): void => { this.ensureFind()?.next(-1); };

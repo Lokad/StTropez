@@ -127,9 +127,15 @@ Use one versioned `.nupkg` with an explicit file allowlist:
 | `build/` MSBuild properties/targets | Expose the restored asset root and an explicit preparation target |
 | Package metadata, README and selected license | Versioning and distribution terms |
 
-Optional workers and WASM, if later justified, travel in the same versioned asset set. The
-manifest must identify them so the host can deploy and resolve their URLs. They remain lazy
-features with tested fallbacks. Source maps, when supplied, contain only project-owned paths
+The optional regex backend ships a standalone compiled `assets/browser/regex-worker.js` module;
+`entries.regexWorker` identifies it. The host deploys that asset and supplies its URL through
+`createRegexFindBackend`. Literal find starts no regex worker. Missing or failed regex workers
+report unavailability and leave ordinary editing usable; there is no main-thread regex fallback.
+The restored consumer proves actual worker matching, capture replacement, complete-set undo,
+raw zero-width navigation and cleanup on a 100,000-line captured source.
+
+Any later workers or justified WASM must travel in the same versioned asset set and have
+manifest entries for host deployment. Source maps, when supplied, contain only project-owned paths
 and sources. Research, roadmap, tests, development dependencies and local artifacts are excluded.
 
 NuGet supports arbitrary packaged files and build properties/targets; it does not require

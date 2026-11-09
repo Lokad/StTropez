@@ -51,7 +51,7 @@ limits the count, navigation or replacement. Index memory is proportional to mat
 is released on query changes, cancellation, expiry or destruction. This is explicit global
 search work, outside the ordinary editing path.
 
-`setQuery`, `setOptions({ wholeWord, matchCase })`, `next(1 | -1)`, `replaceCurrent`, `replaceAll`, `cancel` and `destroy` are explicit
+`setQuery`, `setOptions({ wholeWord, matchCase, regularExpression })`, `next(1 | -1)`, `replaceCurrent`, `replaceAll`, `cancel` and `destroy` are explicit
 commands. Navigation waits for a completed index, wraps, and uses the captured document view.
 Replacing a current selection requires a literal match under the current options; otherwise the command selects
 the next match. Whole-word replacement additionally requires the selection to be in the current
@@ -65,8 +65,8 @@ yielding planning does not qualify large replace-all latency or memory.
 
 Changing options cancels a queued replacement through the existing generation/timer guards
 and scans the unchanged source again. Snapshots expose immutable `wholeWord` and
-`matchCase` flags. Unspecified options use the defaults (`wholeWord: false`, `matchCase: true`).
-Both host find panels and the editing fixture expose **Whole word** and **Match case** checkboxes; the host keeps the option
+`matchCase` and `regularExpression` flags. Unspecified options use the defaults (`wholeWord: false`, `matchCase: true`, `regularExpression: false`).
+Both host find panels and the editing fixture expose **Whole word**, **Match case** and **Regular expression** checkboxes; the host keeps the options
 when commands move between source/comparison views and when views remount.
 
 After replace-all finishes, focus returns to its captured editor only if no new element gained
@@ -106,8 +106,59 @@ cancellation and disposal, without adding idle listeners.
 focuses replacement, Enter/F3 chooses a match and Escape cancels and returns to the editor.
 Browser tests cover Unicode/CRLF, wrap, literal replacements, read-only behavior, 100,000-match
 counting, stale planning, a 10,000-line atomic replacement/undo and disposal. The isolated NuGet
-consumer exercises the compiled controller and shared undo. Unicode caseless literal search is
-available; regular-expression search remains required replacement work.
+consumer exercises the compiled controller, worker asset and shared undo.
+
+## Regular expressions
+
+The optional backend reuses the platform's Unicode multiline regular expressions in a dedicated
+module worker. The host supplies its worker URL and lifecycle factory; literal mode starts no
+regex worker. The assets-only package ships `browser/regex-worker.js` as an independent bundled
+module, declared by `manifest.json`'s `entries.regexWorker`. No consumer compilation or extra
+runtime dependency is needed. For example:
+
+```ts
+const find = createFindController(workspace, tab, editor, {
+    regularExpression: createRegexFindBackend({ clock: window,
+        createWorker: () => new Worker("/assets/regex-worker.js", { type: "module" }) })
+});
+find.setOptions({ regularExpression: true, matchCase: false });
+find.setQuery("(?<word>sample)");
+find.replaceAll("[$<word>]"); // after state.status becomes "ready"
+```
+
+Expressions use `gmu`, adding `i` when **Match case** is cleared. Native matching, captures,
+lookarounds, Unicode properties and replacement tokens (`$$`, `$&`, prefix/suffix, numbered
+and named groups) retain their platform semantics. There is no normalization of raw UTF-16
+offsets or newline sequences. Whole-word mode applies the shared code-word constituent policy
+around the expression before matching, so native alternatives and backtracking respect the
+boundary. An empty query keeps find idle; use `(?:)` for zero-width matches. Navigation advances
+between distinct zero-width matches, including raw CRLF positions, and wraps. Current replacement
+accepts an indexed match or a manually selected nonempty overlap validated in full source context.
+The next current command skips a just-replaced zero-width occurrence. Undo restores complete sets.
+
+Source transfer is an explicit global operation: up to 32 Mi UTF-16 units in acknowledged
+32,768-unit chunks, joined only inside the worker. It avoids `TextBuffer.text()` exports, but
+does transfer the entire captured source. Patterns are limited to 4,096 units and one million
+matches. Search pages contain at most 512 ranges; replacement pages contain at most 512 small
+edits, with large insertions transferred in acknowledged 32,768-unit fragments. Templates are
+limited to 32,768 units; planned inserted text and final document length are each capped at
+32 Mi units. Limits and malformed responses fail visibly without committing partial plans.
+
+The controller coalesces regex query changes for 80ms by default. A five-second timeout per
+worker exchange terminates the cursor when native matching cannot yield; termination/realm
+closure is asynchronous. Cancellation, query/revision/selection changes, composition, authority
+loss, tab replacement and disposal invalidate captured work. Only a complete validated plan can
+commit one shared history transaction. Final fragment assembly and model application remain
+synchronous bulk work; worker isolation does not qualify their latency or memory use. A missing
+backend or failed worker reports unavailability without a fallback matcher.
+
+`maxScanStepMs` for regex covers main-thread dispatch/index spans. It excludes native matching,
+later asynchronous transfers/JSON decoding, publication/subscribers and wait time. It is neither
+an input-handler duration nor a complete callback or interaction latency. `replaceTransactionMs`
+still covers the final model transaction. The services driver's `--regex` mode records index
+completion; replacement also waits for the primary viewport. These component clocks include
+the pattern delay and worker transfer; they do not cover full host/all-view interaction latency.
+Native IME, OS clipboard and assistive technology remain separate qualification requirements.
 
 `bench:services` records repeated search and pilot replacement cases separately from keyboard
 input. Scan-step timing covers matching/index accumulation; replacement timing includes the

@@ -147,6 +147,10 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     function syncSelection(): void {
         if (disposed || composing || committing || input.disabled || input.value !== context.text) return;
         const backward = input.selectionDirection === "backward";
+        // LF projection cannot distinguish both sides of a removed CR. An unchanged native
+        // range still represents the exact captured model selection, including a raw CRLF interior.
+        if (view.getSnapshot().selectionSet === projectedSet && input.selectionStart === Math.min(context.nativeAnchor, context.nativeHead)
+            && input.selectionEnd === Math.max(context.nativeAnchor, context.nativeHead) && backward === (context.nativeAnchor > context.nativeHead)) return;
         const anchor = context.toModel(backward ? input.selectionEnd : input.selectionStart), head = context.toModel(backward ? input.selectionStart : input.selectionEnd);
         const current = view.getSnapshot(); if (current.revision === revision && current.selection.anchor === anchor && current.selection.head === head) return;
         selecting = true;
@@ -196,11 +200,13 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const native = captured.target && resolveNativeInsertion(captured.target, input, type);
         const edit = native || textDifference(projection.text, input.value);
         if (!edit) { refresh(); return; }
-        const from = projection.toModel(edit.from), to = edit.from === edit.to ? from : projection.toModel(edit.to), delta = edit.insert.length - (to - from);
+        const selected = captured.selectionSet.ranges[captured.selectionSet.primary]!;
+        const exactTarget = native && edit.from === Math.min(projection.nativeAnchor, projection.nativeHead) && edit.to === Math.max(projection.nativeAnchor, projection.nativeHead);
+        const from = exactTarget ? Math.min(selected.anchor, selected.head) : projection.toModel(edit.from);
+        const to = exactTarget ? Math.max(selected.anchor, selected.head) : edit.from === edit.to ? from : projection.toModel(edit.to), delta = edit.insert.length - (to - from);
         const typing = type === "insertText" && !edit.insert.includes("\n"), deleting = type === "deleteContentBackward" || type === "deleteContentForward";
         const kind = typing ? "typing" : deleting ? "delete" : type === "insertCompositionText" ? "composition" : type === "insertFromPaste" ? "paste" : "replace";
         if (captured.selectionSet.ranges.length > 1) {
-            const selected = captured.selectionSet.ranges[captured.selectionSet.primary]!;
             // A native textarea describes one primary target. Replicate only an exact captured
             // selection replacement; neighbouring autocorrection/reconversion needs its own plan.
             if (from !== Math.min(selected.anchor, selected.head) || to !== Math.max(selected.anchor, selected.head)) {
@@ -211,7 +217,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         }
         const map = (offset: number) => offset <= edit.from ? projection.toModel(offset)
             : offset >= edit.from + edit.insert.length ? projection.toModel(offset - edit.insert.length + edit.to - edit.from) + delta : from + offset - edit.from;
-        const backward = input.selectionDirection === "backward", selection = { anchor: map(backward ? input.selectionEnd : input.selectionStart), head: map(backward ? input.selectionStart : input.selectionEnd) };
+        const backward = input.selectionDirection === "backward", selection = exactTarget ? { anchor: from + edit.insert.length, head: from + edit.insert.length }
+            : { anchor: map(backward ? input.selectionEnd : input.selectionStart), head: map(backward ? input.selectionStart : input.selectionEnd) };
         apply([{ from, to, insert: edit.insert }], selection, kind, typing || deleting ? type : undefined, captured.revision);
     }
     function history(direction: "undo" | "redo"): void {

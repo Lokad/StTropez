@@ -52,7 +52,10 @@ while it is in flight. **Finish save** trims trailing whitespace in its canonica
    WebKit evaluation environment remains unverified.
    Ctrl+F opens source find. **Match case** starts checked; clear it for Unicode caseless
    literals and combine it with **Whole word**. These choices follow the working view and
-   survive remount; replacement text remains literal.
+   survive remount. Replacement text is literal in this mode. Enable **Regular expression** for
+   Unicode multiline patterns and numbered/named capture substitutions. Invalid patterns leave
+   editing available. Search and replacement use a separate worker; limits and bulk latency remain
+   explicit in [search](search.md#regular-expressions).
    Pause the pointer over a symbol, or press Ctrl+K then Ctrl+I in a candidate source view,
    to read local symbol information. The comparison working view supports the same command.
    Escape dismisses information before changing selections; typing also dismisses it.

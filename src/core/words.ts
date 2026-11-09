@@ -6,7 +6,11 @@ export type WordOptions = Readonly<{ skipWhitespace?: boolean; from?: number; to
 type Kind = "word" | "space" | "symbol" | "extend";
 type Unit = Readonly<{ from: number; to: number; kind: Kind; control: boolean }>;
 type Counters = { work: number; yielded: number; reads: number };
-const kind = (text: string): Kind => /^[\p{M}\u200c\u200d]$/u.test(text) ? "extend" : /^\p{White_Space}$/u.test(text) ? "space" : /^[\p{L}\p{N}\p{Pc}]$/u.test(text) ? "word" : "symbol";
+const extendPattern = "[\\p{M}\\u200c\\u200d]", basePattern = "[\\p{L}\\p{N}\\p{Pc}]";
+/** One code point in the editor's code-word policy, for host-owned Unicode expressions. */
+export const codeWordConstituentPattern = `(?:${basePattern}|${extendPattern})`;
+const extendExpression = new RegExp(`^${extendPattern}$`, "u"), baseExpression = new RegExp(`^${basePattern}$`, "u");
+const kind = (text: string): Kind => extendExpression.test(text) ? "extend" : /^\p{White_Space}$/u.test(text) ? "space" : baseExpression.test(text) ? "word" : "symbol";
 /** Search boundaries use the same code-word constituents, including attached marks/joiners. */
 export const wordConstituent = (text: string): boolean => { const value = kind(text); return value === "word" || value === "extend"; };
 const asciiKind = (code: number): Exclude<Kind, "extend"> => code === 32 || code >= 9 && code <= 13 ? "space"

@@ -20,7 +20,7 @@ export async function startServer(port) {
         await copyFile(`examples/hosts/${mode}.html`, `artifacts/site/hosts/${mode}/index.html`);
     }
     const builder = await context({ entryPoints: { app: "examples/playground/main.ts", shaping: "examples/shaping/main.ts", comparison: "examples/comparison/main.ts", editing: "examples/editing/main.ts", viewport: "examples/viewport/main.ts", probe: "examples/probes/main.ts", "provider-worker": "examples/probes/provider-worker.ts",
-        "host-plain": "examples/hosts/plain-main.ts", "host-react": "examples/hosts/react-main.tsx" }, outdir: "artifacts/site",
+        "regex-worker": "src/browser/regex-worker.ts", "host-plain": "examples/hosts/plain-main.ts", "host-react": "examples/hosts/react-main.tsx" }, outdir: "artifacts/site",
         bundle: true, format: "esm", platform: "browser", target: "es2022", sourcemap: true });
     await builder.watch();
     const server = await builder.serve({ host: "127.0.0.1", port, servedir: "artifacts/site" });

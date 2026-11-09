@@ -47,9 +47,12 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
     const caseLabel = owner.createElement("label"), matchCase = owner.createElement("input");
     matchCase.type = "checkbox"; caseLabel.append(matchCase, "Match case");
     matchCase.addEventListener("change", () => tools.setMatchCase(matchCase.checked), { signal: listeners.signal });
+    const regexLabel = owner.createElement("label"), regularExpression = owner.createElement("input");
+    regularExpression.type = "checkbox"; regexLabel.append(regularExpression, "Regular expression");
+    regularExpression.addEventListener("change", () => tools.setRegularExpression(regularExpression.checked), { signal: listeners.signal });
     const buttons = languageActions(tools).map(action => { const button = owner.createElement("button"); button.textContent = action.label;
         button.addEventListener("click", action.invoke, { signal: listeners.signal }); nav.append(button); return button; });
-    host.append(heading, help, status, choices, diagnostics, ...fields.map(f => f.label), wholeLabel, caseLabel, findStatus, nav);
+    host.append(heading, help, status, choices, diagnostics, ...fields.map(f => f.label), wholeLabel, caseLabel, regexLabel, findStatus, nav);
     const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
     const render = () => {
         const state = tools.state.getSnapshot(); setText(status, state.provider?.message ?? "Focus a source view to use language actions.");
@@ -69,7 +72,7 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
         setText(findStatus, findText(tools));
         if (fields[0]!.field.value !== state.query) fields[0]!.field.value = state.query;
         if (fields[1]!.field.value !== state.replacement) fields[1]!.field.value = state.replacement;
-        wholeWord.checked = state.wholeWord; matchCase.checked = state.matchCase;
+        wholeWord.checked = state.wholeWord; matchCase.checked = state.matchCase; regularExpression.checked = state.regularExpression;
     };
     const unsubscribe = tools.state.subscribe(render); render();
     return () => { unsubscribe(); listeners.abort(); tools.queryRef(null); tools.replacementRef(null); host.replaceChildren(); };

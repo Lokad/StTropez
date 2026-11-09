@@ -90,6 +90,7 @@ function LanguageTools() {
         <label>Replacement<input ref={tools.replacementRef} value={state.replacement} onChange={event => tools.setReplacement(event.currentTarget.value)} onKeyDown={event => languageFieldKey(event.nativeEvent, tools, true)} /></label>
         <label><input type="checkbox" checked={state.wholeWord} onChange={event => tools.setWholeWord(event.currentTarget.checked)} />Whole word</label>
         <label><input type="checkbox" checked={state.matchCase} onChange={event => tools.setMatchCase(event.currentTarget.checked)} />Match case</label>
+        <label><input type="checkbox" checked={state.regularExpression} onChange={event => tools.setRegularExpression(event.currentTarget.checked)} />Regular expression</label>
         <output aria-label="Find status">{findText(tools)}</output>
         <div>{languageActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
     </section>;

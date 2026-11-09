@@ -1,5 +1,5 @@
 import { SfntFont, AdvanceIndex, createAdvanceBuilder, Workspace, TextBuffer, TextDiff, WordCursor, BidiCursor, createBidiIndexController, resolveBidi, importText, exportText, anchoredRange, composePositionMaps, normalizeText, itemizeScripts, createScriptGlyphCursor, unicodeScript, unicodeScriptExtensions, unicodeShapingVersion } from "sttropez";
-import { createFontAssetController, createFindController, mountTextComparison, mountTextEditor, mountTextViewport, mountEditingCandidate } from "sttropez/browser";
+import { createFontAssetController, createFindController, createRegexFindBackend, mountTextComparison, mountTextEditor, mountTextViewport, mountEditingCandidate } from "sttropez/browser";
 import { fontFixture, FontBytes, assembleFont, fontTables, cmapTable } from "./font-fixture.js";
 import { FontCascade, createFontNormalizationCursor } from "sttropez";
 import { createGraphemeCursor, createNormalizedGraphemeCursor, createScriptItemizationCursor } from "sttropez";
@@ -33,6 +33,46 @@ function mountMultipleInput() {
 }
 let multipleInput: ReturnType<typeof mountMultipleInput> | undefined;
 Object.assign(window, { consumer: { text: () => workspace.document(documentId).text,
+    regexPilot: async () => {
+        const original = "foobar foo foo_ K k K_ 𐐀 𐐨\r\n" + "const unchanged = 123;\r\n".repeat(100000);
+        const expected = "[foobar] [foo] foo_ [K] [k] K_ [𐐀] [𐐨]\r\n" + original.slice(original.indexOf("\n") + 1);
+        const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "regex", variant: "working" }, "Regex", { value: original });
+        const tab = model.open({ kind: "text", documentId: source.documentId }, "regex"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
+        let workers = 0;
+        const editor = mountEditingCandidate(host, model, tab, { ariaLabel: "Restored regex" }), find = createFindController(model, tab, editor, {
+            regularExpression: createRegexFindBackend({ clock: window, createWorker: () => { workers++; return new Worker("/regex-worker.js", { type: "module" }); } }) });
+        const wait = async (status: "ready" | "failed") => {
+            const deadline = performance.now() + 30000;
+            while (find.state.getSnapshot().status !== status) {
+                if (performance.now() > deadline || find.state.getSnapshot().status === "failed" && status !== "failed") throw new Error(find.state.getSnapshot().message || "Compiled regex did not complete.");
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+        };
+        const exact = (text: string) => { const b = model.document(source.documentId).buffer; if (b.length !== text.length) throw new Error("Compiled regex length mismatch.");
+            for (let from = 0; from < text.length; from += 32768) if (b.slice(from, Math.min(text.length, from + 32768)) !== text.slice(from, from + 32768)) throw new Error("Compiled regex text mismatch."); };
+        try {
+            find.setQuery("(?<value>foo|foobar|k|𐐨)"); await wait("ready"); if (workers || find.state.getSnapshot().count) throw new Error("Literal mode started a regex worker.");
+            find.setOptions({ regularExpression: true, matchCase: false, wholeWord: true }); await wait("ready");
+            if (find.state.getSnapshot().count !== 6 || workers < 1) throw new Error("Compiled regex worker was not used.");
+            editor.view.setSelections(0, [{ anchor: 0, head: 6 }, { anchor: original.length, head: original.length }], 1);
+            const selected = editor.view.getSnapshot().selectionSet;
+            find.replaceAll("[$<value>]"); await wait("ready"); exact(expected);
+            if (model.observeHistory(source.documentId).getSnapshot().undoDepth !== 1) throw new Error("Compiled regex replacement was not atomic.");
+            model.undo({ documentId: source.documentId, expectedRevision: model.document(source.documentId).revision }); await wait("ready"); exact(original);
+            if (JSON.stringify(editor.view.getSnapshot().selectionSet) !== JSON.stringify(selected)) throw new Error("Compiled regex undo lost selections.");
+            const d = model.document(source.documentId); model.edit({ documentId: source.documentId, expectedRevision: d.revision, origin: "host", edits: [{ from: 0, to: d.buffer.length, insert: "😀x\r\nlast" }] });
+            find.setOptions({ regularExpression: true }); find.setQuery("(?:)"); await wait("ready");
+            editor.view.setSelection(model.document(source.documentId).revision, { anchor: 0, head: 0 });
+            for (const head of [0, 2, 3, 4, 5, 6, 7, 8, 9, 0]) { find.next(); await new Promise(resolve => setTimeout(resolve, 0));
+                if (editor.view.getSnapshot().selection.head !== head) throw new Error("Compiled zero-width navigation lost a raw position."); }
+            find.replaceAll("|"); await wait("ready"); exact("|😀|x|\r|\n|l|a|s|t|");
+            find.setQuery("("); await wait("failed"); exact("|😀|x|\r|\n|l|a|s|t|");
+            if (model.document(source.documentId).buffer.readMetrics().textExports) throw new Error("Compiled regex exported the model value.");
+        } finally { find.destroy(); editor.destroy(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
+        const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled regex resources leaked.");
+        return { actualWorker: workers > 0, workerCount: workers, units: original.length, atomicReplacement: true, completeSelectionUndo: true,
+            rawZeroWidthNavigation: true, syntaxFailureSafe: true, zeroCompleteExports: true, released: { views, leases, subscriptions } };
+    },
     findAuthority: async () => {
         const cases = [];
         for (const change of ["permission", "lease"] as const) {

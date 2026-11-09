@@ -129,6 +129,20 @@ try {
         await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-hover.png` });
         if (!await popup.isVisible() || !await input.evaluate(node => node.ownerDocument.activeElement === node)) throw new Error("Hover inspection lost presentation or source focus.");
         await writeFile(`artifacts/inspect/host-${mode}-hover.json`, JSON.stringify(await harness.page.evaluate(() => window.hostFixture.snapshot()), null, 2));
+        await input.press("Escape"); await input.press("Control+f");
+        await harness.page.getByRole("checkbox", { name: "Regular expression", exact: true }).check();
+        const regexQuery = harness.page.getByRole("textbox", { name: "Find source", exact: true });
+        await regexQuery.fill("(?<keyword>const)");
+        await harness.page.waitForFunction(() => document.querySelector('[aria-label="Find status"]').textContent.includes("2 matches · ready"));
+        await harness.page.getByRole("textbox", { name: "Replacement", exact: true }).fill("$<keyword>_review");
+        await harness.page.getByRole("button", { name: "Replace all", exact: true }).click();
+        await harness.page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return document.querySelector('[aria-label="Find status"]').textContent.includes("Replaced 2 matches.")
+            && s.bindings.comparison.status === "ready" && !s.bindings.comparison.workingViewport.pending && s.bindings.views.every(v => !v.metrics.viewport.pending); });
+        if (await harness.page.evaluate(() => window.hostFixture.range(0, 12)) !== "const_review") throw new Error("Regex inspection lost native capture substitution.");
+        await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-regex.png`, fullPage: true });
+        await writeFile(`artifacts/inspect/host-${mode}-regex.json`, JSON.stringify(await harness.page.evaluate(() => window.hostFixture.snapshot()), null, 2));
+        await regexQuery.fill("("); await harness.page.waitForFunction(() => document.querySelector('[aria-label="Find status"]').textContent.includes("Invalid regular expression"));
+        await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-regex-error.png`, fullPage: true });
         await harness.page.evaluate(() => window.hostFixture.dispose());
     }
     await harness.page.goto(new URL("/viewport/", harness.page.url()).href);

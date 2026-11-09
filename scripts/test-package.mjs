@@ -95,6 +95,7 @@ const bundle = await build({ absWorkingDir: consumer, entryPoints: { app: "main.
         }
     }); } }] });
 await cp(join(assetRoot, "editor.css"), join(consumer, "site/editor.css"));
+await cp(join(assetRoot, assets.entries.regexWorker), join(consumer, "site/regex-worker.js"));
 await cp(join(assetRoot, "UNICODE-LICENSE.txt"), join(consumer, "site/UNICODE-LICENSE.txt"));
 await cp(join(consumer, "index.html"), join(consumer, "site/index.html"));
 await cp(join(consumer, "pilot.html"), join(consumer, "site/pilot.html"));
@@ -117,7 +118,7 @@ if (prepareOnly) {
 } else {
 const server = createServer(async (request, response) => {
     const path = new URL(request.url, "http://localhost").pathname;
-    const file = { "/": "index.html", "/app.js": "app.js", "/pilot": "pilot.html", "/pilot.js": "pilot.js", "/editor.css": "editor.css", "/UNICODE-LICENSE.txt": "UNICODE-LICENSE.txt",
+    const file = { "/": "index.html", "/app.js": "app.js", "/pilot": "pilot.html", "/pilot.js": "pilot.js", "/editor.css": "editor.css", "/regex-worker.js": "regex-worker.js", "/UNICODE-LICENSE.txt": "UNICODE-LICENSE.txt",
         ...(reactHost ? { "/hosts/react/": "react.html", "/host-react.js": "host-react.js", "/host-react.css": "host-react.css", "/provider-worker.js": "provider-worker.js" } : {}) }[path];
     if (!file) { response.writeHead(404).end(); return; }
     response.setHeader("Content-Type", file.endsWith("js") ? "text/javascript" : file.endsWith("css") ? "text/css" : file.endsWith("txt") ? "text/plain" : "text/html");
@@ -199,6 +200,8 @@ try {
     await page.evaluate(() => { window.consumer.findOptions({ wholeWord: true, matchCase: false }); window.consumer.find("RESTORED"); });
     await page.waitForFunction(() => window.consumer.findState().status === "ready");
     const caseFind = await page.evaluate(() => window.consumer.findState()); assert.equal(caseFind.count, 1); assert.equal(caseFind.matchCase, false); assert.equal(caseFind.wholeWord, true);
+    const regex = await page.evaluate(() => window.consumer.regexPilot());
+    assert.equal(regex.actualWorker, true); assert.equal(regex.zeroCompleteExports, true); assert.deepEqual(regex.released, { views: 0, leases: 0, subscriptions: 0 });
     const selectionSets = await page.evaluate(() => window.consumer.selectionSets());
     assert.equal(selectionSets.changed, "XbcX"); assert.equal(selectionSets.restored, "abcd");
     assert.deepEqual(selectionSets.restoredSet, selectionSets.before); assert.equal(selectionSets.after.ranges.length, 2); assert.equal(selectionSets.after.primary, 1);
@@ -300,7 +303,7 @@ try {
         consumer, browser: browser.version(), node: process.version, dotnet: dotnet(["--version"]).trim(),
         typescript: JSON.parse(await readFile("node_modules/typescript/package.json", "utf8")).version,
         esbuild: JSON.parse(await readFile("node_modules/esbuild/package.json", "utf8")).version,
-        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, caseFind, selectionSets, multipleInput, comparison, readonlyIndent, findAuthority, saveReview, style, errors }, null, 2));
+        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, caseFind, regex, selectionSets, multipleInput, comparison, readonlyIndent, findAuthority, saveReview, style, errors }, null, 2));
     console.log("Restored package: declarations, storage/mappings, modules, visible CSS and actual edit passed. Evidence: artifacts/package/");
     console.log(`Isolated consumer retained for inspection: ${consumer}`);
     await page.close();

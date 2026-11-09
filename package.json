@@ -19,7 +19,8 @@
       "types": "./dist/browser/index.d.ts",
       "import": "./dist/browser/index.js"
     },
-    "./editor.css": "./dist/editor.css"
+    "./editor.css": "./dist/editor.css",
+    "./regex-worker.js": "./dist/browser/regex-worker.js"
   },
   "scripts": {
     "dev": "node scripts/serve.mjs",
