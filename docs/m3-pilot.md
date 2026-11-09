@@ -45,7 +45,10 @@ in its canonical reply. Reloading starts a new fixture; this is not durable stor
    the working source in these evaluation hosts. Ctrl+F searches the reference source, F3/Shift+F3
    navigates matches, and Escape returns to that input. Ctrl+H opens the same read-only Find field;
    replacement is unavailable there. Refresh cancels the old Find scope; a fresh query targets the
-   current reference while Find remains there. Native clipboard and accessibility remain unverified.
+   current reference while Find remains there. After a compatible host remount, a fresh query in
+   **Find source** keeps its working/reference context; remount starts no old search or provider
+   request and moves no focus. A replaced target requires choosing its source again.
+   Native clipboard and accessibility remain unverified.
    Enable **Link review scrolling** to follow corresponding vertical positions in either pane;
    clear it for independent scrolling. Selections, horizontal offsets and reference identity stay
    independent. Enable **Align review rows** to add empty padding beside unequal changed blocks;

@@ -50,8 +50,11 @@ own reference resource and view. Replacement fields/actions are disabled, and re
 reject replacement independently of the UI. Working Find/replace and Save/Run retain their scope.
 Reference refresh cancels its old Find/regex work. If Find still targets the reference, fresh field
 input targets the replacement view; replacement alone starts no search and moves no focus.
-Switching to a working view keeps that owner. Unmount clears ownership. Late results cannot
-target a later focused source.
+Switching to a working view keeps that owner. Unmount releases jobs and live ownership; compatible
+remount restores a dormant logical context for fresh field input, without moving focus or starting
+old queries/providers. Working contexts require the same tab generation and document; reference
+contexts require the same buffer/version. A replaced target requires explicit selection again.
+Late results cannot target a later focused source. Final host disposal clears retained ownership.
 
 Synthetic clipboard/composition checks exercise model guards; native OS/application clipboard,
 IME/reconversion/dead keys and assistive-technology qualification remain separate.

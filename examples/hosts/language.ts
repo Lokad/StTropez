@@ -1,13 +1,14 @@
 import { createFindController, createRegexFindBackend } from "../../src/browser/index.ts";
 import type { EditingCandidate, FindController, FindSnapshot } from "../../src/browser/index.ts";
-import type { FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../src/index.ts";
+import type { ComparisonBaseline, DocumentId, FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { createProviderController } from "../editing/provider-controller.ts";
 import type { ProviderSnapshot } from "../editing/provider-controller.ts";
 import { EditingPresentation } from "../editing/presentation.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type Session = { id: string; editor: EditingCandidate; tab: TabId; target: TabTarget; presentation: EditingPresentation;
-    provider?: ReturnType<typeof createProviderController>; reference?: true; find?: FindController; stopFind?: () => void; initialized: boolean };
+    provider?: ReturnType<typeof createProviderController>; reference?: ComparisonBaseline; find?: FindController; stopFind?: () => void; initialized: boolean };
+type DetachedOwner = Readonly<{ id: string; target: TabTarget; documentId: DocumentId; reference?: ComparisonBaseline }>;
 type LanguageSnapshot = Readonly<{ readOnlyReference: boolean; view: string | null; provider: ProviderSnapshot | null; find: FindSnapshot | null; folds: FoldingSnapshot | null; foldMessage: string; query: string; replacement: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean }>;
 
 /** Host-owned tools follow an explicit mounted view; delayed commands never consult focus later. */
@@ -15,6 +16,7 @@ export class HostLanguageTools {
     private readonly workspace: Workspace;
     private readonly sessions = new Map<string, Session>();
     private active: Session | undefined;
+    private detachedOwner: DetachedOwner | undefined;
     private stopFolds: (() => void) | undefined;
     private foldSerial = 0;
     private readonly cell = new HostCell<LanguageSnapshot>({ readOnlyReference: false, view: null, provider: null, find: null, folds: null, foldMessage: "", query: "", replacement: "", wholeWord: false, matchCase: true, regularExpression: false });
@@ -27,10 +29,11 @@ export class HostLanguageTools {
     constructor(workspace: Workspace) { this.workspace = workspace; }
     private publish(): void {
         const previous = this.cell.get(), folds = this.active?.editor.view.folding.getSnapshot() ?? null;
-        this.cell.set({ ...previous, readOnlyReference: this.active?.reference === true, view: this.active?.id ?? null, provider: this.active?.provider?.state.getSnapshot() ?? null,
+        this.cell.set({ ...previous, readOnlyReference: this.active?.reference !== undefined, view: this.active?.id ?? null, provider: this.active?.provider?.state.getSnapshot() ?? null,
             find: this.active?.find?.state.getSnapshot() ?? null, folds, foldMessage: folds === previous.folds ? previous.foldMessage : "" });
     }
-    private activate(session: Session): void {
+    private activate(session: Session, initialize = true): void {
+        this.detachedOwner = undefined;
         if (this.active !== session) {
             this.stopFolds?.(); this.active?.provider?.cancel(); this.active?.find?.cancel(); this.active = session;
             let revision = session.editor.view.folding.getSnapshot().revision;
@@ -39,9 +42,21 @@ export class HostLanguageTools {
                 if (this.active === session) this.publish();
             }); this.cell.set({ ...this.cell.get(), foldMessage: "" });
         }
-        if (!session.initialized) { session.initialized = true; session.provider?.connect(); }
+        if (initialize && !session.initialized) { session.initialized = true; session.provider?.connect(); }
         this.publish();
     }
+    private resume(session: Session): void {
+        const previous = this.detachedOwner;
+        if (!previous || previous.id !== session.id) return;
+        this.detachedOwner = undefined;
+        const compatible = previous.reference && session.reference
+            ? previous.reference.buffer === session.reference.buffer && previous.reference.version === session.reference.version
+            : !previous.reference && !session.reference && previous.documentId === session.editor.view.documentId
+                && previous.target.workspace === session.target.workspace && previous.target.id === session.target.id && previous.target.generation === session.target.generation;
+        // A new attachment owns new jobs. Restoring the logical context starts none and never focuses.
+        if (compatible && !this.active) this.activate(session, false);
+    }
+    clearRetainedView(): void { this.detachedOwner = undefined; }
     attach(id: string, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation): () => void {
         if (this.sessions.has(id)) throw new Error("Language view already mounted.");
         const provider = createProviderController(this.workspace, tab, editor, { autoConnect: false });
@@ -64,18 +79,19 @@ export class HostLanguageTools {
             else if (event.altKey && event.key === "Enter" && provider.state.getSnapshot().offerText !== null) { event.preventDefault(); provider.apply("replace"); }
             else if (event.key === "Escape" && (provider.state.getSnapshot().pending || provider.state.getSnapshot().offerText !== null)) { event.preventDefault(); provider.cancel(); }
         }, { signal: listeners.signal });
-        update(); return this.detachSession(session, listeners, unsubscribe);
+        update(); this.resume(session); return this.detachSession(session, listeners, unsubscribe);
     }
-    attachReferenceFind(id: string, target: TabTarget, editor: EditingCandidate, presentation: EditingPresentation, resume = false): () => void {
+    attachReferenceFind(id: string, target: TabTarget, editor: EditingCandidate, presentation: EditingPresentation, baseline: ComparisonBaseline, resume = false): () => void {
         if (this.sessions.has(id)) throw new Error("Find view already mounted.");
         const tab = this.workspace.resolveTab(target);
-        if (tab?.surface.kind !== "text" || tab.surface.documentId !== editor.view.documentId || !this.workspace.ownsDocumentView(editor.view)) throw new Error("Reference Find requires its captured view.");
-        const session: Session = { id, tab: target.id, target, editor, presentation, initialized: true, reference: true }, listeners = new AbortController();
+        if (tab?.surface.kind !== "text" || tab.surface.documentId !== editor.view.documentId || !this.workspace.ownsDocumentView(editor.view)
+            || this.workspace.document(editor.view.documentId).buffer !== baseline.buffer) throw new Error("Reference Find requires its captured view and baseline.");
+        const session: Session = { id, tab: target.id, target, editor, presentation, initialized: true, reference: baseline }, listeners = new AbortController();
         this.sessions.set(id, session);
         editor.input.addEventListener("focus", () => this.activate(session), { signal: listeners.signal });
         editor.input.addEventListener("keydown", event => { if (!event.defaultPrevented && !event.isComposing && !editor.snapshot().composing) this.findKey(event, session); }, { signal: listeners.signal });
         // Keep the logical field target after replacement, without starting old work or moving focus.
-        if (resume) this.activate(session);
+        if (resume) this.activate(session); else this.resume(session);
         return this.detachSession(session, listeners);
     }
     private findKey(event: KeyboardEvent, session: Session): boolean {
@@ -91,7 +107,10 @@ export class HostLanguageTools {
         let detached = false;
         return () => {
             if (detached) return; detached = true;
-            if (this.active === session) { this.stopFolds?.(); this.stopFolds = undefined; }
+            if (this.active === session) {
+                this.detachedOwner = Object.freeze({ id: session.id, target: session.target, documentId: session.editor.view.documentId, ...(session.reference ? { reference: session.reference } : {}) });
+                this.stopFolds?.(); this.stopFolds = undefined;
+            }
             unsubscribe(); listeners.abort(); session.stopFind?.(); session.find?.destroy();
             const counts = session.provider?.snapshot(); if (counts) for (const key of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[key] += counts[key];
             session.provider?.destroy(); session.presentation.clear(); this.sessions.delete(session.id);
@@ -115,7 +134,7 @@ export class HostLanguageTools {
         if (state.query !== query || state.status === "cancelled") session.find.setQuery(query);
         return session.find;
     }
-    readonly request = (): void => { this.active?.provider?.request(); };
+    readonly request = (): void => { if (this.active) { this.activate(this.active); this.active.provider?.request(); } };
     readonly insert = (): void => { this.active?.provider?.apply("insert"); };
     readonly replace = (): void => { this.active?.provider?.apply("replace"); };
     readonly cancel = (): void => { this.active?.provider?.cancel(); };

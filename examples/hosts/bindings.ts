@@ -98,7 +98,8 @@ export class ViewBindings {
             detachReferenceFind?.(); detachReferenceFind = undefined; referencePresentation.clear();
             const value = reviewReference.getSnapshot();
             if (value) {
-                detachReferenceFind = this.language.attachReferenceFind("reference", value.target, value.editor, referencePresentation, resumeReferenceFind);
+                const reference = this.review!.controller.getSnapshot().baseline!;
+                detachReferenceFind = this.language.attachReferenceFind("reference", value.target, value.editor, referencePresentation, reference, resumeReferenceFind);
                 resumeReferenceFind = false;
             }
         };
@@ -296,7 +297,7 @@ export class ViewBindings {
     dispose(): void {
         this.stopInputCapture();
         this.comparison(null); this.unmount(); this.colors.dispose(); this.links.dispose(); this.actions.dispose(); this.rename.dispose(); this.signature.dispose(); this.project.dispose(); this.navigation.dispose(); this.domain.dispose(); for (const selections of this.selections.values()) for (const view of selections.values()) view.dispose();
-        this.selections.clear(); this.states.clear(); this.referenceState = undefined;
+        this.selections.clear(); this.states.clear(); this.referenceState = undefined; this.language.clearRetainedView();
     }
     debug() {
         const comparison = this.review?.controller.getSnapshot();

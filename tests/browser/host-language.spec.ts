@@ -71,7 +71,9 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
         await page.evaluate(() => window.hostFixture.mount()); await ready(page);
         expect((await snapshot(page)).bindings.views.map(v => ({ id: v.id, selection: v.selection }))).toEqual(selection);
         await expect(page.getByRole("option")).toHaveCount(0);
-        await primary(page).focus(); await page.evaluate(() => window.hostFixture.setProviderDelay(1000)); await primary(page).press("Control+Space");
+        expect((await snapshot(page)).bindings.language.active).toBe("primary");
+        await page.evaluate(() => window.hostFixture.setProviderDelay(1000)); await page.getByRole("button", { name: "Request completion", exact: true }).click();
+        expect((await snapshot(page)).bindings.language.sessions.find(s => s.id === "primary")!.provider.posted).toBe(1);
         await page.evaluate(() => window.hostFixture.dispose()); const disposed = await snapshot(page);
         expect(disposed.diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 }); expect(disposed.bindings.language.sessions).toEqual([]);
         expect(disposed.hostSubscriptions).toBe(0);
