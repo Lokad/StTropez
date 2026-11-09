@@ -429,6 +429,16 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     function horizontal(key: string, extend: boolean, documentBoundary = false): void {
         preferred = undefined;
         graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
+        // Indexed endpoints need no geometry. Finish bounded sets before the next input,
+        // which would otherwise cancel queued navigation and edit the previous ranges.
+        if (documentBoundary && view.getSnapshot().selectionSet.ranges.length <= 32) {
+            cancelWord(); navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
+            navigationTurn(() => {
+                const capture = commandCapture(false); if (!validCommand(capture)) return;
+                const offset = key === "Home" ? 0 : capture.buffer.length;
+                finishRanges(capture, capture.selectionSet.ranges.map(range => moved(range, offset, extend)));
+            }); return;
+        }
         beginNavigation((capture, style) => {
         const began = win.performance.now(); viewport.flush();
         if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
