@@ -8,11 +8,14 @@ import { validateSignatureInput } from "./signature.ts";
 import type { SignatureInput, SignatureResult } from "./signature.ts";
 import { validateActionInput } from "./actions.ts";
 import type { ActionInput, ActionResult } from "./actions.ts";
+import { validateLinksInput } from "./links.ts";
+import type { LinksInput, LinksResult } from "./links.ts";
 
 let project: ProviderProject | undefined, navigationFault: "malformed" | "failure" | undefined;
 let loseCommandAcknowledgement = false;
 let signatureFault: SignatureInput["fault"];
 let actionFault: ActionInput["fault"];
+let linksFault: LinksInput["fault"];
 
 // Host worker entry. Owners control their lanes; deferred replies exercise stale-result rejection.
 globalThis.addEventListener("message", (event: MessageEvent<string>) => {
@@ -21,7 +24,15 @@ globalThis.addEventListener("message", (event: MessageEvent<string>) => {
         try {
             if (!project) { if (decoded.operation !== "project-hello" || !("epoch" in decoded) || typeof decoded.epoch !== "number") throw new Error("Initialize the provider."); project = new ProviderProject(decoded.epoch); }
             const reply = project.handle(decoded);
-            if (decoded.operation === "project-action" && "input" in decoded) {
+            if (decoded.operation === "project-links" && "input" in decoded) {
+                const input = validateLinksInput(decoded.input); linksFault = input.fault;
+                setTimeout(() => { if (input.fault === "failure") throw new Error("Synthetic links failure"); globalThis.postMessage(JSON.stringify(reply)); }, input.delay);
+            } else if (reply.operation === "project-links-result") {
+                const result = reply.result as LinksResult;
+                globalThis.postMessage(JSON.stringify(linksFault === "malformed" ? { ...reply, result: { ...result, links: [...result.links, { from: -1, to: 0, module: "invalid", tooltip: "invalid", target: "javascript:invalid()" }] } }
+                    : linksFault === "incomplete" ? { ...reply, result: { ...result, complete: false } }
+                    : linksFault === "markup" ? { ...reply, result: { ...result, links: result.links.map((link, i) => i ? link : { ...link, tooltip: '<img src="invalid" onerror="window.linkExecuted = true">' }) } } : reply));
+            } else if (decoded.operation === "project-action" && "input" in decoded) {
                 const input = validateActionInput(decoded.input); actionFault = input.fault;
                 setTimeout(() => { if (input.fault === "failure") throw new Error("Synthetic action failure"); globalThis.postMessage(JSON.stringify(reply)); }, input.delay);
             } else if (reply.operation === "project-action-result") {

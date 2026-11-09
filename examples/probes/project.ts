@@ -7,6 +7,8 @@ import { SignatureScanner, validateSignatureInput } from "./signature.ts";
 import type { SignatureInput } from "./signature.ts";
 import { ModuleActionCursor, validateActionInput } from "./actions.ts";
 import type { ActionInput } from "./actions.ts";
+import { ModuleLinksCursor, validateLinksInput } from "./links.ts";
+import type { LinksInput } from "./links.ts";
 export const projectProtocolVersion = 1;
 export type ProjectPacket = Readonly<{ version: number; epoch: number; sequence: number; operation: string; [key: string]: unknown }>;
 type Document = Readonly<{ revision: number; buffer: TextBuffer }>;
@@ -30,6 +32,8 @@ export class ProviderProject {
     private lastCommand = 0;
     private action: { input: ActionInput; cursor: ModuleActionCursor } | undefined;
     private lastAction = 0;
+    private links: { input: LinksInput; cursor: ModuleLinksCursor } | undefined;
+    private lastLinks = 0;
     constructor(epoch: number) { if (!integer(epoch) || !epoch) throw new Error("Invalid provider epoch."); this.epoch = epoch; }
     handle(value: unknown): ProjectPacket {
         if (!record(value) || value.version !== projectProtocolVersion || value.epoch !== this.epoch || value.sequence !== this.sequence + 1 || typeof value.operation !== "string") throw new Error("Invalid protocol version, epoch or sequence.");
@@ -48,6 +52,8 @@ export class ProviderProject {
             return { operation: "project-command-result", request: command.input.id, applied: value.applied, reason: value.reason, registered: this.registered };
         }
         if (this.command) throw new Error("Acknowledge the server request before another operation.");
+        if (value.operation === "project-links-next") return this.advanceLinks(value);
+        if (this.links) throw new Error("Complete the links scan before another operation.");
         if (value.operation === "project-action-next") return this.advanceAction(value);
         if (this.action) throw new Error("Complete the action scan before another operation.");
         if (value.operation === "project-signature-next") return this.advanceSignature(value);
@@ -76,6 +82,11 @@ export class ProviderProject {
             return ack("commit", stage.document, stage.revision, stage.length, stage.received);
         }
         if (this.stage) throw new Error("Complete the document transfer before another operation.");
+        if (value.operation === "project-links") {
+            const input = validateLinksInput(value.input), doc = this.documents.get(input.document);
+            if (input.id <= this.lastLinks || !doc || doc.revision !== input.revision || doc.buffer.length !== input.length) throw new Error("Link source is not synchronized or request is repeated.");
+            this.lastLinks = input.id; this.links = { input, cursor: new ModuleLinksCursor(input, doc.buffer) }; return { operation: "project-links-progress", request: input.id, work: 0 };
+        }
         if (value.operation === "project-action") {
             const input = validateActionInput(value.input), doc = this.documents.get(input.document);
             if (input.id <= this.lastAction || !doc || doc.revision !== input.revision || doc.buffer.length !== input.length) throw new Error("Action document is not synchronized or request is repeated.");
@@ -144,8 +155,13 @@ export class ProviderProject {
         const step = q.cursor.next(); if (!step.result) return { operation: "project-action-progress", request: q.input.id, work: step.work };
         this.action = undefined; return { operation: "project-action-result", request: q.input.id, work: step.work, result: step.result };
     }
+    private advanceLinks(value: Record<string, unknown>): Readonly<{ operation: string; [key: string]: unknown }> {
+        const q = this.links; if (!q || value.request !== q.input.id) throw new Error("Invalid links continuation.");
+        const step = q.cursor.next(); if (!step.result) return { operation: "project-links-progress", request: q.input.id, work: step.work };
+        this.links = undefined; return { operation: "project-links-result", request: q.input.id, work: step.work, result: step.result };
+    }
     buffer(document: string): TextBuffer | undefined { return this.documents.get(document)?.buffer; }
     snapshot() { return Object.freeze({ version: projectProtocolVersion, epoch: this.epoch, sequence: this.sequence, units: this.units, staging: !!this.stage, querying: !!this.query,
-        registered: this.registered, serverPending: !!this.command, signaturePending: !!this.signature, actionPending: !!this.action,
+        registered: this.registered, serverPending: !!this.command, signaturePending: !!this.signature, actionPending: !!this.action, linksPending: !!this.links,
         documents: Object.freeze([...this.documents].map(([document, value]) => Object.freeze({ document, revision: value.revision, length: value.buffer.length }))) }); }
 }

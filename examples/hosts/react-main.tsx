@@ -11,6 +11,7 @@ import { findText, foldText, languageActions, languageFieldKey } from "./languag
 import { domainActions } from "./domain-panel.ts";
 import { navigationActions } from "./navigation-panel.ts";
 import { projectActions } from "./project-panel.ts";
+import { documentLinkActions, documentLinkDescription, documentLinkLabel, documentLinkDetails } from "./document-links-panel.ts";
 import { actionsControls, actionsDescription, actionTarget } from "./actions-panel.ts";
 import { renameActions, renameDescription, renameTarget } from "./rename-panel.ts";
 import { signatureActions } from "./signature-panel.ts";
@@ -124,7 +125,14 @@ function TablePasteTools() {
         <button disabled={state.status !== "converting"} onClick={tools.cancel}>Cancel table paste</button></section>;
 }
 function App() {
-    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><ActionsTools /><SignatureTools /><SymbolInfo /></>;
+    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentLinksTools /><SignatureTools /><SymbolInfo /></>;
+}
+function DocumentLinksTools() {
+    const tools = bindings.links, s = useObserved(tools.state);
+    return <section className="host-language" aria-label="Module document links"><h2>Module document links</h2><p>{documentLinkDescription}</p>
+        <output aria-label="Module link status" aria-live="polite">{s.message}</output>
+        <div>{documentLinkActions(tools).map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
+        <ul ref={tools.bindList} tabIndex={-1} aria-label="Module link results">{s.links.map(link => <li key={link.from}><button disabled={!link.target || s.status !== "ready"} onClick={() => tools.open(s.token, link.ordinal)}>{documentLinkLabel(link)}</button><p>{documentLinkDetails(link)}</p></li>)}</ul></section>;
 }
 function ActionsTools() {
     const tools = bindings.actions, s = useObserved(tools.state);

@@ -32,14 +32,20 @@ export class DomainCursor {
     private finished = false;
     private result: DomainResult | undefined;
     private readonly input: DomainInput;
-    constructor(input: DomainInput) {
+    private readonly importLine: ((from: number, to: number, module: string) => void) | undefined;
+    constructor(input: DomainInput, importLine?: (from: number, to: number, module: string) => void) {
         this.input = input;
+        this.importLine = importLine;
         if (!validDomainModule(input.module)) throw new Error("Choose a bounded module identifier.");
         this.chunks = input.buffer.chunks()[Symbol.iterator]();
     }
     private line(end: number): void {
         const raw = this.prefix.endsWith("\r") ? this.prefix.slice(0, -1) : this.prefix;
         const text = this.lineStart === 0 && raw.startsWith("\ufeff") ? raw.slice(1) : raw;
+        if (this.importLine && !this.truncated) {
+            const match = /^import "([A-Za-z][A-Za-z0-9_./-]{0,63})";$/.exec(text);
+            if (match) { const from = this.lineStart + (this.lineStart === 0 && raw.startsWith("\ufeff") ? 1 : 0) + 8; this.importLine(from, from + match[1]!.length, match[1]!); }
+        }
         if (text === `import ${JSON.stringify(this.input.module)};`) this.imported = true;
         if (this.input.kind === "import") { this.prefix = ""; this.truncated = false; this.lineStart = end; return; }
         const open = /^\/\/ #region ([A-Za-z_][A-Za-z0-9_.-]{0,63})(?: (.*))?$/.exec(text);
