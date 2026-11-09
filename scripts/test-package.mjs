@@ -233,6 +233,8 @@ try {
     assert.equal(await page.evaluate(() => window.consumer.text()), "edited packed package");
     await candidateInput.press("Control+z"); assert.equal(await page.evaluate(() => window.consumer.text()), "edited restored package");
     await page.waitForFunction(() => { const s = window.consumer.comparison(); return s.status === "ready" && !s.working.pending && s.reference && !s.reference.pending; });
+    const findAuthority = await page.evaluate(() => window.consumer.findAuthority());
+    assert.equal(findAuthority.cases.length, 2); assert.ok(findAuthority.cases.every(c => c.cancelled && c.explicitRetry && c.sharedUndoSets && c.noOpReleased && c.zeroCompleteExports));
     const readonlyIndent = [];
     for (const outdent of [false, true]) {
         const result = await page.evaluate(outdent => window.consumer.readonlyIndent(outdent), outdent);
@@ -298,7 +300,7 @@ try {
         consumer, browser: browser.version(), node: process.version, dotnet: dotnet(["--version"]).trim(),
         typescript: JSON.parse(await readFile("node_modules/typescript/package.json", "utf8")).version,
         esbuild: JSON.parse(await readFile("node_modules/esbuild/package.json", "utf8")).version,
-        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, caseFind, selectionSets, multipleInput, comparison, readonlyIndent, saveReview, style, errors }, null, 2));
+        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, caseFind, selectionSets, multipleInput, comparison, readonlyIndent, findAuthority, saveReview, style, errors }, null, 2));
     console.log("Restored package: declarations, storage/mappings, modules, visible CSS and actual edit passed. Evidence: artifacts/package/");
     console.log(`Isolated consumer retained for inspection: ${consumer}`);
     await page.close();

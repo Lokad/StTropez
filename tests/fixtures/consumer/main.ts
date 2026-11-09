@@ -33,6 +33,37 @@ function mountMultipleInput() {
 }
 let multipleInput: ReturnType<typeof mountMultipleInput> | undefined;
 Object.assign(window, { consumer: { text: () => workspace.document(documentId).text,
+    findAuthority: async () => {
+        const cases = [];
+        for (const change of ["permission", "lease"] as const) {
+            const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "find-authority", variant: "working" }, "Captured find", { value: "cat cat" });
+            const tab = model.open({ kind: "text", documentId: source.documentId }, "find"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
+            const editor = mountEditingCandidate(host, model, tab, { ariaLabel: "Restored captured find" }), find = createFindController(model, tab, editor);
+            const ready = async () => { for (let turn = 0; find.state.getSnapshot().status !== "ready"; turn++) {
+                if (turn >= 1000) throw new Error("Compiled find did not settle."); await new Promise<void>(resolve => setTimeout(resolve, 1)); } };
+            try {
+                find.setQuery("cat"); await ready(); editor.view.setSelections(0, [{ anchor: 0, head: 3 }, { anchor: 7, head: 7 }]);
+                const selected = editor.view.getSnapshot().selectionSet, before = model.document(source.documentId), subscriptions = model.diagnostics().subscriptions;
+                find.replaceAll("dog");
+                if (change === "permission") { const policy = source.metadata.getSnapshot().capabilities; model.setCapabilities(source.id, { ...policy, edit: ["host"] }); model.setCapabilities(source.id, policy); }
+                else { const lease = model.acquireEditLease(source.id, "consumer", "host"); lease.release(); }
+                await ready();
+                if (model.document(source.documentId).buffer !== before.buffer || !find.state.getSnapshot().message.includes("cancelled")
+                    || model.observeHistory(source.documentId).getSnapshot().undoDepth !== 0 || model.diagnostics().subscriptions !== subscriptions
+                    || JSON.stringify(editor.view.getSnapshot().selectionSet) !== JSON.stringify(selected)) throw new Error("Interrupted compiled replacement resumed.");
+                find.replaceAll("dog"); await ready(); const changed = model.document(source.documentId);
+                if (changed.buffer.slice(0, 7) !== "dog dog" || model.observeHistory(source.documentId).getSnapshot().undoDepth !== 1) throw new Error("Fresh compiled retry failed.");
+                model.undo({ documentId: source.documentId, expectedRevision: changed.revision }); await ready();
+                if (model.document(source.documentId).buffer.slice(0, 7) !== "cat cat" || JSON.stringify(editor.view.getSnapshot().selectionSet) !== JSON.stringify(selected)) throw new Error("Compiled retry undo lost selections.");
+                find.replaceAll("cat"); await ready();
+                if (model.diagnostics().subscriptions !== subscriptions || model.document(source.documentId).buffer.readMetrics().textExports !== 0) throw new Error("Compiled replacement retained idle observation or exported text.");
+            } finally { find.destroy(); editor.destroy(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
+            const { views, leases, subscriptions } = model.diagnostics();
+            if (views || leases || subscriptions) throw new Error("Compiled find resources leaked.");
+            cases.push({ change, cancelled: true, explicitRetry: true, sharedUndoSets: true, noOpReleased: true, zeroCompleteExports: true, released: { views, leases, subscriptions } });
+        }
+        return { cases, source: "restored-compiled-assets", nativeQualified: false };
+    },
     beginMultipleInput: () => { if (multipleInput) throw new Error("Multiple input already mounted."); multipleInput = mountMultipleInput(); },
     multipleInput: () => { const { model, source, editor } = multipleInput!, document = model.document(source.documentId), state = editor.snapshot(), viewport = editor.viewport.snapshot();
         return { text: document.buffer.slice(0, document.buffer.length), selectionSet: editor.view.getSnapshot().selectionSet, revision: document.revision,

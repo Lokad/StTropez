@@ -96,11 +96,18 @@ does not automatically resume on later typing. Disposed or expired controllers c
 a replacement tab or whichever editor becomes focused later. State includes content-bearing
 query/ranges for a host UI; development telemetry exposes counts and offsets only.
 
+Queued replacement observes edit permission and ownership until it commits. Losing permission
+or acquiring an edit lease cancels that command even if editing becomes available again before
+its next scheduled step. The cancellation preserves text, complete selections and shared history;
+an explicit retry captures a fresh command. This observation is released on completion, no-op,
+cancellation and disposal, without adding idle listeners.
+
 `/editing/` renders the host-owned find controls. Ctrl/Command+F focuses Find, Ctrl/Command+H
 focuses replacement, Enter/F3 chooses a match and Escape cancels and returns to the editor.
 Browser tests cover Unicode/CRLF, wrap, literal replacements, read-only behavior, 100,000-match
 counting, stale planning, a 10,000-line atomic replacement/undo and disposal. The isolated NuGet
-consumer exercises the compiled controller and shared undo. Regex and case folding remain M4 work.
+consumer exercises the compiled controller and shared undo. Unicode caseless literal search is
+available; regular-expression search remains required replacement work.
 
 `bench:services` records repeated search and pilot replacement cases separately from keyboard
 input. Scan-step timing covers matching/index accumulation; replacement timing includes the

@@ -17,11 +17,13 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     const store = new Store<FindSnapshot>(Object.freeze({ query: "", wholeWord: false, matchCase: true, revision: initial.revision, status: "idle", count: 0, scanned: 0, length: initial.buffer.length,
         current: null, preview: Object.freeze([]), message: "", maxScanStepMs: 0, replaceTransactionMs: 0 }), scope);
     let disposed = false, timer: number | undefined, cursor: LiteralSearch | undefined, generation = 0, focusGeneration = 0;
+    let stopPlanAuthority: (() => void) | undefined;
     let pages: number[][] = [], count = 0;
     const valid = () => !disposed && lease.active() && workspace.resolveTab(target) !== undefined && workspace.ownsDocumentView(editor.view)
         && workspace.observeDocument(documentId).getSnapshot() !== undefined && !editor.snapshot().disposed;
     const publish = (patch: Partial<FindSnapshot>) => { const changed = new Set<Store<unknown>>(); store.set(Object.freeze({ ...store.get(), ...patch }), changed); scope.deliver([...changed]); };
-    const stop = () => { generation++; if (timer !== undefined) win.clearTimeout(timer); timer = undefined; cursor?.dispose(); cursor = undefined; };
+    const stop = () => { generation++; if (timer !== undefined) win.clearTimeout(timer); timer = undefined; cursor?.dispose(); cursor = undefined;
+        stopPlanAuthority?.(); stopPlanAuthority = undefined; };
     const later = (work: () => void) => { timer = win.setTimeout(() => { timer = undefined; work(); }, 0); };
     const offsetAt = (index: number) => pages[Math.floor(index / 1024)]![(index % 1024) * 2]!;
     const endAt = (index: number) => pages[Math.floor(index / 1024)]![(index % 1024) * 2 + 1]!;
@@ -90,6 +92,12 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         if (!canEdit()) { publish({ message: "read-only" }); return; }
         if (editor.snapshot().composing) { publish({ message: "Finish composition before replacing." }); return; }
         stop(); const token = generation, focusToken = focusGeneration, positions = pages, total = count, edits: TextEdit[] = [], selectionSet = editor.view.getSnapshot().selectionSet; let index = 0;
+        // A restored permission/lock does not revive an interrupted human command.
+        // Observe only while planning; disposal does not mutate workspace state in delivery.
+        stopPlanAuthority = resource.metadata.subscribe(() => {
+            if (token !== generation || canEdit()) return;
+            stop(); publish({ status: "ready", message: "Replacement cancelled because editing became unavailable." });
+        });
         publish({ status: "replacing", message: "" });
         const step = () => {
             if (token !== generation) return;
@@ -98,12 +106,13 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
             for (; index < stopAt; index++) { const page = positions[Math.floor(index / 1024)]!, local = (index % 1024) * 2; edits.push({ from: page[local]!, to: page[local + 1]!, insert: replacement }); }
             if (index < total) { later(step); return; }
             const started = win.performance.now(), result = workspace.edit({ documentId, expectedRevision: state.revision, origin: "human", edits, view: editor.view, history: { kind: "replace" } });
+            stopPlanAuthority?.(); stopPlanAuthority = undefined;
             publish({ replaceTransactionMs: win.performance.now() - started });
             if (!result.applied) { publish({ status: "ready", message: result.reason }); return; }
             if (workspace.document(documentId).revision === state.revision) publish({ status: "ready" });
             publish({ message: `Replaced ${total} matches.` });
             if (focusGeneration === focusToken) editor.focus();
-        }; later(step);
+        }; if (token === generation) later(step);
     };
     // Disabling the command button can clear activeElement without a new focus choice.
     const focusChanged = () => { focusGeneration++; };
