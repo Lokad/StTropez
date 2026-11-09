@@ -73,12 +73,20 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         if (!query) return;
         try {
             if (regularExpression && !backend) throw new Error("Regular-expression search is unavailable in this host.");
-            const created = regularExpression ? backend!.search(capture(query, wholeWord, matchCase)) : new LiteralSearch(document.buffer, query, { wholeWord, matchCase });
+            let created: FindSearchCursor;
+            if (regularExpression) created = backend!.search(capture(query, wholeWord, matchCase));
+            else {
+                const search = new LiteralSearch(document.buffer, query, { wholeWord, matchCase });
+                // Amortize timer yields while retaining bounded scans and match publication.
+                created = { next: () => search.next(131_072, 8_192), dispose: () => search.dispose() };
+            }
             if (token !== generation) { created.dispose(); return; } cursor = created;
         } catch (error) { failed(error, token); return; }
         const step = () => {
             if (token !== generation || !valid()) { if (token === generation) restart(query); return; }
             const started = win.performance.now();
+            // Start the next literal timer's wait during this bounded slice, rather than after it.
+            if (!regularExpression) later(step);
             const receive = (result: SearchStep, asynchronous: boolean, dispatchMs: number) => {
                 if (token !== generation) return;
                 if (!valid() || workspace.document(documentId).revision !== document.revision) { restart(query); return; }
@@ -93,10 +101,13 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
                 const previous = store.get().preview, extra = result.matches.slice(0, 200 - previous.length);
                 const preview = previous.length < 200 && extra.length ? Object.freeze([...previous, ...(regularExpression ? extra.map(m => Object.freeze({ from: m.from, to: m.to })) : extra)]) : previous;
                 const maxScanStepMs = Math.max(store.get().maxScanStepMs, dispatchMs, win.performance.now() - began);
-                if (result.done) { const finished = cursor; cursor = undefined; finished?.dispose(); }
+                if (result.done) {
+                    if (!regularExpression && timer !== undefined) { win.clearTimeout(timer); timer = undefined; }
+                    const finished = cursor; cursor = undefined; finished?.dispose();
+                }
                 if (token !== generation || !valid()) return;
                 publish({ count, preview, scanned: result.scanned, status: result.done ? "ready" : "searching", maxScanStepMs });
-                if (!result.done && token === generation) later(step);
+                if (!result.done && token === generation && regularExpression) later(step);
             };
             try { const result = cursor!.next(), dispatchMs = win.performance.now() - started;
                 if (isAsync(result)) void Promise.resolve(result).then(value => { try { receive(value, true, dispatchMs); } catch (error) { failed(error, token); } }, error => failed(error, token));

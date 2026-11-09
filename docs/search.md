@@ -44,7 +44,12 @@ and code-word classification; a whole-string regular expression would bypass the
 contract. No external search/editor runtime is included.
 
 `createFindController(workspace, tabId, editingCandidate)` supplies browser scheduling and a
-stable immutable `state` observable. It scans up to 32,768 units or 8,192 matches per timer turn.
+stable immutable `state` observable. Literal scans process up to 131,072 units or 8,192 matches
+per timer turn, then yield. This amortizes scheduling overhead without changing the headless
+cursor's defaults or regex-worker delay. These are work limits, not elapsed-time guarantees.
+The next literal timer is queued before a slice runs so its wait overlaps the work. Completion,
+query changes, cancellation, expiry and destruction clear unused work; captured generations
+prevent an older slice from publishing after replacement. Regex cursors schedule after replies.
 The controller retains all matching start/end pairs in 1,024-match pages for binary navigation,
 while `preview` exposes only the first 200 ranges for bounded decorations. The preview cap never
 limits the count, navigation or replacement. Index memory is proportional to match count and

@@ -49,6 +49,21 @@ test("keyboard find routing, read-only replacement and a pilot-sized replace-all
 });
 
 test("100k-line search yields, caps only its preview and rejects stale replace-all planning", async ({ page }) => {
+    const progress = await page.evaluate(() => new Promise<{
+        before: ReturnType<typeof window.editingFixture.snapshot>;
+        partial: ReturnType<typeof window.editingFixture.snapshot>;
+        cancelled: ReturnType<typeof window.editingFixture.snapshot>;
+    }>(resolve => {
+        const f = window.editingFixture, before = f.snapshot(); f.find("const");
+        setTimeout(() => { const partial = f.snapshot(); f.cancelFind(); resolve({ before, partial, cancelled: f.snapshot() }); }, 0);
+    }));
+    expect(progress.partial.find.status).toBe("searching");
+    expect(progress.partial.find.scanned).toBeGreaterThan(0);
+    expect(progress.partial.find.scanned).toBeLessThan(progress.partial.document!.length);
+    expect(progress.partial.find.count).toBeGreaterThan(0);
+    expect(progress.cancelled.find.status).toBe("cancelled");
+    expect(progress.cancelled.history).toEqual(progress.before.history);
+    expect(progress.cancelled.document).toEqual(progress.before.document);
     await page.evaluate(() => window.editingFixture.find("const")); await found(page, 100_000);
     expect((await snapshot(page)).find.previewCount).toBe(200); expect((await snapshot(page)).document!.exports).toBe(0);
     await page.evaluate(() => { window.editingFixture.replaceAll("let"); window.editingFixture.edit([{ from: 0, to: 0, insert: "later " }]); }); await found(page, 100_000);
