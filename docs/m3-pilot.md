@@ -28,126 +28,96 @@ and measurement. Do not claim production replacement readiness from synthetic co
 After `npm ci` and `npm run dev`, open the
 [plain host](http://127.0.0.1:4173/hosts/plain/?editor=candidate) or
 [React host](http://127.0.0.1:4173/hosts/react/?editor=candidate).
-Both expose the same workflow. Use `?editor=native` for the native source-input baseline;
-the comparison working pane always uses the bounded candidate.
+Run the following journey in either host. The services are local, deferred fixtures:
+**Finish save**, **Deliver proposal** and **Finish remote review** complete pending responses
+explicitly, so you can edit while they are in flight. **Finish save** trims trailing whitespace
+in its canonical reply. Reloading starts a new fixture; this is not durable storage.
 
-The native baseline renders whole values. Its optional weak projection cache may be rebuilt
-after history navigation, causing another complete export. Native baseline export counts are
-diagnostic; the pilot's zero ordinary-export gate applies to the bounded candidate. Text,
-selection, history and save behavior remain checked for both adapters.
-
-The services are local, deferred fixtures. **Finish save**, **Deliver proposal** and
-**Finish remote review** explicitly complete a pending response so that you can keep typing
-while it is in flight. **Finish save** trims trailing whitespace in its canonical reply.
-
-1. In **Primary source**, type a correction, select text with Shift+Arrow and replace it.
-   Check the shared text in **Secondary source**. Use Ctrl+Z and Ctrl+Shift+Z to undo and redo;
-   the views share history and retain independent selections. Alt+click adds carets and Alt+drag
-   adds selections. Move them with arrows or page keys, then type to replace every range together.
-   Shift+click extends the primary range; Escape keeps only that range. Escape followed by Tab leaves
-   the candidate editor for the surrounding host controls.
-   Drag painted selected text to move the selected fragments. During the drag, hold Ctrl (Option on
-   Apple platforms) to copy. Read-only sources copy. If the browser loses the internal transfer token,
-   the drop is refused and source text stays intact; native token-preserving movement in the current
-   WebKit evaluation environment remains unverified.
-   Ctrl+F opens source find. **Match case** starts checked; clear it for Unicode caseless
-   literals and combine it with **Whole word**. These choices follow the working view and
-   survive remount. Replacement text is literal in this mode. Enable **Regular expression** for
-   Unicode multiline patterns and numbered/named capture substitutions. Invalid patterns leave
-   editing available. Search and replacement use a separate worker; limits and bulk latency remain
-   explicit in [search](search.md#regular-expressions).
-   Pause the pointer over a symbol, or press Ctrl+K then Ctrl+I in a candidate source view,
-   to read local symbol information. The comparison working view supports the same command.
-   Escape dismisses information before changing selections; typing also dismisses it.
-   Pointer inspection keeps the current host focus. Results are plain text from a bounded local
-   worker fixture, limited to 4,096 units of context and names up to 256 units. This does not
-   qualify a general language service or screen-reader announcement behavior.
-   Type `lookup(`, `format(` or `café(` to open local signature help, or press
-   Ctrl/Cmd+Shift+Space in a source/comparison working pane. The current parameter is highlighted;
-   For a color literal such as '#abc' or 'rgba(1,2,3,.5)', press F6 or **Discover document colors**.
-   Inspect a result, edit **Proposed color**, press Enter, choose **Color presentation**, review
-   **Proposed color edits** and explicitly **Apply captured color**. [Color policy](document-colors.md)
-   describes safe swatches/markers, alpha, bounds, shared history and the remaining semantic/native gaps.
-   To follow a module link, choose **Add module companion**, then discover an exact
-   'import "sample-utils";' line with F4 or **Discover module links**. Tab/Enter activates a
-   resolved result; Shift+F4 returns to the captured source and complete selections.
-   [Module-link policy](document-links.md) states line-grammar, route and URI limits.
-   To preview a module-import action, press Ctrl/Cmd+. in a source or choose **Preview module action**.
-   Edit **Action module**, press Enter to refresh, review every proposed edit and explicitly choose
-   **Apply captured action**. Escape in the field returns to the source. [Action policy](code-actions.md)
-   describes bounds, idempotence, captured identity and the remaining semantic/native gaps.
-   For a lexical rename, focus a source identifier and press F2 or **Prepare rename preview**,
-   enter **New identifier**, review the captured targets and choose **Apply captured rename**.
-   Open a changed resource to undo the whole batch. [Rename limits](rename.md) are explicit:
-   matching tokens in different scopes and regular expressions can be included.
-   **Previous signature** / **Next signature** select overloads. Escape dismisses help before
-   changing selections. [Signature help](signature-help.md) records provider syntax, bounds,
-   automatic/manual triggers and the still-unverified native accessibility behavior.
-   In either source view or the comparison working pane, **Discover domain regions**
-   finds the local fixture's paired `// #region id Label` / `// #endregion id`
-   markers. **Collapse domain regions** preserves independent manual folds; annotation
-   buttons reveal their captured ranges. **Insert catalogue import** is one shared
-   undoable edit. Discovery/import replies reject stale revisions and authority.
-   The [domain workflow](domain.md) records fixture policy, bounds and native gaps.
-   **Find definition** / **Find references** and F12 / Shift+F12 search captured working
-   resources in a real local worker. Choose a result to reveal it, then **Return to
-   navigation origin** to restore the complete origin selection set. **Add navigation
-   companion** supplies an initially unmounted `catalogue` definition for trying a
-   cross-resource result. [Provider navigation](provider-navigation.md) describes the
-   lexical fixture, bounds, focus behavior and remaining language/native gaps.
-   **Disconnect navigation provider** keeps local editing available; **Reconnect navigation
-   provider** enables a fresh synchronized request. Between successful requests, the worker
-   reuses unchanged working resources and receives bounded versioned changes.
-   Under **Workspace provider**, register the local review command and request its edits.
-   The worker proposes a bounded header/footer batch across captured working resources;
-   one undo in a participating view reverses the accepted batch. Use a **Last applied
-   provider edits** button to open an initially unmounted changed resource. Unregister or
-   disconnect to remove the capability. [Server edits](server-edits.md) describes the
-   fixture, stale/authority checks, acknowledgement failure and remaining protocol gaps.
-2. Choose **Open source review**. Edit the working pane, then use **Next change** and
-   **Use baseline**. Undo the reversion to restore your correction. The reference stays
-   immutable while the working pane shares the source document and history.
-   Select several source lines and choose **Fold selected lines** (Ctrl/Cmd+Shift+[).
-   The header stays visible; Arrow/Page skips the body. The other source view and comparison
-   remain independent. Find, explicit selections and hunk navigation reveal hidden targets.
-   **Expand all folds** (Ctrl/Cmd+Shift+]) opens the current view. Header buttons support
-   Enter/Space and Escape; source Escape then Tab/Shift+Tab still exits to host controls.
-   [Fold semantics and limits](folding.md) describe edits, history and remount behavior.
-   Enable **Paste tables as CSV** to paste a spreadsheet/text table into the captured source
-   selections. The host prefers a single HTML table, then tab-separated plain text. Conversion
-   is one shared undo command; Escape or **Cancel table paste** stops pending work. Clear the
-   option for literal paste. [Table paste](table-paste.md) lists formats, limits and native gaps.
-   **Keep draft version** retains the current committed text. Choose a saved, server, draft or
-   historical entry in **Review version**, then **Finish version load**; typing can continue while
-   it loads. Selection changes the reference while Save and Run keep using the working source.
-   **Discard reviewed changes** followed by **Confirm reviewed discard** restores the captured
-   review as one undoable command. Later text, review or ownership changes expire that confirmation.
+1. In **Primary source**, type a correction. Select text with Shift+Arrow and replace it;
+   move by word, line and page. Check the same text in **Secondary source**. Use Ctrl+Z and
+   Ctrl+Shift+Z to undo and redo through either view. The views share history and keep independent
+   selections. Escape followed by Tab or Shift+Tab leaves the candidate for host controls.
+2. Choose **Open source review**. Edit **Comparison working source**, choose **Next change**,
+   then **Use baseline**. Undo the reversion to restore your correction. The reference stays
+   immutable while the working pane shares source text and history.
+   **Keep draft version** captures the committed text. Choose a saved, server, draft or historical
+   entry in **Review version**, then **Finish version load**. Typing may continue during the load;
+   Save and Run keep targeting the working source. **Discard reviewed changes** followed by
+   **Confirm reviewed discard** is one undoable command. Later text, review or ownership changes
+   expire the confirmation.
 3. Focus a source editor and press Ctrl+S or Cmd+S. Type additional text before choosing
    **Finish save**. The captured revision is saved; later typing remains present and unsaved.
    Undo the later typing to return to the saved capture, then redo it. Use text without trailing
-   whitespace for this step so the synthetic canonical reply does not alter the capture.
+   whitespace for this step so the canonical reply does not alter the capture.
 4. Choose **Simulate external source change**, save again and choose **Finish save**.
-   The conflict notice must retain your local text. Choose **Review remote source**, then
-   **Finish remote review** to compare the captured remote version. Correct the working text,
-   choose **Save reviewed source**, continue typing and choose **Finish save**. The conflict
-   clears after success; text typed after the capture remains unsaved. On that pending
-   reviewed save, you can instead choose **Fail save**, then **Save reviewed source** and
-   **Finish save** to try transport recovery without discarding local work.
-5. Choose **Associate agent**, **Request proposal**, then **Deliver proposal**. The source
-   is read-only while the request is pending; the configuration form remains independent.
-   Correct the delivered proposal, save it and choose **Finish save**. Choose
-   **Retry acknowledgement** twice: the fixture fails the first attempt and succeeds on retry.
-   The next **Request proposal**
-   captures your current source and configuration. **Interrupt agent** restores editing.
-6. Use **Move primary view**, then **Toggle views** twice. Text, history and independent view
-   state survive movement and remount. Configuration changes and background progress keep
-   their own state. Reloading the page starts a new fixture; this is not durable storage.
+   The conflict notice retains local text. Choose **Review remote source**, then **Finish remote
+   review**. Correct the working text, choose **Save reviewed source**, continue typing and choose
+   **Finish save**. The conflict clears; text typed after the capture remains unsaved. To exercise
+   transport recovery instead, choose **Fail save** while the reviewed save is pending, then
+   **Save reviewed source** and **Finish save**. Local work stays intact.
+5. Choose **Associate agent**, **Request proposal**, then **Deliver proposal**. While the request
+   is pending, the source is read-only and the configuration form remains independent. Correct
+   the proposal, save it and choose **Finish save**. Choose **Retry acknowledgement** twice: the
+   first attempt fails and the retry succeeds. The next **Request proposal** captures the current
+   source and configuration. Choose **Interrupt agent** to restore editing before continuing.
+6. Edit the configuration form and choose **Run captured inputs**. Continue typing while the
+   run is pending; Run retains the submitted source and configuration. Choose **Finish run**
+   to settle it, or **Fail run** to exercise recovery. Saving does not run them.
+   Use **Move primary view**, then **Toggle views** twice. Text, history and independent view state
+   survive movement and remount while configuration and background progress keep their own state.
 
-The automated large-document workflows additionally exercise 100,000-line and long-line
-sources with bounded input contexts, DOM and reads. See the
-[host workflow contract](host-workflows.md) and [viewport limits](viewport.md).
-The walkthrough does not qualify real IME, OS clipboard, screen readers or physical display
-latency. Those checks remain unverified until a declared device/support record supplies evidence.
+The automated [host workflows](host-workflows.md) also cover 100,000-line and long-line sources
+with bounded input contexts, reads and DOM. [Viewport limits](viewport.md) identify unsupported
+geometry. Use `?editor=native` for the whole-value native source-input baseline; the comparison
+working pane always uses the bounded candidate. The baseline may rebuild its weak projection
+cache after history navigation. Its export counts are diagnostic; the zero ordinary-export gate
+applies to the candidate. Text, history, selection and save behavior are checked for both adapters.
+
+Real IME/reconversion, OS/app/menu clipboard, NVDA/Narrator and physical display latency remain
+unverified without recorded device evidence. Keyboard automation and synthetic composition do
+not satisfy those checks. Native token-preserving drag movement in the current WebKit evaluation
+environment is also unverified; tokenless internal drops are refused without changing source text.
+
+## Additional editing and provider tools
+
+These tools share the pilot's captured identities, history and review. Their detailed policy
+documents define supported syntax, bounds and remaining semantic/native qualification gaps.
+
+- Alt+click adds carets and Alt+drag adds selections. Shift+click extends the primary range;
+  Escape keeps that range. Arrow/page movement and typing apply to the complete selection set.
+  Drag selected text to move it; hold Ctrl (Option on Apple platforms) to copy. Read-only sources
+  copy. [Editing and transfer policy](editing-candidate.md) describes capture and refusal behavior.
+- Ctrl+F opens find. **Match case**, **Whole word** and **Regular expression** select the
+  [search policy](search.md); regex replacement supports numbered/named captures. Invalid patterns
+  leave editing available. The worker's limits and bulk latency remain explicit.
+- **Fold selected lines** (Ctrl/Cmd+Shift+[) and **Expand all folds** (Ctrl/Cmd+Shift+]) affect the
+  current view. Arrow/page movement skips the body; explicit selections/find/hunks reveal targets.
+  [Folding](folding.md) records history and remount behavior.
+- **Paste tables as CSV** enables one undoable captured conversion, preferring one HTML table and
+  then tab-separated plain text. Escape or **Cancel table paste** cancels pending work. Clear the
+  option for literal paste. See [table formats and native gaps](table-paste.md).
+- Pause over a symbol or press Ctrl+K then Ctrl+I for [hover information](providers.md). Type `lookup(`,
+  `format(` or `café(`, or press Ctrl/Cmd+Shift+Space, for [signature help](signature-help.md).
+  **Previous signature** / **Next signature** select overloads. Escape dismisses information.
+- F12 / Shift+F12 or **Find definition** / **Find references** use the actual local worker.
+  **Add navigation companion** supplies an unmounted resource; **Return to navigation origin**
+  restores complete selections. [Navigation policy](provider-navigation.md) describes the bounded
+  lexical fixture, captured reveal and disconnect/reconnect behavior.
+- F2 opens the [rename preview](rename.md). Enter **New identifier**, inspect captured targets and
+  choose **Apply captured rename**. Ctrl/Cmd+. opens a [module-import action](code-actions.md):
+  edit **Action module**, press Enter to refresh and choose **Apply captured action** explicitly.
+  One undo in a participating resource reverses a batch; later corrections remain separate.
+- **Add module companion**, then discover an exact `import "sample-utils";` line with F4 or
+  **Discover module links**. Tab/Enter activates a resolved result; Shift+F4 returns to its captured
+  origin. [Module links](document-links.md) use explicit host routes and reject URI execution.
+- F6 or **Discover document colors** finds supported literal colors. Inspect a result, type a
+  **Proposed color**, choose **Preview color presentations**, then **Apply captured color**.
+  Enter in the field previews; application requires separate confirmation. [Color policy](document-colors.md)
+  records exact alpha, validated edits and supported literal syntax.
+- **Discover domain regions**, **Collapse domain regions** and **Insert catalogue import** exercise
+  [host domain tools](domain.md). Under **Workspace provider**, register the local review command
+  and request its captured edits. [Server-edit policy](server-edits.md) covers whole-batch validation,
+  participating undo, explicit affected-resource reveal and acknowledgement/reconnect behavior.
 
 
 ## Measurement boundaries
@@ -161,10 +131,11 @@ in full workflow results and must not be hidden in handler measurements.
 
 The timing boundaries are explicit:
 
-1. Handler duration is elapsed time inside the adapter event handler, including the model commit
-   and synchronous context refresh. It excludes `beforeinput`, native work before the handler
-   and probe listeners that run after the adapter. Synchronous subscribers called by the handler
-   remain inside this elapsed span. This measurement does not report process CPU time.
+1. Handler duration is elapsed time inside a named adapter listener, such as `beforeinput`,
+   `input` or `keydown`. Include its model commit, context refresh and synchronous subscribers.
+   Exclude other listeners, preceding native work and queued callbacks; report those clocks
+   separately. A cancelled `beforeinput` has no new `input` sample. Handler elapsed time is
+   neither complete interaction latency nor process CPU time.
 2. Interaction readiness starts at browser input/command dispatch and ends only after the
    expected model, selection and both rendered view revisions are current, plus scheduled
    animation frames. The editor/review proxy also waits for current working and reference panes,
@@ -174,17 +145,19 @@ The timing boundaries are explicit:
    settlement and the same semantic/view readiness checks. Keep these separate from handler duration
    and record imposed service delays.
 
-Execution order:
+Delivery order:
 
-1. Integrate the existing comparison controller/view into both host fixtures. The controller
-   already enters a review navigation state; that state must expose a usable review surface.
-2. Add repeatable complete-interaction measurements and an integrated edit/review/save/conflict
-   scenario, including the large document and concurrent host activity.
-3. Fix reproducible pilot failures in typing, selection/navigation, history, clipboard, saving,
-   review and lifecycle, using focused checks for each change.
-4. At coherent pilot milestones run the broad model/browser/package/inspection checks and
-   relevant editing, host, comparison and viewport measurements; archive evidence and commit
-   qualified changes. Full shaping experiments are not the default implementation loop.
+1. Fix reproduced pilot defects in typing, selection/navigation, history, saving, review and
+   lifecycle with focused regressions. Comparison and the integrated workflows above are already
+   implemented; use their existing scenarios before adding coverage.
+2. At coherent milestones, batch the relevant model/browser/package/inspection checks and bounded
+   measurements. Reuse passing source-labelled evidence for unchanged paths and commit qualified
+   work. Benchmark tooling supports delivery; it is not an independent expansion queue.
+3. Keep historical timing failures and unresolved attribution explicit. Rerun or trace them only
+   for a new hypothesis with a bounded experiment. Separate own-listener, complete readiness and
+   workflow clocks; a larger correctness timeout does not qualify latency.
+4. Obtain native-device/accessibility evidence when available and continue independent work
+   meanwhile. Further font/shaping expansion requires a reproduced pilot defect.
 
 All runtime code remains dependency-free, core logic stays headless, and host services and
 reactive libraries remain outside the editor. Keep the native baseline and bounded candidate
