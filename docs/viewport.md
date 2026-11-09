@@ -97,6 +97,10 @@ native control. Browser tests assert exact bounded row text, first/last position
 scrollbars, logical wheel/keyboard scrolling, font/size changes, batched edit/undo anchors, stale
 tabs, no whole-text export, independent views, unrelated 20 Hz traffic and disposal in all engines.
 The restored NuGet consumer also renders the compiled viewport with its packaged CSS.
+Raw offsets inside CRLF share the preceding painted line edge while retaining their exact
+model offset. The same projection supplies navigation columns, so regex zero-width results
+can paint a caret, move vertically and accept typing without changing newline data. It reuses
+the existing row geometry and reads at most the two newline units for that exceptional point.
 The optional [line decorator](providers.md) receives only the rendered fragment and captured
 document/revision. It combines syntax/search/diagnostic spans with selection without replacing
 the document text. An explicit invalidation schedules changed presentation; token spans remain

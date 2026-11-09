@@ -25,6 +25,11 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     revealOffset: (offset: number, options?: RevealOptions) => void; snapshot: () => ViewportSnapshot; destroy: () => void }>;
 type Row = Readonly<{ line: number; from: number; to: number; text: string; left: number; complete: boolean }>;
 type RowPart = Readonly<{ text: string; className: string }>;
+/** CRLF has two raw positions at one painted line edge. Keep the requested model offset. */
+function rowCaretOffset(buffer: TextBuffer, end: number, offset: number): number | undefined {
+    if (offset <= end) return offset;
+    return offset === end + 1 && offset < buffer.length && buffer.slice(end, end + 2) === "\r\n" ? end : undefined;
+}
 function renderRowChildren(element: HTMLElement, parts: readonly RowPart[]): boolean {
     if (element.childNodes.length === parts.length && parts.every((part, index) => {
         const node = element.childNodes.item(index); if (!node || node.textContent !== part.text) return false;
@@ -87,8 +92,13 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         if (!value) { value = rowGeometry(element, Number(element.dataset.from), renderedRevision!, lineHeight); geometries.set(line, value); } return value;
     };
     const coordinates = (offset: number, affinity: Affinity = "after"): CaretRectangle | undefined => {
-        if (disposed || !workspace.resolveTab(target) || workspace.observeDocument(documentId).getSnapshot()?.revision !== renderedRevision) return undefined;
-        for (const element of rows.values()) if (offset >= Number(element.dataset.from) && offset <= Number(element.dataset.to)) return geometry(element).point(offset, affinity);
+        if (disposed || !workspace.resolveTab(target)) return undefined;
+        const document = workspace.observeDocument(documentId).getSnapshot();
+        if (document?.revision !== renderedRevision) return undefined;
+        for (const element of rows.values()) if (offset >= Number(element.dataset.from) && offset <= Number(element.dataset.to) + 1) {
+            const at = rowCaretOffset(document.buffer, Number(element.dataset.to), offset); if (at === undefined) continue;
+            const point = geometry(element).point(at, affinity); return point && at !== offset ? Object.freeze({ ...point, offset }) : point;
+        }
         return undefined;
     };
     const schedule = () => { if (!disposed && frame === undefined) frame = win.requestAnimationFrame(render); };
@@ -172,13 +182,16 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         visual: (offset: number, affinity: Affinity, direction: -1 | 1) => CaretRectangle | undefined;
         edge: (direction: -1 | 1, low?: number, high?: number) => CaretRectangle; nearest: (column: number) => CaretRectangle }>;
     function measuredRow(entry: CommandRow, revision: number, rectangle: DOMRect): MeasuredRow {
-        const { item, element } = entry, start = workspace.document(documentId).buffer.offsetAt(item.line);
+        const { item, element } = entry, buffer = workspace.document(documentId).buffer, start = buffer.offsetAt(item.line);
         const value = entry.geometry ??= rowGeometry(element, 0, revision, lineHeight), bounds = element.getBoundingClientRect(), origin = padding + (item.from - start) * columnWidth;
         const mapped = (point: CaretRectangle): CaretRectangle => Object.freeze({ ...point, offset: point.offset + item.from,
             left: rectangle.left + origin + point.left - bounds.left - left, top: rectangle.top + padding + item.line * lineHeight - top + point.top - bounds.top });
         const optional = (point: CaretRectangle | undefined) => point && mapped(point);
         return { complete: item.complete, flow: win.getComputedStyle(element).direction === "rtl" ? -1 : 1,
-            point: (offset, affinity) => optional(value.point(offset - item.from, affinity)),
+            point: (offset, affinity) => {
+                const at = rowCaretOffset(buffer, item.to, offset), point = at === undefined ? undefined : optional(value.point(at - item.from, affinity));
+                return point && at !== offset ? Object.freeze({ ...point, offset }) : point;
+            },
             visual: (offset, affinity, direction) => optional(value.visual(offset - item.from, affinity, direction)),
             edge: (direction, low = item.from, high = item.to) => mapped(value.edge(direction, low - item.from, high - item.from)),
             nearest: column => mapped(value.nearest(bounds.left + column - origin)) };

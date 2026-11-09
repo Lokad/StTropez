@@ -65,13 +65,16 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
             editor.view.setSelection(model.document(source.documentId).revision, { anchor: 0, head: 0 });
             for (const head of [0, 2, 3, 4, 5, 6, 7, 8, 9, 0]) { find.next(); await new Promise(resolve => setTimeout(resolve, 0));
                 if (editor.view.getSnapshot().selection.head !== head) throw new Error("Compiled zero-width navigation lost a raw position."); }
+            editor.viewport.flush(); const point = editor.viewport.coordsAt(4), column = editor.viewport.columnAt(4);
+            if (!point || point.offset !== 4 || column === undefined || !editor.viewport.caretAtColumn(1, column)) throw new Error("Compiled CRLF caret has no painted or vertical position.");
             find.replaceAll("|"); await wait("ready"); exact("|😀|x|\r|\n|l|a|s|t|");
             find.setQuery("("); await wait("failed"); exact("|😀|x|\r|\n|l|a|s|t|");
             if (model.document(source.documentId).buffer.readMetrics().textExports) throw new Error("Compiled regex exported the model value.");
         } finally { find.destroy(); editor.destroy(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
         const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled regex resources leaked.");
+        if (editor.viewport.coordsAt(4) !== undefined) throw new Error("Disposed compiled viewport still exposes geometry.");
         return { actualWorker: workers > 0, workerCount: workers, units: original.length, atomicReplacement: true, completeSelectionUndo: true,
-            rawZeroWidthNavigation: true, syntaxFailureSafe: true, zeroCompleteExports: true, released: { views, leases, subscriptions } };
+            rawZeroWidthNavigation: true, crlfCaretProjection: true, disposedGeometryInert: true, syntaxFailureSafe: true, zeroCompleteExports: true, released: { views, leases, subscriptions } };
     },
     findAuthority: async () => {
         const cases = [];
