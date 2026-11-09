@@ -3,6 +3,8 @@ import { NavigationSession, navigationLimits, validateNavigationInput } from "./
 import type { NavigationInput } from "./navigation.ts";
 import { reviewCapability, reviewHeader, reviewFooter, validateProjectCommand } from "./project-commands.ts";
 import type { ProjectCommand, ProjectServerRequest } from "./project-commands.ts";
+import { SignatureScanner, validateSignatureInput } from "./signature.ts";
+import type { SignatureInput } from "./signature.ts";
 export const projectProtocolVersion = 1;
 export type ProjectPacket = Readonly<{ version: number; epoch: number; sequence: number; operation: string; [key: string]: unknown }>;
 type Document = Readonly<{ revision: number; buffer: TextBuffer }>;
@@ -20,6 +22,7 @@ export class ProviderProject {
     private units = 0;
     private stage: Stage | undefined;
     private query: Query | undefined;
+    private signature: { input: SignatureInput; buffer: TextBuffer; scanner: SignatureScanner; from: number } | undefined;
     private registered = false;
     private command: { input: ProjectCommand; method: ProjectServerRequest["method"] } | undefined;
     private lastCommand = 0;
@@ -41,6 +44,8 @@ export class ProviderProject {
             return { operation: "project-command-result", request: command.input.id, applied: value.applied, reason: value.reason, registered: this.registered };
         }
         if (this.command) throw new Error("Acknowledge the server request before another operation.");
+        if (value.operation === "project-signature-next") return this.advanceSignature(value);
+        if (this.signature) throw new Error("Complete the signature scan before another operation.");
         if (value.operation === "project-query-next") return this.advanceQuery(value);
         if (this.query) throw new Error("Complete the query before mutating documents.");
         if (value.operation === "project-open" || value.operation === "project-change") {
@@ -65,6 +70,12 @@ export class ProviderProject {
             return ack("commit", stage.document, stage.revision, stage.length, stage.received);
         }
         if (this.stage) throw new Error("Complete the document transfer before another operation.");
+        if (value.operation === "project-signature") {
+            const input = validateSignatureInput(value.input), doc = this.documents.get(input.document);
+            if (!doc || doc.revision !== input.revision || doc.buffer.length !== input.length) throw new Error("Signature document is not synchronized.");
+            this.signature = { input, buffer: doc.buffer, scanner: new SignatureScanner(), from: 0 };
+            return { operation: "project-signature-progress", request: input.id, work: 0 };
+        }
         if (value.operation === "project-command") {
             const input = validateProjectCommand(value.input);
             if (input.id <= this.lastCommand) throw new Error("Duplicate project command.");
@@ -110,8 +121,14 @@ export class ProviderProject {
         if (q.from === buffer.length) { q.session.handle({ operation: "navigation-end-document", id: q.input.id, document: doc.document }); q.ordinal++; q.from = 0; q.started = false; }
         return { operation: "project-query-progress", request: q.input.id, work: q.work };
     }
+    private advanceSignature(value: Record<string, unknown>): Readonly<{ operation: string; [key: string]: unknown }> {
+        const q = this.signature; if (!q || value.request !== q.input.id) throw new Error("Invalid signature continuation.");
+        if (q.from === q.input.offset) { const result = q.scanner.result(q.input); this.signature = undefined; return { operation: "project-signature-result", request: q.input.id, result }; }
+        const text = q.buffer.slice(q.from, Math.min(q.input.offset, q.from + navigationLimits.chunkUnits)); q.scanner.feed(text, q.from); q.from += text.length;
+        return { operation: "project-signature-progress", request: q.input.id, work: q.from };
+    }
     buffer(document: string): TextBuffer | undefined { return this.documents.get(document)?.buffer; }
     snapshot() { return Object.freeze({ version: projectProtocolVersion, epoch: this.epoch, sequence: this.sequence, units: this.units, staging: !!this.stage, querying: !!this.query,
-        registered: this.registered, serverPending: !!this.command,
+        registered: this.registered, serverPending: !!this.command, signaturePending: !!this.signature,
         documents: Object.freeze([...this.documents].map(([document, value]) => Object.freeze({ document, revision: value.revision, length: value.buffer.length }))) }); }
 }

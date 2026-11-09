@@ -53,6 +53,8 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         faultNavigationSyncNext: (fault: "version" | "epoch" | "sequence" | "revision") => bindings.navigation.faultSyncNext(fault),
         releaseNavigationCompanion: () => bindings.navigation.releaseCompanion(),
         setProjectDelay: (value: number) => bindings.project.setDelay(value), faultProjectNext: (value: "malformed" | "failure" | "ack") => bindings.project.faultNext(value),
+        setSignatureDelay: (value: number) => bindings.signature.setDelay(value), faultSignatureNext: (value: "malformed" | "failure" | "markup") => bindings.signature.faultNext(value), requestSignature: bindings.signature.inspect,
+        faultIdleSignature: () => bindings.signature.faultIdle(),
         faultIdleProject: () => bindings.project.faultIdle(),
         setProjectTargetReadOnly: (id: DocumentId, value: boolean) => { const resource = controller.workspace.resourceForDocument(id), metadata = resource.metadata.getSnapshot();
             controller.workspace.setCapabilities(resource.id, { ...metadata.capabilities, edit: value ? ["host"] : ["human", "host", "agent"] }); },
@@ -84,6 +86,8 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; mode
     setNavigationDelay: (delay: number) => void; faultNavigationNext: (fault: "malformed" | "failure") => void;
     faultNavigationSyncNext: (fault: "version" | "epoch" | "sequence" | "revision") => void; releaseNavigationCompanion: () => boolean;
     setProjectDelay: (value: number) => void; faultProjectNext: (value: "malformed" | "failure" | "ack") => void;
+    setSignatureDelay: (value: number) => void; faultSignatureNext: (value: "malformed" | "failure" | "markup") => void; requestSignature: () => void;
+    faultIdleSignature: () => boolean;
     faultIdleProject: () => boolean;
     setProjectTargetReadOnly: (id: DocumentId, value: boolean) => void;
     navigationDocument: (id: DocumentId) => Readonly<{ revision: number; length: number; text: string; exports: number }>;

@@ -4,6 +4,8 @@ import type { NavigationDocument, NavigationInput, NavigationResult } from "../p
 import { projectProtocolVersion } from "../probes/project.ts";
 import { validateProjectCommand, validateProjectServerRequest } from "../probes/project-commands.ts";
 import type { ProjectCommand, ProjectOutcome, ProjectServerRequest } from "../probes/project-commands.ts";
+import { validateSignatureInput, validateSignatureResult } from "../probes/signature.ts";
+import type { SignatureInput } from "../probes/signature.ts";
 import { ProjectChangeCursor } from "./project-change.ts";
 export type NavigationMetrics = { created: number; posted: number; received: number; transferred: number; maxChunk: number; completed: number; failed: number; terminated: number;
     opened: number; changed: number; closed: number; reused: number; snapshotUnits: number; deltaUnits: number; planningTurns: number; rejected: number };
@@ -106,7 +108,20 @@ export function createNavigationClient(clock: Pick<Window, "setTimeout" | "clear
             counts.completed++; return Object.freeze({ applied: reply.applied, reason: reply.reason, registered: reply.registered });
         });
     };
-    return Object.freeze({ run, command,
+    const signature = (capture: SignatureInput, buffer: TextBuffer, progress: (work: number) => void) => {
+        const input = validateSignatureInput(capture);
+        return execute([{ document: input.document, revision: input.revision, length: input.length }], new Map([[input.document, buffer]]), async () => {
+            let reply = await exchange("project-signature", { input }), work = 0;
+            for (;;) {
+                if (reply.request !== input.id) throw new Error("Invalid captured signature identity.");
+                if (reply.operation === "project-signature-result") { const result = validateSignatureResult(reply.result, input);
+                    if (work !== input.offset || result.call && buffer.slice(result.call.open, result.call.open + 1) !== "(") throw new Error("Invalid captured signature position."); counts.completed++; return result; }
+                if (reply.operation !== "project-signature-progress" || typeof reply.work !== "number" || !Number.isSafeInteger(reply.work) || reply.work < work || reply.work > input.offset) throw new Error("Invalid signature progress.");
+                work = reply.work; progress(work); reply = await exchange("project-signature-next", { request: input.id });
+            }
+        });
+    };
+    return Object.freeze({ run, command, signature,
         faultIdle: () => { if (!worker || !connected || busy) return false; counts.posted++; worker.postMessage("{"); return true; },
         snapshot: () => Object.freeze({ connected, busy, disposed, version: projectProtocolVersion, epoch, sequence,
         documents: Object.freeze([...cache].map(([document, doc]) => Object.freeze({ document, revision: doc.revision, length: doc.buffer.length }))) }),

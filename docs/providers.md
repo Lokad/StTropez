@@ -67,7 +67,8 @@ This deliberately reuses platform workers, the existing transport and editor geo
 adding a language client dependency. The hosts also expose [captured definition/reference
 navigation](provider-navigation.md) through a streaming worker lane, including unmounted
 working resources, safe paged locations and complete-set return. Its local lexical policy is
-explicit; signatures, semantic resolution, rename, actions and other language workflows remain
+explicit; [captured signature help](signature-help.md) now runs in the versioned worker lane.
+General semantic resolution, rename, actions and other language workflows remain
 separate required work.
 
 The complete response is validated before publication, then rendered only as text. Escape,

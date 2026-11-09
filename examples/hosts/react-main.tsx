@@ -11,6 +11,7 @@ import { findText, foldText, languageActions, languageFieldKey } from "./languag
 import { domainActions } from "./domain-panel.ts";
 import { navigationActions } from "./navigation-panel.ts";
 import { projectActions } from "./project-panel.ts";
+import { signatureActions } from "./signature-panel.ts";
 import "./style.css";
 
 const controller = new HostController(), bindings = new ViewBindings(controller, hostEditor());
@@ -105,6 +106,13 @@ function SymbolInfo() {
         onPointerEnter={bindings.hover.enterPopup} onPointerLeave={bindings.hover.leavePopup} onPointerDown={event => event.preventDefault()}>
         <pre>{state.text || state.message}</pre><span>Escape dismisses symbol information.</span></div>;
 }
+function SignatureTools() {
+    const tools = bindings.signature, s = useObserved(tools.state);
+    return <><section className="host-language" aria-label="Signature commands"><h2>Signature help</h2><output aria-label="Signature help status" aria-live="polite">{s.message}</output>
+        <div>{signatureActions(tools).map(action => <button key={action.label} onPointerDown={event => event.preventDefault()} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div></section>
+        <div className="host-symbol-info host-signature" id={s.id} role="tooltip" aria-label="Signature help" hidden={!s.visible} style={{ left: s.left, top: s.top }} onPointerDown={event => event.preventDefault()}>
+            <pre>{s.before || (s.status === "pending" ? s.message : "")}{s.parameter && <mark aria-label="Active signature parameter">{s.parameter}</mark>}{s.after}</pre><p>{s.documentation}</p><p>{s.parameterDocumentation}</p></div></>;
+}
 function TablePasteTools() {
     const tools = bindings.tablePaste, state = useObserved(tools.state);
     return <section className="host-language" aria-label="Table paste tools"><label><input type="checkbox" checked={state.enabled} disabled={!state.available}
@@ -114,7 +122,7 @@ function TablePasteTools() {
         <button disabled={state.status !== "converting"} onClick={tools.cancel}>Cancel table paste</button></section>;
 }
 function App() {
-    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><SymbolInfo /></>;
+    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><SignatureTools /><SymbolInfo /></>;
 }
 function ProjectTools() {
     const tools = bindings.project, state = useObserved(tools.state);

@@ -62,6 +62,11 @@ while it is in flight. **Finish save** trims trailing whitespace in its canonica
    Pointer inspection keeps the current host focus. Results are plain text from a bounded local
    worker fixture, limited to 4,096 units of context and names up to 256 units. This does not
    qualify a general language service or screen-reader announcement behavior.
+   Type `lookup(`, `format(` or `café(` to open local signature help, or press
+   Ctrl/Cmd+Shift+Space in a source/comparison working pane. The current parameter is highlighted;
+   **Previous signature** / **Next signature** select overloads. Escape dismisses help before
+   changing selections. [Signature help](signature-help.md) records provider syntax, bounds,
+   automatic/manual triggers and the still-unverified native accessibility behavior.
    In either source view or the comparison working pane, **Discover domain regions**
    finds the local fixture's paired `// #region id Label` / `// #endregion id`
    markers. **Collapse domain regions** preserves independent manual folds; annotation

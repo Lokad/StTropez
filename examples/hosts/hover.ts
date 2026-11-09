@@ -11,6 +11,7 @@ let nextTooltip = 0;
 /** Host-owned presentation follows an explicit view; pointer inspection never changes focus. */
 export class HostHoverTools {
     private readonly workspace: Workspace;
+    private readonly allowInspect: (kind: "pointer" | "keyboard") => boolean;
     private readonly sessions = new Map<string, Session>();
     private readonly cell = new HostCell<HoverPresentation>({ visible: false, id: "", view: null, left: 0, top: 0, status: "idle", text: "", message: "" });
     private current: Session | undefined;
@@ -20,7 +21,7 @@ export class HostHoverTools {
     private layout: { observer: MutationObserver; win: Window; frame: number | undefined } | undefined;
     private retired = { created: 0, posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0, postedUnits: 0 };
     readonly state = this.cell.observable;
-    constructor(workspace: Workspace) { this.workspace = workspace; }
+    constructor(workspace: Workspace, allowInspect: (kind: "pointer" | "keyboard") => boolean = () => true) { this.workspace = workspace; this.allowInspect = allowInspect; }
     private clearDismiss(): void { this.cancelDismiss?.(); this.cancelDismiss = undefined; }
     private stopLayout(): void {
         const layout = this.layout; this.layout = undefined; layout?.observer.disconnect();
@@ -67,7 +68,7 @@ export class HostHoverTools {
     readonly enterPopup = (): void => { this.overPopup = true; this.clearDismiss(); };
     readonly leavePopup = (): void => { this.overPopup = false; if (this.current) this.queueDismiss(this.current); };
     private inspect(session: Session, revision: number, offset: number, affinity: Affinity, kind: "pointer" | "keyboard"): boolean {
-        if (this.sessions.get(session.id) !== session) return false;
+        if (this.sessions.get(session.id) !== session || !this.allowInspect(kind)) return false;
         this.dismiss(); this.current = session; this.kind = kind; session.affinity = affinity; session.offset = offset;
         const posted = session.controller.request(revision, offset); if (!posted) { this.current = undefined; this.publish(); } return posted;
     }
@@ -89,6 +90,7 @@ export class HostHoverTools {
         const stop = controller.state.subscribe(() => { if (this.current === session) this.publish(); });
         editor.element.addEventListener("pointerenter", () => { session.overTarget = true; if (this.current === session) this.clearDismiss(); }, { signal: listeners.signal });
         editor.element.addEventListener("pointermove", event => {
+            if (!this.allowInspect("pointer")) { cancelPointer(); return; }
             if (event.buttons || editor.snapshot().composing) { cancelPointer(); if (this.current === session) this.dismiss(); return; }
             const point = editor.viewport.hitTest(event.clientX, event.clientY), viewport = editor.viewport.snapshot();
             if (!point || viewport.pending || Math.abs(point.left - event.clientX) > viewport.columnWidth * 1.5 || Math.abs(point.top + point.height / 2 - event.clientY) > point.height) {
@@ -105,7 +107,7 @@ export class HostHoverTools {
             if (["Control", "Meta", "Shift", "Alt"].includes(event.key)) return;
             if (event.key === "Escape" && (this.current || session.scheduled)) { event.preventDefault(); event.stopImmediatePropagation(); this.dismiss(); return; }
             const command = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey, name = event.key.toLowerCase();
-            if (command && name === "k") { event.preventDefault(); event.stopImmediatePropagation(); cancelChord(); chord = true; chordTimer = win.setTimeout(cancelChord, 1500); return; }
+            if (command && name === "k") { if (!this.allowInspect("keyboard")) return; event.preventDefault(); event.stopImmediatePropagation(); cancelChord(); chord = true; chordTimer = win.setTimeout(cancelChord, 1500); return; }
             if (chord) { cancelChord(); if (command && name === "i") { event.preventDefault(); event.stopImmediatePropagation(); this.inspectCaret(id); } }
         }, { capture: true, signal: listeners.signal });
         editor.input.addEventListener("blur", () => { cancelChord(); if (this.current === session && this.kind === "keyboard") this.dismiss(); }, { signal: listeners.signal });

@@ -9,6 +9,7 @@ import { mountTablePastePanel } from "./table-panel.ts";
 import { mountDomainPanel } from "./domain-panel.ts";
 import { mountNavigationPanel } from "./navigation-panel.ts";
 import { mountProjectPanel } from "./project-panel.ts";
+import { mountSignaturePanel } from "./signature-panel.ts";
 
 export function mountPlain(host: HTMLElement, controller: HostController, bindings: ViewBindings): () => void {
     const listeners = new AbortController(), subscriptions: (() => void)[] = [];
@@ -47,6 +48,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const destroyTablePaste = mountTablePastePanel(tablePaste, bindings.tablePaste);
     const destroyLanguage = mountLanguagePanel(language, bindings.language);
     const destroyHover = mountHoverPanel(host, bindings.hover);
+    const destroySignature = mountSignaturePanel(host, bindings.signature);
     const updateStatus = () => {
         const text = statusText(controller); if (status.textContent === text) return;
         // Native form reset can replace an output's children; use its current text node.
@@ -110,5 +112,5 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         controller.saveConflict.subscribe(updateConflict), controller.source.metadata.subscribe(updateConflict),
         controller.layout.subscribe(updateConflict), controller.comparisonReference.subscribe(updateConflict));
     renderScene(); renderReview(); updateStatus(); updateRecovery(); updateConflict();
-    return () => { destroyProject(); destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
+    return () => { destroySignature(); destroyProject(); destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
 }

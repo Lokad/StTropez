@@ -4,9 +4,12 @@ import { provideHover, validateHoverInput } from "./hover.ts";
 import { validateNavigationInput } from "./navigation.ts";
 import { ProviderProject, projectProtocolVersion } from "./project.ts";
 import { validateProjectCommand } from "./project-commands.ts";
+import { validateSignatureInput } from "./signature.ts";
+import type { SignatureInput, SignatureResult } from "./signature.ts";
 
 let project: ProviderProject | undefined, navigationFault: "malformed" | "failure" | undefined;
 let loseCommandAcknowledgement = false;
+let signatureFault: SignatureInput["fault"];
 
 // Host worker entry. Owners control their lanes; deferred replies exercise stale-result rejection.
 globalThis.addEventListener("message", (event: MessageEvent<string>) => {
@@ -15,7 +18,14 @@ globalThis.addEventListener("message", (event: MessageEvent<string>) => {
         try {
             if (!project) { if (decoded.operation !== "project-hello" || !("epoch" in decoded) || typeof decoded.epoch !== "number") throw new Error("Initialize the provider."); project = new ProviderProject(decoded.epoch); }
             const reply = project.handle(decoded);
-            if (decoded.operation === "project-command" && "input" in decoded) {
+            if (decoded.operation === "project-signature" && "input" in decoded) {
+                const input = validateSignatureInput(decoded.input); signatureFault = input.fault;
+                setTimeout(() => { if (input.fault === "failure") throw new Error("Synthetic signature failure"); globalThis.postMessage(JSON.stringify(reply)); }, input.delay);
+            } else if (reply.operation === "project-signature-result") {
+                const result = reply.result as SignatureResult;
+                globalThis.postMessage(JSON.stringify(signatureFault === "malformed" ? { ...reply, result: { ...result, signatures: [...result.signatures, { label: "invalid", documentation: "", parameters: [{ from: -1, to: 1, documentation: "" }] }] } }
+                    : signatureFault === "markup" && result.signatures.length ? { ...reply, result: { ...result, signatures: result.signatures.map((s, i) => i ? s : { ...s, documentation: '<img src="invalid" onerror="window.signatureExecuted = true">' }) } } : reply));
+            } else if (decoded.operation === "project-command" && "input" in decoded) {
                 const input = validateProjectCommand(decoded.input); loseCommandAcknowledgement = input.fault === "ack";
                 setTimeout(() => {
                     if (input.fault === "failure") throw new Error("Synthetic project command failure");
