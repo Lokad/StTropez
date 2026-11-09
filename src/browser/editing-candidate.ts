@@ -414,9 +414,9 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     function beginNavigation(prepare: (capture: CommandCapture, style: string, inline: boolean) => void, canInline?: (capture: CommandCapture) => boolean): void {
         cancelWord(); navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
         navigationTurn(() => {
-            const capture = commandCapture(false), style = navigationStyle(), job = { capture, purpose: "grapheme" as const, release: () => {} };
+            const capture = commandCapture(false), job = { capture, purpose: "grapheme" as const, release: () => {} };
             if (!validCommand(capture)) return; rangeCommand = job;
-            const inline = canInline?.(capture) ?? false;
+            const inline = canInline?.(capture) ?? false, style = navigationStyle();
             const initialize = () => {
                 if (rangeCommand !== job) return;
                 if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
@@ -438,8 +438,25 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             if (line) lines.add(line - 1); if (line + 1 < buffer.lineCount) lines.add(line + 1);
             if (row) lines.add(folds.lineAt(row - 1)); if (row + 1 < folds.visibleLineCount) lines.add(folds.lineAt(row + 1));
         }
+        return shortRows(buffer, lines);
+    }
+    function shortRows(buffer: TextBuffer, lines: Iterable<number>): boolean {
         for (const line of lines) if ((line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length) - buffer.offsetAt(line) > 514) return false;
         return true;
+    }
+    function verticalCount(page: boolean): number {
+        const state = viewport.snapshot(); return page ? Math.max(1, Math.floor(state.height / state.lineHeight) - 1) : 1;
+    }
+    function shortVertical(capture: CommandCapture, direction: -1 | 1, page: boolean): boolean {
+        if (capture.selectionSet.ranges.length > 32) return false;
+        // Page destinations use current viewport dimensions, including a pending resize.
+        viewport.flush();
+        const buffer = capture.buffer, folds = view.folding.getSnapshot().index, count = verticalCount(page), lines = new Set<number>();
+        for (const range of capture.selectionSet.ranges) {
+            const line = buffer.lineAt(range.head), row = folds.rowAt(line);
+            lines.add(line); lines.add(folds.lineAt(Math.max(0, Math.min(folds.visibleLineCount - 1, row + direction * count))));
+        }
+        return shortRows(buffer, lines);
     }
     function boundaryOffset(buffer: TextBuffer, head: number, key: string, documentBoundary: boolean): number {
         if (documentBoundary) return key === "Home" ? 0 : buffer.length;
@@ -490,14 +507,14 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         }, shortHorizontal);
     }
     function vertical(direction: -1 | 1, page: boolean, extend: boolean): void {
-        beginNavigation((capture, style) => {
+        beginNavigation((capture, style, inline) => {
         const began = win.performance.now(); viewport.flush();
         const buffer = capture.buffer, selected = capture.selection;
         if (!viewport.coordsAt(selected.head, selected.headAffinity)) { viewport.revealOffset(selected.head); viewport.flush(); }
         if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
         const state = viewport.snapshot(), layout = navigationLayout(), foldIndex = view.folding.getSnapshot().index;
         const prior = preferred?.selections === capture.selectionSet && preferred.revision === capture.revision && preferred.layout === layout ? preferred.columns : undefined;
-        const columns: (number | undefined)[] = [], count = page ? Math.max(1, Math.floor(state.height / state.lineHeight) - 1) : 1;
+        const columns: (number | undefined)[] = [], count = verticalCount(page);
         navigationPreparationMs = win.performance.now() - began;
         let index = 0, pageDelta = 0;
         eachRange(capture, "grapheme", (range, done) => {
@@ -524,11 +541,12 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 return columns[ownerIndex];
             });
             preferred = { selections, revision: capture.revision, layout, columns: nextColumns };
-        }, { validLayout: () => navigationLayout() === layout, navigation: true, ...(capture.selectionSet.ranges.length > 1 ? {
+        }, { validLayout: () => navigationLayout() === layout, navigation: true, inline, ...(capture.selectionSet.ranges.length > 1 ? {
+            ...(inline ? { batchSize: 16 } : {}),
             prepare: (ranges: readonly Selection[]) => viewport.prepareNavigationRows([...new Set(ranges.flatMap(range => {
                 const line = buffer.lineAt(range.head), row = foldIndex.rowAt(line); return [line, foldIndex.lineAt(Math.max(0, Math.min(foldIndex.visibleLineCount - 1, row + direction * count)))];
             }))]) } : {}) });
-        });
+        }, capture => shortVertical(capture, direction, page));
     }
     function indent(outdent: boolean): void {
         if (disposed || composing || input.disabled || input.readOnly) return;

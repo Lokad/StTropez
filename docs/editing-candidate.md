@@ -120,6 +120,11 @@ still uses batches of 16 ranges; complete short contexts use the existing graphe
 The bounded path includes preparation in the key handler. It has no elapsed-time guarantee.
 Long contextual rows and larger sets retain cooperative cancellation; their command/input
 ordering remains a pilot gap. Inner preparation counters are not complete handler or interaction latency.
+Up/Down and PageUp/PageDown likewise finish at most 32 ranges before subsequent input when
+their current and destination rows meet that short-row bound. Page destinations use current
+viewport dimensions; native row preparation uses batches of 16 ranges. Preferred columns,
+folded visible rows and Shift anchors keep their existing semantics. Longer contexts and larger
+sets still yield; the bounded paths do not settle general ordering of input after pending commands.
 Non-cancellable native word deletion requires a matching captured `beforeinput` target; stale,
 unmatched or capability-blocked attempts emit recovery rather than applying a bounded-context deletion to the model.
 
