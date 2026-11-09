@@ -390,6 +390,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         let to = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) - 1 : buffer.length;
         if (line + 1 < buffer.lineCount && to > from && buffer.slice(to - 1, to) === "\r") to--;
         if (to === from) return;
+        const command = { capture, purpose: "word" as const, release: () => {} }; rangeCommand = command;
         wordScanSteps = 0; maxWordScanStepMs = 0; graphemeScanSteps = 0; maxGraphemeScanStepMs = 0;
         const scan = (start: number, direction: -1 | 1, done: (offset: number) => void) => {
             if (!validCommand(capture)) return;
@@ -414,11 +415,13 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             const width = buffer.slice(probe, Math.min(to, probe + 2)).codePointAt(0)! > 0xffff ? 2 : 1;
             scan(Math.min(to, probe + width), -1, left => scan(probe, 1, right => {
                 withGraphemes(capture, left, -1, "word-selection", low => withGraphemes(capture, right, 1, "word-selection", high => {
-                    if (!validCommand(capture)) return;
+                    if (rangeCommand !== command || !validCommand(capture)) return;
                     const range = { anchor: Math.max(from, low.floor), head: Math.min(to, high.ceil) };
+                    rangeCommand = undefined; completeCaptured(capture, () => {
                     if (add) view.setSelections(capture.revision, [...capture.selectionSet.ranges, range], capture.selectionSet.ranges.length);
                     else view.setSelection(capture.revision, range);
-                    refresh();
+                    refresh(); return true;
+                    });
                 }));
             }));
         });

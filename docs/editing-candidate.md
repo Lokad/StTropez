@@ -77,8 +77,9 @@ context or an instruction to apply it at offset zero. No automatic retargeting o
 allows at most 256 actions and 65,536 UTF-16 units; overflow is recovered intact. The evaluation
 hosts retain recovery content and require Save, Run and new proposal requests to be retried after
 pending input settles, so those commands never capture a source before accepted typing lands.
-Pointer word-selection scans remain a separately captured command; native IME and clipboard
-device qualification remain open.
+Yielding double-click word selection uses the same ordered capture. Typing replaces its completed
+word range, and undo restores that exact range; cancellation retains unapplied text. Native IME
+and clipboard device qualification remain open.
 
 Snapshots expose `pendingInput` and `queuedInputUnits` alongside command readiness. Measure
 `lastBeforeInputMs`, `lastInputMs` and `lastKeydownMs` as separate handler spans. A cancelled
