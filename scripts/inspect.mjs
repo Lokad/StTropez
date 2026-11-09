@@ -121,6 +121,14 @@ try {
         await harness.page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return s.bindings.comparison.status === "ready" && !s.bindings.comparison.workingViewport.pending && !s.bindings.comparison.referenceViewport.pending; });
         await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-commands.png`, fullPage: true });
         await writeFile(`artifacts/inspect/host-${mode}-commands.json`, JSON.stringify({ state: await harness.page.evaluate(() => window.hostFixture.snapshot()), syntheticClipboard: { copied, pastedUnits: 4 }, physicalClipboardQualified: false }, null, 2));
+        await input.focus(); await input.press("Control+Home"); await input.press("ArrowRight"); await input.press("ArrowRight");
+        await harness.page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return s.bindings.views.every(v => !v.metrics.pendingCaret && !v.metrics.viewport.pending); });
+        await harness.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        await input.press("Control+k"); await input.press("Control+i");
+        const popup = harness.page.getByRole("tooltip"); await popup.filter({ hasText: "Declares a constant binding." }).waitFor();
+        await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-hover.png` });
+        if (!await popup.isVisible() || !await input.evaluate(node => node.ownerDocument.activeElement === node)) throw new Error("Hover inspection lost presentation or source focus.");
+        await writeFile(`artifacts/inspect/host-${mode}-hover.json`, JSON.stringify(await harness.page.evaluate(() => window.hostFixture.snapshot()), null, 2));
         await harness.page.evaluate(() => window.hostFixture.dispose());
     }
     await harness.page.goto(new URL("/viewport/", harness.page.url()).href);

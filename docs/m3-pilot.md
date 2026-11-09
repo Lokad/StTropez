@@ -31,6 +31,11 @@ After `npm ci` and `npm run dev`, open the
 Both expose the same workflow. Use `?editor=native` for the native source-input baseline;
 the comparison working pane always uses the bounded candidate.
 
+The native baseline renders whole values. Its optional weak projection cache may be rebuilt
+after history navigation, causing another complete export. Native baseline export counts are
+diagnostic; the pilot's zero ordinary-export gate applies to the bounded candidate. Text,
+selection, history and save behavior remain checked for both adapters.
+
 The services are local, deferred fixtures. **Finish save**, **Deliver proposal** and
 **Finish remote review** explicitly complete a pending response so that you can keep typing
 while it is in flight. **Finish save** trims trailing whitespace in its canonical reply.
@@ -48,6 +53,12 @@ while it is in flight. **Finish save** trims trailing whitespace in its canonica
    Ctrl+F opens source find. **Match case** starts checked; clear it for Unicode caseless
    literals and combine it with **Whole word**. These choices follow the working view and
    survive remount; replacement text remains literal.
+   Pause the pointer over a symbol, or press Ctrl+K then Ctrl+I in a candidate source view,
+   to read local symbol information. The comparison working view supports the same command.
+   Escape dismisses information before changing selections; typing also dismisses it.
+   Pointer inspection keeps the current host focus. Results are plain text from a bounded local
+   worker fixture, limited to 4,096 units of context and names up to 256 units. This does not
+   qualify a general language service or screen-reader announcement behavior.
 2. Choose **Open source review**. Edit the working pane, then use **Next change** and
    **Use baseline**. Undo the reversion to restore your correction. The reference stays
    immutable while the working pane shares the source document and history.

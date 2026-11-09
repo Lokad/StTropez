@@ -34,16 +34,21 @@ try {
             const stage = async (name, action) => { activeCase.stage = name; const began = await clock(); await action(); await ready(); stages[name] = await clock() - began; };
             await stage("proposal", async () => { await click("Associate agent"); await click("Request proposal"); await page.evaluate(text => window.hostFixture.deliverProposal(text), proposal); });
             await input.press("Control+Home"); for (let i = 0; i < 8; i++) await input.press("ArrowRight"); await ready();
+            await stage("capturedHover", async () => { await input.press("Control+k"); await input.press("Control+i");
+                await page.getByRole("tooltip").filter({ hasText: "Symbol in this source." }).waitFor(); });
             await input.evaluate(node => {
                 node.addEventListener("beforeinput", () => { window.hostFixture.requestProvider(); }, { once: true });
             });
             const preTyping = await snapshot();
             await stage("typingWithProviderRequest", async () => { await input.pressSequentially("z"); });
             const typed = await snapshot(), metrics = typed.bindings.views.find(v => v.id === "primary").metrics;
+            assert.equal(typed.bindings.hover.presentation.visible, false); assert.equal(typed.bindings.hover.layoutObserver, false);
+            const hover = typed.bindings.hover.sessions.find(s => s.id === "primary").counters;
+            assert.equal(hover.posted, 1); assert.equal(hover.received, 1); assert.ok(hover.postedUnits <= 4096);
             assert.equal(typed.source.revision, preTyping.source.revision + 1); assert.equal(typed.source.length, proposal.length + 1);
             assert.equal(typed.bindings.views.find(v => v.id === "primary").selection.head, 9);
             await page.waitForFunction(() => window.hostFixture.snapshot().bindings.language.sessions.find(s => s.id === "primary").provider.stale === 1);
-            assert.equal(await page.getByRole("option").count(), 0);
+            assert.equal(await page.getByRole("listbox", { name: "Completion choices", exact: true }).getByRole("option").count(), 0);
             await stage("freshCompletion", async () => { await input.press("Control+z"); await input.press("Control+Space"); await page.getByRole("option", { name: "sample", exact: true }).waitFor(); await input.press("Alt+Enter"); });
             await stage("keyboardFind", async () => { await input.press("Control+f"); const field = page.getByRole("textbox", { name: "Find source", exact: true });
                 await field.fill("TODO"); await page.waitForFunction(() => document.querySelector('[aria-label="Find status"]').textContent.includes("· ready")); await field.press("Escape"); });
@@ -66,7 +71,7 @@ try {
             await page.evaluate(() => window.hostFixture.dispose()); const disposed = await snapshot();
             assert.equal(disposed.hostSubscriptions, 0); assert.equal(disposed.diagnostics.leases, 0); assert.equal(disposed.diagnostics.views, 0); assert.equal(disposed.diagnostics.subscriptions, 0);
             if (iteration >= warmup) samples.push({ workflowAutomationProxyMs, stages, typingInputHandlerMs: metrics.lastInputMs,
-                provider, backgroundUpdates: after.activity.background - before.activity.background, sourceLength: after.source.length, exportsBeforeNextRequest, exportsAfterNextRequest: after.source.exports });
+                provider, hover, backgroundUpdates: after.activity.background - before.activity.background, sourceLength: after.source.length, exportsBeforeNextRequest, exportsAfterNextRequest: after.source.exports });
         }
         cases.push({ host, corpus: corpusId, length: original.length, warmup, measured, samples,
             workflowAutomationProxyMs: distribution(samples.map(s => s.workflowAutomationProxyMs)), inputHandlerMs: distribution(samples.map(s => s.typingInputHandlerMs)),
@@ -75,7 +80,7 @@ try {
     }
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
     const report = { schemaVersion: 1, created: new Date().toISOString(), source, smoke, environment: { ...environment(), browser: harness.browser.version() }, cases, errors: harness.errors,
-        boundaries: "Fresh page per workflow; setup/mount and full text/reference oracles outside the total clock. Both candidate hosts, 20Hz traffic, three working views plus immutable comparison. Actual typing starts a bounded real-worker request in the same beforeinput task, so its reply must follow the edit and be rejected. A fresh keyboard completion, search/cancel, save with later typing, acknowledgement failure/retry and next request follow. No service delay imposed. Input-event handler elapsed time is a separate adapter snapshot, excluding beforeinput/provider posting. It includes synchronous work inside that span and does not measure process CPU time. Stage and whole workflow automation proxies include controls, transport, asynchronous worker/comparison/caret/viewport settlement and two frames. They are not browser-input-to-ready point timings or physical display latency. Existing host-input benchmark retains its separate point/burst clocks and targets. Native IME/clipboard/AT remain unqualified." };
+        boundaries: "Fresh page per workflow; setup/mount and full text/reference oracles outside the total clock. Both candidate hosts, 20Hz traffic, three working views plus immutable comparison. A captured safe-text hover uses an independent real-worker lane and is ready before actual typing. Typing dismisses the popup and releases its layout observer in beforeinput, then starts a bounded completion worker request in the same beforeinput task, so its reply must follow the edit and be rejected. A fresh keyboard completion, search/cancel, save with later typing, acknowledgement failure/retry and next request follow. No service delay imposed. Input-event handler elapsed time is a separate adapter snapshot, excluding beforeinput/provider posting. It includes synchronous work inside that span and does not measure process CPU time. Stage and whole workflow automation proxies include controls, transport, asynchronous worker/comparison/caret/viewport settlement and two frames. They are not browser-input-to-ready point timings or physical display latency. Existing host-input benchmark retains its separate point/burst clocks and targets. Native IME/clipboard/AT remain unqualified." };
     await mkdir("artifacts/bench/host-language", { recursive: true }); await writeFile(`artifacts/bench/host-language/${smoke ? "smoke" : "latest"}.json`, JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ cases: cases.length, summary: cases.map(c => ({ host: c.host, corpus: c.corpus, handlerP95: c.inputHandlerMs.p95, workflowP95: c.workflowAutomationProxyMs.p95 })) }, null, 2));
 } catch (error) {

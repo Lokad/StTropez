@@ -3,6 +3,7 @@ import type { HostController, Layout } from "./controller.ts";
 import type { ViewBindings } from "./bindings.ts";
 import type { TabSnapshot } from "../../src/index.ts";
 import { mountLanguagePanel } from "./language-panel.ts";
+import { mountHoverPanel } from "./hover-panel.ts";
 import { mountVariantPanel } from "./variant-panel.ts";
 
 export function mountPlain(host: HTMLElement, controller: HostController, bindings: ViewBindings): () => void {
@@ -33,6 +34,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const language = document.createElement("section"); language.setAttribute("aria-label", "Language and find tools"); language.className = "host-language";
     host.replaceChildren(nav, status, recovery, conflict, scene, review, language, modal);
     const destroyLanguage = mountLanguagePanel(language, bindings.language);
+    const destroyHover = mountHoverPanel(host, bindings.hover);
     const updateStatus = () => {
         const text = statusText(controller); if (status.textContent === text) return;
         // Native form reset can replace an output's children; use its current text node.
@@ -96,5 +98,5 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         controller.saveConflict.subscribe(updateConflict), controller.source.metadata.subscribe(updateConflict),
         controller.layout.subscribe(updateConflict), controller.comparisonReference.subscribe(updateConflict));
     renderScene(); renderReview(); updateStatus(); updateRecovery(); updateConflict();
-    return () => { destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
+    return () => { destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
 }

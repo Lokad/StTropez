@@ -4,6 +4,7 @@ import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, Documen
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../editing/presentation.ts";
 import { HostLanguageTools } from "./language.ts";
+import { HostHoverTools } from "./hover.ts";
 
 export type HostEditor = "native" | "candidate";
 type BoundEditor = MountedEditor & Readonly<{ metrics: () => null | ReturnType<EditingCandidate["snapshot"]> & Readonly<{ viewport: ViewportSnapshot }> }>;
@@ -20,6 +21,7 @@ export class ViewBindings {
     private destroys = 0;
     private review: TextComparison | undefined;
     readonly language: HostLanguageTools;
+    readonly hover: HostHoverTools;
     private detachReviewLanguage: (() => void) | undefined;
     private referenceState: Readonly<{ baseline: ComparisonBaseline; state: ViewState }> | undefined;
     private reviewStatus: HTMLOutputElement | undefined;
@@ -54,7 +56,8 @@ export class ViewBindings {
         this.review = mountTextComparison(host, this.controller.workspace, this.controller.viewTab("primary"),
             baseline, { ariaLabel: "Source review", view, workingDecorate: presentation.decorate, baselineDecorate: referencePresentation.decorate });
         const detachLanguage = this.language.attach("comparison", this.controller.viewTab("primary"), this.review.working, presentation);
-        this.detachReviewLanguage = () => { detachLanguage(); referencePresentation.clear(); };
+        const detachHover = this.hover.attach("comparison", this.controller.viewTab("primary"), this.review.working);
+        this.detachReviewLanguage = () => { detachHover(); detachLanguage(); referencePresentation.clear(); };
         const state = this.states.get("comparison")?.get(view.documentId);
         if (state) this.review.working.restoreView(this.restoreState(state, view));
         if (this.referenceState?.baseline.buffer === baseline.buffer && this.referenceState.baseline.version === baseline.version)
@@ -134,7 +137,7 @@ export class ViewBindings {
         return view?.setSelections(revision, ranges, primary) ?? false;
     }
     constructor(controller: HostController, editor: HostEditor = "native") {
-        this.controller = controller; this.editor = editor; this.language = new HostLanguageTools(controller.workspace);
+        this.controller = controller; this.editor = editor; this.language = new HostLanguageTools(controller.workspace); this.hover = new HostHoverTools(controller.workspace);
         this.primary = this.ref("primary", "Primary source");
         this.secondary = this.ref("secondary", "Secondary source");
     }
@@ -183,6 +186,7 @@ export class ViewBindings {
             const presentation = new EditingPresentation();
             const candidate = this.editor === "candidate" ? mountEditingCandidate(host, workspace, tabId, { ariaLabel, view, decorate: presentation.decorate }) : undefined;
             const detachLanguage = candidate ? this.language.attach(id, tabId, candidate, presentation) : undefined;
+            const detachHover = candidate ? this.hover.attach(id, tabId, candidate) : undefined;
             const mounted: BoundEditor = candidate ? { element: candidate.input, view, captureView: candidate.captureView,
                 restoreView: candidate.restoreView, destroy: candidate.destroy,
                 metrics: () => ({ ...candidate.snapshot(), viewport: candidate.viewport.snapshot() }) }
@@ -190,7 +194,7 @@ export class ViewBindings {
             const listeners = new AbortController();
             mounted.element.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
             this.bindSaveShortcut(mounted.element, tabId, () => candidate?.snapshot().composing ?? false, listeners.signal);
-            const editor: BoundEditor = { ...mounted, destroy: () => { try { detachLanguage?.(); mounted.destroy(); } finally { listeners.abort(); } } };
+            const editor: BoundEditor = { ...mounted, destroy: () => { try { detachHover?.(); detachLanguage?.(); mounted.destroy(); } finally { listeners.abort(); } } };
             const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView(this.restoreState(state, view));
             this.mounted.set(id, { editor, documentId }); this.mounts++;
         };
@@ -207,7 +211,7 @@ export class ViewBindings {
     }
     debug() {
         const comparison = this.review?.controller.getSnapshot();
-        return { editor: this.editor, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size, language: this.language.debug(),
+        return { editor: this.editor, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size, language: this.language.debug(), hover: this.hover.debug(),
         comparison: comparison ? { status: comparison.status, generation: comparison.generation, workingRevision: comparison.working?.revision,
             referenceIsWorkingBuffer: comparison.baseline !== null && comparison.baseline.buffer === comparison.working?.buffer,
             progress: comparison.progress && { work: comparison.progress.work, readUnits: comparison.progress.readUnits,

@@ -94,8 +94,14 @@ function LanguageTools() {
         <div>{languageActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
     </section>;
 }
+function SymbolInfo() {
+    const state = useObserved(bindings.hover.state);
+    return <div className="host-symbol-info" id={state.id} role="tooltip" hidden={!state.visible} style={{ left: state.left, top: state.top }}
+        onPointerEnter={bindings.hover.enterPopup} onPointerLeave={bindings.hover.leavePopup} onPointerDown={event => event.preventDefault()}>
+        <pre>{state.text || state.message}</pre><span>Escape dismisses symbol information.</span></div>;
+}
 function App() {
-    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /></>;
+    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><SymbolInfo /></>;
 }
 let root: Root | undefined;
 const unmount = () => { root?.unmount(); root = undefined; };

@@ -210,6 +210,12 @@ from the find fields cancels and returns focus. Search and replacement reuse the
 cooperative controller and shared history. These keyboard routes are automated pilot evidence;
 native IME and assistive-technology qualification remain separate.
 
+Pause over a source symbol, or use Ctrl+K then Ctrl+I, for captured plain-text information.
+This read-only command has its own worker lane and explicit view target, including comparison
+working views; it does not retarget completion or steal host form focus. Escape dismisses the
+popup before changing multiple selections. Typing cancels it and retains normal shared history.
+See [provider bounds and lifecycle](providers.md) for the local fixture's limits.
+
 **Whole word** restricts literal matches using the code-word boundary policy in
 [search](search.md). The option survives source/comparison command routing and remount. Current
 replacement requires an indexed whole-word match; selecting a substring cannot bypass the
@@ -232,7 +238,8 @@ example controller is host code; the package supplies editor and comparison prim
 
 `bench:host-language` records six repeated normal/distinct-100k-line/long-line workflows across
 both candidate hosts, with background traffic and all review views mounted. A real worker
-request is posted in the typing event's `beforeinput` task so the subsequent text change must
+hover is ready before typing; its popup/layout observation is released in `beforeinput`. A completion
+request is posted in that same task so the subsequent text change must
 make the reply stale. Fresh completion, keyboard search, save with later correction,
 acknowledgement failure/retry and the next request follow. Each stage and whole workflow is an
 automation proxy including controls and asynchronous settlement; the report keeps the typing

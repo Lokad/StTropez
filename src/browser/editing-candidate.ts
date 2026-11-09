@@ -12,7 +12,7 @@ import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
 
 export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport;
-    focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
+    focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void; describe: (id: string) => () => void;
     snapshot: () => Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; pendingCaret: boolean; pendingDragScroll: boolean; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; composing: boolean; pendingWord: boolean; wordScanSteps: number; maxWordScanStepMs: number; pendingGrapheme: boolean; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number; disposed: boolean }>;
     destroy: () => void }>;
 let nextMount = 0;
@@ -44,6 +44,18 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     secondaryCarets.setAttribute("aria-hidden", "true"); root.append(input, caret, secondaryCarets, help);
     let revision = workspace.document(documentId).revision, context: InputContext = inputContext(workspace.document(documentId).buffer, view.getSnapshot().selection);
     let disposed = false, composing = false, selecting = false, committing = false, escaped = false;
+    const descriptions = new Map<string, number>();
+    const renderDescriptions = () => input.setAttribute("aria-describedby", [help.id, ...[...descriptions.keys()].filter(id => id !== help.id)].join(" "));
+    const describe = (id: string): (() => void) => {
+        if (typeof id !== "string" || !id || /\s/.test(id)) throw new TypeError("Expected one description element ID.");
+        if (disposed) return () => {};
+        descriptions.set(id, (descriptions.get(id) ?? 0) + 1); renderDescriptions(); let active = true;
+        return () => {
+            if (!active || disposed) return; active = false;
+            const count = descriptions.get(id)!; if (count === 1) descriptions.delete(id); else descriptions.set(id, count - 1);
+            renderDescriptions();
+        };
+    };
     let frame: number | undefined, commits = 0, conflicts = 0, serial = 0, inputEvents = 0, lastInputMs = 0;
     let keydownEvents = 0, lastKeydownMs = 0;
     let navigationTurns = 0, navigationPreparationMs = 0, maxNavigationTurnMs = 0, navigationWorkMs = 0, navigationDepth = 0;
@@ -693,7 +705,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     root.addEventListener("sttropez-render", scheduleCaret, { signal: listeners.signal });
     const subscriptions = [workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(refresh), resource.metadata.subscribe(refresh), workspace.tabState.subscribe(refresh)];
     refresh();
-    return Object.freeze({ element: root, input, view, viewport, focus,
+    return Object.freeze({ element: root, input, view, viewport, focus, describe,
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state: ViewState) => { viewport.restoreView(state); refresh(); },
         snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs, pendingCaret: frame !== undefined,
@@ -705,6 +717,6 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             composing = false; stopDrag(); textDrag.destroy();
             if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
             cancelCommandTimers();
-            listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); input.value = ""; caretNodes.length = 0; secondaryCarets.replaceChildren(); viewport.destroy(); if (!options.view) view.dispose();
+            listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); descriptions.clear(); input.value = ""; caretNodes.length = 0; secondaryCarets.replaceChildren(); viewport.destroy(); if (!options.view) view.dispose();
         } });
 }

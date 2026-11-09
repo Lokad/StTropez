@@ -327,9 +327,29 @@ export async function proveCompiledTextDrag(browser, baseUrl) {
         await page.getByRole("textbox", { name: "Comparison working source", exact: true }).press("Control+z"); await ready(); assert.equal((await read()).text, caseText);
         await primary.press("Control+Shift+z"); await ready(); assert.equal((await read()).text, caseChanged.text); assert.equal((await read()).state.source.exports, 0);
         const caseFind = { compiledOptions: true, unicodeRawSpans: true, literalReplacement: true, sharedUndoRedo: true, zeroCompleteExports: true };
+        const hoverText = "const captured = 1;";
+        await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]);
+            f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: 2, head: 2 }]); }, hoverText); await ready();
+        const working = page.getByRole("textbox", { name: "Comparison working source", exact: true }); await working.focus(); await ready();
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const beforeHover = await read(); await working.press("Control+k"); await working.press("Control+i");
+        const popup = page.getByRole("tooltip"); await popup.filter({ hasText: "Declares a constant binding." }).waitFor();
+        const popupId = await popup.getAttribute("id"); assert.ok((await working.getAttribute("aria-describedby")).split(" ").includes(popupId));
+        assert.equal(await working.evaluate(node => node.ownerDocument.activeElement === node), true);
+        const inspected = await read(); assert.equal(inspected.state.source.revision, beforeHover.state.source.revision); assert.deepEqual(inspected.state.history, beforeHover.state.history);
+        await working.press("Escape"); await popup.waitFor({ state: "hidden" });
+        await page.evaluate(() => window.hostFixture.faultHoverNext("comparison", "markup")); await working.press("Control+k"); await working.press("Control+i");
+        await popup.filter({ hasText: "<img" }).waitFor(); assert.equal(await popup.locator("img,script").count(), 0);
+        assert.equal(await page.evaluate(() => window.hoverExecuted), undefined);
+        await working.pressSequentially("X"); await ready(); await popup.waitFor({ state: "hidden" }); const typedHover = await read();
+        assert.equal(typedHover.text, "coXnst captured = 1;"); assert.equal(typedHover.state.history.undoDepth, beforeHover.state.history.undoDepth + 1);
+        await primary.press("Control+z"); await ready(); assert.equal((await read()).text, hoverText); assert.equal((await read()).state.source.exports, 0);
+        const hover = { actualWorker: page.workers().some(worker => worker.url().endsWith("/provider-worker.js")), compiledDescription: true,
+            comparisonCapture: true, plainText: true, focusAndHistory: true, typingDismisses: true, zeroCompleteExports: true };
+        assert.equal(hover.actualWorker, true);
         await page.evaluate(() => window.hostFixture.dispose()); const disposed = await page.evaluate(() => window.hostFixture.snapshot());
         for (const key of ["views", "leases", "subscriptions"]) assert.equal(disposed.diagnostics[key], 0);
-        return { source: "restored-compiled-assets", browser: browser.browserType().name(), audit, moveAndLinkedHistoryQualified: !refused, tokenlessRefusalQualified: refused, variantDiscard, caseFind,
+        return { source: "restored-compiled-assets", browser: browser.browserType().name(), audit, moveAndLinkedHistoryQualified: !refused, tokenlessRefusalQualified: refused, variantDiscard, caseFind, hover,
             nativeMove: refused ? "unverified; automated transport strips the internal token" : "automated gesture verified; OS/application transfers unverified",
             completeSetsRestored: !refused, zeroCompleteExports: true, disposed: { views: 0, leases: 0, subscriptions: 0 }, errors, note: "One qualitative fresh-page proof, outside all existing point/workflow clocks. No latency or native-device claim." };
     } finally { await page.close(); }

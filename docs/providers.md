@@ -56,3 +56,22 @@ requests and truncation. `inspect` records completion and decorated search/diagn
 The restored package proof verifies the generic presentation callback and find API; the worker
 remains host-owned. Full language transport/synchronization, richer operations, large lexical
 invalidation and native accessibility announcements remain separate qualification work.
+
+The review hosts also offer captured symbol information through a separate lazy worker lane.
+Pointer inspection uses the existing viewport hit test without moving focus; Ctrl+K then Ctrl+I
+inspects the captured caret, including in the comparison working view. Requests carry the exact
+revision, complete selection set, tab generation and view identity. A bounded 4,096-unit window
+aligns supplementary characters; a word crossing that window or exceeding 256 units has no offer.
+The local fixture supplies short identifier summaries, without a parser or application service.
+This deliberately reuses platform workers, the existing transport and editor geometry instead of
+adding a language client dependency. Signatures, definition/references, rename, actions and other
+language workflows remain separate required work.
+
+The complete response is validated before publication, then rendered only as text. Escape,
+typing, composition, changed selection/revision and unmount cancel the captured presentation;
+late replies cannot replace a newer view's offer. Pending work holds a lease and timeout.
+Observation exists only while a request or offer is active. The popup follows host layout changes
+and retains pointer access without taking focus. `EditingCandidate.describe(id)` registers a
+host description ID alongside editor-owned help; its idempotent release preserves other owners.
+The browser owns the attribute. DOM description wiring and keyboard tests do not qualify native
+screen-reader announcements or complete accessibility support.
