@@ -1,27 +1,28 @@
 import { provide } from "./provider.ts";
 import type { ProviderInput } from "./provider.ts";
 import { provideHover, validateHoverInput } from "./hover.ts";
-import { NavigationSession, validateNavigationInput } from "./navigation.ts";
+import { validateNavigationInput } from "./navigation.ts";
+import { ProviderProject, projectProtocolVersion } from "./project.ts";
 
-let navigation: NavigationSession | undefined, navigationFault: "malformed" | "failure" | undefined;
+let project: ProviderProject | undefined, navigationFault: "malformed" | "failure" | undefined;
 
-// Dedicated real worker. Deliberately ignores cancellation to exercise late-result rejection.
+// Host worker entry. Owners control their lanes; deferred replies exercise stale-result rejection.
 globalThis.addEventListener("message", (event: MessageEvent<string>) => {
     const decoded: unknown = JSON.parse(event.data);
-    if (typeof decoded === "object" && decoded !== null && "operation" in decoded && typeof decoded.operation === "string" && decoded.operation.startsWith("navigation-")) {
-        const id = "id" in decoded ? decoded.id : 0;
-        if (decoded.operation === "navigation-start") {
-            try {
-                const input = validateNavigationInput(decoded); navigation = new NavigationSession(input); navigationFault = input.fault;
-                setTimeout(() => { if (input.fault === "failure") throw new Error("Synthetic navigation failure"); globalThis.postMessage(JSON.stringify({ operation: "navigation-progress", id: input.id, received: 0 })); }, input.delay);
-            } catch { globalThis.postMessage(JSON.stringify({ operation: "navigation-error", id })); }
-        } else {
-            try {
-                if (!navigation) throw new Error("Navigation was not started.");
-                const reply = navigation.handle(decoded);
-                globalThis.postMessage(JSON.stringify(navigationFault === "malformed" && reply.operation === "navigation-result" ? { ...reply, locations: [...reply.locations as unknown[], { document: "unknown", revision: 0, from: 0, to: 1, declaration: true }] } : reply));
-            } catch { globalThis.postMessage(JSON.stringify({ operation: "navigation-error", id })); }
-        }
+    if (typeof decoded === "object" && decoded !== null && "operation" in decoded && typeof decoded.operation === "string" && decoded.operation.startsWith("project-")) {
+        try {
+            if (!project) { if (decoded.operation !== "project-hello" || !("epoch" in decoded) || typeof decoded.epoch !== "number") throw new Error("Initialize the provider."); project = new ProviderProject(decoded.epoch); }
+            const reply = project.handle(decoded);
+            if (decoded.operation === "project-query" && "input" in decoded) {
+                const input = validateNavigationInput(decoded.input); navigationFault = input.fault;
+                setTimeout(() => { if (input.fault === "failure") throw new Error("Synthetic navigation failure"); globalThis.postMessage(JSON.stringify(reply)); }, input.delay);
+            } else {
+                const result = reply.result as Readonly<{ locations: readonly unknown[] }> | undefined;
+                globalThis.postMessage(JSON.stringify(navigationFault === "malformed" && reply.operation === "project-query-result" && result
+                    ? { ...reply, result: { ...result, locations: [...result.locations, { document: "unknown", revision: 0, from: 0, to: 1, declaration: true }] } } : reply));
+            }
+        } catch { globalThis.postMessage(JSON.stringify({ version: projectProtocolVersion, epoch: project?.epoch ?? 0,
+            sequence: "sequence" in decoded ? decoded.sequence : 0, operation: "project-error" })); }
         return;
     }
     if (typeof decoded === "object" && decoded !== null && "operation" in decoded && decoded.operation === "hover") {

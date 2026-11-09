@@ -2,13 +2,15 @@ import type { HostNavigationTools, NavigationSnapshot } from "./navigation.ts";
 export function navigationActions(tools: HostNavigationTools) {
     const state = tools.state.getSnapshot(), pending = state.status === "pending";
     return [
-        { label: "Find definition", invoke: tools.findDefinition, disabled: !state.available || pending },
-        { label: "Find references", invoke: tools.findReferences, disabled: !state.available || pending },
+        { label: "Find definition", invoke: tools.findDefinition, disabled: !state.available || pending || state.disconnected },
+        { label: "Find references", invoke: tools.findReferences, disabled: !state.available || pending || state.disconnected },
         { label: "Cancel symbol navigation", invoke: tools.cancel, disabled: state.token === null },
         { label: "Return to navigation origin", invoke: tools.returnToOrigin, disabled: !state.canReturn },
         { label: "Previous navigation results", invoke: tools.previousPage, disabled: state.page === 0 },
         { label: "Next navigation results", invoke: tools.nextPage, disabled: (state.page + 1) * 64 >= state.count },
-        { label: "Add navigation companion", invoke: tools.addCompanion, disabled: pending }
+        { label: "Add navigation companion", invoke: tools.addCompanion, disabled: pending },
+        { label: "Disconnect navigation provider", invoke: tools.disconnect, disabled: !state.connected && !pending },
+        { label: "Reconnect navigation provider", invoke: tools.reconnect, disabled: !state.disconnected && state.status !== "failed" }
     ] as const;
 }
 export function mountNavigationPanel(host: HTMLElement, tools: HostNavigationTools): () => void {

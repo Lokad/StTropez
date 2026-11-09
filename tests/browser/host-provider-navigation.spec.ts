@@ -48,7 +48,7 @@ for (const host of ["plain", "react"]) {
         await page.evaluate(from => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 0 }, { anchor: from + 2, head: from + 2 }], 1); }, from); await ready(page);
         const before = await snapshot(page), origin = before.bindings.views.find(v => v.id === "primary")!.selectionSet; await input(page).press("F12"); await ready(page);
         let s = await snapshot(page); expect(s.bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 14, head: 19 }); expect(s.bindings.views.find(v => v.id === "primary")!.metrics!.viewport.collapsedFolds).toBe(0);
-        expect(s.bindings.navigation.worker).toMatchObject({ created: 1, completed: 1, transferred: text.length, terminated: 1 }); expect(s.bindings.navigation.worker.maxChunk).toBeLessThanOrEqual(16384);
+        expect(s.bindings.navigation.worker).toMatchObject({ created: 1, completed: 1, transferred: text.length, terminated: 0, opened: 1 }); expect(s.bindings.navigation.worker.maxChunk).toBeLessThanOrEqual(16384);
         expect(s.source.revision).toBe(before.source.revision); expect(s.history).toEqual(before.history); expect(s.bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
         await button(page, "Return to navigation origin").click(); await ready(page); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet).toEqual(origin);
         await input(page).press("Shift+F12"); await ready(page); await expect(results(page)).toHaveCount(2);

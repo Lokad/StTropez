@@ -74,6 +74,9 @@ while it is in flight. **Finish save** trims trailing whitespace in its canonica
    companion** supplies an initially unmounted `catalogue` definition for trying a
    cross-resource result. [Provider navigation](provider-navigation.md) describes the
    lexical fixture, bounds, focus behavior and remaining language/native gaps.
+   **Disconnect navigation provider** keeps local editing available; **Reconnect navigation
+   provider** enables a fresh synchronized request. Between successful requests, the worker
+   reuses unchanged working resources and receives bounded versioned changes.
 2. Choose **Open source review**. Edit the working pane, then use **Next change** and
    **Use baseline**. Undo the reversion to restore your correction. The reference stays
    immutable while the working pane shares the source document and history.

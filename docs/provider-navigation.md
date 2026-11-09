@@ -19,8 +19,10 @@ requires the candidate host adapter.
 
 `examples/hosts/navigation.ts` owns stable observable state, captured mounted sessions,
 project documents, resource authority and pending lifetimes. React renders this state
-with pure components and stable refs. The provider is in a dedicated real worker lane
-using the existing host worker entry. There is no local fallback or application service.
+with pure components and stable refs. The provider uses a persistent real worker lane
+through the existing host entry. [Versioned project synchronization](project-sync.md)
+reuses acknowledged working buffers and transfers bounded changes before each query.
+There is no local fallback or application service.
 All ready working-variant resources are captured, including unmounted resources; saved
 or comparison reference resources are excluded. A new resource added later belongs to
 a subsequent request.
@@ -37,7 +39,7 @@ This local provider is a streaming lexical fixture, not a general language servi
   provider; this fixture makes no semantic-resolution claim.
 - At most 100 documents/16 Mi UTF-16 units are searched. Only one ≤16,384-unit source
   chunk is in flight at a time; it is acknowledged before the next chunk is read.
-  The worker retains bounded token state and at most 1,024 locations, with explicit
+  The worker retains bounded project buffers, token state and at most 1,024 locations, with explicit
   truncation. Every retained location is accessible through pages of 64 buttons.
 - A complete reply is validated before publication: request and resource/revision
   identity, document/result bounds, ordering, exact symbol text and raw boundaries.
@@ -48,8 +50,10 @@ Revision, selection, fold, authority, composition, input, replacement and unmoun
 invalidation reject pending results. Ready results expire when captured resources
 change. Old result buttons carry a request token and cannot navigate a replacement
 request/session. Worker failure is visible; an explicit new request creates a fresh
-lane. Per-reply and whole-request deadlines are 5/30 seconds. Cancellation/disposal
-terminates workers and releases temporary leases, listeners and subscriptions.
+lane. Per-reply and whole-request deadlines are 5/30 seconds. Pending cancellation
+terminates the connection; ready-result dismissal can retain its bounded cache.
+Last-view removal, explicit disconnect and disposal release it and its listeners.
+Temporary request leases/subscriptions keep their existing cleanup rules.
 
 `EditingCandidate.snapshot().pendingCommand` describes unfinished cooperative
 navigation/selection commands. `pendingCaret` separately describes a scheduled caret

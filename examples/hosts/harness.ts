@@ -50,6 +50,8 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         setDomainDelay: (delay: number) => { if (!Number.isFinite(delay) || delay < 0 || delay > 10000) throw new RangeError("Invalid domain delay."); bindings.domain.fixture.delay = delay; },
         faultDomainNext: (fault: "malformed" | "failure" | "late") => { bindings.domain.fixture.fault = fault; },
         setNavigationDelay: (delay: number) => bindings.navigation.setDelay(delay), faultNavigationNext: (fault: "malformed" | "failure") => bindings.navigation.faultNext(fault),
+        faultNavigationSyncNext: (fault: "version" | "epoch" | "sequence" | "revision") => bindings.navigation.faultSyncNext(fault),
+        releaseNavigationCompanion: () => bindings.navigation.releaseCompanion(),
         navigationDocument: (id: DocumentId) => { const doc = controller.workspace.document(id); return { revision: doc.revision, length: doc.buffer.length, text: doc.buffer.slice(0, Math.min(4096, doc.buffer.length)), exports: doc.buffer.readMetrics().textExports }; },
         inspectSymbol: (id: "primary" | "secondary" | "comparison") => bindings.hover.inspectCaret(id),
         setHoverDelay: (id: string, value: number) => bindings.hover.setDelay(id, value),
@@ -76,6 +78,7 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; mode
     requestProvider: () => void;
     setDomainDelay: (delay: number) => void; faultDomainNext: (fault: "malformed" | "failure" | "late") => void;
     setNavigationDelay: (delay: number) => void; faultNavigationNext: (fault: "malformed" | "failure") => void;
+    faultNavigationSyncNext: (fault: "version" | "epoch" | "sequence" | "revision") => void; releaseNavigationCompanion: () => boolean;
     navigationDocument: (id: DocumentId) => Readonly<{ revision: number; length: number; text: string; exports: number }>;
     inspectSymbol: (id: "primary" | "secondary" | "comparison") => boolean;
     setHoverDelay: (id: string, value: number) => void;
