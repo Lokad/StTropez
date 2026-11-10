@@ -20,11 +20,12 @@ only the `edit` property for resolution and preserves the original opaque action
 must retain all other attributes, including data, even when JSON object key order differs. Changed
 titles, inserted commands, missing edits or stale generations refuse the response before application.
 
-This host does not execute provider commands. Command-only choices and actions containing both
+The action menu does not execute provider commands. Command-only choices and actions containing both
 an edit and a command remain visible with an unavailable reason. Their edits cannot be applied
-alone: LSP requires the edit followed by the command. Command execution policy and server-initiated
-`workspace.applyEdit` acknowledgement/application remain required work, and applyEdit is not
-advertised. This limitation is independent of the delivered literal-edit and resolve paths.
+alone: LSP requires the edit followed by the command. The separate [workspace-provider panel](lsp-server-edits.md)
+now executes advertised commands and owns captured server-edit decisions. Connecting action-menu
+commands to that flow remains required work. The action session does not advertise applyEdit.
+This limitation is independent of the delivered literal-edit and resolve paths.
 
 Requests carry trigger kind Invoked and known versioned diagnostic ranges/messages/severity/source
 overlapping the captured primary range. Unversioned/stale/malformed pushes cannot supply anchors.

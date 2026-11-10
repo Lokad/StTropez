@@ -211,6 +211,7 @@ function ProjectTools() {
     return <section className="host-language" aria-label="Workspace provider"><h2>Workspace provider</h2>
         <output aria-label="Workspace provider status">{state.message}</output>
         <div>{projectActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        {state.review && <><p aria-label="Provider edit review">{state.review.label}</p><ol aria-label="Captured provider edits" start={state.review.page * 64 + 1}>{state.review.notes.map((note, index) => <li key={index}><pre>{actionTarget(note)}</pre></li>)}</ol></>}
         {state.changes.length > 0 && <p>Last applied provider edits</p>}
         <ul aria-label="Provider changed resources">{state.changes.map(c => <li key={c.document}><button disabled={state.pending} onClick={() => tools.openChanged(c.document)}>Open provider changes in {c.title}</button></li>)}</ul></section>;
 }

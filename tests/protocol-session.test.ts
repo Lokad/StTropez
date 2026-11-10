@@ -1,12 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
-import { TextDocument, ResponseError, RegistrationRequest, UnregistrationRequest } from "vscode-languageserver-protocol/node.js";
+import { TextDocument, ResponseError, RegistrationRequest, UnregistrationRequest, CancellationTokenSource } from "vscode-languageserver-protocol/node.js";
 import type { InitializeParams, InitializeResult, DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams } from "vscode-languageserver-protocol/node.js";
 import { referencePeer } from "../examples/protocol/reference-peer.ts";
 import { TextBuffer } from "../src/core/text-buffer.ts";
 import type { RpcScheduler, RpcTransport } from "../src/protocol/json-rpc.ts";
-import type { LspSessionOptions } from "../src/protocol/index.ts";
+import type { LspSessionOptions, LspRequestContext } from "../src/protocol/index.ts";
 
 const { LspSession, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 const settled = async () => { await setImmediate(); await setImmediate(); };
@@ -84,6 +84,30 @@ test("code-action resolve options follow matching registrations and immutable ne
     const options = session.featureOptions("textDocument/codeAction", document); assert.equal(options[0]!.resolveProvider, true); assert.equal(Object.isFrozen(options), true); assert.equal(Object.isFrozen(options[0]), true); assert.deepEqual(session.featureOptions("textDocument/codeAction", other), []);
     const capture = session.synchronized(document)!; await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "actions", method: "textDocument/codeAction" }] });
     assert.equal(capture.isCurrent(), false); assert.deepEqual(session.featureOptions("textDocument/codeAction", document), []);
+});
+
+test("workspace commands require advertised bounded options, reject stale registrations and never replay", async t => {
+    const host = fixture(t, { positionEncoding: "utf-16", textDocumentSync: 2, executeCommandProvider: { commands: ["status"] } }), session = new LspSession({ ...host, features: ["workspace/executeCommand"] }); t.after(() => session.dispose()); await session.connect(); const peer = host.peers[0]!;
+    let finish: ((value: unknown) => void) | undefined, executed = 0;
+    peer.rpc.onRequest("workspace/executeCommand", (params: { command: string }) => { executed++; return params.command === "status" ? { ok: true } : new Promise(resolve => { finish = resolve; }); });
+    assert.deepEqual(session.commandNames(), ["status"]); assert.equal(Object.isFrozen(session.commandNames()), true); assert.equal(peer.initialize()!.capabilities.workspace!.executeCommand!.dynamicRegistration, true);
+    assert.deepEqual(await session.requestCommand("status", [{ opaque: "😀" }]).result, { ok: true }); assert.throws(() => session.requestCommand("unknown"), /not advertised/); assert.throws(() => session.requestCommand("status", ["x".repeat(8193)]), /limit/); assert.equal(executed, 1);
+    await peer.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "commands", method: "workspace/executeCommand", registerOptions: { commands: ["review"] } }] });
+    const call = session.requestCommand("review"); const rejected = assert.rejects(call.result, error => error instanceof RpcError && error.code === -32801); await settled();
+    await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "commands", method: "workspace/executeCommand" }] }); assert.equal(call.isCurrent(), false); finish!({ late: true }); await rejected;
+    await assert.rejects(peer.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "valid", method: "workspace/executeCommand", registerOptions: { commands: ["first"] } }, { id: "invalid", method: "workspace/executeCommand", registerOptions: { commands: [42] } }] })); assert.equal(session.state.getSnapshot().registrations.length, 0);
+    await assert.rejects(peer.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "selector", method: "workspace/executeCommand", registerOptions: { commands: ["bad"], documentSelector: null } }] }));
+    session.disconnect(); await session.connect(); assert.deepEqual(session.commandNames(), ["status"]); assert.equal(executed, 2); assert.equal(host.peers[1]!.wire.messages[0]!.some(value => (value as { method?: string }).method === "workspace/executeCommand"), false);
+});
+
+test("applyEdit is advertised only with a handler and cancelled review requests receive one terminal reply", async t => {
+    const host = fixture(t), session = new LspSession({ ...host, applyEdit: true }); t.after(() => session.dispose()); await assert.rejects(session.connect(), /handler/); assert.equal(host.peers.length, 0);
+    let context: LspRequestContext | undefined, cancellations = 0;
+    session.onRequest("workspace/applyEdit", (_params, incoming) => { context = incoming; return new Promise(resolve => { incoming.onCancel(() => { cancellations++; resolve({ applied: false }); }); }); });
+    await session.connect(); const peer = host.peers[0]!; assert.equal(peer.initialize()!.capabilities.workspace!.applyEdit, true); assert.equal(peer.initialize()!.capabilities.workspace!.workspaceEdit!.failureHandling, "transactional");
+    const cancellation = new CancellationTokenSource(), request = peer.rpc.sendRequest("workspace/applyEdit", { label: "captured", edit: {} }, cancellation.token), rejected = assert.rejects(request, error => error instanceof ResponseError && error.code === -32800); await settled(); assert.equal(context!.isCurrent(), true);
+    cancellation.cancel(); await rejected; await settled(); assert.equal(context!.isCurrent(), false); assert.equal(cancellations, 1); assert.equal(session.snapshotOwnership().incomingRequests, 0);
+    assert.equal(peer.wire.messages[0]!.filter(value => (value as { error?: { code: number } }).error?.code === -32800).length, 1); cancellation.dispose();
 });
 
 test("document requests reject stale revisions, capability withdrawal, URI reuse and cancellation", async t => {

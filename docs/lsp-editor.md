@@ -56,8 +56,9 @@ keep Save/Run on their captured resource; later typing survives an earlier Save 
 The example adapter owns one connection/bound document per mounted provider view, connecting
 on explicit view activation. It does not claim a shared project-wide provider cache. Custom fixture
 configuration is supplied through a host hook; session/feature code contains no fixture endpoint or
-message policy. The [remaining LSP matrix](lsp.md) includes provider commands, server-originated
-workspace edits and advanced completion. Native IME/clipboard and physical-display checks
+message policy. The separate [workspace-provider adapter](lsp-server-edits.md) owns advertised
+commands and explicit server-edit decisions. The [remaining LSP matrix](lsp.md) includes action-menu
+commands and advanced completion. Native IME/clipboard and physical-display checks
 remain unverified; all browser qualification stays headless on the shared desktop.
 
 Large-document correctness journeys type and complete at the beginning, middle and end of a

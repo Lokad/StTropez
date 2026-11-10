@@ -9,8 +9,10 @@ import type { LspSelector, LspUriPath } from "./lsp-selector.ts";
 
 const providers = { "textDocument/completion": "completionProvider", "textDocument/hover": "hoverProvider",
     "textDocument/definition": "definitionProvider", "textDocument/references": "referencesProvider",
-    "textDocument/rename": "renameProvider", "textDocument/codeAction": "codeActionProvider" } as const;
+    "textDocument/rename": "renameProvider", "textDocument/codeAction": "codeActionProvider", "workspace/executeCommand": "executeCommandProvider" } as const;
 export type LspFeature = keyof typeof providers;
+export type LspDocumentFeature = Exclude<LspFeature, "workspace/executeCommand">;
+export type LspCommandCall<T> = RpcCall<T> & Readonly<{ isCurrent: () => boolean }>;
 export type LspDocumentSnapshot = Readonly<{ uri: string; languageId: string; resourceId: string; documentId: string; revision: number; buffer: TextBuffer }>;
 export type LspDocument = Readonly<{ getSnapshot: () => LspDocumentSnapshot;
     update: (expectedRevision: number, revision: number, buffer: TextBuffer) => void; close: () => void }>;
@@ -26,7 +28,7 @@ export type LspSessionSnapshot = Readonly<{ phase: "disconnected" | "connecting"
 export type LspSessionOptions = Readonly<{ connect: (context: LspConnectContext) => Promise<RpcTransport>; schedule: RpcScheduler;
     rootUri?: string | null; initializationOptions?: JsonValue; clientInfo?: Readonly<{ name: string; version?: string }>;
     /** Declare only features whose results the consuming host validates and presents. */
-    features?: readonly LspFeature[]; diagnostics?: boolean; workspaceEdits?: boolean; pathForUri?: LspUriPath; maxDocuments?: number; maxDocumentUnits?: number; maxTotalUnits?: number;
+    features?: readonly LspFeature[]; diagnostics?: boolean; workspaceEdits?: boolean; applyEdit?: boolean; pathForUri?: LspUriPath; maxDocuments?: number; maxDocumentUnits?: number; maxTotalUnits?: number;
     rpc?: Pick<RpcOptions, "timeoutMs" | "maxPending" | "maxMessageUnits">; onError?: (error: Error) => void }>;
 type Entry = { snapshot: LspDocumentSnapshot; handle: LspDocument };
 type Remote = { entry: Entry; snapshot: LspDocumentSnapshot; index: LspLineIndex; version: number };
@@ -36,6 +38,10 @@ type NotificationHandler = (params: unknown, epoch: number) => void | Promise<vo
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const integer = (value: number) => Number.isSafeInteger(value) && value >= 0;
 const empty = Object.freeze({});
+function commandOptions(value: unknown): readonly string[] {
+    if (!object(value) || !Array.isArray(value.commands) || value.commands.length > 128 || value.commands.some(command => typeof command !== "string" || !command || command.length > 256)) throw new TypeError("Invalid or excessive LSP command options.");
+    return value.commands as readonly string[];
+}
 const closed = () => new RpcError(-32097, "LSP session is not ready.");
 const stale = () => new RpcError(-32801, "Document, capability or session capture changed.");
 const cancelError = () => new RpcError(-32800, "Request cancelled.");
@@ -84,7 +90,7 @@ export class LspSession {
         this.maxDocuments = options.maxDocuments ?? 100; this.maxDocumentUnits = options.maxDocumentUnits ?? 3 * 1024 * 1024; this.maxTotalUnits = options.maxTotalUnits ?? 16 * 1024 * 1024;
         if (![this.maxDocuments, this.maxDocumentUnits, this.maxTotalUnits].every(value => integer(value) && value > 0)) throw new RangeError("Invalid LSP document limits.");
         const textDocument: Record<string, JsonValue> = { synchronization: { dynamicRegistration: true, didSave: false, willSave: false, willSaveWaitUntil: false } };
-        for (const method of this.features) textDocument[method.slice("textDocument/".length)] = { dynamicRegistration: true };
+        for (const method of this.features) if (method.startsWith("textDocument/")) textDocument[method.slice("textDocument/".length)] = { dynamicRegistration: true };
         if (this.features.has("textDocument/completion")) textDocument.completion = { dynamicRegistration: true, contextSupport: true,
             completionItem: { snippetSupport: false, insertReplaceSupport: true, documentationFormat: ["plaintext"], insertTextModeSupport: { valueSet: [1] } },
             insertTextMode: 1, completionList: { itemDefaults: ["editRange", "insertTextFormat", "insertTextMode"] } };
@@ -97,7 +103,9 @@ export class LspSession {
         this.initializeParams = jsonSnapshot({ processId: null, rootUri: options.rootUri ?? null,
             ...(options.clientInfo ? { clientInfo: options.clientInfo } : {}), initializationOptions: options.initializationOptions ?? null,
             capabilities: { general: { positionEncodings: ["utf-16"] }, textDocument,
-                ...(options.workspaceEdits ? { workspace: { workspaceEdit: { documentChanges: true, resourceOperations: [], failureHandling: "transactional", normalizesLineEndings: false } } } : {}) } });
+                ...(options.workspaceEdits || options.applyEdit || this.features.has("workspace/executeCommand") ? { workspace: {
+                    ...(options.workspaceEdits || options.applyEdit ? { workspaceEdit: { documentChanges: true, resourceOperations: [], failureHandling: "transactional", normalizesLineEndings: false } } : {}),
+                    ...(options.applyEdit ? { applyEdit: true } : {}), ...(this.features.has("workspace/executeCommand") ? { executeCommand: { dynamicRegistration: true } } : {}) } } : {}) } });
         this.scope = new NotificationScope(error => this.report(error));
         this.store = new Store(this.snapshot("disconnected", null), this.scope);
         this.state = Object.freeze({ getSnapshot: this.store.observable.getSnapshot, subscribe: listener => {
@@ -121,6 +129,7 @@ export class LspSession {
 
     connect(): Promise<void> {
         this.writable(); if (this.store.get().phase === "ready") return Promise.resolve();
+        if (this.options.applyEdit && !this.requests.has("workspace/applyEdit")) return Promise.reject(new TypeError("Advertised applyEdit requires a registered request handler before connection."));
         if (this.connectWork) return this.connectWork;
         if (this.store.get().phase !== "disconnected") return Promise.reject(closed());
         const epoch = ++this.epoch, listeners = new Set<() => void>(); let cancelled = false, rejectOpening!: (reason: Error) => void;
@@ -156,6 +165,7 @@ export class LspSession {
         if (sync !== undefined && sync !== 0 && sync !== 2 && !object(sync)) throw new TypeError("Only incremental LSP synchronization is supported.");
         if (object(sync) && (sync.openClose !== undefined && typeof sync.openClose !== "boolean" || sync.change !== undefined && sync.change !== 0 && sync.change !== 2)) throw new TypeError("Invalid or unsupported synchronization capability.");
         for (const provider of Object.values(providers)) if (capabilities[provider] !== undefined && typeof capabilities[provider] !== "boolean" && !object(capabilities[provider])) throw new TypeError("Malformed feature capability.");
+        if (this.features.has("workspace/executeCommand") && capabilities.executeCommandProvider !== undefined) commandOptions(capabilities.executeCommandProvider);
         this.capabilities = capabilities as Readonly<Record<string, JsonValue>>;
         this.sync = { openClose: sync === 2 || object(sync) && sync.openClose === true, change: sync === 2 || object(sync) && sync.change === 2 };
         rpc.notify("initialized", {}); this.cancelOpening = undefined; this.publish("ready"); this.kick(); await this.flush();
@@ -192,10 +202,14 @@ export class LspSession {
             if (item.method === "textDocument/didChange" && item.registerOptions.syncKind !== 2) throw new RpcError(-32602, "Only incremental changes are supported.");
             if (item.id.length > 256 || JSON.stringify(item.registerOptions).length > 65536) throw new RpcError(-32602, "Registration options exceed their limit.");
             let selector: LspSelector;
-            try { selector = compileLspSelector(item.registerOptions.documentSelector, this.options.pathForUri); } catch { throw new RpcError(-32602, "Invalid registration selector."); }
+            try {
+                if (item.method === "workspace/executeCommand") { commandOptions(item.registerOptions); if ("documentSelector" in item.registerOptions) throw new TypeError(); selector = () => true; }
+                else selector = compileLspSelector(item.registerOptions.documentSelector, this.options.pathForUri);
+            } catch { throw new RpcError(-32602, "Invalid registration selector or command options."); }
             const value = Object.freeze({ id: item.id, method: item.method, registerOptions: jsonSnapshot(item.registerOptions) }); next.set(item.id, { value, selector });
         }
         if (next.size > 128 || [...next.values()].reduce((units, item) => units + JSON.stringify(item.value.registerOptions).length, 0) > 1024 * 1024) throw new RpcError(-32602, "Capability registry exceeds its limit.");
+        if (this.collectCommands(next).length > 256) throw new RpcError(-32602, "Command registry exceeds its limit.");
         this.registrations.clear(); for (const [id, item] of next) this.registrations.set(id, item);
         this.generation++; this.publish(); this.kick(); return null;
     }
@@ -209,17 +223,32 @@ export class LspSession {
     }
     private registered(method: string, document: LspDocumentSnapshot): boolean { return [...this.registrations.values()].some(item => item.value.method === method && item.selector(document)); }
     private syncs(document: LspDocumentSnapshot): boolean { return (this.sync.openClose || this.registered("textDocument/didOpen", document)) && (this.sync.change || this.registered("textDocument/didChange", document)); }
-    canRequest(method: LspFeature, document: LspDocument): boolean {
+    canRequest(method: LspDocumentFeature, document: LspDocument): boolean {
         const entry = this.entry(document), capability = this.capabilities[providers[method]];
         return this.store.get().phase === "ready" && this.features.has(method) && this.syncs(entry.snapshot) && (capability === true || object(capability) || this.registered(method, entry.snapshot));
     }
     /** Static and matching dynamic options only; selectors and session readiness use the request policy. */
-    featureOptions(method: LspFeature, document: LspDocument): readonly Readonly<Record<string, JsonValue>>[] {
+    featureOptions(method: LspDocumentFeature, document: LspDocument): readonly Readonly<Record<string, JsonValue>>[] {
         if (!this.canRequest(method, document)) return Object.freeze([]);
         const entry = this.entry(document), capability = this.capabilities[providers[method]], values: Readonly<Record<string, JsonValue>>[] = [];
         if (object(capability)) values.push(capability); else if (capability === true) values.push(empty);
         for (const item of this.registrations.values()) if (item.value.method === method && item.selector(entry.snapshot) && object(item.value.registerOptions)) values.push(item.value.registerOptions);
         return Object.freeze(values);
+    }
+    private collectCommands(registrations: ReadonlyMap<string, Registration> = this.registrations): readonly string[] {
+        const values = new Set<string>(), provider = this.capabilities.executeCommandProvider;
+        if (this.features.has("workspace/executeCommand") && provider !== undefined) for (const name of commandOptions(provider)) values.add(name);
+        for (const item of registrations.values()) if (item.value.method === "workspace/executeCommand") for (const name of commandOptions(item.value.registerOptions)) values.add(name);
+        return Object.freeze([...values]);
+    }
+    commandNames(): readonly string[] { return this.store.get().phase === "ready" && this.features.has("workspace/executeCommand") ? this.collectCommands() : Object.freeze([]); }
+    /** Explicit caller policy/confirmation is required; commands are never replayed across a session. */
+    requestCommand<T = JsonValue>(command: string, args: readonly JsonValue[] = [], timeoutMs = this.options.rpc?.timeoutMs ?? 15000): LspCommandCall<T> {
+        this.writable(); if (!this.commandNames().includes(command)) throw new RpcError(-32601, "LSP command is not advertised for this session.");
+        const argumentsValue = jsonSnapshot(args); if (!Array.isArray(argumentsValue) || JSON.stringify(argumentsValue).length > 8192) throw new RangeError("LSP command arguments exceed their limit.");
+        const epoch = this.epoch, generation = this.generation, isCurrent = () => this.current(epoch) && this.store.get().phase === "ready" && this.generation === generation && this.commandNames().includes(command);
+        const call = this.ready(epoch).request<T>("workspace/executeCommand", { command, arguments: argumentsValue }, timeoutMs);
+        return Object.freeze({ id: call.id, cancel: call.cancel, isCurrent, result: call.result.then(result => { if (!isCurrent()) throw stale(); return result; }) });
     }
     private entry(handle: LspDocument): Entry { const entry = this.handles.get(handle); if (!entry || this.documents.get(entry.snapshot.uri) !== entry) throw stale(); return entry; }
     private size(length: number, previous: number): void {
@@ -293,7 +322,7 @@ export class LspSession {
             isCurrent: () => this.store.get().phase === "ready" && this.epoch === epoch && this.generation === generation && this.documents.get(remote.snapshot.uri) === entry
                 && entry.snapshot === remote.snapshot && this.remote.get(remote.snapshot.uri) === remote });
     }
-    requestDocument<T = JsonValue>(method: LspFeature, document: LspDocument, params: (index: LspLineIndex, snapshot: LspDocumentSnapshot, capture: LspDocumentCapture) => Readonly<Record<string, JsonValue>>): LspCall<T> {
+    requestDocument<T = JsonValue>(method: LspDocumentFeature, document: LspDocument, params: (index: LspLineIndex, snapshot: LspDocumentSnapshot, capture: LspDocumentCapture) => Readonly<Record<string, JsonValue>>): LspCall<T> {
         this.writable(); this.ready(); if (this.documentCalls.size >= (this.options.rpc?.maxPending ?? 64)) throw new RpcError(-32000, "Too many pending document requests.");
         const entry = this.entry(document), snapshot = entry.snapshot, epoch = this.epoch, generation = this.generation, waiting = this.waitForSync(); let cancelled = false, call: RpcCall<T> | undefined;
         const guard = () => { if (cancelled) throw cancelError(); this.ready(epoch); if (this.documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot || generation !== this.generation) throw stale(); };

@@ -1,5 +1,9 @@
 # Captured workspace provider commands
 
+The default route below uses the internal worker fixture. The optional `language=lsp` route
+instead qualifies [actual LSP workspace commands and captured server-edit decisions](lsp-server-edits.md)
+over WebSocket. Worker protocol v1 does not establish LSP compatibility.
+
 The plain and React candidate hosts expose a local **Workspace provider** fixture. Focus a
 source or comparison working pane, then choose **Register provider review command**. The
 worker requests registration and receives an explicit host acknowledgement. **Unregister

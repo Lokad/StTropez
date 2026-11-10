@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
-import type { CodeAction, Command, CompletionList, PublishDiagnosticsParams, WorkspaceEdit } from "vscode-languageserver-protocol/node.js";
+import type { ApplyWorkspaceEditParams, CodeAction, Command, CompletionList, PublishDiagnosticsParams, WorkspaceEdit } from "vscode-languageserver-protocol/node.js";
 import { TextBuffer } from "../src/core/text-buffer.ts";
 import type { LspDocumentCapture } from "../src/protocol/index.ts";
 
-const { LspLineIndex, decodeLspCompletions, decodeLspDiagnostics, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, decodeLspCodeActions, decodeLspResolvedCodeAction, lspRangeOffsets, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
+const { LspLineIndex, decodeLspCompletions, decodeLspDiagnostics, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, decodeLspApplyEdit, decodeLspCodeActions, decodeLspResolvedCodeAction, lspRangeOffsets, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 async function captured(text = "// header\r\nconst saMORE = 1; // TODO\rb\n") {
     const buffer = TextBuffer.from(text), index = await LspLineIndex.create(buffer, async () => {}); let active = true;
     const capture: LspDocumentCapture = Object.freeze({ document: Object.freeze({ uri: "host+fixture:source", languageId: "fixture", resourceId: "resource", documentId: "working", revision: 70, buffer }), index, version: 3, epoch: 2, registrationGeneration: 4, isCurrent: () => active });
@@ -140,4 +140,13 @@ test("code actions refuse malformed final metadata/targets, incomplete lists and
     assert.throws(() => decodeLspCodeActions({ partial: [] }, capture, resolve)); assert.throws(() => decodeLspCodeActions(Array(65).fill({ title: "many", edit }), capture, resolve));
     const large = { title: "budget", edit: { changes: { [capture.document.uri]: [{ range: range(0, 0, 0), newText: "x".repeat(16384) }] } } };
     assert.throws(() => decodeLspCodeActions(Array(5).fill(large), capture, resolve));
+});
+
+test("workspace applyEdit requests retain a literal label and validate every captured target before review", async () => {
+    const { capture, expire } = await captured("abc"), resolve = (uri: string) => uri === capture.document.uri ? capture : undefined;
+    const value: ApplyWorkspaceEditParams = { label: "<img> review", edit: { documentChanges: [{ textDocument: { uri: capture.document.uri, version: 3 }, edits: [{ range: range(0, 0, 1), newText: "x" }] }] } };
+    const request = decodeLspApplyEdit(value, resolve); assert.equal(request.label, "<img> review"); assert.equal(Object.isFrozen(request), true); assert.equal(request.edit.documents[0]!.target.document.revision, 70);
+    assert.equal(decodeLspApplyEdit({ edit: {} }, resolve).label, null);
+    for (const bad of [{ label: 1, edit: {} }, { label: "x".repeat(257), edit: {} }, {}, { ...value, edit: { changes: { unknown: [] } } }]) assert.throws(() => decodeLspApplyEdit(bad, resolve));
+    expire(); assert.equal(request.edit.isCurrent(), false); assert.throws(() => decodeLspApplyEdit(value, resolve));
 });

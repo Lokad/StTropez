@@ -18,6 +18,8 @@ export type LspLocation = Readonly<{ target: LspLocationTarget; from: number; to
 export type LspEditTarget = LspLocationTarget & Readonly<{ version: number | null }>;
 export type LspDocumentEdits = Readonly<{ target: LspEditTarget; edits: readonly TextEdit[] }>;
 export type LspWorkspaceEdit = Readonly<{ documents: readonly LspDocumentEdits[]; isCurrent: () => boolean }>;
+export type LspApplyEdit = Readonly<{ label: string | null; edit: LspWorkspaceEdit }>;
+export type LspApplyEditResult = Readonly<{ applied: boolean; failureReason?: string }>;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const uint = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 0x7fffffff;
 function invalid(): never { throw new TypeError("Malformed or unsupported LSP feature result."); }
@@ -122,6 +124,10 @@ export function decodeLspWorkspaceEdit(value: unknown, resolve: (uri: string) =>
     const isCurrent = () => documents.every(document => document.target.isCurrent());
     if (!isCurrent()) throw new RpcError(-32801, "LSP edit capture expired.");
     return Object.freeze({ documents: Object.freeze(documents), isCurrent });
+}
+export function decodeLspApplyEdit(value: unknown, resolve: (uri: string) => LspEditTarget | undefined): LspApplyEdit {
+    if (!record(value) || value.label !== undefined && (typeof value.label !== "string" || value.label.length > 256)) invalid();
+    return Object.freeze({ label: value.label as string | undefined ?? null, edit: decodeLspWorkspaceEdit(value.edit, resolve) });
 }
 function edit(index: LspLineIndex, value: unknown, budget: { units: number }): TextEdit {
     if (!record(value)) invalid(); return Object.freeze({ ...lspRangeOffsets(index, value.range), insert: text(value.newText, 16384, budget) });

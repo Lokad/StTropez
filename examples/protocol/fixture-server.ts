@@ -1,6 +1,6 @@
 import type { Server } from "node:http";
 import { WebSocketServer } from "ws";
-import { InitializeRequest, InitializedNotification, ResponseError, TextDocument, RegistrationRequest, UnregistrationRequest } from "vscode-languageserver-protocol/node.js";
+import { InitializeRequest, InitializedNotification, ResponseError, TextDocument, RegistrationRequest, UnregistrationRequest, CancellationTokenSource } from "vscode-languageserver-protocol/node.js";
 import type { CancellationToken, CompletionList, InitializeResult, DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams, RegistrationParams, UnregistrationParams } from "vscode-languageserver-protocol/node.js";
 import { setImmediate } from "node:timers/promises";
 import type { RpcTransport } from "../../src/protocol/json-rpc.ts";
@@ -14,6 +14,9 @@ import type { CodeAction, Command } from "vscode-languageserver-protocol/node.js
 import { TextBuffer } from "../../src/index.ts";
 import { ModuleActionCursor } from "../probes/actions.ts";
 import { validDomainModule } from "../probes/domain.ts";
+import { reviewHeader, reviewFooter } from "../probes/project-commands.ts";
+import type { ProjectCommand } from "../probes/project-commands.ts";
+import type { ApplyWorkspaceEditResult } from "vscode-languageserver-protocol/node.js";
 
 /** Generic development peer. It is separate from the internal worker-v1 fixture and production assets. */
 export function attachProtocolFixture(server: Server) {
@@ -40,6 +43,7 @@ export function attachProtocolFixture(server: Server) {
         type ActionConfig = { module: string; delay: number; fault?: "malformed" | "failure" | "incomplete" | "markup" };
         let actionConfig: ActionConfig = { module: "sample-utils", delay: 0 }, actionResolveConfig: ActionConfig = { module: "sample-utils", delay: 0 }, actionGeneration = 0, actionLiterals = false, actionResolve = false;
         const actionResolutions = new Map<number, WorkspaceEdit>();
+        let projectConfig: Pick<ProjectCommand, "kind" | "delay" | "fault"> = { kind: "status", delay: 0 }, projectRegistered = false, applyEditSupport = false, projectStyle: "markers" | "many" | "wide" = "markers", cancelApply: (() => void) | undefined;
         const deferred = <T>(delay: number, token: CancellationToken, compute: () => T | Promise<T>) => new Promise<T>((resolve, reject) => {
             let done = false, stop: { dispose: () => void } | undefined;
             const finish = () => { if (done) return false; done = true; clearTimeout(timer); stop?.dispose(); pending.delete(cancel); return true; };
@@ -58,6 +62,7 @@ export function attachProtocolFixture(server: Server) {
             versionedEdits = params.capabilities.workspace?.workspaceEdit?.documentChanges === true;
             actionLiterals = params.capabilities.textDocument?.codeAction?.codeActionLiteralSupport !== undefined;
             actionResolve = params.capabilities.textDocument?.codeAction?.dataSupport === true && params.capabilities.textDocument.codeAction.resolveSupport?.properties.includes("edit") === true;
+            applyEditSupport = params.capabilities.workspace?.applyEdit === true;
             return { capabilities: { positionEncoding: "utf-16", textDocumentSync: 2, definitionProvider: true, referencesProvider: true, renameProvider: true,
                 codeActionProvider: { resolveProvider: true, codeActionKinds: ["quickfix", "refactor", "source"] }, executeCommandProvider: { commands: ["fixture.status"] },
                 completionProvider: { triggerCharacters: ["."] }, hoverProvider: params.initializationOptions?.fixtureDynamic !== true }, serverInfo: { name: "Generic protocol fixture" } }; });
@@ -155,7 +160,41 @@ export function attachProtocolFixture(server: Server) {
         const workspaceTextEdits = (project: readonly TextDocument[], changes: ReadonlyMap<string, readonly TextEdit[]>): WorkspaceEdit => versionedEdits
             ? { documentChanges: [...changes].map(([uri, edits]) => ({ textDocument: { uri, version: project.find(doc => doc.uri === uri)?.version ?? null }, edits: [...edits] })) }
             : { changes: Object.fromEntries([...changes].map(([uri, edits]) => [uri, [...edits]])) };
-        peer.onRequest("workspace/executeCommand", (params: { command: string }) => { if (params?.command !== "fixture.status") throw new ResponseError(-32602, "Unknown fixture command"); return { documents: documents.size }; });
+        peer.onRequest("fixture/projectConfig", async (params: typeof projectConfig) => {
+            if (!params || !["register", "unregister", "review", "status"].includes(params.kind) || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure", "ack"].includes(params.fault)) throw new ResponseError(-32602, "Invalid project configuration");
+            projectConfig = { ...params }; if (params.fault === "failure" && (params.kind === "register" || params.kind === "unregister")) throw new ResponseError(-32001, "Fixture registration unavailable");
+            if (params.kind === "register") { await peer.sendRequest(RegistrationRequest.type, { registrations: [{ id: "fixture-review", method: "workspace/executeCommand", registerOptions: { commands: ["fixture.review"] } }] }); projectRegistered = true; }
+            if (params.kind === "unregister") { await peer.sendRequest(UnregistrationRequest.type, { unregisterations: [{ id: "fixture-review", method: "workspace/executeCommand" }] }); projectRegistered = false; }
+            return null;
+        });
+        peer.onRequest("fixture/projectStyle", (params: { style: typeof projectStyle }) => { if (!params || !["markers", "many", "wide"].includes(params.style)) throw new ResponseError(-32602, "Invalid review style"); projectStyle = params.style; return null; });
+        peer.onNotification("fixture/cancelApply", () => cancelApply?.());
+        peer.onRequest("workspace/executeCommand", (params: { command: string }, token) => {
+            if (!["fixture.status", "fixture.review"].includes(params?.command)) throw new ResponseError(-32602, "Unknown fixture command");
+            const config = projectConfig, project = [...documents.values()], style = projectStyle; projectConfig = { kind: "status", delay: 0 };
+            return deferred(config.delay, token, async () => {
+                if (config.fault === "failure") throw new ResponseError(-32001, "Fixture provider command unavailable");
+                if (params.command === "fixture.status") return { documents: documents.size };
+                if (!projectRegistered || !applyEditSupport) throw new ResponseError(-32601, "Review command needs registration and an edit-review capable client");
+                const changes = new Map<string, TextEdit[]>(); let count = 0;
+                for (const doc of project) {
+                    const text = doc.getText(), edits: TextEdit[] = [];
+                    if (style === "wide") edits.push({ range: { start: doc.positionAt(0), end: doc.positionAt(text.length) }, newText: "// provider rewritten\r\n" });
+                    else {
+                        if (!text.startsWith(reviewHeader) || !text.endsWith(reviewFooter)) edits.push({ range: { start: doc.positionAt(0), end: doc.positionAt(0) }, newText: reviewHeader }, { range: { start: doc.positionAt(text.length), end: doc.positionAt(text.length) }, newText: reviewFooter });
+                        if (style === "many") { let at = -1; while ((at = text.indexOf("TODO", at + 1)) >= 0) { if (edits.length === 1024) throw new ResponseError(-32000, "Fixture review edit limit exceeded"); edits.push({ range: { start: doc.positionAt(at), end: doc.positionAt(at + 4) }, newText: "DONE" }); } }
+                    }
+                    if ((count += edits.length) > 1024) throw new ResponseError(-32000, "Fixture review edit limit exceeded"); if (edits.length) changes.set(doc.uri, edits);
+                }
+                if (config.fault === "malformed") changes.set("host+fixture:unknown-target", [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }, newText: "invalid final target" }]);
+                const cancellation = new CancellationTokenSource(), cancel = () => cancellation.cancel(), stop = token.onCancellationRequested(cancel); cancelApply = cancel;
+                try {
+                    const outcome = await peer.sendRequest<ApplyWorkspaceEditResult>("workspace/applyEdit", { label: "Review captured working resources", edit: workspaceTextEdits(project, changes) }, cancellation.token);
+                    if (config.fault === "ack" && outcome.applied) port.dispose(); return outcome;
+                } catch (error) { if (cancellation.token.isCancellationRequested) return { applied: false, failureReason: "Provider edit request cancelled." }; throw error; }
+                finally { if (cancelApply === cancel) cancelApply = undefined; stop.dispose(); cancellation.dispose(); }
+            });
+        });
         peer.onRequest("textDocument/codeAction", (params: { textDocument: { uri: string }; range: Location["range"]; context: { diagnostics: unknown[]; triggerKind?: number } }, token) => {
             const origin = documents.get(params.textDocument.uri); if (!origin || !Array.isArray(params.context?.diagnostics)) throw new ResponseError(-32602, "Code actions need captured context");
             const config = actionConfig, project = [...documents.values()], generation = ++actionGeneration; actionConfig = { module: config.module, delay: 0 }; actionResolutions.clear();
