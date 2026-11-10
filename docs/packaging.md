@@ -120,6 +120,15 @@ loads a separate compiled editing entry and the packaged CSS only after **Edit**
 or CSS loading retains the preview and offers retry. Cancelling activation invalidates late
 responses before they can create a model or mount a view.
 
+The host reader keeps the complete source in native DOM text nodes. For longer files it groups
+500 lines per block and uses `content-visibility: auto` to defer offscreen layout. A small native
+DOM adapter maps text-node and element-boundary selections to raw source offsets, preserving
+direction and CRLF boundaries through activation. This uses browser primitives without an
+additional runtime dependency. Engines without that CSS optimization still retain the full text.
+Native Find, clipboard and assistive-technology behavior require device qualification; DOM
+selection checks alone do not establish those capabilities. Native selection string serialization
+can vary by engine even for a single text node; raw DOM Range text is the source-preservation oracle.
+
 **Read only** detaches the editor and Find controller while keeping the resource, complete
 selection set and shared undo history. Selecting new text in the preview deliberately replaces
 the set with that single selection on the next activation. Composition and queued edits guard switchback;
@@ -163,7 +172,8 @@ handler observations are separate from full interaction and cold activation late
 counts do not prove retained heap bytes; native input/accessibility and release qualification
 remain open.
 
-A separate fixed-budget Chromium 156.0.8078.4 experiment on Windows build 26200, an i7-14700KF
+A separate fixed-budget experiment before the fragmented native reader, in Chromium
+156.0.8078.4 on Windows build 26200, an i7-14700KF
 and 28 logical CPUs checked retained V8 heap and DOM counters. Module code was warmed without
 models; the host preview kept its text. Each corpus retained three forced-GC observations at
 baseline, after warming two visited documents, after ten typing/undo switches and captured-job

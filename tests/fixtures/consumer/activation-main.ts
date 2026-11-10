@@ -1,6 +1,7 @@
 import type { ActivationSession } from "./activate.js";
 import type { WorkspaceSession } from "./workspace.js";
 import type { Selection } from "sttropez";
+import { createPreview } from "./preview.js";
 
 const preview = document.getElementById("text")!, editorHost = document.getElementById("editor")!, status = document.getElementById("status")!;
 const edit = document.getElementById("edit") as HTMLButtonElement, cancel = document.getElementById("cancel") as HTMLButtonElement, readOnly = document.getElementById("preview") as HTMLButtonElement;
@@ -10,12 +11,11 @@ const workspaceMode = document.body.hasAttribute("data-workspace");
 const listeners = new AbortController(); let session: ActivationSession | WorkspaceSession | undefined, generation = 0, abort: AbortController | undefined, stylesheet: HTMLLinkElement | undefined;
 let phase: "preview" | "loading" | "editing" | "disposed" = "preview";
 let retainedText = original;
-preview.textContent = original;
+const reader = createPreview(preview); reader.setText(original);
 const controls = () => { edit.disabled = phase !== "preview"; cancel.disabled = phase !== "loading"; readOnly.disabled = phase !== "editing";
     query.disabled = regex.disabled = next.disabled = phase !== "editing"; };
 function selection(): Selection | undefined {
-    const s = window.getSelection(), text = preview.firstChild;
-    return s && text && s.anchorNode === text && s.focusNode === text ? { anchor: s.anchorOffset, head: s.focusOffset } : undefined;
+    return reader.selection();
 }
 function styles(signal: AbortSignal, attempt: number): Promise<HTMLLinkElement> {
     return new Promise((resolve, reject) => {
@@ -43,13 +43,13 @@ async function activate() {
 }
 function showPreview() {
     if (phase !== "editing") return; if (!session!.unmount()) { status.textContent = "Finish typing before switching to read only."; return; }
-    const at = session!.selection(); preview.textContent = session!.text(); preview.hidden = false; editorHost.hidden = true; stylesheet?.remove(); stylesheet = undefined;
+    const at = session!.selection(); reader.setText(session!.text()); preview.hidden = false; editorHost.hidden = true; stylesheet?.remove(); stylesheet = undefined;
     phase = "preview"; controls(); status.textContent = "Read only"; findStatus.textContent = ""; preview.focus({ preventScroll: true });
-    const text = preview.firstChild; if (text) window.getSelection()?.setBaseAndExtent(text, at.anchor, text, at.head);
+    reader.select(at);
 }
 function cancelActivation() { if (phase !== "loading") return; generation++; abort?.abort(); abort = undefined; phase = "preview"; controls(); status.textContent = "Activation cancelled. Text retained."; }
 function dispose() { if (phase !== "disposed") { generation++; abort?.abort(); abort = undefined; stylesheet?.remove(); stylesheet = undefined; retainedText = session?.text() ?? original;
-    preview.textContent = retainedText; preview.hidden = false; editorHost.hidden = true; listeners.abort(); phase = "disposed"; controls(); status.textContent = "Closed. Text retained."; } return session?.dispose() ?? null; }
+    reader.setText(retainedText); preview.hidden = false; editorHost.hidden = true; listeners.abort(); phase = "disposed"; controls(); status.textContent = "Closed. Text retained."; } return session?.dispose() ?? null; }
 edit.addEventListener("click", () => { void activate(); }, { signal: listeners.signal }); cancel.addEventListener("click", cancelActivation, { signal: listeners.signal }); readOnly.addEventListener("click", showPreview, { signal: listeners.signal });
 const search = () => { if (phase === "editing") session?.search(query.value, regex.checked); };
 query.addEventListener("input", search, { signal: listeners.signal }); regex.addEventListener("change", search, { signal: listeners.signal }); next.addEventListener("click", () => session?.next(), { signal: listeners.signal }); window.addEventListener("pagehide", dispose, { once: true, signal: listeners.signal });

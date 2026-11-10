@@ -9,6 +9,11 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
     const snap = page => page.evaluate(() => window.activationFixture.snapshot());
     const text = page => page.evaluate(() => window.activationFixture.text());
     const button = (page, name) => page.getByRole("button", { name, exact: true });
+    const previewSelect = (page, anchor, head) => page.locator("#text").evaluate((node, [anchor, head]) => {
+        const point = at => { const walk = document.createTreeWalker(node, NodeFilter.SHOW_TEXT); let text, end = 0;
+            while (text = walk.nextNode()) { end += text.length; if (at <= end) return [text, at - end + text.length]; } throw new Error("Preview offset outside text"); };
+        window.getSelection().setBaseAndExtent(...point(anchor), ...point(head)); return window.getSelection().getRangeAt(0).toString();
+    }, [anchor, head]);
     const ready = async page => {
         await page.waitForFunction(() => { const s = window.activationFixture.snapshot(), v = s.session?.viewport, i = s.session?.input;
             return s.phase === "editing" && i && !i.pendingInput && !i.pendingCommand && !i.pendingCaret && !i.pendingWord && !i.pendingGrapheme && !i.pendingDragScroll && v && !v.pending && v.revision === s.session.revision && v.selectionSet === s.session.selections; });
@@ -31,28 +36,44 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         } finally { await context.close(); }
     }
     for (const large of [false, true]) await scenario("preview-edit-read-only-history-worker", async (page, original, requests) => {
-        await page.locator("#text").evaluate(node => { const t = node.firstChild; window.getSelection().setBaseAndExtent(t, 7, t, 3); });
+        const boundary = large ? [...original.matchAll(/\r\n|\r|\n/g)].slice(0, 500).at(-1) : null;
+        const anchor = boundary ? boundary.index + boundary[0].length + 21 : 7, head = boundary ? boundary.index - 20 : 3;
+        assert.equal(await previewSelect(page, anchor, head), original.slice(head, anchor));
         await button(page, "Edit").click(); await ready(page); const input = page.getByRole("textbox", { name: "Activated source", exact: true });
-        const initial = await snap(page); assert.equal(initial.session.selections.ranges[0].anchor, 7); assert.equal(initial.session.selections.ranges[0].head, 3);
+        const initial = await snap(page); assert.equal(initial.session.selections.ranges[0].anchor, anchor); assert.equal(initial.session.selections.ranges[0].head, head);
         assert.equal(initial.session.workers, 0); assert.ok(!requests.includes("/regex-worker.js"));
         if (!large) {
             await input.dispatchEvent("compositionstart", { data: "" }); await button(page, "Read only").click(); assert.equal((await snap(page)).phase, "editing");
             assert.match(await page.locator("#status").textContent(), /Finish typing/); await input.dispatchEvent("compositionend", { data: "" }); await ready(page); assert.equal(await text(page), original);
         }
-        await input.pressSequentially("Z"); await ready(page); const changed = original.slice(0, 3) + "Z" + original.slice(7); assert.equal(await text(page), changed);
+        await input.pressSequentially("Z"); await ready(page); const changed = original.slice(0, head) + "Z" + original.slice(anchor); assert.equal(await text(page), changed);
         const handlerMs = (await snap(page)).session.input.lastInputMs;
         await input.press("Control+z"); await ready(page); assert.equal(await text(page), original); await input.press("Control+Shift+z"); await ready(page); assert.equal(await text(page), changed);
-        assert.equal(await page.evaluate(() => window.activationFixture.select([{ anchor: 0, head: 0 }, { anchor: 2, head: 1 }], 1)), true); await ready(page);
+        const range = large ? { anchor: changed.length - 2, head: changed.length - 42 } : { anchor: 2, head: 1 };
+        assert.equal(await page.evaluate(range => window.activationFixture.select([{ anchor: 0, head: 0 }, range], 1), range), true); await ready(page);
         const before = await snap(page); await button(page, "Read only").click(); assert.equal((await snap(page)).phase, "preview"); assert.equal(await page.locator("#text").textContent(), changed);
+        // Range text is the raw source oracle; native Selection serialization varies by engine.
+        assert.equal(await page.evaluate(() => window.getSelection().getRangeAt(0).toString()), changed.slice(range.head, range.anchor));
+        if (large) {
+            await page.locator("#text").evaluate(async node => {
+                node.lastElementChild.scrollIntoView({ block: "end" });
+                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+                const tail = node.lastElementChild.getBoundingClientRect(), box = node.getBoundingClientRect();
+                if (tail.height <= 0 || tail.bottom > box.bottom + 1 || tail.bottom < box.top) throw new Error("Reader tail was not revealed");
+            });
+            await page.screenshot({ path: `${directory}/activation-reader-tail-${browserName}.png` });
+        }
         const dormant = (await snap(page)).session; assert.equal(dormant.diagnostics.subscriptions, 0); assert.equal(dormant.diagnostics.views, 1); assert.equal(dormant.diagnostics.leases, 1);
         await button(page, "Edit").click(); await ready(page); const after = await snap(page); assert.equal(after.session.resourceId, before.session.resourceId); assert.equal(after.session.documentId, before.session.documentId);
         assert.deepEqual(after.session.selections, before.session.selections); assert.deepEqual(after.session.history, before.session.history); assert.equal(after.session.workers, 0);
         await page.getByRole("textbox", { name: "Find", exact: true }).fill("const"); await page.waitForFunction(() => window.activationFixture.snapshot().session.find?.status === "ready"); assert.equal((await snap(page)).session.find.count, 1); assert.equal((await snap(page)).session.workers, 0);
         await page.getByRole("textbox", { name: "Find", exact: true }).fill("c.fé"); await page.getByRole("checkbox", { name: "Regular expression", exact: true }).check();
-        await page.waitForFunction(() => window.activationFixture.snapshot().session.find?.status === "ready"); const found = (await snap(page)).session; assert.equal(found.find.count, 1); assert.ok(found.workers > 0);
+        await page.waitForFunction(() => window.activationFixture.snapshot().session.find?.status === "ready"); const found = (await snap(page)).session; assert.equal(found.find.count, large ? 2 : 1); assert.ok(found.workers > 0);
         assert.ok(found.viewport.rows < 100); assert.equal(found.exports, 0); assert.equal(await text(page), changed);
-        await button(page, "Read only").click(); await page.locator("#text").evaluate(node => { const t = node.firstChild; window.getSelection().setBaseAndExtent(t, 2, t, 0); });
-        await button(page, "Edit").click(); await ready(page); const selected = (await snap(page)).session.selections; assert.equal(selected.ranges.length, 1); assert.equal(selected.ranges[0].anchor, 2); assert.equal(selected.ranges[0].head, 0);
+        await button(page, "Read only").click();
+        // Element boundary endpoints arise from native Select All as well as text-node ranges.
+        await page.locator("#text").evaluate(node => window.getSelection().setBaseAndExtent(node, node.childNodes.length, node, 0));
+        await button(page, "Edit").click(); await ready(page); const selected = (await snap(page)).session.selections; assert.equal(selected.ranges.length, 1); assert.equal(selected.ranges[0].anchor, changed.length); assert.equal(selected.ranges[0].head, 0);
         if (!large) await page.screenshot({ path: `${directory}/activation-${browserName}.png` });
         const diagnostics = await page.evaluate(() => window.activationFixture.dispose()); assert.equal(diagnostics.resources, 0); assert.equal(diagnostics.views, 0); assert.equal(diagnostics.leases, 0); assert.equal(diagnostics.subscriptions, 0); assert.equal(await text(page), changed);
         return { handlerMs, handlerClock: "own input handler only; no complete-action or latency percentile claim", dormant: dormant.diagnostics, final: diagnostics, boundedRows: found.viewport.rows, workerRequestsAfterOptIn: found.workers, exactUnicodeCrlf: true, completeSelectionsAndHistory: true };
