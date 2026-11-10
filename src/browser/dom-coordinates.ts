@@ -1,0 +1,19 @@
+/** CSS zoom scales client rectangles, while scrolling and inline styles keep local CSS units. */
+export function cssZoom(element: Element): number {
+    const value = element.currentCSSZoom;
+    if (Number.isFinite(value) && value > 0) return value;
+    // Older engines can implement zoom before exposing its effective value.
+    let result = 1;
+    for (let ancestor: Element | null = element; ancestor;) {
+        result *= parseFloat(element.ownerDocument.defaultView!.getComputedStyle(ancestor).zoom) || 1;
+        const root = ancestor.getRootNode();
+        ancestor = ancestor.parentElement ?? ("host" in root ? (root as ShadowRoot).host : null);
+    }
+    return result;
+}
+
+export function clientBox(element: HTMLElement) {
+    const zoom = cssZoom(element), rectangle = element.getBoundingClientRect();
+    const left = rectangle.left + element.clientLeft * zoom, top = rectangle.top + element.clientTop * zoom;
+    return { left, top, right: left + element.clientWidth * zoom, bottom: top + element.clientHeight * zoom, zoom };
+}

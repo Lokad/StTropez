@@ -1,3 +1,4 @@
+import { clientBox } from "./dom-coordinates.ts";
 import type { Affinity, DocumentView, SelectionSet, TabTarget, Workspace } from "../index.ts";
 import { applyTextDrop, captureTextTransfer, isCurrentTextTransfer } from "./text-transfer.ts";
 import type { TextTransferCapture } from "./text-transfer.ts";
@@ -54,20 +55,19 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
         || (copy ? ["copy", "copyLink", "copyMove"] : ["move", "linkMove", "copyMove"]).includes(data.effectAllowed);
     function paint(): void {
         if (!aim) return;
-        const point = viewport.coordsAt(aim.offset, aim.affinity), box = root.getBoundingClientRect();
+        const point = viewport.coordsAt(aim.offset, aim.affinity), box = clientBox(root);
         if (!point || point.revision !== aim.revision) { marker.remove(); return; }
-        marker.style.left = `${root.scrollLeft + point.left - box.left}px`;
-        marker.style.top = `${root.scrollTop + point.top - box.top}px`; marker.style.height = `${point.height}px`; root.append(marker);
+        marker.style.left = `${root.scrollLeft + (point.left - box.left) / box.zoom}px`;
+        marker.style.top = `${root.scrollTop + (point.top - box.top) / box.zoom}px`; marker.style.height = `${point.height / box.zoom}px`; root.append(marker);
     }
     function bounds() {
-        const box = root.getBoundingClientRect(), left = box.left + root.clientLeft, top = box.top + root.clientTop;
-        return { left, right: left + root.clientWidth, top, bottom: top + root.clientHeight };
+        return clientBox(root);
     }
     function velocity() {
         if (!aim) return { x: 0, y: 0 }; const box = bounds(), metrics = viewport.snapshot();
         const speed = (point: number, low: number, high: number, unit: number) => {
             const zone = Math.min(24, (high - low) / 4), distance = point < low + zone ? point - low - zone : point >= high - zone ? point - high + zone : 0;
-            return Math.sign(distance) * Math.min((high - low) * 3, Math.max(unit * 5, Math.abs(distance) * 20));
+            return Math.sign(distance) * Math.min((high - low) / box.zoom * 3, Math.max(unit * 5, Math.abs(distance) / box.zoom * 20));
         };
         return { x: speed(aim.x, box.left, box.right, metrics.columnWidth), y: speed(aim.y, box.top, box.bottom, metrics.lineHeight) };
     }

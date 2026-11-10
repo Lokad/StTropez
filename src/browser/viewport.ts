@@ -1,3 +1,4 @@
+import { clientBox, cssZoom } from "./dom-coordinates.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, Selection, SelectionSet, TabId, TextBuffer, Workspace } from "../index.ts";
 import type { ViewState } from "./index.ts";
 import { scrollAxis } from "./scroll.ts";
@@ -106,7 +107,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     const geometries = new Map<number, ReturnType<typeof rowGeometry>>();
     const geometry = (element: HTMLDivElement) => {
         const line = Number(element.dataset.line); let value = geometries.get(line);
-        if (!value) { value = rowGeometry(element, Number(element.dataset.from), renderedRevision!, lineHeight); geometries.set(line, value); } return value;
+        if (!value) { value = rowGeometry(element, Number(element.dataset.from), renderedRevision!, lineHeight * cssZoom(root)); geometries.set(line, value); } return value;
     };
     const coordinates = (offset: number, affinity: Affinity = "after"): CaretRectangle | undefined => {
         if (disposed || !workspace.resolveTab(target)) return undefined;
@@ -235,11 +236,11 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     type MeasuredRow = Readonly<{ complete: boolean; flow: -1 | 1; point: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
         visual: (offset: number, affinity: Affinity, direction: -1 | 1) => CaretRectangle | undefined;
         edge: (direction: -1 | 1, low?: number, high?: number) => CaretRectangle; nearest: (column: number) => CaretRectangle }>;
-    function measuredRow(entry: CommandRow, revision: number, rectangle: DOMRect): MeasuredRow {
+    function measuredRow(entry: CommandRow, revision: number, rectangle: ReturnType<typeof clientBox>): MeasuredRow {
         const { item, element } = entry, buffer = workspace.document(documentId).buffer, start = buffer.offsetAt(item.line);
-        const value = entry.geometry ??= rowGeometry(element, 0, revision, lineHeight), bounds = element.getBoundingClientRect(), origin = padding + (item.from - start) * columnWidth;
+        const value = entry.geometry ??= rowGeometry(element, 0, revision, lineHeight * rectangle.zoom), bounds = element.getBoundingClientRect(), origin = padding + (item.from - start) * columnWidth;
         const mapped = (point: CaretRectangle): CaretRectangle => Object.freeze({ ...point, offset: point.offset + item.from,
-            left: rectangle.left + origin + point.left - bounds.left - left, top: rectangle.top + padding + renderedIndex.rowAt(item.line) * lineHeight - top + point.top - bounds.top });
+            left: rectangle.left + (origin - left) * rectangle.zoom + point.left - bounds.left, top: rectangle.top + (padding + renderedIndex.rowAt(item.line) * lineHeight - top) * rectangle.zoom + point.top - bounds.top });
         const optional = (point: CaretRectangle | undefined) => point && mapped(point);
         return { complete: item.complete, flow: win.getComputedStyle(element).direction === "rtl" ? -1 : 1,
             point: (offset, affinity) => {
@@ -248,7 +249,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             },
             visual: (offset, affinity, direction) => optional(value.visual(offset - item.from, affinity, direction)),
             edge: (direction, low = item.from, high = item.to) => mapped(value.edge(direction, low - item.from, high - item.from)),
-            nearest: column => mapped(value.nearest(bounds.left + column - origin)) };
+            nearest: column => mapped(value.nearest(bounds.left + (column - origin) * rectangle.zoom)) };
     }
     function prepareNavigationRows(lines: readonly number[]): () => void {
         clearPreparedRows(); const document = workspace.observeDocument(documentId).getSnapshot();
@@ -281,12 +282,12 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     function withRow<T>(line: number, scrollLeft: number, offset: number | undefined, complete: boolean, work: (row: MeasuredRow) => T): T | undefined {
         const document = workspace.observeDocument(documentId).getSnapshot();
         if (disposed || !workspace.resolveTab(target) || document?.revision !== renderedRevision) return;
-        const existing = rows.get(line), rectangle = root.getBoundingClientRect();
+        const existing = rows.get(line), rectangle = clientBox(root);
         if (existing && (existing.dataset.complete === "true" || !complete && scrollLeft === left
             && (offset === undefined || offset >= Number(existing.dataset.from) && offset <= Number(existing.dataset.to)))) {
             const value = geometry(existing);
             return work({ ...value, complete: existing.dataset.complete === "true", flow: win.getComputedStyle(existing).direction === "rtl" ? -1 : 1,
-                nearest: column => value.nearest(rectangle.left + column - left) });
+                nearest: column => value.nearest(rectangle.left + (column - left) * rectangle.zoom) });
         }
         if (preparedRows && (preparedRows.revision !== document.revision || preparedRows.selectionSet !== view.getSnapshot().selectionSet)) clearPreparedRows();
         const prepared = preparedRows?.rows.get(line); if (prepared) return work(measuredRow(prepared, document.revision, rectangle));
@@ -296,7 +297,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         const changed = paintRow(commandRow, item, document, view.getSnapshot().selectionSet);
         commandRow.style.height = `${lineHeight}px`; commandRow.style.lineHeight = comparisonRows ? `${lineHeight}px` : ""; root.append(commandMeasure); navigationRows++;
         try {
-            if (changed || !commandGeometry) commandGeometry = rowGeometry(commandRow, 0, document.revision, lineHeight);
+            if (changed || !commandGeometry) commandGeometry = rowGeometry(commandRow, 0, document.revision, lineHeight * rectangle.zoom);
             return work(measuredRow({ item, element: commandRow, geometry: commandGeometry }, document.revision, rectangle));
         } finally { commandMeasure.remove(); }
     }
@@ -315,7 +316,8 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         const started = win.performance.now();
         // Read container metrics before writing rows; bounded shaping reads follow the writes.
         width = root.clientWidth; height = root.clientHeight;
-        columnWidth = probe.getBoundingClientRect().width / 64 || 8.4;
+        const zoom = cssZoom(root);
+        columnWidth = probe.getBoundingClientRect().width / zoom / 64 || 8.4;
         const style = win.getComputedStyle(root); naturalLineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.6; lineHeight = naturalLineHeight;
         const font = [style.fontFamily, style.fontSize, style.fontWeight, style.fontStyle, style.letterSpacing, style.tabSize].join("|");
         if (font !== measuredFont) { measuredWidth = 0; measuredFont = font; }
@@ -407,13 +409,13 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         orderedButtons.forEach((button, index) => { if (foldLayer.children.item(index) !== button) foldLayer.insertBefore(button, foldLayer.children.item(index)); });
         // A bounded batch of native shaping measurements follows the row writes. Extent corrections
         // are scheduled for the next frame, without alternating reads and writes for each row.
-        const measured = Math.max(0, ...[...rows.values()].filter(element => element.dataset.complete === "true").map(element => element.getBoundingClientRect().width));
+        const measured = Math.max(0, ...[...rows.values()].filter(element => element.dataset.complete === "true").map(element => element.getBoundingClientRect().width / zoom));
         if (measured > measuredWidth + .01) { measuredWidth = measured; if (measuredWidth + padding * 2 > x.extent + .01) schedule(); }
         const requestedRow = requested?.revision === document.revision ? rows.get(document.buffer.lineAt(requested.offset)) : undefined;
         if (requestedRow?.dataset.complete === "false") {
-            const caret = coordinates(requested!.offset, requested!.affinity), rectangle = root.getBoundingClientRect();
+            const caret = coordinates(requested!.offset, requested!.affinity), rectangle = clientBox(root);
             if (caret) {
-                const actual = caret.left - rectangle.left, desired = requested!.horizontal === "center" ? width / 2 : horizontalPosition(actual);
+                const actual = (caret.left - rectangle.left) / rectangle.zoom, desired = requested!.horizontal === "center" ? width / 2 : horizontalPosition(actual);
                 if (Math.abs(desired - actual) > 1) horizontalAnchor = { revision: document.revision, offset: requested!.offset, affinity: requested!.affinity, left: desired };
             }
         }
@@ -422,9 +424,9 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         if (horizontalAnchor?.revision === document.revision) {
             const at = horizontalAnchor, line = document.buffer.lineAt(at.offset), item = next.find(item => item.line === line), element = rows.get(line);
             if (item && !item.complete && element && at.offset >= item.from && at.offset <= item.to) {
-                const caret = coordinates(at.offset, at.affinity), rectangle = root.getBoundingClientRect();
+                const caret = coordinates(at.offset, at.affinity), rectangle = clientBox(root);
                 if (caret) {
-                    const desired = horizontalPosition(at.left), delta = desired - (caret.left - rectangle.left);
+                    const desired = horizontalPosition(at.left), delta = desired - (caret.left - rectangle.left) / rectangle.zoom;
                     if (Math.abs(delta) > 1) {
                         const prior = fragmentPlacement, shift = (prior?.revision === document.revision && prior.line === line && prior.from === item.from
                             && prior.to === item.to && prior.left === left ? prior.shift : 0) + delta;
@@ -434,9 +436,9 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
                 }
             }
         } else if (requested?.revision === document.revision && requestedRow?.dataset.complete === "true") {
-            const caret = coordinates(requested.offset, requested.affinity), rectangle = root.getBoundingClientRect();
+            const caret = coordinates(requested.offset, requested.affinity), rectangle = clientBox(root);
             if (caret) {
-                const actual = caret.left - rectangle.left + left;
+                const actual = (caret.left - rectangle.left) / rectangle.zoom + left;
                 const desired = requested.horizontal === "nearest" ? expose(actual, 1, left, width) : Math.max(0, actual - width / 2);
                 const maximum = Math.max(0, Math.max(document.buffer.longestLineLength * columnWidth, measuredWidth) + padding * 2 - width);
                 if (Math.abs(Math.min(maximum, desired) - left) > 1) { left = Math.min(maximum, desired); schedule(); }
@@ -493,8 +495,8 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         hitTest: (clientX: number, clientY: number) => {
             if (!Number.isFinite(clientX) || !Number.isFinite(clientY) || disposed || !workspace.resolveTab(target)
                 || workspace.observeDocument(documentId).getSnapshot()?.revision !== renderedRevision) return undefined;
-            const rectangle = root.getBoundingClientRect(), at = Math.max(0, Math.min(renderedIndex.visibleLineCount - 1, Math.floor((clientY - rectangle.top + top - padding) / lineHeight))), gap = gapAt(renderedIndex, at);
-            if (gap) return Object.freeze({ offset: gap.offset, affinity: "after", left: rectangle.left + padding - left, top: rectangle.top + padding + at * lineHeight - top, height: lineHeight, revision: renderedRevision!, padding: true });
+            const rectangle = clientBox(root), at = Math.max(0, Math.min(renderedIndex.visibleLineCount - 1, Math.floor(((clientY - rectangle.top) / rectangle.zoom + top - padding) / lineHeight))), gap = gapAt(renderedIndex, at);
+            if (gap) return Object.freeze({ offset: gap.offset, affinity: "after", left: rectangle.left + (padding - left) * rectangle.zoom, top: rectangle.top + (padding + at * lineHeight - top) * rectangle.zoom, height: lineHeight * rectangle.zoom, revision: renderedRevision!, padding: true });
             let element: HTMLDivElement | undefined, distance = Infinity;
             for (const candidate of rows.values()) {
                 const rectangle = candidate.getBoundingClientRect(), next = Math.max(rectangle.top - clientY, clientY - rectangle.bottom, 0);
@@ -517,11 +519,11 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             if (disposed || !workspace.resolveTab(target)) return;
             const document = workspace.observeDocument(documentId).getSnapshot();
             if (document?.revision !== renderedRevision || view.folding.getSnapshot().generation !== renderedFoldGeneration) return;
-            const visible = coordinates(offset, affinity), rectangle = root.getBoundingClientRect();
-            if (visible) return visible.left - rectangle.left + left;
+            const visible = coordinates(offset, affinity), rectangle = clientBox(root);
+            if (visible) return (visible.left - rectangle.left) / rectangle.zoom + left;
             const originalLine = document.buffer.lineAt(offset), hidden = renderedIndex.hiddenBy(originalLine), line = hidden?.lineFrom ?? originalLine;
             const projected = hidden ? row(document.buffer, line).to : offset, scroll = Math.max(0, padding + (projected - document.buffer.offsetAt(line)) * columnWidth - width / 2);
-            return withRow(line, scroll, projected, false, measured => { const point = measured.point(projected, affinity); return point && point.left - rectangle.left + left; });
+            return withRow(line, scroll, projected, false, measured => { const point = measured.point(projected, affinity); return point && (point.left - rectangle.left) / rectangle.zoom + left; });
         },
         caretAtColumn: (line: number, column: number) => {
             if (disposed || !workspace.resolveTab(target)) return;

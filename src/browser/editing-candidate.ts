@@ -1,3 +1,4 @@
+import { clientBox, cssZoom } from "./dom-coordinates.ts";
 import { PositionMap, textDifference, WordCursor, createGraphemeCursor, createSelectionSet, planSelectionEdits } from "../index.ts";
 import type { Affinity, DocumentView, EditKind, Selection, SelectionSet, TabId, TextBuffer, TextEdit, Workspace, GraphemeCursor, GraphemeIndex } from "../index.ts";
 import type { ViewState } from "./index.ts";
@@ -94,14 +95,14 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     const scheduleCaret = () => { if (!disposed && frame === undefined) frame = win.requestAnimationFrame(positionCaret); };
     function positionCaret(): void {
         frame = undefined; if (disposed) return;
-        const { selection: selected, selectionSet } = view.getSnapshot(), point = viewport.coordsAt(selected.head, selected.headAffinity), rectangle = root.getBoundingClientRect();
-        const visible = point && point.left >= rectangle.left && point.left < rectangle.left + root.clientWidth
-            && point.top + point.height > rectangle.top && point.top < rectangle.top + root.clientHeight;
+        const { selection: selected, selectionSet } = view.getSnapshot(), point = viewport.coordsAt(selected.head, selected.headAffinity), rectangle = clientBox(root);
+        const visible = point && point.left >= rectangle.left && point.left < rectangle.right
+            && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
         caret.hidden = !visible || selected.anchor !== selected.head || composing || owner.activeElement !== input;
         // Keep the native IME anchor near the measured caret without enlarging the scroll surface.
-        const left = Math.max(0, Math.min(root.clientWidth - 2, (point?.left ?? rectangle.left) - rectangle.left));
-        const top = Math.max(0, Math.min(root.clientHeight - 24, (point?.top ?? rectangle.top) - rectangle.top));
-        for (const element of [input, caret]) { element.style.left = `${root.scrollLeft + left}px`; element.style.top = `${root.scrollTop + top}px`; element.style.height = `${point?.height ?? viewport.snapshot().lineHeight}px`; }
+        const left = Math.max(0, Math.min(root.clientWidth - 2, ((point?.left ?? rectangle.left) - rectangle.left) / rectangle.zoom));
+        const top = Math.max(0, Math.min(root.clientHeight - 24, ((point?.top ?? rectangle.top) - rectangle.top) / rectangle.zoom));
+        for (const element of [input, caret]) { element.style.left = `${root.scrollLeft + left}px`; element.style.top = `${root.scrollTop + top}px`; element.style.height = `${point ? point.height / rectangle.zoom : viewport.snapshot().lineHeight}px`; }
         const state = viewport.snapshot(), buffer = workspace.observeDocument(documentId).getSnapshot()?.buffer;
         const points = [];
         if (!composing && owner.activeElement === input && buffer && state.selectionSet === selectionSet && state.lastLine > state.firstLine) {
@@ -116,15 +117,15 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 if (index === selectionSet.primary || range.anchor !== range.head) continue;
                 if (view.folding.getSnapshot().index.hiddenBy(buffer.lineAt(range.head))) continue;
                 const at = viewport.coordsAt(range.head, range.headAffinity);
-                if (at && at.left >= rectangle.left && at.left < rectangle.left + root.clientWidth
-                    && at.top + at.height > rectangle.top && at.top < rectangle.top + root.clientHeight) points.push(at);
+                if (at && at.left >= rectangle.left && at.left < rectangle.right
+                    && at.top + at.height > rectangle.top && at.top < rectangle.bottom) points.push(at);
             }
         }
         while (caretNodes.length > points.length) caretNodes.pop()!.remove();
         points.forEach((at, index) => {
             let node = caretNodes[index];
             if (!node) { node = owner.createElement("div"); node.className = "st-input-secondary-caret"; caretNodes.push(node); secondaryCarets.append(node); }
-            node.style.left = `${root.scrollLeft + at.left - rectangle.left}px`; node.style.top = `${root.scrollTop + at.top - rectangle.top}px`; node.style.height = `${at.height}px`;
+            node.style.left = `${root.scrollLeft + (at.left - rectangle.left) / rectangle.zoom}px`; node.style.top = `${root.scrollTop + (at.top - rectangle.top) / rectangle.zoom}px`; node.style.height = `${at.height / rectangle.zoom}px`;
         });
     }
     function refresh(): void {
@@ -426,7 +427,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const style = win.getComputedStyle(root);
         return [root.isConnected, style.width, style.height, style.fontFamily, style.fontSize, style.fontWeight, style.fontStyle, style.lineHeight,
             style.letterSpacing, style.wordSpacing, style.tabSize, style.direction, style.getPropertyValue("--st-text-direction"),
-            style.fontVariantLigatures, style.fontKerning, style.fontFeatureSettings, style.fontVariationSettings, style.transform, owner.fonts.status].join("|");
+            style.fontVariantLigatures, style.fontKerning, style.fontFeatureSettings, style.fontVariationSettings, style.transform, cssZoom(root), owner.fonts.status].join("|");
     }
     function navigationLayout(): string {
         const state = viewport.snapshot();
@@ -870,9 +871,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         return !!drag && !disposed && !composing && !input.disabled && root.isConnected && root.clientWidth > 0 && root.clientHeight > 0
             && drag.revision === revision && drag.selectionSet === view.getSnapshot().selectionSet && !!workspace.resolveTab(target) && root.hasPointerCapture(drag.pointer);
     }
-    function dragBounds(): Readonly<{ left: number; right: number; top: number; bottom: number }> {
-        const rectangle = root.getBoundingClientRect(), left = rectangle.left + root.clientLeft, top = rectangle.top + root.clientTop;
-        return { left, right: left + root.clientWidth, top, bottom: top + root.clientHeight };
+    function dragBounds() {
+        return clientBox(root);
     }
     function updateDragHead(): void {
         const current = drag; if (!current) return; const bounds = dragBounds();
@@ -885,7 +885,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (!drag) return { x: 0, y: 0 }; const bounds = dragBounds(), metrics = viewport.snapshot();
         const speed = (point: number, low: number, high: number, unit: number) => {
             const outside = point < low ? point - low : point >= high ? point - high + 1 : 0;
-            return Math.sign(outside) * Math.min((high - low) * 3, Math.max(unit * 5, Math.abs(outside) * 20));
+            return Math.sign(outside) * Math.min((high - low) / bounds.zoom * 3, Math.max(unit * 5, Math.abs(outside) / bounds.zoom * 20));
         };
         return { x: speed(drag.x, bounds.left, bounds.right, metrics.columnWidth), y: speed(drag.y, bounds.top, bounds.bottom, metrics.lineHeight) };
     }

@@ -7,6 +7,16 @@ text geometry now supplies `coordsAt` and `hitTest`; the separate experimental
 [`mountEditingCandidate`](editing-candidate.md) adds bounded input. This component does not
 select an input engine.
 
+`coordsAt`, `rowBounds` and `hitTest` use client coordinates. Scroll positions, navigation
+columns and inline placement use local CSS units. Inherited CSS `zoom` is converted at this
+boundary, including caret/input anchors, secondary carets, drop markers and pointer scroll
+bounds. The implementation uses the browser's effective zoom, with an ancestor-style fallback;
+it adds no runtime dependency. This follows the [CSSOM coordinate and zoom definitions](https://drafts.csswg.org/cssom-view/#dom-element-currentcsszoom).
+Normal/100k host scenarios compare against DOM text ranges at 150% and 75% inherited zoom,
+including borders, complete selections, pointer ranges, vertical/page navigation, typing/undo,
+comparison panes and a 2.4M-unit horizontal window. These checks cover DOM geometry; native
+IME placement, browser-toolbar zoom and OS display scaling still need platform qualification.
+
 Each frame reads the container/font geometry, obtains only visible/overscan lines and bounded
 horizontal ranges, then writes the DOM. A bounded batch of native row-width reads follows the
 writes; extent/reveal corrections schedule another frame. Rows are reused, kept in document order and removed
