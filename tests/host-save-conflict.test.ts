@@ -51,3 +51,45 @@ test("superseded remote reads cannot publish over a newer review, and disposal s
     const stopped = host.debug(); assert.equal(stopped.pendingConflictReads, 0); assert.equal(stopped.diagnostics.leases, 0);
     assert.equal(host.finishConflictReview(), false); await settled(); assert.deepEqual(host.debug(), stopped);
 });
+
+test("a newer version choice or reference publication expires an older remote conflict review", async () => {
+    for (const action of ["loading", "completed", "cancelled", "failed", "reference"] as const) {
+        const host = new HostController();
+        try {
+            await conflict(host); host.variants.keepDraft(); host.reviewSaveConflict();
+            if (action === "reference") host.retainComparisonReference(host.savedComparisonReference());
+            else {
+                assert.equal(host.variants.review("draft"), true);
+                if (action === "completed") assert.equal(host.variants.finishNext(), true);
+                if (action === "cancelled") host.variants.cancel();
+                if (action === "failed") host.variants.failNext();
+            }
+            const reference = host.comparisonReference.getSnapshot(), history = host.debug().history;
+            edit(host, "later human correction"); const laterHistory = host.debug().history;
+            assert.equal(host.finishConflictReview(), false, action);
+            assert.equal(host.comparisonReference.getSnapshot(), reference, action);
+            assert.equal(host.canSaveReviewedSource(), false); assert.equal(host.debug().saveConflict!.review, "expired");
+            assert.equal(host.workspace.document(host.source.documentId).text, "later human correction");
+            assert.deepEqual(host.debug().history, laterHistory); assert.notDeepEqual(laterHistory, history);
+            if (action === "loading") assert.equal(host.variants.finishNext(), true);
+            assert.equal(host.debug().diagnostics.leases, 0);
+        } finally { await host.dispose(); }
+    }
+});
+
+test("a newer remote review expires an older version load before either response publishes", async () => {
+    const host = new HostController();
+    try {
+        await conflict(host); host.variants.keepDraft(); assert.equal(host.variants.review("draft"), true);
+        host.reviewSaveConflict(); const reference = host.comparisonReference.getSnapshot(), history = host.debug().history;
+        assert.equal(host.variants.finishNext(), false); assert.equal(host.comparisonReference.getSnapshot(), reference);
+        assert.equal(host.finishConflictReview(), true); assert.equal(host.canSaveReviewedSource(), true);
+        assert.equal(host.comparisonReference.getSnapshot().baseline.version, "reference:conflict-v1");
+        assert.equal(host.workspace.document(host.source.documentId).text, "local"); assert.deepEqual(host.debug().history, history);
+        assert.equal(host.debug().diagnostics.leases, 0);
+        assert.equal(host.variants.review("draft"), true); assert.equal(host.canSaveReviewedSource(), false);
+        host.variants.cancel(); host.saveReviewedSource(); await settled();
+        assert.equal(host.canSaveReviewedSource(), false); assert.equal(host.debug().pendingSaves.length, 0);
+        host.reviewSaveConflict(); assert.equal(host.finishConflictReview(), true); assert.equal(host.canSaveReviewedSource(), true);
+    } finally { await host.dispose(); }
+});

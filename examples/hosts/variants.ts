@@ -6,7 +6,7 @@ export type VariantReviewSnapshot = Readonly<{ generation: number; choices: read
     status: "idle" | "loading" | "ready" | "expired" | "failed" | "disposed"; pending: number; message: string }>;
 type ReferencePublication = Readonly<{ generation: number; baseline: ComparisonBaseline }>;
 type VariantPorts = Readonly<{ presentation: () => TabTarget; reference: Observable<ReferencePublication>; publish: (baseline: ComparisonBaseline) => void;
-    present: () => void; saved: () => ComparisonBaseline; server: () => ComparisonBaseline }>;
+    present: () => void; beginReferenceRequest: () => () => boolean; saved: () => ComparisonBaseline; server: () => ComparisonBaseline }>;
 let nextScope = 0;
 const captureBaseline = (value: ComparisonBaseline): ComparisonBaseline => Object.freeze({ buffer: value.buffer, version: value.version });
 
@@ -18,7 +18,7 @@ export class ReviewVariants {
     private readonly cell: HostCell<VariantReviewSnapshot>;
     private readonly lane = `review-variant:${++nextScope}`;
     private readonly history = new Map<string, ComparisonBaseline>();
-    private readonly loads: { operation: Operation; reference: ReferencePublication; baseline: ComparisonBaseline; choice: ReviewVariant; ownerGeneration: number }[] = [];
+    private readonly loads: { operation: Operation; reference: ReferencePublication; currentRequest: () => boolean; baseline: ComparisonBaseline; choice: ReviewVariant; ownerGeneration: number }[] = [];
     private draft: ComparisonBaseline | undefined;
     private serial = 0;
     private disposed = false;
@@ -80,12 +80,13 @@ export class ReviewVariants {
         this.ports.present();
         const operation = this.workspace.beginOperation(this.source.id, this.lane, presentation);
         this.watchOwner();
-        this.loads.push({ operation, baseline: captureBaseline(baseline), choice, reference: this.ports.reference.getSnapshot(), ownerGeneration: this.ownerGeneration });
+        this.loads.push({ operation, baseline: captureBaseline(baseline), choice, reference: this.ports.reference.getSnapshot(),
+            currentRequest: this.ports.beginReferenceRequest(), ownerGeneration: this.ownerGeneration });
         this.cell.set({ ...this.cell.get(), generation: this.cell.get().generation + 1, choices: this.choices(), requested: choice, status: "loading", pending: this.loads.length,
             message: "Loading the captured version. Working text stays editable." }); return true;
     }
     private current(load: (typeof this.loads)[number]): boolean {
-        return !this.disposed && load.operation.presentationCurrent() && this.ports.reference.getSnapshot() === load.reference
+        return !this.disposed && load.currentRequest() && load.operation.presentationCurrent() && this.ports.reference.getSnapshot() === load.reference
             && this.ownerGeneration === load.ownerGeneration;
     }
     readonly finishNext = (): boolean => {

@@ -192,6 +192,13 @@ loads, failure/cancellation and an explicit discard confirmation. Selecting a ve
 reference; Save and Run keep targeting the working resource. A newer server version does not relabel
 an already captured version. These local host ports do not perform application-service integration.
 
+The evaluation hosts share a latest-request guard between version selection and remote conflict
+review. An older response cannot replace the reference after a newer request, even if that newer
+load fails or is cancelled. A changed reference publication also expires an outstanding remote
+review. Starting a new request also expires a completed remote review's save authorization.
+Stale results release their leases and cannot authorize a reviewed save; working text,
+history and the current reference remain intact. A fresh remote review can authorize saving again.
+
 Tickets own explicit resource leases until completion, cancellation or `finish()`. Completion
 settles even stale or rejected results; finish/cancel are idempotent. Captures remain available
 for host recovery. Dispose the controller and release host-held tickets when done. Disposal

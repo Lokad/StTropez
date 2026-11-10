@@ -72,6 +72,44 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await page.evaluate(() => window.hostFixture.dispose()); expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics.leases).toBe(0);
         });
 
+        test("remote and selected-version reads honor the latest review request in either response order", async ({ page }) => {
+            const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
+            const button = (name: string) => page.getByRole("button", { name, exact: true });
+            await primary.press("End"); await primary.pressSequentially(" local"); await button("Save source").click();
+            await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().pendingSaves.length)).toBe(1);
+            await page.evaluate(() => { window.hostFixture.externalWrite("remote one"); window.hostFixture.finishSave(); });
+            await expect(page.getByRole("region", { name: "Save conflict", exact: true })).toBeVisible();
+            await button("Open source review").click(); await button("Keep draft version").click();
+            const version = page.getByRole("combobox", { name: "Review version", exact: true });
+            await button("Review remote source").click(); await version.selectOption("draft");
+            const before = await page.evaluate(() => window.hostFixture.snapshot());
+            await button("Finish remote review").click();
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).comparisonReference).toEqual(before.comparisonReference);
+            await expect(button("Save reviewed source")).toBeDisabled();
+            await primary.press("End"); await primary.pressSequentially(" correction"); await button("Finish version load").click();
+            await expect(page.getByRole("group", { name: "Source review", exact: true })).toHaveAttribute("data-status", "ready");
+            expect(await page.evaluate(() => window.hostFixture.referenceRange(0, 11))).toBe("start local");
+            await expect(primary).toHaveValue("start local correction");
+
+            await version.selectOption("saved"); await button("Review remote source").click();
+            const later = await page.evaluate(() => window.hostFixture.snapshot());
+            await button("Finish version load").click();
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).comparisonReference).toEqual(later.comparisonReference);
+            await button("Finish remote review").click();
+            await expect(page.getByRole("group", { name: "Source review", exact: true })).toHaveAttribute("data-status", "ready");
+            expect(await page.evaluate(() => window.hostFixture.referenceRange(0, 10))).toBe("remote one");
+            await expect(button("Save reviewed source")).toBeEnabled();
+            const after = await page.evaluate(() => window.hostFixture.snapshot());
+            expect(after.history).toEqual(later.history); expect(after.source).toEqual(later.source);
+            await expect(primary).toHaveValue("start local correction");
+            await version.selectOption("draft"); await expect(button("Save reviewed source")).toBeDisabled();
+            await button("Cancel version load").click(); await expect(button("Save reviewed source")).toBeDisabled();
+            await button("Review remote source").click(); await button("Finish remote review").click();
+            await expect(button("Save reviewed source")).toBeEnabled();
+            await page.evaluate(() => window.hostFixture.dispose());
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 });
+        });
+
         if (editor === "candidate") test("100k-line conflict review retains bounded views and shared history during host traffic", async ({ page }) => {
             const original = "const sample = '😀 é';\r\n".repeat(100000).trimEnd(), button = (name: string) => page.getByRole("button", { name, exact: true });
             await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
