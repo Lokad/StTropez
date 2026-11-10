@@ -171,7 +171,15 @@ module/CSS loading and model/view creation after the click included. The normal/
 recorded p95 readiness of 98.7/98.3 ms and complete action proxies of 144.4/135.2 ms, with no
 editable focus or frame observed. Initial native snapshot/bootstrap construction was outside
 those clocks; browser/server/OS caches were shared. This does not qualify cold process/network
-startup, the larger 2.4-million-unit workflow, physical display or production devices.
+startup, physical display or production devices.
+
+The expanded large corpus contains 2,400,044 units. Existing restored journeys now exercise
+beginning, middle and end edits/navigation, undo/redo, Find, mode transitions and captured jobs
+at that size across three engines. A separate 12-action first-activation run recorded p95
+readiness/action proxies of 97.7/123.0 ms, including requested module/CSS loading and view/model
+creation after the click. Normal-corpus observations were retained. Scoped forced-GC Chromium
+V8/DOM release checks also pass with large-source history; native/total-process/peak memory,
+physical display and production-hardware qualification remain open.
 
 **Show snapshot** explicitly detaches the views and Find controllers and removes the stylesheet,
 leaving the native reader and retained model state. A new native range replaces the complete set
@@ -191,6 +199,9 @@ switchback, failure/retry and disposal. Run the existing archive with
 engine without rebuilding the library. Reports and images are `artifacts/package/activation-*`.
 `--activation-only --prepare-only` and `--workspace-only --prepare-only` stop after the strict
 isolated consumer build, allowing the same journeys to run under a separate browser lifecycle.
+`--corpus=large` or `--corpus=normal` selects the existing journeys for that corpus in either
+scenario; the default runs both. The large source contains 2,400,044 UTF-16 units with the same
+Unicode/CRLF header, while the 116-unit normal control stays unchanged.
 Own input-handler observations are not complete interaction latency or production percentiles.
 This local host fixture does not qualify retained heap, native IME/OS clipboard/accessibility,
 durable storage, arbitrary deployment failures or a consuming application's adoption policy.

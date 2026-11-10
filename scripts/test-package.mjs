@@ -19,7 +19,9 @@ const activationOnly = process.argv.includes("--activation-only");
 const workspaceOnly = process.argv.includes("--workspace-only"), deferredOnly = activationOnly || workspaceOnly;
 const pilotOnly = deferredOnly || reactOnly || hunkOnly || process.argv.includes("--pilot-only"), benchmark = process.argv.includes("--bench");
 const browserName = process.argv.find(arg => arg.startsWith("--browser="))?.slice("--browser=".length) ?? "chromium";
+const corpus = process.argv.find(arg => arg.startsWith("--corpus="))?.slice("--corpus=".length) ?? "all";
 assert.ok(["chromium", "firefox", "webkit"].includes(browserName), `Unknown browser: ${browserName}`);
+assert.ok(["all", "normal", "large"].includes(corpus) && (corpus === "all" || deferredOnly), "Corpus selection requires an activation/workspace scenario and all, normal or large.");
 assert.ok(!benchmark || pilotOnly, "Use --pilot-only, --hunk-only or --react-only with --bench to keep the workload explicit.");
 assert.ok(!reactOnly || (!hunkOnly && !process.argv.includes("--pilot-only")), "Select one restored pilot scenario.");
 assert.ok(!prepareOnly || ((reactOnly || deferredOnly) && !benchmark), "Preparation-only checks require --react-only, --activation-only or --workspace-only without --bench.");
@@ -120,7 +122,7 @@ const activationOutputs = deferredOnly ? Object.fromEntries(Object.entries(bundl
 await mkdir("artifacts/package", { recursive: true });
 await writeFile("artifacts/package/restored-consumer.json", JSON.stringify({ schemaVersion: 1,
     packageSha256: createHash("sha256").update(archive).digest("hex"), consumer, assetRoot,
-    browser: browserName, mode: prepareOnly ? "prepare-only" : benchmark ? "benchmark" : pilotOnly ? "pilot" : "full", scenario: workspaceOnly ? "workspace" : activationOnly ? "activation" : reactOnly ? "react" : hunkOnly ? "hunk" : pilotOnly ? "recovery" : "all",
+    browser: browserName, mode: prepareOnly ? "prepare-only" : benchmark ? "benchmark" : pilotOnly ? "pilot" : "full", scenario: workspaceOnly ? "workspace" : activationOnly ? "activation" : reactOnly ? "react" : hunkOnly ? "hunk" : pilotOnly ? "recovery" : "all", corpus,
     declarations: { files: compilerFiles, strict: true, skipLibCheck: false, passed: true, ...(reactHost ? { inputs: typeInputs } : {}) },
     inputs: Object.keys(bundle.metafile.inputs).sort(), assets,
     ...(deferredOnly ? { activationOutputs } : {}),
@@ -343,12 +345,12 @@ try {
     }
     if (activationOnly) {
         const { runPackagedActivation } = await import("./package-activation.mjs");
-        await runPackagedActivation(browser, `http://127.0.0.1:${server.address().port}`, { directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), outputs: activationOutputs,
+        await runPackagedActivation(browser, `http://127.0.0.1:${server.address().port}`, { directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), outputs: activationOutputs, corpus,
             assetBytes: { css: assets.assets.filter(a => a.path.endsWith(".css")), workers: assets.assets.filter(a => a.path === assets.entries.regexWorker) } });
     }
     if (workspaceOnly) {
         const { runPackagedWorkspace } = await import("./package-workspace.mjs");
-        await runPackagedWorkspace(browser, `http://127.0.0.1:${server.address().port}`, { directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), outputs: activationOutputs });
+        await runPackagedWorkspace(browser, `http://127.0.0.1:${server.address().port}`, { directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), outputs: activationOutputs, corpus });
     }
     if (!deferredOnly && !reactOnly && !hunkOnly) await runPackagedPilot(browser, `http://127.0.0.1:${server.address().port}`, {
         directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), benchmark,

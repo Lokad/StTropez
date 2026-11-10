@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 
-export async function runPackagedWorkspace(browser, baseUrl, { directory, packageSha256, outputs }) {
+export async function runPackagedWorkspace(browser, baseUrl, { directory, packageSha256, outputs, corpus = "all" }) {
     await mkdir(directory, { recursive: true }); const engine = browser.browserType().name(), cases = [];
     for (const large of [false, true]) {
+        if (corpus !== "all" && large !== (corpus === "large")) continue;
         const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } }), p = await context.newPage(), errors = [], requests = [];
         p.on("pageerror", e => errors.push(e.message)); p.on("request", r => requests.push(new URL(r.url()).pathname));
         const snap = () => p.evaluate(() => window.activationFixture.snapshot().session), text = () => p.evaluate(() => window.activationFixture.text());
@@ -20,6 +21,7 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
                 window.setInterval = (handler, delay, ...args) => schedule(typeof handler === "function" ? () => { if (!window.holdFirstProgress) handler(...args); } : handler, delay);
             });
             await p.goto(baseUrl + (large ? "/?large=1" : "/")); await p.waitForFunction(() => !!window.activationFixture); const original = await text();
+            assert.equal(original.length, large ? 2_400_044 : 116, "Restored workspace corpus size changed");
             assert.deepEqual(requests.filter(s => /\.(js|css)$/.test(s)), ["/activation.js"]); assert.equal(await p.locator(".st-editing-candidate").count(), 0);
             await button("Read only").click(); await ready(); const firstReading = await snap(); assert.equal(await p.evaluate(() => window.activationFixture.snapshot().phase), "reading"); assert.equal(firstReading.readOnly, true); assert.equal(firstReading.peer.readOnly, true);
             assert.equal(await p.getByLabel("Background activity", { exact: true }).textContent(), "Background activity: 0");
@@ -112,6 +114,6 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
             await writeFile(`${directory}/workspace-${engine}-failure.json`, JSON.stringify({ large, error: String(error.stack ?? error), snapshot: await snap(), layout, errors, requests }, null, 2)); throw error; }
         finally { await context.close(); }
     }
-    await writeFile(`${directory}/workspace-${engine}.json`, JSON.stringify({ packageSha256, browser: browser.version(), cases, outputs, limits: "Bounded correctness/resource/DOM and individual input-handler observations. Retained heap, complete interaction/cold activation latency, native IME/OS clipboard/accessibility and production adoption remain unverified." }, null, 2));
+    await writeFile(`${directory}/workspace-${engine}.json`, JSON.stringify({ packageSha256, browser: browser.version(), corpus, cases, outputs, limits: "Bounded correctness/resource/DOM and individual input-handler observations. Retained heap, complete interaction/cold activation latency, native IME/OS clipboard/accessibility and production adoption remain unverified." }, null, 2));
     console.log(`Restored workspace: ${cases.length} normal/100k journeys passed in ${engine}.`);
 }

@@ -7,7 +7,8 @@ const preview = document.getElementById("text")!, editorHost = document.getEleme
 const edit = document.getElementById("edit") as HTMLButtonElement, cancel = document.getElementById("cancel") as HTMLButtonElement, readOnly = document.getElementById("preview") as HTMLButtonElement;
 const snapshot = document.getElementById("snapshot") as HTMLButtonElement;
 const query = document.getElementById("query") as HTMLInputElement, regex = document.getElementById("regex") as HTMLInputElement, next = document.getElementById("next") as HTMLButtonElement, findStatus = document.getElementById("find-status")!;
-const original = "// café😀 e\u0301\r\nconst café = '😀';\r\nend\rthird\n" + "row Δ😀\r\n".repeat(new URLSearchParams(location.search).get("large") === "1" ? 100000 : 8);
+const large = new URLSearchParams(location.search).get("large") === "1";
+const original = "// café😀 e\u0301\r\nconst café = '😀';\r\nend\rthird\n" + (large ? "row Δ😀 12345678901234\r\n" : "row Δ😀\r\n").repeat(large ? 100000 : 8);
 const workspaceMode = document.body.hasAttribute("data-workspace");
 const listeners = new AbortController(); let session: ActivationSession | WorkspaceSession | undefined, generation = 0, abort: AbortController | undefined, stylesheet: HTMLLinkElement | undefined;
 let phase: "preview" | "loading" | "editing" | "reading" | "disposed" = "preview";

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 
 /** Visible consumer journeys use only the restored package and host-owned activation shell. */
-export async function runPackagedActivation(browser, baseUrl, { directory, packageSha256, outputs, assetBytes }) {
+export async function runPackagedActivation(browser, baseUrl, { directory, packageSha256, outputs, assetBytes, corpus = "all" }) {
     await mkdir(directory, { recursive: true });
     const browserName = browser.browserType().name(), cases = [];
     const bounded = async promise => { let timer; try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Activation test response did not settle within its correctness deadline.")), 30000); })]); } finally { clearTimeout(timer); } };
@@ -77,12 +77,14 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
             return s.phase === phase && i && !i.pendingInput && !i.pendingCommand && !i.pendingCaret && !i.pendingWord && !i.pendingGrapheme && !i.pendingDragScroll && v && !v.pending && v.revision === s.session.revision && v.selectionSet === s.session.selections; }, phase);
     };
     async function scenario(name, run, large = false) {
+        if (corpus !== "all" && large !== (corpus === "large")) return;
         const context = await browser.newContext({ viewport: { width: 1280, height: 900 } }), page = await context.newPage(), errors = [], requests = [], consoleErrors = [];
         page.on("pageerror", error => errors.push(error.message)); page.on("request", request => requests.push(new URL(request.url()).pathname));
         page.on("console", message => { if (message.type() === "error") consoleErrors.push(message.text()); });
         try {
             await page.goto(baseUrl + (large ? "/?large=1" : "/")); await page.waitForFunction(() => !!window.activationFixture);
             const original = await text(page); assert.equal(await page.locator("#text").textContent(), original); assert.equal((await snap(page)).session, null);
+            assert.equal(original.length, large ? 2_400_044 : 116, "Restored pilot corpus size changed");
             assert.deepEqual(requests.filter(p => /\.(js|css)$/.test(p)), ["/activation.js"]);
             assert.equal(await page.locator('link[rel="stylesheet"]').count(), 0); assert.ok(outputs["activation.js"].bytes <= 16384);
             if (name === "preview-edit-read-only-history-worker" && !large) await page.screenshot({ path: `${directory}/activation-static-${browserName}.png` });
@@ -115,6 +117,19 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         const firstAssets = [...requests]; await button(page, "Edit").click(); await ready(page); assert.deepEqual(requests, firstAssets); assert.equal((await snap(page)).session.readOnly, false);
         const initial = await snap(page); assert.equal(initial.session.selections.ranges[0].anchor, anchor); assert.equal(initial.session.selections.ranges[0].head, head);
         assert.equal(initial.session.workers, 0); assert.ok(!requests.includes("/regex-worker.js"));
+        if (large) {
+            const middle = original.lastIndexOf("\n", Math.floor(original.length / 2) - 1) + 1;
+            for (const [at, mark] of [[middle, "M"], [original.length, "E"]]) {
+                await page.evaluate(at => window.activationFixture.select([{ anchor: at, head: at }]), at);
+                await input.press(at === middle ? "Home" : "Control+End"); await ready(page); await input.pressSequentially(mark); await ready(page);
+                const edited = original.slice(0, at) + mark + original.slice(at); assert.equal(await text(page), edited); assert.equal((await snap(page)).session.selections.ranges[0].head, at + 1);
+                assert.ok((await snap(page)).session.viewport.rows < 100); assert.ok((await snap(page)).session.input.inputUnits < 2600); assert.equal((await snap(page)).session.exports, 0);
+                await input.press("Control+z"); await ready(page); assert.equal(await text(page), original);
+                await input.press("Control+Shift+z"); await ready(page); assert.equal(await text(page), edited);
+                await input.press("Control+z"); await ready(page); assert.equal(await text(page), original);
+            }
+            await page.evaluate(s => window.activationFixture.select(s.ranges, s.primary), initial.session.selections); await ready(page);
+        }
         if (!large) {
             await input.dispatchEvent("compositionstart", { data: "" }); await button(page, "Read only").click(); assert.equal((await snap(page)).phase, "editing");
             assert.match(await page.locator("#status").textContent(), /Finish typing/); await input.dispatchEvent("compositionend", { data: "" }); await ready(page); assert.equal(await text(page), original);
@@ -217,7 +232,7 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         await page.getByRole("checkbox", { name: "Regular expression", exact: true }).uncheck(); await page.waitForFunction(() => window.activationFixture.snapshot().session.find?.status === "ready"); assert.equal((await snap(page)).session.find.count, 1);
         const d = await page.evaluate(() => window.activationFixture.dispose()); assert.equal(d.resources, 0); return { literalFindAndTypingSurvive: true, final: d };
     });
-    const report = { packageSha256, browser: browser.version(), cases, assets: { javascript: outputs, ...assetBytes, wasm: [] },
+    const report = { packageSha256, browser: browser.version(), corpus, cases, assets: { javascript: outputs, ...assetBytes, wasm: [] },
         limits: "Correctness and asset loading evidence, with own input-handler observations only. No activation/interaction p95, retained heap, native IME/OS clipboard/accessibility, service integration or production qualification." };
     await writeFile(`${directory}/activation-${browserName}.json`, JSON.stringify(report, null, 2)); console.log(`Restored explicit activation: ${cases.length} journeys passed in ${browserName}.`);
 }
