@@ -7,6 +7,8 @@ import { DiffReferenceCache, WorkspaceCommands } from "sttropez";
 import { createSelectionSet, planSelectionEdits } from "sttropez";
 import type { SaveReview } from "sttropez";
 import type { PresentedLine } from "sttropez/browser";
+import { JsonRpcConnection } from "sttropez/protocol";
+import { openWebSocketTransport } from "sttropez/browser";
 const workspace = new Workspace();
 const documentId = workspace.createDocument({ scope: "consumer", resource: "source", variant: "working" }, "Consumer source", "restored assets");
 const tabId = workspace.open({ kind: "text", documentId }, "main");
@@ -33,6 +35,7 @@ function mountMultipleInput() {
 }
 let multipleInput: ReturnType<typeof mountMultipleInput> | undefined;
 Object.assign(window, { consumer: { text: () => workspace.document(documentId).text,
+    protocolExports: () => ({ connection: typeof JsonRpcConnection, websocket: typeof openWebSocketTransport }),
     clipboardBoundary: () => {
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "clipboard-boundary", variant: "working" }, "Source", { value: "before\r\nend" });
         const tab = model.open({ kind: "text", documentId: source.documentId }, "clipboard"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);

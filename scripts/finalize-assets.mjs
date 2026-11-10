@@ -25,6 +25,7 @@ await writeFile(resolve(root, "package.json"), JSON.stringify({ name: "sttropez"
     private: true, type: "module", exports: {
         ".": { types: "./index.d.ts", import: "./index.js" },
         "./browser": { types: "./browser/index.d.ts", import: "./browser/index.js" },
+        "./protocol": { types: "./protocol/index.d.ts", import: "./protocol/index.js" },
         "./editor.css": "./editor.css",
         "./regex-worker.js": "./browser/regex-worker.js",
     } }, null, 2) + "\n");
@@ -37,5 +38,5 @@ for (const file of await filesUnder(root)) {
     assets.push({ path, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") });
 }
 await writeFile(resolve(root, "manifest.json"), JSON.stringify({ schemaVersion: 1, version: "0.0.0-local",
-    entries: { core: "index.js", browser: "browser/index.js", types: "index.d.ts", css: "editor.css", regexWorker: "browser/regex-worker.js" },
+    entries: { core: "index.js", browser: "browser/index.js", protocol: "protocol/index.js", types: "index.d.ts", css: "editor.css", regexWorker: "browser/regex-worker.js" },
     assets }, null, 2) + "\n");

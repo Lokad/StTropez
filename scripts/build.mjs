@@ -1,6 +1,6 @@
 import { build } from "esbuild";
 import { mkdir, writeFile, copyFile, rm } from "node:fs/promises";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
@@ -9,7 +9,7 @@ export async function buildLibrary() {
     if (output !== resolve("dist")) throw new Error("Build must run from the project root.");
     // Only this known generated directory is cleared; stale chunks must not enter packages.
     await rm(output, { recursive: true, force: true });
-    const main = await build({ entryPoints: { index: "src/index.ts", "browser/index": "src/browser/index.ts" },
+    const main = await build({ entryPoints: { index: "src/index.ts", "browser/index": "src/browser/index.ts", "protocol/index": "src/protocol/index.ts" },
         outdir: "dist", bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022",
         minify: true, metafile: true, write: false });
     // A standalone worker can be served at a host-selected URL without relocating shared chunks.
@@ -23,7 +23,7 @@ export async function buildLibrary() {
     }
     let bytes = 0, gzipBytes = 0;
     for (const file of results.flatMap(result => result.outputFiles)) {
-        await mkdir(new URL("../dist/browser/", import.meta.url), { recursive: true });
+        await mkdir(dirname(file.path), { recursive: true });
         await writeFile(file.path, file.contents);
         bytes += file.contents.length; gzipBytes += gzipSync(file.contents, { level: 9 }).length;
     }
