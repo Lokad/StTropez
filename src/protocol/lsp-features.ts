@@ -15,6 +15,9 @@ export type LspHover = Readonly<{ text: string; range: Readonly<{ from: number; 
 export type LspLocationTarget = Pick<LspDocumentCapture, "document" | "index" | "isCurrent">;
 export type LspLocation = Readonly<{ target: LspLocationTarget; from: number; to: number; targetRange: Readonly<{ from: number; to: number }>;
     originRange: Readonly<{ from: number; to: number }> | null }>;
+export type LspEditTarget = LspLocationTarget & Readonly<{ version: number | null }>;
+export type LspDocumentEdits = Readonly<{ target: LspEditTarget; edits: readonly TextEdit[] }>;
+export type LspWorkspaceEdit = Readonly<{ documents: readonly LspDocumentEdits[]; isCurrent: () => boolean }>;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const uint = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 0x7fffffff;
 function invalid(): never { throw new TypeError("Malformed or unsupported LSP feature result."); }
@@ -86,6 +89,39 @@ export function decodeLspLocations(value: unknown, kind: "definition" | "referen
         return Object.freeze({ target, from: selected.from, to: selected.to, targetRange, originRange });
     });
     current(origin); for (const item of items) current(item.target); return Object.freeze(items);
+}
+/** Normalize a complete text-only batch; the host checks edit authority again at application. */
+export function decodeLspWorkspaceEdit(value: unknown, resolve: (uri: string) => LspEditTarget | undefined): LspWorkspaceEdit {
+    if (!record(value) || value.changeAnnotations !== undefined) invalid();
+    const budget = { units: 65536 }, identities = new Set<string>(); let count = 0;
+    const entries: Readonly<{ uri: unknown; version?: unknown; edits: unknown }>[] = [];
+    // LSP prefers versioned documentChanges when both representations are supplied.
+    if (value.documentChanges !== undefined) {
+        if (!Array.isArray(value.documentChanges) || value.documentChanges.length > 100) invalid();
+        for (const item of value.documentChanges) {
+            if (!record(item) || "kind" in item || !record(item.textDocument) || !("version" in item.textDocument)) invalid();
+            const version = item.textDocument.version;
+            if (version !== null && (typeof version !== "number" || !Number.isInteger(version) || version < -0x80000000 || version > 0x7fffffff)) invalid();
+            entries.push({ uri: item.textDocument.uri, version, edits: item.edits });
+        }
+    } else if (value.changes !== undefined) {
+        if (!record(value.changes) || Object.keys(value.changes).length > 100) invalid();
+        for (const [uri, edits] of Object.entries(value.changes)) entries.push({ uri, edits });
+    }
+    const documents = entries.map(({ uri, version, edits: values }): LspDocumentEdits => {
+        if (typeof uri !== "string" || !uri || uri.length > 4096 || !Array.isArray(values) || (count += values.length) > 1024) invalid();
+        const target = resolve(uri);
+        if (!target || target.document.uri !== uri || target.index.buffer !== target.document.buffer) throw new TypeError("LSP edit URI is outside the captured host project.");
+        current(target); if (identities.has(target.document.documentId)) throw new TypeError("LSP edits must name each captured document once."); identities.add(target.document.documentId);
+        if (version !== undefined && version !== null && version !== target.version) throw new RpcError(-32801, "LSP edit refers to another wire document version.");
+        const edits = values.map((item: unknown) => { if (!record(item) || "annotationId" in item) invalid(); return edit(target.index, item, budget); })
+            .sort((a, b) => a.from - b.from || a.to - b.to);
+        // Stable sorting preserves the server's order for insertions at the same position.
+        validateTextEdits(target.document.buffer.length, edits); return Object.freeze({ target, edits: Object.freeze(edits) });
+    });
+    const isCurrent = () => documents.every(document => document.target.isCurrent());
+    if (!isCurrent()) throw new RpcError(-32801, "LSP edit capture expired.");
+    return Object.freeze({ documents: Object.freeze(documents), isCurrent });
 }
 function edit(index: LspLineIndex, value: unknown, budget: { units: number }): TextEdit {
     if (!record(value)) invalid(); return Object.freeze({ ...lspRangeOffsets(index, value.range), insert: text(value.newText, 16384, budget) });

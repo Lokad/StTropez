@@ -26,7 +26,7 @@ export type LspSessionSnapshot = Readonly<{ phase: "disconnected" | "connecting"
 export type LspSessionOptions = Readonly<{ connect: (context: LspConnectContext) => Promise<RpcTransport>; schedule: RpcScheduler;
     rootUri?: string | null; initializationOptions?: JsonValue; clientInfo?: Readonly<{ name: string; version?: string }>;
     /** Declare only features whose results the consuming host validates and presents. */
-    features?: readonly LspFeature[]; diagnostics?: boolean; pathForUri?: LspUriPath; maxDocuments?: number; maxDocumentUnits?: number; maxTotalUnits?: number;
+    features?: readonly LspFeature[]; diagnostics?: boolean; workspaceEdits?: boolean; pathForUri?: LspUriPath; maxDocuments?: number; maxDocumentUnits?: number; maxTotalUnits?: number;
     rpc?: Pick<RpcOptions, "timeoutMs" | "maxPending" | "maxMessageUnits">; onError?: (error: Error) => void }>;
 type Entry = { snapshot: LspDocumentSnapshot; handle: LspDocument };
 type Remote = { entry: Entry; snapshot: LspDocumentSnapshot; index: LspLineIndex; version: number };
@@ -93,7 +93,8 @@ export class LspSession {
         if (this.features.has("textDocument/definition")) textDocument.definition = { dynamicRegistration: true, linkSupport: true };
         this.initializeParams = jsonSnapshot({ processId: null, rootUri: options.rootUri ?? null,
             ...(options.clientInfo ? { clientInfo: options.clientInfo } : {}), initializationOptions: options.initializationOptions ?? null,
-            capabilities: { general: { positionEncodings: ["utf-16"] }, textDocument } });
+            capabilities: { general: { positionEncodings: ["utf-16"] }, textDocument,
+                ...(options.workspaceEdits ? { workspace: { workspaceEdit: { documentChanges: true, resourceOperations: [], failureHandling: "transactional", normalizesLineEndings: false } } } : {}) } });
         this.scope = new NotificationScope(error => this.report(error));
         this.store = new Store(this.snapshot("disconnected", null), this.scope);
         this.state = Object.freeze({ getSnapshot: this.store.observable.getSnapshot, subscribe: listener => {

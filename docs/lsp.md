@@ -7,8 +7,8 @@ dependencies. A production language provider is not required for fixture qualifi
 The wire engine is implemented in TypeScript because importing the reference implementation
 would add runtime dependencies; JSON encoding and WebSocket I/O use platform APIs.
 
-The protocol entry provides a wire engine, host-driven client session, and validated diagnostics/
-completion models. Both development hosts have an explicit [LSP editor adapter](lsp-editor.md).
+The protocol entry provides a wire engine, host-driven client session, and validated feature/edit
+models. Both development hosts have an explicit [LSP editor adapter](lsp-editor.md).
 The rest of the requested feature matrix remains required. The existing [local worker protocol v1](project-sync.md)
 remains an internal fixture and establishes no LSP compatibility.
 
@@ -21,7 +21,8 @@ remains an internal fixture and establishes no LSP compatibility.
 | Incremental synchronization | Captured URI/resource/document/revision bindings, separate wire versions, queued/coalesced open/change/close and exact raw UTF-16/CRLF/LF/bare-CR conversion. Point changes reuse shared buffer edges and LF metadata. |
 | Diagnostics/completion | Complete bounded validation, captured version/index access, versioned diagnostic anchors and manual completion with insert/replace/additional edits. Both hosts exercise actual typing, shared history, comparison authority, Save/Run and outage/lifecycle guards over WebSocket. Unversioned diagnostics remain plain information without source anchors. |
 | Hover/navigation | Bounded literal hover content/optional ranges, definition Location/LocationLink and references validation. Both actual hosts use WebSocket backends with captured project URIs, complete origin selections, target revision/authority checks, unmounted-resource reveal and stale/cancellation/lifecycle guards. See [navigation scope](lsp-navigation.md). |
-| Rename/code actions/workspace edits | Versioned URI-to-resource mapping, complete validation, explicit application, shared atomic history and stale/authority refusal are still required. |
+| Rename/workspace text edits | Whole-batch URI/range/wire-version validation and exact provider edit previews/application in both hosts. Shared atomic history, unmounted targets, comparison, Save/Run, stale/authority/cancellation guards use existing Workspace transactions. See [supported forms and limits](lsp-rename.md). Optional prepareRename, file operations and annotations remain unsupported. |
+| Code actions/server edits | Actual code-action/resolve/command and workspace.applyEdit schemas, explicit host flow and affected end-to-end qualification remain required. Their local worker fixtures establish no LSP compatibility. |
 | Cancellation/reconnect | Opening, queued document calls, RPC requests and cooperative sync plans can be cancelled. Reconnect clears registrations/results and reopens current captures; commands never replay automatically. |
 | Host URIs/custom messages | Exact opaque URI bindings, replaceable selector path policy and removable custom request/notification handlers. Custom result schemas, authority and service policy belong to the host. |
 
@@ -70,8 +71,9 @@ all items/ranges/additional edits before presenting any choice. `synchronized(bi
 exact sent snapshot/index/wire version, or undefined while local updates are pending; its `isCurrent`
 guard expires on session, registration or binding/revision changes. `decodeLspDiagnostics` validates
 pushes against that capture. `decodeLspHover` and `decodeLspLocations` validate literal content and
-captured host URI locations. Rename/code-action validation and atomic workspace-edit application
-remain required. Custom handlers persist
+captured host URI locations. `decodeLspWorkspaceEdit` normalizes complete text-only batches for
+captured resources; the host rechecks edit authority before its atomic transaction. Code-action
+and server-edit adapters remain required. Custom handlers persist
 across reconnect, but pending calls do not. Incoming request contexts expose cancellation and an
 `isCurrent` guard; hosts must check authority again before committing after an await.
 

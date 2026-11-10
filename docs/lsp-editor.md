@@ -4,7 +4,7 @@ The plain and React development hosts accept `?editor=candidate&language=lsp` to
 WebSocket provider. Their default local worker remains a separate fixture. The LSP route opens a
 real session using the pinned 3.17.5 reference peer; it never falls back to that worker. Both hosts
 reuse the same provider controls, captured view ownership, Workspace transactions and history.
-Hover and definition/reference navigation also use LSP in this route. Rename, actions and other
+Hover, definition/reference navigation and [rename/edit previews](lsp-rename.md) also use LSP in this route. Actions and other
 language tools retain their separately declared worker fixtures until their LSP adapters are delivered.
 The fixture recognizes simple words and TODO markers; it establishes protocol/host behavior, not
 general language semantics. There is no production service or provider prerequisite.
@@ -55,8 +55,8 @@ keep Save/Run on their captured resource; later typing survives an earlier Save 
 The example adapter owns one connection/bound document per mounted provider view, connecting
 on explicit view activation. It does not claim a shared project-wide provider cache. Custom fixture
 configuration is supplied through a host hook; session/feature code contains no fixture endpoint or
-message policy. The [remaining LSP matrix](lsp.md) includes rename, code actions
-and atomic workspace edits across resources. Native IME/clipboard and physical-display checks
+message policy. The [remaining LSP matrix](lsp.md) includes code actions, server-originated
+workspace edits and advanced completion. Native IME/clipboard and physical-display checks
 remain unverified; all browser qualification stays headless on the shared desktop.
 
 Large-document correctness journeys type and complete at the beginning, middle and end of a

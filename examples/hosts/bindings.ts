@@ -213,7 +213,7 @@ export class ViewBindings {
         this.colors = new HostDocumentColors(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
         this.links = new HostDocumentLinks(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
         this.actions = new HostActionsTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
-        this.rename = new HostRenameTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
+        this.rename = new HostRenameTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.rename);
         this.signature = new HostSignatureTools(controller.workspace, canCapture, () => this.hover.dismiss());
         this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.documentId) && !this.review?.working.snapshot().pendingInput
             && ![...this.mounted.values()].some(value => value.editor.metrics()?.pendingInput),

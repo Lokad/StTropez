@@ -8,6 +8,8 @@ import { referencePeer } from "./reference-peer.ts";
 import { provide } from "../probes/provider.ts";
 import { provideHover } from "../probes/hover.ts";
 import { SymbolScanner } from "../probes/navigation.ts";
+import { renameName } from "../probes/rename.ts";
+import type { Location, TextEdit, WorkspaceEdit } from "vscode-languageserver-protocol/node.js";
 
 /** Generic development peer. It is separate from the internal worker-v1 fixture and production assets. */
 export function attachProtocolFixture(server: Server) {
@@ -30,6 +32,7 @@ export function attachProtocolFixture(server: Server) {
         const documents = new Map<string, TextDocument>(), syncFailures: string[] = [];
         const pending = new Set<() => void>(); let completionConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, completionStyle = "edits";
         let hoverConfig: { delay: number; fault?: "malformed" | "failure" | "markup" } | undefined, navigationConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, definitionLinks = false;
+        let renameConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, versionedEdits = false;
         const deferred = <T>(delay: number, token: CancellationToken, compute: () => T | Promise<T>) => new Promise<T>((resolve, reject) => {
             let done = false, stop: { dispose: () => void } | undefined;
             const finish = () => { if (done) return false; done = true; clearTimeout(timer); stop?.dispose(); pending.delete(cancel); return true; };
@@ -45,7 +48,8 @@ export function attachProtocolFixture(server: Server) {
         };
         const publish = (doc: TextDocument) => { peer.sendNotification("textDocument/publishDiagnostics", { uri: doc.uri, version: doc.version, diagnostics: diagnosticItems(doc) }); };
         peer.onRequest(InitializeRequest.type, (params): InitializeResult => { definitionLinks = params.capabilities.textDocument?.definition?.linkSupport === true;
-            return { capabilities: { positionEncoding: "utf-16", textDocumentSync: 2, definitionProvider: true, referencesProvider: true,
+            versionedEdits = params.capabilities.workspace?.workspaceEdit?.documentChanges === true;
+            return { capabilities: { positionEncoding: "utf-16", textDocumentSync: 2, definitionProvider: true, referencesProvider: true, renameProvider: true,
                 completionProvider: { triggerCharacters: ["."] }, hoverProvider: params.initializationOptions?.fixtureDynamic !== true }, serverInfo: { name: "Generic protocol fixture" } }; });
         peer.onNotification(InitializedNotification.type, () => { initialized = true; });
         const sync = (update: () => void) => { try { if (!initialized) throw new Error("Synchronization before initialized"); update(); } catch (error) { syncFailures.push(String(error)); } };
@@ -88,6 +92,37 @@ export function attachProtocolFixture(server: Server) {
         peer.onRequest("fixture/navigationConfig", (params: typeof navigationConfig) => {
             if (!params || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure"].includes(params.fault)) throw new ResponseError(-32602, "Invalid navigation configuration"); navigationConfig = { ...params }; return null;
         });
+        const scanLocations = async (project: readonly TextDocument[], name: string, kind: "definition" | "references", includeDeclaration: boolean, token: CancellationToken) => {
+            const locations: Location[] = []; let overflow = false;
+            for (const doc of project) {
+                const scanner = new SymbolScanner(name, (from, to, declaration) => {
+                    if (kind === "definition" ? !declaration : declaration && !includeDeclaration) return;
+                    if (locations.length === 1024) { overflow = true; return; } locations.push({ uri: doc.uri, range: { start: doc.positionAt(from), end: doc.positionAt(to) } });
+                });
+                const text = doc.getText(); for (let at = 0; at < text.length; at += 16384) { if (token.isCancellationRequested) throw new ResponseError(-32800, "Fixture request cancelled"); scanner.chunk(text.slice(at, at + 16384)); if (at % 65536 === 0) await setImmediate(); } scanner.finish();
+            }
+            if (overflow) throw new ResponseError(-32000, "Fixture result exceeds its declared limit"); return locations;
+        };
+        peer.onRequest("fixture/renameConfig", (params: typeof renameConfig) => {
+            if (!params || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure"].includes(params.fault)) throw new ResponseError(-32602, "Invalid rename configuration"); renameConfig = { ...params }; return null;
+        });
+        peer.onRequest("textDocument/rename", (params: { textDocument: { uri: string }; position: { line: number; character: number }; newName: string }, token) => {
+            const origin = documents.get(params.textDocument.uri); if (!origin || typeof params.newName !== "string" || !renameName(params.newName)) throw new ResponseError(-32602, "Fixture rename needs an open source and a supported new identifier");
+            const config = renameConfig, project = [...documents.values()]; renameConfig = { delay: 0 };
+            return deferred(config.delay, token, async (): Promise<WorkspaceEdit | null> => {
+                if (config.fault === "failure") throw new ResponseError(-32001, "Fixture rename unavailable");
+                const symbol = symbolAt(origin, params.position); if (!symbol.result.range) return null;
+                const name = symbol.text.slice(symbol.from + symbol.result.range.from, symbol.from + symbol.result.range.to);
+                const locations = await scanLocations(project, name, "references", true, token);
+                if (!locations.some(location => location.uri === origin.uri && origin.offsetAt(location.range.start) <= origin.offsetAt(params.position) && origin.offsetAt(params.position) <= origin.offsetAt(location.range.end))) return null;
+                const changes = new Map<string, TextEdit[]>();
+                for (const location of locations) { const edits = changes.get(location.uri) ?? []; edits.push({ range: location.range, newText: params.newName }); changes.set(location.uri, edits); }
+                const marker = "// fixture rename\r\n";
+                if (!origin.getText().startsWith(marker)) { if (locations.length === 1024) throw new ResponseError(-32000, "Fixture rename exceeds its edit limit"); const edits = changes.get(origin.uri) ?? []; edits.unshift({ range: { start: origin.positionAt(0), end: origin.positionAt(0) }, newText: marker }); changes.set(origin.uri, edits); }
+                if (config.fault === "malformed") changes.set("host+fixture:unknown-target", [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }, newText: "invalid final target" }]);
+                return versionedEdits ? { documentChanges: [...changes].map(([uri, edits]) => ({ textDocument: { uri, version: project.find(doc => doc.uri === uri)?.version ?? null }, edits: [...edits].reverse() })) } : { changes: Object.fromEntries(changes) };
+            });
+        });
         for (const kind of ["definition", "references"] as const) peer.onRequest(`textDocument/${kind}`, (params: { textDocument: { uri: string }; position: { line: number; character: number }; context?: { includeDeclaration: boolean } }, token) => {
             const origin = documents.get(params.textDocument.uri); if (!origin) throw new ResponseError(-32602, "Document not open");
             if (kind === "references" && typeof params.context?.includeDeclaration !== "boolean") throw new ResponseError(-32602, "References require declaration context");
@@ -95,16 +130,8 @@ export function attachProtocolFixture(server: Server) {
             return deferred(config.delay, token, async () => {
                 if (config.fault === "failure") throw new ResponseError(-32001, "Fixture navigation unavailable");
                 const symbol = symbolAt(origin, params.position); if (!symbol.result.range) return [];
-                const name = symbol.text.slice(symbol.from + symbol.result.range.from, symbol.from + symbol.result.range.to), locations: { uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }[] = [];
-                let overflow = false;
-                for (const doc of project) {
-                    const scanner = new SymbolScanner(name, (from, to, declaration) => {
-                        if (kind === "definition" ? !declaration : declaration && !params.context!.includeDeclaration) return;
-                        if (locations.length === 1024) { overflow = true; return; } locations.push({ uri: doc.uri, range: { start: doc.positionAt(from), end: doc.positionAt(to) } });
-                    });
-                    const text = doc.getText(); for (let at = 0; at < text.length; at += 16384) { if (token.isCancellationRequested) throw new ResponseError(-32800, "Fixture navigation cancelled"); scanner.chunk(text.slice(at, at + 16384)); if (at % 65536 === 0) await setImmediate(); } scanner.finish();
-                }
-                if (overflow) throw new ResponseError(-32000, "Fixture navigation result exceeds its declared limit");
+                const name = symbol.text.slice(symbol.from + symbol.result.range.from, symbol.from + symbol.result.range.to);
+                const locations = await scanLocations(project, name, kind, params.context?.includeDeclaration ?? true, token);
                 if (config.fault === "malformed") locations.push({ uri: "host+fixture:unknown-target", range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } } });
                 if (kind === "definition" && definitionLinks) return locations.map(location => ({ originSelectionRange: symbol.range, targetUri: location.uri, targetRange: location.range, targetSelectionRange: location.range }));
                 return kind === "definition" && locations.length === 1 ? locations[0] : locations;

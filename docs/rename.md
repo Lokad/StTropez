@@ -1,5 +1,9 @@
 # Captured rename preview
 
+The default worker route below is a local lexical fixture. The explicit LSP route uses a
+[provider edit preview](lsp-rename.md): enter the new name before requesting its edits;
+changing the name requires a fresh request. Both routes share atomic Workspace history.
+
 Both candidate hosts offer **Prepare rename preview** (F2 in a source), a **New
 identifier** field, paged targets and **Apply captured rename**. The origin can be
 primary, secondary or comparison working source. Preparing and editing the name

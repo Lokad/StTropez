@@ -1,6 +1,7 @@
 import type { DocumentId, TextBuffer, Workspace } from "../../src/index.ts";
 import { LspSession, RpcError, decodeLspLocations } from "../../src/protocol/index.ts";
 import type { LspCall, LspDocument, LspSessionOptions } from "../../src/protocol/index.ts";
+import { captureLspProject, updateLspProject } from "./lsp-project.ts";
 import type { NavigationInput } from "../probes/navigation.ts";
 import { validateNavigationInput } from "../probes/navigation.ts";
 import type { NavigationMetrics } from "./navigation-client.ts";
@@ -27,25 +28,10 @@ export function createLspNavigationClient(workspace: Workspace, clock: Pick<Wind
         busy = true; const serial = ++sequence; let call: LspCall<unknown> | undefined;
         const current = () => { if (disposed || serial !== sequence) throw new RpcError(-32800, "LSP navigation cancelled."); };
         try {
-            const ids = new Set(input.documents.map(doc => doc.document)), uris = new Set<string>();
-            const snapshots = input.documents.map(doc => {
-                const buffer = buffers.get(doc.document), resource = workspace.resourceForDocument(doc.document as DocumentId);
-                if (!buffer || buffer.length !== doc.length || workspace.document(doc.document as DocumentId).key.variant !== "working") throw new Error("LSP navigation buffer is outside its captured scope.");
-                const uri = options.uri(doc.document as DocumentId); if (uris.has(uri)) throw new Error("LSP host URI mapping must be unique."); uris.add(uri);
-                return { uri, languageId: "fixture", resourceId: resource.id, documentId: doc.document, revision: doc.revision, buffer };
-            });
-            for (const [id, document] of documents) if (!ids.has(id) || !snapshots.some(snapshot => snapshot.documentId === id && snapshot.resourceId === document.getSnapshot().resourceId && snapshot.uri === document.getSnapshot().uri)) { document.close(); documents.delete(id); }
-            // Shrink before growing, so a valid final project does not fail a transient total-size bound.
-            snapshots.sort((a, b) => (a.buffer.length - (documents.get(a.documentId)?.getSnapshot().buffer.length ?? 0)) - (b.buffer.length - (documents.get(b.documentId)?.getSnapshot().buffer.length ?? 0)));
-            for (const snapshot of snapshots) {
-                const document = documents.get(snapshot.documentId);
-                if (!document) documents.set(snapshot.documentId, session.bindDocument(snapshot));
-                else if (document.getSnapshot().revision !== snapshot.revision) document.update(document.getSnapshot().revision, snapshot.revision, snapshot.buffer);
-                else if (document.getSnapshot().buffer !== snapshot.buffer) throw new Error("A navigation revision cannot name different buffers.");
-            }
+            updateLspProject(workspace, session, documents, input.documents, buffers, options.uri);
             await session.connect(); await session.flush(); current();
             if (options.beforeRequest) await options.beforeRequest(session, input); current();
-            const captures = new Map([...documents.values()].map(document => { const captured = session.synchronized(document); if (!captured) throw new Error("LSP project synchronization is incomplete."); return [captured.document.uri, captured] as const; }));
+            const captures = captureLspProject(session, documents);
             const originDocument = documents.get(origin.document)!; let source = session.synchronized(originDocument)!;
             call = session.requestDocument(input.kind === "definition" ? "textDocument/definition" : "textDocument/references", originDocument, (index, _snapshot, captured) => {
                 source = captured; return { position: index.at(origin.offset), ...(input.kind === "references" ? { context: { includeDeclaration: input.includeDeclaration } } : {}) };

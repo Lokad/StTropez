@@ -14,7 +14,7 @@ import { projectActions } from "./project-panel.ts";
 import { documentColorActions, documentColorDescription, documentColorLabel, colorEditLabel } from "./document-colors-panel.ts";
 import { documentLinkActions, documentLinkDescription, documentLinkLabel, documentLinkDetails } from "./document-links-panel.ts";
 import { actionsControls, actionsDescription, actionTarget } from "./actions-panel.ts";
-import { renameActions, renameDescription, renameTarget } from "./rename-panel.ts";
+import { renameActions, renameDescriptionFor, renameTarget } from "./rename-panel.ts";
 import { signatureActions } from "./signature-panel.ts";
 import { HostDraftRecovery } from "./draft-recovery.ts";
 import { createBrowserDraftStore } from "./draft-store.ts";
@@ -198,11 +198,11 @@ function ActionsTools() {
 }
 function RenameTools() {
     const tools = bindings.rename, s = useObserved(tools.state);
-    return <section className="host-language" aria-label="Rename preview"><h2>Rename preview</h2><p>{renameDescription}</p>
+    return <section className="host-language" aria-label="Rename preview"><h2>Rename preview</h2><p>{renameDescriptionFor(tools)}</p>
         <output aria-label="Rename status">{s.message}</output>
         <label>New identifier <input ref={tools.bindName} type="text" maxLength={256} value={s.name} onChange={event => tools.setName(event.currentTarget.value)} /></label>
         <div>{renameActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
-        <ol aria-label="Captured rename targets" start={s.page * 64 + 1}>{s.locations.map(at => <li key={at.document + ":" + at.from}>{renameTarget(at, s.symbol, s.name)}</li>)}</ol>
+        <ol aria-label="Captured rename targets" start={s.page * 64 + 1}>{s.locations.map(at => <li key={at.ordinal}>{renameTarget(at, s.symbol, s.name)}</li>)}</ol>
         <ul aria-label="Renamed resources">{s.changes.map(c => <li key={c.document}><button disabled={s.token !== null} onClick={() => tools.openChanged(c.document)}>Open renamed changes in {c.title}</button></li>)}</ul></section>;
 }
 function ProjectTools() {
