@@ -72,9 +72,9 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         assert.equal(await reader.textContent(), value); assert.equal(await text(page), value);
         assert.equal(await reader.evaluate(node => [...node.children].every(child => getComputedStyle(child).contentVisibility === "auto")), true);
     }
-    const ready = async page => {
-        await page.waitForFunction(() => { const s = window.activationFixture.snapshot(), v = s.session?.viewport, i = s.session?.input;
-            return s.phase === "editing" && i && !i.pendingInput && !i.pendingCommand && !i.pendingCaret && !i.pendingWord && !i.pendingGrapheme && !i.pendingDragScroll && v && !v.pending && v.revision === s.session.revision && v.selectionSet === s.session.selections; });
+    const ready = async (page, phase = "editing") => {
+        await page.waitForFunction(phase => { const s = window.activationFixture.snapshot(), v = s.session?.viewport, i = s.session?.input;
+            return s.phase === phase && i && !i.pendingInput && !i.pendingCommand && !i.pendingCaret && !i.pendingWord && !i.pendingGrapheme && !i.pendingDragScroll && v && !v.pending && v.revision === s.session.revision && v.selectionSet === s.session.selections; }, phase);
     };
     async function scenario(name, run, large = false) {
         const context = await browser.newContext({ viewport: { width: 1280, height: 900 } }), page = await context.newPage(), errors = [], requests = [], consoleErrors = [];
@@ -110,7 +110,24 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         await input.press("Control+z"); await ready(page); assert.equal(await text(page), original); await input.press("Control+Shift+z"); await ready(page); assert.equal(await text(page), changed);
         const range = large ? { anchor: changed.length - 2, head: changed.length - 42 } : { anchor: 2, head: 1 };
         assert.equal(await page.evaluate(range => window.activationFixture.select([{ anchor: 0, head: 0 }, range], 1), range), true); await ready(page);
-        const before = await snap(page); await button(page, "Read only").click(); assert.equal((await snap(page)).phase, "preview"); assert.equal(await page.locator("#text").textContent(), changed);
+        const before = await snap(page), assetsBefore = requests.filter(path => /\.(js|css)(\?|$)/.test(path));
+        await button(page, "Read only").click(); await ready(page, "reading"); const reading = (await snap(page)).session;
+        assert.equal(reading.readOnly, true); assert.deepEqual(reading.selections, before.session.selections); assert.deepEqual(reading.history, before.session.history);
+        for (const key of ["Backspace", "Delete", "Control+z", "Control+Shift+z"]) await input.press(key);
+        await input.pressSequentially("blocked"); await ready(page, "reading"); assert.equal(await text(page), changed); assert.deepEqual((await snap(page)).session.history, before.session.history);
+        await input.press("Control+End"); await input.press("Shift+PageUp"); await input.press("Control+a"); await ready(page, "reading");
+        assert.deepEqual((await snap(page)).session.selections.ranges.map(r => [r.anchor, r.head]), [[0, changed.length]]);
+        if (large) assert.equal((await snap(page)).session.input.inputUnits, 1); assert.ok((await snap(page)).session.viewport.rows < 100);
+        await input.press("Escape"); await input.press("Tab"); assert.equal(await page.getByRole("textbox", { name: "Find", exact: true }).evaluate(node => node === document.activeElement), true);
+        await page.getByRole("textbox", { name: "Find", exact: true }).fill("const"); await page.waitForFunction(() => window.activationFixture.snapshot().session.find?.status === "ready");
+        await button(page, "Next match").click(); assert.equal((await snap(page)).session.selections.ranges[0].anchor, changed.indexOf("const"));
+        await page.getByRole("textbox", { name: "Find", exact: true }).fill("");
+        await page.evaluate(s => window.activationFixture.select(s.ranges, s.primary), before.session.selections); await ready(page, "reading");
+        await page.screenshot({ path: `${directory}/activation-reading-${large ? "100k-" : ""}${browserName}.png` });
+        await button(page, "Edit").click(); await ready(page);
+        assert.equal((await snap(page)).session.readOnly, false); assert.deepEqual((await snap(page)).session.selections, before.session.selections);
+        assert.deepEqual(requests.filter(path => /\.(js|css)(\?|$)/.test(path)), assetsBefore); assert.equal((await snap(page)).session.workers, 0);
+        await button(page, "Show snapshot").click(); assert.equal((await snap(page)).phase, "preview"); assert.equal(await page.locator("#text").textContent(), changed);
         // Range text is the raw source oracle; native Selection serialization varies by engine.
         assert.equal(await page.evaluate(() => window.getSelection().getRangeAt(0).toString()), changed.slice(range.head, range.anchor));
         if (large) {
@@ -129,7 +146,7 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         await page.getByRole("textbox", { name: "Find", exact: true }).fill("c.fé"); await page.getByRole("checkbox", { name: "Regular expression", exact: true }).check();
         await page.waitForFunction(() => window.activationFixture.snapshot().session.find?.status === "ready"); const found = (await snap(page)).session; assert.equal(found.find.count, large ? 2 : 1); assert.ok(found.workers > 0);
         assert.ok(found.viewport.rows < 100); assert.equal(found.exports, 0); assert.equal(await text(page), changed);
-        await button(page, "Read only").click();
+        await button(page, "Show snapshot").click();
         const keyboardDormant = (await snap(page)).session;
         await page.locator("#text").press("Control+Home"); await page.locator("#text").press("Shift+ArrowRight"); await page.locator("#text").press("Escape");
         const keyboardAfter = (await snap(page)).session;
@@ -138,7 +155,11 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         await page.locator("#text").evaluate(node => window.getSelection().setBaseAndExtent(node, node.childNodes.length, node, 0));
         await button(page, "Edit").click(); await ready(page); const selected = (await snap(page)).session.selections; assert.equal(selected.ranges.length, 1); assert.equal(selected.ranges[0].anchor, changed.length); assert.equal(selected.ranges[0].head, 0);
         if (!large) {
-            await input.press("Delete"); await ready(page); assert.equal(await text(page), ""); await button(page, "Read only").click();
+            await input.press("Delete"); await ready(page); assert.equal(await text(page), "");
+            await button(page, "Read only").click(); await ready(page, "reading");
+            for (const key of ["Control+a", "Home", "End", "Shift+ArrowRight", "PageDown"]) await input.press(key);
+            await ready(page, "reading"); assert.deepEqual((await snap(page)).session.selections.ranges.map(r => [r.anchor, r.head]), [[0, 0]]);
+            await button(page, "Edit").click(); await ready(page); await button(page, "Show snapshot").click();
             for (const key of ["Control+a", "Home", "End", "Shift+ArrowRight", "Shift+ArrowLeft", "PageDown"]) await page.locator("#text").press(key);
             assert.deepEqual(await previewRange(page), { anchor: 0, head: 0 }); assert.equal(await page.locator("#text").textContent(), "");
             await page.locator("#text").press("Escape"); await page.keyboard.press("Enter"); await ready(page); await input.press("Control+z"); await ready(page); assert.equal(await text(page), changed);
@@ -152,7 +173,7 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         let expected = original, captured = null;
         if (asset === "editor.css") {
             await button(page, "Edit").click(); await ready(page); const input = page.getByRole("textbox", { name: "Activated source", exact: true }); await input.press("Control+Home"); await input.pressSequentially("Q"); await ready(page);
-            expected = "Q" + original; captured = (await snap(page)).session; await button(page, "Read only").click();
+            expected = "Q" + original; captured = (await snap(page)).session; await button(page, "Show snapshot").click();
         }
         let failures = 0; await page.route("**/" + asset + "*", async route => { if (failures++ === 0) await route.fulfill({ status: 503, contentType: asset.endsWith("js") ? "text/javascript" : "text/css", body: "" }); else await route.continue(); });
         await button(page, "Edit").click(); await page.waitForFunction(() => window.activationFixture.snapshot().phase === "preview");

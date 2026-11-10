@@ -53,7 +53,19 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
             await button("Close primary tab").click(); await ready();
             await closed.selectOption(one.resourceId); await button("Discard closed document").click(); await button("Confirm discard").click(); assert.ok(!(await snap()).workspace.documents.some(d => d.resourceId === one.resourceId)); assert.equal((await snap()).diagnostics.resources, 101);
             if (!large) { await peer.dispatchEvent("compositionstart", { data: "" }); await button("Read only").click(); assert.equal(await p.evaluate(() => window.activationFixture.snapshot().phase), "editing"); await peer.dispatchEvent("compositionend", { data: "" }); await ready(); }
-            const beforePreview = await snap(), retained = await text(); await button("Read only").click(); assert.equal(await p.evaluate(() => window.activationFixture.snapshot().phase), "preview"); const dormant = await snap(); assert.equal(dormant.diagnostics.subscriptions, 0); assert.equal(await p.locator(".st-editing-candidate").count(), 0); assert.equal(await p.locator(".activation-workspace").count(), 0);
+            const beforeReading = await snap(), beforeReadingText = await text();
+            await button("Read only").click(); await ready(); const reading = await snap();
+            assert.equal(await p.evaluate(() => window.activationFixture.snapshot().phase), "reading"); assert.equal(reading.readOnly, true); assert.equal(reading.peer.readOnly, true);
+            for (const [after, before] of [[reading, beforeReading], [reading.peer, beforeReading.peer]]) { assert.deepEqual(after.selections, before.selections); assert.deepEqual(after.history, before.history); }
+            for (const input of [primary, peer]) { await input.pressSequentially("blocked"); await input.press("Control+z"); }
+            await ready(); assert.equal(await text(), beforeReadingText); assert.deepEqual((await snap()).peer.history, beforeReading.peer.history);
+            assert.equal(await p.evaluate(({ id, revision }) => window.activationFixture.workspace().edit(id, revision, [{ from: 0, to: 0, insert: "live\r\n" }]), { id: reading.resourceId, revision: reading.revision }), true);
+            await ready(); const liveReading = await snap(); assert.equal(await text(), "live\r\n" + beforeReadingText); assert.equal(liveReading.readOnly, true);
+            await select.selectOption(two.resourceId); await ready(); assert.equal((await snap()).readOnly, true); await primary.pressSequentially("blocked"); await ready(); assert.equal(await text(), "two " + twoOriginal);
+            await select.selectOption(beforeReading.resourceId); await ready(); assert.deepEqual((await snap()).selections, liveReading.selections);
+            await p.screenshot({ path: `${directory}/workspace-reading-${large ? "100k-" : ""}${engine}.png` });
+            await button("Edit").click(); await ready(); assert.equal((await snap()).readOnly, false); assert.equal((await snap()).peer.readOnly, false);
+            const beforePreview = await snap(), retained = await text(); await button("Show snapshot").click(); assert.equal(await p.evaluate(() => window.activationFixture.snapshot().phase), "preview"); const dormant = await snap(); assert.equal(dormant.diagnostics.subscriptions, 0); assert.equal(await p.locator(".st-editing-candidate").count(), 0); assert.equal(await p.locator(".activation-workspace").count(), 0);
             const reader = p.locator("#text"), savedRange = await reader.evaluateHandle(() => { const s = window.getSelection(); return { anchor: s.anchorNode, anchorOffset: s.anchorOffset, head: s.focusNode, headOffset: s.focusOffset }; });
             try {
                 await reader.press("Control+Home"); await reader.press("Shift+ArrowRight"); await reader.press("Escape");
@@ -63,10 +75,28 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
                 assert.equal(await text(), retained);
             } finally { await p.evaluate(at => window.getSelection().setBaseAndExtent(at.anchor, at.anchorOffset, at.head, at.headOffset), savedRange); await savedRange.dispose(); }
             await button("Edit").click(); await ready(); assert.equal(await text(), retained); assert.equal((await snap()).resourceId, beforePreview.resourceId); assert.deepEqual((await snap()).selections, beforePreview.selections); assert.equal((await snap()).diagnostics.resources, 101);
+            await button("Show snapshot").click();
+            await reader.press("Control+Home"); await reader.press("Shift+ArrowRight");
+            const frozen = await snap();
+            let releaseStyle, pendingStyle; const styleGate = new Promise(resolve => { releaseStyle = resolve; });
+            const pattern = "**/editor.css?activation=*"; await p.route(pattern, route => pendingStyle = styleGate.then(() => route.continue()));
+            let mapped;
+            try {
+                const loading = p.waitForRequest(pattern); await button("Edit").click(); await loading;
+                assert.equal(await p.evaluate(({ id, revision }) => window.activationFixture.workspace().edit(id, revision, [{ from: 0, to: 0, insert: "host\r\n" }]), { id: frozen.resourceId, revision: frozen.revision }), true);
+                mapped = await snap();
+            } finally { releaseStyle(); await pendingStyle; await p.unroute(pattern); }
+            await ready();
+            assert.deepEqual((await snap()).selections, mapped.selections, "A stale native snapshot must not replace model-mapped complete selections");
+            const finalText = "host\r\n" + retained; assert.equal(await text(), finalText);
+            await button("Show snapshot").click(); await reader.press("Control+Home"); await reader.press("Shift+ArrowRight");
+            await p.evaluate(() => window.activationFixture.select([{ anchor: 0, head: 0 }, { anchor: 3, head: 1 }], 1)); const selectedModel = await snap();
+            assert.equal(selectedModel.revision, mapped.revision);
+            await button("Edit").click(); await ready(); assert.deepEqual((await snap()).selections, selectedModel.selections, "A model selection change also expires the snapshot without a text revision");
             const live = await snap(); assert.equal(live.exports, 0); assert.equal(live.peer.exports, 0); if (!large) await p.screenshot({ path: `${directory}/workspace-${engine}.png` });
             const final = await p.evaluate(() => window.activationFixture.dispose()); assert.equal(final.resources, 0); assert.equal(final.documents, 0); assert.equal(final.views, 0); assert.equal(final.leases, 0); assert.equal(final.subscriptions, 0);
             assert.equal(await reader.evaluate(node => { const e = new KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true, cancelable: true }); node.dispatchEvent(e); return e.defaultPrevented; }), false);
-            const stopped = (await snap()).workspace.ticks; await p.waitForTimeout(120); assert.equal((await snap()).workspace.ticks, stopped); assert.equal(await text(), retained); assert.deepEqual(errors, []);
+            const stopped = (await snap()).workspace.ticks; await p.waitForTimeout(120); assert.equal((await snap()).workspace.ticks, stopped); assert.equal(await text(), finalText); assert.deepEqual(errors, []);
             cases.push({ large, initiallyInactive: 100, activeViews: 2, progressHz: 20, baselineNodes, maxNodes, baselineSubscriptions, dormant: dormant.diagnostics, final, primaryHandlerMs, peerHandlerMs, requests, errors, oneOriginalLength: oneOriginal.length });
         } catch (error) { await p.screenshot({ path: `${directory}/workspace-${engine}-failure.png` }); const layout = await p.evaluate(() => [...document.querySelectorAll('#editor,.workspace-panes,.workspace-panes > div,.st-editing-candidate')].map(node => { const s = getComputedStyle(node), r = node.getBoundingClientRect(); return { name: node.id || node.className, display: s.display, height: s.height, width: r.width, minHeight: s.minHeight, columns: s.gridTemplateColumns, rows: s.gridTemplateRows }; }));
             await writeFile(`${directory}/workspace-${engine}-failure.json`, JSON.stringify({ large, error: String(error.stack ?? error), snapshot: await snap(), layout, errors, requests }, null, 2)); throw error; }

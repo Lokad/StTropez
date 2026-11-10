@@ -18,13 +18,13 @@ export function createActivationSession(original: string, selection: Selection) 
     let current = add("source", "Source", original);
     const peerSource = add("peer", "Peer document", "// peer\r\n" + original), peerTab = workspace.open({ kind: "text", documentId: peerSource.resource.documentId }, "peer");
     for (let i = 1; i <= 100; i++) add(`document-${i}`, `Document ${String(i).padStart(3, "0")}`, `// document ${i}\r\n` + "row Δ😀\r\n".repeat(1000));
-    const view = (s: Source) => s.primary ??= createViewSession("", s.key === "source" ? selection : { anchor: 0, head: 0 }, { workspace, source: s.resource, tab: () => { if (!s.tab) throw new Error("Tab is closed."); return s.tab; } });
+    const view = (s: Source) => s.primary ??= createViewSession("", s.key === "source" ? selection : { anchor: 0, head: 0 }, { workspace, source: s.resource, tab: () => s.tab });
     let peer: ActivationSession | undefined = createViewSession("", { anchor: 4, head: 1 }, { workspace, source: peerSource.resource, tab: () => peerTab, label: "Peer source", focus: false });
     view(current);
     let root: HTMLElement | undefined, primaryHost: HTMLElement | undefined, peerHost: HTMLElement | undefined, options: HTMLSelectElement | undefined, closed: HTMLSelectElement | undefined, messageNode: HTMLOutputElement | undefined, progressNode: HTMLOutputElement | undefined;
     let listeners: AbortController | undefined, updateFind: ((value: string) => void) | undefined, chosenClosed = "", message = "Closing a tab retains its document and history.";
     let discard: Discard | undefined, job: Job | undefined, lastJob: Readonly<{ resourceId: ResourceId; revision: number; prefix: string }> | undefined;
-    let ticks = 0, disposed = false, query = "", regex = false, lastBase: ReturnType<ActivationSession["snapshot"]> | undefined;
+    let ticks = 0, disposed = false, query = "", regex = false, readOnly = false, lastBase: ReturnType<ActivationSession["snapshot"]> | undefined;
     const refresh = () => {
         if (messageNode) messageNode.textContent = message;
         if (options) { options.replaceChildren(); for (const s of sources.values()) if (s.tab) options.add(new Option(s.title, s.resource.id)); options.value = current.tab ? current.resource.id : ""; }
@@ -43,7 +43,7 @@ export function createActivationSession(original: string, selection: Selection) 
         workspace.releaseResource(s.resource.id, true); sources.delete(s.resource.id); if (current === s) current = sources.values().next().value!;
         discard = undefined; notify("Closed document discarded.");
     };
-    const mountPrimary = () => { if (primaryHost && current.tab) { view(current).mount(primaryHost, undefined, value => updateFind?.(value)); if (query) view(current).search(query, regex); else updateFind?.(""); } };
+    const mountPrimary = () => { if (primaryHost && current.tab) { view(current).mount(primaryHost, undefined, value => updateFind?.(value), readOnly); if (query) view(current).search(query, regex); else updateFind?.(""); } };
     const open = (s: Source) => {
         if (disposed || !view(current).canUnmount()) { notify("Finish primary typing before switching documents."); return; }
         view(current).unmount(); if (!s.tab) { s.tab = workspace.open({ kind: "text", documentId: s.resource.documentId }, "primary"); s.epoch++; }
@@ -67,8 +67,9 @@ export function createActivationSession(original: string, selection: Selection) 
     const clearDOM = () => { listeners?.abort(); listeners = undefined; root?.remove(); root = primaryHost = peerHost = options = closed = messageNode = progressNode = undefined; updateFind = undefined; };
     const unmount = () => { if (!view(current).canUnmount() || !peer?.canUnmount()) return false; view(current).unmount(); peer.unmount(); clearDOM(); return true; };
     return Object.freeze({
-        mount: (host: HTMLElement, at: Selection | undefined, update: (message: string) => void) => {
+        mount: (host: HTMLElement, at: Selection | undefined, update: (message: string) => void, reading = false) => {
             if (disposed || root) throw new Error("Workspace is unavailable."); listeners = new AbortController(); updateFind = update;
+            readOnly = reading;
             const owner = host.ownerDocument, signal = listeners.signal; root = owner.createElement("section"); root.className = "activation-workspace";
             const controls = owner.createElement("div"), label = owner.createElement("label"); label.textContent = "Primary document"; options = owner.createElement("select"); label.append(options); controls.append(label);
             options.addEventListener("change", () => { const s = sources.get(options!.value as ResourceId); if (s) open(s); }, { signal });
@@ -81,7 +82,7 @@ export function createActivationSession(original: string, selection: Selection) 
             button("Capture job", captureJob); button("Finish job", finishJob);
             messageNode = owner.createElement("output"); messageNode.setAttribute("aria-label", "Workspace status"); progressNode = owner.createElement("output"); progressNode.setAttribute("aria-label", "Background activity");
             const panes = owner.createElement("div"); panes.className = "workspace-panes"; primaryHost = owner.createElement("div"); peerHost = owner.createElement("div"); panes.append(primaryHost, peerHost); root.append(controls, messageNode, progressNode, panes); host.append(root);
-            view(current).mount(primaryHost, at, update); peer!.mount(peerHost, undefined, () => {}); refresh();
+            view(current).mount(primaryHost, at, update, readOnly); peer!.mount(peerHost, undefined, () => {}, readOnly); refresh();
         }, unmount, canUnmount: () => view(current).canUnmount() && !!peer?.canUnmount(),
         search: (value: string, regularExpression: boolean) => { query = value; regex = regularExpression; if (current.tab) view(current).search(query, regex); }, next: () => view(current).next(),
         select: (ranges: readonly Selection[], primary = 0) => view(current).select(ranges, primary), selection: () => view(current).selection(),

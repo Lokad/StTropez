@@ -145,14 +145,31 @@ Full-document native selection remains a large-reader responsiveness limit. A re
 against a 250 ms target, a 332.7 ms keydown dispatch span and a 459.7 ms complete keyboard/observer
 proxy. The dispatch span measures a navigation event; typing/input-handler and physical-display
 clocks are separate. Selecting through reader-element endpoints did not remove the cost in a
-bounded control. Functional keyboard and scoped release checks pass; responsive large Select All
-remains open work for a virtual read-only presentation. The snapshot remains an evaluation
+bounded control. Functional keyboard and scoped release checks pass; the native snapshot's large
+Select All responsiveness remains open. The snapshot remains an evaluation
 fallback; native/total-process memory and production editing-engine readiness remain unqualified.
 
-**Read only** detaches the editor and Find controller while keeping the resource, complete
-selection set and shared undo history. Selecting new text in the preview deliberately replaces
-the set with that single selection on the next activation. Composition and queued edits guard switchback;
-caret repaint work can be cancelled safely. The regex worker is requested only after opting in
+After the first **Edit**, **Read only** remounts the bounded views with a per-view read-only policy.
+Navigation, selection, copying and Find remain available; input, history and replacement commands
+cannot mutate through those views. Resource permissions stay unchanged. **Edit** restores editing
+with the same retained views, complete selection sets, scroll and shared undo history. This mode
+transition makes no new editing-entry or CSS request. In the workspace consumer, both panes and
+subsequently opened primary tabs retain the chosen mode.
+
+A separate warm Chromium 156 workspace run used the 100k corpus (900,044 UTF-16 units),
+two rendered panes, 100 inactive documents, 20 Hz progress and a pending captured job. Ten
+observations after two warmups recorded Read only p95 readiness/action proxies of 82.2/119.4 ms
+and Select All proxies of 50.6/54.9 ms. Select All's own navigation-key handler was 0.6 ms and
+capture-to-post-target dispatch span 0.7 ms; neither measures a typing input handler or physical
+display latency. These development-runner points qualify the bounded mode, not the native
+snapshot, cold loads, population percentiles or production hardware.
+
+**Show snapshot** explicitly detaches the views and Find controllers and removes the stylesheet,
+leaving the native reader and retained model state. A new native range replaces the complete set
+on reactivation only while its captured resource, document revision, tab generation, view and model
+selection set remain current after asynchronous loading. Otherwise the current model selections
+are kept. Composition and queued edits guard both transitions; caret repaint can be cancelled
+safely. The regex worker is requested only after opting in
 to regular expressions. Worker failure reports an unavailable search while typing and literal
 Find remain usable. Final disposal releases models, views, subscriptions and leases and retains
 the last committed text in the host preview. Module code already evaluated stays browser-cached.
