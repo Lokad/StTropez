@@ -19,6 +19,8 @@ import { signatureActions } from "./signature-panel.ts";
 import { HostDraftRecovery } from "./draft-recovery.ts";
 import { createBrowserDraftStore } from "./draft-store.ts";
 import { draftActions } from "./draft-panel.ts";
+import { configurationValidation } from "./configuration.ts";
+import { configurationActions, configurationKey } from "./configuration-panel.ts";
 import "./style.css";
 
 const controller = new HostController(), bindings = new ViewBindings(controller, hostEditor());
@@ -61,11 +63,19 @@ function DraftRecovery() {
         <div>{draftActions(draft).map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
         <pre hidden={s.preview === null}>{s.preview ?? ""}</pre></section>;
 }
+function ConfigurationSavePanel() {
+    const save = controller.configurationSave, state = useObserved(save.state); useObserved(controller.connection);
+    return <section className="host-language" aria-label="Configuration save" onKeyDown={event => configurationKey(event, save)}><h2>Configuration save</h2>
+        <output aria-label="Configuration save status" aria-live="polite">{save.statusText()}</output>
+        <div>{configurationActions(save).map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
+        <pre hidden={state.preview === null}>{state.preview ?? ""}</pre></section>;
+}
 function Form() {
     const state = useObserved(controller.connection), layout = useObserved(controller.layout);
     if (layout.formFault) throw new Error("Synthetic host form render failure");
-    return state.state === "ready" ? <div><label>Configuration path<input value={state.value.path} onChange={event => controller.setPath(event.currentTarget.value)} /></label>
-        <p>{state.value.path ? "" : "Path is required."}</p></div> : <p>{state.state}</p>;
+    return state.state === "ready" ? <div onKeyDown={event => configurationKey(event, controller.configurationSave)}><label>Configuration path<input value={state.value.path}
+        readOnly={!state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null} aria-invalid={configurationValidation(state.value) !== null}
+        onChange={event => controller.setPath(event.currentTarget.value)} /></label><p>{configurationValidation(state.value)}</p></div> : <p>{state.state}</p>;
 }
 function Scene() {
     const layout = useObserved(controller.layout);
@@ -139,7 +149,7 @@ function TablePasteTools() {
         <button disabled={state.status !== "converting"} onClick={tools.cancel}>Cancel table paste</button></section>;
 }
 function App() {
-    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><DraftRecovery /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentLinksTools /><DocumentColorsTools /><SignatureTools /><SymbolInfo /></>;
+    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><ConfigurationSavePanel /><DraftRecovery /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentLinksTools /><DocumentColorsTools /><SignatureTools /><SymbolInfo /></>;
 }
 function DocumentColorsTools() {
     const tools = bindings.colors, s = useObserved(tools.state);

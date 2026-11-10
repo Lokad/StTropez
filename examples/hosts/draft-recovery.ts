@@ -37,7 +37,8 @@ function decode(stored: StoredDraft, controller: HostController): Draft {
     return Object.freeze({ format: 1, id: stored.token, created: d.created,
         source: Object.freeze({ key: sourceKey, revision: d.source.revision, serverVersion: d.source.serverVersion, text: d.source.text }),
         configuration: Object.freeze({ key: configurationKey, revision: d.configuration.revision, serverVersion: d.configuration.serverVersion,
-            value: Object.freeze({ path: d.configuration.value.path, format: "csv" }) }), input: Object.freeze(input) });
+            // Keep opaque fields in the host's private clone; the resource validates and freezes on restore.
+            value: Object.freeze(structuredClone(d.configuration.value)) as Connection }), input: Object.freeze(input) });
 }
 
 /** Host-owned checkpoints. Ordinary edits only compare immutable handles; they never export text. */

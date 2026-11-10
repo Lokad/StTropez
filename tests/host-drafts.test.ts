@@ -27,15 +27,29 @@ test("checkpoint transfers captured versions without exporting ordinary later ed
     assert.equal(before.readMetrics().textExports, 1); assert.equal(c.workspace.document(c.source.documentId).buffer.readMetrics().textExports, 0); assert.equal(d.shouldWarnOnLeave(), true); await close(c, d);
 });
 test("new session offers independent source/configuration restore with a new undo history", async () => {
-    const store = await seeded(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); assert.equal(text(c), "start"); assert.equal(d.state.getSnapshot().present, true);
+    const store = await seeded(), envelope = structuredClone(store.shared.value!);
+    const extra = { remoteOptions: { columns: ["id", "Δ"], separator: ";", retained: true }, opaqueZero: -0 };
+    const payload = envelope.value as { configuration: { value: Record<string, unknown> } }; payload.configuration.value = { ...payload.configuration.value, ...extra }; store.shared.value = envelope;
+    const c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); assert.equal(text(c), "start"); assert.equal(d.state.getSnapshot().present, true);
     d.prepare("source"); d.confirm(); await idle(d); assert.equal(text(c), "stored café😀\r\ndraft"); assert.equal(c.source.metadata.getSnapshot().serverVersion, "v0"); assert.equal(c.workspace.observeHistory(c.source.documentId).getSnapshot().undoDepth, 1);
     const initialConfiguration = c.connection.getSnapshot(); assert.equal(initialConfiguration.state === "ready" && initialConfiguration.value.path, "source.csv");
     d.prepare("configuration"); d.confirm(); await idle(d); const configuration = c.connection.getSnapshot(); assert.equal(configuration.state === "ready" && configuration.value.path, "stored.csv"); assert.equal(d.shouldWarnOnLeave(), false);
+    assert.deepEqual(configuration.state === "ready" && configuration.value, { path: "stored.csv", format: "csv", ...extra });
     c.workspace.undo({ documentId: c.source.documentId, expectedRevision: c.workspace.document(c.source.documentId).revision }); assert.equal(text(c), "start"); await close(c, d);
 });
 test("stale source confirmation retains corrections while independent configuration can restore", async () => {
     const store = await seeded(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); d.prepare("source"); edit(c, "human correction"); d.confirm(); await idle(d); assert.equal(text(c), "human correction");
     d.prepare("configuration"); edit(c, "further correction"); d.confirm(); await idle(d); assert.equal(text(c), "further correction"); const configuration = c.connection.getSnapshot(); assert.equal(configuration.state === "ready" && configuration.value.path, "stored.csv"); await close(c, d);
+});
+
+test("configuration save receipt expires a pending restore and pending Save still warns with checkpoint coverage", async () => {
+    const store = storage(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d);
+    c.setPath("checkpoint.csv"); d.prepare("keep"); await idle(d); assert.equal(d.shouldWarnOnLeave(), false);
+    const gate = deferred(); store.shared.readGate = gate.promise; d.prepare("configuration"); d.confirm();
+    c.configurationSave.save(); await new Promise<void>(done => setImmediate(done)); assert.equal(d.shouldWarnOnLeave(), true);
+    c.configurationSave.finish(); await new Promise<void>(done => setImmediate(done)); gate.resolve(); await idle(d);
+    const state = c.connection.getSnapshot(); assert.equal(state.state === "ready" && state.value.path, "checkpoint.csv"); assert.equal(state.metadata.serverVersion, "configuration-v1"); assert.equal(state.metadata.dirty, false);
+    assert.match(d.state.getSnapshot().message, /changed|stale|expired/i); assert.equal(text(c), "start"); await close(c, d);
 });
 for (const change of ["revision", "authority"] as const) test(`restore revalidates ${change} after asynchronous storage read`, async () => {
     const store = await seeded(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); const gate = deferred(); store.shared.readGate = gate.promise; d.prepare("source"); d.confirm();

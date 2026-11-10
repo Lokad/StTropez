@@ -16,6 +16,8 @@ import { mountRenamePanel } from "./rename-panel.ts";
 import { mountSignaturePanel } from "./signature-panel.ts";
 import type { HostDraftRecovery } from "./draft-recovery.ts";
 import { mountDraftPanel } from "./draft-panel.ts";
+import { configurationValidation } from "./configuration.ts";
+import { configurationKey, mountConfigurationPanel } from "./configuration-panel.ts";
 
 export function mountPlain(host: HTMLElement, controller: HostController, bindings: ViewBindings, draft: HostDraftRecovery): () => void {
     const listeners = new AbortController(), subscriptions: (() => void)[] = [];
@@ -52,7 +54,9 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const links = document.createElement("section"); links.className = "host-language"; links.setAttribute("aria-label", "Module document links");
     const colors = document.createElement("section"); colors.className = "host-language"; colors.setAttribute("aria-label", "Document colors");
     const draftPanel = document.createElement("section"); draftPanel.className = "host-language"; draftPanel.setAttribute("aria-label", "Draft recovery");
-    host.replaceChildren(nav, status, recovery, conflict, scene, review, draftPanel, language, tablePaste, domain, navigation, project, rename, codeActions, links, colors, modal);
+    const configuration = document.createElement("section"); configuration.className = "host-language"; configuration.setAttribute("aria-label", "Configuration save");
+    host.replaceChildren(nav, status, recovery, conflict, scene, review, configuration, draftPanel, language, tablePaste, domain, navigation, project, rename, codeActions, links, colors, modal);
+    const destroyConfiguration = mountConfigurationPanel(configuration, controller);
     const destroyDraft = mountDraftPanel(draftPanel, draft);
     const destroyColors = mountDocumentColorsPanel(colors, bindings.colors);
     const destroyLinks = mountDocumentLinksPanel(links, bindings.links);
@@ -93,8 +97,11 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         label.textContent = "Configuration path"; label.append(field); form.append(label, validation); right.append(form);
         const updateForm = () => {
             const state = controller.connection.getSnapshot();
-            if (state.state === "ready") { if (field.value !== state.value.path) field.value = state.value.path; validation.textContent = state.value.path ? "" : "Path is required."; }
+            if (state.state === "ready") { if (field.value !== state.value.path) field.value = state.value.path;
+                const error = configurationValidation(state.value); validation.textContent = error ?? ""; field.setAttribute("aria-invalid", String(error !== null));
+                field.readOnly = !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null; }
         };
+        form.addEventListener("keydown", event => configurationKey(event, controller.configurationSave), { signal: sceneListeners.signal });
         field.addEventListener("input", () => controller.setPath(field.value), { signal: sceneListeners.signal });
         unwatchForm = controller.connection.subscribe(updateForm); updateForm();
         if (layout.visible) {
@@ -128,5 +135,5 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         controller.saveConflict.subscribe(updateConflict), controller.source.metadata.subscribe(updateConflict),
         controller.layout.subscribe(updateConflict), controller.comparisonReference.subscribe(updateConflict));
     renderScene(); renderReview(); updateStatus(); updateRecovery(); updateConflict();
-    return () => { destroyDraft(); destroyColors(); destroyLinks(); destroyActions(); destroyRename(); destroySignature(); destroyProject(); destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
+    return () => { destroyConfiguration(); destroyDraft(); destroyColors(); destroyLinks(); destroyActions(); destroyRename(); destroySignature(); destroyProject(); destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
 }

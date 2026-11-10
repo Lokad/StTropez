@@ -5,6 +5,23 @@ document, tab and view handles. `?editor=native` mounts the native control; `?ed
 mounts the bounded input candidate. The same host protocol tests run against both choices.
 These remain synthetic evaluation hosts. All service responses come from deferred local ports.
 
+Configuration has its own captured Save, validation, dirty/saved/failed status and explicit
+remote-conflict review. The host reuses the generic resource save ticket for immutable capture,
+per-resource serialization, canonical replies and server preconditions. Form fields and their
+Save panel route Ctrl+S/Cmd+S to configuration; source inputs keep targeting source. Repeated
+or composing shortcuts do not submit another write. A blank path blocks configuration Save
+and Run while retaining the raw input; source Save remains available. Run captures the current
+valid inputs without saving them, including while another configuration capture is saving.
+
+Later edits survive a captured configuration receipt. A reviewed retry uses the observed remote
+version and conflicts again if that version changed. Failure preserves the value and review for
+retry. Unknown snapshot fields survive path edits, save canonicalization and draft restore;
+restoring a configuration never rebuilds it from only the visible form fields. A save receipt
+changing the baseline expires a pending checkpoint restore. Pending saves keep the unload guard
+active even when current values have a recovery checkpoint. View removal keeps the controller's
+pending port; final controller disposal settles it and releases its command lease. These local
+fixtures demonstrate host policy without adding storage, schema or network services to core.
+
 Reference versions update the existing comparison through a captured refresh ticket. They
 preserve its editable input, focus, selection, provider target and in-flight working commands.
 An external reference expires older captured reference commands and releases their leases.

@@ -1,4 +1,4 @@
-import type { HostController } from "./controller.ts";
+import type { Connection, HostController } from "./controller.ts";
 import type { HostDraftRecovery } from "./draft-recovery.ts";
 import type { ViewBindings } from "./bindings.ts";
 import type { DocumentId, HistorySnapshot, Selection, TextEdit, TextResourceHandle } from "../../src/index.ts";
@@ -31,6 +31,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         deliverProposal: controller.deliverProposalText, runCapture: (index: number) => controller.runCapture(index), setPath: controller.setPath, recoveryText: () => controller.recoveryText(),
         finishRun: controller.finishRun, failRun: controller.failRun, finishSave: controller.finishSave, failSave: controller.failSave,
         externalWrite: (text: string) => controller.externalWrite(text), finishConflictReview: controller.finishConflictReview, saveReviewedSource: controller.saveReviewedSource,
+        configurationCapture: () => controller.configurationSave.capture(), configurationValue: () => { const s = controller.connection.getSnapshot(); return s.state === "ready" ? s.value : null; },
         range: (from: number, to: number) => controller.workspace.document(controller.source.documentId).buffer.slice(from, to),
         referenceRange: (from: number, to: number) => bindings.referenceRange(from, to),
         selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => bindings.selectSource(id, revision, selection),
@@ -78,6 +79,7 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; mode
     recoveryText: () => string | null;
     finishRun: () => void; failRun: () => void; finishSave: () => void; failSave: () => void; range: (from: number, to: number) => string;
     externalWrite: (text: string) => void; finishConflictReview: () => boolean; saveReviewedSource: () => void;
+    configurationCapture: () => ReturnType<HostController["configurationSave"]["capture"]>; configurationValue: () => Connection | null;
     referenceRange: (from: number, to: number) => string | undefined;
     selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => boolean;
     selectSourceSet: (id: "primary" | "secondary" | "comparison", revision: number, ranges: readonly Selection[], primary?: number) => boolean;

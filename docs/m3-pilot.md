@@ -93,6 +93,17 @@ in its canonical reply. Reloading starts a new fixture; this is not durable stor
    Use **Move primary view**, then **Toggle views** twice. Text, history and independent view state
    survive movement and remount while configuration and background progress keep their own state.
 
+7. Edit **Configuration path**, then press Ctrl+S/Cmd+S in that field or choose **Save
+   configuration**. Continue editing either resource and running captured inputs while the
+   request is pending. **Finish configuration save** acknowledges the captured value; newer
+   form edits remain unsaved. **Fail configuration save** retains values for retry. A successful
+   unchanged capture trims its path without discarding unknown configuration fields.
+   A blank path remains visible and blocks configuration Save and Run; source Save stays independent.
+   **Simulate external configuration change** followed by Save/Finish produces a conflict.
+   Choose **Review remote configuration**, correct local fields, then **Save reviewed
+   configuration** and finish it. A newer remote write conflicts again instead of being overwritten.
+   Source text, history, complete selection sets and comparison reference remain independent.
+
 The automated [host workflows](host-workflows.md) also cover 100,000-line and long-line sources
 with bounded input contexts, reads and DOM. [Viewport limits](viewport.md) identify unsupported
 geometry. Use `?editor=native` for the whole-value native source-input baseline; the comparison
