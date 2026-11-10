@@ -88,3 +88,41 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     }
     await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });
+
+for (const host of ["plain", "react"]) test(`${host} scroll boundary keeps the display caret on source while the native input stays bounded`, async ({ page }) => {
+    page.on("pageerror", error => { throw error; }); await page.goto(`/hosts/${host}/?editor=candidate`);
+    const line = "0123456789abcdef Δ😀 xyz\r\n", text = line.repeat(80), offset = line.length * 20 + 8, input = source(page);
+    await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text);
+    for (const zoom of [1, 1.5]) {
+        await input.evaluate((input, zoom) => { const root = input.closest<HTMLElement>(".st-editing-candidate")!;
+            root.parentElement!.style.zoom = String(zoom); root.style.border = "2px solid transparent"; }, zoom);
+        await page.evaluate(offset => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: offset, head: offset }); }, offset);
+        await input.focus();
+        const first = await input.evaluate(input => { const root = input.closest<HTMLElement>(".st-editing-candidate")!;
+            root.scrollTop = window.hostFixture.snapshot().bindings.views.find(v => v.id === "primary")!.metrics!.viewport.lineHeight * 20; return root.scrollTop; });
+        await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollTop).toBeCloseTo(first, 3); await ready(page);
+        const glyph = await rectangle(input, offset);
+        const last = await input.evaluate((input, { glyph, zoom }) => { const root = input.closest<HTMLElement>(".st-editing-candidate")!, box = root.getBoundingClientRect();
+            const current = (glyph.top - box.top) / zoom - root.clientTop, desired = root.clientHeight - glyph.height / zoom - 1;
+            root.scrollTop += current - desired; return root.scrollTop;
+        }, { glyph, zoom });
+        await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollTop).toBeCloseTo(last, 3); await ready(page);
+        await caret(input, offset);
+        const anchor = await input.evaluate((input, zoom) => { const root = input.closest<HTMLElement>(".st-editing-candidate")!, box = root.getBoundingClientRect(), at = input.getBoundingClientRect();
+            return { top: at.top, bottom: at.bottom, low: box.top + root.clientTop * zoom, high: box.top + (root.clientTop + root.clientHeight) * zoom };
+        }, zoom);
+        expect(anchor.top).toBeGreaterThanOrEqual(anchor.low); expect(anchor.bottom).toBeLessThanOrEqual(anchor.high);
+        const point = await rectangle(input, offset); await page.mouse.click(point.x, point.y); await ready(page);
+        expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: offset, head: offset }); await caret(input, offset);
+        await input.click(); await ready(page);
+        expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: offset, head: offset });
+        await expect(input).toBeFocused();
+        await input.pressSequentially("Q"); await ready(page);
+        expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection.head).toBe(offset + 1);
+        expect(await page.evaluate(at => window.hostFixture.range(at - 1, at + 2), offset)).toBe(text[offset - 1] + "Q" + text[offset]);
+        await input.press("Control+z"); await ready(page); expect((await snapshot(page)).source.length).toBe(text.length);
+        expect(await page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length))).toBe(text);
+        expect((await snapshot(page)).source.exports).toBe(0);
+    }
+    await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+});

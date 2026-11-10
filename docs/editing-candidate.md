@@ -177,7 +177,11 @@ next or previous host control. Shift alone preserves the pending exit. The next 
 that exit, so ordinary indentation resumes after returning to the editor. Host controls retain
 their normal tab order.
 
-Pointer selection uses rendered native rectangles; drag anchors expire across document changes.
+Pointer selection uses rendered native rectangles, including clicks overlapping the transparent
+input context. Outside composition, those clicks use source hit testing so the context's native
+default selection cannot move later typing away from the visible caret. Composition keeps its
+existing native input handling; device qualification remains separate.
+Drag anchors expire across document changes.
 Only the captured pointer can end its drag. Losing capture, cancellation, releasing the primary
 button or disposing the mount stops selection updates and releases any remaining capture.
 Returning to the editor after a release outside it leaves the retained caret unchanged; subsequent

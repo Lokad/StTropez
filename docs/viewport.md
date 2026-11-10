@@ -17,6 +17,10 @@ including borders, complete selections, pointer ranges, vertical/page navigation
 comparison panes and a 2.4M-unit horizontal window. These checks cover DOM geometry; native
 IME placement, browser-toolbar zoom and OS display scaling still need platform qualification.
 
+The display caret follows the measured source position at scroll boundaries, including partly
+clipped rows. Its placement is independent of the bounded native input anchor, so keeping that
+anchor inside the viewport cannot shift the visible caret away from its character.
+
 Each frame reads the container/font geometry, obtains only visible/overscan lines and bounded
 horizontal ranges, then writes the DOM. A bounded batch of native row-width reads follows the
 writes; extent/reveal corrections schedule another frame. Rows are reused, kept in document order and removed

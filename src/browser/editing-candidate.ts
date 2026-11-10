@@ -99,10 +99,13 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const visible = point && point.left >= rectangle.left && point.left < rectangle.right
             && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
         caret.hidden = !visible || selected.anchor !== selected.head || composing || owner.activeElement !== input;
-        // Keep the native IME anchor near the measured caret without enlarging the scroll surface.
-        const left = Math.max(0, Math.min(root.clientWidth - 2, ((point?.left ?? rectangle.left) - rectangle.left) / rectangle.zoom));
-        const top = Math.max(0, Math.min(root.clientHeight - 24, ((point?.top ?? rectangle.top) - rectangle.top) / rectangle.zoom));
-        for (const element of [input, caret]) { element.style.left = `${root.scrollLeft + left}px`; element.style.top = `${root.scrollTop + top}px`; element.style.height = `${point ? point.height / rectangle.zoom : viewport.snapshot().lineHeight}px`; }
+        const left = ((point?.left ?? rectangle.left) - rectangle.left) / rectangle.zoom;
+        const top = ((point?.top ?? rectangle.top) - rectangle.top) / rectangle.zoom;
+        // Bound the native input anchor while the display caret follows the text, including clipped rows.
+        input.style.left = `${root.scrollLeft + Math.max(0, Math.min(root.clientWidth - 2, left))}px`;
+        input.style.top = `${root.scrollTop + Math.max(0, Math.min(root.clientHeight - 24, top))}px`;
+        caret.style.left = `${root.scrollLeft + left}px`; caret.style.top = `${root.scrollTop + top}px`;
+        for (const element of [input, caret]) element.style.height = `${point ? point.height / rectangle.zoom : viewport.snapshot().lineHeight}px`;
         const state = viewport.snapshot(), buffer = workspace.observeDocument(documentId).getSnapshot()?.buffer;
         const points = [];
         if (!composing && owner.activeElement === input && buffer && state.selectionSet === selectionSet && state.lastLine > state.firstLine) {
@@ -852,7 +855,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     root.addEventListener("pointerdown", event => {
         if (event.button !== 0 || disposed || composing || input.disabled || !workspace.resolveTab(target)) return;
         if (textDrag.arm(event)) return;
-        if (event.target === input && !event.altKey && view.getSnapshot().selectionSet.ranges.length === 1) return;
+        // The transparent native context can overlap source text; its default hit test uses context coordinates.
         const point = viewport.hitTest(event.clientX, event.clientY); if (!point) return;
         event.preventDefault(); stopDrag(); cancelWord(); preferred = undefined; focus(); group = undefined;
         const state = view.getSnapshot(), extending = event.shiftKey && !event.altKey;
