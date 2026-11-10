@@ -39,6 +39,11 @@ function json(value: unknown, depth = 0, budget = { left: 100000 }): value is Js
 function immutable(value: JsonValue): JsonValue {
     if (value && typeof value === "object") { Object.values(value).forEach(immutable); Object.freeze(value); } return value;
 }
+/** Internal shared validation/capture for host-supplied session options. */
+export function jsonSnapshot(value: unknown): JsonValue {
+    if (!json(value)) throw new TypeError("Expected bounded JSON values.");
+    return immutable(JSON.parse(JSON.stringify(value)) as JsonValue);
+}
 function methodName(method: string): void {
     if (!method || method.startsWith("rpc.")) throw new TypeError("Invalid application RPC method.");
 }
