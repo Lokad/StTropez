@@ -163,6 +163,25 @@ handler observations are separate from full interaction and cold activation late
 counts do not prove retained heap bytes; native input/accessibility and release qualification
 remain open.
 
+A separate fixed-budget Chromium 156.0.8078.4 experiment on Windows build 26200, an i7-14700KF
+and 28 logical CPUs checked retained V8 heap and DOM counters. Module code was warmed without
+models; the host preview kept its text. Each corpus retained three forced-GC observations at
+baseline, after warming two visited documents, after ten typing/undo switches and captured-job
+close/reopen, and after disposal: 24 observations in total. No sample or failure was retried.
+
+| Active corpus | Maximum post-disposal V8 increase | DOM node change | DOM listener change |
+| --- | ---: | ---: | ---: |
+| Normal | 1,781,704 bytes | +1 | −7 |
+| 100,000 lines | 1,780,600 bytes | +1 | −7 |
+
+Both passed the predefined 4 MiB V8 increase, 32 extra nodes and no extra listeners limits.
+Workspace resource/document/tab/view/lease/subscription counts all returned to zero; those
+logical subscriptions are separate from the browser's DOM listener counter. Backing-storage
+and embedder heap fields were recorded without a pass criterion. The large read-only baseline
+alone reported about 95.2 MB of embedder heap before any editor models existed. These results
+therefore do not qualify total process, native-layout or peak memory, GC pauses, other engines,
+or interaction latency. Production scope and native input/accessibility gates remain open.
+
 ## Build bridge
 
 Restore imports `build/StTropez.Assets.props` and `.targets` and exposes `StTropezAssetRoot`.
