@@ -5,7 +5,7 @@ import type { CompletionList, PublishDiagnosticsParams } from "vscode-languagese
 import { TextBuffer } from "../src/core/text-buffer.ts";
 import type { LspDocumentCapture } from "../src/protocol/index.ts";
 
-const { LspLineIndex, decodeLspCompletions, decodeLspDiagnostics, lspRangeOffsets, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
+const { LspLineIndex, decodeLspCompletions, decodeLspDiagnostics, decodeLspHover, decodeLspLocations, lspRangeOffsets, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 async function captured(text = "// header\r\nconst saMORE = 1; // TODO\rb\n") {
     const buffer = TextBuffer.from(text), index = await LspLineIndex.create(buffer, async () => {}); let active = true;
     const capture: LspDocumentCapture = Object.freeze({ document: Object.freeze({ uri: "host+fixture:source", languageId: "fixture", resourceId: "resource", documentId: "working", revision: 70, buffer }), index, version: 3, epoch: 2, registrationGeneration: 4, isCurrent: () => active });
@@ -63,4 +63,29 @@ test("strict LSP ranges refuse out-of-document clamping and preserve surrogate/n
     assert.deepEqual(lspRangeOffsets(capture.index, range(0, 1, 2)), { from: 1, to: 2 });
     assert.deepEqual(lspRangeOffsets(capture.index, { start: { line: 1, character: 1 }, end: { line: 2, character: 1 } }), { from: 5, to: 7 });
     for (const bad of [range(0, 0, 3), range(100, 0, 0), range(0, 2, 1), range(0, -1, 0), { start: { line: 0, character: .5 }, end: { line: 0, character: 1 } }]) assert.throws(() => lspRangeOffsets(capture.index, bad));
+});
+
+test("hover accepts standard content shapes and optional ranges as bounded literal text", async () => {
+    const { capture, expire } = await captured("const 😀\r\n");
+    for (const contents of ["plain", { kind: "plaintext", value: "plain" }, { kind: "markdown", value: "<img src=x> **plain**" }, [{ language: "fixture", value: "code" }, "detail"]]) {
+        const decoded = decodeLspHover({ contents }, capture)!; assert.equal(decoded.range, null); assert.equal(typeof decoded.text, "string"); assert.equal(Object.isFrozen(decoded), true);
+    }
+    assert.deepEqual(decodeLspHover({ contents: "info", range: range(0, 0, 5) }, capture), { text: "info", range: { from: 0, to: 5 } });
+    assert.equal(decodeLspHover(null, capture), null); assert.equal(decodeLspHover({ contents: [] }, capture), null);
+    for (const bad of [{}, { contents: ["valid", { value: "missing language" }] }, { contents: [{ kind: "plaintext", value: "not a MarkedString" }] }, { contents: "valid", range: range(0, 0, 999) }, { contents: "x".repeat(8193) }, { contents: Array(65).fill("x") }]) assert.throws(() => decodeLspHover(bad, capture));
+    expire(); assert.throws(() => decodeLspHover({ contents: "late" }, capture), error => error instanceof RpcError && error.code === -32801);
+});
+
+test("definition links/references resolve exact host URI captures and reject whole malformed/stale batches", async () => {
+    const origin = await captured("use 😀\r\n"), destination = await captured("// 😀\r\nconst target = 1;\r\n");
+    const target = { ...destination.capture, document: Object.freeze({ ...destination.capture.document, uri: "custom+host:project/%E2%88%86 target", documentId: "destination", resourceId: "target" }) };
+    const resolve = (uri: string) => uri === target.document.uri ? target : undefined;
+    const location = { uri: target.document.uri, range: range(1, 6, 12) }, link = { targetUri: target.document.uri, targetRange: range(1, 0, 17), targetSelectionRange: range(1, 6, 12), originSelectionRange: range(0, 0, 3) };
+    assert.equal(decodeLspLocations(location, "definition", origin.capture, resolve)[0]!.target, target);
+    const linked = decodeLspLocations([link], "definition", origin.capture, resolve)[0]!; assert.equal(target.index.buffer.slice(linked.from, linked.to), "target"); assert.deepEqual(linked.originRange, { from: 0, to: 3 }); assert.equal(Object.isFrozen(linked), true);
+    assert.equal(decodeLspLocations([location], "references", origin.capture, resolve).length, 1); assert.deepEqual(decodeLspLocations(null, "definition", origin.capture, resolve), []);
+    for (const bad of [[location, { ...location, uri: "custom+host:unknown" }], [location, { ...location, range: range(1, 0, 999) }], [link, location], [{ ...link, targetSelectionRange: range(1, 0, 18) }], [{ ...link, originSelectionRange: range(0, 0, 999) }], link, Array(1025).fill(location)]) assert.throws(() => decodeLspLocations(bad, "definition", origin.capture, resolve));
+    assert.throws(() => decodeLspLocations([link], "references", origin.capture, resolve)); assert.throws(() => decodeLspLocations(location, "references", origin.capture, resolve));
+    destination.expire(); assert.throws(() => decodeLspLocations([location], "definition", origin.capture, resolve), error => error instanceof RpcError && error.code === -32801);
+    origin.expire(); assert.throws(() => decodeLspLocations([], "references", origin.capture, resolve), error => error instanceof RpcError && error.code === -32801);
 });

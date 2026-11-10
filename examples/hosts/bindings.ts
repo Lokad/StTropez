@@ -4,7 +4,7 @@ import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, Documen
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../editing/presentation.ts";
 import { HostLanguageTools } from "./language.ts";
-import { hostProviderFactory } from "../protocol/editor-provider.ts";
+import { hostLspFactories } from "../protocol/editor-provider.ts";
 import { HostHoverTools } from "./hover.ts";
 import { HostTablePaste } from "./table-paste.ts";
 import { HostDomainTools } from "./domain.ts";
@@ -198,7 +198,6 @@ export class ViewBindings {
     }
     constructor(controller: HostController, editor: HostEditor = "native") {
         this.controller = controller; this.editor = editor;
-        this.hover = new HostHoverTools(controller.workspace, kind => { if (kind === "pointer") return !this.signature?.state.getSnapshot().visible; this.signature?.dismiss(); return true; });
         this.tablePaste = new HostTablePaste(controller.workspace, editor === "candidate");
         this.domain = new HostDomainTools(controller.workspace, documentId => !this.tablePaste.hasPendingInput(documentId) && !(this.review?.working.view.documentId === documentId && (this.review.working.snapshot().pendingInput || this.review.working.snapshot().composing))
             && ![...this.mounted.values()].some(value => { const metrics = value.editor.metrics(); return value.documentId === documentId && (metrics?.pendingInput || metrics?.composing); }));
@@ -206,9 +205,10 @@ export class ViewBindings {
             const busy = (metrics: ReturnType<EditingCandidate["snapshot"]> | null) => metrics && (metrics.pendingInput || metrics.pendingCommand || metrics.composing);
             return !this.tablePaste.hasPendingInput(documentId) && !(this.review?.working.view.documentId === documentId && busy(this.review.working.snapshot())) && ![...this.mounted.values()].some(value => value.documentId === documentId && busy(value.editor.metrics()));
         };
-        const providerFactory = hostProviderFactory();
-        this.language = new HostLanguageTools(controller.workspace, (event, field, target, composing) => this.handleSaveShortcut(event, field, target, composing), { canCapture, ...(providerFactory ? { providerFactory } : {}) });
-        this.navigation = new HostNavigationTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
+        const lsp = hostLspFactories(controller.workspace);
+        this.language = new HostLanguageTools(controller.workspace, (event, field, target, composing) => this.handleSaveShortcut(event, field, target, composing), { canCapture, ...(lsp ? { providerFactory: lsp.provider } : {}) });
+        this.hover = new HostHoverTools(controller.workspace, kind => { if (kind === "pointer") return !this.signature?.state.getSnapshot().visible; this.signature?.dismiss(); return true; }, lsp ? { createController: lsp.hover, canCapture } : {});
+        this.navigation = new HostNavigationTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.navigation);
         this.project = new HostProjectTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
         this.colors = new HostDocumentColors(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
         this.links = new HostDocumentLinks(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));

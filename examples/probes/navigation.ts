@@ -40,7 +40,7 @@ export function validateNavigationDocuments(value: unknown): readonly Navigation
 }
 
 /** Streaming lexical fixture, not a language parser or a text mirror. */
-class SymbolScanner {
+export class SymbolScanner {
     private offset = 0;
     private high = "";
     private token = "";

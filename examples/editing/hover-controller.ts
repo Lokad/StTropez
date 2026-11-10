@@ -3,27 +3,36 @@ import type { EditingCandidate } from "../../src/browser/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import { validateHoverResult } from "../probes/hover.ts";
 import type { HoverInput } from "../probes/hover.ts";
+import type { AbsoluteHover, HoverBackend } from "./hover-backend.ts";
 
 type Capture = Readonly<{ input: HoverInput; from: number; selectionSet: SelectionSet; foldGeneration: number; startsInWord: boolean; endsInWord: boolean; lease: ResourceLease }>;
 export type HoverSnapshot = Readonly<{ status: "idle" | "pending" | "ready" | "empty" | "failed" | "disconnected" | "expired" | "disposed";
     message: string; revision: number | null; range: Readonly<{ from: number; to: number }> | null; text: string }>;
 
 /** Host-owned read-only service. Its worker lane is independent of completion/diagnostics. */
-export function createHoverController(workspace: Workspace, tabId: TabId, editor: EditingCandidate, options: Readonly<{ createWorker?: () => Worker }> = {}) {
+export function createHoverController(workspace: Workspace, tabId: TabId, editor: EditingCandidate, options: Readonly<{ createWorker?: () => Worker; backend?: HoverBackend; canCapture?: () => boolean }> = {}) {
     const target = workspace.captureTab(tabId), documentId = editor.view.documentId, resource = workspace.resourceForDocument(documentId), tab = workspace.resolveTab(target);
     if (tab?.surface.kind !== "text" || tab.surface.documentId !== documentId || !workspace.ownsDocumentView(editor.view)) throw new Error("Hover requires the captured document view.");
     const win = editor.element.ownerDocument.defaultView!, counts = { created: 0, posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0, postedUnits: 0 };
     const cell = new HostCell<HoverSnapshot>({ status: "idle", message: "Inspect a symbol for information.", revision: null, range: null, text: "" });
     let worker: Worker | undefined, pending: Capture | undefined, capture: Capture | undefined, timer: number | undefined, disposed = false, sequence = 0, intent = 0, epoch = 0, delay = 0, fault: HoverInput["fault"];
     let subscriptions: (() => void)[] = [];
+    let backendCall: ReturnType<HoverBackend["run"]> | undefined, backendCurrent: (() => boolean) | undefined;
     const valid = () => !disposed && workspace.resolveTab(target) !== undefined && workspace.ownsDocumentView(editor.view) && !editor.snapshot().disposed && resource.getSnapshot().state === "ready";
     const current = (value: Capture) => valid() && workspace.document(documentId).revision === value.input.revision && editor.view.getSnapshot().selectionSet === value.selectionSet
-        && editor.view.folding.getSnapshot().generation === value.foldGeneration;
-    const release = () => { pending?.lease.release(); pending = undefined; if (timer !== undefined) win.clearTimeout(timer); timer = undefined; };
-    const clear = (status: HoverSnapshot["status"], message: string) => { intent++; release(); capture = undefined;
+        && editor.view.folding.getSnapshot().generation === value.foldGeneration && (options.canCapture?.() ?? true) && (backendCurrent?.() ?? true);
+    const release = () => { const value = pending, call = backendCall; pending = undefined; backendCall = undefined; value?.lease.release(); call?.cancel(); if (timer !== undefined) win.clearTimeout(timer); timer = undefined; };
+    const clear = (status: HoverSnapshot["status"], message: string) => { intent++; capture = undefined; backendCurrent = undefined; release();
         for (const stop of subscriptions.splice(0)) stop(); cell.set({ status, message, revision: null, range: null, text: "" }); };
-    function disconnect(): void { epoch++; worker?.terminate(); worker = undefined; clear(disposed ? "disposed" : "disconnected", "Symbol information is disconnected."); }
+    function disconnect(): void { epoch++; worker?.terminate(); worker = undefined; clear(disposed ? "disposed" : "disconnected", "Symbol information is disconnected."); options.backend?.disconnect(); }
+    function accept(value: Capture, result: AbsoluteHover | null): void {
+        release(); backendCurrent = result?.isCurrent;
+        if (!current(value)) { counts.stale++; clear("expired", "The captured symbol changed."); return; }
+        if (!result?.text) { clear("empty", "No symbol information at this position."); return; }
+        capture = value; cell.set({ status: "ready", message: "Symbol information ready.", revision: result.revision, range: result.range, text: result.text });
+    }
     function connect(): boolean {
+        if (options.backend) return true;
         if (worker) return true;
         const connection = ++epoch;
         try { worker = options.createWorker?.() ?? new Worker("/provider-worker.js", { type: "module" }); counts.created++; }
@@ -40,16 +49,12 @@ export function createHoverController(workspace: Workspace, tabId: TabId, editor
                 counts.invalid++; clear("failed", "Malformed symbol information rejected."); return;
             }
             if (decoded.id !== pending.input.id) { counts.stale++; return; }
-            const value = pending, result = validateHoverResult(decoded, value.input); release();
+            const value = pending, result = validateHoverResult(decoded, value.input);
             if (!result) { counts.invalid++; clear("failed", "Malformed symbol information rejected."); return; }
-            if (!current(value)) { counts.stale++; clear("expired", "The captured symbol changed."); return; }
             if (result.range && (value.startsInWord && result.range.from === 0 || value.endsInWord && result.range.to === value.input.text.length)) {
                 counts.invalid++; clear("empty", "The symbol extends beyond the captured window."); return;
             }
-            if (!result.range) { clear("empty", "No symbol information at this position."); return; }
-            capture = value;
-            cell.set({ status: result.range ? "ready" : "empty", message: result.range ? "Symbol information ready." : "No symbol information at this position.", revision: result.revision,
-                range: result.range && Object.freeze({ from: value.from + result.range.from, to: value.from + result.range.to }), text: result.text });
+            accept(value, result.range ? { revision: result.revision, range: Object.freeze({ from: value.from + result.range.from, to: value.from + result.range.to }), text: result.text } : null);
         });
         return true;
     }
@@ -57,7 +62,7 @@ export function createHoverController(workspace: Workspace, tabId: TabId, editor
         if (!valid()) return false;
         const document = workspace.document(documentId);
         if (document.revision !== expectedRevision || !Number.isSafeInteger(offset) || offset < 0 || offset > document.buffer.length || editor.snapshot().composing
-            || editor.view.folding.getSnapshot().index.hiddenBy(document.buffer.lineAt(offset))) return false;
+            || !(options.canCapture?.() ?? true) || editor.view.folding.getSnapshot().index.hiddenBy(document.buffer.lineAt(offset))) return false;
         clear("idle", "Reading captured symbol information."); if (!connect()) return false;
         const buffer = document.buffer; let from = Math.max(0, offset - 2047), to = Math.min(buffer.length, offset + 2047);
         const high = (value: string) => /^[\ud800-\udbff]$/.test(value), low = (value: string) => /^[\udc00-\udfff]$/.test(value);
@@ -69,7 +74,16 @@ export function createHoverController(workspace: Workspace, tabId: TabId, editor
             startsInWord: from > 0 && word.test(before) && word.test(points[0] ?? ""), endsInWord: to < buffer.length && word.test(after) && word.test(points.at(-1) ?? "") });
         subscriptions = [workspace.observeDocument(documentId).subscribe(invalidate), editor.view.subscribe(invalidate), editor.view.folding.subscribe(invalidate), workspace.tabState.subscribe(invalidate)];
         counts.posted++; counts.postedUnits += input.text.length;
-        try { worker!.postMessage(JSON.stringify(input)); } catch { counts.failed++; disconnect(); return false; }
+        if (options.backend) {
+            const value = pending, token = intent;
+            try { backendCall = options.backend.run(document, offset, input);
+                void backendCall.result.then(result => { if (disposed || intent !== token || pending !== value) return; counts.received++; accept(value, result); }, error => {
+                    if (disposed || intent !== token || pending !== value) return;
+                    if (error instanceof TypeError || error instanceof RangeError) counts.invalid++; else counts.failed++;
+                    clear("failed", error instanceof Error ? error.message : "LSP symbol information failed.");
+                });
+            } catch { counts.failed++; disconnect(); return false; }
+        } else try { worker!.postMessage(JSON.stringify(input)); } catch { counts.failed++; disconnect(); return false; }
         cell.set({ status: "pending", message: "Reading captured symbol information.", revision: document.revision, range: null, text: "" });
         const token = intent; timer = win.setTimeout(() => { if (disposed || token !== intent || !pending) return; counts.failed++; clear("failed", "Symbol information timed out; editing remains available."); }, 5000);
         return true;
@@ -78,11 +92,13 @@ export function createHoverController(workspace: Workspace, tabId: TabId, editor
     const invalidate = () => { const value = pending ?? capture, token = intent;
         if (value && !current(value)) queueMicrotask(() => { if (!disposed && token === intent) clear("expired", "The captured symbol changed."); }); };
     const composition = () => { if (pending) counts.cancelled++; clear("idle", "Finish composition before inspecting a symbol."); };
+    const stopBackend = options.backend?.subscribe(invalidate);
     editor.input.addEventListener("compositionstart", composition);
     return Object.freeze({ state: cell.observable, request, disconnect,
         cancel: () => { if (disposed) return; if (pending) counts.cancelled++; clear("idle", "Symbol information dismissed."); },
         setDelay: (value: number) => { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid hover delay."); delay = value; },
         faultNext: (value: NonNullable<HoverInput["fault"]>) => { fault = value; },
-        snapshot: () => Object.freeze({ ...counts, connected: worker !== undefined, pending: pending !== undefined, disposed }),
-        destroy: () => { if (disposed) return; disposed = true; disconnect(); editor.input.removeEventListener("compositionstart", composition); } });
+        snapshot: () => Object.freeze({ ...counts, created: options.backend?.snapshot().created ?? counts.created, connected: options.backend?.snapshot().connected ?? worker !== undefined, pending: pending !== undefined, disposed,
+            ...(options.backend ? { transport: options.backend.snapshot().transport } : {}) }),
+        destroy: () => { if (disposed) return; disposed = true; stopBackend?.(); disconnect(); options.backend?.dispose(); editor.input.removeEventListener("compositionstart", composition); } });
 }

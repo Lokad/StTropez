@@ -11,10 +11,14 @@ export type LspCompletionPlan = Readonly<{ edits: readonly TextEdit[]; head: num
 export type LspCompletion = Readonly<{ label: string; detail: string; insert: LspCompletionPlan; replace: LspCompletionPlan }>;
 export type LspCompletions = Readonly<{ incomplete: boolean; items: readonly LspCompletion[] }>;
 export type LspCompletionFallback = Readonly<{ from: number; to: number; replaceTo: number }>;
+export type LspHover = Readonly<{ text: string; range: Readonly<{ from: number; to: number }> | null }>;
+export type LspLocationTarget = Pick<LspDocumentCapture, "document" | "index" | "isCurrent">;
+export type LspLocation = Readonly<{ target: LspLocationTarget; from: number; to: number; targetRange: Readonly<{ from: number; to: number }>;
+    originRange: Readonly<{ from: number; to: number }> | null }>;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const uint = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 0x7fffffff;
 function invalid(): never { throw new TypeError("Malformed or unsupported LSP feature result."); }
-function current(capture: LspDocumentCapture): void { if (!capture.isCurrent()) throw new RpcError(-32801, "LSP feature capture expired."); }
+function current(capture: Pick<LspDocumentCapture, "isCurrent">): void { if (!capture.isCurrent()) throw new RpcError(-32801, "LSP feature capture expired."); }
 function text(value: unknown, maximum: number, budget: { units: number }): string {
     if (typeof value !== "string" || value.length > maximum || (budget.units -= value.length) < 0) invalid(); return value;
 }
@@ -44,6 +48,44 @@ export function decodeLspDiagnostics(value: unknown, capture: LspDocumentCapture
         return Object.freeze({ from: offsets?.from ?? null, to: offsets?.to ?? null, message, severity: item.severity as number | undefined ?? null, source });
     });
     current(capture); return Object.freeze({ uri: capture.document.uri, version, revision: version === null ? null : capture.document.revision, items: Object.freeze(items) });
+}
+/** Markup and legacy marked strings are displayed literally; the client advertises plain text only. */
+export function decodeLspHover(value: unknown, capture: LspDocumentCapture): LspHover | null {
+    current(capture); if (value === null) return null; if (!record(value)) invalid(); const budget = { units: 16384 };
+    const fragment = (part: unknown): string => {
+        if (typeof part === "string") return text(part, 8192, budget);
+        if (!record(part)) invalid();
+        if ("kind" in part) { if (part.kind !== "plaintext" && part.kind !== "markdown" || "language" in part) invalid(); return text(part.value, 8192, budget); }
+        const language = text(part.language, 128, budget), body = text(part.value, 8192, budget); return language ? `${language}\n${body}` : body;
+    };
+    let contents: string;
+    if (Array.isArray(value.contents)) { if (value.contents.length > 64) invalid(); contents = value.contents.map(part => {
+            // Arrays contain MarkedString, not MarkupContent.
+            if (record(part) && "kind" in part) invalid(); return fragment(part);
+        }).filter(Boolean).join("\n\n"); }
+    else contents = fragment(value.contents);
+    if (contents.length > 16384) invalid();
+    const range = value.range === undefined ? null : lspRangeOffsets(capture.index, value.range); current(capture);
+    return contents ? Object.freeze({ text: contents, range }) : null;
+}
+/** Resolve opaque URIs through captured host buffers; never fetch or open a server-supplied URI. */
+export function decodeLspLocations(value: unknown, kind: "definition" | "references", origin: LspDocumentCapture,
+    resolve: (uri: string) => LspLocationTarget | undefined): readonly LspLocation[] {
+    current(origin); const values = value === null ? [] : Array.isArray(value) ? value : kind === "definition" && record(value) ? [value] : invalid();
+    if (values.length > 1024) invalid(); let links: boolean | undefined;
+    const items = values.map((item: unknown): LspLocation => {
+        if (!record(item)) invalid(); const link = "targetUri" in item;
+        if (link && (kind !== "definition" || !Array.isArray(value)) || links !== undefined && links !== link) invalid(); links = link;
+        const uri = link ? item.targetUri : item.uri;
+        if (typeof uri !== "string" || !uri || uri.length > 4096 || link && ("uri" in item || "range" in item)) invalid();
+        const target = resolve(uri); if (!target || target.document.uri !== uri || target.index.buffer !== target.document.buffer) throw new TypeError("LSP location URI is outside the captured host project.");
+        current(target);
+        const targetRange = lspRangeOffsets(target.index, link ? item.targetRange : item.range), selected = link ? lspRangeOffsets(target.index, item.targetSelectionRange) : targetRange;
+        if (selected.from < targetRange.from || selected.to > targetRange.to) invalid();
+        const originRange = link && item.originSelectionRange !== undefined ? lspRangeOffsets(origin.index, item.originSelectionRange) : null;
+        return Object.freeze({ target, from: selected.from, to: selected.to, targetRange, originRange });
+    });
+    current(origin); for (const item of items) current(item.target); return Object.freeze(items);
 }
 function edit(index: LspLineIndex, value: unknown, budget: { units: number }): TextEdit {
     if (!record(value)) invalid(); return Object.freeze({ ...lspRangeOffsets(index, value.range), insert: text(value.newText, 16384, budget) });

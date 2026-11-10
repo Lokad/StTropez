@@ -5,18 +5,19 @@ import type { EditingCandidate } from "../src/browser/index.ts";
 import { createHoverController } from "../examples/editing/hover-controller.ts";
 import { provideHover } from "../examples/probes/hover.ts";
 import type { HoverInput } from "../examples/probes/hover.ts";
+import type { AbsoluteHover, HoverBackend } from "../examples/editing/hover-backend.ts";
 class FixtureWorker extends EventTarget {
     readonly sent: HoverInput[] = []; terminated = false;
     postMessage(text: string): void { this.sent.push(JSON.parse(text) as HoverInput); }
     terminate(): void { this.terminated = true; }
     reply(value: unknown): void { this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(value) })); }
 }
-function fixture(text = "const café") {
+function fixture(text = "const café", backend?: HoverBackend) {
     const workspace = new Workspace(), documentId = workspace.createDocument({ scope: "hover", resource: "source", variant: "working" }, "Source", text), tab = workspace.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId);
     const timers = new Map<number, () => void>(), workers: FixtureWorker[] = []; let serial = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { setTimeout: (work: () => void) => { timers.set(++serial, work); return serial; }, clearTimeout: (id: number) => timers.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), snapshot: () => ({ composing: false, disposed: false }), focus: () => { throw new Error("Hover must not focus an editor."); } } as unknown as EditingCandidate;
-    const hover = createHoverController(workspace, tab, editor, { createWorker: () => { const worker = new FixtureWorker(); workers.push(worker); return worker as unknown as Worker; } });
+    const hover = createHoverController(workspace, tab, editor, { ...(backend ? { backend } : {}), createWorker: () => { const worker = new FixtureWorker(); workers.push(worker); return worker as unknown as Worker; } });
     return { workspace, documentId, tab, view, hover, timers, workers, leasesBefore: workspace.diagnostics().leases, finish: () => { hover.destroy(); view.dispose(); workspace.close(tab); assert.equal(timers.size, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().subscriptions, 0); } };
 }
 test("hover creates a lazy independent lane, rejects old responses and never edits or focuses source", () => {
@@ -33,6 +34,19 @@ test("hover creates a lazy independent lane, rejects old responses and never edi
         f.hover.cancel(); assert.equal(f.workspace.diagnostics().subscriptions, 0);
     } finally { f.finish(); }
     assert.equal(f.workers[0]!.terminated, true);
+});
+
+test("an asynchronous hover backend accepts absent ranges and expires its guarded result without a worker", async () => {
+    const listeners = new Set<() => void>(); let resolve!: (value: AbsoluteHover | null) => void, live = true, disposed = false, pending = false, cancelled = 0;
+    const backend: HoverBackend = { run: () => { pending = true; return { result: new Promise(yes => { resolve = value => { pending = false; yes(value); }; }), cancel: () => { if (pending) { pending = false; cancelled++; } } }; },
+        subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }, disconnect: () => {}, dispose: () => { disposed = true; }, snapshot: () => ({ connected: true, created: 1, transport: "lsp3.17" }) };
+    const f = fixture("const value", backend), before = f.workspace.document(f.documentId);
+    try { assert.equal(f.hover.request(0, 2), true); resolve({ revision: 0, range: null, text: "<img> literal", isCurrent: () => live }); await Promise.resolve();
+        assert.equal(f.hover.state.getSnapshot().status, "ready"); assert.equal(f.hover.state.getSnapshot().range, null); assert.equal(f.workspace.diagnostics().leases, f.leasesBefore); assert.equal(f.workers.length, 0);
+        live = false; for (const listener of listeners) listener(); await Promise.resolve(); assert.equal(f.hover.state.getSnapshot().status, "expired");
+        live = true; f.hover.request(0, 2); f.view.setSelection(0, { anchor: 8, head: 8 }); await Promise.resolve(); assert.equal(cancelled, 1); resolve({ revision: 0, range: null, text: "late" }); await Promise.resolve();
+        assert.equal(f.hover.state.getSnapshot().status, "expired"); assert.equal(f.workspace.document(f.documentId), before);
+    } finally { f.finish(); assert.equal(disposed, true); assert.equal(listeners.size, 0); }
 });
 test("deferred invalidation releases old leases without cancelling a newer captured intent", async () => {
     const f = fixture();

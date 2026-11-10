@@ -100,7 +100,8 @@ The [editing candidate](docs/editing-candidate.md) and `/editing/` fixture exerc
 context, measured pointer selection, shared history and composition guards. Long contextual-line
 layout and native-device input remain qualification gates.
 The optional [LSP protocol layer](docs/lsp.md) supplies JSON-RPC/WebSocket transport, captured
-sessions and validated [diagnostic/completion host adapters](docs/lsp-editor.md). Its supported-subset
+sessions, validated [diagnostic/completion](docs/lsp-editor.md) and [hover/navigation](docs/lsp-navigation.md)
+host adapters. Its supported-subset
 matrix keeps the remaining language-feature/edit work explicit.
 The [find controller](docs/search.md) and [provider/presentation fixture](docs/providers.md)
 add revision-checked workflows to that view, with explicit scope and scheduling limits.

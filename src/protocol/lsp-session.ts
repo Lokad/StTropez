@@ -89,6 +89,8 @@ export class LspSession {
             completionItem: { snippetSupport: false, insertReplaceSupport: true, documentationFormat: ["plaintext"], insertTextModeSupport: { valueSet: [1] } },
             insertTextMode: 1, completionList: { itemDefaults: ["editRange", "insertTextFormat", "insertTextMode"] } };
         if (options.diagnostics) textDocument.publishDiagnostics = { versionSupport: true };
+        if (this.features.has("textDocument/hover")) textDocument.hover = { dynamicRegistration: true, contentFormat: ["plaintext"] };
+        if (this.features.has("textDocument/definition")) textDocument.definition = { dynamicRegistration: true, linkSupport: true };
         this.initializeParams = jsonSnapshot({ processId: null, rootUri: options.rootUri ?? null,
             ...(options.clientInfo ? { clientInfo: options.clientInfo } : {}), initializationOptions: options.initializationOptions ?? null,
             capabilities: { general: { positionEncodings: ["utf-16"] }, textDocument } });

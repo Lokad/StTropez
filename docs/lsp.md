@@ -20,7 +20,7 @@ remains an internal fixture and establishes no LSP compatibility.
 | Dynamic registration | Atomic register/unregister batches, unique identifiers, exact method matching and immutable snapshots. Text-document selectors cover language, scheme and bounded glob patterns; notebook and file-watcher registration are not advertised. |
 | Incremental synchronization | Captured URI/resource/document/revision bindings, separate wire versions, queued/coalesced open/change/close and exact raw UTF-16/CRLF/LF/bare-CR conversion. Point changes reuse shared buffer edges and LF metadata. |
 | Diagnostics/completion | Complete bounded validation, captured version/index access, versioned diagnostic anchors and manual completion with insert/replace/additional edits. Both hosts exercise actual typing, shared history, comparison authority, Save/Run and outage/lifecycle guards over WebSocket. Unversioned diagnostics remain plain information without source anchors. |
-| Hover/navigation | Captured request gateway exists; feature-specific result validation and actual editor adapters remain required. |
+| Hover/navigation | Bounded literal hover content/optional ranges, definition Location/LocationLink and references validation. Both actual hosts use WebSocket backends with captured project URIs, complete origin selections, target revision/authority checks, unmounted-resource reveal and stale/cancellation/lifecycle guards. See [navigation scope](lsp-navigation.md). |
 | Rename/code actions/workspace edits | Versioned URI-to-resource mapping, complete validation, explicit application, shared atomic history and stale/authority refusal are still required. |
 | Cancellation/reconnect | Opening, queued document calls, RPC requests and cooperative sync plans can be cancelled. Reconnect clears registrations/results and reopens current captures; commands never replay automatically. |
 | Host URIs/custom messages | Exact opaque URI bindings, replaceable selector path policy and removable custom request/notification handlers. Custom result schemas, authority and service policy belong to the host. |
@@ -69,8 +69,9 @@ Its result is immutable wire JSON. Use `decodeLspCompletions` with the supplied 
 all items/ranges/additional edits before presenting any choice. `synchronized(binding)` returns the
 exact sent snapshot/index/wire version, or undefined while local updates are pending; its `isCurrent`
 guard expires on session, registration or binding/revision changes. `decodeLspDiagnostics` validates
-pushes against that capture. Feature-specific hover/navigation/edit validation and atomic workspace
-edit application remain required. Custom handlers persist
+pushes against that capture. `decodeLspHover` and `decodeLspLocations` validate literal content and
+captured host URI locations. Rename/code-action validation and atomic workspace-edit application
+remain required. Custom handlers persist
 across reconnect, but pending calls do not. Incoming request contexts expose cancellation and an
 `isCurrent` guard; hosts must check authority again before committing after an await.
 

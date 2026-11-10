@@ -2,6 +2,7 @@ import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, 
 import type { EditingCandidate } from "../../src/browser/index.ts";
 import { createNavigationClient } from "../editing/navigation-client.ts";
 import type { NavigationMetrics, SyncFault } from "../editing/navigation-client.ts";
+import type { NavigationService, NavigationServiceFactory } from "../editing/navigation-service.ts";
 import { navigationLimits, navigationSymbol, validateNavigationInput } from "../probes/navigation.ts";
 import type { NavigationInput, NavigationLocation } from "../probes/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
@@ -9,7 +10,7 @@ import { HostCell } from "../shared/observable.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
 type Source = { document: DocumentSnapshot; authority: string };
 type Job = { id: number; origin: Session; selections: SelectionSet; folds: number; input: NavigationInput; sources: Map<string, Source>; targets: Map<string, Session>;
-    leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; navigated: boolean; locations: readonly NavigationLocation[] };
+    leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; navigated: boolean; locations: readonly NavigationLocation[]; serviceCurrent?: () => boolean };
 export type NavigationNote = NavigationLocation & Readonly<{ ordinal: number; title: string; line: number; column: number }>;
 export type NavigationSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; syncedDocuments: number; view: string | null; requestView: string | null; token: number | null; status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disconnected";
     message: string; work: number; total: number; includeDeclaration: boolean; locations: readonly NavigationNote[]; count: number; truncated: boolean; page: number; canReturn: boolean }>;
@@ -30,14 +31,18 @@ export class HostNavigationTools {
     private delay = 0;
     private fault: NavigationInput["fault"];
     private syncFault: SyncFault | undefined;
-    private client: ReturnType<typeof createNavigationClient> | undefined;
+    private client: NavigationService | undefined;
+    private readonly createService: NavigationServiceFactory;
     private disconnected = false;
     private readonly cell = new HostCell<NavigationSnapshot>({ available: false, connected: false, disconnected: false, syncedDocuments: 0, view: null, requestView: null, token: null, status: "idle", message: "Focus a candidate source to navigate symbols.", work: 0, total: 0, includeDeclaration: true, locations: [], count: 0, truncated: false, page: 0, canReturn: false });
     readonly state = this.cell.observable;
     private readonly metrics = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0 };
     private readonly worker: NavigationMetrics = { created: 0, posted: 0, received: 0, transferred: 0, maxChunk: 0, completed: 0, failed: 0, terminated: 0,
         opened: 0, changed: 0, closed: 0, reused: 0, snapshotUnits: 0, deltaUnits: 0, planningTurns: 0, rejected: 0 };
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined) { this.workspace = workspace; this.canCapture = canCapture; this.present = present; }
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined,
+        createService: NavigationServiceFactory = { positionQueries: false, create: (clock, counts, changed) => createNavigationClient(clock, counts, undefined, changed) }) {
+        this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.createService = createService;
+    }
     private available(session: Session): boolean {
         const tab = this.workspace.resolveTab(session.target), editor = session.editor;
         return !this.disposed && this.sessions.get(session.token) === session && editor.element.isConnected && !editor.snapshot().disposed && this.workspace.ownsDocumentView(editor.view)
@@ -56,7 +61,7 @@ export class HostNavigationTools {
             locations, count: job?.locations.length ?? 0, canReturn: !!job?.navigated });
     }
     private current(job: Job): boolean {
-        if (this.job !== job || job.invalid || this.disposed) return false;
+        if (this.job !== job || job.invalid || this.disposed || job.serviceCurrent && !job.serviceCurrent()) return false;
         try { for (const source of job.sources.values()) {
             if (this.workspace.observeDocument(source.document.id).getSnapshot()?.revision !== source.document.revision || this.authority(source.document.id) !== source.authority) return false;
         } } catch { return false; }
@@ -103,7 +108,7 @@ export class HostNavigationTools {
         const origin = this.active;
         if (!origin || !this.available(origin)) { this.publish({ message: "Focus an available candidate source." }); return; }
         if (!this.canCapture(origin.editor.view.documentId)) { this.publish({ message: "Finish pending input, navigation or composition first." }); return; }
-        this.cancel(); const selected = origin.editor.view.getSnapshot(), document = this.workspace.document(origin.editor.view.documentId), symbol = navigationSymbol(document.buffer, selected.selection.head);
+        this.cancel(); const selected = origin.editor.view.getSnapshot(), document = this.workspace.document(origin.editor.view.documentId), symbol = navigationSymbol(document.buffer, selected.selection.head) ?? (this.createService.positionQueries ? "position" : undefined);
         if (!symbol) { this.publish({ status: "empty", message: "No bounded symbol at this position." }); return; }
         const documents = this.workspace.getSnapshot().documents.filter(doc => doc.key.variant === "working"), sources = new Map(documents.map(doc => [doc.id as string, { document: doc, authority: this.authority(doc.id) }]));
         if (!sources.has(document.id)) { this.publish({ status: "failed", message: "This source is outside the host navigation scope." }); return; }
@@ -124,9 +129,11 @@ export class HostNavigationTools {
             job.timer = win.setTimeout(() => { if (this.job === job && !job.ready) { this.metrics.failed++; this.clear("failed", "Navigation timed out; source is unchanged."); } }, 30000);
             const total = input.documents.reduce((sum, doc) => sum + doc.length, 0);
             this.publish({ status: "pending", message: `Finding ${kind === "definition" ? "definitions" : "references"} of ${symbol} from ${origin.id}.`, work: 0, total, page: 0, truncated: false });
-            this.client ??= createNavigationClient(win, this.worker, undefined, () => this.publish());
+            this.client ??= this.createService.create(win, this.worker, () => { const job = this.job; if (job?.ready && !this.current(job)) this.invalidate(job); this.publish(); });
             const syncFault = this.syncFault; this.syncFault = undefined;
-            void this.client.run(input, new Map([...sources].map(([id, source]) => [id, source.document.buffer])), work => { if (this.current(job)) this.publish({ work }); }, syncFault).then(result => {
+            void this.client.run(input, new Map([...sources].map(([id, source]) => [id, source.document.buffer])), work => { if (this.current(job)) this.publish({ work }); }, syncFault,
+                { document: document.id, offset: selected.selection.head }).then(result => {
+                if (result.isCurrent) job.serviceCurrent = result.isCurrent;
                 if (!this.current(job)) { if (this.job === job) this.invalidate(job); return; }
                 job.ready = true; job.locations = result.locations; this.releasePending(job); this.metrics.applied++;
                 this.publish({ status: result.locations.length ? "ready" : "empty", message: `${result.locations.length}${result.truncated ? "+" : ""} ${kind === "definition" ? "definition" : "reference"} locations for ${symbol} across ${sources.size} captured resources.`, truncated: result.truncated, work: total });
