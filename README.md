@@ -33,6 +33,11 @@ npm run dev
 
 Open `http://127.0.0.1:4173`. The playground uses synthetic data and makes no application
 service requests. The development server binds to loopback only.
+It serves the last completed build while source watching compiles updates. Reload after a build
+finishes to use those updates; asset requests do not start compilation or delay worker startup.
+An unsuccessful build returns a development error until the source is corrected.
+Browser qualification uses up to four workers and a 30-minute suite limit; individual test and
+assertion limits are separate. Pass `--workers=1` to Playwright for a serial focused control.
 
 ```sh
 npm run check          # Type checking, model tests, build, Chromium tests
