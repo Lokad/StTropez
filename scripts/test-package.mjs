@@ -22,9 +22,9 @@ const browserName = process.argv.find(arg => arg.startsWith("--browser="))?.slic
 assert.ok(["chromium", "firefox", "webkit"].includes(browserName), `Unknown browser: ${browserName}`);
 assert.ok(!benchmark || pilotOnly, "Use --pilot-only, --hunk-only or --react-only with --bench to keep the workload explicit.");
 assert.ok(!reactOnly || (!hunkOnly && !process.argv.includes("--pilot-only")), "Select one restored pilot scenario.");
-assert.ok(!prepareOnly || (reactOnly && !benchmark), "Preparation-only checks require --react-only without --bench.");
+assert.ok(!prepareOnly || ((reactOnly || deferredOnly) && !benchmark), "Preparation-only checks require --react-only, --activation-only or --workspace-only without --bench.");
 assert.ok(!transitionsOnly || (!pilotOnly && !prepareOnly && !benchmark), "Transition-only checks cannot be combined with pilot or benchmark modes.");
-assert.ok(!deferredOnly || (!reactOnly && !hunkOnly && !process.argv.includes("--pilot-only") && !benchmark && !prepareOnly), "Deferred activation checks are an independent correctness scenario.");
+assert.ok(!deferredOnly || (!reactOnly && !hunkOnly && !process.argv.includes("--pilot-only") && !benchmark), "Deferred activation checks are an independent correctness scenario.");
 assert.ok(!workspaceOnly || !activationOnly, "Select one deferred activation scenario.");
 
 const project = resolve(".");
@@ -132,7 +132,7 @@ await writeFile("artifacts/package/restored-consumer.json", JSON.stringify({ sch
     esbuild: JSON.parse(await readFile("node_modules/esbuild/package.json", "utf8")).version,
 }, null, 2));
 if (prepareOnly) {
-    console.log(`Restored React consumer declarations and isolated bundle prepared without a browser: ${consumer}`);
+    console.log(`Restored ${workspaceOnly ? "workspace" : activationOnly ? "activation" : "React"} consumer declarations and isolated bundle prepared without a browser: ${consumer}`);
 } else {
 const server = createServer(async (request, response) => {
     const path = new URL(request.url, "http://localhost").pathname;

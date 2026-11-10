@@ -11,7 +11,7 @@ const workspaceMode = document.body.hasAttribute("data-workspace");
 const listeners = new AbortController(); let session: ActivationSession | WorkspaceSession | undefined, generation = 0, abort: AbortController | undefined, stylesheet: HTMLLinkElement | undefined;
 let phase: "preview" | "loading" | "editing" | "disposed" = "preview";
 let retainedText = original;
-const reader = createPreview(preview); reader.setText(original);
+const reader = createPreview(preview, listeners.signal, () => { if (phase === "preview") edit.focus(); }); reader.setText(original);
 const controls = () => { edit.disabled = phase !== "preview"; cancel.disabled = phase !== "loading"; readOnly.disabled = phase !== "editing";
     query.disabled = regex.disabled = next.disabled = phase !== "editing"; };
 function selection(): Selection | undefined {

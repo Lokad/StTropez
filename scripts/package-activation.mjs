@@ -14,6 +14,64 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
             while (text = walk.nextNode()) { end += text.length; if (at <= end) return [text, at - end + text.length]; } throw new Error("Preview offset outside text"); };
         window.getSelection().setBaseAndExtent(...point(anchor), ...point(head)); return window.getSelection().getRangeAt(0).toString();
     }, [anchor, head]);
+    const previewRange = page => page.locator("#text").evaluate(node => {
+        const s = window.getSelection(), offset = (text, at) => {
+            if (!text || text !== node && !node.contains(text)) return null;
+            const range = document.createRange(); range.selectNodeContents(node); range.setEnd(text, at); return range.toString().length;
+        };
+        return { anchor: offset(s.anchorNode, s.anchorOffset), head: offset(s.focusNode, s.focusOffset) };
+    });
+    async function readerKeyboard(page, value, large) {
+        const reader = page.locator("#text"); await reader.focus(); await previewSelect(page, 0, 0);
+        await reader.press("Shift+ArrowRight"); assert.deepEqual(await previewRange(page), { anchor: 0, head: 1 });
+        await reader.press("Control+End"); assert.deepEqual(await previewRange(page), { anchor: value.length, head: value.length });
+        await reader.evaluate(async node => {
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            const s = window.getSelection(), tail = document.createRange(); tail.setStart(s.focusNode, s.focusOffset - 3); tail.setEnd(s.focusNode, s.focusOffset - 2);
+            const rect = tail.getBoundingClientRect(), box = node.getBoundingClientRect();
+            if (rect.height <= 0 || rect.top < box.top || rect.bottom > box.bottom) throw new Error("Keyboard End did not reveal the source tail");
+        });
+        if (large) await page.screenshot({ path: `${directory}/activation-keyboard-end-${browserName}.png` });
+        await reader.press("Control+Shift+Home"); assert.deepEqual(await previewRange(page), { anchor: value.length, head: 0 });
+        await reader.press("Control+a"); assert.deepEqual(await previewRange(page), { anchor: 0, head: value.length });
+        assert.equal(await page.evaluate(() => window.getSelection().getRangeAt(0).toString()), value);
+        if (!large) await page.screenshot({ path: `${directory}/activation-keyboard-selection-${browserName}.png` });
+        await reader.press("ArrowLeft"); assert.deepEqual(await previewRange(page), { anchor: 0, head: 0 });
+        await reader.press("Control+a"); await reader.press("ArrowRight"); assert.deepEqual(await previewRange(page), { anchor: value.length, head: value.length });
+        await reader.press("Backspace"); await reader.press("Delete"); await reader.pressSequentially("Q"); assert.equal(await reader.textContent(), value);
+        for (const [at, key, head] of [[7, "Shift+ArrowRight", 9], [10, "Shift+ArrowRight", 12], [12, "Shift+ArrowRight", 14], [14, "Shift+ArrowLeft", 12]]) {
+            await previewSelect(page, at, at); await reader.press(key); assert.deepEqual(await previewRange(page), { anchor: at, head });
+        }
+        await previewSelect(page, 6, 6); await reader.press("Home"); assert.deepEqual(await previewRange(page), { anchor: 0, head: 0 });
+        await reader.press("End"); assert.deepEqual(await previewRange(page), { anchor: 12, head: 12 });
+        await previewSelect(page, 3, 3); await reader.press("Control+Shift+ArrowRight"); const word = await previewRange(page);
+        assert.equal(word.anchor, 3); assert.ok(word.head > 3 && word.head <= 14, JSON.stringify(word)); // Native word rules may include the line ending.
+        const starts = [0, ...[...value.matchAll(/\r\n|\r|\n/g)].map(m => m.index + m[0].length)];
+        await reader.press("Control+Home"); await reader.press("ArrowDown"); assert.deepEqual(await previewRange(page), { anchor: starts[1], head: starts[1] });
+        await reader.press("Shift+ArrowDown"); assert.deepEqual(await previewRange(page), { anchor: starts[1], head: starts[2] });
+        await reader.press("ArrowUp"); assert.deepEqual(await previewRange(page), { anchor: starts[1], head: starts[1] });
+        const column = starts[2] - 3; await previewSelect(page, column, column);
+        await reader.press("ArrowDown"); assert.deepEqual(await previewRange(page), { anchor: starts[3] - 1, head: starts[3] - 1 });
+        await reader.press("ArrowUp"); assert.deepEqual(await previewRange(page), { anchor: column, head: column });
+        if (large) {
+            const boundary = [...value.matchAll(/\r\n|\r|\n/g)].slice(0, 500).at(-1), at = boundary.index + boundary[0].length;
+            await previewSelect(page, at, at); await reader.press("Shift+ArrowRight"); assert.deepEqual(await previewRange(page), { anchor: at, head: at + 1 });
+            await reader.press("Shift+ArrowLeft"); assert.deepEqual(await previewRange(page), { anchor: at, head: at });
+            await reader.press("Shift+ArrowLeft"); assert.deepEqual(await previewRange(page), { anchor: at, head: at - 2 });
+            await reader.press("Shift+ArrowRight"); assert.deepEqual(await previewRange(page), { anchor: at, head: at });
+            await previewSelect(page, at - 2, at - 2); await reader.press("Control+Shift+ArrowRight"); const across = await previewRange(page);
+            assert.equal(across.anchor, at - 2); assert.ok(across.head >= at && across.head <= starts[501], JSON.stringify(across));
+            const pageLines = await reader.evaluate(n => Math.max(1, Math.floor(n.clientHeight / parseFloat(getComputedStyle(n).lineHeight)) - 1));
+            await previewSelect(page, starts[490], starts[490]); await reader.press("Home"); await reader.press("Shift+PageDown");
+            assert.deepEqual(await previewRange(page), { anchor: starts[490], head: starts[490 + pageLines] });
+            await reader.press("PageUp"); assert.deepEqual(await previewRange(page), { anchor: starts[490], head: starts[490] });
+        }
+        await reader.press("Control+Home"); await reader.press("ArrowLeft"); assert.deepEqual(await previewRange(page), { anchor: 0, head: 0 });
+        await reader.press("Control+End"); await reader.press("ArrowRight"); assert.deepEqual(await previewRange(page), { anchor: value.length, head: value.length });
+        await reader.press("Escape"); assert.equal(await button(page, "Edit").evaluate(node => node === document.activeElement), true);
+        assert.equal(await reader.textContent(), value); assert.equal(await text(page), value);
+        assert.equal(await reader.evaluate(node => [...node.children].every(child => getComputedStyle(child).contentVisibility === "auto")), true);
+    }
     const ready = async page => {
         await page.waitForFunction(() => { const s = window.activationFixture.snapshot(), v = s.session?.viewport, i = s.session?.input;
             return s.phase === "editing" && i && !i.pendingInput && !i.pendingCommand && !i.pendingCaret && !i.pendingWord && !i.pendingGrapheme && !i.pendingDragScroll && v && !v.pending && v.revision === s.session.revision && v.selectionSet === s.session.selections; });
@@ -36,6 +94,7 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         } finally { await context.close(); }
     }
     for (const large of [false, true]) await scenario("preview-edit-read-only-history-worker", async (page, original, requests) => {
+        await readerKeyboard(page, original, large); assert.equal((await snap(page)).session, null);
         const boundary = large ? [...original.matchAll(/\r\n|\r|\n/g)].slice(0, 500).at(-1) : null;
         const anchor = boundary ? boundary.index + boundary[0].length + 21 : 7, head = boundary ? boundary.index - 20 : 3;
         assert.equal(await previewSelect(page, anchor, head), original.slice(head, anchor));
@@ -71,11 +130,22 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         await page.waitForFunction(() => window.activationFixture.snapshot().session.find?.status === "ready"); const found = (await snap(page)).session; assert.equal(found.find.count, large ? 2 : 1); assert.ok(found.workers > 0);
         assert.ok(found.viewport.rows < 100); assert.equal(found.exports, 0); assert.equal(await text(page), changed);
         await button(page, "Read only").click();
+        const keyboardDormant = (await snap(page)).session;
+        await page.locator("#text").press("Control+Home"); await page.locator("#text").press("Shift+ArrowRight"); await page.locator("#text").press("Escape");
+        const keyboardAfter = (await snap(page)).session;
+        assert.equal(keyboardAfter.revision, keyboardDormant.revision); assert.deepEqual(keyboardAfter.history, keyboardDormant.history); assert.deepEqual(keyboardAfter.selections, keyboardDormant.selections);
         // Element boundary endpoints arise from native Select All as well as text-node ranges.
         await page.locator("#text").evaluate(node => window.getSelection().setBaseAndExtent(node, node.childNodes.length, node, 0));
         await button(page, "Edit").click(); await ready(page); const selected = (await snap(page)).session.selections; assert.equal(selected.ranges.length, 1); assert.equal(selected.ranges[0].anchor, changed.length); assert.equal(selected.ranges[0].head, 0);
+        if (!large) {
+            await input.press("Delete"); await ready(page); assert.equal(await text(page), ""); await button(page, "Read only").click();
+            for (const key of ["Control+a", "Home", "End", "Shift+ArrowRight", "Shift+ArrowLeft", "PageDown"]) await page.locator("#text").press(key);
+            assert.deepEqual(await previewRange(page), { anchor: 0, head: 0 }); assert.equal(await page.locator("#text").textContent(), "");
+            await page.locator("#text").press("Escape"); await page.keyboard.press("Enter"); await ready(page); await input.press("Control+z"); await ready(page); assert.equal(await text(page), changed);
+        }
         if (!large) await page.screenshot({ path: `${directory}/activation-${browserName}.png` });
         const diagnostics = await page.evaluate(() => window.activationFixture.dispose()); assert.equal(diagnostics.resources, 0); assert.equal(diagnostics.views, 0); assert.equal(diagnostics.leases, 0); assert.equal(diagnostics.subscriptions, 0); assert.equal(await text(page), changed);
+        assert.equal(await page.locator("#text").evaluate(node => { const e = new KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true, cancelable: true }); node.dispatchEvent(e); return e.defaultPrevented; }), false);
         return { handlerMs, handlerClock: "own input handler only; no complete-action or latency percentile claim", dormant: dormant.diagnostics, final: diagnostics, boundedRows: found.viewport.rows, workerRequestsAfterOptIn: found.workers, exactUnicodeCrlf: true, completeSelectionsAndHistory: true };
     }, large);
     for (const asset of ["activate.js", "editor.css"]) await scenario("failed-activation-retry-" + asset, async (page, original) => {

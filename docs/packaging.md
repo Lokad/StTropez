@@ -129,6 +129,26 @@ Native Find, clipboard and assistive-technology behavior require device qualific
 selection checks alone do not establish those capabilities. Native selection string serialization
 can vary by engine even for a single text node; raw DOM Range text is the source-preservation oracle.
 
+Reader keyboard commands stay inside the source: Ctrl/Meta+A selects its text, Home/End use
+the current logical CR/LF line, and Ctrl+Home/End reach the source boundaries. Arrows, word
+movement use native selection movement; vertical/Page commands use source rows and native caret
+hit testing, retaining the visual column through short rows. Shift extends the range. Word
+movement follows browser rules. The adapter normalizes CRLF/surrogate boundaries,
+bridges DOM chunk boundaries and reveals the native text geometry in the reader's scroller.
+Escape focuses **Edit**; Tab keeps normal host navigation. Deletion/history keys do not change
+read-only text. Keyboard/pointer listeners share the host's abort/disposal lifecycle. These checks
+cover automated desktop browser behavior, with native input, OS clipboard and screen readers
+still requiring the support records described above.
+
+Full-document native selection remains a large-reader responsiveness limit. A registered
+100,000-line, 900,044-unit Chromium 156 run recorded Select All p95 readiness of 441.2 ms
+against a 250 ms target, a 332.7 ms keydown dispatch span and a 459.7 ms complete keyboard/observer
+proxy. The dispatch span measures a navigation event; typing/input-handler and physical-display
+clocks are separate. Selecting through reader-element endpoints did not remove the cost in a
+bounded control. Functional keyboard and scoped release checks pass; responsive large Select All
+remains open work for a virtual read-only presentation. The snapshot remains an evaluation
+fallback; native/total-process memory and production editing-engine readiness remain unqualified.
+
 **Read only** detaches the editor and Find controller while keeping the resource, complete
 selection set and shared undo history. Selecting new text in the preview deliberately replaces
 the set with that single selection on the next activation. Composition and queued edits guard switchback;
@@ -143,6 +163,8 @@ request paths. Normal and 100,000-line journeys exercise typing, complete select
 switchback, failure/retry and disposal. Run the existing archive with
 `node scripts/test-package.mjs --activation-only --browser=firefox` (or `webkit`) to check another
 engine without rebuilding the library. Reports and images are `artifacts/package/activation-*`.
+`--activation-only --prepare-only` and `--workspace-only --prepare-only` stop after the strict
+isolated consumer build, allowing the same journeys to run under a separate browser lifecycle.
 Own input-handler observations are not complete interaction latency or production percentiles.
 This local host fixture does not qualify retained heap, native IME/OS clipboard/accessibility,
 durable storage, arbitrary deployment failures or a consuming application's adoption policy.
