@@ -164,7 +164,11 @@ export class HostDraftRecovery {
                 else { const restored = c.connection.getSnapshot(); this.protectedConfiguration = restored.state === "ready" ? restored.value : undefined; }
                 this.publish(capture.kind === "source" ? "Source draft restored. Undo returns to the loaded source." : "Configuration draft restored independently.");
             }
-        } catch { if (!this.disposed && serial === this.serial) this.publish("Draft action failed or became stale. Current inputs and the previous stored copy are retained."); }
+        } catch { if (!this.disposed && serial === this.serial) {
+            // A peer may have replaced the covered copy before its notification arrived.
+            this.protectedSource = undefined; this.protectedConfiguration = undefined; this.protectedInput = undefined;
+            this.publish("Draft action failed or became stale. Current inputs are retained; recheck storage before relying on a stored copy.");
+        } }
         finally { this.mutations--; if (!this.disposed && serial === this.serial) { this.busy = false; this.publish(); } } })());
     };
     shouldWarnOnLeave(): boolean { return !this.disposed && (this.mutations > 0 || this.needsProtection() || this.hasComposition() || !this.controller.canCaptureRecovery() || this.controller.hasPendingRecoveryWork()); }

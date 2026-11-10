@@ -46,6 +46,20 @@ test("failed write and stale discard preserve the previous stored copy and live 
     const store = await seeded(), old = structuredClone(store.shared.value), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); edit(c, "latest local work"); store.shared.failWrite = true; d.prepare("keep"); d.confirm(); await idle(d); assert.deepEqual(store.shared.value, old); assert.equal(text(c), "latest local work");
     d.prepare("discard"); store.shared.value = { token: "newer", value: old!.value }; d.confirm(); await idle(d); assert.equal(store.shared.value.token, "newer"); assert.equal(text(c), "latest local work"); await close(c, d);
 });
+
+for (const kind of ["keep", "discard"] as const) for (const input of ["source", "configuration", "rejected input"] as const) test(`failed ${kind} invalidates ${input} coverage after an unseen peer replacement`, async () => {
+    const store = storage(), c = new HostController(), d = new HostDraftRecovery(c, store.port());
+    try { await idle(d); if (input === "source") edit(c, "owned unsaved work");
+        else if (input === "configuration") c.setPath("owned.csv");
+        else c.captureInputConflict(c.source.documentId, { documentId: c.source.documentId, expectedRevision: 0, reason: "composition-detached", contextFrom: 0, attemptedText: "owned preedit", attemptedEdit: { from: 0, to: 0, insert: "owned preedit" } });
+        d.prepare("keep"); await idle(d); assert.equal(d.shouldWarnOnLeave(), false);
+        const peer = structuredClone(store.shared.value!.value) as { id: string; source: { text: string }; configuration: { value: { path: string } }; input: unknown[] }; peer.id = "peer-newer"; peer.source.text = "other page draft"; peer.configuration.value.path = "peer.csv"; peer.input = [];
+        store.shared.value = { token: peer.id, value: peer }; const before = c.workspace.document(c.source.documentId), history = c.workspace.observeHistory(c.source.documentId).getSnapshot(), beforeText = text(c), configuration = c.connection.getSnapshot(), recovered = c.recovery.getSnapshot();
+        d.prepare(kind); d.confirm(); await idle(d);
+        assert.equal(text(c), beforeText); assert.equal(c.workspace.document(c.source.documentId).revision, before.revision); assert.deepEqual(c.workspace.observeHistory(c.source.documentId).getSnapshot(), history); assert.deepEqual(c.connection.getSnapshot(), configuration); assert.deepEqual(c.recovery.getSnapshot(), recovered); assert.deepEqual(store.shared.value, { token: peer.id, value: peer });
+        assert.equal(d.shouldWarnOnLeave(), true); assert.equal(d.state.getSnapshot().unprotected, true);
+    } finally { await close(c, d); }
+});
 test("unsupported stored data never applies and explicit discard leaves current work alone", async () => {
     const store = storage(); store.shared.value = { token: "bad", value: { format: 999, source: { text: "injected" } } }; const c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); assert.equal(d.state.getSnapshot().valid, false); d.prepare("source"); d.confirm(); assert.equal(text(c), "start");
     edit(c, "owned work"); d.prepare("discard"); d.confirm(); await idle(d); assert.equal(store.shared.value, null); assert.equal(text(c), "owned work"); assert.equal(d.shouldWarnOnLeave(), true); await close(c, d);

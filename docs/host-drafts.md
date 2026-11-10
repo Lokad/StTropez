@@ -7,8 +7,10 @@ storage, install navigation handlers or choose persistence policy for an applica
 Choose **Keep recovery draft** and wait for the completed checkpoint message. The browser
 adapter uses an IndexedDB transaction; completion is reported after the transaction commits.
 Large sources are supported without the small string quota of a local-storage record. A failed
-open, clone, write, transaction or stale stored token leaves current inputs and the existing
-stored copy available. There is no memory-only fallback advertised as durable storage.
+open, clone, write or transaction retains current inputs; native transactions do not partially
+replace stored data. A peer may already have replaced the previously covered copy, even before
+its notification arrives. Failed or stale actions invalidate local checkpoint coverage; recheck
+storage before relying on a stored copy. There is no memory-only fallback advertised as durable storage.
 
 Ordinary edits only compare immutable buffer/value handles and readiness flags. They do not
 export, serialize or write the document. Full source transfer belongs to the explicit checkpoint
