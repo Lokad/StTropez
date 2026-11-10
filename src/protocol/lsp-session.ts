@@ -15,6 +15,8 @@ export type LspDocumentSnapshot = Readonly<{ uri: string; languageId: string; re
 export type LspDocument = Readonly<{ getSnapshot: () => LspDocumentSnapshot;
     update: (expectedRevision: number, revision: number, buffer: TextBuffer) => void; close: () => void }>;
 export type LspCall<T> = Readonly<{ result: Promise<T>; cancel: () => void }>;
+export type LspDocumentCapture = Readonly<{ document: LspDocumentSnapshot; index: LspLineIndex; version: number;
+    epoch: number; registrationGeneration: number; isCurrent: () => boolean }>;
 export type LspConnectContext = Readonly<{ epoch: number; cancelled: boolean; onCancel: (listener: () => void) => () => void }>;
 export type LspRequestContext = RpcRequestContext & Readonly<{ epoch: number; isCurrent: () => boolean }>;
 export type LspRegistration = Readonly<{ id: string; method: string; registerOptions: JsonValue }>;
@@ -24,7 +26,7 @@ export type LspSessionSnapshot = Readonly<{ phase: "disconnected" | "connecting"
 export type LspSessionOptions = Readonly<{ connect: (context: LspConnectContext) => Promise<RpcTransport>; schedule: RpcScheduler;
     rootUri?: string | null; initializationOptions?: JsonValue; clientInfo?: Readonly<{ name: string; version?: string }>;
     /** Declare only features whose results the consuming host validates and presents. */
-    features?: readonly LspFeature[]; pathForUri?: LspUriPath; maxDocuments?: number; maxDocumentUnits?: number; maxTotalUnits?: number;
+    features?: readonly LspFeature[]; diagnostics?: boolean; pathForUri?: LspUriPath; maxDocuments?: number; maxDocumentUnits?: number; maxTotalUnits?: number;
     rpc?: Pick<RpcOptions, "timeoutMs" | "maxPending" | "maxMessageUnits">; onError?: (error: Error) => void }>;
 type Entry = { snapshot: LspDocumentSnapshot; handle: LspDocument };
 type Remote = { entry: Entry; snapshot: LspDocumentSnapshot; index: LspLineIndex; version: number };
@@ -83,6 +85,10 @@ export class LspSession {
         if (![this.maxDocuments, this.maxDocumentUnits, this.maxTotalUnits].every(value => integer(value) && value > 0)) throw new RangeError("Invalid LSP document limits.");
         const textDocument: Record<string, JsonValue> = { synchronization: { dynamicRegistration: true, didSave: false, willSave: false, willSaveWaitUntil: false } };
         for (const method of this.features) textDocument[method.slice("textDocument/".length)] = { dynamicRegistration: true };
+        if (this.features.has("textDocument/completion")) textDocument.completion = { dynamicRegistration: true, contextSupport: true,
+            completionItem: { snippetSupport: false, insertReplaceSupport: true, documentationFormat: ["plaintext"], insertTextModeSupport: { valueSet: [1] } },
+            insertTextMode: 1, completionList: { itemDefaults: ["editRange", "insertTextFormat", "insertTextMode"] } };
+        if (options.diagnostics) textDocument.publishDiagnostics = { versionSupport: true };
         this.initializeParams = jsonSnapshot({ processId: null, rootUri: options.rootUri ?? null,
             ...(options.clientInfo ? { clientInfo: options.clientInfo } : {}), initializationOptions: options.initializationOptions ?? null,
             capabilities: { general: { positionEncodings: ["utf-16"] }, textDocument } });
@@ -241,8 +247,13 @@ export class LspSession {
             for (const [uri, entry] of this.documents) {
                 if (!this.syncs(entry.snapshot)) continue; const snapshot = entry.snapshot, old = this.remote.get(uri);
                 if (old?.snapshot === snapshot) continue;
-                const plan = old ? await old.index.change(snapshot.buffer, () => this.pause(epoch)) : { index: await LspLineIndex.create(snapshot.buffer, () => this.pause(epoch)), changes: [] };
-                this.ready(epoch); if (entry.snapshot !== snapshot || this.documents.get(uri) !== entry || this.generation !== generation) { this.dirty = true; continue; }
+                const expired = {}, valid = () => entry.snapshot === snapshot && this.documents.get(uri) === entry && this.generation === generation;
+                const cooperate = async () => { await this.pause(epoch); if (!valid()) throw expired; };
+                let plan;
+                try { plan = old ? await old.index.change(snapshot.buffer, cooperate) : { index: await LspLineIndex.create(snapshot.buffer, cooperate), changes: [] }; }
+                catch (error) { if (error !== expired) throw error; this.dirty = true; break; }
+                // Restart ownership cleanup too: replacing a URI during planning must close/open, never change the old resource.
+                this.ready(epoch); if (!valid()) { this.dirty = true; break; }
                 const version = (old?.version ?? 0) + 1; if (version > 0x7fffffff) throw new RangeError("LSP document version exhausted; reconnect required.");
                 if (old) rpc.notify("textDocument/didChange", { textDocument: { uri, version }, contentChanges: plan.changes });
                 else rpc.notify("textDocument/didOpen", { textDocument: { uri, languageId: snapshot.languageId, version, text: snapshot.buffer.slice(0, snapshot.buffer.length) } });
@@ -259,13 +270,22 @@ export class LspSession {
         return { result, cancel: () => { if (this.waiters.delete(waiter)) waiter.reject(cancelError()); } };
     }
     flush(): Promise<void> { this.scope.assertWritable(); return this.waitForSync().result; }
-    requestDocument<T = JsonValue>(method: LspFeature, document: LspDocument, params: (index: LspLineIndex, snapshot: LspDocumentSnapshot) => Readonly<Record<string, JsonValue>>): LspCall<T> {
+    /** The exact sent snapshot, never a guessed provider-analysis revision. Unsynced local edits return undefined. */
+    synchronized(document: LspDocument): LspDocumentCapture | undefined {
+        const entry = this.handles.get(document); if (this.store.get().phase !== "ready" || !entry || this.documents.get(entry.snapshot.uri) !== entry) return undefined;
+        const remote = this.remote.get(entry.snapshot.uri); if (!remote || remote.snapshot !== entry.snapshot) return undefined;
+        const epoch = this.epoch, generation = this.generation;
+        return Object.freeze({ document: remote.snapshot, index: remote.index, version: remote.version, epoch, registrationGeneration: generation,
+            isCurrent: () => this.store.get().phase === "ready" && this.epoch === epoch && this.generation === generation && this.documents.get(remote.snapshot.uri) === entry
+                && entry.snapshot === remote.snapshot && this.remote.get(remote.snapshot.uri) === remote });
+    }
+    requestDocument<T = JsonValue>(method: LspFeature, document: LspDocument, params: (index: LspLineIndex, snapshot: LspDocumentSnapshot, capture: LspDocumentCapture) => Readonly<Record<string, JsonValue>>): LspCall<T> {
         this.writable(); this.ready(); if (this.documentCalls.size >= (this.options.rpc?.maxPending ?? 64)) throw new RpcError(-32000, "Too many pending document requests.");
         const entry = this.entry(document), snapshot = entry.snapshot, epoch = this.epoch, generation = this.generation, waiting = this.waitForSync(); let cancelled = false, call: RpcCall<T> | undefined;
         const guard = () => { if (cancelled) throw cancelError(); this.ready(epoch); if (this.documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot || generation !== this.generation) throw stale(); };
         const result = (async () => { await waiting.result; guard(); if (!this.canRequest(method, document)) throw new RpcError(-32601, "LSP feature unavailable for this document.");
-            const remote = this.remote.get(snapshot.uri); if (remote?.snapshot !== snapshot) throw stale();
-            const value = params(remote.index, snapshot); guard(); call = this.ready(epoch).request<T>(method, { ...value, textDocument: { uri: snapshot.uri } }); const response = await call.result; guard(); return response;
+            const capture = this.synchronized(document); if (capture?.document !== snapshot) throw stale();
+            const value = params(capture.index, snapshot, capture); guard(); call = this.ready(epoch).request<T>(method, { ...value, textDocument: { uri: snapshot.uri } }); const response = await call.result; guard(); return response;
         })();
         const handle = Object.freeze({ result, cancel: () => { cancelled = true; waiting.cancel(); call?.cancel(); } }); this.documentCalls.add(handle);
         void result.then(() => { this.documentCalls.delete(handle); }, () => { this.documentCalls.delete(handle); }); return handle;

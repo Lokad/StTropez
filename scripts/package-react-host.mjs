@@ -27,6 +27,7 @@ export async function stagePackagedReactHost(project, consumer) {
     const publicImports = new Map([
         ["src/index.ts", "sttropez"],
         ["src/browser/index.ts", "sttropez/browser"],
+        ["src/protocol/index.ts", "sttropez/protocol"],
         ["src/browser/editor.css", "sttropez/editor.css"],
     ]);
     const entryPoints = {

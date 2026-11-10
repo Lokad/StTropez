@@ -38,7 +38,8 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
     host.addEventListener("keydown", event => languageToolsKey(event, tools), { signal: listeners.signal });
     heading.textContent = "Language and find"; status.setAttribute("aria-label", "Language status");
     const help = owner.createElement("p"); help.textContent = "Ctrl+Space requests completion; Alt+Enter replaces it. Ctrl+F finds, Ctrl+H replaces, F3 moves to the next match, and Escape returns to source. Ctrl+S saves the working source.";
-    const choices = owner.createElement("ul"), diagnostics = owner.createElement("ul"), nav = owner.createElement("div"), findStatus = owner.createElement("output");
+    const choices = owner.createElement("ul"), diagnostics = owner.createElement("ul"), uncertain = owner.createElement("ul"), nav = owner.createElement("div"), findStatus = owner.createElement("output");
+    uncertain.setAttribute("aria-label", "Unversioned diagnostics");
     choices.setAttribute("role", "listbox"); choices.setAttribute("aria-label", "Completion choices"); diagnostics.setAttribute("aria-label", "Source diagnostics"); findStatus.setAttribute("aria-label", "Find status");
     const fields = ["Find source", "Replacement"].map((name, index) => {
         const label = owner.createElement("label"), field = owner.createElement("input"); label.textContent = name; label.append(field);
@@ -58,16 +59,21 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
     const buttons = languageActions(tools).map(action => { const button = owner.createElement("button"); button.textContent = action.label;
         button.addEventListener("click", action.invoke, { signal: listeners.signal }); nav.append(button); return button; });
     const foldStatus = owner.createElement("output"); foldStatus.setAttribute("aria-label", "Fold status");
-    host.append(heading, help, status, choices, diagnostics, ...fields.map(f => f.label), wholeLabel, caseLabel, regexLabel, findStatus, foldStatus, nav);
+    host.append(heading, help, status, choices, diagnostics, uncertain, ...fields.map(f => f.label), wholeLabel, caseLabel, regexLabel, findStatus, foldStatus, nav);
     const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
     const render = () => {
         const state = tools.state.getSnapshot(); setText(status, state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider?.message ?? "Focus a source view to use language actions.");
         const offered = state.provider?.offerText;
-        if (offered != null) {
-            if (choices.childElementCount !== 1 || choices.firstElementChild?.textContent !== offered) {
-                const item = owner.createElement("li"); item.textContent = offered; item.setAttribute("role", "option"); item.setAttribute("aria-selected", "true"); choices.replaceChildren(item);
-            }
-        } else if (choices.childNodes.length) choices.replaceChildren();
+        const labels = state.provider?.choices ?? (offered != null ? [offered] : []);
+        if (choices.childElementCount !== labels.length || labels.some((label, index) => choices.children.item(index)?.textContent !== label)) {
+            choices.replaceChildren(...labels.map((label, index) => { const item = owner.createElement("li"), button = owner.createElement("button");
+                item.setAttribute("role", "option"); button.textContent = label; button.addEventListener("click", () => tools.chooseCompletion(index), { signal: listeners.signal }); item.append(button); return item; }));
+        }
+        [...choices.children].forEach((item, index) => item.setAttribute("aria-selected", String(index === (state.provider?.choiceIndex ?? 0))));
+        const messages = state.provider?.unversionedDiagnostics ?? [];
+        if (uncertain.childElementCount !== messages.length || messages.some((message, index) => uncertain.children.item(index)?.textContent !== message)) {
+            uncertain.replaceChildren(...messages.map(message => { const item = owner.createElement("li"); item.textContent = message; return item; }));
+        }
         const currentDiagnostics = state.provider?.diagnostics ?? [];
         if (diagnostics.childElementCount !== currentDiagnostics.length || currentDiagnostics.some((diagnostic, index) => diagnostics.children.item(index)?.textContent !== `${diagnostic.from}: ${diagnostic.message}`)) {
             const items = currentDiagnostics.map((diagnostic, index) => { const item = owner.createElement("li"), button = owner.createElement("button"); button.textContent = `${diagnostic.from}: ${diagnostic.message}`;

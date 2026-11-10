@@ -44,10 +44,12 @@ const input = (text = "a😀\r\nb\rc\n", uri = "host+fixture://project/scope/doc
 
 test("reference peer receives ordered initialization and exact coalesced UTF-16 incremental versions", async t => {
     const host = fixture(t), session = new LspSession({ ...host, features: ["textDocument/hover"] }); t.after(() => session.dispose());
-    const initial = input(), document = session.bindDocument(initial); await session.connect(); await settled(); const peer = host.peers[0]!;
+    const initial = input(), document = session.bindDocument(initial); assert.equal(session.synchronized(document), undefined); await session.connect(); await settled(); const peer = host.peers[0]!, firstCapture = session.synchronized(document)!;
+    assert.equal(firstCapture.document, document.getSnapshot()); assert.equal(firstCapture.version, 1); assert.equal(firstCapture.isCurrent(), true);
     assert.deepEqual(peer.initialize()?.capabilities.general?.positionEncodings, ["utf-16"]); assert.equal(peer.initialize()?.capabilities.textDocument?.synchronization?.dynamicRegistration, true);
     assert.deepEqual(peer.events, ["initialize", "initialized", "open"]); assert.equal(peer.documents.get(initial.uri)?.getText(), "a😀\r\nb\rc\n");
     const next = initial.buffer.replace(4, 5, ""), latest = next.replace(1, 1, "prefix\r\n"); document.update(40, 45, next); document.update(45, 51, latest);
+    assert.equal(firstCapture.isCurrent(), false); assert.equal(session.synchronized(document), undefined);
     await session.flush(); await settled(); assert.equal(peer.documents.get(initial.uri)?.getText(), latest.slice(0, latest.length)); assert.equal(peer.documents.get(initial.uri)?.version, 2);
     document.update(51, 52, latest); await session.flush(); await settled(); assert.equal(peer.documents.get(initial.uri)?.version, 3);
     assert.equal(initial.buffer.readMetrics().textExports + latest.readMetrics().textExports, 0);
@@ -135,4 +137,21 @@ test("large opening plans cancel at a cooperative boundary and limits refuse cha
     assert.equal(host.peers[0]!.events.includes("open"), false); assert.equal(session.snapshotOwnership().scheduledTasks, 0);
     watching = false; document.update(40, 42, initial.buffer.replace(0, 1, "current")); await session.connect(); await settled();
     assert.equal(host.peers[1]!.documents.get(initial.uri)?.getText().startsWith("current\r\n"), true); assert.equal(session.snapshotOwnership().remoteDocuments, 2);
+});
+
+test("local edits and URI replacement stop obsolete index plans at the next cooperative boundary", async t => {
+    for (const replacement of [false, true]) {
+        const host = fixture(t); let change: (() => void) | undefined, turns = 0;
+        const session = new LspSession({ ...host, schedule: (ms, callback) => host.schedule(ms, () => { if (change && ms === 0 && ++turns === 2) { const apply = change; change = undefined; apply(); } callback(); }) }); t.after(() => session.dispose());
+        const initial = input("small"), original = session.bindDocument(initial); await session.connect(); await settled();
+        const large = TextBuffer.from("line\r\n".repeat(40_000)), latest = large.replace(0, 4, "current"); let current = original;
+        change = () => { if (replacement) { original.close(); current = session.bindDocument(input("replacement", initial.uri, "other-resource", 0)); }
+            else original.update(41, 42, latest); };
+        original.update(40, 41, large); await session.flush(); await settled(); const peer = host.peers[0]!;
+        assert.ok(large.readMetrics().sliceUnits < 16500, "An obsolete snapshot must stop after its first bounded chunk, not scan the full document.");
+        assert.equal(session.synchronized(current)?.document, current.getSnapshot());
+        if (replacement) { assert.deepEqual(peer.events.slice(-2), ["close", "open"]); assert.equal(peer.documents.get(initial.uri)?.getText(), "replacement"); assert.equal(peer.documents.get(initial.uri)?.version, 1); }
+        else { assert.equal(peer.documents.get(initial.uri)?.getText(), latest.slice(0, latest.length)); assert.equal(peer.documents.get(initial.uri)?.version, 2); }
+        session.dispose();
+    }
 });

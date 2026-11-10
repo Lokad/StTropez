@@ -1,5 +1,6 @@
 import { anchoredRange } from "../../src/index.ts";
-import type { ResourceLease, Selection, TabId, Workspace } from "../../src/index.ts";
+import type { Observable, ResourceLease, Selection, TabId, Workspace } from "../../src/index.ts";
+import type { JsonValue, LspSession } from "../../src/protocol/index.ts";
 import type { EditingCandidate } from "../../src/browser/index.ts";
 import type { ProviderInput, ProviderResult } from "../probes/provider.ts";
 import { validateProviderResult } from "../probes/provider.ts";
@@ -7,10 +8,19 @@ import { HostCell } from "../shared/observable.ts";
 type Pending = Readonly<{ input: ProviderInput; from: number; selection: Selection; lease: ResourceLease; startsInWord: boolean; endsInWord: boolean }>;
 export type Diagnostic = Readonly<{ from: number; to: number; message: string }>;
 
-export type ProviderSnapshot = Readonly<{ message: string; connected: boolean; pending: boolean; offerText: string | null; diagnostics: readonly Diagnostic[]; diagnosticRevision: number }>;
+export type ProviderSnapshot = Readonly<{ message: string; connected: boolean; pending: boolean; offerText: string | null; diagnostics: readonly Diagnostic[]; diagnosticRevision: number;
+    choices?: readonly string[]; choiceIndex?: number; unversionedDiagnostics?: readonly string[] }>;
+export type ProviderOptions = Readonly<{ autoConnect?: boolean; canCapture?: () => boolean }>;
+export type ProviderController = Readonly<{ state: Observable<ProviderSnapshot>; request: () => void; apply: (mode: "insert" | "replace") => boolean;
+    cancel: () => void; connect: () => void; disconnect: () => void; selectDiagnostic: (index: number) => boolean; chooseCompletion: (index: number) => boolean;
+    setDelay: (value: number) => void; faultNext: (value: "malformed" | "failure") => void; destroy: () => void;
+    customRequest?: (method: string, params: JsonValue) => Promise<JsonValue>;
+    snapshot: () => Readonly<{ posted: number; received: number; applied: number; stale: number; cancelled: number; invalid: number; outOfScope: number; failed: number; postedUnits: number;
+        connected: boolean; pending: boolean; offer: boolean; diagnostics: number; diagnosticRevision: number; transport?: "worker-v1" | "lsp3.17"; protocol?: ReturnType<LspSession["snapshotOwnership"]> }> }>;
+export type ProviderFactory = (workspace: Workspace, tabId: TabId, editor: EditingCandidate, options: ProviderOptions) => ProviderController;
 
 /** Synthetic host service shared by fixtures. No DOM controls or authoritative source mirror. */
-export function createProviderController(workspace: Workspace, tabId: TabId, editor: EditingCandidate, options: Readonly<{ autoConnect?: boolean }> = {}) {
+export function createProviderController(workspace: Workspace, tabId: TabId, editor: EditingCandidate, options: ProviderOptions = {}) {
     const target = workspace.captureTab(tabId), documentId = editor.view.documentId, resource = workspace.resourceForDocument(documentId);
     const tab = workspace.resolveTab(target);
     if (tab?.surface.kind !== "text" || tab.surface.documentId !== documentId || !workspace.ownsDocumentView(editor.view)) throw new Error("Provider requires the captured document view.");
@@ -96,7 +106,7 @@ export function createProviderController(workspace: Workspace, tabId: TabId, edi
         editor.view.subscribe(() => { if (offer && !sameSelection(offer.capture.selection)) { offer = undefined; render("Completion expired after selection changed."); } }),
         workspace.tabState.subscribe(() => { if (!valid()) { release(); clearResults("Captured view is unavailable."); } })];
     if (options.autoConnect !== false) connect();
-    return Object.freeze({ state: cell.observable, request, apply, cancel, connect, disconnect, selectDiagnostic,
+    return Object.freeze({ state: cell.observable, request, apply, cancel, connect, disconnect, selectDiagnostic, chooseCompletion: (index: number) => index === 0 && offer !== undefined,
         setDelay: (value: number) => { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid provider delay."); delay = value; },
         faultNext: (value: "malformed" | "failure") => { fault = value; },
         snapshot: () => Object.freeze({ ...counters, connected: worker !== undefined, pending: pending !== undefined, offer: offer !== undefined, diagnostics: diagnostics.length, diagnosticRevision }),

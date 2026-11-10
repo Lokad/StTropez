@@ -1,2 +1,2 @@
-export { ProjectChangeCursor } from "../../src/core/buffer-change.ts";
-export type { ProjectChange } from "../../src/core/buffer-change.ts";
+export { BufferChangeCursor as ProjectChangeCursor } from "../../src/index.ts";
+export type { BufferChangeSpan as ProjectChange } from "../../src/index.ts";

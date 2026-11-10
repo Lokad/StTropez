@@ -2,12 +2,13 @@ import { createFindController, createRegexFindBackend } from "../../src/browser/
 import type { EditingCandidate, FindController, FindSnapshot } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, DocumentId, FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { createProviderController } from "../editing/provider-controller.ts";
-import type { ProviderSnapshot } from "../editing/provider-controller.ts";
+import type { ProviderController, ProviderFactory, ProviderSnapshot } from "../editing/provider-controller.ts";
+import type { JsonValue } from "../../src/protocol/index.ts";
 import { EditingPresentation } from "../editing/presentation.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type Session = { id: string; editor: EditingCandidate; tab: TabId; target: TabTarget; saveTarget: TabTarget; presentation: EditingPresentation;
-    provider?: ReturnType<typeof createProviderController>; reference?: ComparisonBaseline; find?: FindController; stopFind?: () => void; initialized: boolean };
+    provider?: ProviderController; reference?: ComparisonBaseline; find?: FindController; stopFind?: () => void; initialized: boolean };
 type DetachedOwner = Readonly<{ id: string; target: TabTarget; documentId: DocumentId; reference?: ComparisonBaseline }>;
 type FindCommand = Readonly<{ kind: "navigate"; direction: 1 | -1 } | { kind: "replace"; text: string }>;
 
@@ -18,6 +19,8 @@ type LanguageSnapshot = Readonly<{ readOnlyReference: boolean; view: string | nu
 export class HostLanguageTools {
     private readonly workspace: Workspace;
     private readonly saveShortcut: SaveShortcut;
+    private readonly providerFactory: ProviderFactory;
+    private readonly canCapture: (documentId: DocumentId) => boolean;
     private readonly sessions = new Map<string, Session>();
     private active: Session | undefined;
     private detachedOwner: DetachedOwner | undefined;
@@ -33,7 +36,9 @@ export class HostLanguageTools {
     readonly replacementRef = (element: HTMLInputElement | null): void => { this.replacementElement = element; };
     readonly toolsRef = (element: HTMLElement | null): void => { if (this.toolsElement !== element) this.cancelFindCommand(); this.toolsElement = element; };
     private retired = { posted: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, failed: 0, postedUnits: 0 };
-    constructor(workspace: Workspace, saveShortcut: SaveShortcut) { this.workspace = workspace; this.saveShortcut = saveShortcut; }
+    constructor(workspace: Workspace, saveShortcut: SaveShortcut, options: Readonly<{ providerFactory?: ProviderFactory; canCapture?: (documentId: DocumentId) => boolean }> = {}) {
+        this.workspace = workspace; this.saveShortcut = saveShortcut; this.providerFactory = options.providerFactory ?? createProviderController; this.canCapture = options.canCapture ?? (() => true);
+    }
     private publish(): void {
         const previous = this.cell.get(), folds = this.active?.editor.view.folding.getSnapshot() ?? null;
         this.cell.set({ ...previous, readOnlyReference: this.active?.reference !== undefined, view: this.active?.id ?? null, provider: this.active?.provider?.state.getSnapshot() ?? null,
@@ -67,7 +72,7 @@ export class HostLanguageTools {
     clearRetainedView(): void { this.cancelFindCommand(); this.detachedOwner = undefined; }
     attach(id: string, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation): () => void {
         if (this.sessions.has(id)) throw new Error("Language view already mounted.");
-        const provider = createProviderController(this.workspace, tab, editor, { autoConnect: false });
+        const provider = this.providerFactory(this.workspace, tab, editor, { autoConnect: false, canCapture: () => this.canCapture(editor.view.documentId) });
         const target = this.workspace.captureTab(tab), session: Session = { id, tab, target, saveTarget: target, editor, presentation, provider, initialized: false }, listeners = new AbortController();
         this.sessions.set(id, session);
         const update = () => {
@@ -275,6 +280,10 @@ export class HostLanguageTools {
         this.cell.set({ ...this.cell.get(), foldMessage: "All folds expanded." });
     };
     selectDiagnostic(index: number): void { this.active?.provider?.selectDiagnostic(index); }
+    chooseCompletion(index: number): void { this.active?.provider?.chooseCompletion(index); }
+    customRequest(method: string, params: JsonValue): Promise<JsonValue> {
+        const provider = this.active?.provider; if (!provider?.customRequest) return Promise.reject(new Error("The active provider has no custom-message extension.")); return provider.customRequest(method, params);
+    }
     setDelay(value: number): void { this.active?.provider?.setDelay(value); }
     faultNext(value: "malformed" | "failure"): void { this.active?.provider?.faultNext(value); }
     debug() { return { active: this.active?.id ?? null, navigationPending: this.pendingFind?.kind === "navigate", findCommandPending: this.pendingFind?.kind ?? null, subscriptions: this.cell.count(), referenceFind: [...this.sessions.values()].filter(s => s.reference).map(s => ({ id: s.id, documentId: s.editor.view.documentId, viewId: s.editor.view.id, find: s.find?.state.getSnapshot() ?? null })), sessions: [...this.sessions.values()].flatMap(s => s.provider ? [{ id: s.id, documentId: s.editor.view.documentId,

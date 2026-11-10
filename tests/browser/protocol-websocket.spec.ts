@@ -8,7 +8,7 @@ const test = base.extend({ page: async ({ playwright, browserName, baseURL }, us
 test.beforeEach(async ({ page }) => { page.on("pageerror", error => { throw error; }); await page.goto("/protocol/"); await page.waitForFunction(() => window.protocolFixture?.ready); });
 test("JSON-RPC wire foundation uses the reference peer over real WebSockets without worker fallback", async ({ page }) => {
     const state = await page.evaluate(() => window.protocolFixture.exercise());
-    expect(state.initialization).toEqual({ capabilities: { positionEncoding: "utf-16", textDocumentSync: 2, hoverProvider: true }, serverInfo: { name: "Generic protocol fixture" } });
+    expect(state.initialization).toEqual({ capabilities: { positionEncoding: "utf-16", textDocumentSync: 2, hoverProvider: true, completionProvider: { triggerCharacters: ["."] } }, serverInfo: { name: "Generic protocol fixture" } });
     expect(state.echoed).toEqual(state.payload); expect(state.roundtrip).toEqual(state.payload); expect(state.notice).toEqual(state.payload);
     expect(state.rejection).toBe(-32001); expect(state.before).toEqual({ held: 1, initialized: true }); expect(state.after).toEqual({ held: 0, initialized: true });
     expect(state.cancelled).toBe(true); expect(state.disconnected).toBe(true); expect(state.reconnect).toEqual({ fresh: true }); expect(state.timers).toBe(0);

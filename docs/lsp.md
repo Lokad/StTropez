@@ -7,8 +7,9 @@ dependencies. A production language provider is not required for fixture qualifi
 The wire engine is implemented in TypeScript because importing the reference implementation
 would add runtime dependencies; JSON encoding and WebSocket I/O use platform APIs.
 
-The protocol entry provides a wire engine and a host-driven client session. Editor feature
-adapters and the complete requested feature matrix remain required. The existing [local worker protocol v1](project-sync.md)
+The protocol entry provides a wire engine, host-driven client session, and validated diagnostics/
+completion models. Both development hosts have an explicit [LSP editor adapter](lsp-editor.md).
+The rest of the requested feature matrix remains required. The existing [local worker protocol v1](project-sync.md)
 remains an internal fixture and establishes no LSP compatibility.
 
 | Area | Current status / next work |
@@ -18,7 +19,8 @@ remains an internal fixture and establishes no LSP compatibility.
 | Initialization/capabilities | Ordered initialize/initialized, UTF-16 negotiation, immutable capabilities and shutdown/exit. Unsupported position encodings and full synchronization are explicitly refused. |
 | Dynamic registration | Atomic register/unregister batches, unique identifiers, exact method matching and immutable snapshots. Text-document selectors cover language, scheme and bounded glob patterns; notebook and file-watcher registration are not advertised. |
 | Incremental synchronization | Captured URI/resource/document/revision bindings, separate wire versions, queued/coalesced open/change/close and exact raw UTF-16/CRLF/LF/bare-CR conversion. Point changes reuse shared buffer edges and LF metadata. |
-| Diagnostics/completion/hover/navigation | Wire-backed feature negotiation, validation, captured result ownership and editor adapters are still required. |
+| Diagnostics/completion | Complete bounded validation, captured version/index access, versioned diagnostic anchors and manual completion with insert/replace/additional edits. Both hosts exercise actual typing, shared history, comparison authority, Save/Run and outage/lifecycle guards over WebSocket. Unversioned diagnostics remain plain information without source anchors. |
+| Hover/navigation | Captured request gateway exists; feature-specific result validation and actual editor adapters remain required. |
 | Rename/code actions/workspace edits | Versioned URI-to-resource mapping, complete validation, explicit application, shared atomic history and stale/authority refusal are still required. |
 | Cancellation/reconnect | Opening, queued document calls, RPC requests and cooperative sync plans can be cancelled. Reconnect clears registrations/results and reopens current captures; commands never replay automatically. |
 | Host URIs/custom messages | Exact opaque URI bindings, replaceable selector path policy and removable custom request/notification handlers. Custom result schemas, authority and service policy belong to the host. |
@@ -63,9 +65,12 @@ refused; generated change boundaries expand across a pair rather than normalizin
 Declare `features` only for results the host validates and presents. `canRequest` combines static
 and matching dynamic support. `requestDocument` waits for synchronization, captures binding,
 revision, session and registration generation, supplies the bound URI, and refuses stale replies.
-Its result is immutable wire JSON, **not a validated completion, hover, navigation or edit model**.
-Feature-specific schema validation, diagnostics/version policy, captured view ownership and atomic
-workspace-edit/history application remain the next implementation stage. Custom handlers persist
+Its result is immutable wire JSON. Use `decodeLspCompletions` with the supplied capture to validate
+all items/ranges/additional edits before presenting any choice. `synchronized(binding)` returns the
+exact sent snapshot/index/wire version, or undefined while local updates are pending; its `isCurrent`
+guard expires on session, registration or binding/revision changes. `decodeLspDiagnostics` validates
+pushes against that capture. Feature-specific hover/navigation/edit validation and atomic workspace
+edit application remain required. Custom handlers persist
 across reconnect, but pending calls do not. Incoming request contexts expose cancellation and an
 `isCurrent` guard; hosts must check authority again before committing after an await.
 

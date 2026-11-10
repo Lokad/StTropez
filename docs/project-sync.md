@@ -5,6 +5,11 @@ The candidate hosts keep their navigation worker connected between successful re
 **Reconnect navigation provider** enables a fresh request, which opens current bounded
 snapshots in a new worker. It never replays a cancelled navigation intent.
 
+The shared headless planner is available through the public `BufferChangeCursor` export
+(`BufferChangeSpan` describes its result). It proves shared buffer edges in bounded advances,
+keeps unproved text inside the replacement and never exports the document. Dispose the cursor
+to release its captures. Host fixtures use this public entry when restored from compiled assets.
+
 Synchronization happens before each query. Ordinary typing performs no transport or change
 planning. The host captures immutable working buffers/revisions and temporary resource leases.
 Saved/comparison references are excluded. Unchanged documents are reused; removed documents

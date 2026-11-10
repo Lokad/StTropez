@@ -128,12 +128,14 @@ function ReviewVersions() {
 }
 function LanguageTools() {
     const tools = bindings.language, state = useObserved(tools.state);
+    const choices = state.provider?.choices ?? (state.provider?.offerText != null ? [state.provider.offerText] : []);
     return <section ref={tools.toolsRef} onKeyDown={event => languageToolsKey(event.nativeEvent, tools)} className="host-language" aria-label="Language and find tools"><h2>Language and find</h2>
         <p>Ctrl+Space requests completion; Alt+Enter replaces it. Ctrl+F finds, Ctrl+H replaces, F3 moves to the next match, and Escape returns to source. Ctrl+S saves the working source.</p>
         <output aria-label="Language status">{state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider?.message ?? "Focus a source view to use language actions."}</output>
-        <ul role="listbox" aria-label="Completion choices">{state.provider?.offerText != null ? <li role="option" aria-selected="true">{state.provider.offerText}</li> : null}</ul>
+        <ul role="listbox" aria-label="Completion choices">{choices.map((label, index) => <li key={`${index}:${label}`} role="option" aria-selected={index === (state.provider?.choiceIndex ?? 0)}><button onClick={() => tools.chooseCompletion(index)}>{label}</button></li>)}</ul>
         <ul aria-label="Source diagnostics">{state.provider?.diagnostics.map((diagnostic, index) => <li key={`${diagnostic.from}:${diagnostic.to}:${index}`}>
             <button onClick={() => tools.selectDiagnostic(index)}>{diagnostic.from}: {diagnostic.message}</button></li>)}</ul>
+        <ul aria-label="Unversioned diagnostics">{state.provider?.unversionedDiagnostics?.map((message, index) => <li key={index}>{message}</li>)}</ul>
         <label>Find source<input ref={tools.queryRef} value={state.query} onChange={event => tools.setQuery(event.currentTarget.value)} /></label>
         <label>Replacement<input ref={tools.replacementRef} disabled={state.readOnlyReference} value={state.replacement} onChange={event => tools.setReplacement(event.currentTarget.value)} /></label>
         <label><input type="checkbox" checked={state.wholeWord} onChange={event => tools.setWholeWord(event.currentTarget.checked)} />Whole word</label>

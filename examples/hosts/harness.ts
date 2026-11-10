@@ -2,6 +2,7 @@ import type { Connection, HostController } from "./controller.ts";
 import type { HostDraftRecovery } from "./draft-recovery.ts";
 import type { ViewBindings } from "./bindings.ts";
 import type { DocumentId, HistorySnapshot, ResourceId, Selection, TabTarget, TextEdit, TextResourceHandle } from "../../src/index.ts";
+import type { JsonValue } from "../../src/protocol/index.ts";
 
 type TransferTargetSnapshot = Readonly<{ documentId: DocumentId; revision: number; text: string; exports: number; history: HistorySnapshot }>;
 
@@ -67,6 +68,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         setTransferReadOnly: (value: boolean) => { if (!transferTarget) throw new Error("No transfer target is mounted.");
             controller.workspace.setCapabilities(transferTarget.id, { edit: value ? ["host"] : ["human", "host"], save: true, run: false }); },
         setProviderDelay: (delay: number) => bindings.language.setDelay(delay), faultProviderNext: (fault: "malformed" | "failure") => bindings.language.faultNext(fault),
+        providerCustom: (method: string, params: JsonValue) => bindings.language.customRequest(method, params),
         requestProvider: bindings.language.request,
         setDomainDelay: (delay: number) => { if (!Number.isFinite(delay) || delay < 0 || delay > 10000) throw new RangeError("Invalid domain delay."); bindings.domain.fixture.delay = delay; },
         faultDomainNext: (fault: "malformed" | "failure" | "late") => { bindings.domain.fixture.fault = fault; },
@@ -112,6 +114,7 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; mode
     editTransferTarget: (expectedRevision: number, edits: readonly TextEdit[]) => ReturnType<HostController["workspace"]["edit"]>;
     setTransferReadOnly: (value: boolean) => void;
     setProviderDelay: (delay: number) => void; faultProviderNext: (fault: "malformed" | "failure") => void;
+    providerCustom: (method: string, params: JsonValue) => Promise<JsonValue>;
     requestProvider: () => void;
     setDomainDelay: (delay: number) => void; faultDomainNext: (fault: "malformed" | "failure" | "late") => void;
     setNavigationDelay: (delay: number) => void; faultNavigationNext: (fault: "malformed" | "failure") => void;

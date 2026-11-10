@@ -99,8 +99,9 @@ The [viewport layer](docs/viewport.md) and `/viewport/` fixture record bounded-r
 The [editing candidate](docs/editing-candidate.md) and `/editing/` fixture exercise bounded native
 context, measured pointer selection, shared history and composition guards. Long contextual-line
 layout and native-device input remain qualification gates.
-The optional [LSP protocol layer](docs/lsp.md) supplies JSON-RPC/WebSocket transport and a captured
-client session; its supported-subset matrix keeps pending language-feature/editor adapters explicit.
+The optional [LSP protocol layer](docs/lsp.md) supplies JSON-RPC/WebSocket transport, captured
+sessions and validated [diagnostic/completion host adapters](docs/lsp-editor.md). Its supported-subset
+matrix keeps the remaining language-feature/edit work explicit.
 The [find controller](docs/search.md) and [provider/presentation fixture](docs/providers.md)
 add revision-checked workflows to that view, with explicit scope and scheduling limits.
 The [comparison controller](docs/comparison.md) and `/comparison/` fixture add an immutable
