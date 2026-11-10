@@ -51,6 +51,22 @@ test("configuration save receipt expires a pending restore and pending Save stil
     const state = c.connection.getSnapshot(); assert.equal(state.state === "ready" && state.value.path, "checkpoint.csv"); assert.equal(state.metadata.serverVersion, "configuration-v1"); assert.equal(state.metadata.dirty, false);
     assert.match(d.state.getSnapshot().message, /changed|stale|expired/i); assert.equal(text(c), "start"); await close(c, d);
 });
+
+test("transfer checkpoints retain invalid and opaque input, restore independently and expire after a Save receipt", async () => {
+    const store = storage(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d);
+    const value = { destination: "kept.csv", batchSize: "1e", opaque: { columns: ["Δ"], zero: -0 } };
+    c.workspace.updateResource(c.transfer.resource, { expectedRevision: 0, origin: "human", value }); assert.equal(d.shouldWarnOnLeave(), true); d.prepare("keep"); await idle(d); assert.equal(d.shouldWarnOnLeave(), false);
+    c.transfer.update("destination", "correction.csv"); d.prepare("transfer"); edit(c, "independent source"); c.setPath("independent.csv"); d.confirm(); await idle(d);
+    let s = c.transfer.resource.getSnapshot(); assert.deepEqual(s.state === "ready" && s.value, value); assert.equal(text(c), "independent source"); assert.equal(c.configurationSave.validation(), null);
+    c.transfer.update("batchSize", "100"); const gate = deferred(); store.shared.readGate = gate.promise; d.prepare("transfer"); d.confirm(); c.transfer.save.save(); await new Promise<void>(done => setImmediate(done)); c.transfer.save.finish(); await new Promise<void>(done => setImmediate(done)); gate.resolve(); await idle(d);
+    s = c.transfer.resource.getSnapshot(); assert.equal(s.metadata.serverVersion, "transfer-v1"); assert.equal(s.state === "ready" && s.value.batchSize, "100"); assert.match(d.state.getSnapshot().message, /failed|stale|changed/i); await close(c, d);
+});
+
+test("legacy checkpoints retain source/configuration recovery without inventing a transfer copy", async () => {
+    const store = await seeded(), envelope = structuredClone(store.shared.value!); const payload = envelope.value as Record<string, unknown>; payload.format = 1; delete payload.transfer; store.shared.value = envelope;
+    const c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); assert.equal(d.state.getSnapshot().valid, true); assert.equal(d.state.getSnapshot().hasTransfer, false);
+    c.transfer.update("batchSize", "invalid"); d.prepare("transfer"); assert.equal(d.state.getSnapshot().confirmation, null); d.prepare("configuration"); d.confirm(); await idle(d); const s = c.transfer.resource.getSnapshot(); assert.equal(s.state === "ready" && s.value.batchSize, "invalid"); assert.equal(d.shouldWarnOnLeave(), true); await close(c, d);
+});
 for (const change of ["revision", "authority"] as const) test(`restore revalidates ${change} after asynchronous storage read`, async () => {
     const store = await seeded(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); const gate = deferred(); store.shared.readGate = gate.promise; d.prepare("source"); d.confirm();
     if (change === "revision") edit(c, "later human text"); else { const m = c.source.metadata.getSnapshot(); c.workspace.setCapabilities(c.source.id, { ...m.capabilities, edit: ["host"] }); c.workspace.setCapabilities(c.source.id, m.capabilities); }
@@ -61,13 +77,14 @@ test("failed write and stale discard preserve the previous stored copy and live 
     d.prepare("discard"); store.shared.value = { token: "newer", value: old!.value }; d.confirm(); await idle(d); assert.equal(store.shared.value.token, "newer"); assert.equal(text(c), "latest local work"); await close(c, d);
 });
 
-for (const kind of ["keep", "discard"] as const) for (const input of ["source", "configuration", "rejected input"] as const) test(`failed ${kind} invalidates ${input} coverage after an unseen peer replacement`, async () => {
+for (const kind of ["keep", "discard"] as const) for (const input of ["source", "configuration", "transfer", "rejected input"] as const) test(`failed ${kind} invalidates ${input} coverage after an unseen peer replacement`, async () => {
     const store = storage(), c = new HostController(), d = new HostDraftRecovery(c, store.port());
     try { await idle(d); if (input === "source") edit(c, "owned unsaved work");
         else if (input === "configuration") c.setPath("owned.csv");
+        else if (input === "transfer") c.transfer.update("destination", "owned-target.csv");
         else c.captureInputConflict(c.source.documentId, { documentId: c.source.documentId, expectedRevision: 0, reason: "composition-detached", contextFrom: 0, attemptedText: "owned preedit", attemptedEdit: { from: 0, to: 0, insert: "owned preedit" } });
         d.prepare("keep"); await idle(d); assert.equal(d.shouldWarnOnLeave(), false);
-        const peer = structuredClone(store.shared.value!.value) as { id: string; source: { text: string }; configuration: { value: { path: string } }; input: unknown[] }; peer.id = "peer-newer"; peer.source.text = "other page draft"; peer.configuration.value.path = "peer.csv"; peer.input = [];
+        const peer = structuredClone(store.shared.value!.value) as { id: string; source: { text: string }; configuration: { value: { path: string } }; transfer: { value: { destination: string } }; input: unknown[] }; peer.id = "peer-newer"; peer.source.text = "other page draft"; peer.configuration.value.path = "peer.csv"; peer.transfer.value.destination = "peer-target.csv"; peer.input = [];
         store.shared.value = { token: peer.id, value: peer }; const before = c.workspace.document(c.source.documentId), history = c.workspace.observeHistory(c.source.documentId).getSnapshot(), beforeText = text(c), configuration = c.connection.getSnapshot(), recovered = c.recovery.getSnapshot();
         d.prepare(kind); d.confirm(); await idle(d);
         assert.equal(text(c), beforeText); assert.equal(c.workspace.document(c.source.documentId).revision, before.revision); assert.deepEqual(c.workspace.observeHistory(c.source.documentId).getSnapshot(), history); assert.deepEqual(c.connection.getSnapshot(), configuration); assert.deepEqual(c.recovery.getSnapshot(), recovered); assert.deepEqual(store.shared.value, { token: peer.id, value: peer });

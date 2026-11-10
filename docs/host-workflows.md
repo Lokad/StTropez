@@ -22,6 +22,23 @@ active even when current values have a recovery checkpoint. View removal keeps t
 pending port; final controller disposal settles it and releases its command lease. These local
 fixtures demonstrate host policy without adding storage, schema or network services to core.
 
+The **Transfer workspace** owns a distinct structured transfer resource. Destination and batch
+size have independent dirty/save/validation state and reuse the same deferred form-save policy.
+Batch size is a text field with a numeric keyboard hint so invalid input such as `1e` survives
+editing and recovery. Valid values are decimal integers from 1 to 100000. Save never starts Run.
+Run uses current valid settings even while an earlier capture is saving, and retains later edits.
+
+Each Run creates a read-only resource containing captured source, connection and transfer
+resource IDs, revisions, server versions and values. Progress appends immutable log resources
+linked to that Run; older progress/results keep their captured identity and never save or run
+inputs again. **Inspect Run**, log inspection and links to current inputs use separate typed
+panel tabs. Source previews show at most 512 UTF-16 units. Current-input inspection refreshes
+only on an explicit inspection/refresh command; ordinary typing does not rebuild previews.
+View unmount keeps pending work and inspector choice. Final host disposal interrupts pending
+Runs and settles Save ports; command leases release without discarding owned input values.
+Run/log history is local to the fixture session. Durable service results, retention and routing
+policy remain the consuming host's responsibility. These fixtures do not execute a transfer.
+
 Reference versions update the existing comparison through a captured refresh ticket. They
 preserve its editable input, focus, selection, provider target and in-flight working commands.
 An external reference expires older captured reference commands and releases their leases.

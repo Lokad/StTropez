@@ -1,6 +1,6 @@
 /** Host-defined immutable form data. Runtime schemas, validation and services belong to the host. */
 export type SnapshotValue = null | boolean | number | string | readonly SnapshotValue[] | { readonly [key: string]: SnapshotValue };
-export type Immutable<T> = SnapshotValue extends T ? SnapshotValue : T extends object ? { readonly [K in keyof T]: Immutable<T[K]> } : T;
+export type Immutable<T> = SnapshotValue extends T ? SnapshotValue : T extends null | boolean | number | string ? T : T extends object ? { readonly [K in keyof T]: Immutable<T[K]> } : T;
 
 /** Copy plain values so caller mutations cannot change published snapshots or captured requests. */
 export function snapshotValue<T extends SnapshotValue>(value: T): Immutable<T> {

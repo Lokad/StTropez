@@ -1,7 +1,7 @@
 # Host draft recovery
 
 The evaluation hosts provide an explicit recovery checkpoint for the working source,
-configuration and already rejected input. This is host code: the editor package does not open
+connection configuration, transfer settings and already rejected input. This is host code: the editor package does not open
 storage, install navigation handlers or choose persistence policy for an application.
 
 Choose **Keep recovery draft** and wait for the completed checkpoint message. The browser
@@ -20,18 +20,24 @@ requires confirmation. A storage recheck invalidates local coverage until a new 
 restore establishes it again.
 
 After reload, the stored draft is offered without changing the freshly loaded resources.
-**Restore source draft** and **Restore configuration draft** have independent confirmations and
+**Restore source draft**, **Restore configuration draft** and **Restore transfer draft** have independent confirmations and
 revision checks. A source restore is one new undoable edit; it does not deserialize the previous
 session's undo stack. It preserves the loaded saved baseline, server precondition and immutable
 comparison reference. The stored server version is context for the choice, never authority to
 replace the loaded version. Configuration changes do not retarget source restoration, and source
 changes do not invalidate an otherwise current configuration restore.
 
+Transfer restoration is independent too. It preserves raw invalid batch input and unknown
+fields, and a later transfer Save receipt expires a pending transfer restore. New checkpoints
+use format 2 with a transfer capture. Format 1 source/configuration checkpoints remain readable;
+they do not invent a transfer copy, and transfer restore stays disabled for those records.
+Run/log session history is separate from the input checkpoint.
+
 Each confirmation captures current resource targets, affected revisions, server versions and
 edit authority. Restoration revalidates after storage reads; permission revoke/restore also
 expires an old intent. A token checked inside the storage transaction prevents a delayed write
 or discard from replacing a newer stored copy. Cross-page store notifications invalidate cached
-coverage. The example uses one app-scoped source/configuration slot; consuming hosts supply their
+coverage. The example uses one app-scoped source/configuration/transfer slot; consuming hosts supply their
 own resource routes, storage partitioning, retention and compatibility policy.
 
 **Discard stored draft** affects the persisted copy, without discarding current inputs.

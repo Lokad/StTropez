@@ -3,6 +3,46 @@ import assert from "node:assert/strict";
 import { HostController } from "../examples/hosts/controller.ts";
 
 const settled = () => new Promise<void>(done => setImmediate(done));
+function transfer(host: HostController) { const s = host.transfer.resource.getSnapshot(); assert.equal(s.state, "ready"); if (s.state !== "ready") throw new Error("Missing transfer"); return s; }
+
+test("independent transfer Save retains invalid input, opaque fields, later edits and reviewed conflict", async () => {
+    const h = new HostController(), t = h.transfer, save = t.save;
+    try {
+        t.update("batchSize", "1e"); save.save(); await h.run(); await settled(); assert.equal(transfer(h).value.batchSize, "1e"); assert.equal(h.debug().activity.pendingRuns, 0); assert.equal(save.capture(), null);
+        h.workspace.updateResource(t.resource, { expectedRevision: transfer(h).revision, origin: "human", value: { ...transfer(h).value, batchSize: "2000", destination: " captured.csv ", opaque: { separator: "Δ", zero: -0 } } });
+        save.save(); await settled(); const captured = save.capture()!; assert.equal(captured.resourceId, t.resource.id);
+        t.update("destination", "later.csv"); sourceEdit(h, " correction"); h.setPath("connection.csv"); const before = h.debug(); save.finish(); await settled();
+        assert.equal(transfer(h).value.destination, "later.csv"); assert.equal(transfer(h).metadata.serverVersion, "transfer-v1"); assert.equal(transfer(h).metadata.dirty, true); assert.deepEqual(h.debug().source, before.source); assert.deepEqual(h.debug().configuration, before.configuration);
+        save.save(); await settled(); save.fail(); await settled(); assert.equal(transfer(h).metadata.saveStatus, "failed");
+        save.externalWrite(); save.save(); await settled(); save.finish(); await settled(); assert.equal(save.canSave(), false); save.review(); assert.equal(save.state.getSnapshot().conflict?.value?.destination, "remote-target.csv");
+        t.update("destination", " merged.csv "); save.saveReviewed(); await settled(); save.finish(); await settled(); assert.equal(transfer(h).value.destination, "merged.csv"); assert.equal(transfer(h).metadata.dirty, false); assert.deepEqual(transfer(h).value.opaque, captured.value.opaque);
+        assert.equal(h.debug().activity.pendingRuns, 0); assert.equal(h.source.metadata.getSnapshot().dirty, true); assert.equal(configuration(h).metadata.dirty, true);
+    } finally { await h.dispose(); }
+});
+
+test("immutable Run/log resources link captured inputs and keep older progress/results separate", async () => {
+    const h = new HostController();
+    try {
+        const first = h.run(); await settled(); const id = h.runResources.state.getSnapshot().runs[0]!.id, input = h.runResources.capture(id)!;
+        const sourceId: import("../src/index.ts").ResourceId = input.source.id; assert.equal(sourceId, h.source.id); assert.equal(input.configuration.id, h.connection.id); assert.equal(input.transfer.id, h.transfer.resource.id); assert.equal(input.source.value, "start");
+        const snapshot = h.workspace.resource(id).getSnapshot(); assert.equal(Object.isFrozen(input.transfer.value), true);
+        assert.equal(h.workspace.updateResource(h.workspace.resource(id), { expectedRevision: 0, origin: "host", value: { ...input, mode: "tampered" } }).applied, false);
+        const initialLog = h.runResources.state.getSnapshot().runs[0]!.logs[0]!, oldLog = h.workspace.resource(initialLog).getSnapshot();
+        sourceEdit(h, " later"); h.setPath("later-connection.csv"); h.transfer.update("destination", "later-target.csv"); const second = h.run(); await settled(); const latest = h.debug().activity.lastRun;
+        const secondId = h.runResources.state.getSnapshot().runs[1]!.id; h.runResources.open(secondId); const selection = h.runResources.state.getSnapshot().selected, before = h.debug();
+        h.runResources.advance(id); h.runResources.advance(id); assert.equal(h.runResources.state.getSnapshot().runs[0]!.progress, 60); assert.deepEqual(h.debug().source, before.source); assert.deepEqual(h.debug().configuration, before.configuration); assert.deepEqual(h.debug().transfer, before.transfer);
+        h.finishRun(); await first; assert.equal(h.runResources.state.getSnapshot().runs[0]!.status, "completed"); assert.equal(h.debug().activity.pendingRuns, 1); assert.equal(h.runResources.state.getSnapshot().selected, selection); assert.deepEqual(h.debug().activity.lastRun, latest);
+        h.failRun(); await second; assert.equal(h.runResources.state.getSnapshot().runs[1]!.status, "failed"); assert.equal(h.workspace.resource(id).getSnapshot(), snapshot); assert.equal(h.workspace.resource(initialLog).getSnapshot(), oldLog);
+        assert.equal(h.runResources.capture(id), input); h.runResources.open(initialLog); assert.equal(h.runResources.inspect()?.links[0]?.id, id); h.runResources.open(id); assert.equal(h.runResources.inspect()?.preview, "start");
+        h.runResources.open(h.source.id); const preview = h.runResources.inspect(); sourceEdit(h, " newer"); assert.equal(h.runResources.inspect(), preview); h.runResources.open(h.source.id); assert.equal(h.runResources.inspect()?.preview, "start later newer");
+    } finally { await h.dispose(); assert.equal(h.debug().diagnostics.leases, 0); }
+});
+
+test("disposal interrupts Run resources and pending transfer Save without completing or losing inputs", async () => {
+    const h = new HostController(); h.transfer.update("destination", "unsaved.csv"); h.transfer.save.save(); const run = h.run(); await settled();
+    const id = h.runResources.state.getSnapshot().runs[0]!.id; await h.dispose(); await run; const stopped = h.debug(); assert.equal(stopped.runResources.runs[0]!.status, "interrupted"); assert.equal(stopped.activity.completedRuns, 0); assert.equal(stopped.diagnostics.leases, 0);
+    assert.equal(transfer(h).value.destination, "unsaved.csv"); h.runResources.advance(id); h.transfer.save.finish(); h.transfer.save.save(); h.runResources.open(id); await settled(); assert.deepEqual(h.debug(), stopped);
+});
 function configuration(host: HostController) { const s = host.connection.getSnapshot(); assert.equal(s.state, "ready"); if (s.state !== "ready") throw new Error("Missing configuration"); return s; }
 function sourceEdit(host: HostController, insert: string) { const d = host.workspace.document(host.source.documentId); host.workspace.edit({ documentId: d.id, expectedRevision: d.revision, origin: "human", edits: [{ from: d.buffer.length, to: d.buffer.length, insert }] }); }
 

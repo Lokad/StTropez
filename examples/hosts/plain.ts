@@ -17,7 +17,8 @@ import { mountSignaturePanel } from "./signature-panel.ts";
 import type { HostDraftRecovery } from "./draft-recovery.ts";
 import { mountDraftPanel } from "./draft-panel.ts";
 import { configurationValidation } from "./configuration.ts";
-import { configurationKey, mountConfigurationPanel } from "./configuration-panel.ts";
+import { formSaveKey, mountConfigurationPanel } from "./configuration-panel.ts";
+import { mountTransferPanel } from "./transfer-panel.ts";
 
 export function mountPlain(host: HTMLElement, controller: HostController, bindings: ViewBindings, draft: HostDraftRecovery): () => void {
     const listeners = new AbortController(), subscriptions: (() => void)[] = [];
@@ -55,7 +56,9 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const colors = document.createElement("section"); colors.className = "host-language"; colors.setAttribute("aria-label", "Document colors");
     const draftPanel = document.createElement("section"); draftPanel.className = "host-language"; draftPanel.setAttribute("aria-label", "Draft recovery");
     const configuration = document.createElement("section"); configuration.className = "host-language"; configuration.setAttribute("aria-label", "Configuration save");
-    host.replaceChildren(nav, status, recovery, conflict, scene, review, configuration, draftPanel, language, tablePaste, domain, navigation, project, rename, codeActions, links, colors, modal);
+    const transfer = document.createElement("section"); transfer.className = "host-language"; transfer.setAttribute("aria-label", "Transfer workspace");
+    host.replaceChildren(nav, status, recovery, conflict, scene, review, configuration, transfer, draftPanel, language, tablePaste, domain, navigation, project, rename, codeActions, links, colors, modal);
+    const destroyTransfer = mountTransferPanel(transfer, controller);
     const destroyConfiguration = mountConfigurationPanel(configuration, controller);
     const destroyDraft = mountDraftPanel(draftPanel, draft);
     const destroyColors = mountDocumentColorsPanel(colors, bindings.colors);
@@ -101,7 +104,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
                 const error = configurationValidation(state.value); validation.textContent = error ?? ""; field.setAttribute("aria-invalid", String(error !== null));
                 field.readOnly = !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null; }
         };
-        form.addEventListener("keydown", event => configurationKey(event, controller.configurationSave), { signal: sceneListeners.signal });
+        form.addEventListener("keydown", event => formSaveKey(event, controller.configurationSave), { signal: sceneListeners.signal });
         field.addEventListener("input", () => controller.setPath(field.value), { signal: sceneListeners.signal });
         unwatchForm = controller.connection.subscribe(updateForm); updateForm();
         if (layout.visible) {
@@ -135,5 +138,5 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         controller.saveConflict.subscribe(updateConflict), controller.source.metadata.subscribe(updateConflict),
         controller.layout.subscribe(updateConflict), controller.comparisonReference.subscribe(updateConflict));
     renderScene(); renderReview(); updateStatus(); updateRecovery(); updateConflict();
-    return () => { destroyConfiguration(); destroyDraft(); destroyColors(); destroyLinks(); destroyActions(); destroyRename(); destroySignature(); destroyProject(); destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
+    return () => { destroyTransfer(); destroyConfiguration(); destroyDraft(); destroyColors(); destroyLinks(); destroyActions(); destroyRename(); destroySignature(); destroyProject(); destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
 }

@@ -1,7 +1,7 @@
 import type { Connection, HostController } from "./controller.ts";
 import type { HostDraftRecovery } from "./draft-recovery.ts";
 import type { ViewBindings } from "./bindings.ts";
-import type { DocumentId, HistorySnapshot, Selection, TextEdit, TextResourceHandle } from "../../src/index.ts";
+import type { DocumentId, HistorySnapshot, ResourceId, Selection, TextEdit, TextResourceHandle } from "../../src/index.ts";
 
 type TransferTargetSnapshot = Readonly<{ documentId: DocumentId; revision: number; text: string; exports: number; history: HistorySnapshot }>;
 
@@ -32,6 +32,8 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         finishRun: controller.finishRun, failRun: controller.failRun, finishSave: controller.finishSave, failSave: controller.failSave,
         externalWrite: (text: string) => controller.externalWrite(text), finishConflictReview: controller.finishConflictReview, saveReviewedSource: controller.saveReviewedSource,
         configurationCapture: () => controller.configurationSave.capture(), configurationValue: () => { const s = controller.connection.getSnapshot(); return s.state === "ready" ? s.value : null; },
+        transferCapture: () => controller.transfer.save.capture(), transferValue: () => { const s = controller.transfer.resource.getSnapshot(); return s.state === "ready" ? s.value : null; },
+        setTransfer: controller.transfer.update, runInput: (id: ResourceId) => controller.runResources.capture(id),
         range: (from: number, to: number) => controller.workspace.document(controller.source.documentId).buffer.slice(from, to),
         referenceRange: (from: number, to: number) => bindings.referenceRange(from, to),
         selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => bindings.selectSource(id, revision, selection),
@@ -80,6 +82,8 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; mode
     finishRun: () => void; failRun: () => void; finishSave: () => void; failSave: () => void; range: (from: number, to: number) => string;
     externalWrite: (text: string) => void; finishConflictReview: () => boolean; saveReviewedSource: () => void;
     configurationCapture: () => ReturnType<HostController["configurationSave"]["capture"]>; configurationValue: () => Connection | null;
+    transferCapture: () => ReturnType<HostController["transfer"]["save"]["capture"]>; transferValue: () => import("./transfers.ts").TransferSettings | null;
+    setTransfer: HostController["transfer"]["update"]; runInput: (id: ResourceId) => ReturnType<HostController["runResources"]["capture"]>;
     referenceRange: (from: number, to: number) => string | undefined;
     selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => boolean;
     selectSourceSet: (id: "primary" | "secondary" | "comparison", revision: number, ranges: readonly Selection[], primary?: number) => boolean;

@@ -20,7 +20,7 @@ import { HostDraftRecovery } from "./draft-recovery.ts";
 import { createBrowserDraftStore } from "./draft-store.ts";
 import { draftActions } from "./draft-panel.ts";
 import { configurationValidation } from "./configuration.ts";
-import { configurationActions, configurationKey } from "./configuration-panel.ts";
+import { configurationActions, formActions, formSaveKey } from "./configuration-panel.ts";
 import "./style.css";
 
 const controller = new HostController(), bindings = new ViewBindings(controller, hostEditor());
@@ -65,15 +65,32 @@ function DraftRecovery() {
 }
 function ConfigurationSavePanel() {
     const save = controller.configurationSave, state = useObserved(save.state); useObserved(controller.connection);
-    return <section className="host-language" aria-label="Configuration save" onKeyDown={event => configurationKey(event, save)}><h2>Configuration save</h2>
+    return <section className="host-language" aria-label="Configuration save" onKeyDown={event => formSaveKey(event, save)}><h2>Configuration save</h2>
         <output aria-label="Configuration save status" aria-live="polite">{save.statusText()}</output>
         <div>{configurationActions(save).map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
         <pre hidden={state.preview === null}>{state.preview ?? ""}</pre></section>;
 }
+function TransferWorkspace() {
+    const transfer = controller.transfer, state = useObserved(transfer.resource), save = useObserved(transfer.save.state), runs = useObserved(controller.runResources.state), inspection = controller.runResources.inspect();
+    const readOnly = state.state !== "ready" || !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null;
+    return <section className="host-language" aria-label="Transfer workspace"><h2>Transfer workspace</h2>
+        <div onKeyDown={e => formSaveKey(e, transfer.save)}>{state.state === "ready" ? <>
+            <label>Transfer destination<input value={state.value.destination} readOnly={readOnly} aria-invalid={transfer.save.validation() !== null} onChange={e => transfer.update("destination", e.currentTarget.value)} /></label>
+            <label>Transfer batch size<input value={state.value.batchSize} readOnly={readOnly} inputMode="numeric" aria-invalid={transfer.save.validation() !== null} onChange={e => transfer.update("batchSize", e.currentTarget.value)} /></label></> : <p>{state.state}</p>}
+            <output aria-label="Transfer save status" aria-live="polite">{transfer.save.statusText()}</output>
+            <div>{formActions(transfer.save, "transfer settings").map(a => <button key={a.label} disabled={a.disabled} onClick={a.invoke}>{a.label}</button>)}</div><pre hidden={save.preview === null}>{save.preview ?? ""}</pre></div>
+        <h3>Captured Runs and logs</h3><ul>{runs.runs.map(run => <li key={run.id}><span>Run {run.number}: {run.status}, {run.progress}% · {run.id} </span>
+            <button onClick={() => controller.runResources.open(run.id)}>Inspect Run {run.number}</button>
+            <button disabled={run.status !== "running" || run.progress >= 90} onClick={() => controller.runResources.advance(run.id)}>Advance Run {run.number} progress</button>
+            {run.logs.map((id, i) => <button key={id} onClick={() => controller.runResources.open(id)}>Inspect Run {run.number} log {i + 1}</button>)}</li>)}</ul>
+        <section aria-label="Resource inspection" hidden={inspection === null}><h3>{inspection?.title}</h3><p>{inspection?.text}</p><pre hidden={inspection?.preview == null}>{inspection?.preview ?? ""}</pre>
+            <div>{inspection?.links.map(l => <button key={l.id} onClick={() => controller.runResources.open(l.id)}>{l.label}</button>)}</div>
+            <button onClick={() => { if (runs.selected) controller.runResources.open(runs.selected); }}>Refresh resource inspection</button></section></section>;
+}
 function Form() {
     const state = useObserved(controller.connection), layout = useObserved(controller.layout);
     if (layout.formFault) throw new Error("Synthetic host form render failure");
-    return state.state === "ready" ? <div onKeyDown={event => configurationKey(event, controller.configurationSave)}><label>Configuration path<input value={state.value.path}
+    return state.state === "ready" ? <div onKeyDown={event => formSaveKey(event, controller.configurationSave)}><label>Configuration path<input value={state.value.path}
         readOnly={!state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null} aria-invalid={configurationValidation(state.value) !== null}
         onChange={event => controller.setPath(event.currentTarget.value)} /></label><p>{configurationValidation(state.value)}</p></div> : <p>{state.state}</p>;
 }
@@ -149,7 +166,7 @@ function TablePasteTools() {
         <button disabled={state.status !== "converting"} onClick={tools.cancel}>Cancel table paste</button></section>;
 }
 function App() {
-    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><ConfigurationSavePanel /><DraftRecovery /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentLinksTools /><DocumentColorsTools /><SignatureTools /><SymbolInfo /></>;
+    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><ConfigurationSavePanel /><TransferWorkspace /><DraftRecovery /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentLinksTools /><DocumentColorsTools /><SignatureTools /><SymbolInfo /></>;
 }
 function DocumentColorsTools() {
     const tools = bindings.colors, s = useObserved(tools.state);

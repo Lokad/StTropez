@@ -159,7 +159,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect(after.commits.form).toBe(ready.commits.form); expect(after.commits.metadata).toBe(ready.commits.metadata);
             expect(after.diagnostics.subscriptions).toBe(ready.diagnostics.subscriptions);
             await page.evaluate(() => window.hostFixture.unmount());
-            await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().diagnostics.subscriptions)).toBe(3);
+            await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().diagnostics.subscriptions)).toBe(4);
             expect((await page.evaluate(() => window.hostFixture.snapshot())).hostSubscriptions).toBe(1);
             await page.evaluate(() => window.hostFixture.mount()); await expect(primary).toHaveValue("abcdefghij more typing");
             expect((await page.evaluate(() => window.hostFixture.snapshot())).bindings.activeViews).toBe(2);
@@ -473,7 +473,7 @@ test(`React ${editor} root error callbacks retain resources and recover through 
     await page.getByRole("button", { name: "Inject form error", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().activity.errors)).toBeGreaterThan(0);
     await expect(primary).toHaveCount(0);
-    expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics.subscriptions).toBe(3); // Persistent host draft observers.
+    expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics.subscriptions).toBe(4); // Source document/metadata, connection and transfer recovery observers.
     await page.getByRole("button", { name: "Recover views", exact: true }).click();
     await expect(primary).toHaveValue("unsaved before failure");
     const after = await page.evaluate(() => window.hostFixture.snapshot());

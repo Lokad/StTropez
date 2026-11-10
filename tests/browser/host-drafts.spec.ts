@@ -105,7 +105,7 @@ for (const host of ["plain", "react"]) test(`${host === "plain" ? "" : "react "}
     await button(p, "Retry draft storage").click(); await ready(p); let seen = await notices(peer); await keep(p); await peerNotice(peer, seen); await preserved(peer, peerBefore, peerText); expect(await source(peer).evaluate(n => document.activeElement === n)).toBe(true);
     await source(p).focus(); await ready(p); let before = await snapshot(p); seen = await notices(p); await keep(peer); await peerNotice(p, seen); await preserved(p, before, owned); expect((await snapshot(p)).draft!.unprotected).toBe(true); expect(await warning(p)).toBe(true); expect(await warning(peer)).toBe(false); expect(await source(p).evaluate(n => document.activeElement === n)).toBe(true);
     // The persistent host service also observes the peer while its views are dormant.
-    await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expect(dormant.diagnostics.subscriptions).toBe(3); expect(dormant.hostSubscriptions).toBe(1);
+    await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expect(dormant.diagnostics.subscriptions).toBe(4); expect(dormant.hostSubscriptions).toBe(1);
     await source(peer).press("Control+End"); await source(peer).pressSequentially("B"); peerText += "B"; seen = await notices(p); await keep(peer); await peerNotice(p, seen); await preserved(p, dormant, owned);
     await p.evaluate(() => window.hostFixture.mount()); await ready(p); await exact(p, owned); expect(selections(await snapshot(p))).toEqual(selections(before));
     await button(p, "Open source review").click(); await ready(p); const baseline = (await snapshot(p)).bindings.comparison!.baseline!.version;

@@ -3,6 +3,8 @@ import { TextBuffer, Workspace, WorkspaceCommands } from "../../src/index.ts";
 import type { AgentRequest, CloseOperation, ComparisonBaseline, DocumentId, Operation, RunSubmission, SaveResponse, SaveReview, SaveSubmission, SnapshotValue, TabId, TabTarget, TextEdit } from "../../src/index.ts";
 import { ReviewVariants } from "./variants.ts";
 import { ConfigurationSave } from "./configuration.ts";
+import { HostTransfer } from "./transfers.ts";
+import { RunResources } from "./run-resources.ts";
 
 export type Connection = Readonly<{ path: string; format: "csv"; [key: string]: SnapshotValue }>;
 type RunSettings = Readonly<{ mode: "preview" | "inspect" }>;
@@ -23,6 +25,8 @@ export class HostController {
     readonly source = this.workspace.createTextResource({ scope: "host-fixture", resource: "source", variant: "working" }, "Primary source", { value: "start", serverVersion: "v0" });
     readonly connection = this.workspace.createResource<Connection>({ scope: "host-fixture", resource: "connection", variant: "working" }, "Connection", { value: { path: "source.csv", format: "csv" } });
     readonly configurationSave = new ConfigurationSave(this.workspace, this.commands, this.connection, task => { void this.track(task); });
+    readonly transfer = new HostTransfer(this.workspace, this.commands, task => { void this.track(task); });
+    readonly runResources = new RunResources(this.workspace, this.source, this.connection, this.transfer.resource);
     readonly review = this.workspace.agentState(this.source.id);
     private savedReference: ComparisonBaseline = Object.freeze({ buffer: this.workspace.document(this.source.documentId).buffer, version: "reference:saved-v0" });
     private readonly referenceCell = new HostCell<Readonly<{ generation: number; baseline: ComparisonBaseline }>>({ generation: 0, baseline: this.savedReference });
@@ -248,10 +252,13 @@ export class HostController {
     });
     readonly run = async (): Promise<void> => {
         if (this.disposed || !this.sourceInputReady()) return;
-        const validation = this.configurationSave.validation(); if (validation) { this.reportError(new Error(validation)); return; }
+        const validation = this.configurationSave.validation() ?? this.runResources.validation(); if (validation) { this.reportError(new Error(validation)); return; }
         let started = false;
         await this.track(this.commands.run(this.source, this.connection, this.settingsCell.get(), { run: submission => {
-            const pending = new Promise<void>((resolve, reject) => this.runs.push({ submission, resolve, reject })); started = true;
+            const id = this.runResources.start(submission);
+            const pending = new Promise<void>((resolve, reject) => this.runs.push({ submission,
+                resolve: () => { this.runResources.finish(id, this.disposed ? "interrupted" : "completed"); resolve(); },
+                reject: error => { this.runResources.finish(id, "failed"); reject(error); } })); started = true;
             this.updateActivity({ pendingRuns: this.activityCell.get().pendingRuns + 1, lastRun: Object.freeze({ sourceRevision: submission.source.revision,
                 configurationRevision: submission.configuration.revision, mode: submission.settings.mode }) });
             return pending;
@@ -336,6 +343,7 @@ export class HostController {
                 exports: source.state === "ready" ? this.workspace.document(this.source.documentId).buffer.readMetrics().textExports : 0,
                 serverVersion: source.metadata.serverVersion, dirty: source.metadata.dirty, saveStatus: source.metadata.saveStatus },
             saveConflict: this.conflictCell.get(), pendingConflictReads: this.conflictReads.length, variants: this.variants.state.getSnapshot(),
+            transfer: { id: this.transfer.resource.id, revision: this.transfer.resource.getSnapshot().revision, dirty: this.transfer.resource.metadata.getSnapshot().dirty, saveStatus: this.transfer.resource.metadata.getSnapshot().saveStatus, serverVersion: this.transfer.resource.metadata.getSnapshot().serverVersion }, transferSave: this.transfer.save.debug(), runResources: this.runResources.debug(),
             server: { version: this.serverVersion, length: this.serverBuffer.length },
             history: this.workspace.observeHistory(this.source.documentId).getSnapshot(),
             configuration: { id: this.connection.id, revision: form.revision, dirty: form.metadata.dirty, serverVersion: form.metadata.serverVersion, saveStatus: form.metadata.saveStatus }, configurationSave: this.configurationSave.debug(), review: this.review.getSnapshot(),
@@ -350,11 +358,11 @@ export class HostController {
                 sourceLength: this.pendingAgent.input.source.value.length, configurationRevision: this.pendingAgent.input.context.configurationRevision } : null,
             proposalTransactionMs: this.proposalTransactionMs, pendingCommands: this.operations.size,
             inputRecovery: this.recoveryCell.get().items.map(item => ({ documentId: item.documentId, expectedRevision: item.expectedRevision, reason: item.reason, contextFrom: item.contextFrom, attemptedUnits: item.attemptedText.length })),
-            hostSubscriptions: this.layoutCell.count() + this.activityCell.count() + this.settingsCell.count() + this.recoveryCell.count() + this.referenceCell.count() + this.conflictCell.count() + this.configurationSave.debug().subscriptions, inputCaptureGuards: this.inputCaptureGuards.size, loadPending: this.pendingLoad !== undefined, disposed: this.disposed };
+            hostSubscriptions: this.layoutCell.count() + this.activityCell.count() + this.settingsCell.count() + this.recoveryCell.count() + this.referenceCell.count() + this.conflictCell.count() + this.configurationSave.debug().subscriptions + this.transfer.save.debug().subscriptions + this.runResources.debug().subscriptions, inputCaptureGuards: this.inputCaptureGuards.size, loadPending: this.pendingLoad !== undefined, disposed: this.disposed };
     }
     dispose(): Promise<void> {
         if (this.disposal) return this.disposal; this.disposed = true; this.variants.dispose();
-        this.configurationSave.dispose();
+        this.configurationSave.dispose(); this.transfer.save.dispose(); this.runResources.dispose();
         this.inputCaptureGuards.clear();
         if (this.timer !== undefined) clearInterval(this.timer); this.timer = undefined;
         this.workspace.interruptAgent(this.source.id);
