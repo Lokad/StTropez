@@ -91,6 +91,9 @@ export class LspSession {
         if (options.diagnostics) textDocument.publishDiagnostics = { versionSupport: true };
         if (this.features.has("textDocument/hover")) textDocument.hover = { dynamicRegistration: true, contentFormat: ["plaintext"] };
         if (this.features.has("textDocument/definition")) textDocument.definition = { dynamicRegistration: true, linkSupport: true };
+        if (this.features.has("textDocument/codeAction")) textDocument.codeAction = { dynamicRegistration: true,
+            codeActionLiteralSupport: { codeActionKind: { valueSet: ["quickfix", "refactor", "source"] } },
+            disabledSupport: true, isPreferredSupport: true, dataSupport: true, resolveSupport: { properties: ["edit"] }, honorsChangeAnnotations: false };
         this.initializeParams = jsonSnapshot({ processId: null, rootUri: options.rootUri ?? null,
             ...(options.clientInfo ? { clientInfo: options.clientInfo } : {}), initializationOptions: options.initializationOptions ?? null,
             capabilities: { general: { positionEncodings: ["utf-16"] }, textDocument,
@@ -209,6 +212,14 @@ export class LspSession {
     canRequest(method: LspFeature, document: LspDocument): boolean {
         const entry = this.entry(document), capability = this.capabilities[providers[method]];
         return this.store.get().phase === "ready" && this.features.has(method) && this.syncs(entry.snapshot) && (capability === true || object(capability) || this.registered(method, entry.snapshot));
+    }
+    /** Static and matching dynamic options only; selectors and session readiness use the request policy. */
+    featureOptions(method: LspFeature, document: LspDocument): readonly Readonly<Record<string, JsonValue>>[] {
+        if (!this.canRequest(method, document)) return Object.freeze([]);
+        const entry = this.entry(document), capability = this.capabilities[providers[method]], values: Readonly<Record<string, JsonValue>>[] = [];
+        if (object(capability)) values.push(capability); else if (capability === true) values.push(empty);
+        for (const item of this.registrations.values()) if (item.value.method === method && item.selector(entry.snapshot) && object(item.value.registerOptions)) values.push(item.value.registerOptions);
+        return Object.freeze(values);
     }
     private entry(handle: LspDocument): Entry { const entry = this.handles.get(handle); if (!entry || this.documents.get(entry.snapshot.uri) !== entry) throw stale(); return entry; }
     private size(length: number, previous: number): void {

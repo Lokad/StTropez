@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
-import type { CompletionList, PublishDiagnosticsParams, WorkspaceEdit } from "vscode-languageserver-protocol/node.js";
+import type { CodeAction, Command, CompletionList, PublishDiagnosticsParams, WorkspaceEdit } from "vscode-languageserver-protocol/node.js";
 import { TextBuffer } from "../src/core/text-buffer.ts";
 import type { LspDocumentCapture } from "../src/protocol/index.ts";
 
-const { LspLineIndex, decodeLspCompletions, decodeLspDiagnostics, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, lspRangeOffsets, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
+const { LspLineIndex, decodeLspCompletions, decodeLspDiagnostics, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, decodeLspCodeActions, decodeLspResolvedCodeAction, lspRangeOffsets, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 async function captured(text = "// header\r\nconst saMORE = 1; // TODO\rb\n") {
     const buffer = TextBuffer.from(text), index = await LspLineIndex.create(buffer, async () => {}); let active = true;
     const capture: LspDocumentCapture = Object.freeze({ document: Object.freeze({ uri: "host+fixture:source", languageId: "fixture", resourceId: "resource", documentId: "working", revision: 70, buffer }), index, version: 3, epoch: 2, registrationGeneration: 4, isCurrent: () => active });
@@ -116,4 +116,28 @@ test("workspace edits reject the complete malformed, stale, aliased, annotated o
         { changes: { [uri]: [valid, { range: range(1, 0, 999), newText: "invalid final" }] } }, { changes: { [uri]: Array(1025).fill({ range: range(0, 0, 0), newText: "" }) } },
         { changes: { [uri]: [{ ...valid, newText: "x".repeat(16385) }] } }, { changes: { [uri]: Array(5).fill({ range: range(0, 0, 0), newText: "x".repeat(16384) }) } }]) assert.throws(() => decodeLspWorkspaceEdit(value, resolve));
     assert.equal(capture.document.buffer.slice(0, capture.document.buffer.length), "abc\r\ndef");
+});
+
+test("code actions preserve disabled/preferred/command choices and resolve only captured edit properties", async () => {
+    const { capture, expire } = await captured("abc\r\n// TODO\n"), resolve = (uri: string) => uri === capture.document.uri ? capture : undefined;
+    const edit: WorkspaceEdit = { documentChanges: [{ textDocument: { uri: capture.document.uri, version: 3 }, edits: [{ range: range(0, 0, 1), newText: "😀\r" }] }] };
+    const values: (CodeAction | Command)[] = [{ title: "<img> literal", kind: "refactor.custom", isPreferred: true, edit }, { title: "disabled", disabled: { reason: "Not in this context" } },
+        { title: "command", command: "host/command", arguments: [{ opaque: "never executed" }] }, { title: "lazy", kind: "quickfix", data: { token: 1, nested: { a: 1, b: "😀" } } }];
+    const actions = decodeLspCodeActions(values, capture, resolve, true); assert.equal(actions[0]!.title, "<img> literal"); assert.equal(actions[0]!.preferred, true); assert.equal(actions[1]!.disabled, "Not in this context"); assert.equal(actions[2]!.command!.command, "host/command");
+    assert.equal(Object.isFrozen(actions[3]!.resolve), true); assert.equal(Object.isFrozen(actions), true); assert.equal(decodeLspCodeActions(values, capture, resolve)[3]!.resolve, null);
+    const resolved = decodeLspResolvedCodeAction({ ...values[3], data: { nested: { b: "😀", a: 1 }, token: 1 }, edit }, actions[3]!, capture, resolve); const result = capture.document.buffer.apply(resolved.edit!.documents[0]!.edits).buffer;
+    assert.equal(result.slice(0, result.length), "😀\rbc\r\n// TODO\n"); assert.equal(resolved.resolve, null); assert.equal(capture.document.buffer.slice(0, 3), "abc");
+    assert.deepEqual(decodeLspCodeActions(null, capture, resolve), []);
+    for (const changed of [{ ...values[3], title: "retargeted", edit }, { ...values[3], edit, command: { title: "injected", command: "host/run" } }, { ...values[3], data: { token: 2 }, edit }, values[3]]) assert.throws(() => decodeLspResolvedCodeAction(changed, actions[3]!, capture, resolve));
+    expire(); assert.equal(resolved.edit!.isCurrent(), false); assert.throws(() => decodeLspResolvedCodeAction({ ...values[3], edit }, actions[3]!, capture, resolve), error => error instanceof RpcError && error.code === -32801);
+});
+
+test("code actions refuse malformed final metadata/targets, incomplete lists and aggregate limits before publication", async () => {
+    const { capture } = await captured("abc"), resolve = (uri: string) => uri === capture.document.uri ? capture : undefined, edit = { changes: { [capture.document.uri]: [{ range: range(0, 0, 0), newText: "x" }] } };
+    for (const bad of [{ title: 1 }, { title: "bad", isPreferred: 1 }, { title: "bad", disabled: {} }, { title: "bad", command: { title: "run", command: "c", arguments: {} } },
+        { title: "bad", data: { n: Infinity } }, { title: "bad", data: "x".repeat(8193) }, { title: "bad", edit: { changes: { unknown: [] } } },
+        { title: "disabled", disabled: { reason: "Still validate its edits" }, edit: { changes: { unknown: [] } } }, { title: "bad", diagnostics: [{ range: range(0, 0, 99), message: "invalid" }] }]) assert.throws(() => decodeLspCodeActions([{ title: "valid", edit }, bad], capture, resolve, true));
+    assert.throws(() => decodeLspCodeActions({ partial: [] }, capture, resolve)); assert.throws(() => decodeLspCodeActions(Array(65).fill({ title: "many", edit }), capture, resolve));
+    const large = { title: "budget", edit: { changes: { [capture.document.uri]: [{ range: range(0, 0, 0), newText: "x".repeat(16384) }] } } };
+    assert.throws(() => decodeLspCodeActions(Array(5).fill(large), capture, resolve));
 });

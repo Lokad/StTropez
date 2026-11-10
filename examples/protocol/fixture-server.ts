@@ -10,6 +10,10 @@ import { provideHover } from "../probes/hover.ts";
 import { SymbolScanner } from "../probes/navigation.ts";
 import { renameName } from "../probes/rename.ts";
 import type { Location, TextEdit, WorkspaceEdit } from "vscode-languageserver-protocol/node.js";
+import type { CodeAction, Command } from "vscode-languageserver-protocol/node.js";
+import { TextBuffer } from "../../src/index.ts";
+import { ModuleActionCursor } from "../probes/actions.ts";
+import { validDomainModule } from "../probes/domain.ts";
 
 /** Generic development peer. It is separate from the internal worker-v1 fixture and production assets. */
 export function attachProtocolFixture(server: Server) {
@@ -33,6 +37,9 @@ export function attachProtocolFixture(server: Server) {
         const pending = new Set<() => void>(); let completionConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, completionStyle = "edits";
         let hoverConfig: { delay: number; fault?: "malformed" | "failure" | "markup" } | undefined, navigationConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, definitionLinks = false;
         let renameConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, versionedEdits = false;
+        type ActionConfig = { module: string; delay: number; fault?: "malformed" | "failure" | "incomplete" | "markup" };
+        let actionConfig: ActionConfig = { module: "sample-utils", delay: 0 }, actionResolveConfig: ActionConfig = { module: "sample-utils", delay: 0 }, actionGeneration = 0, actionLiterals = false, actionResolve = false;
+        const actionResolutions = new Map<number, WorkspaceEdit>();
         const deferred = <T>(delay: number, token: CancellationToken, compute: () => T | Promise<T>) => new Promise<T>((resolve, reject) => {
             let done = false, stop: { dispose: () => void } | undefined;
             const finish = () => { if (done) return false; done = true; clearTimeout(timer); stop?.dispose(); pending.delete(cancel); return true; };
@@ -49,7 +56,10 @@ export function attachProtocolFixture(server: Server) {
         const publish = (doc: TextDocument) => { peer.sendNotification("textDocument/publishDiagnostics", { uri: doc.uri, version: doc.version, diagnostics: diagnosticItems(doc) }); };
         peer.onRequest(InitializeRequest.type, (params): InitializeResult => { definitionLinks = params.capabilities.textDocument?.definition?.linkSupport === true;
             versionedEdits = params.capabilities.workspace?.workspaceEdit?.documentChanges === true;
+            actionLiterals = params.capabilities.textDocument?.codeAction?.codeActionLiteralSupport !== undefined;
+            actionResolve = params.capabilities.textDocument?.codeAction?.dataSupport === true && params.capabilities.textDocument.codeAction.resolveSupport?.properties.includes("edit") === true;
             return { capabilities: { positionEncoding: "utf-16", textDocumentSync: 2, definitionProvider: true, referencesProvider: true, renameProvider: true,
+                codeActionProvider: { resolveProvider: true, codeActionKinds: ["quickfix", "refactor", "source"] }, executeCommandProvider: { commands: ["fixture.status"] },
                 completionProvider: { triggerCharacters: ["."] }, hoverProvider: params.initializationOptions?.fixtureDynamic !== true }, serverInfo: { name: "Generic protocol fixture" } }; });
         peer.onNotification(InitializedNotification.type, () => { initialized = true; });
         const sync = (update: () => void) => { try { if (!initialized) throw new Error("Synchronization before initialized"); update(); } catch (error) { syncFailures.push(String(error)); } };
@@ -135,6 +145,51 @@ export function attachProtocolFixture(server: Server) {
                 if (config.fault === "malformed") locations.push({ uri: "host+fixture:unknown-target", range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } } });
                 if (kind === "definition" && definitionLinks) return locations.map(location => ({ originSelectionRange: symbol.range, targetUri: location.uri, targetRange: location.range, targetSelectionRange: location.range }));
                 return kind === "definition" && locations.length === 1 ? locations[0] : locations;
+            });
+        });
+        const validateActionConfig = (params: ActionConfig) => {
+            if (!params || typeof params.module !== "string" || !validDomainModule(params.module) || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure", "incomplete", "markup"].includes(params.fault)) throw new ResponseError(-32602, "Invalid action configuration"); return { ...params };
+        };
+        peer.onRequest("fixture/actionConfig", (params: ActionConfig) => { actionConfig = validateActionConfig(params); return null; });
+        peer.onRequest("fixture/actionResolveConfig", (params: ActionConfig) => { actionResolveConfig = validateActionConfig(params); return null; });
+        const workspaceTextEdits = (project: readonly TextDocument[], changes: ReadonlyMap<string, readonly TextEdit[]>): WorkspaceEdit => versionedEdits
+            ? { documentChanges: [...changes].map(([uri, edits]) => ({ textDocument: { uri, version: project.find(doc => doc.uri === uri)?.version ?? null }, edits: [...edits] })) }
+            : { changes: Object.fromEntries([...changes].map(([uri, edits]) => [uri, [...edits]])) };
+        peer.onRequest("workspace/executeCommand", (params: { command: string }) => { if (params?.command !== "fixture.status") throw new ResponseError(-32602, "Unknown fixture command"); return { documents: documents.size }; });
+        peer.onRequest("textDocument/codeAction", (params: { textDocument: { uri: string }; range: Location["range"]; context: { diagnostics: unknown[]; triggerKind?: number } }, token) => {
+            const origin = documents.get(params.textDocument.uri); if (!origin || !Array.isArray(params.context?.diagnostics)) throw new ResponseError(-32602, "Code actions need captured context");
+            const config = actionConfig, project = [...documents.values()], generation = ++actionGeneration; actionConfig = { module: config.module, delay: 0 }; actionResolutions.clear();
+            return deferred(config.delay, token, async (): Promise<(CodeAction | Command)[]> => {
+                if (config.fault === "failure") throw new ResponseError(-32001, "Fixture actions unavailable");
+                const status = { title: "Provider status command", command: "fixture.status", arguments: [] };
+                if (!actionLiterals) return [status];
+                const text = origin.getText(), cursor = new ModuleActionCursor({ operation: "action-start", id: 1, document: origin.uri, revision: origin.version, length: text.length, from: origin.offsetAt(params.range.start), to: origin.offsetAt(params.range.end), module: config.module, delay: 0 }, TextBuffer.from(text));
+                let step = cursor.next(), turn = 0; while (!step.result) { if (token.isCancellationRequested) throw new ResponseError(-32800, "Fixture action cancelled"); if (++turn % 4 === 0) await setImmediate(); step = cursor.next(); }
+                const found = step.result.action, importEdit = workspaceTextEdits(project, new Map([[origin.uri, found.edits.flatMap(change => [...change.edits].map(edit => ({ range: { start: origin.positionAt(edit.from), end: origin.positionAt(edit.to) }, newText: edit.insert })))]]));
+                const marker = "// fixture action\r\n", changes = new Map(project.filter(doc => !doc.getText().startsWith(marker)).map(doc => [doc.uri, [{ range: { start: doc.positionAt(0), end: doc.positionAt(0) }, newText: marker }]]));
+                const reviewEdit = workspaceTextEdits(project, changes), todoEdits: TextEdit[] = []; let todo = -1;
+                while ((todo = text.indexOf("TODO", todo + 1)) >= 0) { if (todoEdits.length === 1024) throw new ResponseError(-32000, "Fixture TODO action exceeds its edit limit"); todoEdits.push({ range: { start: origin.positionAt(todo), end: origin.positionAt(todo + 4) }, newText: "DONE" }); }
+                const lazyEdit = todoEdits.length ? workspaceTextEdits(project, new Map([[origin.uri, todoEdits]])) : importEdit;
+                actionResolutions.set(generation, lazyEdit);
+                const actions: (CodeAction | Command)[] = [{ title: config.fault === "markup" ? '<img src=x onerror="actionExecuted=1">' : found.title, kind: "source.addImport", isPreferred: true, ...(found.disabled ? { disabled: { reason: found.disabled } } : {}), edit: importEdit },
+                    { title: "Add review markers across captured resources", kind: "refactor.rewrite", edit: reviewEdit, ...(changes.size ? {} : { disabled: { reason: "All captured sources already have review markers." } }) },
+                    { title: todoEdits.length ? "Load TODO fixes preview" : "Load alternate import preview", kind: todoEdits.length ? "source.fixAll" : "source.addImport", ...(actionResolve ? { data: { token: generation, opaque: { label: "captured", uri: origin.uri } } } : { edit: lazyEdit }) },
+                    { title: "Unavailable context example", kind: "refactor", disabled: { reason: "The fixture requires another context." } }, status,
+                    { title: "Edit then provider command", kind: "source", edit: reviewEdit, command: status }];
+                if (config.fault === "malformed") actions.push({ title: "Invalid final choice", edit: workspaceTextEdits(project, new Map([["host+fixture:unknown-target", [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }, newText: "bad" }]]])) });
+                if (config.fault === "incomplete") return { partial: actions } as unknown as (CodeAction | Command)[];
+                return actions;
+            });
+        });
+        peer.onRequest("codeAction/resolve", (params: CodeAction, token) => {
+            const config = actionResolveConfig; actionResolveConfig = { module: config.module, delay: 0 };
+            return deferred(config.delay, token, () => {
+                if (config.fault === "failure") throw new ResponseError(-32001, "Fixture action resolution unavailable");
+                const edit = actionResolutions.get(params.data?.token); if (!edit) throw new ResponseError(-32602, "Unknown captured action");
+                if (config.fault === "incomplete") return params;
+                if (config.fault === "markup") return { ...params, title: "Changed during resolve", edit };
+                if (config.fault === "malformed") return { ...params, edit: { ...edit, documentChanges: [...edit.documentChanges ?? [], { textDocument: { uri: "host+fixture:unknown-target", version: null }, edits: [] }] } };
+                return { ...params, edit };
             });
         });
         peer.onRequest("fixture/completionConfig", (params: typeof completionConfig) => {

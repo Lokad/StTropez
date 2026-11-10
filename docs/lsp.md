@@ -22,7 +22,8 @@ remains an internal fixture and establishes no LSP compatibility.
 | Diagnostics/completion | Complete bounded validation, captured version/index access, versioned diagnostic anchors and manual completion with insert/replace/additional edits. Both hosts exercise actual typing, shared history, comparison authority, Save/Run and outage/lifecycle guards over WebSocket. Unversioned diagnostics remain plain information without source anchors. |
 | Hover/navigation | Bounded literal hover content/optional ranges, definition Location/LocationLink and references validation. Both actual hosts use WebSocket backends with captured project URIs, complete origin selections, target revision/authority checks, unmounted-resource reveal and stale/cancellation/lifecycle guards. See [navigation scope](lsp-navigation.md). |
 | Rename/workspace text edits | Whole-batch URI/range/wire-version validation and exact provider edit previews/application in both hosts. Shared atomic history, unmounted targets, comparison, Save/Run, stale/authority/cancellation guards use existing Workspace transactions. See [supported forms and limits](lsp-rename.md). Optional prepareRename, file operations and annotations remain unsupported. |
-| Code actions/server edits | Actual code-action/resolve/command and workspace.applyEdit schemas, explicit host flow and affected end-to-end qualification remain required. Their local worker fixtures establish no LSP compatibility. |
+| Code actions | Complete bounded literal/command list validation, disabled/preferred choices and captured lazy edit resolution. Both hosts preview exact multi-resource edits, page large results and apply one atomic history command with authority/revision/lifecycle guards. [Supported scope](lsp-code-actions.md). Provider commands remain unavailable; an edit+command choice cannot apply only its edit. |
+| Server edits/commands | Host execution policy and workspace.applyEdit decisions/acknowledgements and their actual provider flows remain required. Local worker fixtures establish no LSP compatibility. |
 | Cancellation/reconnect | Opening, queued document calls, RPC requests and cooperative sync plans can be cancelled. Reconnect clears registrations/results and reopens current captures; commands never replay automatically. |
 | Host URIs/custom messages | Exact opaque URI bindings, replaceable selector path policy and removable custom request/notification handlers. Custom result schemas, authority and service policy belong to the host. |
 
@@ -72,8 +73,10 @@ exact sent snapshot/index/wire version, or undefined while local updates are pen
 guard expires on session, registration or binding/revision changes. `decodeLspDiagnostics` validates
 pushes against that capture. `decodeLspHover` and `decodeLspLocations` validate literal content and
 captured host URI locations. `decodeLspWorkspaceEdit` normalizes complete text-only batches for
-captured resources; the host rechecks edit authority before its atomic transaction. Code-action
-and server-edit adapters remain required. Custom handlers persist
+captured resources; the host rechecks edit authority before its atomic transaction.
+`decodeLspCodeActions` and `decodeLspResolvedCodeAction` validate choices and edit resolution;
+server-edit/command adapters remain
+required. Custom handlers persist
 across reconnect, but pending calls do not. Incoming request contexts expose cancellation and an
 `isCurrent` guard; hosts must check authority again before committing after an await.
 

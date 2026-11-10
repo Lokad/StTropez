@@ -13,7 +13,7 @@ import { navigationActions } from "./navigation-panel.ts";
 import { projectActions } from "./project-panel.ts";
 import { documentColorActions, documentColorDescription, documentColorLabel, colorEditLabel } from "./document-colors-panel.ts";
 import { documentLinkActions, documentLinkDescription, documentLinkLabel, documentLinkDetails } from "./document-links-panel.ts";
-import { actionsControls, actionsDescription, actionTarget } from "./actions-panel.ts";
+import { actionsControls, actionsDescriptionFor, actionChoiceLabel, actionTarget } from "./actions-panel.ts";
 import { renameActions, renameDescriptionFor, renameTarget } from "./rename-panel.ts";
 import { signatureActions } from "./signature-panel.ts";
 import { HostDraftRecovery } from "./draft-recovery.ts";
@@ -189,12 +189,13 @@ function DocumentLinksTools() {
 }
 function ActionsTools() {
     const tools = bindings.actions, s = useObserved(tools.state);
-    return <section className="host-language" aria-label="Code actions"><h2>Code actions</h2><p>{actionsDescription}</p>
+    return <section className="host-language" aria-label="Code actions"><h2>Code actions</h2><p>{actionsDescriptionFor(tools)}</p>
         <output aria-label="Code action status">{s.message}</output>
         <label>Action module <input ref={tools.bindModule} type="text" maxLength={64} value={s.module} onChange={event => tools.setModule(event.currentTarget.value)} /></label>
         <div>{actionsControls(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
-        <p aria-label="Captured action title">{s.title}</p><ol aria-label="Proposed action edits">{s.edits.map((at, i) => <li key={i}><pre>{actionTarget(at)}</pre></li>)}</ol>
-        {s.changed && <button disabled={s.token !== null} onClick={tools.openChanged}>Open action changes in {s.changed.title}</button>}</section>;
+        {tools.usesLsp && <ol aria-label="Provider code actions">{s.choices.map(choice => <li key={choice.index}><button disabled={s.pending} aria-pressed={s.choice === choice.index} onClick={() => tools.selectChoice(choice.index)}>{actionChoiceLabel(choice)}</button></li>)}</ol>}
+        <p aria-label="Captured action title">{s.title}</p><ol aria-label="Proposed action edits" start={s.page * 64 + 1}>{s.edits.map((at, i) => <li key={i}><pre>{actionTarget(at)}</pre></li>)}</ol>
+        {tools.usesLsp ? s.changes.map(change => <button key={change.document} disabled={s.token !== null} onClick={() => tools.openChangedDocument(change.document)}>Open action changes in {change.title}</button>) : s.changed && <button disabled={s.token !== null} onClick={tools.openChanged}>Open action changes in {s.changed.title}</button>}</section>;
 }
 function RenameTools() {
     const tools = bindings.rename, s = useObserved(tools.state);

@@ -75,6 +75,17 @@ test("dynamic registrations validate atomically, select documents and withdraw c
     await assert.rejects(peer.rpc.sendRequest(RegistrationRequest.type, { registrations: [registration("notebook", "textDocument/hover", { documentSelector: [{ notebook: "fixture" }] })] }), error => error instanceof ResponseError && error.code === -32602);
 });
 
+test("code-action resolve options follow matching registrations and immutable negotiated capabilities", async t => {
+    const host = fixture(t, { positionEncoding: "utf-16", textDocumentSync: 2, codeActionProvider: false }), session = new LspSession({ ...host, features: ["textDocument/codeAction"], workspaceEdits: true }); t.after(() => session.dispose());
+    const document = session.bindDocument(input()), other = session.bindDocument({ ...input("other", "other:document", "other"), languageId: "plain" }); await session.connect(); await session.flush(); const peer = host.peers[0]!;
+    assert.deepEqual(peer.initialize()!.capabilities.textDocument!.codeAction!.resolveSupport!.properties, ["edit"]); assert.equal(peer.initialize()!.capabilities.workspace!.workspaceEdit!.documentChanges, true); assert.equal(peer.initialize()!.capabilities.workspace!.applyEdit, undefined);
+    assert.deepEqual(session.featureOptions("textDocument/codeAction", document), []);
+    await peer.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "actions", method: "textDocument/codeAction", registerOptions: { documentSelector: [{ language: "typescript", scheme: "host+fixture" }], resolveProvider: true } }] });
+    const options = session.featureOptions("textDocument/codeAction", document); assert.equal(options[0]!.resolveProvider, true); assert.equal(Object.isFrozen(options), true); assert.equal(Object.isFrozen(options[0]), true); assert.deepEqual(session.featureOptions("textDocument/codeAction", other), []);
+    const capture = session.synchronized(document)!; await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "actions", method: "textDocument/codeAction" }] });
+    assert.equal(capture.isCurrent(), false); assert.deepEqual(session.featureOptions("textDocument/codeAction", document), []);
+});
+
 test("document requests reject stale revisions, capability withdrawal, URI reuse and cancellation", async t => {
     const host = fixture(t), session = new LspSession({ ...host, features: ["textDocument/hover"] }); t.after(() => session.dispose()); const document = session.bindDocument(input()); await session.connect();
     const peer = host.peers[0]!, releases: ((value: unknown) => void)[] = []; let cancellations = 0, requests = 0;

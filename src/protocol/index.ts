@@ -6,3 +6,5 @@ export { LspSession } from "./lsp-session.ts";
 export type { LspFeature, LspDocumentSnapshot, LspDocument, LspDocumentCapture, LspCall, LspConnectContext, LspRequestContext, LspRegistration, LspSessionSnapshot, LspSessionOptions } from "./lsp-session.ts";
 export { lspRangeOffsets, decodeLspDiagnostics, decodeLspCompletions, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit } from "./lsp-features.ts";
 export type { LspDiagnostic, LspDiagnostics, LspCompletionPlan, LspCompletion, LspCompletions, LspCompletionFallback, LspHover, LspLocationTarget, LspLocation, LspEditTarget, LspDocumentEdits, LspWorkspaceEdit } from "./lsp-features.ts";
+export { decodeLspCodeActions, decodeLspResolvedCodeAction } from "./lsp-code-actions.ts";
+export type { LspCommand, LspCodeAction, LspCodeActions } from "./lsp-code-actions.ts";

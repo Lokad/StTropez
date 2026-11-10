@@ -1,5 +1,9 @@
 # Captured module-import actions
 
+The default worker route below is a local fixture. The explicit LSP route offers
+[provider action choices and lazy previews](lsp-code-actions.md), with captured multi-resource
+text edits and the same atomic Workspace history. Provider commands remain unavailable there.
+
 Both candidate hosts expose **Action module**, **Preview module action** and
 **Apply captured action**. Ctrl/Cmd+. from primary, secondary or comparison working
 source captures the document, revision, primary range, complete selections, fold

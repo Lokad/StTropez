@@ -101,7 +101,8 @@ context, measured pointer selection, shared history and composition guards. Long
 layout and native-device input remain qualification gates.
 The optional [LSP protocol layer](docs/lsp.md) supplies JSON-RPC/WebSocket transport, captured
 sessions, validated [diagnostic/completion](docs/lsp-editor.md), [hover/navigation](docs/lsp-navigation.md)
-and [rename/workspace-text-edit](docs/lsp-rename.md) host adapters. Its supported-subset
+and [rename/workspace-text-edit](docs/lsp-rename.md) host adapters, plus
+[code-action choices and resolve](docs/lsp-code-actions.md). Its supported-subset
 matrix keeps the remaining language-feature/edit work explicit.
 The [find controller](docs/search.md) and [provider/presentation fixture](docs/providers.md)
 add revision-checked workflows to that view, with explicit scope and scheduling limits.

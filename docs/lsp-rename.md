@@ -48,7 +48,8 @@ targets, changed authority, cancellation, reconnect, comparison, history and 100
 
 Sessions that declare `workspaceEdits` advertise versioned text edits, transactional failure handling,
 no resource operations and no newline normalization. They do not advertise `workspace.applyEdit`;
-server-originated edits and code-action adapters remain required. Native IME/dead keys, OS clipboard
+server-originated edits and provider command execution remain required. Code-action literal/resolve
+[previews](lsp-code-actions.md) use the same edit validator. Native IME/dead keys, OS clipboard
 and display checks remain unverified. Large-document checks establish correctness and bounded
 input, with no new latency-tail or heap claim. Existing source-labelled performance evidence remains
 separate from automation/IPC/polling and physical-display clocks.
