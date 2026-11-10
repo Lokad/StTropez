@@ -52,6 +52,10 @@ form controls in the DOM. Narrow views suspend the form; widening/revealing rest
 Source values and per-view field selection survive view remount. Resizing the form changes
 its own layout, not source, history or editor ownership.
 
+Switching the primary view to another document removes the form and its reserved lane. The
+anchor remains attached to the original source; returning restores its field selections and
+restores field focus only when no other control owns focus.
+
 The viewport's read-only `rowBounds(line)` query returns immutable client-space vertical bounds
 for an already rendered row and its revision/fold generation. It returns `undefined` for a
 pending render, expired tab, hidden fold, unavailable document or unrendered row. It neither

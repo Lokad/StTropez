@@ -4,9 +4,9 @@ const snap = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const button = (p: Page, name: string) => p.getByRole("button", { name, exact: true });
 const source = (p: Page) => p.getByRole("textbox", { name: "Primary source", exact: true });
 const sets = (s: Awaited<ReturnType<typeof snap>>) => ({ views: s.bindings.views.map(v => ({ id: v.id, set: v.selectionSet })), working: s.bindings.comparison?.selectionSet });
-async function ready(p: Page) { await p.waitForFunction(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
+async function ready(p: Page, review = true) { await p.waitForFunction(review => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
     return !s.bindings.instruction?.pending && s.bindings.views.every(v => v.metrics && !v.metrics.pendingInput && !v.metrics.pendingCommand && !v.metrics.pendingCaret && !v.metrics.viewport.pending)
-        && c?.status === "ready" && c.workingRevision === s.source.revision && !c.input.pendingInput && !c.input.pendingCaret && !c.workingViewport.pending && !c.referenceViewport?.pending; }); }
+        && (!review || c?.status === "ready" && c.workingRevision === s.source.revision && !c.input.pendingInput && !c.input.pendingCaret && !c.workingViewport.pending && !c.referenceViewport?.pending); }, review); }
 async function exact(p: Page, text: string) { expect(await p.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false;
     for (let i = 0; i < text.length; i += 32768) if (f.range(i, Math.min(text.length, i + 32768)) !== text.slice(i, i + 32768)) return false; return true; }, text)).toBe(true); }
 test.afterEach(async ({ page }, info) => { if (info.status !== info.expectedStatus && !page.isClosed()) await info.attach("instruction-failure-state", { contentType: "application/json", body: JSON.stringify(await snap(page), null, 2) }); });
@@ -57,4 +57,28 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await field.press("Control+s"); await expect.poll(async () => (await snap(p)).pendingSaves.length).toBe(1); await button(p, "Fail save").click(); await button(p, "Dismiss message").click();
     if (!large) await info.attach("anchored-instruction", { body: await p.screenshot(), contentType: "image/png" });
     await p.evaluate(() => window.hostFixture.dispose()); const stopped = await snap(p); expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0); expect(errors).toEqual([]);
+});
+
+for (const host of ["plain", "react"]) test(`${host} anchored instruction stays with its source across primary document replacement`, async ({ page: p }) => {
+    const errors: string[] = []; p.on("pageerror", e => errors.push(e.message)); await p.goto(`/hosts/${host}/?editor=candidate`);
+    const original = '// @transfer {"destination":"café😀.csv","batchSize":"1000"}\r\nsource tail';
+    await expect(source(p)).toBeVisible(); await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
+    await button(p, "Open source review").click(); await ready(p); await source(p).press("Control+Home"); await button(p, "Anchor instruction at caret").click();
+    const field = p.getByRole("textbox", { name: "Instruction destination", exact: true }); await expect(field).toBeVisible(); await ready(p);
+    await field.focus(); await field.evaluate(node => (node as HTMLTextAreaElement).setSelectionRange(1, 4, "backward")); const before = await snap(p);
+    // Host lifecycle commands may run without moving focus; the detached field must retain its private view state.
+    const invoke = (name: string) => p.evaluate(name => { const b = [...document.querySelectorAll("button")].find(b => b.textContent === name); if (!b) throw new Error("Missing host command."); b.click(); }, name);
+    await invoke("Begin delayed load"); await expect(source(p)).toHaveCount(0); await invoke("Finish delayed load"); await expect(source(p)).toBeVisible(); await ready(p, false);
+    await expect(field).toHaveCount(0); expect((await snap(p)).instruction.active).toBe(true);
+    await expect.poll(() => p.evaluate(() => { const input = document.querySelector('textarea[aria-label="Primary source"]')!, host = input.closest(".editor-host")!, surface = host.querySelector(".host-instruction-source")!, lane = host.querySelector(".host-instruction-lane") as HTMLElement;
+        return lane.hidden && !host.classList.contains("host-instruction-enabled") && Math.abs(surface.getBoundingClientRect().width - host.clientWidth) <= 1; })).toBe(true);
+    await source(p).press("Control+End"); await source(p).pressSequentially(" loaded edit"); await ready(p, false); await exact(p, original); expect((await snap(p)).source.revision).toBe(before.source.revision);
+    expect(await p.evaluate(() => { const f = window.hostFixture, id = f.snapshot().bindings.views.find(v => v.id === "primary")!.documentId; return f.navigationDocument(id).text; })).toBe("loaded resource loaded edit");
+    await button(p, "Anchor instruction at caret").click(); await button(p, "Insert transfer instruction").click(); await expect(field).toHaveCount(0); await exact(p, original);
+    await source(p).focus(); await invoke("Reopen primary source"); await ready(p); await expect(field).toHaveValue("café😀.csv"); await expect(field).toBeFocused();
+    expect(await field.evaluate(node => { const f = node as HTMLTextAreaElement; return [f.selectionStart, f.selectionEnd, f.selectionDirection]; })).toEqual([1, 4, "backward"]);
+    expect((await snap(p)).bindings.views.find(v => v.id === "primary")?.selectionSet).toEqual(before.bindings.views.find(v => v.id === "primary")?.selectionSet);
+    await field.focus(); await field.press("Escape"); await expect(source(p)).toBeFocused(); await source(p).press("Control+End"); await source(p).pressSequentially(" source edit"); await ready(p); await exact(p, original + " source edit");
+    await source(p).press("Control+z"); await ready(p); await exact(p, original); expect((await snap(p)).history).toEqual({ undoDepth: before.history.undoDepth, redoDepth: 1 });
+    await p.evaluate(() => window.hostFixture.dispose()); expect((await snap(p)).diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(errors).toEqual([]);
 });
