@@ -44,6 +44,7 @@ export function attachProtocolFixture(server: Server) {
         let actionConfig: ActionConfig = { module: "sample-utils", delay: 0 }, actionResolveConfig: ActionConfig = { module: "sample-utils", delay: 0 }, actionGeneration = 0, actionLiterals = false, actionResolve = false;
         const actionResolutions = new Map<number, WorkspaceEdit>();
         let projectConfig: Pick<ProjectCommand, "kind" | "delay" | "fault"> = { kind: "status", delay: 0 }, projectRegistered = false, applyEditSupport = false, projectStyle: "markers" | "many" | "wide" = "markers", cancelApply: (() => void) | undefined;
+        let lastCommand: unknown = null;
         const deferred = <T>(delay: number, token: CancellationToken, compute: () => T | Promise<T>) => new Promise<T>((resolve, reject) => {
             let done = false, stop: { dispose: () => void } | undefined;
             const finish = () => { if (done) return false; done = true; clearTimeout(timer); stop?.dispose(); pending.delete(cancel); return true; };
@@ -155,7 +156,10 @@ export function attachProtocolFixture(server: Server) {
         const validateActionConfig = (params: ActionConfig) => {
             if (!params || typeof params.module !== "string" || !validDomainModule(params.module) || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure", "incomplete", "markup"].includes(params.fault)) throw new ResponseError(-32602, "Invalid action configuration"); return { ...params };
         };
-        peer.onRequest("fixture/actionConfig", (params: ActionConfig) => { actionConfig = validateActionConfig(params); return null; });
+        peer.onRequest("fixture/actionConfig", async (params: ActionConfig) => { actionConfig = validateActionConfig(params);
+            if (applyEditSupport && !projectRegistered) { await peer.sendRequest(RegistrationRequest.type, { registrations: [{ id: "fixture-review", method: "workspace/executeCommand", registerOptions: { commands: ["fixture.review"] } }] }); projectRegistered = true; }
+            return null;
+        });
         peer.onRequest("fixture/actionResolveConfig", (params: ActionConfig) => { actionResolveConfig = validateActionConfig(params); return null; });
         const workspaceTextEdits = (project: readonly TextDocument[], changes: ReadonlyMap<string, readonly TextEdit[]>): WorkspaceEdit => versionedEdits
             ? { documentChanges: [...changes].map(([uri, edits]) => ({ textDocument: { uri, version: project.find(doc => doc.uri === uri)?.version ?? null }, edits: [...edits] })) }
@@ -169,13 +173,17 @@ export function attachProtocolFixture(server: Server) {
         });
         peer.onRequest("fixture/projectStyle", (params: { style: typeof projectStyle }) => { if (!params || !["markers", "many", "wide"].includes(params.style)) throw new ResponseError(-32602, "Invalid review style"); projectStyle = params.style; return null; });
         peer.onNotification("fixture/cancelApply", () => cancelApply?.());
-        peer.onRequest("workspace/executeCommand", (params: { command: string }, token) => {
+        peer.onRequest("fixture/lastCommand", () => lastCommand);
+        peer.onRequest("workspace/executeCommand", (params: { command: string; arguments?: unknown[] }, token) => {
             if (!["fixture.status", "fixture.review"].includes(params?.command)) throw new ResponseError(-32602, "Unknown fixture command");
             const config = projectConfig, project = [...documents.values()], style = projectStyle; projectConfig = { kind: "status", delay: 0 };
+            lastCommand = { command: params.command, arguments: params.arguments ?? [], documents: project.map(doc => ({ uri: doc.uri, version: doc.version, prefix: doc.getText().slice(0, 64) })) };
             return deferred(config.delay, token, async () => {
                 if (config.fault === "failure") throw new ResponseError(-32001, "Fixture provider command unavailable");
-                if (params.command === "fixture.status") return { documents: documents.size };
+                if (params.command === "fixture.status") { if (config.fault === "ack") port.dispose(); return { documents: documents.size }; }
                 if (!projectRegistered || !applyEditSupport) throw new ResponseError(-32601, "Review command needs registration and an edit-review capable client");
+                const argument = params.arguments?.[0] as { uri?: string; expectedPrefix?: string } | undefined;
+                if (argument?.expectedPrefix && !project.find(doc => doc.uri === argument.uri)?.getText().startsWith(argument.expectedPrefix)) throw new ResponseError(-32602, "The action edit was not synchronized before its command");
                 const changes = new Map<string, TextEdit[]>(); let count = 0;
                 for (const doc of project) {
                     const text = doc.getText(), edits: TextEdit[] = [];
@@ -214,7 +222,10 @@ export function attachProtocolFixture(server: Server) {
                     { title: "Add review markers across captured resources", kind: "refactor.rewrite", edit: reviewEdit, ...(changes.size ? {} : { disabled: { reason: "All captured sources already have review markers." } }) },
                     { title: todoEdits.length ? "Load TODO fixes preview" : "Load alternate import preview", kind: todoEdits.length ? "source.fixAll" : "source.addImport", ...(actionResolve ? { data: { token: generation, opaque: { label: "captured", uri: origin.uri } } } : { edit: lazyEdit }) },
                     { title: "Unavailable context example", kind: "refactor", disabled: { reason: "The fixture requires another context." } }, status,
-                    { title: "Edit then provider command", kind: "source", edit: reviewEdit, command: status }];
+                    { title: "Edit then provider command", kind: "source", edit: reviewEdit, command: status },
+                    { title: "Review provider edits command", command: "fixture.review", arguments: [{ uri: origin.uri, opaque: { note: "😀" } }] },
+                    { title: "Edit then provider review command", kind: "source", edit: reviewEdit, command: { title: "Review provider edits", command: "fixture.review", arguments: [{ uri: origin.uri, expectedPrefix: marker, opaque: { note: "😀" } }] } },
+                    { title: "Unadvertised provider command", kind: "source", edit: reviewEdit, command: { title: "Unavailable command", command: "fixture.unadvertised", arguments: [] } }];
                 if (config.fault === "malformed") actions.push({ title: "Invalid final choice", edit: workspaceTextEdits(project, new Map([["host+fixture:unknown-target", [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }, newText: "bad" }]]])) });
                 if (config.fault === "incomplete") return { partial: actions } as unknown as (CodeAction | Command)[];
                 return actions;

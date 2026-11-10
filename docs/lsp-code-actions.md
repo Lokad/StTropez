@@ -4,7 +4,9 @@ The plain and React `?editor=candidate&language=lsp` routes send actual `textDoc
 requests. **Preview module action** or Ctrl+. captures the primary selection's UTF-16 range and
 complete selection set. The module field configures this development fixture's import choice;
 it is not an extra LSP request parameter. The response can offer several choices. Select one,
-review its captured text edits, then choose **Apply captured action**. Discovery and selection
+review its captured text edits, then choose **Apply captured action**. A command choice instead
+shows **Execute captured action**, with its literal command title/name and argument count.
+Discovery and selection
 never apply edits automatically. A filled first choice may show its preview immediately.
 
 `decodeLspCodeActions` validates the complete array or null before publishing any choice. It
@@ -20,12 +22,26 @@ only the `edit` property for resolution and preserves the original opaque action
 must retain all other attributes, including data, even when JSON object key order differs. Changed
 titles, inserted commands, missing edits or stale generations refuse the response before application.
 
-The action menu does not execute provider commands. Command-only choices and actions containing both
-an edit and a command remain visible with an unavailable reason. Their edits cannot be applied
-alone: LSP requires the edit followed by the command. The separate [workspace-provider panel](lsp-server-edits.md)
-now executes advertised commands and owns captured server-edit decisions. Connecting action-menu
-commands to that flow remains required work. The action session does not advertise applyEdit.
-This limitation is independent of the delivered literal-edit and resolve paths.
+Command-only choices and actions containing both an edit and a command require explicit execution.
+The command must be advertised by the captured session's static or dynamic global capabilities;
+an unknown command disables the whole choice, including its edit. Confirmation transfers the
+captured origin/resources/authority to the existing [workspace-provider review owner](lsp-server-edits.md).
+That owner applies any initial edit atomically, synchronizes its new wire versions, then executes
+the command with the original bounded opaque arguments. The action connection advertises applyEdit
+only with its registered handler. Further server edits require Apply/Decline in the existing
+Workspace provider panel; background requests without a confirmed intent remain refused.
+
+The review lane admits one operation. Its observable state updates action availability; a busy
+workspace review prevents execution before any initial edit. Later focus does not retarget the
+origin. The action and workspace adapters keep independent provider connections: losing an idle
+workspace connection cannot cancel an action's captured review. Cancelling, typing, selection/fold
+changes, authority changes, remount, capability withdrawal or disconnect expire the owned command.
+
+Each applied phase is an atomic shared undo transaction: one for the initial action edit, followed
+by one per confirmed server batch. A command failure, declined later batch or lost acknowledgement
+cannot undo an earlier committed phase automatically. Receipts explicitly retain applied edits as
+undoable. Reconnect and fresh discovery never replay the edit or command. Code-action resolve still
+advertises only the edit property; command resolution and automatic invocation are unsupported.
 
 Requests carry trigger kind Invoked and known versioned diagnostic ranges/messages/severity/source
 overlapping the captured primary range. Unversioned/stale/malformed pushes cannot supply anchors.
@@ -53,7 +69,9 @@ text after 256 units with its full size, and keep deletion context bounded indep
 length. Confirming applies every validated edit, not only the visible page.
 
 The generic reference-peer fixture reuses StTropez's import cursor for one choice, supplies working-
-project review markers and resolves TODO-to-DONE edits. Disabled and command-dependent choices,
+project review markers and resolves TODO-to-DONE edits. It includes static/dynamic command choices,
+ordered edit+command checks, opaque argument roundtrips and captured server-edit decisions.
+Disabled and unadvertised choices,
 malformed lists/resolves, changed authority, cancellation/reconnect, comparison, history and 100k-line
 journeys qualify protocol/host behavior, not general module/type/scope resolution. No production
 provider is required. Native IME/OS clipboard/display remain unverified. Browser checks stay headless;

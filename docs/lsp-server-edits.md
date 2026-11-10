@@ -23,8 +23,10 @@ raw UTF-16 ranges and separate local/wire versions retain the same rules. Resour
 change annotations remain unsupported. The reference peer is a development dependency; the
 runtime session and validation code use no third-party packages.
 
-The host adapter accepts an incoming edit only within the currently confirmed review command.
-Unsolicited edits, overlapping requests and requests attached to a status command are refused.
+The workspace adapter accepts an incoming edit only within its currently confirmed review command;
+its status command refuses edits. Confirmed [code-action commands](lsp-code-actions.md) use the same
+session runner and hand their captured intent to this existing review owner and panel. Unsolicited
+edits and overlapping requests are refused.
 The preview retains captured document/buffer/revision, origin tab/view, complete selections, fold
 generation, authority, pending-input, session and registration ownership. A later focus change
 does not retarget it. Typing, selection/fold changes, lost authority, remount or disposal expire
@@ -39,7 +41,7 @@ decision or history entry. Closed transports cannot guarantee delivery of a repl
 connection or command acknowledgement is lost after application, the host explicitly reports that
 the edits remain applied and undoable. Reconnect never retries the command or transaction.
 
-The whole batch is one shared undo command, including unmounted resources and complete origin
+Each batch is one shared undo command, including unmounted resources and complete origin
 selections. Comparison baselines remain immutable. Changed-resource links, primary Save/Run and
 later dirty typing retain their existing captured identities. Previews page every 64 edits, show
 at most 256 inserted units with the full size, and bound deletion context independently of range
@@ -48,9 +50,10 @@ limits remain 100 resources, 1,024 edits, 16,384 units per insertion and 65,536 
 
 The generic fixture qualifies registration/withdrawal, explicit decisions, stale tokens,
 cancellation, real disconnect, lost acknowledgement, shared history, comparison and 100k-line
-reviews. It is not a production language provider. Code-action menu commands and edit-followed-by-
-command actions are still unavailable; they require connection to this owned decision flow before
-they can be offered. Arbitrary background server edits remain a host-policy extension point.
+reviews. It is not a production language provider. Action-menu commands preserve edit-before-command
+ordering, using separate undoable phases for the initial edit and later confirmed server batches.
+A busy review lane blocks execution before any initial edit. Independent provider connections do
+not share connection-loss authority. Arbitrary background server edits remain a host-policy extension point.
 Native IME/OS clipboard/display checks remain unverified. Headless correctness and bounded-preview
 checks make no new latency distribution or heap claim; handler, readiness, automation/IPC/workflow
 and physical-display clocks remain distinct.

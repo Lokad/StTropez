@@ -3,7 +3,7 @@ export function actionsControls(tools: HostActionsTools) {
     const s = tools.state.getSnapshot();
     return [
         { label: "Preview module action", invoke: tools.request, disabled: !s.available || s.disconnected || s.pending },
-        { label: "Apply captured action", invoke: () => tools.apply(s.token), disabled: !s.canApply },
+        { label: s.command ? "Execute captured action" : "Apply captured action", invoke: () => tools.apply(s.token), disabled: !s.canApply },
         { label: "Dismiss action preview", invoke: tools.cancel, disabled: s.token === null },
         ...(tools.usesLsp ? [{ label: "Previous action edits", invoke: () => tools.previousPage(), disabled: s.pending || s.page === 0 },
             { label: "Next action edits", invoke: () => tools.nextPage(), disabled: s.pending || (s.page + 1) * 64 >= s.editCount }] : []),
@@ -12,7 +12,7 @@ export function actionsControls(tools: HostActionsTools) {
     ];
 }
 export const actionsDescription = "Preview an import of the chosen module into the captured working source. Existing exact import lines disable the action. This local fixture uses its own bounded import policy; it does not resolve symbols, modules or types.";
-export const actionsDescriptionFor = (tools: HostActionsTools): string => tools.usesLsp ? "Choose a provider action, review its captured text edits, then confirm application. Some choices load their preview when selected. Disabled actions explain why; provider commands are unavailable. This sample uses lexical/import policies, not general type or scope resolution." : actionsDescription;
+export const actionsDescriptionFor = (tools: HostActionsTools): string => tools.usesLsp ? "Choose a provider action and review its captured edits or advertised command, then confirm. Commands run after their edits; any further provider edits require a decision in Workspace provider. Some choices load a preview when selected. This sample uses lexical/import policies, not general type or scope resolution." : actionsDescription;
 export const actionChoiceLabel = (choice: ActionChoice): string => `${choice.title}${choice.kind ? ` · ${choice.kind}` : ""}${choice.preferred ? " · preferred" : ""}${choice.disabled ? ` · ${choice.disabled}` : choice.needsResolve ? " · Load preview" : ""}`;
 export const actionTarget = (at: ActionNote): string => `${at.title} · ${at.resource} · ${at.document} @ revision ${at.revision} · [${at.from},${at.to})\nInsert ${JSON.stringify(at.insert)}${at.insertUnits !== undefined && at.insertUnits > at.insert.length ? `… (${at.insertUnits} UTF-16 units)` : ""}\nContext: ${at.context}`;
 export function mountActionsPanel(host: HTMLElement, tools: HostActionsTools): () => void {
@@ -25,7 +25,7 @@ export function mountActionsPanel(host: HTMLElement, tools: HostActionsTools): (
     host.replaceChildren(heading, description, status, label, controls, ...(tools.usesLsp ? [choices] : []), title, edits, ...(tools.usesLsp ? [changes] : [changed])); let previous: unknown, previousChoices: unknown, previousChanges: unknown;
     let choiceButtons: HTMLButtonElement[] = [];
     const render = () => { const s = tools.state.getSnapshot(); status.textContent = s.message; if (module.value !== s.module) module.value = s.module; title.textContent = s.title;
-        for (const [i, action] of actionsControls(tools).entries()) { buttons[i]!.disabled = action.disabled; buttons[i]!.onclick = action.invoke; }
+        for (const [i, action] of actionsControls(tools).entries()) { buttons[i]!.textContent = action.label; buttons[i]!.disabled = action.disabled; buttons[i]!.onclick = action.invoke; }
         if (previousChoices !== s.choices) { previousChoices = s.choices; choiceButtons = []; choices.replaceChildren(...s.choices.map(choice => { const li = owner.createElement("li"), button = owner.createElement("button"); button.textContent = actionChoiceLabel(choice); button.onclick = () => tools.selectChoice(choice.index); choiceButtons.push(button); li.append(button); return li; })); }
         for (const [index, button] of choiceButtons.entries()) { button.disabled = s.pending; button.setAttribute("aria-pressed", String(s.choice === index)); }
         if (previous !== s.edits) { previous = s.edits; edits.start = s.page * 64 + 1; edits.replaceChildren(...s.edits.map(at => { const li = owner.createElement("li"), pre = owner.createElement("pre"); pre.textContent = actionTarget(at); li.append(pre); return li; })); }
