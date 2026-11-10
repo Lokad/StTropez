@@ -72,7 +72,8 @@ export function installHostReferenceProbe() {
             const now = performance.now(); phases.modelObservedAt ??= now;
             for (const key of ["rendered", "scans", "caret", "drag", "comparison", "reference"]) if (current[key]) phases[`${key}At`] ??= now;
         }
-        const roots = document.querySelectorAll(".st-editing-candidate");
+        // The immutable reference has its own candidate surface; observe the three working inputs here.
+        const roots = [...document.querySelectorAll(".st-editing-candidate")].filter(root => root.querySelector("textarea")?.readOnly === false);
         if (roots.length !== 3 || !facts(before).full || !node) { fail("Reference experiment requires three ready bounded working views."); return; }
         roots.forEach(root => root.addEventListener("sttropez-render", observe, { signal: listeners.signal }));
         if (kind === "reference") {

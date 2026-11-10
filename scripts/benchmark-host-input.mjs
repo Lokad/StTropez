@@ -60,7 +60,8 @@ async function measure(input, text, mode) {
                     record.caretPendingAtRender = s.bindings.views.some(v => v.metrics.pendingCaret) || s.bindings.comparison.input.pendingCaret;
                 }
             };
-            const roots = document.querySelectorAll(".st-editing-candidate");
+            // The immutable reference has its own candidate surface; observe the three working inputs here.
+            const roots = [...document.querySelectorAll(".st-editing-candidate")].filter(root => root.querySelector("textarea")?.readOnly === false);
             if (roots.length !== 3) { fail("Expected three bounded working views."); return; }
             roots.forEach(root => root.addEventListener("sttropez-render", workingRendered, { signal }));
             input.addEventListener("beforeinput", () => { pendingStart = performance.now(); started ??= pendingStart; }, { capture: true, signal });
