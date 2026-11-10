@@ -3,6 +3,11 @@ import type { ViewBindings } from "./bindings.ts";
 
 export function actions(controller: HostController, bindings: ViewBindings): readonly Readonly<{ label: string; invoke: () => void }>[] {
     return [
+        ...(bindings.editor === "candidate" ? [
+            { label: "Insert transfer instruction", invoke: bindings.insertInstruction },
+            { label: "Anchor instruction at caret", invoke: bindings.anchorInstruction },
+            { label: "Close anchored instruction", invoke: controller.instruction.clear },
+        ] : []),
         { label: "Associate agent", invoke: controller.associate }, { label: "Request proposal", invoke: controller.requestAgent },
         { label: "Deliver proposal", invoke: controller.deliverProposal }, { label: "Interrupt agent", invoke: controller.interrupt },
         { label: "Fail agent service", invoke: controller.failAgent }, { label: "Offer newer proposal", invoke: controller.offerNewerProposal },

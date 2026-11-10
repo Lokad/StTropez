@@ -3,7 +3,7 @@ import type { Affinity, DocumentId, DocumentSnapshot, DocumentView, EditKind, Fo
 import { captureNativeInsertion, resolveNativeInsertion } from "./input-target.ts";
 import type { NativeInsertionTarget } from "./input-target.ts";
 export { mountTextViewport } from "./viewport.ts";
-export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RevealOptions, TextViewport, ViewportSnapshot, ViewportComparisonRows } from "./viewport.ts";
+export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealOptions, TextViewport, ViewportSnapshot, ViewportComparisonRows } from "./viewport.ts";
 export { mountEditingCandidate } from "./editing-candidate.ts";
 export type { EditingCandidate } from "./editing-candidate.ts";
 export { createFindController } from "./find.ts";

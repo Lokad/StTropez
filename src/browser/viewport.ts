@@ -13,6 +13,7 @@ const emptyIndex = new FoldIndex(1, []);
 /** Shared by view-only scroll coordination; this is independent of source coordinates. */
 export const viewportPadding = 12;
 export type ViewportComparisonRows = Readonly<{ documentId: DocumentId; revision: number; foldGeneration: number; id: number; lineHeight: number; index: ComparisonRowIndex }>;
+export type RenderedRowBounds = Readonly<{ revision: number; foldGeneration: number; line: number; top: number; height: number }>;
 
 export type ViewportSnapshot = Readonly<{ revision: number | null; selection: Selection | null; selectionSet: SelectionSet | null; renders: number; firstLine: number; lastLine: number;
     foldGeneration: number; visibleLines: number; collapsedFolds: number; visualRows: number; paddingRows: number; aligned: boolean; alignmentId: number | null; rowGeneration: number; naturalLineHeight: number;
@@ -26,6 +27,7 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     visualRowAt: (line: number) => number;
     navigationLine: (line: number, direction: -1 | 1, count: number, page: boolean) => number;
     coordsAt: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
+    rowBounds: (line: number) => RenderedRowBounds | undefined;
     hitTest: (clientX: number, clientY: number) => CaretRectangle | undefined;
     moveVisual: (offset: number, affinity: Affinity, direction: -1 | 1, reveal?: boolean) => CaretRectangle | undefined;
     collapseVisual: (from: number, to: number, direction: -1 | 1, reveal?: boolean) => CaretRectangle | undefined;
@@ -481,6 +483,13 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         prepareNavigationRows,
         invalidate: schedule,
         coordsAt: coordinates,
+        rowBounds: (line: number) => {
+            const current = workspace.observeDocument(documentId).getSnapshot(), folding = view.folding.getSnapshot();
+            if (disposed || frame !== undefined || !workspace.resolveTab(target) || current?.revision !== renderedRevision || folding.generation !== renderedFoldGeneration
+                || !Number.isSafeInteger(line) || line < 0 || line >= current.buffer.lineCount || renderedIndex.hiddenBy(line)) return undefined;
+            const row = rows.get(line); if (!row) return undefined; const rectangle = row.getBoundingClientRect();
+            return Object.freeze({ revision: current.revision, foldGeneration: folding.generation, line, top: rectangle.top, height: rectangle.height });
+        },
         hitTest: (clientX: number, clientY: number) => {
             if (!Number.isFinite(clientX) || !Number.isFinite(clientY) || disposed || !workspace.resolveTab(target)
                 || workspace.observeDocument(documentId).getSnapshot()?.revision !== renderedRevision) return undefined;

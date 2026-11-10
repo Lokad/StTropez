@@ -5,6 +5,11 @@ document, tab and view handles. `?editor=native` mounts the native control; `?ed
 mounts the bounded input candidate. The same host protocol tests run against both choices.
 These remain synthetic evaluation hosts. All service responses come from deferred local ports.
 
+Candidate hosts also offer a [source-backed anchored transfer-instruction form](transfer-instruction.md).
+It patches known JSON string spans, follows source edits/folds/history and keeps explicit copying
+into separate transfer settings independent of Save and Run. The host owns its sibling DOM lane;
+the editor exposes rendered-row bounds without exposing or transferring ownership of row nodes.
+
 Configuration has its own captured Save, validation, dirty/saved/failed status and explicit
 remote-conflict review. The host reuses the generic resource save ticket for immutable capture,
 per-resource serialization, canonical replies and server preconditions. Form fields and their

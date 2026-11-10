@@ -14,6 +14,8 @@ import { HostDocumentLinks } from "./document-links.ts";
 import { HostActionsTools } from "./code-actions.ts";
 import { HostRenameTools } from "./rename.ts";
 import { HostSignatureTools } from "./signature.ts";
+import { mountInstructionWidget } from "./instruction-widget.ts";
+import type { InstructionViewState } from "./instruction-widget.ts";
 
 export type HostEditor = "native" | "candidate";
 type BoundEditor = MountedEditor & Readonly<{ metrics: () => null | ReturnType<EditingCandidate["snapshot"]> & Readonly<{ viewport: ViewportSnapshot }> }>;
@@ -22,6 +24,8 @@ export function hostEditor(): HostEditor { return new URLSearchParams(location.s
 /** Stable refs own editor descendants; the controller and resource IDs survive every detach. */
 export class ViewBindings {
     private readonly controller: HostController;
+    private instructionMount: ReturnType<typeof mountInstructionWidget> | undefined;
+    private readonly instructionMemory: InstructionViewState = { generation: 0, fields: {}, focus: undefined };
     private readonly stopInputCapture: () => void;
     private readonly mounted = new Map<string, { editor: BoundEditor; documentId: DocumentId; candidate: EditingCandidate | undefined }>();
     readonly editor: HostEditor;
@@ -208,7 +212,7 @@ export class ViewBindings {
         this.actions = new HostActionsTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
         this.rename = new HostRenameTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
         this.signature = new HostSignatureTools(controller.workspace, canCapture, () => this.hover.dismiss());
-        this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.tablePaste.hasPendingInput(controller.source.documentId) && !this.review?.working.snapshot().pendingInput
+        this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.documentId) && !this.review?.working.snapshot().pendingInput
             && ![...this.mounted.values()].some(value => value.editor.metrics()?.pendingInput));
         this.primary = this.ref("primary", "Primary source");
         this.secondary = this.ref("secondary", "Secondary source");
@@ -266,7 +270,13 @@ export class ViewBindings {
             const documentId = tab.surface.documentId;
             const view = this.retainedView(id, documentId);
             const presentation = new EditingPresentation();
-            const candidate = this.editor === "candidate" ? mountEditingCandidate(host, workspace, tabId, { ariaLabel, view, decorate: presentation.decorate }) : undefined;
+            const surface = id === "primary" && this.editor === "candidate" ? host.ownerDocument.createElement("div") : host;
+            if (surface !== host) { surface.className = "host-instruction-source"; host.append(surface); }
+            const candidate = this.editor === "candidate" ? mountEditingCandidate(surface, workspace, tabId, { ariaLabel, view, decorate: presentation.decorate }) : undefined;
+            const lane = surface !== host ? host.ownerDocument.createElement("div") : undefined;
+            if (lane) { lane.className = "host-instruction-lane"; lane.hidden = true; host.append(lane); }
+            const instruction = lane && candidate ? mountInstructionWidget(host, lane, candidate, this.controller, tabId, this.instructionMemory) : undefined;
+            if (instruction) this.instructionMount = instruction;
             const detachLanguage = candidate ? this.language.attach(id, tabId, candidate, presentation) : undefined;
             const detachHover = candidate ? this.hover.attach(id, tabId, candidate) : undefined;
             const detachPaste = candidate ? this.tablePaste.attach(id, tabId, candidate) : undefined;
@@ -285,7 +295,7 @@ export class ViewBindings {
             const listeners = new AbortController();
             mounted.element.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
             this.bindSaveShortcut(mounted.element, tabId, () => candidate?.snapshot().composing ?? false, listeners.signal);
-            const editor: BoundEditor = { ...mounted, destroy: () => { try { detachColors?.(); detachLinks?.(); detachActions?.(); detachRename?.(); detachSignature?.(); detachProject?.(); detachNavigation?.(); detachDomain?.(); detachPaste?.(); detachHover?.(); detachLanguage?.(); mounted.destroy(); } finally { listeners.abort(); } } };
+            const editor: BoundEditor = { ...mounted, destroy: () => { try { instruction?.dispose(); if (this.instructionMount === instruction) this.instructionMount = undefined; detachColors?.(); detachLinks?.(); detachActions?.(); detachRename?.(); detachSignature?.(); detachProject?.(); detachNavigation?.(); detachDomain?.(); detachPaste?.(); detachHover?.(); detachLanguage?.(); mounted.destroy(); } finally { listeners.abort(); if (surface !== host) surface.remove(); } } };
             const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView(this.restoreState(state, view));
             this.mounted.set(id, { editor, documentId, candidate }); this.mounts++;
         };
@@ -295,6 +305,18 @@ export class ViewBindings {
         this.retainState(id, mounted.documentId, mounted.editor.captureView());
         mounted.editor.destroy(); this.mounted.delete(id); this.destroys++;
     }
+    readonly anchorInstruction = (): void => {
+        const current = this.mounted.get("primary"); if (!current?.candidate || current.documentId !== this.controller.source.documentId || !this.controller.canCaptureRecovery()) return;
+        this.controller.instruction.anchor(current.editor.view.getSnapshot().selection.head);
+    };
+    readonly insertInstruction = (): void => {
+        const current = this.mounted.get("primary"); if (!current?.candidate || current.documentId !== this.controller.source.documentId || !this.controller.canCaptureRecovery()) return;
+        const d = this.controller.workspace.document(current.documentId), at = d.buffer.offsetAt(d.buffer.lineAt(current.editor.view.getSnapshot().selection.head));
+        const firstEnd = d.buffer.lineCount > 1 ? d.buffer.offsetAt(1) : 0, tail = d.buffer.slice(Math.max(0, firstEnd - 2), firstEnd), eol = tail.endsWith("\r\n") ? "\r\n" : tail.endsWith("\r") ? "\r" : "\n";
+        const result = this.controller.workspace.edit({ documentId: d.id, expectedRevision: d.revision, origin: "human", edits: [{ from: at, to: at,
+            insert: '// @transfer {"destination":"target.csv","batchSize":"1000"}' + eol }], history: { kind: "form" }, view: current.editor.view });
+        if (result.applied) { this.controller.instruction.anchor(at); current.candidate.viewport.revealOffset(at); }
+    };
     unmount(): void { for (const id of [...this.mounted.keys()]) this.detach(id); }
     dispose(): void {
         this.stopInputCapture();
@@ -303,7 +325,7 @@ export class ViewBindings {
     }
     debug() {
         const comparison = this.review?.controller.getSnapshot();
-        return { editor: this.editor, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size, language: this.language.debug(), hover: this.hover.debug(), tablePaste: this.tablePaste.debug(), domain: this.domain.debug(), navigation: this.navigation.debug(), project: this.project.debug(), rename: this.rename.debug(), actions: this.actions.debug(), links: this.links.debug(), colors: this.colors.debug(), signature: this.signature.debug(),
+        return { instruction: this.instructionMount?.debug() ?? null, editor: this.editor, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size, language: this.language.debug(), hover: this.hover.debug(), tablePaste: this.tablePaste.debug(), domain: this.domain.debug(), navigation: this.navigation.debug(), project: this.project.debug(), rename: this.rename.debug(), actions: this.actions.debug(), links: this.links.debug(), colors: this.colors.debug(), signature: this.signature.debug(),
         comparison: comparison ? { status: comparison.status, generation: comparison.generation, workingRevision: comparison.working?.revision,
             referenceIsWorkingBuffer: comparison.baseline !== null && comparison.baseline.buffer === comparison.working?.buffer,
             progress: comparison.progress && { work: comparison.progress.work, readUnits: comparison.progress.readUnits,

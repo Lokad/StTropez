@@ -1,0 +1,60 @@
+import { test, expect } from "@playwright/test";
+import type { Page } from "@playwright/test";
+const snap = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
+const button = (p: Page, name: string) => p.getByRole("button", { name, exact: true });
+const source = (p: Page) => p.getByRole("textbox", { name: "Primary source", exact: true });
+const sets = (s: Awaited<ReturnType<typeof snap>>) => ({ views: s.bindings.views.map(v => ({ id: v.id, set: v.selectionSet })), working: s.bindings.comparison?.selectionSet });
+async function ready(p: Page) { await p.waitForFunction(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
+    return !s.bindings.instruction?.pending && s.bindings.views.every(v => v.metrics && !v.metrics.pendingInput && !v.metrics.pendingCommand && !v.metrics.pendingCaret && !v.metrics.viewport.pending)
+        && c?.status === "ready" && c.workingRevision === s.source.revision && !c.input.pendingInput && !c.input.pendingCaret && !c.workingViewport.pending && !c.referenceViewport?.pending; }); }
+async function exact(p: Page, text: string) { expect(await p.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false;
+    for (let i = 0; i < text.length; i += 32768) if (f.range(i, Math.min(text.length, i + 32768)) !== text.slice(i, i + 32768)) return false; return true; }, text)).toBe(true); }
+test.afterEach(async ({ page }, info) => { if (info.status !== info.expectedStatus && !page.isClosed()) await info.attach("instruction-failure-state", { contentType: "application/json", body: JSON.stringify(await snap(page), null, 2) }); });
+for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} anchored instruction preserves source, history, copy and virtualized ownership`, async ({ page: p }, info) => {
+    const errors: string[] = []; p.on("pageerror", e => errors.push(e.message)); await p.goto(`/hosts/${host}/?editor=candidate`); await expect(source(p)).toBeVisible();
+    const prefix = "before\r\n".repeat(large ? 50000 : 2), line = '  // @transfer { "destination":"a\\u0041.csv", "batchSize":"1000", "unknown":{"n":-0,"s":"😀,}"} }', tail = "\r\nafter".repeat(large ? 50000 : 8), original = prefix + line + tail;
+    await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
+    await button(p, "Open source review").click(); await button(p, "Capture review acceptance").click(); await button(p, "Finish review acceptance").click(); await ready(p);
+    await p.evaluate(offset => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: offset, head: offset }); }, prefix.length);
+    await source(p).press("ArrowRight"); await source(p).press("ArrowLeft"); await ready(p); await button(p, "Anchor instruction at caret").click();
+    const field = p.getByRole("textbox", { name: "Instruction destination", exact: true }), batch = p.getByRole("textbox", { name: "Instruction batch size", exact: true });
+    await ready(p); await expect.poll(async () => (await snap(p)).bindings.views.find(v => v.id === "primary")?.metrics?.viewport.height).toBe(320);
+    await expect(field).toBeVisible(); await ready(p); const before = await snap(p); expect(before.bindings.views.every(v => !v.metrics || v.metrics.viewport.rows < 100)).toBe(true);
+    expect(await p.evaluate(() => { const field = document.querySelector('textarea[aria-label="Primary source"]')!, form = document.querySelector('[aria-label="Anchored transfer instruction"]')!; return !field.closest('.st-editing-candidate')!.contains(form) && form.closest('.editor-host')?.contains(field); })).toBe(true);
+    await field.press("End"); await field.pressSequentially("X"); await ready(p); const changed = original.replace('\\u0041.csv"', '\\u0041.csvX"'); await exact(p, changed);
+    expect((await snap(p)).bindings.mounts).toBe(before.bindings.mounts); await field.press("Control+z"); await ready(p); await exact(p, original); expect(sets(await snap(p))).toEqual(sets(before));
+    await field.press("Control+y"); await ready(p); await exact(p, changed); await batch.fill("1e"); await expect(button(p, "Capture instruction copy")).toBeDisabled();
+    await exact(p, changed.replace('"1000"', '"1e"')); await batch.fill("2000"); await button(p, "Capture instruction copy").click();
+    await p.getByRole("textbox", { name: "Transfer destination", exact: true }).fill("independent.csv"); await button(p, "Finish instruction copy").click(); await expect(p.getByLabel("Instruction status", { exact: true })).toContainText("expired");
+    await button(p, "Capture instruction copy").click(); await field.press("End"); await field.pressSequentially("Y"); await expect(p.getByLabel("Instruction status", { exact: true })).toContainText('"aA.csvX"'); await button(p, "Finish instruction copy").click();
+    await expect(p.getByRole("textbox", { name: "Transfer destination", exact: true })).toHaveValue("aA.csvX"); expect((await snap(p)).activity.pendingRuns).toBe(0); expect((await snap(p)).pendingSaves).toHaveLength(0);
+    await field.press("Escape"); await expect(source(p)).toBeFocused(); await ready(p);
+    // Source edits outside the instruction map its anchor; invalid JSON stays authoritative.
+    await p.evaluate(() => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: 0, insert: "mapped\r\n" }]); }); await ready(p); expect((await snap(p)).instruction.from).toBe(prefix.length + 8);
+    await p.evaluate(() => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: s.instruction.to! - 1, to: s.instruction.to!, insert: "" }]); }); await ready(p); await expect(field).toHaveAttribute("readonly", "");
+    await source(p).press("Control+z"); await ready(p); await expect(field).not.toHaveAttribute("readonly", "");
+    await source(p).press("End"); await ready(p); expect((await snap(p)).bindings.views.find(v => v.id === "primary")?.metrics?.viewport.scrollLeft).toBeGreaterThan(0); await expect(field).toBeVisible();
+    await source(p).focus(); await p.evaluate(() => { const f = window.hostFixture, s = f.snapshot(); f.selectSource("primary", s.source.revision, { anchor: s.instruction.from! - 8, head: s.instruction.to! + 2 }); });
+    await button(p, "Fold selected lines").click(); await ready(p); await expect(field).toHaveCount(0); expect((await snap(p)).bindings.instruction?.laneState).toBe("folded");
+    await button(p, "Expand all folds").click(); await ready(p); await expect(field).toBeVisible();
+    if (large) { await source(p).press("Control+Home"); await ready(p); await expect(field).toHaveCount(0); expect((await snap(p)).bindings.instruction?.fieldNodes).toBe(0);
+        await p.evaluate(() => { const f = window.hostFixture, s = f.snapshot(), at = s.instruction.from!; f.selectSource("primary", s.source.revision, { anchor: at, head: at }); }); await source(p).press("ArrowRight"); await source(p).press("ArrowLeft"); await ready(p); await expect(field).toBeVisible(); }
+    await p.setViewportSize({ width: 1100, height: 900 }); await ready(p); await p.setViewportSize({ width: 1600, height: 1000 }); await ready(p); await expect(field).toBeVisible();
+    const geometry = await snap(p); await field.evaluate(node => { (node as HTMLTextAreaElement).style.height = "70px"; }); await ready(p);
+    expect((await snap(p)).source.revision).toBe(geometry.source.revision); expect((await snap(p)).history).toEqual(geometry.history);
+    await expect.poll(() => p.evaluate(() => { const panel = document.querySelector('[aria-label="Anchored transfer instruction"]')!.getBoundingClientRect(), lane = document.querySelector('.host-instruction-lane')!.getBoundingClientRect(), source = document.querySelector('.host-instruction-source')!.getBoundingClientRect();
+        return panel.top >= lane.top - 1 && panel.bottom <= lane.bottom + 1 && source.right <= lane.left + 1; })).toBe(true);
+    await p.evaluate(() => window.hostFixture.unmount()); expect((await snap(p)).diagnostics.subscriptions).toBe(6); await p.evaluate(() => window.hostFixture.mount()); await ready(p); await expect(field).toHaveValue("aA.csvXY");
+    const committed = await p.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); });
+    const oldToken = '"a\\u0041.csvXY"', crlfToken = '"line\\r\\nname.csv"', at = committed.indexOf(oldToken); expect(at).toBeGreaterThanOrEqual(0);
+    await p.evaluate(({ at, length, value }) => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: at, to: at + length, insert: value }]); }, { at, length: oldToken.length, value: crlfToken });
+    await ready(p); await expect(field).toHaveValue("line\nname.csv"); await field.press("Control+End"); await field.pressSequentially("Z"); await ready(p); await exact(p, committed.replace(oldToken, '"line\\r\\nname.csvZ"'));
+    await field.press("Control+z"); await field.press("Control+z"); await ready(p); await exact(p, committed); await expect(field).toHaveValue("aA.csvXY");
+    await field.focus(); await field.dispatchEvent("compositionstart", { data: "" }); await field.evaluate(node => { (node as HTMLTextAreaElement).value = "uncommitted café😀"; }); await field.dispatchEvent("input", { inputType: "insertCompositionText", isComposing: true });
+    await button(p, "Save source").click(); expect((await snap(p)).pendingSaves).toHaveLength(0); await button(p, "Dismiss message").click();
+    await p.evaluate(() => window.hostFixture.setSourceReadOnly(true)); expect(await p.evaluate(() => window.hostFixture.recoveryText())).toBe("uncommitted café😀"); await exact(p, committed);
+    await field.dispatchEvent("compositionend", { data: "uncommitted café😀" }); await p.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await ready(p); await expect(field).toHaveValue("aA.csvXY"); await exact(p, committed);
+    await field.press("Control+s"); await expect.poll(async () => (await snap(p)).pendingSaves.length).toBe(1); await button(p, "Fail save").click(); await button(p, "Dismiss message").click();
+    if (!large) await info.attach("anchored-instruction", { body: await p.screenshot(), contentType: "image/png" });
+    await p.evaluate(() => window.hostFixture.dispose()); const stopped = await snap(p); expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0); expect(errors).toEqual([]);
+});
