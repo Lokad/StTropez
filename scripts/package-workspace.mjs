@@ -15,9 +15,19 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
                 && [s, s.peer].every(v => v?.input && !v.input.pendingInput && !v.input.pendingCommand && !v.input.pendingCaret && !v.input.pendingWord && !v.input.pendingGrapheme && !v.input.pendingDragScroll && v.viewport && !v.viewport.pending && v.viewport.revision === v.revision && v.viewport.selectionSet === v.selections); });
         const apiText = id => p.evaluate(id => window.activationFixture.workspace().text(id), id);
         try {
+            await p.addInitScript(() => {
+                window.holdFirstProgress = true; const schedule = window.setInterval.bind(window);
+                window.setInterval = (handler, delay, ...args) => schedule(typeof handler === "function" ? () => { if (!window.holdFirstProgress) handler(...args); } : handler, delay);
+            });
             await p.goto(baseUrl + (large ? "/?large=1" : "/")); await p.waitForFunction(() => !!window.activationFixture); const original = await text();
             assert.deepEqual(requests.filter(s => /\.(js|css)$/.test(s)), ["/activation.js"]); assert.equal(await p.locator(".st-editing-candidate").count(), 0);
-            await button("Edit").click(); await ready(); const initial = await snap(), doc = key => initial.workspace.documents.find(d => d.key === key);
+            await button("Read only").click(); await ready(); const firstReading = await snap(); assert.equal(await p.evaluate(() => window.activationFixture.snapshot().phase), "reading"); assert.equal(firstReading.readOnly, true); assert.equal(firstReading.peer.readOnly, true);
+            assert.equal(await p.getByLabel("Background activity", { exact: true }).textContent(), "Background activity: 0");
+            await p.evaluate(() => { window.holdFirstProgress = false; });
+            for (const input of [primary, peer]) await input.pressSequentially("blocked"); assert.equal(await text(), original);
+            const firstAssets = [...requests]; await button("Edit").click(); await ready(); assert.deepEqual(requests, firstAssets); const initial = await snap(), doc = key => initial.workspace.documents.find(d => d.key === key);
+            assert.equal(initial.readOnly, false); assert.equal(initial.peer.readOnly, false); assert.deepEqual(initial.selections, firstReading.selections); assert.deepEqual(initial.peer.selections, firstReading.peer.selections);
+            for (const [after, before] of [[initial, firstReading], [initial.peer, firstReading.peer]]) { assert.equal(after.revision, before.revision); assert.deepEqual(after.history, before.history); }
             assert.equal(initial.workspace.documents.length, 102); assert.equal(initial.diagnostics.resources, 102); assert.equal(initial.diagnostics.tabs, 103); assert.equal(initial.diagnostics.views, 2);
             assert.equal(initial.workspace.documents.filter(d => !d.cachedView && d.key !== "peer").length, 100); assert.equal(await p.locator(".st-editing-candidate").count(), 2);
             const baselineSubscriptions = initial.diagnostics.subscriptions, baselineNodes = await p.locator("body *").count(), peerOriginal = await apiText(doc("peer").resourceId);

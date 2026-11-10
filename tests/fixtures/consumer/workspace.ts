@@ -80,7 +80,7 @@ export function createActivationSession(original: string, selection: Selection) 
             button("Discard closed document", () => { const s = sources.get(chosenClosed as ResourceId); if (!s || s.tab) return; discard = { source: s, target: workspace.captureResource(s.resource.id), revision: s.resource.getSnapshot().revision, epoch: s.epoch, confirmed: false }; notify(`Confirm discard of ${s.title} at revision ${discard.revision}.`); });
             button("Confirm discard", () => { if (discard) { discard.confirmed = true; release(); } }); button("Cancel discard", () => { discard = undefined; notify("Discard cancelled."); });
             button("Capture job", captureJob); button("Finish job", finishJob);
-            messageNode = owner.createElement("output"); messageNode.setAttribute("aria-label", "Workspace status"); progressNode = owner.createElement("output"); progressNode.setAttribute("aria-label", "Background activity");
+            messageNode = owner.createElement("output"); messageNode.setAttribute("aria-label", "Workspace status"); progressNode = owner.createElement("output"); progressNode.setAttribute("aria-label", "Background activity"); progressNode.textContent = `Background activity: ${ticks}`;
             const panes = owner.createElement("div"); panes.className = "workspace-panes"; primaryHost = owner.createElement("div"); peerHost = owner.createElement("div"); panes.append(primaryHost, peerHost); root.append(controls, messageNode, progressNode, panes); host.append(root);
             view(current).mount(primaryHost, at, update, readOnly); peer!.mount(peerHost, undefined, () => {}, readOnly); refresh();
         }, unmount, canUnmount: () => view(current).canUnmount() && !!peer?.canUnmount(),

@@ -116,9 +116,11 @@ and initial readiness are outside the workflow clock; range oracles and cleanup 
 
 `npm run test:package:activation` restores an isolated consumer whose initial page shows exact
 Unicode/CRLF text without requesting editor JavaScript, CSS or a worker. Its small host module
-loads a separate compiled editing entry and the packaged CSS only after **Edit**. Failed module
-or CSS loading retains the preview and offers retry. Cancelling activation invalidates late
-responses before they can create a model or mount a view.
+loads a separate compiled view entry and the packaged CSS only after **Edit** or **Read only**.
+Read only can be the first action and mounts with its policy already applied. Keyboard focus
+traversal to its control retains the source range. Failed module or
+CSS loading retains the snapshot and offers retry with the requested mode. Cancelling activation
+invalidates late responses before they can create a model or override a later mode choice.
 
 The host reader keeps the complete source in native DOM text nodes. For longer files it groups
 500 lines per block and uses `content-visibility: auto` to defer offscreen layout. A small native
@@ -149,20 +151,27 @@ bounded control. Functional keyboard and scoped release checks pass; the native 
 Select All responsiveness remains open. The snapshot remains an evaluation
 fallback; native/total-process memory and production editing-engine readiness remain unqualified.
 
-After the first **Edit**, **Read only** remounts the bounded views with a per-view read-only policy.
+**Read only** mounts or remounts the bounded views with a per-view read-only policy.
 Navigation, selection, copying and Find remain available; input, history and replacement commands
 cannot mutate through those views. Resource permissions stay unchanged. **Edit** restores editing
 with the same retained views, complete selection sets, scroll and shared undo history. This mode
 transition makes no new editing-entry or CSS request. In the workspace consumer, both panes and
 subsequently opened primary tabs retain the chosen mode.
 
-A separate warm Chromium 156 workspace run used the 100k corpus (900,044 UTF-16 units),
+A prior warm Chromium 156 workspace run used the 100k corpus (900,044 UTF-16 units),
 two rendered panes, 100 inactive documents, 20 Hz progress and a pending captured job. Ten
 observations after two warmups recorded Read only p95 readiness/action proxies of 82.2/119.4 ms
 and Select All proxies of 50.6/54.9 ms. Select All's own navigation-key handler was 0.6 ms and
 capture-to-post-target dispatch span 0.7 ms; neither measures a typing input handler or physical
 display latency. These development-runner points qualify the bounded mode, not the native
 snapshot, cold loads, population percentiles or production hardware.
+
+First Read only activation was measured separately in fresh isolated browser contexts, with
+module/CSS loading and model/view creation after the click included. The normal/100k corpus
+recorded p95 readiness of 98.7/98.3 ms and complete action proxies of 144.4/135.2 ms, with no
+editable focus or frame observed. Initial native snapshot/bootstrap construction was outside
+those clocks; browser/server/OS caches were shared. This does not qualify cold process/network
+startup, the larger 2.4-million-unit workflow, physical display or production devices.
 
 **Show snapshot** explicitly detaches the views and Find controllers and removes the stylesheet,
 leaving the native reader and retained model state. A new native range replaces the complete set

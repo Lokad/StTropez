@@ -11,10 +11,12 @@ const original = "// café😀 e\u0301\r\nconst café = '😀';\r\nend\rthird\n"
 const workspaceMode = document.body.hasAttribute("data-workspace");
 const listeners = new AbortController(); let session: ActivationSession | WorkspaceSession | undefined, generation = 0, abort: AbortController | undefined, stylesheet: HTMLLinkElement | undefined;
 let phase: "preview" | "loading" | "editing" | "reading" | "disposed" = "preview";
-let retainedText = original;
-const reader = createPreview(preview, listeners.signal, () => { if (phase === "preview") edit.focus(); }); reader.setText(original);
+let retainedText = original, toolbarSelection: Selection | undefined;
+const reader = createPreview(preview, listeners.signal, () => { if (phase === "preview") { toolbarSelection = reader.selection() ?? toolbarSelection; edit.focus(); } }); reader.setText(original);
+// Some engines clear native DOM selection when Tab moves between toolbar controls.
+document.addEventListener("keydown", event => { if (phase === "preview" && event.key === "Tab") toolbarSelection = reader.selection() ?? toolbarSelection; }, { capture: true, signal: listeners.signal });
 const mounted = () => phase === "editing" || phase === "reading";
-const controls = () => { edit.disabled = phase !== "preview" && phase !== "reading"; cancel.disabled = phase !== "loading"; readOnly.disabled = phase !== "editing"; snapshot.disabled = !mounted();
+const controls = () => { edit.disabled = phase !== "preview" && phase !== "reading"; cancel.disabled = phase !== "loading"; readOnly.disabled = phase !== "preview" && phase !== "editing"; snapshot.disabled = !mounted();
     query.disabled = regex.disabled = next.disabled = !mounted(); };
 function captureSnapshot() {
     const s = session!.snapshot();
@@ -27,7 +29,7 @@ function currentSnapshot(captured: typeof snapshotCapture): boolean {
         && captured.revision === current.revision && captured.tab?.id === current.tab?.id && captured.tab?.generation === current.tab?.generation && captured.selections === current.selections;
 }
 function selection(): Selection | undefined {
-    return reader.selection();
+    return reader.selection() ?? toolbarSelection;
 }
 function styles(signal: AbortSignal, attempt: number): Promise<HTMLLinkElement> {
     return new Promise((resolve, reject) => {
@@ -36,9 +38,9 @@ function styles(signal: AbortSignal, attempt: number): Promise<HTMLLinkElement> 
         const stop = () => finish(new Error("Cancelled")); link.onload = () => finish(); link.onerror = () => finish(new Error("Styles unavailable")); signal.addEventListener("abort", stop, { once: true }); document.head.append(link);
     });
 }
-async function activate() {
-    if (phase === "reading") { switchMode(false); return; }
-    if (phase !== "preview") return; const token = ++generation, at = selection(), captured = snapshotCapture, restoring = !!session, controller = new AbortController(); abort = controller; phase = "loading"; controls(); status.textContent = "Loading editor…";
+async function activate(reading = false) {
+    if (mounted()) { if ((phase === "reading") !== reading) switchMode(reading); return; }
+    if (phase !== "preview") return; const token = ++generation, at = selection(), captured = snapshotCapture, restoring = !!session, controller = new AbortController(); abort = controller; phase = "loading"; controls(); status.textContent = reading ? "Loading reader…" : "Loading editor…";
     let link: HTMLLinkElement | undefined;
     controller.signal.addEventListener("abort", () => link?.remove(), { once: true });
     try {
@@ -47,18 +49,19 @@ async function activate() {
         if (generation !== token || controller.signal.aborted) { css.remove(); return; }
         const expired = restoring && !currentSnapshot(captured);
         session ??= loaded!.createActivationSession(original, at ?? { anchor: 0, head: 0 });
-        editorHost.hidden = false; session.mount(editorHost, expired ? undefined : at, message => { findStatus.textContent = message; });
-        stylesheet = css; link = undefined; preview.hidden = true; phase = "editing"; controls(); status.textContent = expired ? "Editing. Snapshot selection expired; kept the current selection." : "Editing";
-        snapshotCapture = undefined;
+        editorHost.hidden = false; session.mount(editorHost, expired ? undefined : at, message => { findStatus.textContent = message; }, reading);
+        stylesheet = css; link = undefined; preview.hidden = true; phase = reading ? "reading" : "editing"; controls();
+        const label = reading ? "Read only" : "Editing"; status.textContent = expired ? `${label}. Snapshot selection expired; kept the current selection.` : label;
+        snapshotCapture = undefined; toolbarSelection = undefined;
         if (query.value) session.search(query.value, regex.checked);
     } catch {
         controller.abort(); link?.remove();
-        if (generation === token) { session?.unmount(); editorHost.hidden = true; preview.hidden = false; phase = "preview"; controls(); status.textContent = "Editor unavailable. Text retained; retry Edit."; }
+        if (generation === token) { session?.unmount(); editorHost.hidden = true; preview.hidden = false; phase = "preview"; controls(); status.textContent = reading ? "Reader unavailable. Text retained; retry Read only." : "Editor unavailable. Text retained; retry Edit."; }
     } finally { if (generation === token) abort = undefined; }
 }
 function showPreview() {
     if (!mounted()) return; if (!session!.unmount()) { status.textContent = "Finish typing before showing a snapshot."; return; }
-    snapshotCapture = captureSnapshot();
+    snapshotCapture = captureSnapshot(); toolbarSelection = undefined;
     const at = session!.selection(); reader.setText(session!.text()); preview.hidden = false; editorHost.hidden = true; stylesheet?.remove(); stylesheet = undefined;
     phase = "preview"; controls(); status.textContent = "Snapshot"; findStatus.textContent = ""; preview.focus({ preventScroll: true });
     reader.select(at);
@@ -70,12 +73,12 @@ function switchMode(reading: boolean) {
         session!.mount(editorHost, undefined, message => { findStatus.textContent = message; }, reading);
         phase = reading ? "reading" : "editing"; controls(); status.textContent = reading ? "Read only" : "Editing";
         if (query.value) session!.search(query.value, regex.checked);
-    } catch { showPreview(); status.textContent = "View unavailable. Text retained in snapshot; retry Edit."; }
+    } catch { showPreview(); status.textContent = reading ? "View unavailable. Text retained in snapshot; retry Read only." : "View unavailable. Text retained in snapshot; retry Edit."; }
 }
 function cancelActivation() { if (phase !== "loading") return; generation++; abort?.abort(); abort = undefined; phase = "preview"; controls(); status.textContent = "Activation cancelled. Text retained."; }
 function dispose() { if (phase !== "disposed") { generation++; abort?.abort(); abort = undefined; stylesheet?.remove(); stylesheet = undefined; retainedText = session?.text() ?? original;
-    snapshotCapture = undefined; reader.setText(retainedText); preview.hidden = false; editorHost.hidden = true; listeners.abort(); phase = "disposed"; controls(); status.textContent = "Closed. Text retained."; } return session?.dispose() ?? null; }
-edit.addEventListener("click", () => { void activate(); }, { signal: listeners.signal }); cancel.addEventListener("click", cancelActivation, { signal: listeners.signal }); readOnly.addEventListener("click", () => switchMode(true), { signal: listeners.signal }); snapshot.addEventListener("click", showPreview, { signal: listeners.signal });
+    snapshotCapture = undefined; toolbarSelection = undefined; reader.setText(retainedText); preview.hidden = false; editorHost.hidden = true; listeners.abort(); phase = "disposed"; controls(); status.textContent = "Closed. Text retained."; } return session?.dispose() ?? null; }
+edit.addEventListener("click", () => { void activate(); }, { signal: listeners.signal }); cancel.addEventListener("click", cancelActivation, { signal: listeners.signal }); readOnly.addEventListener("click", () => { void activate(true); }, { signal: listeners.signal }); snapshot.addEventListener("click", showPreview, { signal: listeners.signal });
 const search = () => { if (mounted()) session?.search(query.value, regex.checked); };
 query.addEventListener("input", search, { signal: listeners.signal }); regex.addEventListener("change", search, { signal: listeners.signal }); next.addEventListener("click", () => session?.next(), { signal: listeners.signal }); window.addEventListener("pagehide", dispose, { once: true, signal: listeners.signal });
 const fixture = Object.freeze({ snapshot: () => ({ phase, generation, session: session?.snapshot() ?? null }), text: () => phase === "disposed" ? retainedText : session?.text() ?? original,

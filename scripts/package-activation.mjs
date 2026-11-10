@@ -98,7 +98,21 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         const boundary = large ? [...original.matchAll(/\r\n|\r|\n/g)].slice(0, 500).at(-1) : null;
         const anchor = boundary ? boundary.index + boundary[0].length + 21 : 7, head = boundary ? boundary.index - 20 : 3;
         assert.equal(await previewSelect(page, anchor, head), original.slice(head, anchor));
-        await button(page, "Edit").click(); await ready(page); const input = page.getByRole("textbox", { name: "Activated source", exact: true });
+        await page.evaluate(() => {
+            const stats = { frames: 0, editableFrames: 0, editableFocus: 0 }; let frame;
+            const inspect = () => { stats.frames++; if ([...document.querySelectorAll("#editor textarea")].some(n => !n.readOnly)) stats.editableFrames++; frame = requestAnimationFrame(inspect); };
+            const focus = event => { if (event.target.matches?.("#editor textarea") && !event.target.readOnly) stats.editableFocus++; };
+            document.addEventListener("focusin", focus); frame = requestAnimationFrame(inspect);
+            window.stopFirstReadingProbe = () => { cancelAnimationFrame(frame); document.removeEventListener("focusin", focus); delete window.stopFirstReadingProbe; return stats; };
+        });
+        await button(page, "Edit").focus(); await page.keyboard.press("Tab"); assert.equal(await button(page, "Read only").evaluate(node => node === document.activeElement), true);
+        await page.keyboard.press("Enter"); await ready(page, "reading"); const input = page.getByRole("textbox", { name: "Activated source", exact: true });
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const firstReading = await page.evaluate(() => window.stopFirstReadingProbe()); assert.ok(firstReading.frames >= 2); assert.equal(firstReading.editableFrames, 0); assert.equal(firstReading.editableFocus, 0);
+        assert.equal((await snap(page)).session.readOnly, true); assert.equal((await snap(page)).session.revision, 0); assert.equal((await snap(page)).session.history.undoDepth, 0);
+        await input.pressSequentially("blocked"); await input.press("Control+z"); assert.equal(await text(page), original);
+        await page.screenshot({ path: `${directory}/activation-first-reading-${large ? "100k-" : ""}${browserName}.png` });
+        const firstAssets = [...requests]; await button(page, "Edit").click(); await ready(page); assert.deepEqual(requests, firstAssets); assert.equal((await snap(page)).session.readOnly, false);
         const initial = await snap(page); assert.equal(initial.session.selections.ranges[0].anchor, anchor); assert.equal(initial.session.selections.ranges[0].head, head);
         assert.equal(initial.session.workers, 0); assert.ok(!requests.includes("/regex-worker.js"));
         if (!large) {
@@ -167,7 +181,7 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         if (!large) await page.screenshot({ path: `${directory}/activation-${browserName}.png` });
         const diagnostics = await page.evaluate(() => window.activationFixture.dispose()); assert.equal(diagnostics.resources, 0); assert.equal(diagnostics.views, 0); assert.equal(diagnostics.leases, 0); assert.equal(diagnostics.subscriptions, 0); assert.equal(await text(page), changed);
         assert.equal(await page.locator("#text").evaluate(node => { const e = new KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true, cancelable: true }); node.dispatchEvent(e); return e.defaultPrevented; }), false);
-        return { handlerMs, handlerClock: "own input handler only; no complete-action or latency percentile claim", dormant: dormant.diagnostics, final: diagnostics, boundedRows: found.viewport.rows, workerRequestsAfterOptIn: found.workers, exactUnicodeCrlf: true, completeSelectionsAndHistory: true };
+        return { firstReading, handlerMs, handlerClock: "own input handler only; no complete-action or latency percentile claim", dormant: dormant.diagnostics, final: diagnostics, boundedRows: found.viewport.rows, workerRequestsAfterOptIn: found.workers, exactUnicodeCrlf: true, completeSelectionsAndHistory: true };
     }, large);
     for (const asset of ["activate.js", "editor.css"]) await scenario("failed-activation-retry-" + asset, async (page, original) => {
         let expected = original, captured = null;
@@ -176,23 +190,23 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
             expected = "Q" + original; captured = (await snap(page)).session; await button(page, "Show snapshot").click();
         }
         let failures = 0; await page.route("**/" + asset + "*", async route => { if (failures++ === 0) await route.fulfill({ status: 503, contentType: asset.endsWith("js") ? "text/javascript" : "text/css", body: "" }); else await route.continue(); });
-        await button(page, "Edit").click(); await page.waitForFunction(() => window.activationFixture.snapshot().phase === "preview");
+        await button(page, "Read only").click(); await page.waitForFunction(() => window.activationFixture.snapshot().phase === "preview");
         assert.equal(await text(page), expected); if (!captured) assert.equal((await snap(page)).session, null); assert.equal(await page.locator('link[rel="stylesheet"]').count(), 0); assert.equal(await page.getByRole("textbox", { name: "Activated source", exact: true }).count(), 0);
-        await button(page, "Edit").click(); await ready(page); assert.equal(await text(page), expected);
+        await button(page, "Read only").click(); await ready(page, "reading"); assert.equal((await snap(page)).session.readOnly, true); assert.equal(await text(page), expected);
         if (captured) { const s = (await snap(page)).session; assert.equal(s.resourceId, captured.resourceId); assert.deepEqual(s.history, captured.history); assert.deepEqual(s.selections, captured.selections); }
         const d = await page.evaluate(() => window.activationFixture.dispose()); assert.equal(d.resources, 0);
         assert.ok(failures >= 2);
         return { failures: 1, retrySucceeded: true, final: d };
     });
-    await scenario("cancel-late-module-response", async (page, original) => {
+    for (const asset of ["activate.js", "editor.css"]) await scenario("cancel-late-response-" + asset, async (page, original) => {
         let release, arrived; const held = new Promise(resolve => { arrived = resolve; }), gate = new Promise(resolve => { release = resolve; }); let first = true, finished;
         const completed = new Promise(resolve => { finished = resolve; });
-        await page.route("**/activate.js*", async route => { if (!first) { await route.continue(); return; } first = false; arrived(); await gate;
+        await page.route("**/" + asset + "*", async route => { if (!first) { await route.continue(); return; } first = false; arrived(); await gate;
             try { await route.fulfill({ response: await route.fetch() }); } finally { finished(); } });
         try {
-            await button(page, "Edit").click(); await bounded(held); await button(page, "Cancel activation").click(); assert.equal((await snap(page)).phase, "preview"); assert.equal((await snap(page)).session, null);
+            await button(page, "Read only").click(); await bounded(held); await button(page, "Cancel activation").click(); assert.equal((await snap(page)).phase, "preview"); assert.equal((await snap(page)).session, null);
             assert.equal(await page.locator('link[rel="stylesheet"]').count(), 0); await button(page, "Edit").click(); await ready(page); release(); await bounded(completed);
-            assert.equal(await text(page), original); assert.equal((await snap(page)).session.mounts, 1); const d = await page.evaluate(() => window.activationFixture.dispose()); assert.equal(d.resources, 0); return { lateResponseIgnored: true, final: d };
+            assert.equal(await text(page), original); assert.equal((await snap(page)).phase, "editing"); assert.equal((await snap(page)).session.readOnly, false); assert.equal((await snap(page)).session.mounts, 1); const d = await page.evaluate(() => window.activationFixture.dispose()); assert.equal(d.resources, 0); return { cancelledMode: "reading", replacementMode: "editing", lateResponseIgnored: true, final: d };
         } finally { release(); await bounded(completed); }
     });
     await scenario("failed-optional-worker-keeps-editing", async (page, original) => {

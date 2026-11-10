@@ -2,7 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><title>Explicit editor activation</title>
 <style>body { font: 16px system-ui; margin: 24px; } button,input { margin: 4px; } pre { height: 320px; overflow: auto; border: 1px solid #8193a7; padding: 12px; line-height: 1.4; } .preview-chunk { display: block; white-space: pre; content-visibility: auto; contain-intrinsic-block-size: auto 700em; } #editor { height: 320px; } output { display: block; margin: 8px 0; } [hidden] { display: none !important; }
 body[data-workspace] #editor { height: auto; } .workspace-panes { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); grid-template-rows: minmax(0,1fr); gap: 12px; height: 320px; } .workspace-panes > div { box-sizing: border-box; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }</style></head>
-<body><h1>Source preview</h1><nav aria-label="Source actions"><button id="edit">Edit</button><button id="cancel" disabled>Cancel activation</button><button id="preview" disabled>Read only</button><button id="snapshot" disabled>Show snapshot</button></nav>
-<output id="status" aria-live="polite">Read only</output><pre id="text" tabindex="0" aria-label="Source preview"></pre><div id="editor" hidden></div>
+<body><h1>Source preview</h1><nav aria-label="Source actions"><button id="edit">Edit</button><button id="cancel" disabled>Cancel activation</button><button id="preview">Read only</button><button id="snapshot" disabled>Show snapshot</button></nav>
+<output id="status" aria-live="polite">Snapshot</output><pre id="text" tabindex="0" aria-label="Source preview"></pre><div id="editor" hidden></div>
 <label>Find <input id="query" disabled></label><label><input id="regex" type="checkbox" disabled>Regular expression</label><button id="next" disabled>Next match</button><output id="find-status" aria-live="polite"></output>
 <script type="module" src="/activation.js"></script></body></html>
