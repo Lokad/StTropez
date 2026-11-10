@@ -26,6 +26,60 @@ async function dispose(page: Page): Promise<void> {
 }
 const region = "// #region root <b>東京 😀</b>\r\nconst one\r\n// #region child Child\r\nconst two\r\n// #endregion child\r\n// #endregion root\r\n";
 for (const host of ["plain", "react"]) {
+    for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} 1000 indexed annotations stay bounded with inactive documents and typing`, async ({ page }) => {
+        test.setTimeout(120000);
+        const line = "row Δ😀 12345678901234\r\n", starts: number[] = [], bodies: number[] = []; let text = "";
+        for (let index = 0; index < 1000; index++) {
+            starts.push(text.length); text += `// #region r${index} Note ${index}\r\n`; bodies.push(text.length);
+            text += line.repeat(large ? 98 : 1) + `// #endregion r${index}\r\n`;
+        }
+        text += "tail"; expect(text.length).toBe(large ? 2397674 : 69674);
+        await setup(page, host, text); const initial = await snapshot(page);
+        await page.evaluate(() => window.hostFixture.seedInactiveDocuments()); await ready(page);
+        const seeded = await snapshot(page), inactive = await page.evaluate(() => window.hostFixture.inactiveDocuments());
+        expect(inactive).toHaveLength(100); expect(inactive.every(v => v.revision === 0 && !v.dirty && v.current && v.exports === 0)).toBe(true);
+        expect(seeded.diagnostics.documents).toBe(initial.diagnostics.documents + 100); expect(seeded.diagnostics.tabs).toBe(initial.diagnostics.tabs + 100);
+        expect(seeded.bindings.views.map(v => v.viewId)).toEqual(initial.bindings.views.map(v => v.viewId)); expect(seeded.bindings.activeViews).toBe(2);
+        await button(page, "Save source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
+        await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.dirty).toBe(false);
+        await input(page).focus(); await button(page, "Discover domain regions").click(); await ready(page);
+        expect((await snapshot(page)).bindings.domain.sessions.find(v => v.id === "primary")).toMatchObject({ annotations: 1000, folds: 1000 });
+        const notes = page.getByRole("list", { name: "Domain annotations", exact: true }); await expect(notes.getByRole("button")).toHaveCount(64);
+        const primary = page.locator(".st-editing-candidate").filter({ has: input(page) });
+        for (const index of [0, 500, 999]) {
+            await page.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: at, head: at }]); }, starts[index]! + 3);
+            await input(page).focus(); await input(page).press("ArrowRight"); await ready(page);
+            expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection.head).toBe(starts[index]! + 4);
+            await expect(primary.locator(".st-domain-note").filter({ hasText: `Note ${index}` })).toHaveCount(1);
+            expect(await primary.locator(".st-domain-note").count()).toBeLessThan(100);
+        }
+        await input(page).press("ArrowDown"); await input(page).press("End"); await ready(page);
+        const at = bodies[999]! + line.length - 2, before = await snapshot(page);
+        expect(before.bindings.views.find(v => v.id === "primary")!.selection.head).toBe(at);
+        await input(page).press("Control+s"); await button(page, "Run captured inputs").click();
+        await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
+        await expect.poll(async () => (await snapshot(page)).pendingRuns.length).toBe(1);
+        const captured = await snapshot(page); expect(captured.pendingSaves[0]!.revision).toBe(before.source.revision);
+        expect(captured.pendingRuns[0]).toMatchObject({ sourceId: before.source.id, sourceRevision: before.source.revision, sourceLength: text.length });
+        expect((await snapshot(page)).bindings.domain.sessions.find(v => v.id === "primary")!.annotations).toBe(1000);
+        await input(page).focus(); await input(page).pressSequentially("q"); await ready(page);
+        const edited = text.slice(0, at) + "q" + text.slice(at); await exact(page, edited);
+        expect((await snapshot(page)).bindings.domain.sessions.find(v => v.id === "primary")!.annotations).toBe(0); await expect(notes.getByRole("button")).toHaveCount(0);
+        await expect.poll(async () => (await snapshot(page)).activity.background).toBeGreaterThan(before.activity.background);
+        expect(await page.evaluate(() => window.hostFixture.inactiveDocuments())).toEqual(inactive);
+        await page.evaluate(() => { window.hostFixture.finishSave(); window.hostFixture.finishRun(); });
+        await expect.poll(async () => (await snapshot(page)).pendingCommands).toBe(0); expect((await snapshot(page)).source.dirty).toBe(true);
+        await input(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, text); expect((await snapshot(page)).source.dirty).toBe(false);
+        await input(page, "Secondary source").press("Control+Shift+z"); await ready(page); await exact(page, edited);
+        await input(page).focus(); await button(page, "Discover domain regions").click(); await ready(page);
+        expect((await snapshot(page)).bindings.domain.sessions.find(v => v.id === "primary")!.annotations).toBe(1000); await expect(notes.getByRole("button")).toHaveCount(64);
+        const retained = await snapshot(page); await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); }); await ready(page);
+        const remounted = await snapshot(page); expect(remounted.history).toEqual(retained.history); expect(remounted.source.exports).toBe(0);
+        expect(remounted.bindings.views.every(v => v.metrics!.inputUnits <= 2600 && v.metrics!.viewport.rows < 100)).toBe(true);
+        expect(await page.evaluate(() => window.hostFixture.inactiveDocuments())).toEqual(inactive);
+        await dispose(page); const stopped = await snapshot(page); expect(await page.evaluate(() => window.hostFixture.inactiveDocuments())).toEqual([]);
+        expect(stopped.diagnostics.documents).toBe(initial.diagnostics.documents); expect(stopped.diagnostics.tabs).toBe(initial.diagnostics.tabs);
+    });
     for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} actual domain discovery preserves manual folds, independent views and remount`, async ({ page }) => {
         test.setTimeout(120000); const text = "manual\r\nbody\r\n" + region + (large ? "const unchanged = 123;\r\n".repeat(100000) : "") + "tail";
         await setup(page, host, text); await button(page, "Open source review").click(); await ready(page); await input(page).focus();

@@ -59,8 +59,11 @@ broader M5 qualification remain open; native baseline timings are diagnostic.
 The `/probes/` workspace stress fixture exercises the largest pinned workspace with 100
 resources/tabs, two shared native views, 1,000 immutable host annotation records and a 20 Hz
 background resource. Browser tests assert shared typing, view movement and timer/view disposal.
-Annotation rendering/mapping and the smaller workspace combinations remain later engine
-scenarios; generating annotation records is not evidence of a production decoration path.
+Generating annotation records in that probe is separate from rendering. Integrated plain/React
+host scenarios now exercise 1,000 discovered annotations with two live views, 100 inactive
+documents and 20 Hz progress, including indexed rendering, stale-mark invalidation, typing,
+captured Save/Run, shared history, remount and disposal. Smaller workspace combinations and
+broader retention remain M5 qualification work; these functional checks add no heap claim.
 
 ## Browser and native-device matrix
 

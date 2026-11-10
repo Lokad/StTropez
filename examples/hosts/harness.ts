@@ -1,7 +1,7 @@
 import type { Connection, HostController } from "./controller.ts";
 import type { HostDraftRecovery } from "./draft-recovery.ts";
 import type { ViewBindings } from "./bindings.ts";
-import type { DocumentId, HistorySnapshot, ResourceId, Selection, TextEdit, TextResourceHandle } from "../../src/index.ts";
+import type { DocumentId, HistorySnapshot, ResourceId, Selection, TabTarget, TextEdit, TextResourceHandle } from "../../src/index.ts";
 
 type TransferTargetSnapshot = Readonly<{ documentId: DocumentId; revision: number; text: string; exports: number; history: HistorySnapshot }>;
 
@@ -9,6 +9,19 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
     mount: () => void, unmount: () => void, commits: () => Readonly<{ form: number; metadata: number }>, draft?: HostDraftRecovery): void {
     let disposed = false;
     let transferTarget: TextResourceHandle | undefined;
+    const inactive: { resource: TextResourceHandle; tab: TabTarget }[] = [];
+    const seedInactiveDocuments = () => {
+        if (disposed || inactive.length) throw new Error("Inactive workload can be created once on a live host.");
+        for (let index = 0; index < 100; index++) {
+            const resource = controller.workspace.createTextResource({ scope: "host-workload", resource: `inactive-${index}`, variant: "working" },
+                `Inactive ${index}`, { value: `// inactive ${index}\r\n` + "row Δ😀\r\n".repeat(1000) });
+            const id = controller.workspace.open({ kind: "text", documentId: resource.documentId }, "inactive");
+            inactive.push({ resource, tab: controller.workspace.captureTab(id) });
+        }
+    };
+    const inactiveDocuments = () => Object.freeze(inactive.map(({ resource, tab }) => Object.freeze({ id: resource.id,
+        revision: resource.getSnapshot().revision, dirty: resource.metadata.getSnapshot().dirty, current: !!controller.workspace.resolveTab(tab),
+        exports: controller.workspace.document(resource.documentId).buffer.readMetrics().textExports })));
     const transferSnapshot = (): TransferTargetSnapshot => {
         if (!transferTarget) throw new Error("No transfer target is mounted.");
         const current = controller.workspace.document(transferTarget.documentId);
@@ -20,6 +33,10 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
     const listeners = new AbortController();
     document.getElementById("recover")!.addEventListener("click", recover, { signal: listeners.signal });
     const dispose = async () => { disposed = true; listeners.abort(); unmount(); bindings.dispose();
+        for (const { resource, tab } of inactive.splice(0)) {
+            if (controller.workspace.resolveTab(tab)) controller.workspace.close(tab.id);
+            controller.workspace.releaseResource(resource.id);
+        }
         if (transferTarget) { controller.workspace.close(controller.viewTab("secondary")); controller.workspace.releaseResource(transferTarget.id, true); transferTarget = undefined; }
         const draftDisposal = draft?.dispose(), controllerDisposal = controller.dispose(); await Promise.all([draftDisposal, controllerDisposal]); };
     window.addEventListener("pagehide", () => { void dispose(); }, { once: true, signal: listeners.signal });
@@ -71,12 +88,14 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         inspectSymbol: (id: "primary" | "secondary" | "comparison") => bindings.hover.inspectCaret(id),
         setHoverDelay: (id: string, value: number) => bindings.hover.setDelay(id, value),
         faultHoverNext: (id: string, value: "malformed" | "failure" | "markup") => bindings.hover.faultNext(id, value),
-        unmount, mount: attach, dispose });
+        seedInactiveDocuments, inactiveDocuments, unmount, mount: attach, dispose });
     window.hostFixture = fixture;
 }
 declare global { interface Window { hostFixture: Readonly<{ ready: boolean; mode: string; snapshot: () => ReturnType<HostController["debug"]> &
     { bindings: ReturnType<ViewBindings["debug"]>; commits: Readonly<{ form: number; metadata: number }>; draft: ReturnType<HostDraftRecovery["debug"]> | null };
     editSource: (expectedRevision: number, edits: readonly TextEdit[]) => ReturnType<HostController["workspace"]["edit"]>;
+    seedInactiveDocuments: () => void;
+    inactiveDocuments: () => readonly Readonly<{ id: ResourceId; revision: number; dirty: boolean; current: boolean; exports: number }>[];
     deliverProposal: (text: string) => void; runCapture: (index: number) => ReturnType<HostController["runCapture"]>; setPath: (path: string) => void;
     recoveryText: () => string | null;
     finishRun: () => void; failRun: () => void; finishSave: () => void; failSave: () => void; range: (from: number, to: number) => string;

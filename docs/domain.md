@@ -31,6 +31,13 @@ The local cooperative provider in `examples/probes/domain.ts` is a fixture polic
   intersecting annotations. The panel shows at most 64 notes; its snapshot reports
   the complete count. Ordinary discovery/rendering does not export full text.
 
+Integrated normal and 100k-line scenarios exercise 1,000 discovered annotations with two
+live views, 100 inactive documents and 20 Hz background progress. First/middle/last region
+navigation renders indexed marks while the inspector keeps its 64-note bound. Typing clears
+stale marks; discovery, captured Save/Run, shared undo/redo, remount and disposal preserve
+source identity and release the inactive workload. These are correctness and bounded-work
+checks, without a new latency-distribution or heap-retention claim.
+
 Commands capture a unique mounted session, tab target, document/revision, immutable
 buffer, fold generation and resource authority. Imports also capture the complete
 selection set. Revision, permission/lease, fold, selection (for imports), unmount,
