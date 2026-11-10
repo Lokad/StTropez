@@ -19,7 +19,8 @@ let nextMount = 0;
 
 /** Experimental bounded-input adapter. Long contextual lines and native IME/AT remain qualification gates. */
 export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, tabId: TabId,
-    options: Readonly<{ ariaLabel?: string; view?: DocumentView; decorate?: LineDecorator; lineClass?: LineClass }> = {}): EditingCandidate {
+    options: Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; decorate?: LineDecorator; lineClass?: LineClass }> = {}): EditingCandidate {
+    const readOnly = options.readOnly === true;
     const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
     if (!tab || tab.surface.kind !== "text") throw new Error("Expected a text surface.");
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId);
@@ -143,7 +144,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     function refresh(): void {
         if (disposed || selecting || committing) return;
         const state = resource.getSnapshot(); input.disabled = !workspace.resolveTab(target) || state.state !== "ready";
-        input.readOnly = !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null;
+        input.readOnly = readOnly || !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null;
         const hint = input.readOnly ? "Read-only text. Navigate, select and copy. Press Escape, then Tab or Shift+Tab to leave the editor." : editingHelp;
         if (help.textContent !== hint) help.textContent = hint;
         if (executingInput?.edit && input.readOnly) recoverInput(executingInput, "pending-input-expired");
@@ -183,6 +184,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     };
     function apply(edits: readonly TextEdit[], selection: Selection | SelectionSet, kind: EditKind, type?: string, expectedRevision = revision, recoveryText?: string): boolean {
         if (disposed) return false;
+        if (readOnly) { conflict("read-only", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
         cancelWord(); preferred = undefined;
         if (!workspace.resolveTab(target)) { conflict("expired-view", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
         let key: string | undefined;
@@ -243,6 +245,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     }
     function history(direction: "undo" | "redo"): void {
         if (disposed) return; cancelWord(); group = undefined; syncSelection();
+        if (readOnly) { refresh(); return; }
         if (!workspace.resolveTab(target)) { conflict("expired-view"); refresh(); return; }
         const result = workspace[direction]({ documentId, expectedRevision: revision });
         if (!result.applied && result.reason !== "history-empty") conflict(result.reason);
@@ -765,6 +768,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         wordInput = undefined; insertion = undefined;
         if (nativeOrder) { if (!nativeOrder.invalid) cancelWord(); nativeOrder = undefined; }
         if (event.defaultPrevented) return;
+        if (input.readOnly) { if (event.cancelable) event.preventDefault(); return; }
         if (captureOrderedInput(event)) return;
         if (!composing) view.folding.revealSelection(view.folding.getSnapshot());
         if (!composing && ["deleteWordBackward", "deleteWordForward", "deleteContentBackward", "deleteContentForward"].includes(event.inputType)) {

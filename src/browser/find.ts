@@ -50,7 +50,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         while (low < high) { const middle = (low + high) >>> 1; if (offsetAt(middle) < offset) low = middle + 1; else high = middle; }
         return low;
     };
-    const canEdit = () => { const state = resource.getSnapshot(); return state.state === "ready" && state.metadata.capabilities.edit.includes("human") && state.metadata.editLock === null; };
+    const canEdit = () => { const state = resource.getSnapshot(); return !editor.input.readOnly && state.state === "ready" && state.metadata.capabilities.edit.includes("human") && state.metadata.editLock === null; };
     const observePlanAuthority = (token: number) => { stopPlanAuthority = resource.metadata.subscribe(() => {
         if (token !== generation || canEdit()) return;
         stop(); publish({ status: "ready", message: "Replacement cancelled because editing became unavailable." });
@@ -204,6 +204,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     }
     const replaceCurrent = (replacement: string): boolean => {
         scope.assertWritable(); if (typeof replacement !== "string") throw new TypeError("Expected replacement text.");
+        if (!canEdit()) { publish({ message: "read-only" }); return false; }
         if (editor.snapshot().composing && valid()) { publish({ message: "Finish composition before replacing." }); return false; }
         const match = currentRange(); if (!match) return next();
         if (store.get().regularExpression) return regexPlan(store.get(), replacement, match);

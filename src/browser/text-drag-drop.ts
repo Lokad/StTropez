@@ -96,7 +96,8 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
         if (!intent || event.target === input || !event.dataTransfer || current()?.revision !== intent.revision || view.getSnapshot().selectionSet !== intent.selectionSet) {
             event.preventDefault(); clearArm(); return;
         }
-        options.beforeStart(); const source = captureTextTransfer(workspace, tab, view);
+        options.beforeStart(); const captured = captureTextTransfer(workspace, tab, view);
+        const source = captured && input.readOnly ? Object.freeze({ ...captured, moveAllowed: false }) : captured;
         if (!source || source.revision !== intent.revision || source.selectionSet !== intent.selectionSet) { event.preventDefault(); clearArm(); return; }
         const token = win.crypto.randomUUID(); activeDrags.set(document, { token, owner, source }); armed = undefined;
         event.dataTransfer.setData("text/plain", source.text); event.dataTransfer.setData(transferType, token);

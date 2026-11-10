@@ -1,6 +1,6 @@
 # Bounded editing candidate
 
-`mountEditingCandidate(host, workspace, tabId, { view?, ariaLabel? })` is an experimental view
+`mountEditingCandidate(host, workspace, tabId, { view?, ariaLabel?, readOnly? })` is an experimental view
 over the shared document/history contract. It owns its viewport, bounded native textarea and
 caret beneath the supplied host. The existing whole-value `mountTextEditor` remains a control.
 The candidate is exported explicitly; native-device IME and assistive-technology feasibility
@@ -27,6 +27,10 @@ selected range; paste and indentation still have costs proportional to their cha
 `focus`, `captureView`, `restoreView`, `view`, `viewport` and `destroy` support explicit host
 lifecycle. Supplied views stay host-owned; otherwise destruction releases the retained view.
 Two candidates share document history while keeping their selection, scroll and focus separate.
+`readOnly: true` is captured for that mount. It keeps navigation, selection, copying and Find
+available while refusing input, paste/cut/drop, history and Find replacements through that view.
+Dragging from it offers copying only. Resource permissions, host transactions and other editable
+views remain independent; remount with the retained view to change this presentation policy.
 Each mount captures tab generation and document identity. Composition retains its original
 context/revision until completion. Stale edits, capability changes and expired targets reject
 the attempt and emit `sttropez-conflict` with the attempted text/context range for host recovery.

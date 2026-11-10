@@ -13,7 +13,7 @@ const workspace = new Workspace(), source = workspace.createTextResource({ scope
 const primaryTab = workspace.open({ kind: "text", documentId: source.documentId }, "left"), secondaryTab = workspace.open({ kind: "text", documentId: source.documentId }, "right");
 const pane = (id: string) => document.getElementById(id)!;
 const presentation = { primary: new EditingPresentation(), secondary: new EditingPresentation() };
-const editors = { primary: mountEditingCandidate(pane("primary"), workspace, primaryTab, { ariaLabel: "Primary source", decorate: presentation.primary.decorate }),
+const editors = { primary: mountEditingCandidate(pane("primary"), workspace, primaryTab, { ariaLabel: "Primary source", readOnly: new URLSearchParams(location.search).has("readonly"), decorate: presentation.primary.decorate }),
     secondary: mountEditingCandidate(pane("secondary"), workspace, secondaryTab, { ariaLabel: "Secondary source", decorate: presentation.secondary.decorate }) };
 const findUI = mountFindUI(workspace, primaryTab, editors.primary, presentation.primary), provider = mountProviderUI(workspace, primaryTab, editors.primary, presentation.primary);
 const paragraph = mountParagraphUI(workspace, primaryTab, editors.primary);
@@ -40,7 +40,7 @@ const fixture = { ready: true, setText, edit, select, history,
     analyzeParagraph: paragraph.start, analyzeCurrentLine: paragraph.currentLine, cancelParagraph: paragraph.cancel, paragraphLevel: paragraph.levelAt, paragraphOffset: paragraph.offsetAt,
     setProviderDelay: provider.setDelay, faultProviderNext: provider.faultNext,
     requestProvider: provider.request, cancelProvider: provider.cancel,
-    find: (query: string) => findUI.find.setQuery(query), replaceAll: (text: string) => findUI.find.replaceAll(text), cancelFind: findUI.find.cancel,
+    find: (query: string) => findUI.find.setQuery(query), findNext: () => findUI.find.next(), replaceCurrent: (text: string) => findUI.find.replaceCurrent(text), replaceAll: (text: string) => findUI.find.replaceAll(text), cancelFind: findUI.find.cancel,
     conflictText: (index = conflicts.length - 1) => conflicts[index]?.attemptedText,
     focus: (which: "primary" | "secondary") => editors[which].focus(),
     load: (id: CorpusId) => { if (!corpusIds.includes(id)) throw new RangeError("Unknown workload."); setText(corpus(id)); },

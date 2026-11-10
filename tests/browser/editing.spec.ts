@@ -29,6 +29,69 @@ test("real typing in 100k lines uses bounded native context and shared grouped u
     expect((await state(page)).document!.length).toBe(2_400_003);
 });
 
+test("a read-only view keeps bounded navigation and Find while its peer retains editing authority", async ({ page }) => {
+    await page.goto("/editing/?readonly"); await ready(page);
+    const reader = page.getByRole("textbox", { name: "Primary source", exact: true }), peer = page.getByRole("textbox", { name: "Secondary source", exact: true });
+    await expect(reader).toHaveJSProperty("readOnly", true); await expect(peer).toHaveJSProperty("readOnly", false);
+    const initial = await state(page);
+    await reader.press("ControlOrMeta+End"); expect((await state(page)).primary.selection.head).toBe(2_400_000);
+    await reader.press("ControlOrMeta+a"); expect((await state(page)).primary.inputUnits).toBe(1);
+    for (const key of ["Backspace", "Delete", "Tab", "ControlOrMeta+z", "ControlOrMeta+Shift+z"]) await reader.press(key);
+    await reader.pressSequentially("blocked"); await ready(page);
+    expect((await state(page)).document).toEqual(initial.document); expect((await state(page)).history).toEqual(initial.history);
+    expect((await state(page)).primary.viewport.rows).toBeLessThan(100);
+    await page.evaluate(() => window.editingFixture.setText("alpha\r\nbeta alpha")); await ready(page);
+    await page.evaluate(() => { window.editingFixture.find("alpha"); });
+    await expect.poll(async () => (await state(page)).find.status).toBe("ready");
+    expect(await page.evaluate(() => window.editingFixture.findNext())).toBe(true);
+    const before = await state(page);
+    expect(await page.evaluate(() => window.editingFixture.replaceCurrent("changed"))).toBe(false);
+    await page.evaluate(() => window.editingFixture.replaceAll("changed"));
+    await reader.evaluate(node => {
+        const input = node as HTMLTextAreaElement;
+        for (const type of ["cut", "paste", "copy"]) {
+            const data = new DataTransfer(); data.setData("text/plain", type === "copy" ? "" : "blocked");
+            const event = new ClipboardEvent(type, { clipboardData: data, bubbles: true, cancelable: true }); input.dispatchEvent(event);
+            if (type === "copy" && event.clipboardData!.getData("text/plain") !== "alpha") throw new Error("Read-only selection copy failed");
+        }
+        for (const inputType of ["insertText", "historyUndo", "historyRedo", "deleteContentBackward"]) {
+            const event = new InputEvent("beforeinput", { inputType, data: "blocked", bubbles: true, cancelable: true }); input.dispatchEvent(event);
+            if (!event.defaultPrevented) throw new Error("Read-only beforeinput was not refused");
+        }
+        // A noncancelable native change must still fail at the model commit boundary.
+        input.setRangeText("blocked", input.selectionStart, input.selectionEnd, "end");
+        input.dispatchEvent(new InputEvent("input", { inputType: "insertText", bubbles: true }));
+        input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+        input.setRangeText("東京", input.selectionStart, input.selectionEnd, "end");
+        input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "東京" }));
+        const data = new DataTransfer(); data.setData("text/plain", "blocked");
+        for (const type of ["dragenter", "dragover", "drop"]) input.parentElement!.dispatchEvent(new DragEvent(type, { dataTransfer: data, bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+    }); await ready(page);
+    expect((await state(page)).document).toEqual(before.document); expect((await state(page)).history).toEqual(before.history);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 17))).toBe("alpha\r\nbeta alpha");
+    expect((await state(page)).conflicts.slice(-2).map(c => c.reason)).toEqual(["read-only", "read-only"]);
+    await page.evaluate(() => window.editingFixture.select("primary", { anchor: 0, head: 5 })); await ready(page);
+    const transfer = await reader.evaluate(node => {
+        const root = node.parentElement!, selected = root.querySelector(".st-viewport-selected")!, rect = selected.getBoundingClientRect();
+        selected.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 77, pointerType: "mouse", button: 0, clientX: rect.left + 1, clientY: rect.top + rect.height / 2 }));
+        const data = new DataTransfer(); Object.defineProperty(data, "effectAllowed", { value: "uninitialized", writable: true });
+        const start = new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: data }); root.dispatchEvent(start);
+        const target = document.querySelector("#secondary .st-editing-candidate")!, box = target.getBoundingClientRect();
+        for (const type of ["dragover", "drop"]) target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: data, clientX: box.left + 15, clientY: box.top + 15 }));
+        document.dispatchEvent(new Event("dragend")); return { refused: start.defaultPrevented, effect: data.effectAllowed };
+    });
+    expect(transfer).toEqual({ refused: false, effect: "copy" }); await ready(page);
+    expect((await state(page)).document!.length).toBe(before.document!.length + 5);
+    await peer.press("ControlOrMeta+z"); await ready(page); expect((await state(page)).document!.length).toBe(before.document!.length);
+    await peer.press("ControlOrMeta+Home"); await peer.pressSequentially("!"); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 6))).toBe("!alpha");
+    const edited = await state(page); await reader.press("ControlOrMeta+z"); await ready(page);
+    expect((await state(page)).document).toEqual(edited.document); expect((await state(page)).history).toEqual(edited.history);
+    await peer.press("ControlOrMeta+z"); await ready(page); expect(await page.evaluate(() => window.editingFixture.range(0, 5))).toBe("alpha");
+    await reader.press("Escape"); await reader.press("Tab"); await expect(peer).toBeFocused();
+    await page.evaluate(() => window.editingFixture.dispose()); expect((await state(page)).diagnostics).toMatchObject({ resources: 0, views: 0, leases: 0, subscriptions: 0 });
+});
+
 test("measured tab/CJK/cluster coordinates drive pointer selection and whole-grapheme deletion", async ({ page }) => {
     await page.evaluate(() => window.editingFixture.setText("a\t界é👩‍💻z\r\nsecond")); await ready(page);
     const points = await page.evaluate(() => [1, 2, 3, 4, 5, 10, 11].map(offset => window.editingFixture.coords(offset)!));

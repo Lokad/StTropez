@@ -42,7 +42,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         cycleSourceEditLease: () => { const lease = controller.workspace.acquireEditLease(controller.source.id, "host-fixture", "host"); lease.release(); },
         openTransferTarget: (text: string) => {
             if (disposed || transferTarget) throw new Error("Transfer target cannot be mounted.");
-            unmount(); transferTarget = controller.workspace.createTextResource({ scope: "host-fixture", resource: "transfer", variant: "working" }, "Transfer target", { value: text });
+            unmount(); transferTarget = controller.workspace.createTextResource({ scope: "host-fixture", resource: "transfer-text", variant: "working" }, "Transfer target", { value: text });
             controller.workspace.replace(controller.viewTab("secondary"), { kind: "text", documentId: transferTarget.documentId }); attach();
         },
         transferSnapshot,
