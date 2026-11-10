@@ -1,11 +1,12 @@
 import type { HostController } from "./controller.ts";
+import type { HostDraftRecovery } from "./draft-recovery.ts";
 import type { ViewBindings } from "./bindings.ts";
 import type { DocumentId, HistorySnapshot, Selection, TextEdit, TextResourceHandle } from "../../src/index.ts";
 
 type TransferTargetSnapshot = Readonly<{ documentId: DocumentId; revision: number; text: string; exports: number; history: HistorySnapshot }>;
 
 export function installHostHarness(controller: HostController, bindings: ViewBindings, mode: "plain" | "react",
-    mount: () => void, unmount: () => void, commits: () => Readonly<{ form: number; metadata: number }>): void {
+    mount: () => void, unmount: () => void, commits: () => Readonly<{ form: number; metadata: number }>, draft?: HostDraftRecovery): void {
     let disposed = false;
     let transferTarget: TextResourceHandle | undefined;
     const transferSnapshot = (): TransferTargetSnapshot => {
@@ -20,11 +21,11 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
     document.getElementById("recover")!.addEventListener("click", recover, { signal: listeners.signal });
     const dispose = async () => { disposed = true; listeners.abort(); unmount(); bindings.dispose();
         if (transferTarget) { controller.workspace.close(controller.viewTab("secondary")); controller.workspace.releaseResource(transferTarget.id, true); transferTarget = undefined; }
-        await controller.dispose(); };
+        const draftDisposal = draft?.dispose(), controllerDisposal = controller.dispose(); await Promise.all([draftDisposal, controllerDisposal]); };
     window.addEventListener("pagehide", () => { void dispose(); }, { once: true, signal: listeners.signal });
     controller.startBackground(); mount();
     const fixture = Object.freeze({ ready: true, mode, snapshot: () => { const state = controller.debug(), views = bindings.debug();
-        return { ...state, hostSubscriptions: state.hostSubscriptions + views.language.subscriptions + views.hover.subscriptions + views.tablePaste.subscriptions + views.domain.subscriptions + views.navigation.subscriptions + views.project.subscriptions + views.signature.subscriptions + views.rename.subscriptions + views.actions.subscriptions + views.links.subscriptions + views.colors.subscriptions, bindings: views, commits: commits() }; },
+        return { ...state, hostSubscriptions: state.hostSubscriptions + views.language.subscriptions + views.hover.subscriptions + views.tablePaste.subscriptions + views.domain.subscriptions + views.navigation.subscriptions + views.project.subscriptions + views.signature.subscriptions + views.rename.subscriptions + views.actions.subscriptions + views.links.subscriptions + views.colors.subscriptions + (draft?.debug().subscriptions ?? 0), draft: draft?.debug() ?? null, bindings: views, commits: commits() }; },
         editSource: (expectedRevision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: controller.source.documentId,
             expectedRevision, edits, origin: "host", history: { kind: "live" } }),
         deliverProposal: controller.deliverProposalText, runCapture: (index: number) => controller.runCapture(index), setPath: controller.setPath, recoveryText: () => controller.recoveryText(),
@@ -71,7 +72,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
     window.hostFixture = fixture;
 }
 declare global { interface Window { hostFixture: Readonly<{ ready: boolean; mode: string; snapshot: () => ReturnType<HostController["debug"]> &
-    { bindings: ReturnType<ViewBindings["debug"]>; commits: Readonly<{ form: number; metadata: number }> };
+    { bindings: ReturnType<ViewBindings["debug"]>; commits: Readonly<{ form: number; metadata: number }>; draft: ReturnType<HostDraftRecovery["debug"]> | null };
     editSource: (expectedRevision: number, edits: readonly TextEdit[]) => ReturnType<HostController["workspace"]["edit"]>;
     deliverProposal: (text: string) => void; runCapture: (index: number) => ReturnType<HostController["runCapture"]>; setPath: (path: string) => void;
     recoveryText: () => string | null;

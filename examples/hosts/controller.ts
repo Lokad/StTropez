@@ -66,6 +66,8 @@ export class HostController {
         if ([...this.inputCaptureGuards].every(ready => ready())) return true;
         this.layoutCell.set({ ...this.layoutCell.get(), modal: { kind: "error", message: "Wait for pending typing to finish, then try the source command again." } }); return false;
     }
+    canCaptureRecovery(): boolean { return !this.disposed && [...this.inputCaptureGuards].every(ready => ready()); }
+    hasPendingRecoveryWork(): boolean { return this.operations.size > 0 || this.review.getSnapshot().request !== null || this.review.getSnapshot().acknowledgements.length > 0; }
     readonly variants = new ReviewVariants(this.workspace, this.source, {
         presentation: () => this.workspace.captureTab(this.primaryTab), reference: this.comparisonReference,
         saved: () => this.savedReference, server: () => ({ buffer: this.serverBuffer, version: `reference:server-${this.serverVersion}` }),

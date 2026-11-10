@@ -161,7 +161,10 @@ disposal settles locally instead of adding another unresolved request. Pending c
 then release through their normal completion paths. Full fixture disposal also detaches the
 agent and releases its proposal lease. Model/recovery data remains owned
 by the host; disposing a view does not discard unsaved work or retire stored receipts. The
-consuming application still owns durable recovery, navigation and unload policy.
+consuming application still owns durable recovery, navigation and unload policy. The example
+[draft recovery controller and browser store](host-drafts.md) demonstrate explicit durable
+checkpoints, independent guarded restore, storage failure handling and an unload choice;
+they keep persistence and browser policy outside the editor package.
 
 ## Commands, permission changes and clipboard
 

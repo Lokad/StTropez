@@ -147,7 +147,9 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await page.getByRole("button", { name: "Toggle views", exact: true }).click(); await expect(primary).toHaveCount(0);
             await page.getByRole("button", { name: "Toggle views", exact: true }).click(); await expect(primary).toHaveValue("abcdefghij");
             // First focus attaches active-only language/fold observation. Compare typing
-            // against that steady state; unmount below still requires every listener gone.
+            // against that steady state; view unmount releases UI listeners while the
+            // host draft service keeps three model observers and one rejected-input
+            // observer until full disposal.
             await primary.focus();
             const ready = await page.evaluate(() => window.hostFixture.snapshot());
             await primary.press("End"); await primary.pressSequentially(" more typing");
@@ -157,10 +159,13 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect(after.commits.form).toBe(ready.commits.form); expect(after.commits.metadata).toBe(ready.commits.metadata);
             expect(after.diagnostics.subscriptions).toBe(ready.diagnostics.subscriptions);
             await page.evaluate(() => window.hostFixture.unmount());
-            await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().diagnostics.subscriptions)).toBe(0);
-            expect((await page.evaluate(() => window.hostFixture.snapshot())).hostSubscriptions).toBe(0);
+            await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().diagnostics.subscriptions)).toBe(3);
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).hostSubscriptions).toBe(1);
             await page.evaluate(() => window.hostFixture.mount()); await expect(primary).toHaveValue("abcdefghij more typing");
             expect((await page.evaluate(() => window.hostFixture.snapshot())).bindings.activeViews).toBe(2);
+            await page.evaluate(() => window.hostFixture.dispose());
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).hostSubscriptions).toBe(0);
         });
 
         test("shared typing/deletion history returns to saved content and survives move, unmount, close and reopen", async ({ page }) => {
@@ -468,12 +473,15 @@ test(`React ${editor} root error callbacks retain resources and recover through 
     await page.getByRole("button", { name: "Inject form error", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().activity.errors)).toBeGreaterThan(0);
     await expect(primary).toHaveCount(0);
-    expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics.subscriptions).toBe(0);
+    expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics.subscriptions).toBe(3); // Persistent host draft observers.
     await page.getByRole("button", { name: "Recover views", exact: true }).click();
     await expect(primary).toHaveValue("unsaved before failure");
     const after = await page.evaluate(() => window.hostFixture.snapshot());
     expect(after.source.id).toBe(before.source.id); expect(after.source.revision).toBe(before.source.revision);
     expect(after.bindings.activeViews).toBe(2);
+    await page.evaluate(() => window.hostFixture.dispose());
+    expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+    expect((await page.evaluate(() => window.hostFixture.snapshot())).hostSubscriptions).toBe(0);
 });
 
 test(`React ${editor} explicit mount returns only after stable refs and Strict Mode replay are ready`, async ({ page }) => {

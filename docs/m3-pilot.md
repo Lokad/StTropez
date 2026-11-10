@@ -107,6 +107,11 @@ environment is also unverified; tokenless internal drops are refused without cha
 
 ## Additional editing and provider tools
 
+The hosts also offer explicit [draft checkpoints and reload recovery](host-drafts.md).
+Keep a recovery draft before leaving unsaved inputs. Reload offers independent source and
+configuration restore choices; neither applies automatically or restores an old undo stack.
+Later edits, failed storage and unsettled input/requests keep the navigation guard active.
+
 These tools share the pilot's captured identities, history and review. Their detailed policy
 documents define supported syntax, bounds and remaining semantic/native qualification gaps.
 

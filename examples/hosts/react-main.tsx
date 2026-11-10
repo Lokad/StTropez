@@ -16,9 +16,13 @@ import { documentLinkActions, documentLinkDescription, documentLinkLabel, docume
 import { actionsControls, actionsDescription, actionTarget } from "./actions-panel.ts";
 import { renameActions, renameDescription, renameTarget } from "./rename-panel.ts";
 import { signatureActions } from "./signature-panel.ts";
+import { HostDraftRecovery } from "./draft-recovery.ts";
+import { createBrowserDraftStore } from "./draft-store.ts";
+import { draftActions } from "./draft-panel.ts";
 import "./style.css";
 
 const controller = new HostController(), bindings = new ViewBindings(controller, hostEditor());
+const draft = new HostDraftRecovery(controller, createBrowserDraftStore(window)); draft.attachNavigation(window);
 const counters = { form: 0, metadata: 0 };
 const formCommitted = () => { counters.form++; };
 const metadataCommitted = () => { counters.metadata++; };
@@ -47,6 +51,15 @@ function InputRecovery() {
     const state = useObserved(controller.recovery), text = state.items.at(-1)?.attemptedText ?? "";
     return <section hidden={state.items.length === 0} aria-label="Input recovery"><output aria-live="polite">{state.items.length} input {state.items.length === 1 ? "change" : "changes"} retained for recovery.</output>
         <pre hidden={!state.visible}>{state.visible ? text.slice(0, 4096) + (text.length > 4096 ? "…" : "") : ""}</pre></section>;
+}
+function DraftRecovery() {
+    const s = useObserved(draft.state);
+    return <section className="host-language" aria-label="Draft recovery"><h2>Draft recovery</h2>
+        <output aria-label="Draft recovery status" aria-live="polite">{s.message}</output>
+        <progress aria-label="Draft storage progress" hidden={!s.busy} />
+        <p>{s.unprotected ? "Current inputs need a recovery checkpoint before leaving." : "Checkpoint copies do not save or run inputs."}</p>
+        <div>{draftActions(draft).map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
+        <pre hidden={s.preview === null}>{s.preview ?? ""}</pre></section>;
 }
 function Form() {
     const state = useObserved(controller.connection), layout = useObserved(controller.layout);
@@ -126,7 +139,7 @@ function TablePasteTools() {
         <button disabled={state.status !== "converting"} onClick={tools.cancel}>Cancel table paste</button></section>;
 }
 function App() {
-    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentLinksTools /><DocumentColorsTools /><SignatureTools /><SymbolInfo /></>;
+    return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><DraftRecovery /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentLinksTools /><DocumentColorsTools /><SignatureTools /><SymbolInfo /></>;
 }
 function DocumentColorsTools() {
     const tools = bindings.colors, s = useObserved(tools.state);
@@ -198,4 +211,4 @@ const mount = () => {
     // The explicit host lifecycle returns after refs and Strict Mode's replay are ready for input.
     flushSync(() => root!.render(<StrictMode><App /></StrictMode>));
 };
-installHostHarness(controller, bindings, "react", mount, unmount, () => ({ ...counters }));
+installHostHarness(controller, bindings, "react", mount, unmount, () => ({ ...counters }), draft);
