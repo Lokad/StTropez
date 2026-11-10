@@ -26,7 +26,8 @@ export function actions(controller: HostController, bindings: ViewBindings): rea
         { label: "Prompt close", invoke: controller.openClosePrompt }, { label: "Confirm close", invoke: controller.confirmClose },
         { label: "Cancel close", invoke: controller.cancelClose }, { label: "Replace primary panel", invoke: controller.replacePrimary },
         { label: "Reopen primary source", invoke: controller.reopenPrimary }, { label: "Begin delayed load", invoke: controller.beginDeferredLoad },
-        { label: "Finish delayed load", invoke: controller.finishLoad }, { label: "Inject form error", invoke: controller.injectFormError },
+        { label: "Finish delayed load", invoke: controller.finishLoad }, { label: "Reopen loaded source", invoke: controller.reopenLoaded },
+        { label: "Discard loaded source", invoke: controller.discardLoadedSource }, { label: "Inject form error", invoke: controller.injectFormError },
     ];
 }
 export function statusText(controller: HostController): string {

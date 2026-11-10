@@ -1,6 +1,6 @@
 import { HostCell } from "../shared/observable.ts";
 import { TextBuffer, Workspace, WorkspaceCommands } from "../../src/index.ts";
-import type { AgentRequest, CloseOperation, ComparisonBaseline, DocumentId, Operation, RunSubmission, SaveResponse, SaveReview, SaveSubmission, SnapshotValue, TabId, TabTarget, TextEdit } from "../../src/index.ts";
+import type { AgentRequest, CloseOperation, ComparisonBaseline, DocumentId, Operation, RunSubmission, SaveResponse, SaveReview, SaveSubmission, SnapshotValue, TabId, TabTarget, TextEdit, TextResourceHandle } from "../../src/index.ts";
 import { ReviewVariants } from "./variants.ts";
 import { ConfigurationSave } from "./configuration.ts";
 import { HostTransfer } from "./transfers.ts";
@@ -59,6 +59,10 @@ export class HostController {
     private proposalTransactionMs = 0;
     private closeOperation: CloseOperation | undefined;
     private pendingLoad: (() => void) | undefined;
+    private loaded: TextResourceHandle | undefined;
+    private discardLoaded: Readonly<{ resource: TextResourceHandle; revision: number }> | undefined;
+    private collectingLoaded = false;
+    private readonly detachedDocumentCleanup = new Set<(documentId: DocumentId) => void>();
     private serverVersion = "v0";
     private serverSerial = 0;
     private serverBuffer = this.savedReference.buffer;
@@ -70,12 +74,38 @@ export class HostController {
         if (this.disposed) return () => {};
         this.inputCaptureGuards.add(ready); return () => { this.inputCaptureGuards.delete(ready); };
     }
+    registerDetachedDocumentCleanup(cleanup: (documentId: DocumentId) => void): () => void {
+        if (this.disposed) return () => {};
+        this.detachedDocumentCleanup.add(cleanup); return () => { this.detachedDocumentCleanup.delete(cleanup); };
+    }
+    /** Host policy: clean temporary loads are evicted after all presentations and operations detach. */
+    collectLoadedDocument(): void {
+        const loaded = this.loaded;
+        if (!loaded || this.pendingLoad || this.collectingLoaded) return;
+        const state = loaded.getSnapshot(), discard = this.discardLoaded?.resource === loaded && this.discardLoaded.revision === state.revision;
+        if (this.discardLoaded && !discard) {
+            this.discardLoaded = undefined;
+            if (state.metadata.dirty) this.layoutCell.set({ ...this.layoutCell.get(), modal: { kind: "error", message: "Loaded source changed after the discard request. Reopen it or discard again." } });
+        }
+        if (state.metadata.dirty && !discard || this.workspace.ownership(loaded.id).tabs) return;
+        this.collectingLoaded = true;
+        try {
+            for (const cleanup of this.detachedDocumentCleanup) cleanup(loaded.documentId);
+            if (this.workspace.ownership(loaded.id).leases) return;
+            const latest = loaded.getSnapshot();
+            if (latest.metadata.dirty && (!discard || latest.revision !== state.revision)) {
+                this.discardLoaded = undefined;
+                this.layoutCell.set({ ...this.layoutCell.get(), modal: { kind: "error", message: "Loaded source changed during cleanup. Reopen it or discard again." } }); return;
+            }
+            this.workspace.releaseResource(loaded.id, discard && latest.revision === state.revision); this.loaded = undefined; this.discardLoaded = undefined;
+        } finally { this.collectingLoaded = false; }
+    }
     private sourceInputReady(): boolean {
         if ([...this.inputCaptureGuards].every(ready => ready())) return true;
         this.layoutCell.set({ ...this.layoutCell.get(), modal: { kind: "error", message: "Wait for pending typing to finish, then try the source command again." } }); return false;
     }
     canCaptureRecovery(): boolean { return !this.disposed && [...this.inputCaptureGuards].every(ready => ready()); }
-    hasPendingRecoveryWork(): boolean { return this.operations.size > 0 || this.instruction.debug().pendingCopy || this.review.getSnapshot().request !== null || this.review.getSnapshot().acknowledgements.length > 0; }
+    hasPendingRecoveryWork(): boolean { return this.loaded?.metadata.getSnapshot().dirty === true || this.operations.size > 0 || this.instruction.debug().pendingCopy || this.review.getSnapshot().request !== null || this.review.getSnapshot().acknowledgements.length > 0; }
     readonly variants = new ReviewVariants(this.workspace, this.source, {
         presentation: () => this.workspace.captureTab(this.primaryTab), reference: this.comparisonReference,
         saved: () => this.savedReference, server: () => ({ buffer: this.serverBuffer, version: `reference:server-${this.serverVersion}` }),
@@ -308,26 +338,48 @@ export class HostController {
         const closed = this.closeOperation?.complete("close"); this.closeOperation = undefined;
         if (closed) this.layoutCell.set({ ...this.layoutCell.get(), primarySurface: "closed", modal: Object.freeze({ kind: "none" }) });
         else this.reportError(new Error("Close confirmation expired."));
+        this.collectLoadedDocument();
     });
     readonly replacePrimary = (): void => this.safe(() => {
         this.workspace.replace(this.primaryTab, { kind: "panel", resourceId: this.connection.id, panelType: "configuration" });
         this.layoutCell.set({ ...this.layoutCell.get(), primarySurface: "panel" });
+        this.collectLoadedDocument();
     });
     readonly reopenPrimary = (): void => this.safe(() => {
         if (this.layoutCell.get().primarySurface === "closed") this.primaryTab = this.workspace.open({ kind: "text", documentId: this.source.documentId }, this.layoutCell.get().position);
         else this.workspace.replace(this.primaryTab, { kind: "text", documentId: this.source.documentId });
         this.layoutCell.set({ ...this.layoutCell.get(), primarySurface: "text" });
+        this.collectLoadedDocument();
     });
     readonly beginDeferredLoad = (): void => this.safe(() => {
         if (this.pendingLoad) throw new Error("A fixture load is already pending.");
-        const loaded = this.workspace.createTextResource({ scope: "host-fixture", resource: `loaded-${this.workspace.getSnapshot().revision}`, variant: "working" }, "Loaded source");
-        this.workspace.replace(this.primaryTab, { kind: "text", documentId: loaded.documentId });
+        if (this.loaded?.metadata.getSnapshot().dirty) {
+            this.layoutCell.set({ ...this.layoutCell.get(), modal: { kind: "error", message: "Loaded source has unsaved changes. Reopen or explicitly discard it before starting another load." } }); return;
+        }
+        const loaded = this.loaded ?? this.workspace.createTextResource({ scope: "host-fixture", resource: `loaded-${this.workspace.getSnapshot().revision}`, variant: "working" }, "Loaded source");
+        this.loaded = loaded;
+        if (this.layoutCell.get().primarySurface === "closed") this.primaryTab = this.workspace.open({ kind: "text", documentId: loaded.documentId }, this.layoutCell.get().position);
+        else this.workspace.replace(this.primaryTab, { kind: "text", documentId: loaded.documentId });
         const target = this.workspace.captureTab(this.primaryTab), operation = this.workspace.beginLoad(loaded);
         this.layoutCell.set({ ...this.layoutCell.get(), primarySurface: "loading" });
         this.pendingLoad = () => {
             operation.accept({ value: "loaded resource", serverVersion: "loaded-v1" });
             if (this.workspace.resolveTab(target)) this.layoutCell.set({ ...this.layoutCell.get(), primarySurface: "text" });
+            this.collectLoadedDocument();
         };
+    });
+    readonly reopenLoaded = (): void => this.safe(() => {
+        const loaded = this.loaded; if (!loaded || this.pendingLoad) return;
+        if (this.layoutCell.get().primarySurface === "closed") this.primaryTab = this.workspace.open({ kind: "text", documentId: loaded.documentId }, this.layoutCell.get().position);
+        else this.workspace.replace(this.primaryTab, { kind: "text", documentId: loaded.documentId });
+        this.layoutCell.set({ ...this.layoutCell.get(), primarySurface: "text" });
+    });
+    readonly discardLoadedSource = (): void => this.safe(() => {
+        const loaded = this.loaded; if (!loaded || this.pendingLoad) return;
+        this.discardLoaded = { resource: loaded, revision: loaded.getSnapshot().revision };
+        const tab = this.workspace.getSnapshot().tabs.find(tab => tab.id === this.primaryTab);
+        if (tab?.surface.kind === "text" && tab.surface.documentId === loaded.documentId) this.reopenPrimary();
+        this.collectLoadedDocument();
     });
     readonly finishLoad = (): void => { const finish = this.pendingLoad; this.pendingLoad = undefined; finish?.(); };
     readonly cancelClose = (): void => { this.closeOperation?.complete("keep-open"); this.closeOperation = undefined; this.clearError(); };
@@ -376,6 +428,7 @@ export class HostController {
         this.updateActivity({ pendingRuns: 0 });
         this.closeOperation?.finish(); this.closeOperation = undefined;
         this.finishLoad();
+        this.detachedDocumentCleanup.clear();
         this.disposal = Promise.allSettled([...this.operations]).then(() => {}); return this.disposal;
     }
 }

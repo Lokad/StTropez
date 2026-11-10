@@ -3,7 +3,52 @@ import assert from "node:assert/strict";
 import { HostController } from "../examples/hosts/controller.ts";
 
 const settled = () => new Promise<void>(done => setImmediate(done));
+
+test("clean deferred loads release after switchback without disturbing captured source work", async () => {
+    const host = new HostController();
+    try {
+        sourceEdit(host, " unsaved café😀\r\n"); host.save(); const run = host.run(); await settled();
+        const before = host.debug(), source = host.workspace.document(host.source.documentId), capture = host.runCapture(0), history = before.history;
+        for (let i = 0; i < 6; i++) {
+            host.beginDeferredLoad(); assert.equal(host.debug().loadPending, true);
+            if (i % 2 === 0) { host.reopenPrimary(); host.finishLoad(); } else { host.finishLoad(); host.reopenPrimary(); }
+            const after = host.debug(); assert.equal(after.loadPending, false);
+            assert.deepEqual(after.diagnostics, before.diagnostics); assert.deepEqual(after.pendingSaves, before.pendingSaves);
+            assert.equal(host.workspace.document(host.source.documentId), source); assert.deepEqual(after.history, history); assert.deepEqual(host.runCapture(0), capture);
+        }
+        host.finishSave(); host.finishRun(); await run; await settled(); assert.equal(host.debug().diagnostics.leases, 0);
+    } finally { await host.dispose(); }
+});
 function transfer(host: HostController) { const s = host.transfer.resource.getSnapshot(); assert.equal(s.state, "ready"); if (s.state !== "ready") throw new Error("Missing transfer"); return s; }
+
+test("loaded drafts remain reachable until explicit discard and clean loads respect operation ownership", async () => {
+    const host = new HostController();
+    const loaded = () => { const tab = host.workspace.resolveTab(host.workspace.captureTab(host.viewTab("primary")))!; assert.equal(tab.surface.kind, "text"); if (tab.surface.kind !== "text") throw Error("Missing text"); return host.workspace.resourceForDocument(tab.surface.documentId); };
+    try {
+        const before = host.debug().diagnostics; host.beginDeferredLoad(); host.finishLoad(); const clean = loaded(), lease = host.workspace.acquire(clean.id);
+        host.replacePrimary(); assert.equal(clean.getSnapshot().state, "ready"); lease.release(); host.collectLoadedDocument(); assert.equal(clean.getSnapshot().state, "released");
+        host.reopenPrimary(); assert.deepEqual(host.debug().diagnostics, before);
+        host.beginDeferredLoad(); host.finishLoad(); const draft = loaded(), d = host.workspace.document(draft.documentId);
+        host.workspace.edit({ documentId: d.id, expectedRevision: d.revision, origin: "human", edits: [{ from: d.buffer.length, to: d.buffer.length, insert: " unsaved café😀\r\n" }] });
+        const snapshot = host.workspace.document(d.id); host.reopenPrimary(); assert.equal(host.hasPendingRecoveryWork(), true);
+        host.beginDeferredLoad(); assert.equal(host.debug().loadPending, false); assert.equal(host.workspace.document(d.id), snapshot);
+        host.reopenLoaded(); assert.equal(loaded(), draft); assert.equal(host.workspace.document(d.id), snapshot);
+        host.openClosePrompt(); host.confirmClose(); host.reopenLoaded(); assert.equal(loaded(), draft);
+        const pending = host.workspace.acquire(draft.id); host.discardLoadedSource(); assert.equal(draft.getSnapshot().state, "ready");
+        host.workspace.edit({ documentId: d.id, expectedRevision: snapshot.revision, origin: "host", edits: [{ from: 0, to: 0, insert: "later correction " }] });
+        pending.release(); host.collectLoadedDocument(); assert.equal(draft.getSnapshot().state, "ready"); assert.equal(host.hasPendingRecoveryWork(), true);
+        host.reopenLoaded(); assert.match(host.workspace.document(d.id).text, /^later correction /);
+        const stop = host.registerDetachedDocumentCleanup(id => { const current = host.workspace.document(id); host.workspace.edit({ documentId: id, expectedRevision: current.revision, origin: "host", edits: [{ from: 0, to: 0, insert: "cleanup correction " }] }); });
+        try { host.discardLoadedSource(); assert.equal(draft.getSnapshot().state, "ready"); assert.match(host.workspace.document(d.id).text, /^cleanup correction /); }
+        finally { stop(); }
+        host.discardLoadedSource(); assert.equal(draft.getSnapshot().state, "released"); assert.equal(host.hasPendingRecoveryWork(), false);
+        assert.deepEqual(host.debug().diagnostics, before); assert.equal(host.workspace.document(host.source.documentId).text, "start");
+        host.openClosePrompt(); host.confirmClose(); host.beginDeferredLoad(); assert.equal(host.debug().loadPending, true); host.finishLoad();
+        host.openClosePrompt(); host.confirmClose(); host.reopenPrimary(); assert.deepEqual(host.debug().diagnostics, before);
+        host.beginDeferredLoad(); host.reopenPrimary(); await host.dispose(); assert.equal(host.debug().loadPending, false); assert.equal(host.debug().diagnostics.leases, 0);
+        host.finishLoad(); assert.deepEqual(host.debug().diagnostics, before);
+    } finally { await host.dispose(); }
+});
 
 test("independent transfer Save retains invalid input, opaque fields, later edits and reviewed conflict", async () => {
     const h = new HostController(), t = h.transfer, save = t.save;

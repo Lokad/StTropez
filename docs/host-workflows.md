@@ -171,6 +171,21 @@ measures point insertion after loading a differing remote reference. First edits
 identical-reference acceptance, sustained input, navigation and broader host populations remain
 separate pilot qualification work.
 
+## Temporary loaded sources
+
+The deferred-load fixture owns one temporary source resource independently of the primary
+source. Clean loaded text is released after its last tab, view and operation detach. Detached
+selection and viewport state for that released document is removed; source view state remains.
+A response arriving after source switchback completes only its captured resource, then releases
+that unused clean resource. Repeated loads reuse the live clean fixture resource when appropriate.
+
+Dirty loaded text stays reachable through **Reopen loaded source**, retains shared history and
+view selections, and keeps the navigation guard active. Starting another load requires resolving
+that draft first. **Discard loaded source** explicitly releases that captured revision once its
+owners detach; later edits expire the discard request and remain available. This temporary draft
+is not included in the source/configuration/transfer checkpoint or those resources' Save/Run
+captures. A consuming host must declare its durable policy for additional documents.
+
 ## Input recovery and disposal
 
 The binding consumes the editor's existing `sttropez-conflict` event and validates its captured

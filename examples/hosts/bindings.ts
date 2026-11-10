@@ -27,6 +27,7 @@ export class ViewBindings {
     private instructionMount: ReturnType<typeof mountInstructionWidget> | undefined;
     private readonly instructionMemory: InstructionViewState = { generation: 0, fields: {}, focus: undefined };
     private readonly stopInputCapture: () => void;
+    private readonly stopDocumentCleanup: () => void;
     private readonly mounted = new Map<string, { editor: BoundEditor; documentId: DocumentId; candidate: EditingCandidate | undefined }>();
     readonly editor: HostEditor;
     private readonly states = new Map<string, Map<DocumentId, ViewState>>();
@@ -214,6 +215,11 @@ export class ViewBindings {
         this.signature = new HostSignatureTools(controller.workspace, canCapture, () => this.hover.dismiss());
         this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.documentId) && !this.review?.working.snapshot().pendingInput
             && ![...this.mounted.values()].some(value => value.editor.metrics()?.pendingInput));
+        this.stopDocumentCleanup = controller.registerDetachedDocumentCleanup(documentId => {
+            if ([...this.mounted.values()].some(value => value.documentId === documentId) || this.review?.working.view.documentId === documentId) return;
+            for (const selections of this.selections.values()) { selections.get(documentId)?.dispose(); selections.delete(documentId); }
+            for (const states of this.states.values()) states.delete(documentId);
+        });
         this.primary = this.ref("primary", "Primary source");
         this.secondary = this.ref("secondary", "Secondary source");
     }
@@ -304,6 +310,7 @@ export class ViewBindings {
         const mounted = this.mounted.get(id); if (!mounted) return;
         this.retainState(id, mounted.documentId, mounted.editor.captureView());
         mounted.editor.destroy(); this.mounted.delete(id); this.destroys++;
+        this.controller.collectLoadedDocument();
     }
     readonly anchorInstruction = (): void => {
         const current = this.mounted.get("primary"); if (!current?.candidate || current.documentId !== this.controller.source.documentId || !this.controller.canCaptureRecovery()) return;
@@ -319,9 +326,10 @@ export class ViewBindings {
     };
     unmount(): void { for (const id of [...this.mounted.keys()]) this.detach(id); }
     dispose(): void {
-        this.stopInputCapture();
+        this.stopInputCapture(); this.stopDocumentCleanup();
         this.comparison(null); this.unmount(); this.colors.dispose(); this.links.dispose(); this.actions.dispose(); this.rename.dispose(); this.signature.dispose(); this.project.dispose(); this.navigation.dispose(); this.domain.dispose(); for (const selections of this.selections.values()) for (const view of selections.values()) view.dispose();
         this.selections.clear(); this.states.clear(); this.referenceState = undefined; this.language.clearRetainedView();
+        this.controller.collectLoadedDocument();
     }
     debug() {
         const comparison = this.review?.controller.getSnapshot();
