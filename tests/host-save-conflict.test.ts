@@ -93,3 +93,22 @@ test("a newer remote review expires an older version load before either response
         host.reviewSaveConflict(); assert.equal(host.finishConflictReview(), true); assert.equal(host.canSaveReviewedSource(), true);
     } finally { await host.dispose(); }
 });
+
+test("dismissed review loads cannot publish or reopen the comparison, including after reopening", async () => {
+    for (const kind of ["remote", "variant"] as const) for (const reopen of [false, true]) {
+        const host = new HostController();
+        try {
+            await conflict(host); host.variants.keepDraft(); host.openReview();
+            if (kind === "remote") host.reviewSaveConflict(); else assert.equal(host.variants.review("draft"), true);
+            host.closeReview(); if (reopen) host.openReview();
+            const reference = host.comparisonReference.getSnapshot(), navigation = host.layout.getSnapshot().navigation;
+            edit(host, "human after dismissal"); const history = host.debug().history;
+            assert.equal(kind === "remote" ? host.finishConflictReview() : host.variants.finishNext(), false, `${kind}/${reopen}`);
+            assert.equal(host.comparisonReference.getSnapshot(), reference); assert.equal(host.layout.getSnapshot().navigation, navigation);
+            assert.equal(host.workspace.document(host.source.documentId).text, "human after dismissal"); assert.deepEqual(host.debug().history, history);
+            assert.equal(host.canSaveReviewedSource(), false); assert.equal(host.debug().diagnostics.leases, 0);
+            host.reviewSaveConflict(); assert.equal(host.finishConflictReview(), true); assert.equal(host.canSaveReviewedSource(), true);
+            host.closeReview(); assert.equal(host.canSaveReviewedSource(), true);
+        } finally { await host.dispose(); }
+    }
+});

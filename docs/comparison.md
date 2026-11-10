@@ -198,6 +198,10 @@ load fails or is cancelled. A changed reference publication also expires an outs
 review. Starting a new request also expires a completed remote review's save authorization.
 Stale results release their leases and cannot authorize a reviewed save; working text,
 history and the current reference remain intact. A fresh remote review can authorize saving again.
+Closing the review dismisses pending version and remote-review requests, including across a later
+reopen. Their late responses cannot replace the reference or reopen the comparison. This keeps a
+completed remote review's save authorization intact; hiding an already reviewed version does not
+change what was reviewed. Explicit host remounts retain their existing logical presentation lifetime.
 
 Tickets own explicit resource leases until completion, cancellation or `finish()`. Completion
 settles even stale or rejected results; finish/cancel are idempotent. Captures remain available

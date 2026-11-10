@@ -140,7 +140,11 @@ export class HostController {
     });
     viewTab(id: "primary" | "secondary"): TabId { return id === "primary" ? this.primaryTab : this.secondaryTab; }
     readonly openReview = (): void => this.safe(() => { this.layoutCell.set({ ...this.layoutCell.get(), navigation: { kind: "review" } }); });
-    readonly closeReview = (): void => this.safe(() => { this.layoutCell.set({ ...this.layoutCell.get(), navigation: { kind: "workspace" } }); });
+    readonly closeReview = (): void => this.safe(() => {
+        // Dismiss pending presentation work permanently; a later reopen starts no old request.
+        this.referenceRequest++;
+        this.layoutCell.set({ ...this.layoutCell.get(), navigation: { kind: "workspace" } });
+    });
     savedComparisonReference(): ComparisonBaseline { return this.savedReference; }
     private beginReferenceRequest(): () => boolean {
         // Version and conflict retrieval share the latest request, even if its load is cancelled.

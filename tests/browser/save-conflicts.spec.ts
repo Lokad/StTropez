@@ -72,7 +72,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await page.evaluate(() => window.hostFixture.dispose()); expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics.leases).toBe(0);
         });
 
-        test("remote and selected-version reads honor the latest review request in either response order", async ({ page }) => {
+        test("remote and selected-version reads honor the latest review request and dismissal", async ({ page }) => {
             const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
             const button = (name: string) => page.getByRole("button", { name, exact: true });
             await primary.press("End"); await primary.pressSequentially(" local"); await button("Save source").click();
@@ -106,6 +106,23 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await button("Cancel version load").click(); await expect(button("Save reviewed source")).toBeDisabled();
             await button("Review remote source").click(); await button("Finish remote review").click();
             await expect(button("Save reviewed source")).toBeEnabled();
+
+            await button("Review remote source").click(); await button("Close source review").click();
+            await primary.press("End"); await primary.pressSequentially(" after dismissal");
+            const dismissed = await page.evaluate(() => window.hostFixture.snapshot());
+            expect(await page.evaluate(() => window.hostFixture.finishConflictReview())).toBe(false);
+            await expect(page.getByRole("group", { name: "Source review", exact: true })).toBeHidden();
+            await expect(primary).toBeFocused(); await expect(primary).toHaveValue("start local correction after dismissal");
+            const settled = await page.evaluate(() => window.hostFixture.snapshot());
+            expect(settled.comparisonReference).toEqual(dismissed.comparisonReference); expect(settled.history).toEqual(dismissed.history);
+
+            await button("Open source review").click(); await version.selectOption("draft");
+            await button("Close source review").click(); await button("Open source review").click();
+            await button("Finish version load").click();
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).comparisonReference).toEqual(dismissed.comparisonReference);
+            await expect(button("Save reviewed source")).toBeDisabled();
+            await button("Review remote source").click(); await button("Finish remote review").click();
+            await button("Close source review").click(); await expect(button("Save reviewed source")).toBeEnabled();
             await page.evaluate(() => window.hostFixture.dispose());
             expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 });
         });
