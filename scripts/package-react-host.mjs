@@ -9,6 +9,19 @@ export function within(root, path) {
     return remainder !== ".." && !remainder.startsWith(`..${sep}`) && !isAbsolute(remainder);
 }
 
+export async function consumerCompilerRoots(project) {
+    const compilerRoot = await realpath(join(project, "node_modules/typescript"));
+    const compilerPackage = JSON.parse(await readFile(join(compilerRoot, "package.json"), "utf8"));
+    const roots = [join(compilerRoot, "lib")], platformCompiler = `@typescript/typescript-${process.platform}-${process.arch}`;
+    if (compilerPackage.optionalDependencies?.[platformCompiler]) {
+        const root = await realpath(join(project, "node_modules", platformCompiler));
+        const metadata = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+        assert.equal(metadata.version, compilerPackage.optionalDependencies[platformCompiler]);
+        assert.equal(metadata.version, compilerPackage.version); roots.push(join(root, "lib"));
+    }
+    return roots;
+}
+
 /** Reuse the development host; the consumer never receives checkout library sources. */
 export async function stagePackagedReactHost(project, consumer) {
     const publicImports = new Map([
@@ -57,17 +70,7 @@ export async function stagePackagedReactHost(project, consumer) {
     const shim = "host-fixtures/styles.d.ts";
     await writeFile(join(consumer, shim), 'declare module "*.css";\n');
     const reactTypes = await realpath(join(project, "node_modules/@types/react")), reactDomTypes = await realpath(join(project, "node_modules/@types/react-dom"));
-    const compilerRoot = await realpath(join(project, "node_modules/typescript"));
-    const compilerPackage = JSON.parse(await readFile(join(compilerRoot, "package.json"), "utf8"));
-    const typePackageRoots = [reactTypes, reactDomTypes, join(compilerRoot, "lib"), await realpath(join(project, "node_modules/csstype"))];
-    const platformCompiler = `@typescript/typescript-${process.platform}-${process.arch}`;
-    if (compilerPackage.optionalDependencies?.[platformCompiler]) {
-        const root = await realpath(join(project, "node_modules", platformCompiler));
-        const metadata = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-        assert.equal(metadata.version, compilerPackage.optionalDependencies[platformCompiler]);
-        assert.equal(metadata.version, compilerPackage.version);
-        typePackageRoots.push(join(root, "lib"));
-    }
+    const typePackageRoots = [reactTypes, reactDomTypes, ...await consumerCompilerRoots(project), await realpath(join(project, "node_modules/csstype"))];
     const hostPackageRoots = [], hostPackages = [];
     for (const name of ["react", "react-dom", "scheduler"]) {
         const root = await realpath(join(project, "node_modules", name));

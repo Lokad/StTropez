@@ -7,9 +7,9 @@ Compiled assets and staged consumer output include `UNICODE-LICENSE.txt` for the
 Unicode character-property data. Hosts retain that notice when bundling or deploying assets.
 The project-wide release license remains a separate decision.
 
-The local evaluation package and minimal consumer proof are implemented. Release metadata,
-license selection, version upgrade/downgrade qualification and broad consumer compatibility
-remain pending. Nothing is published by these commands.
+The local evaluation package, minimal consumer and controlled version-transition proofs are
+implemented. Release metadata, license selection and compatibility across released versions
+and broader consumer toolchains remain pending. Nothing is published by these commands.
 
 ## Local proof
 
@@ -17,6 +17,20 @@ Run `npm run test:package` with Node.js 24+, the pinned development tools, Chrom
 .NET SDK 10+ installation. `npm run pack:nuget` first compiles the assets and creates
 `artifacts/nuget/feed/StTropez.Assets.0.0.0-local.nupkg`. The pack project includes no managed
 output or package dependencies. The local prerelease ID/version are evaluation metadata.
+
+The default proof also restores fixture versions A→B→A in one isolated cache and generated-stage
+parent. A adds a fixture-only optional worker; B has the original payload. Each step checks the
+manifest-addressed root, exact file list and every asset hash, strict public declarations and
+bundle isolation, visible CSS, actual keyboard editing and undo/redo with complete selections.
+Old staged generations, package payloads and a host-owned sentinel stay unchanged. The first A
+editor stays usable while later versions are restored. Returning to the original package reuses
+B's root because its manifest and payload are identical. Repeating preparation is idempotent.
+
+After packing, `node scripts/test-package.mjs --transitions-only` runs this focused qualification;
+add `--browser=firefox` or `--browser=webkit` to select another engine. Reports are recorded in
+`artifacts/package/transitions-<browser>.json`. These controlled local fixture versions qualify
+the restore/staging mechanism; they do not claim arbitrary released-version compatibility,
+native input/accessibility or display latency. The focused mode records no timing distributions.
 
 The proof inspects the actual ZIP entries and dependency metadata, checks SHA-256 integrity,
 copies the package and generic fixture to a fresh OS temporary directory, and restores using

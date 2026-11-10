@@ -10,8 +10,10 @@ import { unzipSync, strFromU8 } from "fflate";
 import { chromium, firefox, webkit } from "@playwright/test";
 import { runPackagedPilot } from "./package-pilot.mjs";
 import { runPackagedHunkPilot } from "./package-hunk-pilot.mjs";
+import { runPackageTransitions } from "./package-transitions.mjs";
 
 const hunkOnly = process.argv.includes("--hunk-only");
+const transitionsOnly = process.argv.includes("--transitions-only");
 const reactOnly = process.argv.includes("--react-only"), prepareOnly = process.argv.includes("--prepare-only");
 const pilotOnly = reactOnly || hunkOnly || process.argv.includes("--pilot-only"), benchmark = process.argv.includes("--bench");
 const browserName = process.argv.find(arg => arg.startsWith("--browser="))?.slice("--browser=".length) ?? "chromium";
@@ -19,6 +21,7 @@ assert.ok(["chromium", "firefox", "webkit"].includes(browserName), `Unknown brow
 assert.ok(!benchmark || pilotOnly, "Use --pilot-only, --hunk-only or --react-only with --bench to keep the workload explicit.");
 assert.ok(!reactOnly || (!hunkOnly && !process.argv.includes("--pilot-only")), "Select one restored pilot scenario.");
 assert.ok(!prepareOnly || (reactOnly && !benchmark), "Preparation-only checks require --react-only without --bench.");
+assert.ok(!transitionsOnly || (!pilotOnly && !prepareOnly && !benchmark), "Transition-only checks cannot be combined with pilot or benchmark modes.");
 
 const project = resolve(".");
 const archive = await readFile("artifacts/nuget/feed/StTropez.Assets.0.0.0-local.nupkg");
@@ -49,8 +52,13 @@ await mkdir(join(consumer, "feed"));
 await writeFile(join(consumer, "feed/StTropez.Assets.0.0.0-local.nupkg"), archive);
 await writeFile(join(consumer, "NuGet.Config"), '<configuration><packageSources><clear/><add key="local" value="feed"/></packageSources></configuration>');
 const dotnet = args => execFileSync("dotnet", args, { cwd: consumer, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+const transitions = transitionsOnly || !pilotOnly && !prepareOnly && !benchmark
+    ? await runPackageTransitions({ project, consumer, entries, assets, browserName, dotnet }) : undefined;
+if (!transitionsOnly) {
+if (!transitions) {
 dotnet(["restore", "Consumer.csproj", "--packages", join(consumer, "packages"), "--configfile", "NuGet.Config"]);
 dotnet(["msbuild", "Consumer.csproj", "-target:PrepareFrontend", "-verbosity:minimal"]);
+}
 const assetRoot = (await readFile(join(consumer, "assets-root.txt"), "utf8")).trim();
 assert.ok(relative(consumer, await realpath(assetRoot)).replaceAll("\\", "/").startsWith("obj/sttropez/"), `Stage escaped generated directory: ${assetRoot}`);
 const restored = JSON.parse(await readFile(join(consumer, "obj/project.assets.json"), "utf8"));
@@ -332,5 +340,6 @@ try {
 } finally {
     await browser?.close();
     await new Promise(resolve => server.close(resolve));
+}
 }
 }
