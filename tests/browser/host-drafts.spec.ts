@@ -3,6 +3,17 @@ import type { Page } from "@playwright/test";
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const button = (p: Page, name: string) => p.getByRole("button", { name, exact: true });
 const source = (p: Page, name = "Primary source") => p.getByRole("textbox", { name, exact: true });
+declare global { interface Window { heldDraftReads: readonly IDBTransaction[]; releaseDraftReads: () => void } }
+/** Hold completion of the real read transaction so authority changes precede restore validation. */
+async function holdDraftRead(p: Page): Promise<void> { await p.evaluate(() => {
+    const original = IDBDatabase.prototype.transaction, held: IDBTransaction[] = []; window.heldDraftReads = held;
+    IDBDatabase.prototype.transaction = function (...args) { const tx = original.apply(this, args);
+        if (this.name === "sttropez-example-drafts-v1" && args[1] === "readonly") tx.addEventListener("complete", event => { event.stopImmediatePropagation(); held.push(tx); }, { capture: true, once: true });
+        return tx;
+    };
+    window.releaseDraftReads = () => { IDBDatabase.prototype.transaction = original; for (const tx of held.splice(0)) tx.dispatchEvent(new Event("complete")); };
+}); }
+const selections = (s: Awaited<ReturnType<typeof snapshot>>) => ({ views: s.bindings.views.map(v => ({ id: v.id, set: v.selectionSet })), working: s.bindings.comparison?.selectionSet, reference: s.bindings.comparison?.referenceViewport?.selectionSet });
 async function ready(p: Page): Promise<void> { await p.waitForFunction(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison; return !s.draft?.busy && s.bindings.views.every(v => !v.metrics || !v.metrics.pendingInput && !v.metrics.pendingCommand && !v.metrics.pendingCaret && !v.metrics.viewport.pending)
     && (!c || c.status === "ready" && !c.input.pendingInput && !c.input.pendingCaret && !c.workingViewport.pending && !c.referenceViewport?.pending); }); }
 async function exact(p: Page, value: string): Promise<void> { expect(await p.evaluate(value => { const f = window.hostFixture; if (f.snapshot().source.length !== value.length) return false; for (let from = 0; from < value.length; from += 32768) if (f.range(from, Math.min(value.length, from + 32768)) !== value.slice(from, from + 32768)) return false; return true; }, value)).toBe(true); }
@@ -25,10 +36,26 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
         await p.goto(`/hosts/${host}/?editor=candidate`); await ready(p); await restore(p, "Restore source draft"); await restore(p, "Restore configuration draft"); await exact(p, raw + "K");
     }
     await source(p, "Secondary source").press("Control+z"); await ready(p); await exact(p, "start"); await source(p, "Secondary source").press("Control+Shift+z"); await ready(p); await exact(p, raw + "K");
-    await button(p, "Open source review").click(); await ready(p); const ref = source(p, "Comparison baseline source"), baseline = (await snapshot(p)).bindings.comparison!.baseline!.version; await ref.press("Control+s"); expect((await snapshot(p)).pendingSaves).toHaveLength(1);
+    // Establish a newer authoritative saved baseline before restoring the older stored copy.
+    const loaded = "loaded café😀\r\nnew saved baseline"; await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, loaded); await ready(p); await source(p).press("Control+s"); await button(p, "Finish save").click();
+    await expect.poll(async () => (await snapshot(p)).source.serverVersion).toBe("v1"); await ready(p); const beforeRestore = await snapshot(p); expect(beforeRestore.source.dirty).toBe(false);
+    await restore(p, "Restore source draft"); await exact(p, raw + "K"); expect((await snapshot(p)).source).toMatchObject({ serverVersion: "v1", dirty: true }); expect((await snapshot(p)).history.undoDepth).toBe(beforeRestore.history.undoDepth + 1);
+    await source(p, "Secondary source").press("Control+z"); await ready(p); await exact(p, loaded); expect((await snapshot(p)).source.dirty).toBe(false); await source(p, "Secondary source").press("Control+Shift+z"); await ready(p); await exact(p, raw + "K");
+    await button(p, "Open source review").click(); await ready(p); const ref = source(p, "Comparison baseline source"), baseline = (await snapshot(p)).bindings.comparison!.baseline!.version; await ref.press("Control+s"); expect((await snapshot(p)).pendingSaves).toHaveLength(1); expect((await snapshot(p)).pendingSaves[0]!.expectedServerVersion).toBe("v1");
     await source(p).press("Control+End"); await source(p).pressSequentially("L"); await button(p, "Finish save").click(); await ready(p); await expect.poll(async () => (await snapshot(p)).pendingCommands).toBe(0); await exact(p, raw + "KL"); expect((await snapshot(p)).source.dirty).toBe(true);
     await source(p, "Secondary source").press("Control+z"); await ready(p); await exact(p, raw + "K"); expect((await snapshot(p)).source.dirty).toBe(false); await source(p, "Secondary source").press("Control+Shift+z"); await ready(p);
-    await ref.focus(); await button(p, "Run captured inputs").click(); const s = await snapshot(p); expect(s.activity.lastRun!.sourceRevision).toBe(s.source.revision); expect(s.bindings.comparison!.baseline!.version).toBe(baseline); expect(await p.evaluate(() => window.hostFixture.runCapture(0)!.configuration.path)).toBe("recovered.csv"); await button(p, "Finish run").click(); await dispose(p);
+    expect((await snapshot(p)).bindings.comparison!.baseline!.version).toBe(baseline); await p.evaluate(() => window.hostFixture.externalWrite("new remote source\r\n"));
+    await ref.press("Control+s"); expect((await snapshot(p)).pendingSaves[0]!.expectedServerVersion).toBe("v2"); await button(p, "Finish save").click(); await expect.poll(async () => (await snapshot(p)).source.saveStatus).toBe("conflict"); await exact(p, raw + "KL");
+    await button(p, "Review remote source").click(); await p.evaluate(() => window.hostFixture.finishConflictReview()); await ready(p); expect(await p.evaluate(() => window.hostFixture.referenceRange(0, 19))).toBe("new remote source\r\n"); const remote = (await snapshot(p)).bindings.comparison!.baseline!.version;
+    const working = source(p, "Comparison working source"); await working.press("Control+End"); await working.pressSequentially("M"); await button(p, "Save reviewed source").click(); expect((await snapshot(p)).pendingSaves[0]!.expectedServerVersion).toBe("v3");
+    await working.pressSequentially("N"); await button(p, "Finish save").click(); await expect.poll(async () => (await snapshot(p)).source.serverVersion).toBe("v4"); await ready(p); await exact(p, raw + "KLMN"); expect((await snapshot(p)).source.dirty).toBe(true);
+    await source(p, "Secondary source").press("Control+z"); await ready(p); await exact(p, raw + "KLM"); expect((await snapshot(p)).source.dirty).toBe(false); await source(p, "Secondary source").press("Control+Shift+z"); await ready(p); await exact(p, raw + "KLMN");
+    await ref.focus(); await button(p, "Run captured inputs").click(); const s = await snapshot(p); expect(s.activity.lastRun!.sourceRevision).toBe(s.source.revision); expect(s.bindings.comparison!.baseline!.version).toBe(remote); expect(await p.evaluate(() => window.hostFixture.runCapture(0)!.configuration.path)).toBe("recovered.csv"); expect(await p.evaluate(() => window.hostFixture.runCapture(0)!.source.slice(-4))).toBe("KLMN"); await button(p, "Finish run").click(); await ready(p);
+    // A genuine stored read is pending while authority is revoked and restored by takeover.
+    await holdDraftRead(p); await button(p, "Restore source draft").click(); await button(p, "Confirm draft action").click(); await p.waitForFunction(() => window.heldDraftReads.length === 1); const intent = await snapshot(p);
+    await button(p, "Associate agent").click(); await button(p, "Request proposal").click(); await button(p, "Interrupt agent").click(); await p.evaluate(() => window.releaseDraftReads()); await ready(p);
+    await expect(p.getByLabel("Draft recovery status", { exact: true })).toContainText("became stale"); await exact(p, raw + "KLMN"); expect((await snapshot(p)).history).toEqual(intent.history); expect(selections(await snapshot(p))).toEqual(selections(intent));
+    await button(p, "Deliver proposal").click(); await expect.poll(async () => (await snapshot(p)).pendingCommands).toBe(0); await ready(p); await exact(p, raw + "KLMN"); expect((await snapshot(p)).review.proposal).toBeNull(); expect((await snapshot(p)).history).toEqual(intent.history); expect(selections(await snapshot(p))).toEqual(selections(intent)); await dispose(p);
 });
 for (const host of ["plain", "react"]) test(`${host} draft confirmation, authority, storage errors and discard never overwrite later work`, async ({ page: p }) => {
     test.setTimeout(120000); p.on("pageerror", e => { throw e; });
