@@ -1,11 +1,13 @@
 import type { ActivationSession } from "./activate.js";
+import type { WorkspaceSession } from "./workspace.js";
 import type { Selection } from "sttropez";
 
 const preview = document.getElementById("text")!, editorHost = document.getElementById("editor")!, status = document.getElementById("status")!;
 const edit = document.getElementById("edit") as HTMLButtonElement, cancel = document.getElementById("cancel") as HTMLButtonElement, readOnly = document.getElementById("preview") as HTMLButtonElement;
 const query = document.getElementById("query") as HTMLInputElement, regex = document.getElementById("regex") as HTMLInputElement, next = document.getElementById("next") as HTMLButtonElement, findStatus = document.getElementById("find-status")!;
 const original = "// café😀 e\u0301\r\nconst café = '😀';\r\nend\rthird\n" + "row Δ😀\r\n".repeat(new URLSearchParams(location.search).get("large") === "1" ? 100000 : 8);
-const listeners = new AbortController(); let session: ActivationSession | undefined, generation = 0, abort: AbortController | undefined, stylesheet: HTMLLinkElement | undefined;
+const workspaceMode = document.body.hasAttribute("data-workspace");
+const listeners = new AbortController(); let session: ActivationSession | WorkspaceSession | undefined, generation = 0, abort: AbortController | undefined, stylesheet: HTMLLinkElement | undefined;
 let phase: "preview" | "loading" | "editing" | "disposed" = "preview";
 let retainedText = original;
 preview.textContent = original;
@@ -27,7 +29,7 @@ async function activate() {
     let link: HTMLLinkElement | undefined;
     controller.signal.addEventListener("abort", () => link?.remove(), { once: true });
     try {
-        const module = session ? undefined : import(new URL(`./activate.js?activation=${token}`, import.meta.url).href) as Promise<typeof import("./activate.js")>;
+        const module = session ? undefined : import(new URL(`./${workspaceMode ? "workspace" : "activate"}.js?activation=${token}`, import.meta.url).href) as Promise<{ createActivationSession: (text: string, at: Selection) => ActivationSession | WorkspaceSession }>;
         const [loaded, css] = await Promise.all([module, styles(controller.signal, token).then(value => { link = value; return value; })]);
         if (generation !== token || controller.signal.aborted) { css.remove(); return; }
         session ??= loaded!.createActivationSession(original, at ?? { anchor: 0, head: 0 });
@@ -52,6 +54,6 @@ edit.addEventListener("click", () => { void activate(); }, { signal: listeners.s
 const search = () => { if (phase === "editing") session?.search(query.value, regex.checked); };
 query.addEventListener("input", search, { signal: listeners.signal }); regex.addEventListener("change", search, { signal: listeners.signal }); next.addEventListener("click", () => session?.next(), { signal: listeners.signal }); window.addEventListener("pagehide", dispose, { once: true, signal: listeners.signal });
 const fixture = Object.freeze({ snapshot: () => ({ phase, generation, session: session?.snapshot() ?? null }), text: () => phase === "disposed" ? retainedText : session?.text() ?? original,
-    select: (ranges: readonly Selection[], primary?: number) => session?.select(ranges, primary), dispose });
+    select: (ranges: readonly Selection[], primary?: number) => session?.select(ranges, primary), workspace: () => session && "workspaceApi" in session ? session.workspaceApi : undefined, dispose });
 declare global { interface Window { activationFixture: typeof fixture } }
 window.activationFixture = fixture;

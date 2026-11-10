@@ -138,6 +138,31 @@ Own input-handler observations are not complete interaction latency or productio
 This local host fixture does not qualify retained heap, native IME/OS clipboard/accessibility,
 durable storage, arbitrary deployment failures or a consuming application's adoption policy.
 
+## Inactive-document workspace
+
+`npm run test:package:workspace` extends the deferred activation host with two active panes,
+100 initially inactive 1,000-line documents, and 20 Hz synthetic background activity. Normal
+and 100,000-line active sources use the same restored public assets. All documents share one
+workspace; resource, tab and view identities remain separate. Visited tabs retain lightweight
+model-owned selection/view state, with no inactive editor DOM or observable subscriptions.
+
+The primary document selector changes its captured tab while the peer stays usable. Shared
+documents retain shared undo with independent complete selection sets. Find follows the newly
+presented document. **Close primary tab** preserves its document/history; **Reopen closed tab**
+creates a new tab identity and restores the retained view. **Discard closed document** captures
+resource revision and close/reopen generation for explicit confirmation. Later edits or reopening
+expire that request. Captured jobs retain their own immutable input and ownership until finish;
+waiting for a job does not discard the saved view state. Final disposal stops background work
+and releases models, views, listeners and leases. Durable handling of all owned documents remains
+a consuming-host responsibility.
+
+`node scripts/test-package.mjs --workspace-only --browser=firefox` (or `webkit`) reuses a packed
+artifact. `artifacts/package/workspace-*` records ten switches, typing/shared undo, Find routing,
+close/reopen and stale/delayed discard journeys, with DOM/resource/subscription bounds. Individual
+handler observations are separate from full interaction and cold activation latency. These
+counts do not prove retained heap bytes; native input/accessibility and release qualification
+remain open.
+
 ## Build bridge
 
 Restore imports `build/StTropez.Assets.props` and `.targets` and exposes `StTropezAssetRoot`.
