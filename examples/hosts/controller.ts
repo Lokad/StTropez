@@ -1,6 +1,6 @@
 import { HostCell } from "../shared/observable.ts";
 import { TextBuffer, Workspace, WorkspaceCommands } from "../../src/index.ts";
-import type { AgentRequest, CloseOperation, ComparisonBaseline, DocumentId, Operation, RunSubmission, SaveResponse, SaveReview, SaveSubmission, SnapshotValue, TabId, TabTarget, TextEdit, TextResourceHandle } from "../../src/index.ts";
+import type { AgentRequest, CloseOperation, ComparisonBaseline, DocumentId, DocumentView, Operation, RunSubmission, SaveResponse, SaveReview, SaveSubmission, SnapshotValue, TabId, TabTarget, TextEdit, TextResourceHandle } from "../../src/index.ts";
 import { ReviewVariants } from "./variants.ts";
 import { ConfigurationSave } from "./configuration.ts";
 import { HostTransfer } from "./transfers.ts";
@@ -59,7 +59,12 @@ export class HostController {
     private proposalTransactionMs = 0;
     private closeOperation: CloseOperation | undefined;
     private pendingLoad: (() => void) | undefined;
-    private loaded: TextResourceHandle | undefined;
+    private readonly loadedCell = new HostCell<Readonly<{ generation: number; resource: TextResourceHandle | null }>>({ generation: 0, resource: null });
+    readonly loadedSource = this.loadedCell.observable;
+    private get loaded(): TextResourceHandle | undefined { return this.loadedCell.get().resource ?? undefined; }
+    private setLoaded(resource: TextResourceHandle | undefined): void {
+        if (resource !== this.loaded) this.loadedCell.set({ generation: this.loadedCell.get().generation + 1, resource: resource ?? null });
+    }
     private discardLoaded: Readonly<{ resource: TextResourceHandle; revision: number }> | undefined;
     private collectingLoaded = false;
     private readonly detachedDocumentCleanup = new Set<(documentId: DocumentId) => void>();
@@ -69,10 +74,14 @@ export class HostController {
     private failNextAck = true;
     private timer: ReturnType<typeof setInterval> | undefined;
     private disposed = false;
-    private readonly inputCaptureGuards = new Set<() => boolean>();
-    registerInputCaptureGuard(ready: () => boolean): () => void {
+    private readonly inputCaptureGuards = new Map<() => boolean, ((id: DocumentId) => DocumentView | undefined) | undefined>();
+    registerInputCaptureGuard(ready: () => boolean, view?: (id: DocumentId) => DocumentView | undefined): () => void {
         if (this.disposed) return () => {};
-        this.inputCaptureGuards.add(ready); return () => { this.inputCaptureGuards.delete(ready); };
+        this.inputCaptureGuards.set(ready, view); return () => { this.inputCaptureGuards.delete(ready); };
+    }
+    captureRecoveryView(id: DocumentId): DocumentView | undefined {
+        for (const resolve of this.inputCaptureGuards.values()) { const view = resolve?.(id); if (view && this.workspace.ownsDocumentView(view)) return view; }
+        return undefined;
     }
     registerDetachedDocumentCleanup(cleanup: (documentId: DocumentId) => void): () => void {
         if (this.disposed) return () => {};
@@ -97,15 +106,30 @@ export class HostController {
                 this.discardLoaded = undefined;
                 this.layoutCell.set({ ...this.layoutCell.get(), modal: { kind: "error", message: "Loaded source changed during cleanup. Reopen it or discard again." } }); return;
             }
-            this.workspace.releaseResource(loaded.id, discard && latest.revision === state.revision); this.loaded = undefined; this.discardLoaded = undefined;
+            this.workspace.releaseResource(loaded.id, discard && latest.revision === state.revision); this.setLoaded(undefined); this.discardLoaded = undefined;
         } finally { this.collectingLoaded = false; }
     }
     private sourceInputReady(): boolean {
-        if ([...this.inputCaptureGuards].every(ready => ready())) return true;
+        if ([...this.inputCaptureGuards.keys()].every(ready => ready())) return true;
         this.layoutCell.set({ ...this.layoutCell.get(), modal: { kind: "error", message: "Wait for pending typing to finish, then try the source command again." } }); return false;
     }
-    canCaptureRecovery(): boolean { return !this.disposed && [...this.inputCaptureGuards].every(ready => ready()); }
-    hasPendingRecoveryWork(): boolean { return this.loaded?.metadata.getSnapshot().dirty === true || this.operations.size > 0 || this.instruction.debug().pendingCopy || this.review.getSnapshot().request !== null || this.review.getSnapshot().acknowledgements.length > 0; }
+    canCaptureRecovery(): boolean { return !this.disposed && [...this.inputCaptureGuards.keys()].every(ready => ready()); }
+    hasPendingRecoveryWork(includeLoaded = true): boolean { return this.pendingLoad !== undefined || includeLoaded && this.loaded?.metadata.getSnapshot().dirty === true || this.operations.size > 0 || this.instruction.debug().pendingCopy || this.review.getSnapshot().request !== null || this.review.getSnapshot().acknowledgements.length > 0; }
+    /** Recovery targets the host's one temporary-source slot, never a surviving tab index. */
+    restoreLoadedDraft(text: string, generation: number, view?: DocumentView): TextResourceHandle | undefined {
+        if (!this.canCaptureRecovery() || this.pendingLoad || generation !== this.loadedCell.get().generation) return;
+        const previous = this.loaded, resource = previous ?? this.createLoadedResource(true), state = resource.getSnapshot();
+        if (state.state !== "ready") return;
+        const document = this.workspace.document(resource.documentId);
+        const result = this.workspace.edit({ documentId: document.id, expectedRevision: document.revision, origin: "human",
+            edits: [{ from: 0, to: document.buffer.length, insert: text }], history: { kind: "replace" }, ...(view ? { view } : {}) });
+        if (!result.applied) { if (!previous) this.workspace.releaseResource(resource.id, true); return; }
+        this.setLoaded(resource); return resource;
+    }
+    private createLoadedResource(ready = false): TextResourceHandle {
+        return this.workspace.createTextResource({ scope: "host-fixture", resource: `loaded-${this.workspace.getSnapshot().revision}`, variant: "working" }, "Loaded source",
+            ready ? { value: "loaded resource", serverVersion: "loaded-v1" } : undefined);
+    }
     readonly variants = new ReviewVariants(this.workspace, this.source, {
         presentation: () => this.workspace.captureTab(this.primaryTab), reference: this.comparisonReference,
         saved: () => this.savedReference, server: () => ({ buffer: this.serverBuffer, version: `reference:server-${this.serverVersion}` }),
@@ -356,8 +380,7 @@ export class HostController {
         if (this.loaded?.metadata.getSnapshot().dirty) {
             this.layoutCell.set({ ...this.layoutCell.get(), modal: { kind: "error", message: "Loaded source has unsaved changes. Reopen or explicitly discard it before starting another load." } }); return;
         }
-        const loaded = this.loaded ?? this.workspace.createTextResource({ scope: "host-fixture", resource: `loaded-${this.workspace.getSnapshot().revision}`, variant: "working" }, "Loaded source");
-        this.loaded = loaded;
+        const loaded = this.loaded ?? this.createLoadedResource();
         if (this.layoutCell.get().primarySurface === "closed") this.primaryTab = this.workspace.open({ kind: "text", documentId: loaded.documentId }, this.layoutCell.get().position);
         else this.workspace.replace(this.primaryTab, { kind: "text", documentId: loaded.documentId });
         const target = this.workspace.captureTab(this.primaryTab), operation = this.workspace.beginLoad(loaded);
@@ -367,6 +390,7 @@ export class HostController {
             if (this.workspace.resolveTab(target)) this.layoutCell.set({ ...this.layoutCell.get(), primarySurface: "text" });
             this.collectLoadedDocument();
         };
+        this.setLoaded(loaded);
     });
     readonly reopenLoaded = (): void => this.safe(() => {
         const loaded = this.loaded; if (!loaded || this.pendingLoad) return;
@@ -412,7 +436,7 @@ export class HostController {
                 sourceLength: this.pendingAgent.input.source.value.length, configurationRevision: this.pendingAgent.input.context.configurationRevision } : null,
             proposalTransactionMs: this.proposalTransactionMs, pendingCommands: this.operations.size,
             inputRecovery: this.recoveryCell.get().items.map(item => ({ documentId: item.documentId, expectedRevision: item.expectedRevision, reason: item.reason, contextFrom: item.contextFrom, attemptedUnits: item.attemptedText.length })),
-            hostSubscriptions: this.layoutCell.count() + this.activityCell.count() + this.settingsCell.count() + this.recoveryCell.count() + this.referenceCell.count() + this.conflictCell.count() + this.configurationSave.debug().subscriptions + this.transfer.save.debug().subscriptions + this.runResources.debug().subscriptions + this.instruction.debug().subscriptions, inputCaptureGuards: this.inputCaptureGuards.size, loadPending: this.pendingLoad !== undefined, disposed: this.disposed };
+            hostSubscriptions: this.layoutCell.count() + this.activityCell.count() + this.settingsCell.count() + this.loadedCell.count() + this.recoveryCell.count() + this.referenceCell.count() + this.conflictCell.count() + this.configurationSave.debug().subscriptions + this.transfer.save.debug().subscriptions + this.runResources.debug().subscriptions + this.instruction.debug().subscriptions, inputCaptureGuards: this.inputCaptureGuards.size, loadPending: this.pendingLoad !== undefined, disposed: this.disposed };
     }
     dispose(): Promise<void> {
         if (this.disposal) return this.disposal; this.disposed = true; this.variants.dispose();

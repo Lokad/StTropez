@@ -1,7 +1,7 @@
 # Host draft recovery
 
 The evaluation hosts provide an explicit recovery checkpoint for the working source,
-connection configuration, transfer settings and already rejected input. This is host code: the editor package does not open
+connection configuration, transfer settings, dirty temporary loaded source and already rejected input. This is host code: the editor package does not open
 storage, install navigation handlers or choose persistence policy for an application.
 
 Choose **Keep recovery draft** and wait for the completed checkpoint message. The browser
@@ -29,22 +29,37 @@ changes do not invalidate an otherwise current configuration restore.
 
 Transfer restoration is independent too. It preserves raw invalid batch input and unknown
 fields, and a later transfer Save receipt expires a pending transfer restore. New checkpoints
-use format 2 with a transfer capture. Format 1 source/configuration checkpoints remain readable;
+use format 3 with an optional loaded-source capture. Formats 1 and 2 remain readable;
 they do not invent a transfer copy, and transfer restore stays disabled for those records.
 Run/log session history is separate from the input checkpoint.
+
+**Restore loaded-source draft** independently recovers the host's temporary loaded-source slot.
+It is disabled for checkpoints without that copy. An absent slot gets a new resource with the
+fixture's current loaded baseline; stored server versions never become save authority. Existing
+loaded text keeps its current baseline and history. Restore is one undoable edit, with a captured
+view preserving complete selection history. A later edit, resource replacement, load or authority
+change expires the confirmation. Resource generations prevent an empty-to-loaded-to-empty slot
+from accepting an older intent. Choose **Reopen loaded source** to inspect it; restoration leaves
+the original source, configuration, transfer, comparison, Save and Run targets unchanged.
+
+Loaded text participates in checkpoint coverage through its immutable buffer and resource
+identity. Later typing needs another checkpoint; failed writes and peer changes invalidate
+coverage. Ordinary typing never exports the loaded document. The stored recovery identity
+names this host's temporary-source slot, independently of transient tab, resource and view IDs.
+This fixture does not supply a general resource router or persist the previous session's undo.
 
 Each confirmation captures current resource targets, affected revisions, server versions and
 edit authority. Restoration revalidates after storage reads; permission revoke/restore also
 expires an old intent. A token checked inside the storage transaction prevents a delayed write
 or discard from replacing a newer stored copy. Cross-page store notifications invalidate cached
-coverage. The example uses one app-scoped source/configuration/transfer slot; consuming hosts supply their
+coverage. The example uses one app-scoped checkpoint slot; consuming hosts supply their
 own resource routes, storage partitioning, retention and compatibility policy.
 
 **Discard stored draft** affects the persisted copy, without discarding current inputs.
 **Inspect stored draft** renders bounded text previews. Malformed, unsupported or foreign-resource
 data is never restored. Rejected/preedit recovery is stored separately with its old revision and
 context and is never automatically replayed into a new document. Uncommitted composition blocks
-checkpoint capture and both restore choices; finish it or keep the page open rather than treating native preedit as a
+checkpoint capture and all restore choices; finish it or keep the page open rather than treating native preedit as a
 committed source snapshot.
 
 The host installs a `beforeunload` guard when current inputs lack checkpoint coverage, composition

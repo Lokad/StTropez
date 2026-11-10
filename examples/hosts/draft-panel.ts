@@ -7,6 +7,7 @@ export function draftActions(draft: HostDraftRecovery) {
         { label: "Restore source draft", invoke: () => draft.prepare("source"), disabled: s.busy || !s.valid },
         { label: "Restore configuration draft", invoke: () => draft.prepare("configuration"), disabled: s.busy || !s.valid },
         { label: "Restore transfer draft", invoke: () => draft.prepare("transfer"), disabled: s.busy || !s.valid || !s.hasTransfer },
+        { label: "Restore loaded-source draft", invoke: () => draft.prepare("loaded"), disabled: s.busy || !s.valid || !s.hasLoaded },
         { label: "Inspect stored draft", invoke: draft.inspect, disabled: s.busy || !s.valid },
         { label: "Discard stored draft", invoke: () => draft.prepare("discard"), disabled: s.busy || !s.present },
         { label: "Retry draft storage", invoke: draft.reload, disabled: s.busy },

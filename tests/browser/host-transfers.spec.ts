@@ -35,7 +35,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await batch.fill("invalid"); await button(p, "Keep recovery draft").click(); await ready(p); expect((await snapshot(p)).draft?.hasTransfer).toBe(true); await p.reload(); await expect(input).toBeVisible(); await button(p, "Open source review").click(); await ready(p);
     await draftAction(p, "Restore transfer draft"); await expect(destination).toHaveValue("newer.csv"); await expect(batch).toHaveValue("invalid"); await expect(path).toHaveValue("source.csv"); await exact(p, "start");
     await draftAction(p, "Restore source draft"); await exact(p, original + "!"); await batch.fill("100"); await destination.fill(" final.csv "); await destination.press("Control+s"); await expect(button(p, "Finish transfer settings save")).toBeEnabled();
-    await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expect(dormant.diagnostics.subscriptions).toBe(4); expect(dormant.hostSubscriptions).toBe(1);
+    await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expect(dormant.diagnostics.subscriptions).toBe(4); expect(dormant.hostSubscriptions).toBe(2);
     await p.evaluate(() => window.hostFixture.mount()); await ready(p); await button(p, "Finish transfer settings save").click(); await expect(destination).toHaveValue("final.csv");
     await button(p, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(p)).runResources.runs.length).toBe(1); await button(p, "Inspect Run 1").click();
     if (!large) await info.attach("transfer-run-inspection", { body: await p.screenshot(), contentType: "image/png" });

@@ -160,7 +160,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect(after.diagnostics.subscriptions).toBe(ready.diagnostics.subscriptions);
             await page.evaluate(() => window.hostFixture.unmount());
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().diagnostics.subscriptions)).toBe(4);
-            expect((await page.evaluate(() => window.hostFixture.snapshot())).hostSubscriptions).toBe(1);
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).hostSubscriptions).toBe(2); // Input-recovery and loaded-source slot observers outlive views.
             await page.evaluate(() => window.hostFixture.mount()); await expect(primary).toHaveValue("abcdefghij more typing");
             expect((await page.evaluate(() => window.hostFixture.snapshot())).bindings.activeViews).toBe(2);
             await page.evaluate(() => window.hostFixture.dispose());

@@ -18,6 +18,82 @@ function edit(c: HostController, value: string) { const d = c.workspace.document
 async function seeded() { const store = storage(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); edit(c, "stored café😀\r\ndraft"); c.setPath("stored.csv"); d.prepare("keep"); await idle(d); await d.dispose(); await c.dispose(); return store; }
 async function close(c: HostController, d: HostDraftRecovery) { const a = d.dispose(), b = c.dispose(); await Promise.all([a, b]); assert.equal(c.workspace.diagnostics().subscriptions, 0); }
 
+test("checkpoint includes dirty temporary text after close and reopen", async () => {
+    const store = storage(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d);
+    try {
+        c.beginDeferredLoad(); c.finishLoad(); const tab = c.workspace.getSnapshot().tabs.find(t => t.id === c.viewTab("primary"))!;
+        assert.equal(tab.surface.kind, "text"); if (tab.surface.kind !== "text") throw Error("Missing loaded source");
+        const doc = c.workspace.document(tab.surface.documentId), value = "loaded café😀\r\ndirty draft";
+        c.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "human", edits: [{ from: 0, to: doc.buffer.length, insert: value }] });
+        c.openClosePrompt(); c.confirmClose(); c.reopenLoaded(); assert.equal(c.workspace.document(doc.id).text, value);
+        d.prepare("keep"); await idle(d);
+        const saved = store.shared.value!.value as { loaded?: { text: string } };
+        assert.equal(saved.loaded?.text, value); assert.equal(d.shouldWarnOnLeave(), false);
+    } finally { await close(c, d); }
+});
+
+function editLoaded(c: HostController, value: string) {
+    const resource = c.loadedSource.getSnapshot().resource!; assert.ok(resource);
+    const document = c.workspace.document(resource.documentId);
+    assert.equal(c.workspace.edit({ documentId: document.id, expectedRevision: document.revision, origin: "human",
+        edits: [{ from: 0, to: document.buffer.length, insert: value }], history: { kind: "replace" } }).applied, true);
+    return resource;
+}
+async function loadedSeed() {
+    const store = storage(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d);
+    c.beginDeferredLoad(); c.finishLoad(); editLoaded(c, "stored loaded café😀\r\ndraft"); d.prepare("keep"); await idle(d); await close(c, d); return store;
+}
+test("loaded checkpoint captures immutable text and failed replacement revokes its coverage", async () => {
+    const store = storage(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d);
+    try {
+        c.beginDeferredLoad(); c.finishLoad(); const resource = editLoaded(c, "captured loaded text"), captured = c.workspace.document(resource.documentId);
+        const gate = deferred(); store.shared.writeGate = gate.promise; d.prepare("keep"); editLoaded(c, "later loaded correction"); gate.resolve(); await idle(d);
+        assert.equal((store.shared.value!.value as { loaded: { text: string } }).loaded.text, "captured loaded text"); assert.equal(captured.buffer.readMetrics().textExports, 1);
+        assert.equal(c.workspace.document(resource.documentId).buffer.readMetrics().textExports, 0); assert.equal(d.shouldWarnOnLeave(), true);
+        c.workspace.undo({ documentId: resource.documentId, expectedRevision: c.workspace.document(resource.documentId).revision }); assert.equal(d.shouldWarnOnLeave(), false);
+        const old = structuredClone(store.shared.value); store.shared.failWrite = true; d.prepare("keep"); d.confirm(); await idle(d);
+        assert.deepEqual(store.shared.value, old); assert.equal(d.shouldWarnOnLeave(), true);
+    } finally { await close(c, d); }
+});
+test("loaded restore creates a fresh owned resource and keeps independent input targets and complete-set undo", async () => {
+    const store = await loadedSeed(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d);
+    let view: ReturnType<typeof c.workspace.createDocumentView> | undefined;
+    let stop = () => {};
+    try {
+        assert.equal(c.loadedSource.getSnapshot().resource, null); assert.equal(d.state.getSnapshot().hasLoaded, true);
+        d.prepare("loaded"); edit(c, "independent original source"); c.setPath("later.csv"); c.transfer.update("batchSize", "invalid");
+        const configuration = c.connection.getSnapshot(), transfer = c.transfer.resource.getSnapshot(), reference = c.savedComparisonReference();
+        d.confirm(); await idle(d); const resource = c.loadedSource.getSnapshot().resource!; assert.ok(resource); assert.notEqual(resource.id, c.source.id);
+        assert.equal(c.workspace.document(resource.documentId).text, "stored loaded café😀\r\ndraft"); assert.equal(resource.metadata.getSnapshot().serverVersion, "loaded-v1");
+        assert.equal(text(c), "independent original source"); assert.equal(c.connection.getSnapshot(), configuration); assert.equal(c.transfer.resource.getSnapshot(), transfer); assert.equal(c.savedComparisonReference(), reference);
+        assert.equal(c.workspace.observeHistory(resource.documentId).getSnapshot().undoDepth, 1);
+        c.workspace.undo({ documentId: resource.documentId, expectedRevision: c.workspace.document(resource.documentId).revision }); assert.equal(c.workspace.document(resource.documentId).text, "loaded resource"); assert.equal(resource.metadata.getSnapshot().dirty, false);
+        editLoaded(c, "later loaded text"); view = c.workspace.createDocumentView(resource.documentId); view.setSelections(c.workspace.document(resource.documentId).revision, [{ anchor: 2, head: 1 }, { anchor: 8, head: 4 }], 1);
+        stop = c.registerInputCaptureGuard(() => true, () => view); const set = view.getSnapshot().selectionSet; d.prepare("loaded"); d.confirm(); await idle(d);
+        c.workspace.undo({ documentId: resource.documentId, expectedRevision: c.workspace.document(resource.documentId).revision }); assert.equal(c.workspace.document(resource.documentId).text, "later loaded text"); assert.deepEqual(view.getSnapshot().selectionSet, set);
+    } finally { stop(); view?.dispose(); await close(c, d); }
+});
+for (const change of ["revision", "authority", "slot-generation"] as const) test(`loaded restore rejects ${change} changes after storage read starts`, async () => {
+    const store = await loadedSeed(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d);
+    try {
+        if (change !== "slot-generation") { c.beginDeferredLoad(); c.finishLoad(); }
+        const gate = deferred(); store.shared.readGate = gate.promise; d.prepare("loaded"); d.confirm();
+        if (change === "slot-generation") { c.beginDeferredLoad(); c.finishLoad(); c.reopenPrimary(); }
+        else if (change === "revision") editLoaded(c, "later correction wins");
+        else { const r = c.loadedSource.getSnapshot().resource!, m = r.metadata.getSnapshot(); c.workspace.setCapabilities(r.id, { ...m.capabilities, edit: ["host"] }); c.workspace.setCapabilities(r.id, m.capabilities); }
+        const loaded = c.loadedSource.getSnapshot().resource, before = loaded ? c.workspace.document(loaded.documentId) : null;
+        gate.resolve(); await idle(d); assert.equal(c.loadedSource.getSnapshot().resource, loaded); if (loaded) assert.equal(c.workspace.document(loaded.documentId), before);
+        assert.match(d.state.getSnapshot().message, /stale|changed/i); assert.equal(text(c), "start");
+    } finally { await close(c, d); }
+});
+test("v2 recovery does not invent loaded text and foreign loaded identities are rejected", async () => {
+    const store = await loadedSeed(), envelope = structuredClone(store.shared.value!); (envelope.value as Record<string, unknown>).format = 2; delete (envelope.value as Record<string, unknown>).loaded;
+    store.shared.value = envelope; let c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d);
+    assert.equal(d.state.getSnapshot().valid, true); assert.equal(d.state.getSnapshot().hasLoaded, false); await close(c, d);
+    (envelope.value as Record<string, unknown>).format = 3; (envelope.value as Record<string, unknown>).loaded = { identity: "another-route", revision: 1, serverVersion: "v1", text: "foreign" };
+    store.shared.value = envelope; c = new HostController(); d = new HostDraftRecovery(c, store.port()); await idle(d); assert.equal(d.state.getSnapshot().valid, false); assert.equal(c.loadedSource.getSnapshot().resource, null); await close(c, d);
+});
+
 test("checkpoint transfers captured versions without exporting ordinary later edits", async () => {
     const store = storage(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); edit(c, "captured"); c.setPath("captured.csv");
     const before = c.workspace.document(c.source.documentId).buffer; assert.equal(before.readMetrics().textExports, 0); const gate = deferred(); store.shared.writeGate = gate.promise; d.prepare("keep");

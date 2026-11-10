@@ -214,7 +214,8 @@ export class ViewBindings {
         this.rename = new HostRenameTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
         this.signature = new HostSignatureTools(controller.workspace, canCapture, () => this.hover.dismiss());
         this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.documentId) && !this.review?.working.snapshot().pendingInput
-            && ![...this.mounted.values()].some(value => value.editor.metrics()?.pendingInput));
+            && ![...this.mounted.values()].some(value => value.editor.metrics()?.pendingInput),
+            documentId => this.selections.get("primary")?.get(documentId) ?? this.selections.get("comparison")?.get(documentId) ?? this.selections.get("secondary")?.get(documentId));
         this.stopDocumentCleanup = controller.registerDetachedDocumentCleanup(documentId => {
             if ([...this.mounted.values()].some(value => value.documentId === documentId) || this.review?.working.view.documentId === documentId) return;
             for (const selections of this.selections.values()) { selections.get(documentId)?.dispose(); selections.delete(documentId); }

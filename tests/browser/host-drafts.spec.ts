@@ -31,6 +31,43 @@ async function stored(p: Page, text: string | null): Promise<string | null> { co
     };
 }), text); expect(row.matches).toBe(true); return row.token; }
 const selections = (s: Awaited<ReturnType<typeof snapshot>>) => ({ views: s.bindings.views.map(v => ({ id: v.id, set: v.selectionSet })), working: s.bindings.comparison?.selectionSet, reference: s.bindings.comparison?.referenceViewport?.selectionSet });
+for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} loaded-source checkpoint survives close and real reload independently`, async ({ page: p }, info) => {
+    test.setTimeout(120000); const errors: string[] = []; p.on("pageerror", e => errors.push(e.message));
+    await p.goto(`/hosts/${host}/?editor=candidate`); await ready(p);
+    await button(p, "Begin delayed load").click(); await button(p, "Finish delayed load").click(); await ready(p);
+    const loaded = (await snapshot(p)).bindings.views.find(v => v.id === "primary")!;
+    const value = "loaded café😀 é\r\n" + "row Δ😀\r\n".repeat(large ? 100000 : 8) + "tail";
+    await p.evaluate(({ id, value }) => { const f = window.hostFixture, s = f.navigationDocument(id); f.editLinkTarget(id, s.revision, [{ from: 0, to: s.length, insert: value }]); }, { id: loaded.documentId, value });
+    await source(p).press("Control+End"); await source(p).pressSequentially("K"); await ready(p);
+    let doc = await p.evaluate(id => window.hostFixture.navigationDocument(id), loaded.documentId); expect(doc.exports).toBe(0);
+    await p.evaluate(revision => window.hostFixture.selectSourceSet("primary", revision, [{ anchor: 4, head: 1 }, { anchor: 12, head: 8 }], 1), doc.revision); await ready(p);
+    const beforeClose = (await snapshot(p)).bindings.views.find(v => v.id === "primary")!;
+    await button(p, "Prompt close").click(); await button(p, "Confirm close").click(); await button(p, "Reopen loaded source").click(); await ready(p);
+    expect((await snapshot(p)).bindings.views.find(v => v.id === "primary")!.selectionSet).toEqual(beforeClose.selectionSet);
+    await keep(p); expect((await snapshot(p)).draft).toMatchObject({ hasLoaded: true, unprotected: false }); expect(await warning(p)).toBe(false);
+    await source(p).press("Control+End"); await source(p).pressSequentially("L"); await ready(p); expect(await warning(p)).toBe(true);
+    await source(p).press("Control+z"); await ready(p); expect(await warning(p)).toBe(false);
+    await p.reload(); await ready(p); await exact(p, "start"); const original = await snapshot(p), originalDocument = original.bindings.views.find(v => v.id === "primary")!.documentId;
+    await button(p, "Save source").click(); await button(p, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(p)).pendingRuns.length).toBe(1);
+    const pending = await snapshot(p); await restore(p, "Restore loaded-source draft"); await exact(p, "start");
+    expect((await snapshot(p)).bindings.views.find(v => v.id === "primary")!.documentId).toBe(originalDocument);
+    await button(p, "Reopen loaded source").click(); await ready(p); const restored = (await snapshot(p)).bindings.views.find(v => v.id === "primary")!;
+    expect(restored.documentId).not.toBe(originalDocument); expect((await snapshot(p)).pendingSaves).toEqual(pending.pendingSaves); expect((await snapshot(p)).pendingRuns).toEqual(pending.pendingRuns);
+    doc = await p.evaluate(id => window.hostFixture.navigationDocument(id), restored.documentId); expect(doc.length).toBe(value.length + 1); expect(doc.text).toBe((value + "K").slice(0, 4096)); expect(doc.exports).toBe(0);
+    await source(p).press("Control+z"); await ready(p); expect(await p.evaluate(id => window.hostFixture.navigationDocument(id).text, restored.documentId)).toBe("loaded resource");
+    await source(p).press("Control+Shift+z"); await ready(p); expect((await snapshot(p)).history).toEqual(original.history);
+    await button(p, "Finish save").click(); await button(p, "Finish run").click(); await expect.poll(async () => (await snapshot(p)).pendingCommands).toBe(0);
+    await keep(p);
+    const storedLoaded = await p.evaluate(() => new Promise<string>((resolve, reject) => {
+        const open = indexedDB.open("sttropez-example-drafts-v1", 1); open.onerror = () => reject(open.error); open.onsuccess = () => {
+            const db = open.result, tx = db.transaction("drafts", "readonly"), get = tx.objectStore("drafts").get("working-inputs");
+            tx.oncomplete = () => { db.close(); resolve(get.result.value.loaded.text); }; tx.onabort = () => { db.close(); reject(tx.error); };
+        };
+    }));
+    expect(storedLoaded).toBe(value + "K"); expect(await warning(p)).toBe(false); await exact(p, "start");
+    expect(restored.metrics!.viewport.rows).toBeLessThan(100); await p.screenshot({ path: info.outputPath("loaded-source-restored.png") });
+    await dispose(p); expect(errors).toEqual([]);
+});
 async function ready(p: Page): Promise<void> { await p.waitForFunction(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison; return !s.draft?.busy && s.bindings.views.every(v => !v.metrics || !v.metrics.pendingInput && !v.metrics.pendingCommand && !v.metrics.pendingCaret && !v.metrics.viewport.pending)
     && (!c || c.status === "ready" && !c.input.pendingInput && !c.input.pendingCaret && !c.workingViewport.pending && !c.referenceViewport?.pending); }); }
 async function exact(p: Page, value: string): Promise<void> { expect(await p.evaluate(value => { const f = window.hostFixture; if (f.snapshot().source.length !== value.length) return false; for (let from = 0; from < value.length; from += 32768) if (f.range(from, Math.min(value.length, from + 32768)) !== value.slice(from, from + 32768)) return false; return true; }, value)).toBe(true); }
@@ -105,7 +142,7 @@ for (const host of ["plain", "react"]) test(`${host === "plain" ? "" : "react "}
     await button(p, "Retry draft storage").click(); await ready(p); let seen = await notices(peer); await keep(p); await peerNotice(peer, seen); await preserved(peer, peerBefore, peerText); expect(await source(peer).evaluate(n => document.activeElement === n)).toBe(true);
     await source(p).focus(); await ready(p); let before = await snapshot(p); seen = await notices(p); await keep(peer); await peerNotice(p, seen); await preserved(p, before, owned); expect((await snapshot(p)).draft!.unprotected).toBe(true); expect(await warning(p)).toBe(true); expect(await warning(peer)).toBe(false); expect(await source(p).evaluate(n => document.activeElement === n)).toBe(true);
     // The persistent host service also observes the peer while its views are dormant.
-    await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expect(dormant.diagnostics.subscriptions).toBe(4); expect(dormant.hostSubscriptions).toBe(1);
+    await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expect(dormant.diagnostics.subscriptions).toBe(4); expect(dormant.hostSubscriptions).toBe(2);
     await source(peer).press("Control+End"); await source(peer).pressSequentially("B"); peerText += "B"; seen = await notices(p); await keep(peer); await peerNotice(p, seen); await preserved(p, dormant, owned);
     await p.evaluate(() => window.hostFixture.mount()); await ready(p); await exact(p, owned); expect(selections(await snapshot(p))).toEqual(selections(before));
     await button(p, "Open source review").click(); await ready(p); const baseline = (await snapshot(p)).bindings.comparison!.baseline!.version;

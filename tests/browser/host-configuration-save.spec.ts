@@ -40,7 +40,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await button(p, "Fail configuration save").click(); await expect(p.getByLabel("Configuration save status", { exact: true })).toContainText("failed");
     await button(p, "Dismiss message").click(); await button(p, "Save configuration").click(); await expect(button(p, "Finish configuration save")).toBeEnabled();
     // Service work outlives views; remount keeps the captured resource and later form value.
-    await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expect(dormant.diagnostics.subscriptions).toBe(4); expect(dormant.hostSubscriptions).toBe(1);
+    await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expect(dormant.diagnostics.subscriptions).toBe(4); expect(dormant.hostSubscriptions).toBe(2);
     await p.evaluate(() => window.hostFixture.mount()); await ready(p); await expect(field).toHaveValue("later.csv");
     await button(p, "Finish configuration save").click(); await expect.poll(async () => (await snapshot(p)).configuration.dirty).toBe(false);
     await field.fill("local.csv"); await button(p, "Simulate external configuration change").click(); await button(p, "Save configuration").click();
