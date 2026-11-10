@@ -13,7 +13,7 @@ export const actionsDescription = "Preview an import of the chosen module into t
 export const actionTarget = (at: ActionNote): string => `${at.title} · ${at.resource} · ${at.document} @ revision ${at.revision} · [${at.from},${at.to})\nInsert ${JSON.stringify(at.insert)}\nContext: ${at.context}`;
 export function mountActionsPanel(host: HTMLElement, tools: HostActionsTools): () => void {
     const owner = host.ownerDocument, heading = owner.createElement("h2"), description = owner.createElement("p"), status = owner.createElement("output"), label = owner.createElement("label"), module = owner.createElement("input"), controls = owner.createElement("div"), title = owner.createElement("p"), edits = owner.createElement("ol"), changed = owner.createElement("button");
-    heading.textContent = "Code actions"; description.textContent = actionsDescription; status.setAttribute("aria-label", "Code action status"); status.setAttribute("aria-live", "polite");
+    heading.textContent = "Code actions"; description.textContent = actionsDescription; status.setAttribute("aria-label", "Code action status");
     module.type = "text"; module.maxLength = 64; module.value = tools.state.getSnapshot().module; module.oninput = () => tools.setModule(module.value); label.append("Action module ", module); tools.bindModule(module);
     title.setAttribute("aria-label", "Captured action title"); edits.setAttribute("aria-label", "Proposed action edits"); changed.onclick = tools.openChanged;
     const buttons = actionsControls(tools).map(action => { const button = owner.createElement("button"); button.textContent = action.label; controls.append(button); return button; });

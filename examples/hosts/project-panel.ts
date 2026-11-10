@@ -13,7 +13,7 @@ export function projectActions(tools: HostProjectTools) {
 }
 export function mountProjectPanel(host: HTMLElement, tools: HostProjectTools): () => void {
     const owner = host.ownerDocument, heading = owner.createElement("h2"), status = owner.createElement("output"), controls = owner.createElement("div"), changed = owner.createElement("ul"), description = owner.createElement("p");
-    heading.textContent = "Workspace provider"; status.setAttribute("aria-label", "Workspace provider status"); status.setAttribute("aria-live", "polite");
+    heading.textContent = "Workspace provider"; status.setAttribute("aria-label", "Workspace provider status");
     const buttons = projectActions(tools).map(action => { const button = owner.createElement("button"); button.textContent = action.label; button.onclick = action.invoke; controls.append(button); return button; });
     description.textContent = "Last applied provider edits"; changed.setAttribute("aria-label", "Provider changed resources");
     host.replaceChildren(heading, status, controls, description, changed); let previous: ReturnType<HostProjectTools["state"]["getSnapshot"]>["changes"] | undefined;

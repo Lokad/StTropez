@@ -59,4 +59,4 @@ physical-display qualification.
 The [workspace command fixture](server-edits.md) uses the same client in a separately owned lane
 for acknowledged local registration, captured server edits and custom status messages. Full
 external-protocol compatibility and broader language semantics remain required. Native IME,
-OS clipboard and accessibility qualification remain unverified where applicable.
+OS clipboard qualification remains unverified where applicable.

@@ -68,7 +68,7 @@ contexts require the same buffer/version. A replaced target requires explicit se
 Late results cannot target a later focused source. Final host disposal clears retained ownership.
 
 Synthetic clipboard/composition checks exercise model guards; native OS/application clipboard,
-IME/reconversion/dead keys and assistive-technology qualification remain separate.
+IME/reconversion/dead-key qualification remains separate.
 
 ## Exact alignment and scheduling
 
@@ -237,7 +237,7 @@ disable and disposal invalidate it. Pending input/navigation or composition in e
 Rendered logical positions are observed as well as native scroll notifications. A scroll consumed
 while navigation is pending retains its initiating pane and resumes when input/viewport work settle. The clamped logical target suppresses delayed programmatic feedback. Resize and
 fold changes reuse bounded frame scheduling; horizontal scrolling does not move the other pane.
-The host owns refresh/acceptance controls and transport errors. Native IME, accessibility and
+The host owns refresh/acceptance controls and transport errors. Native IME and
 physical-display qualification remain separate; scroll callback work is not complete interaction
 latency.
 
@@ -260,8 +260,7 @@ rather than document or padding row count. A cooperative cursor publishes both l
 against captured reference, working revision and fold snapshots. Edits, refresh, fold changes,
 disable and disposal cancel stale work. Publication waits for pending input, navigation, pointer
 gestures and composition in either pane to settle. Pending state reflects stale captures immediately. Only the
-visible row window creates DOM; padding is empty, nonfocusable and hidden from accessibility APIs.
-This is not native assistive-technology qualification.
+visible row window creates DOM; padding is empty and nonfocusable.
 
 Padding contains no source characters. Clicking it chooses the adjacent source boundary or visible
 fold header; ordinary arrows skip padding and Page commands use the visual grid with real-source
@@ -288,6 +287,6 @@ consumer also uses the compiled comparison modules, declarations and styles.
 
 `npm run bench:comparison` records headless total/step time separately from browser step and
 readiness proxies, with source/environment metadata and raw samples. Large browser cases are
-single diagnostic observations. These checks do not qualify native-device IME, assistive
-technology, full contextual long-line shaping, physical presentation latency or production
+single diagnostic observations. These checks do not qualify native-device IME,
+full contextual long-line shaping, physical presentation latency or production
 performance budgets.

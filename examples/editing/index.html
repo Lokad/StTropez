@@ -1,14 +1,14 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Bounded editing candidate</title><link rel="stylesheet" href="/editing.css"></head>
-<body><h1>Bounded editing candidate</h1><p>Experimental input and local glyph coordinates. Native IME, assistive technology and long contextual-line layout remain qualification work.</p>
+<body><h1>Bounded editing candidate</h1><p>Experimental input and local glyph coordinates. Native IME and long contextual-line layout remain qualification work.</p>
 <div id="commands"><label>Workload <select id="workload"><option value="normal">Normal source</option><option value="lines-100000" selected>100,000 lines</option><option value="single-line">Huge single line</option><option value="unicode">Unicode</option></select></label><button id="end">End</button><button id="undo">Undo</button><button id="redo">Redo</button><button id="after">After editor</button></div>
 <section aria-label="Find and replace"><label>Find <input id="find-query" type="text"></label><label>Replace with <input id="replacement" type="text"></label>
 <label><input id="find-whole-word" type="checkbox">Whole word</label>
 <label><input id="find-match-case" type="checkbox" checked>Match case</label>
 <label><input id="find-regex" type="checkbox">Regular expression</label>
-<button id="find-previous">Previous match</button><button id="find-next">Next match</button><button id="replace-current">Replace match</button><button id="replace-all">Replace all</button><button id="find-cancel">Cancel search</button><output id="find-status" aria-live="polite"></output></section>
+<button id="find-previous">Previous match</button><button id="find-next">Next match</button><button id="replace-current">Replace match</button><button id="replace-all">Replace all</button><button id="find-cancel">Cancel search</button><output id="find-status"></output></section>
 <main><section><h2>Primary view</h2><div class="pane" id="primary"></div></section><section><h2>Independent view</h2><div class="pane" id="secondary"></div></section></main>
 <section aria-label="Language tools"><button id="provider-request">Request completion</button><button id="completion-insert">Insert completion</button><button id="completion-replace">Replace completion</button><button id="provider-cancel">Cancel request</button><button id="provider-disconnect">Disconnect provider</button><button id="provider-reconnect">Reconnect provider</button>
-<output id="provider-status" aria-live="polite"></output><ul id="completion-choices" role="listbox" aria-label="Completion choices"></ul><h2>Diagnostics near the caret</h2><ul id="provider-diagnostics" aria-label="Provider diagnostics"></ul></section>
-<section aria-label="Paragraph analysis"><button id="paragraph-start">Analyze current line</button><button id="paragraph-cancel">Cancel analysis</button><output id="paragraph-status" aria-live="polite"></output></section>
-<output id="status" aria-live="polite"></output><script type="module" src="/editing.js"></script></body></html>
+<output id="provider-status"></output><ul id="completion-choices" role="listbox" aria-label="Completion choices"></ul><h2>Diagnostics near the caret</h2><ul id="provider-diagnostics" aria-label="Provider diagnostics"></ul></section>
+<section aria-label="Paragraph analysis"><button id="paragraph-start">Analyze current line</button><button id="paragraph-cancel">Cancel analysis</button><output id="paragraph-status"></output></section>
+<output id="status"></output><script type="module" src="/editing.js"></script></body></html>

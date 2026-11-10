@@ -12,12 +12,12 @@ import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
 
 export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport;
-    focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void; describe: (id: string) => () => void;
+    focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
     snapshot: () => Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number; queuedInputTurns: number; maxQueuedInputTurnMs: number; queuedInputWorkMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; pendingCaret: boolean; pendingCommand: boolean; pendingDragScroll: boolean; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; composing: boolean; pendingInput: boolean; queuedInputUnits: number; pendingWord: boolean; wordScanSteps: number; maxWordScanStepMs: number; pendingGrapheme: boolean; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number; disposed: boolean }>;
     destroy: () => void }>;
 let nextMount = 0;
 
-/** Experimental bounded-input adapter. Long contextual lines and native IME/AT remain qualification gates. */
+/** Experimental bounded-input adapter. Long contextual lines and native IME remain qualification gates. */
 export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, tabId: TabId,
     options: Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; decorate?: LineDecorator; lineClass?: LineClass }> = {}): EditingCandidate {
     const readOnly = options.readOnly === true;
@@ -30,7 +30,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     try { viewport = mountTextViewport(host, workspace, tabId, { ...options, view }); }
     catch (error) { if (!options.view) view.dispose(); throw error; }
     const root = viewport.element;
-    const owner = host.ownerDocument, win = owner.defaultView!, input = owner.createElement("textarea"), caret = owner.createElement("div"), secondaryCarets = owner.createElement("div"), help = owner.createElement("span");
+    const owner = host.ownerDocument, win = owner.defaultView!, input = owner.createElement("textarea"), caret = owner.createElement("div"), secondaryCarets = owner.createElement("div");
     const caretNodes: HTMLDivElement[] = [];
     const scope = ++nextMount, listeners = new AbortController();
     root.classList.add("st-editing-candidate"); root.tabIndex = -1;
@@ -39,29 +39,15 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     // The native projection belongs to the editor, independently of enclosing host forms.
     input.setAttribute("form", "");
     input.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
-    input.setAttribute("aria-multiline", "true"); input.setAttribute("autocapitalize", "off");
-    const editingHelp = "Alt+click or Alt+drag adds a caret or selection. Escape keeps the primary selection. Tab inserts indentation. Press Escape, then Tab or Shift+Tab to leave the editor.";
-    help.id = `st-input-help-${scope}`; help.className = "st-input-help"; help.textContent = editingHelp;
-    input.setAttribute("aria-describedby", help.id); caret.className = "st-input-caret"; caret.setAttribute("aria-hidden", "true");
-    secondaryCarets.setAttribute("aria-hidden", "true"); root.append(input, caret, secondaryCarets, help);
+    input.setAttribute("autocapitalize", "off");
+    caret.className = "st-input-caret"; caret.setAttribute("aria-hidden", "true");
+    secondaryCarets.setAttribute("aria-hidden", "true"); root.append(input, caret, secondaryCarets);
     let revision = workspace.document(documentId).revision, context: InputContext = inputContext(workspace.document(documentId).buffer, view.getSnapshot().selection);
     let disposed = false, composing = false, selecting = false, committing = false, escaped = false;
     const escapeState = (value: boolean) => {
         if (escaped === value) return;
         escaped = value; root.toggleAttribute("data-st-tab-escape", value);
         for (const button of root.querySelectorAll<HTMLButtonElement>(".st-fold-button")) button.tabIndex = value ? -1 : 0;
-    };
-    const descriptions = new Map<string, number>();
-    const renderDescriptions = () => input.setAttribute("aria-describedby", [help.id, ...[...descriptions.keys()].filter(id => id !== help.id)].join(" "));
-    const describe = (id: string): (() => void) => {
-        if (typeof id !== "string" || !id || /\s/.test(id)) throw new TypeError("Expected one description element ID.");
-        if (disposed) return () => {};
-        descriptions.set(id, (descriptions.get(id) ?? 0) + 1); renderDescriptions(); let active = true;
-        return () => {
-            if (!active || disposed) return; active = false;
-            const count = descriptions.get(id)!; if (count === 1) descriptions.delete(id); else descriptions.set(id, count - 1);
-            renderDescriptions();
-        };
     };
     let frame: number | undefined, commits = 0, conflicts = 0, serial = 0, inputEvents = 0, lastInputMs = 0;
     let beforeInputEvents = 0, lastBeforeInputMs = 0, queuedInputTurns = 0, maxQueuedInputTurnMs = 0, queuedInputWorkMs = 0;
@@ -145,11 +131,9 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (disposed || selecting || committing) return;
         const state = resource.getSnapshot(); input.disabled = !workspace.resolveTab(target) || state.state !== "ready";
         input.readOnly = readOnly || !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null;
-        const hint = input.readOnly ? "Read-only text. Navigate, select and copy. Press Escape, then Tab or Shift+Tab to leave the editor." : editingHelp;
-        if (help.textContent !== hint) help.textContent = hint;
         if (executingInput?.edit && input.readOnly) recoverInput(executingInput, "pending-input-expired");
         if (ordered && (!currentInput(ordered) || ordered.edit && input.readOnly)) cancelWord();
-        input.setAttribute("aria-busy", String(state.state === "loading" || ordered !== undefined));
+
         if (!input.disabled && !composing) {
             const document = workspace.document(documentId), { selection: selected, selectionSet } = view.getSnapshot();
             if (graphemeCache?.buffer !== document.buffer) graphemeCache = undefined;
@@ -650,7 +634,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (nativeOrder?.order === pending) { nativeOrder.invalid = true;
             if (!nativeOrder.reported && nativeOrder.data !== null) { text += nativeOrder.data; nativeOrder.reported = true; } }
         if (text.length) conflict(reason, undefined, pending.capture.revision, 0, text);
-        input.setAttribute("aria-busy", String(!disposed && resource.getSnapshot().state === "loading"));
+
     }
     function currentInput(pending: OrderedInput): boolean {
         return !pending.cancelled && validCommand(pending.capture) && root.isConnected && workspace.ownsDocumentView(view) && !(pending.edit && input.readOnly);
@@ -671,7 +655,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (last?.kind === "text" && action.kind === "text" && last.type === "insertText" && action.type === "insertText" && action.at - (last.at ?? action.at) < 1000) { last.text += action.text; last.at = action.at; }
         else pending.actions.push(action);
         pending.units += action.text.length; pending.edit ||= action.kind === "text" || action.edit;
-        input.setAttribute("aria-busy", "true"); scheduleInput();
+        scheduleInput();
     }
     function scheduleInput(): void {
         if (!ordered || rangeCommand || ordered.native || orderedTimer !== undefined) return;
@@ -712,7 +696,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             if (pending.actions.length || pending.native) { ordered = pending; scheduleInput(); }
         } catch { recoverInput(pending, "pending-input-failed"); }
         finally { replayTime = undefined; if (executingInput === pending) executingInput = undefined; drainingInput = false;
-            input.setAttribute("aria-busy", String(ordered !== undefined || !disposed && resource.getSnapshot().state === "loading")); }
+            }
     }
     function inputKey(event: KeyboardEvent): InputKey | undefined {
         const command = (event.ctrlKey || event.metaKey) && !event.altKey, key = event.key.toLowerCase();
@@ -741,7 +725,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (event.cancelable && (action || data !== null)) { event.preventDefault(); appendInput(action ?? { kind: "text", text: data!, type: event.inputType }); return true; }
         pending.native = true; pending.edit = true;
         nativeOrder = { order: pending, capture: captureInput(event.inputType, event.data), type: event.inputType, data, ...(action ? { action } : {}), invalid: false, reported: false };
-        input.setAttribute("aria-busy", "true"); return true;
+        return true;
     }
     function commitOrderedInput(event: InputEvent): boolean {
         let pendingNative = nativeOrder; nativeOrder = undefined;
@@ -966,7 +950,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             if (revision === observedFoldRevision) { cancelWord(); stopDrag(); preferred = undefined; group = undefined; }
             observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh), workspace.tabState.subscribe(refresh)];
     refresh();
-    return Object.freeze({ element: root, input, view, viewport, focus, describe,
+    return Object.freeze({ element: root, input, view, viewport, focus,
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state: ViewState) => { viewport.restoreView(state); refresh(); },
         snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, queuedInputTurns, maxQueuedInputTurnMs, queuedInputWorkMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs, pendingCaret: frame !== undefined, pendingCommand: rangeCommand !== undefined || wordJob !== undefined || graphemeJob !== undefined,
@@ -980,6 +964,6 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             composing = false; stopDrag(); textDrag.destroy();
             if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
             cancelCommandTimers();
-            listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); descriptions.clear(); input.value = ""; caretNodes.length = 0; secondaryCarets.replaceChildren(); viewport.destroy(); if (!options.view) view.dispose();
+            listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); input.value = ""; caretNodes.length = 0; secondaryCarets.replaceChildren(); viewport.destroy(); if (!options.view) view.dispose();
         } });
 }

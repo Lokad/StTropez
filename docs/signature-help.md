@@ -14,7 +14,7 @@ editor changes selections. A second Escape resumes the editor's selection comman
 removal and composition dismiss help. Passive pointer hover stays suppressed while signature help
 is visible; explicit keyboard hover takes ownership when Ctrl/Cmd+K starts its chord, dismissing
 signature help and cancelling automatic retriggers before Ctrl/Cmd+I. Clicking or scrolling the documentation
-keeps source focus and the complete selections. Native screen-reader behavior remains unverified.
+keeps source focus and the complete selections.
 
 Automatic opening triggers use a bounded, 512-unit known-name filter, then debounce for 50 ms.
 Commas retrigger active help. This filter does not establish lexical correctness: the actual worker
@@ -54,6 +54,6 @@ Per-reply and whole-request deadlines remain 5/30 seconds. Signature work never 
 edits; Save/Run retain the primary working identity even when help comes from comparison.
 Measurements distinguish the candidate's own input handler, whole synchronous command dispatch,
 background synchronization/scan and complete all-view/widget readiness. Single controls and
-functional deadlines qualify neither latency tails nor native input, clipboard, accessibility or
+functional deadlines qualify neither latency tails nor native input, clipboard or
 physical display. Remaining language semantics, rename/actions/links/colors and needed consuming-
 host/protocol qualification stay required.

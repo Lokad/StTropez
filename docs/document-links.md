@@ -61,6 +61,6 @@ Focused model and browser checks cover Unicode/BOM/CRLF, normal/100k sources,
 action-to-link navigation, remounted origins, complete sets, unresolved/page/count
 bounds, stale source/target/route/authority/tokens, safe tooltips, malformed results,
 reconnect, synthetic input guards and disposal. Native IME/reconversion/dead keys,
-OS/application clipboard, assistive technology and physical display latency remain
+OS/application clipboard and physical display latency remain
 unverified. Command dispatch and complete discovery/reveal readiness are distinct
 from actual typing-handler timings; bulk correctness is not a latency pass.

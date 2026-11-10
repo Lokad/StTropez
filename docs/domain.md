@@ -54,6 +54,6 @@ provider callback, without an application service or a worker fallback.
 
 These functional deadlines do not qualify point latency. Input-handler time,
 provider callback work, complete result readiness and physical display latency are
-different clocks. Native IME, OS clipboard and assistive-technology checks remain
+different clocks. Native IME and OS clipboard checks remain
 separate and unverified; the fixture is not full native or language-service
 qualification. Further domain/language policy belongs in the host.

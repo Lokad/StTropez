@@ -17,7 +17,7 @@ export const documentLinkLabel = (link: LinkNote) => `Open ${link.module} at ${l
 export const documentLinkDetails = (link: LinkNote) => `${link.title} [${link.from},${link.to}) · ${link.tooltip}${link.target ? ` · ${link.target.resource} · ${link.target.document} @ revision ${link.target.revision}` : ""}`;
 export function mountDocumentLinksPanel(host: HTMLElement, tools: HostDocumentLinks): () => void {
     const owner = host.ownerDocument, heading = owner.createElement("h2"), description = owner.createElement("p"), status = owner.createElement("output"), controls = owner.createElement("div"), list = owner.createElement("ul");
-    heading.textContent = "Module document links"; description.textContent = documentLinkDescription; status.setAttribute("aria-label", "Module link status"); status.setAttribute("aria-live", "polite"); list.setAttribute("aria-label", "Module link results"); list.tabIndex = -1; tools.bindList(list);
+    heading.textContent = "Module document links"; description.textContent = documentLinkDescription; status.setAttribute("aria-label", "Module link status"); list.setAttribute("aria-label", "Module link results"); list.tabIndex = -1; tools.bindList(list);
     const buttons = documentLinkActions(tools).map(action => { const button = owner.createElement("button"); button.textContent = action.label; controls.append(button); return button; });
     host.replaceChildren(heading, description, status, controls, list); let previous: unknown, token: number | null = null, page = -1;
     const render = () => { const s = tools.state.getSnapshot(); status.textContent = s.message; for (const [i, action] of documentLinkActions(tools).entries()) { buttons[i]!.disabled = action.disabled; buttons[i]!.onclick = action.invoke; }

@@ -53,7 +53,7 @@ try {
     });
     const report = { schemaVersion: 1, created: new Date().toISOString(), source: await sourceIdentity(), environment: { ...environment(), browser: harness.browser.version(), display },
         runtime: "bounded-read-only-viewport", activeViews: 2, cases, errors: harness.errors,
-        note: "Programmatic range edits and a read-only DOM projection. Render timing covers geometry reads, indexed ranges and DOM writes; the frame-ready metric is an animation-frame scheduling proxy. No typing/input/IME/AT or production-latency claim. UTF-16 fixed-pitch horizontal estimation remains unqualified for long shaped lines." };
+        note: "Programmatic range edits and a read-only DOM projection. Render timing covers geometry reads, indexed ranges and DOM writes; the frame-ready metric is an animation-frame scheduling proxy. No typing/input/IME or production-latency claim. UTF-16 fixed-pitch horizontal estimation remains unqualified for long shaped lines." };
     await mkdir("artifacts/bench/viewport", { recursive: true }); await writeFile("artifacts/bench/viewport/latest.json", JSON.stringify(report, null, 2));
     console.log(JSON.stringify(cases.map(item => ({ corpus: item.corpus, position: item.position, renderP95: item.primaryRenderMs.p95,
         frameProxyP95: item.frameReadyProxyMs.p95, maxRows: Math.max(...item.samples.map(sample => sample.primary.rows)),

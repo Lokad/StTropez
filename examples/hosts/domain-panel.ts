@@ -10,7 +10,7 @@ export function domainActions(tools: HostDomainTools) {
 }
 export function mountDomainPanel(host: HTMLElement, tools: HostDomainTools): () => void {
     const owner = host.ownerDocument, heading = owner.createElement("h2"), status = owner.createElement("output"), progress = owner.createElement("progress"), notes = owner.createElement("ul"), controls = owner.createElement("div");
-    heading.textContent = "Domain tools"; status.setAttribute("aria-label", "Domain command status"); status.setAttribute("aria-live", "polite");
+    heading.textContent = "Domain tools"; status.setAttribute("aria-label", "Domain command status");
     progress.setAttribute("aria-label", "Domain discovery progress"); notes.setAttribute("aria-label", "Domain annotations");
     const buttons = domainActions(tools).map(action => { const button = owner.createElement("button"); button.textContent = action.label; button.onclick = action.invoke; controls.append(button); return button; });
     host.replaceChildren(heading, status, progress, controls, notes); let previous: DomainSnapshot | undefined;

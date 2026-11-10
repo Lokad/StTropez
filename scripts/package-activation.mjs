@@ -233,6 +233,6 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         const d = await page.evaluate(() => window.activationFixture.dispose()); assert.equal(d.resources, 0); return { literalFindAndTypingSurvive: true, final: d };
     });
     const report = { packageSha256, browser: browser.version(), corpus, cases, assets: { javascript: outputs, ...assetBytes, wasm: [] },
-        limits: "Correctness and asset loading evidence, with own input-handler observations only. No activation/interaction p95, retained heap, native IME/OS clipboard/accessibility, service integration or production qualification." };
+        limits: "Correctness and asset loading evidence, with own input-handler observations only. No activation/interaction p95, retained heap, native IME/OS clipboard, service integration or production qualification." };
     await writeFile(`${directory}/activation-${browserName}.json`, JSON.stringify(report, null, 2)); console.log(`Restored explicit activation: ${cases.length} journeys passed in ${browserName}.`);
 }

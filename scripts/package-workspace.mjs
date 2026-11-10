@@ -114,6 +114,6 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
             await writeFile(`${directory}/workspace-${engine}-failure.json`, JSON.stringify({ large, error: String(error.stack ?? error), snapshot: await snap(), layout, errors, requests }, null, 2)); throw error; }
         finally { await context.close(); }
     }
-    await writeFile(`${directory}/workspace-${engine}.json`, JSON.stringify({ packageSha256, browser: browser.version(), corpus, cases, outputs, limits: "Bounded correctness/resource/DOM and individual input-handler observations. Retained heap, complete interaction/cold activation latency, native IME/OS clipboard/accessibility and production adoption remain unverified." }, null, 2));
+    await writeFile(`${directory}/workspace-${engine}.json`, JSON.stringify({ packageSha256, browser: browser.version(), corpus, cases, outputs, limits: "Bounded correctness/resource/DOM and individual input-handler observations. Retained heap, complete interaction/cold activation latency, native IME/OS clipboard and production adoption remain unverified." }, null, 2));
     console.log(`Restored workspace: ${cases.length} normal/100k journeys passed in ${engine}.`);
 }

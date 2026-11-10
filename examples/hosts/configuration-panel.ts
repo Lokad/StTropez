@@ -31,7 +31,7 @@ export function formSaveKey(event: SaveKey, save: Readonly<{ save: () => void }>
 export function mountConfigurationPanel(host: HTMLElement, controller: HostController): () => void {
     const save = controller.configurationSave, owner = host.ownerDocument, listeners = new AbortController();
     const title = owner.createElement("h2"), status = owner.createElement("output"), nav = owner.createElement("div"), preview = owner.createElement("pre");
-    title.textContent = "Configuration save"; status.setAttribute("aria-label", "Configuration save status"); status.setAttribute("aria-live", "polite");
+    title.textContent = "Configuration save"; status.setAttribute("aria-label", "Configuration save status");
     const buttons = configurationActions(save).map(action => { const button = owner.createElement("button"); button.textContent = action.label;
         button.addEventListener("click", action.invoke, { signal: listeners.signal }); nav.append(button); return button; });
     host.addEventListener("keydown", event => formSaveKey(event, save), { signal: listeners.signal });

@@ -68,6 +68,6 @@ keep the page open so the user can checkpoint, finish or cancel the work. A chec
 save or run inputs, replay service requests or persist the synthetic server. Browser unload
 prompts are not a crash/power-loss guarantee and require the consuming host's declared browser
 and device checks. The draft service outlives view unmounts; full host disposal releases its
-observers, navigation listeners and storage connection. Native IME/reconversion, OS clipboard, screen readers, mobile termination and
+observers, navigation listeners and storage connection. Native IME/reconversion, OS clipboard, mobile termination and
 physical display behavior remain unverified. The baseline adapter remains available for bounded
 switchback evaluation; portable undo and production adoption are separate gates.

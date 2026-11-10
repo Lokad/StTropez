@@ -55,7 +55,7 @@ tab replacement, malformed payloads, worker failure, reconnect, permissions, bou
 requests and truncation. `inspect` records completion and decorated search/diagnostic screenshots.
 The restored package proof verifies the generic presentation callback and find API; the worker
 remains host-owned. Full language transport/synchronization, richer operations, large lexical
-invalidation and native accessibility announcements remain separate qualification work.
+invalidation remain separate qualification work.
 
 The review hosts also offer captured symbol information through a separate lazy worker lane.
 Pointer inspection uses the existing viewport hit test without moving focus; Ctrl+K then Ctrl+I
@@ -79,7 +79,4 @@ The complete response is validated before publication, then rendered only as tex
 typing, composition, changed selection/revision and unmount cancel the captured presentation;
 late replies cannot replace a newer view's offer. Pending work holds a lease and timeout.
 Observation exists only while a request or offer is active. The popup follows host layout changes
-and retains pointer access without taking focus. `EditingCandidate.describe(id)` registers a
-host description ID alongside editor-owned help; its idempotent release preserves other owners.
-The browser owns the attribute. DOM description wiring and keyboard tests do not qualify native
-screen-reader announcements or complete accessibility support.
+and retains pointer access without taking focus. The host owns its visible text and controls.

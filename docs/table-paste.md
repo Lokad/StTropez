@@ -51,5 +51,5 @@ later candidate cleanup, parsing and rendering; conversion-to-commit is not inte
 No CPU-time or physical-display latency follows from these clocks.
 
 Automated ClipboardEvent scenarios and guarded process-local Chromium keyboard clipboard checks
-are distinct evidence. Native OS/application/browser-menu clipboard, IME and assistive technology
+are distinct evidence. Native OS/application/browser-menu clipboard and IME
 remain unverified. Domain annotations/import commands and the rest of H01 remain required.

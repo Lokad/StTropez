@@ -49,7 +49,7 @@ BOM/CRLF, normal/100k sources, complete sets, actual keyboard form entry, explic
 confirmation, idempotence, stale tokens, malformed/incomplete/unsafe responses,
 authority, history, review, secondary identity, reconnect and disposal. Synthetic
 composition/table guards do not qualify native IME/reconversion/dead keys, OS and
-application clipboard, assistive technology or physical display latency. Those
+application clipboard or physical display latency. Those
 device checks remain unverified. Command dispatch, complete readiness and actual
 typing-handler durations are separate clocks; a bulk correctness deadline is not
 a responsiveness pass.

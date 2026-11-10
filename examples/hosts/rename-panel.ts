@@ -15,7 +15,7 @@ export const renameDescription = "Lexical token fixture: scans captured working 
 export function renameTarget(at: RenameNote, symbol: string, name: string): string { return `${at.title} · ${at.resource} · ${at.document} @ revision ${at.revision} · ${at.line + 1}:${at.column + 1} [${at.from},${at.to}) · ${symbol} → ${name || "(enter name)"}\n${at.context}`; }
 export function mountRenamePanel(host: HTMLElement, tools: HostRenameTools): () => void {
     const owner = host.ownerDocument, title = owner.createElement("h2"), description = owner.createElement("p"), status = owner.createElement("output"), label = owner.createElement("label"), name = owner.createElement("input"), controls = owner.createElement("div"), targets = owner.createElement("ol"), changes = owner.createElement("ul");
-    title.textContent = "Rename preview"; description.textContent = renameDescription; status.setAttribute("aria-label", "Rename status"); status.setAttribute("aria-live", "polite");
+    title.textContent = "Rename preview"; description.textContent = renameDescription; status.setAttribute("aria-label", "Rename status");
     name.maxLength = 256; name.type = "text"; name.value = tools.state.getSnapshot().name; name.oninput = () => tools.setName(name.value); label.append("New identifier ", name);
     tools.bindName(name);
     targets.setAttribute("aria-label", "Captured rename targets"); changes.setAttribute("aria-label", "Renamed resources");

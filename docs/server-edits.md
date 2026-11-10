@@ -53,6 +53,6 @@ requesting the same fixture again is a no-op when its markers are already presen
 This narrow local protocol covers registration, server requests and custom-message lifecycles.
 Full external-protocol compatibility, selectors/negotiation, position encodings, resource operations
 and general language edits remain required separately. The fixture uses raw UTF-16 offsets and
-does not claim an external wire format. Native IME, OS/application clipboard, screen readers and
+does not claim an external wire format. Native IME, OS/application clipboard and
 physical-display responsiveness remain unverified. Command dispatch, complete readiness and
 input-handler durations are separate clocks; functional deadlines establish no latency tail.

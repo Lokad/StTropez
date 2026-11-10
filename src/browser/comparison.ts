@@ -42,7 +42,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     const linkLabel = owner.createElement("label"), link = owner.createElement("input"); link.type = "checkbox";
     linkLabel.append(link, " Link review scrolling"); controls.append(linkLabel);
     const alignLabel = owner.createElement("label"), align = owner.createElement("input"); align.type = "checkbox"; alignLabel.append(align, " Align review rows"); controls.append(alignLabel);
-    const status = owner.createElement("output"); status.setAttribute("aria-live", "polite"); controls.append(status);
+    const status = owner.createElement("output"); controls.append(status);
     const pane = (label: string) => {
         const section = owner.createElement("section"), heading = owner.createElement("h3"), content = owner.createElement("div");
         heading.textContent = label; content.className = "st-comparison-editor"; section.append(heading, content); panes.append(section); return { heading, content };

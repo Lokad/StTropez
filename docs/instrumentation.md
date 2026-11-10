@@ -91,5 +91,5 @@ Next instrumentation milestones:
 5. For optional workers/WASM, require a handshake plus a verified result from that path.
    Test deliberate startup failure and fallback. Never let a fallback turn an accelerator
    test green without exercising the accelerator.
-6. Supplement automation with native IME, screen-reader and OS clipboard checks. Synthetic
+6. Supplement automation with native IME and OS clipboard checks. Synthetic
    composition events and Chromium alone are not evidence of broad browser correctness.

@@ -62,6 +62,6 @@ pending render, expired tab, hidden fold, unavailable document or unrendered row
 materializes rows nor measures glyphs. Caret geometry continues to use `coordsAt`.
 
 Synthetic composition tests cover rejected preedit recovery, authority changes and guarded
-Save. Real IME/reconversion, OS clipboard, assistive technology and physical display remain
+Save. Real IME/reconversion, OS clipboard and physical display remain
 unverified. This fixture demonstrates the declared workflow, not general inline widgets or
 production replacement readiness. Protocols, credentials and execution remain outside the editor.

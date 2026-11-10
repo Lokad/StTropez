@@ -94,6 +94,6 @@ or peak memory limits.
 [Font-aware canonical selection](font-normalization.md) now supplies captured closed font cascades.
 System discovery, full script/language-specific masks/reordering, variable metrics/outlines,
 certified source/cluster/ink/caret geometry, combined workspace capture, cooperative compilation,
-exact bounded rendering/visual navigation and native-device input/AT remain required. No complete
+exact bounded rendering/visual navigation and native-device input remain required. No complete
 font backend, third-party runtime, worker or WASM is selected. See [Unicode layout text](unicode-shaping.md),
 [substitution](substitution-cursor.md) and [positioning](position-cursor.md).

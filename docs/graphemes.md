@@ -70,4 +70,4 @@ License V3 notice, and writes compact facts and compressed test fixtures. Alloca
 growth, freezing and GC remain atomic; work quanta are not time deadlines or qualified memory
 budgets. [Font-aware canonical selection](font-normalization.md) reuses these boundaries.
 Language tailoring, system fallback, complete shaping, renderer
-origins, native-device IME/accessibility and certified source/ink/caret geometry remain open.
+origins, native-device IME and certified source/ink/caret geometry remain open.

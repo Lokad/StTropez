@@ -54,8 +54,8 @@ or generation runs during ordinary builds or consumer restores.
 
 The headless tests check every Unicode code point's bidi class, all 770,241 direction cases
 in the type conformance data, and all 91,707 character conformance paragraphs. These suites
-cover resolution/reordering through L2; they establish no browser shaping, native-input,
-assistive-technology or global layout qualification.
+cover resolution/reordering through L2; they establish no browser shaping, native-input
+or global layout qualification.
 
 For a mounted row, the browser measures native grapheme ranges and combines them with resolved
 levels. A logical boundary can have two visual positions:

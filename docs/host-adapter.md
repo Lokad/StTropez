@@ -73,6 +73,5 @@ hooks remain that application's responsibility.
 `npm run inspect` records both hosts after failed acknowledgement and successful retry, with
 screenshots and content-free counters/state. Both editor modes also exercise deferred Run and
 host input recovery. These fixtures prove the generic adapter contract; the consuming host
-separately verifies its hooks, lint rules and service policies. Native-device input and assistive
-technology remain explicit qualification gates. Shared history
+separately verifies its hooks, lint rules and service policies. Native-device input remains an explicit qualification gate. Shared history
 and retained selection handles are covered by [the document/view contract](history.md).

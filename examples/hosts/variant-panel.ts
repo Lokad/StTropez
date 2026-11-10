@@ -6,7 +6,7 @@ export function mountVariantPanel(host: HTMLElement, controller: HostController,
     const empty = owner.createElement("option"), captured = owner.createElement("option"); empty.value = ""; empty.textContent = "Choose a version";
     captured.value = "__captured"; captured.disabled = true; captured.hidden = true; select.append(empty, captured);
     select.setAttribute("aria-label", "Review version"); label.textContent = "Review version "; label.append(select);
-    status.setAttribute("aria-label", "Version review status"); status.setAttribute("aria-live", "polite"); host.append(label, status);
+    status.setAttribute("aria-label", "Version review status"); host.append(label, status);
     select.addEventListener("change", () => { if (select.value) controller.variants.review(select.value); }, { signal: listeners.signal });
     const actions = [{ label: "Keep draft version", invoke: controller.variants.keepDraft }, { label: "Finish version load", invoke: controller.variants.finishNext },
         { label: "Fail version load", invoke: controller.variants.failNext }, { label: "Cancel version load", invoke: controller.variants.cancel },

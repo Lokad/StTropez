@@ -233,4 +233,4 @@ convert on import/export. Selection capture during `beforeinput` avoids DOM writ
 disrupt a pending native replacement. When moving/focusing a native control, focus before
 restoring its captured view state. `textDifference` derives a minimal single replacement at this whole
 text boundary. It and native rendering still require document-sized work; bounded rendering,
-native-device composition and accessibility qualification remain M0/M3 work.
+native-device composition qualification remains M0/M3 work.

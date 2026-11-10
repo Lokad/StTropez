@@ -3,6 +3,11 @@
 Reviewed 2026-11-05. This is a measurement plan and scaffold assessment, not a claim that the
 native-textarea scaffold has the performance of a finished editor.
 
+Use recorded Linux measurements as the performance baseline. The local Windows machine is
+available for native input and clipboard checks; its background activity may affect timings.
+Record that load and keep Windows observations labelled separately. Native correctness checks
+do not require a quiet benchmark machine.
+
 ## Likely bottlenecks and design consequences
 
 | Work | Scaling hazard | Design and measurement |

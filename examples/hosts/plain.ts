@@ -30,13 +30,13 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const status = document.createElement("output"); status.setAttribute("aria-label", "Host operation status");
     const scene = document.createElement("main"), modal = document.createElement("div"); modal.setAttribute("role", "status"); modal.setAttribute("aria-label", "Host messages");
     const recovery = document.createElement("section"), recoveryNotice = document.createElement("output"), recoveryPreview = document.createElement("pre");
-    recovery.setAttribute("aria-label", "Input recovery"); recoveryNotice.setAttribute("aria-live", "polite"); recovery.append(recoveryNotice, recoveryPreview);
+    recovery.setAttribute("aria-label", "Input recovery"); recovery.append(recoveryNotice, recoveryPreview);
     const updateRecovery = () => { const state = controller.recovery.getSnapshot(), text = state.items.at(-1)?.attemptedText ?? "";
         recovery.hidden = state.items.length === 0; recoveryNotice.textContent = `${state.items.length} input ${state.items.length === 1 ? "change" : "changes"} retained for recovery.`;
         recoveryPreview.hidden = !state.visible; recoveryPreview.textContent = state.visible ? text.slice(0, 4096) + (text.length > 4096 ? "…" : "") : ""; };
     const review = document.createElement("section"); review.setAttribute("aria-label", "Source review surface"); review.className = "host-review";
     const conflict = document.createElement("section"), conflictStatus = document.createElement("output");
-    conflict.setAttribute("aria-label", "Save conflict"); conflictStatus.setAttribute("aria-live", "polite"); conflict.append(conflictStatus);
+    conflict.setAttribute("aria-label", "Save conflict"); conflict.append(conflictStatus);
     const reviewRemote = document.createElement("button"), finishRemote = document.createElement("button"), retry = document.createElement("button");
     reviewRemote.textContent = "Review remote source"; finishRemote.textContent = "Finish remote review"; retry.textContent = "Save reviewed source";
     reviewRemote.addEventListener("click", controller.reviewSaveConflict, { signal: listeners.signal });

@@ -57,7 +57,7 @@ automation action separately, followed by a distinct point-input handler/readine
 full workflow. Both hosts use normal Unicode/CRLF and 100,000-line sources with comparison or
 host-form focus. Exact text/history/reference versions, stable views/focus, bounded contexts,
 background activity and disposal remain assertions. Screenshot smoke inspection is separate
-from repeated timings. These browser proxies do not qualify native IME, assistive technology
+from repeated timings. These browser proxies do not qualify native IME
 or physical display latency.
 
 The bounded mount adapts its input, view capture/restore and disposal APIs to the existing
@@ -161,7 +161,7 @@ point edit while all three working views and the remote reference are mounted. A
 document-capture-beforeinput to exact model/selection/diff/view readiness across two frames,
 and complete keyboard-action automation are separate measurements. Stage/workflow timings
 include controls, typing during deferred responses and settlement. The fixture imposes no
-network delay. Full text/reference checks run outside timing; real IME/clipboard/AT and physical
+network delay. Full text/reference checks run outside timing; real IME/clipboard and physical
 display latency remain unqualified.
 
 The conflict benchmark includes repeated and distinct 100,000-line sources and a 2.4-million
@@ -199,7 +199,7 @@ recovery API and is excluded from default snapshots.
 Synthetic composition checks demonstrate an independent form/progress update and Run failure
 without losing preedit, plus rejected preedit recovery during an agent takeover or forced
 view removal. Removal emits recovery before owned listeners are disconnected. These checks do not
-qualify native IME behavior. Native-device input, reconversion, screen readers and clipboard
+qualify native IME behavior. Native-device input, reconversion and clipboard
 policy remain explicit acceptance gates.
 
 A captured save can also settle while composition is staged. An unchanged reply leaves the
@@ -251,7 +251,7 @@ baseline; dirty state stays true until an explicit user edit adopts that exact s
 
 These clipboard scenarios dispatch synthetic ClipboardEvent/DataTransfer payloads and prove
 the editor's event path. They do not qualify the OS clipboard, browser menus or native input.
-Windows IME, dead keys, NVDA and Narrator remain separate unverified device gates.
+Windows IME and dead keys remain separate unverified device gates.
 
 ## Language and find in the review host
 
@@ -265,7 +265,7 @@ captured word. The host also exposes insertion/replacement buttons and scoped di
 navigation. Ctrl+F opens find, Ctrl+H opens replacement, F3 moves between matches, and Escape
 from the find fields cancels and returns focus. Search and replacement reuse the existing
 cooperative controller and shared history. These keyboard routes are automated pilot evidence;
-native IME and assistive-technology qualification remain separate.
+native IME qualification remains separate.
 
 Pause over a source symbol, or use Ctrl+K then Ctrl+I, for captured plain-text information.
 This read-only command has its own worker lane and explicit view target, including comparison
@@ -319,7 +319,7 @@ working/reference viewports. They are automation proxies. Synchronous
 proposal acceptance/notification elapsed time and selected candidate input-handler observations are
 separate fields; ordinary editing has its own benchmark. These desktop diagnostics establish
 neither physical presentation latency nor production tails, retained-memory budgets or a
-production renderer choice. Native input and accessibility qualification remain open.
+production renderer choice. Native input qualification remains open.
 
 The host benchmark validates typing-group boundaries against event timing and undo depth.
 Continuous adjacent typing must coalesce; a documented one-second pause starts another group.
@@ -351,7 +351,7 @@ starts at `beforeinput` and includes that work. Handler duration, whole-burst re
 settlement after the last input and complete action
 automation have separate fields. Requested keyboard delay and actual input gaps are retained;
 burst totals include cadence and instrumentation. No metric proves physical presentation or
-native IME/clipboard/assistive-technology support. Target misses remain in raw assessments.
+native IME/clipboard support. Target misses remain in raw assessments.
 
 Plain host controls project changed text, field values and enabled states into their existing
 DOM. Identical offers and diagnostic labels retain their rows; diagnostic buttons resolve the

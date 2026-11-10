@@ -69,5 +69,5 @@ Focused coverage is in `tests/provider-navigation.test.ts` and
 `tests/browser/host-provider-navigation.spec.ts`, including actual worker transfer,
 100k rows, raw Unicode/CRLF, cross-resource reveal, complete-set return, review,
 Save/Run, faults, stale results, paging and disposal. Full L02 language semantics,
-remaining provider operations/protocol, native IME/clipboard and accessibility
+remaining provider operations/protocol, native IME/clipboard
 qualification remain required and unverified where applicable.

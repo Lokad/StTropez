@@ -323,7 +323,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         if (!document) {
             layer.replaceChildren(); rows.clear(); geometries.clear(); measuredWidth = 0; measuredRevision = null; spacer.style.width = "0px"; spacer.style.height = "0px";
             layer.style.transform = "none"; layer.style.width = "0px"; layer.style.height = "0px";
-            root.setAttribute("aria-disabled", "true"); root.setAttribute("aria-busy", String(resource.getSnapshot().state === "loading"));
+            root.setAttribute("aria-disabled", "true");
             previous = undefined; anchor = undefined; renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; firstLine = 0; lastLine = 0;
             renderedIndex = emptyIndex; renderedFoldGeneration = -1; renderedAlignmentId = null; comparisonRows = undefined; paddingRows.clear(); foldButtons.clear(); foldLayer.replaceChildren(); return;
         }
@@ -382,7 +382,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             let element = paddingRows.get(at); if (!element) { element = owner.createElement("div"); element.className = "st-comparison-padding"; element.setAttribute("aria-hidden", "true"); paddingRows.set(at, element); layer.append(element); }
             element.style.transform = `translate(0px, ${padding + at * lineHeight - top}px)`; element.style.height = `${lineHeight}px`; element.style.width = `${width}px`;
         }
-        root.removeAttribute("aria-disabled"); root.setAttribute("aria-busy", "false"); root.dataset.revision = String(document.revision);
+        root.removeAttribute("aria-disabled"); root.dataset.revision = String(document.revision);
         renderedRevision = document.revision; renderedSelection = selected; renderedSelectionSet = selectionSet; previous = document; renderedIndex = index; renderedFoldGeneration = folds.generation; renderedAlignmentId = comparisonRows?.id ?? null; renders++; geometries.clear();
         const visibleFolds = new Set<string>(), orderedButtons: HTMLButtonElement[] = [];
         for (const item of next) {

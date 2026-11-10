@@ -3,17 +3,16 @@ import type { EditingCandidate } from "../../src/browser/index.ts";
 import { createHoverController } from "../editing/hover-controller.ts";
 import type { HoverSnapshot } from "../editing/hover-controller.ts";
 import { HostCell } from "../shared/observable.ts";
-type Session = { id: string; tooltipId: string; editor: EditingCandidate; controller: ReturnType<typeof createHoverController>;
+type Session = { id: string; editor: EditingCandidate; controller: ReturnType<typeof createHoverController>;
     affinity: Affinity; offset: number; overTarget: boolean; scheduled: boolean; cancelTimers: () => void };
-export type HoverPresentation = Readonly<{ visible: boolean; id: string; view: string | null; left: number; top: number; status: HoverSnapshot["status"]; text: string; message: string }>;
-let nextTooltip = 0;
+export type HoverPresentation = Readonly<{ visible: boolean; view: string | null; left: number; top: number; status: HoverSnapshot["status"]; text: string; message: string }>;
 
 /** Host-owned presentation follows an explicit view; pointer inspection never changes focus. */
 export class HostHoverTools {
     private readonly workspace: Workspace;
     private readonly allowInspect: (kind: "pointer" | "keyboard") => boolean;
     private readonly sessions = new Map<string, Session>();
-    private readonly cell = new HostCell<HoverPresentation>({ visible: false, id: "", view: null, left: 0, top: 0, status: "idle", text: "", message: "" });
+    private readonly cell = new HostCell<HoverPresentation>({ visible: false, view: null, left: 0, top: 0, status: "idle", text: "", message: "" });
     private current: Session | undefined;
     private kind: "pointer" | "keyboard" = "pointer";
     private overPopup = false;
@@ -52,7 +51,7 @@ export class HostHoverTools {
         const state = session.controller.state.getSnapshot();
         if (["expired", "empty", "disconnected", "disposed"].includes(state.status)) { this.current = undefined; this.overPopup = false; this.clearDismiss(); this.stopLayout(); this.cell.set({ ...this.cell.get(), visible: false, view: null, status: state.status, text: "", message: state.message }); return; }
         const visible = ["pending", "ready", "failed"].includes(state.status);
-        this.cell.set({ visible, id: session.tooltipId, view: session.id, status: state.status, text: state.text, message: state.message, ...this.position(session) });
+        this.cell.set({ visible, view: session.id, status: state.status, text: state.text, message: state.message, ...this.position(session) });
         if (visible) this.trackLayout(session); else this.stopLayout();
     }
     readonly dismiss = (): void => {
@@ -82,11 +81,11 @@ export class HostHoverTools {
         if (this.sessions.has(id)) throw new Error("Hover view already mounted.");
         const controller = createHoverController(this.workspace, tab, editor), listeners = new AbortController(), win = editor.element.ownerDocument.defaultView!;
         let pointerTimer: number | undefined, chordTimer: number | undefined, chord = false, key: string | undefined;
-        const session: Session = { id, tooltipId: `host-symbol-info-${++nextTooltip}`, editor, controller, affinity: "after", offset: 0, overTarget: false, scheduled: false, cancelTimers: () => {} };
+        const session: Session = { id, editor, controller, affinity: "after", offset: 0, overTarget: false, scheduled: false, cancelTimers: () => {} };
         const cancelPointer = () => { if (pointerTimer !== undefined) win.clearTimeout(pointerTimer); pointerTimer = undefined; session.scheduled = false; key = undefined; };
         const cancelChord = () => { if (chordTimer !== undefined) win.clearTimeout(chordTimer); chordTimer = undefined; chord = false; };
         session.cancelTimers = () => { cancelPointer(); cancelChord(); };
-        this.sessions.set(id, session); const stopDescription = editor.describe(session.tooltipId);
+        this.sessions.set(id, session);
         const stop = controller.state.subscribe(() => { if (this.current === session) this.publish(); });
         editor.element.addEventListener("pointerenter", () => { session.overTarget = true; if (this.current === session) this.clearDismiss(); }, { signal: listeners.signal });
         editor.element.addEventListener("pointermove", event => {
@@ -122,7 +121,7 @@ export class HostHoverTools {
         win.addEventListener("resize", () => { cancelPointer(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
         let detached = false;
         return () => {
-            if (detached) return; detached = true; if (this.current === session) this.dismiss(); session.cancelTimers(); listeners.abort(); stop(); stopDescription();
+            if (detached) return; detached = true; if (this.current === session) this.dismiss(); session.cancelTimers(); listeners.abort(); stop();
             const counts = controller.snapshot(); for (const name of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[name] += counts[name];
             controller.destroy(); this.sessions.delete(id);
         };

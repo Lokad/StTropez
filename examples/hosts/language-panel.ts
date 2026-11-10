@@ -36,7 +36,7 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
     const owner = host.ownerDocument, listeners = new AbortController(), heading = owner.createElement("h2"), status = owner.createElement("output");
     tools.toolsRef(host);
     host.addEventListener("keydown", event => languageToolsKey(event, tools), { signal: listeners.signal });
-    heading.textContent = "Language and find"; status.setAttribute("aria-label", "Language status"); status.setAttribute("aria-live", "polite");
+    heading.textContent = "Language and find"; status.setAttribute("aria-label", "Language status");
     const help = owner.createElement("p"); help.textContent = "Ctrl+Space requests completion; Alt+Enter replaces it. Ctrl+F finds, Ctrl+H replaces, F3 moves to the next match, and Escape returns to source. Ctrl+S saves the working source.";
     const choices = owner.createElement("ul"), diagnostics = owner.createElement("ul"), nav = owner.createElement("div"), findStatus = owner.createElement("output");
     choices.setAttribute("role", "listbox"); choices.setAttribute("aria-label", "Completion choices"); diagnostics.setAttribute("aria-label", "Source diagnostics"); findStatus.setAttribute("aria-label", "Find status");
@@ -57,7 +57,7 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
     regularExpression.addEventListener("change", () => tools.setRegularExpression(regularExpression.checked), { signal: listeners.signal });
     const buttons = languageActions(tools).map(action => { const button = owner.createElement("button"); button.textContent = action.label;
         button.addEventListener("click", action.invoke, { signal: listeners.signal }); nav.append(button); return button; });
-    const foldStatus = owner.createElement("output"); foldStatus.setAttribute("aria-label", "Fold status"); foldStatus.setAttribute("aria-live", "polite");
+    const foldStatus = owner.createElement("output"); foldStatus.setAttribute("aria-label", "Fold status");
     host.append(heading, help, status, choices, diagnostics, ...fields.map(f => f.label), wholeLabel, caseLabel, regexLabel, findStatus, foldStatus, nav);
     const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
     const render = () => {

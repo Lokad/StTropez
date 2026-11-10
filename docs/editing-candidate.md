@@ -3,8 +3,8 @@
 `mountEditingCandidate(host, workspace, tabId, { view?, ariaLabel?, readOnly? })` is an experimental view
 over the shared document/history contract. It owns its viewport, bounded native textarea and
 caret beneath the supplied host. The existing whole-value `mountTextEditor` remains a control.
-The candidate is exported explicitly; native-device IME and assistive-technology feasibility
-have not selected a production input strategy.
+The candidate is exported explicitly; native-device IME qualification remains open.
+No production input strategy has been selected.
 The project had no bounded context/coordinate adapter to reuse. This small original adapter
 uses platform text ranges and segmentation; embedding an external editing runtime would conflict
 with the zero-dependency distribution requirement. No reference implementation is imported.
@@ -200,7 +200,7 @@ work, projected frame count and the longest complete synchronous callback elapse
 mount. That maximum includes guards, layout, projection, selection/subscribers and scheduling;
 it is separate from typing-handler duration, per-frame distributions and process CPU time.
 The native textarea and preedit overlay sit near the measured caret. This is an input-positioning
-experiment, with no qualified screen-reader document representation or native-device claim.
+experiment, with no native-device qualification claim.
 
 `bench:host-pointer` checks the pointer-to-typing handoff in both hosts on Unicode/CRLF and
 100,000-line sources, with three warmups and ten samples per capture-loss or synthetic-cancel
@@ -227,7 +227,7 @@ action budget. These are measurements and targets, not native-device or display 
 
 Complete rows support [visual bidi navigation and dual affinities](bidi.md). Current limits include
 long contextual-line geometry/navigation, wrapping,
-touch/mobile selection, native undo/menu behavior, OS clipboard, accessibility,
+touch/mobile selection, native undo/menu behavior, OS clipboard,
 and additional platform modifier bindings. [Literal search/replace](search.md) and the host-owned
 [provider/highlighting fixture](providers.md) now exercise the view. [Grapheme navigation](graphemes.md) first attempts an exact local ASCII boundary query; uncertain context cooperatively indexes the full captured logical line using Unicode 18 facts. A one-line cache uses immutable buffer identity and range; long clusters and RI parity retain full context. Delayed commands check captured revision, selection, tab generation, composition, permission and disposal. Complete-row visual movement still requires measured geometry.
 The textarea's value is an internal context, so setting it is not a full-document edit API.
@@ -245,8 +245,7 @@ both hosts, including large backward selections, independent views, captured sav
 history and read-only transitions. It verifies the isolated headless shell before any clipboard
 action and uses only known fixture text. The native baseline commits the textarea API value
 with LF line endings; the candidate custom paste preserves the clipboard event payload.
-Other browser backends, OS/application/browser-menu clipboard, native IME and assistive
-technology remain unverified. These functional scenarios collect no latency samples.
+Other browser backends, OS/application/browser-menu clipboard and native IME remain unverified. These functional scenarios collect no latency samples.
 
 `npm run bench:editing` records actual keyboard insertions at start/middle/end of six pinned
 corpora, with three warmups and twenty measured inputs per condition. Guards require one native

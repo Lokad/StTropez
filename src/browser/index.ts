@@ -71,7 +71,7 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
         if (destroyed || selecting) return;
         if (!workspace.resolveTab(target)) { input.disabled = true; return; }
         const state = resource.getSnapshot(); input.disabled = state.state !== "ready";
-        input.setAttribute("aria-busy", String(state.state === "loading"));
+
         input.readOnly = !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null;
         if (state.state !== "ready" || composing) return;
         const document = workspace.document(documentId);

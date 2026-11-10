@@ -163,7 +163,7 @@ an input-handler duration nor a complete callback or interaction latency. `repla
 still covers the final model transaction. The services driver's `--regex` mode records index
 completion; replacement also waits for the primary viewport. These component clocks include
 the pattern delay and worker transfer; they do not cover full host/all-view interaction latency.
-Native IME, OS clipboard and assistive technology remain separate qualification requirements.
+Native IME and OS clipboard remain separate qualification requirements.
 
 `bench:services` records repeated search and pilot replacement cases separately from keyboard
 input. Scan-step timing covers matching/index accumulation; replacement timing includes the

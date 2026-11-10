@@ -55,5 +55,5 @@ Focused model and actual-worker browser regressions cover bounded and truncated
 previews, Unicode/CRLF, late malformed targets, authority, stale selections,
 typing, remount, reconnect, synthetic composition/table guards, shared history,
 comparison, primary Save/Run and cleanup. Native IME/reconversion/dead keys, OS
-and application clipboard, assistive technology and physical display latency
+and application clipboard and physical display latency
 remain unverified. Automated synthetic guards do not qualify native input.

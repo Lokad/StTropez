@@ -4,8 +4,8 @@
 the first M3 rendering layer, separate from the native `mountTextEditor` control. Per-view
 [folding](folding.md) projects visible source rows without changing raw document positions. Local native
 text geometry now supplies `coordsAt` and `hitTest`; the separate experimental
-[`mountEditingCandidate`](editing-candidate.md) adds bounded input. Completion UI and a qualified
-screen-reader editing contract remain open. This component does not select an input engine.
+[`mountEditingCandidate`](editing-candidate.md) adds bounded input. This component does not
+select an input engine.
 
 Each frame reads the container/font geometry, obtains only visible/overscan lines and bounded
 horizontal ranges, then writes the DOM. A bounded batch of native row-width reads follows the

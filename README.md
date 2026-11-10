@@ -18,7 +18,7 @@ atomic multi-document edits and explicit newline conversion. The textarea remain
 instrumentation baseline. A bounded viewport and experimental bounded-input candidate provide
 local glyph coordinates and document/history editing. Literal find/replace and a host-owned
 worker fixture add incremental visible highlighting, completion and scoped diagnostics.
-Full contextual-line geometry, language-protocol support, recovery and production accessibility
+Full contextual-line geometry, language-protocol support and recovery
 remain roadmap work.
 
 ## Run
@@ -86,10 +86,10 @@ The development hosts are `/hosts/plain/` and `/hosts/react/`; their
 synthetic fixtures and the consuming host's remaining integration responsibilities.
 
 The [acceptance inventory](docs/acceptance.md) defines pilot/replacement workflows, workload
-sizes and the proposed input/accessibility matrix. `/probes/` on the development server
+sizes and the proposed input matrix. `/probes/` on the development server
 compares native input candidates and exercises highlighting, completion and diagnostics
 through a real development worker. These experiments do not select or qualify a production
-renderer or language client; native IME and assistive-technology checks remain pending.
+renderer or language client; native IME checks remain pending.
 
 See [the architecture](docs/architecture.md), [performance assessment](docs/performance.md), and
 [instrumentation guide](docs/instrumentation.md). [Text storage](docs/text-storage.md) records
@@ -98,7 +98,7 @@ See [document history and view lifetime](docs/history.md) for transaction, group
 The [viewport layer](docs/viewport.md) and `/viewport/` fixture record bounded-rendering evidence.
 The [editing candidate](docs/editing-candidate.md) and `/editing/` fixture exercise bounded native
 context, measured pointer selection, shared history and composition guards. Long contextual-line
-layout, native-device input and assistive technology remain qualification gates.
+layout and native-device input remain qualification gates.
 The [find controller](docs/search.md) and [provider/presentation fixture](docs/providers.md)
 add revision-checked workflows to that view, with explicit scope and scheduling limits.
 The [comparison controller](docs/comparison.md) and `/comparison/` fixture add an immutable

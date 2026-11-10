@@ -44,20 +44,20 @@ function SourceMetadata() {
 function SaveConflict() {
     const conflict = useObserved(controller.saveConflict);
     useObserved(controller.source.metadata); useObserved(controller.comparisonReference); useObserved(controller.layout); useObserved(controller.workspace.tabState);
-    return conflict ? <section aria-label="Save conflict"><output aria-live="polite">{conflictText(controller)}</output>
+    return conflict ? <section aria-label="Save conflict"><output>{conflictText(controller)}</output>
         <button onClick={controller.reviewSaveConflict}>Review remote source</button>
         <button onClick={controller.finishConflictReview} disabled={conflict.review !== "loading"}>Finish remote review</button>
         <button onClick={controller.saveReviewedSource} disabled={!controller.canSaveReviewedSource()}>Save reviewed source</button></section> : null;
 }
 function InputRecovery() {
     const state = useObserved(controller.recovery), text = state.items.at(-1)?.attemptedText ?? "";
-    return <section hidden={state.items.length === 0} aria-label="Input recovery"><output aria-live="polite">{state.items.length} input {state.items.length === 1 ? "change" : "changes"} retained for recovery.</output>
+    return <section hidden={state.items.length === 0} aria-label="Input recovery"><output>{state.items.length} input {state.items.length === 1 ? "change" : "changes"} retained for recovery.</output>
         <pre hidden={!state.visible}>{state.visible ? text.slice(0, 4096) + (text.length > 4096 ? "…" : "") : ""}</pre></section>;
 }
 function DraftRecovery() {
     const s = useObserved(draft.state);
     return <section className="host-language" aria-label="Draft recovery"><h2>Draft recovery</h2>
-        <output aria-label="Draft recovery status" aria-live="polite">{s.message}</output>
+        <output aria-label="Draft recovery status">{s.message}</output>
         <progress aria-label="Draft storage progress" hidden={!s.busy} />
         <p>{s.unprotected ? "Current inputs need a recovery checkpoint before leaving." : "Checkpoint copies do not save or run inputs."}</p>
         <div>{draftActions(draft).map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
@@ -66,7 +66,7 @@ function DraftRecovery() {
 function ConfigurationSavePanel() {
     const save = controller.configurationSave, state = useObserved(save.state); useObserved(controller.connection);
     return <section className="host-language" aria-label="Configuration save" onKeyDown={event => formSaveKey(event, save)}><h2>Configuration save</h2>
-        <output aria-label="Configuration save status" aria-live="polite">{save.statusText()}</output>
+        <output aria-label="Configuration save status">{save.statusText()}</output>
         <div>{configurationActions(save).map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
         <pre hidden={state.preview === null}>{state.preview ?? ""}</pre></section>;
 }
@@ -77,7 +77,7 @@ function TransferWorkspace() {
         <div onKeyDown={e => formSaveKey(e, transfer.save)}>{state.state === "ready" ? <>
             <label>Transfer destination<input value={state.value.destination} readOnly={readOnly} aria-invalid={transfer.save.validation() !== null} onChange={e => transfer.update("destination", e.currentTarget.value)} /></label>
             <label>Transfer batch size<input value={state.value.batchSize} readOnly={readOnly} inputMode="numeric" aria-invalid={transfer.save.validation() !== null} onChange={e => transfer.update("batchSize", e.currentTarget.value)} /></label></> : <p>{state.state}</p>}
-            <output aria-label="Transfer save status" aria-live="polite">{transfer.save.statusText()}</output>
+            <output aria-label="Transfer save status">{transfer.save.statusText()}</output>
             <div>{formActions(transfer.save, "transfer settings").map(a => <button key={a.label} disabled={a.disabled} onClick={a.invoke}>{a.label}</button>)}</div><pre hidden={save.preview === null}>{save.preview ?? ""}</pre></div>
         <h3>Captured Runs and logs</h3><ul>{runs.runs.map(run => <li key={run.id}><span>Run {run.number}: {run.status}, {run.progress}% · {run.id} </span>
             <button onClick={() => controller.runResources.open(run.id)}>Inspect Run {run.number}</button>
@@ -121,7 +121,7 @@ function ReviewVersions() {
         onChange={event => { if (event.currentTarget.value) controller.variants.review(event.currentTarget.value); }}>
         <option value="">Choose a version</option><option value="__captured" disabled hidden={!pinned}>{pinned ? `Captured ${selected.label} · ${selected.version}` : ""}</option>
         {state.choices.map(choice => <option key={choice.id} value={choice.id}>{choice.label} · {choice.version}</option>)}
-    </select></label><output aria-label="Version review status" aria-live="polite">{state.message} Reference: {reference.baseline.version}.</output>
+    </select></label><output aria-label="Version review status">{state.message} Reference: {reference.baseline.version}.</output>
         <button onClick={controller.variants.keepDraft}>Keep draft version</button><button onClick={controller.variants.finishNext} disabled={!state.pending}>Finish version load</button>
         <button onClick={controller.variants.failNext} disabled={!state.pending}>Fail version load</button><button onClick={controller.variants.cancel} disabled={!state.pending}>Cancel version load</button>
         <button onClick={bindings.beginDiscard}>Discard reviewed changes</button><button onClick={bindings.finishDiscard}>Confirm reviewed discard</button><button onClick={bindings.cancelDiscard}>Cancel reviewed discard</button></div>;
@@ -130,7 +130,7 @@ function LanguageTools() {
     const tools = bindings.language, state = useObserved(tools.state);
     return <section ref={tools.toolsRef} onKeyDown={event => languageToolsKey(event.nativeEvent, tools)} className="host-language" aria-label="Language and find tools"><h2>Language and find</h2>
         <p>Ctrl+Space requests completion; Alt+Enter replaces it. Ctrl+F finds, Ctrl+H replaces, F3 moves to the next match, and Escape returns to source. Ctrl+S saves the working source.</p>
-        <output aria-label="Language status" aria-live="polite">{state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider?.message ?? "Focus a source view to use language actions."}</output>
+        <output aria-label="Language status">{state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider?.message ?? "Focus a source view to use language actions."}</output>
         <ul role="listbox" aria-label="Completion choices">{state.provider?.offerText != null ? <li role="option" aria-selected="true">{state.provider.offerText}</li> : null}</ul>
         <ul aria-label="Source diagnostics">{state.provider?.diagnostics.map((diagnostic, index) => <li key={`${diagnostic.from}:${diagnostic.to}:${index}`}>
             <button onClick={() => tools.selectDiagnostic(index)}>{diagnostic.from}: {diagnostic.message}</button></li>)}</ul>
@@ -140,28 +140,28 @@ function LanguageTools() {
         <label><input type="checkbox" checked={state.matchCase} onChange={event => tools.setMatchCase(event.currentTarget.checked)} />Match case</label>
         <label><input type="checkbox" checked={state.regularExpression} onChange={event => tools.setRegularExpression(event.currentTarget.checked)} />Regular expression</label>
         <output aria-label="Find status">{findText(tools)}</output>
-        <output aria-label="Fold status" aria-live="polite">{foldText(tools)}</output>
+        <output aria-label="Fold status">{foldText(tools)}</output>
         <div>{languageActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
     </section>;
 }
 function SymbolInfo() {
     const state = useObserved(bindings.hover.state);
-    return <div className="host-symbol-info" id={state.id} role="tooltip" hidden={!state.visible} style={{ left: state.left, top: state.top }}
+    return <div className="host-symbol-info" role="tooltip" hidden={!state.visible} style={{ left: state.left, top: state.top }}
         onPointerEnter={bindings.hover.enterPopup} onPointerLeave={bindings.hover.leavePopup} onPointerDown={event => event.preventDefault()}>
         <pre>{state.text || state.message}</pre><span>Escape dismisses symbol information.</span></div>;
 }
 function SignatureTools() {
     const tools = bindings.signature, s = useObserved(tools.state);
-    return <><section className="host-language" aria-label="Signature commands"><h2>Signature help</h2><output aria-label="Signature help status" aria-live="polite">{s.message}</output>
+    return <><section className="host-language" aria-label="Signature commands"><h2>Signature help</h2><output aria-label="Signature help status">{s.message}</output>
         <div>{signatureActions(tools).map(action => <button key={action.label} onPointerDown={event => event.preventDefault()} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div></section>
-        <div className="host-symbol-info host-signature" id={s.id} role="tooltip" aria-label="Signature help" hidden={!s.visible} style={{ left: s.left, top: s.top }} onPointerDown={event => event.preventDefault()}>
+        <div className="host-symbol-info host-signature" role="tooltip" aria-label="Signature help" hidden={!s.visible} style={{ left: s.left, top: s.top }} onPointerDown={event => event.preventDefault()}>
             <pre>{s.before || (s.status === "pending" ? s.message : "")}{s.parameter && <mark aria-label="Active signature parameter">{s.parameter}</mark>}{s.after}</pre><p>{s.documentation}</p><p>{s.parameterDocumentation}</p></div></>;
 }
 function TablePasteTools() {
     const tools = bindings.tablePaste, state = useObserved(tools.state);
     return <section className="host-language" aria-label="Table paste tools"><label><input type="checkbox" checked={state.enabled} disabled={!state.available}
         onChange={event => tools.setEnabled(event.currentTarget.checked)} />Paste tables as CSV</label>
-        <output aria-label="Table paste status" aria-live="polite">{state.message}</output>
+        <output aria-label="Table paste status">{state.message}</output>
         <progress aria-label="Table conversion progress" hidden={state.status !== "converting"} />
         <button disabled={state.status !== "converting"} onClick={tools.cancel}>Cancel table paste</button></section>;
 }
@@ -171,7 +171,7 @@ function App() {
 function DocumentColorsTools() {
     const tools = bindings.colors, s = useObserved(tools.state);
     return <section className="host-language" aria-label="Document colors"><h2>Document colors</h2><p>{documentColorDescription}</p>
-        <output aria-label="Document color status" aria-live="polite">{s.message}</output><div>{documentColorActions(tools).map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
+        <output aria-label="Document color status">{s.message}</output><div>{documentColorActions(tools).map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
         <ul ref={tools.bindList} tabIndex={-1} aria-label="Document color results">{s.colors.map(color => <li key={color.from}><span className="host-color-swatch" aria-hidden="true" style={{backgroundColor: color.css}} /><button disabled={s.pending} aria-pressed={s.selected === color.ordinal} onClick={() => tools.inspect(s.token, color.ordinal)}>{documentColorLabel(color)}</button></li>)}</ul>
         <label>Proposed color <input ref={tools.bindValue} type="text" maxLength={96} value={s.value} onChange={event => tools.setValue(event.currentTarget.value)} /></label><span className="host-color-swatch" aria-hidden="true" style={{backgroundColor: s.css ?? "transparent"}} />
         <button disabled={!s.canPreview || s.pending} onClick={tools.preview}>Preview color presentations</button><label>Color presentation <select disabled={!s.choices.length || s.pending} value={s.presentation} onChange={event => tools.setPresentation(event.currentTarget.value)}>{s.choices.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
@@ -181,14 +181,14 @@ function DocumentColorsTools() {
 function DocumentLinksTools() {
     const tools = bindings.links, s = useObserved(tools.state);
     return <section className="host-language" aria-label="Module document links"><h2>Module document links</h2><p>{documentLinkDescription}</p>
-        <output aria-label="Module link status" aria-live="polite">{s.message}</output>
+        <output aria-label="Module link status">{s.message}</output>
         <div>{documentLinkActions(tools).map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
         <ul ref={tools.bindList} tabIndex={-1} aria-label="Module link results">{s.links.map(link => <li key={link.from}><button disabled={!link.target || s.status !== "ready"} onClick={() => tools.open(s.token, link.ordinal)}>{documentLinkLabel(link)}</button><p>{documentLinkDetails(link)}</p></li>)}</ul></section>;
 }
 function ActionsTools() {
     const tools = bindings.actions, s = useObserved(tools.state);
     return <section className="host-language" aria-label="Code actions"><h2>Code actions</h2><p>{actionsDescription}</p>
-        <output aria-label="Code action status" aria-live="polite">{s.message}</output>
+        <output aria-label="Code action status">{s.message}</output>
         <label>Action module <input ref={tools.bindModule} type="text" maxLength={64} value={s.module} onChange={event => tools.setModule(event.currentTarget.value)} /></label>
         <div>{actionsControls(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
         <p aria-label="Captured action title">{s.title}</p><ol aria-label="Proposed action edits">{s.edits.map((at, i) => <li key={i}><pre>{actionTarget(at)}</pre></li>)}</ol>
@@ -197,7 +197,7 @@ function ActionsTools() {
 function RenameTools() {
     const tools = bindings.rename, s = useObserved(tools.state);
     return <section className="host-language" aria-label="Rename preview"><h2>Rename preview</h2><p>{renameDescription}</p>
-        <output aria-label="Rename status" aria-live="polite">{s.message}</output>
+        <output aria-label="Rename status">{s.message}</output>
         <label>New identifier <input ref={tools.bindName} type="text" maxLength={256} value={s.name} onChange={event => tools.setName(event.currentTarget.value)} /></label>
         <div>{renameActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
         <ol aria-label="Captured rename targets" start={s.page * 64 + 1}>{s.locations.map(at => <li key={at.document + ":" + at.from}>{renameTarget(at, s.symbol, s.name)}</li>)}</ol>
@@ -206,7 +206,7 @@ function RenameTools() {
 function ProjectTools() {
     const tools = bindings.project, state = useObserved(tools.state);
     return <section className="host-language" aria-label="Workspace provider"><h2>Workspace provider</h2>
-        <output aria-label="Workspace provider status" aria-live="polite">{state.message}</output>
+        <output aria-label="Workspace provider status">{state.message}</output>
         <div>{projectActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
         {state.changes.length > 0 && <p>Last applied provider edits</p>}
         <ul aria-label="Provider changed resources">{state.changes.map(c => <li key={c.document}><button disabled={state.pending} onClick={() => tools.openChanged(c.document)}>Open provider changes in {c.title}</button></li>)}</ul></section>;
@@ -214,7 +214,7 @@ function ProjectTools() {
 function NavigationTools() {
     const tools = bindings.navigation, state = useObserved(tools.state);
     return <section className="host-language" aria-label="Symbol navigation"><h2>Symbol navigation</h2>
-        <output aria-label="Symbol navigation status" aria-live="polite">{state.message}</output>
+        <output aria-label="Symbol navigation status">{state.message}</output>
         <progress aria-label="Symbol navigation progress" hidden={state.status !== "pending"} max={Math.max(1, state.total)} value={state.work} />
         <label><input type="checkbox" checked={state.includeDeclaration} onChange={event => tools.setIncludeDeclaration(event.currentTarget.checked)} />Include declarations in references</label>
         <div>{navigationActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
@@ -224,7 +224,7 @@ function NavigationTools() {
 function DomainTools() {
     const tools = bindings.domain, state = useObserved(tools.state);
     return <section className="host-language" aria-label="Domain tools"><h2>Domain tools</h2>
-        <output aria-label="Domain command status" aria-live="polite">{state.message}</output>
+        <output aria-label="Domain command status">{state.message}</output>
         <progress aria-label="Domain discovery progress" hidden={state.status !== "running"} max={Math.max(1, state.total)} value={state.work} />
         <div>{domainActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
         <ul aria-label="Domain annotations">{state.annotations.map(note => <li key={`${state.token}:${state.revision}:${note.id}`}>

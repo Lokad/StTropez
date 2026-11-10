@@ -45,7 +45,7 @@ Visible headers expose native disclosure buttons with `aria-expanded` and line-r
 Enter/Space toggles; Escape returns to the source. Source Escape followed by Tab or Shift+Tab
 leaves the editor for host controls. Buttons capture tab, revision and fold generation, so delayed
 clicks cannot act on a new target. Folding is guarded during composition; synthetic checks do
-not qualify native IME or screen-reader behavior. Those device checks remain unverified.
+not qualify native IME behavior. Those device checks remain unverified.
 
 Retained view handles preserve folds through remount. `captureView()` includes fold metadata;
 `restoreView()` may initialize a new empty view of the same document and revision, and never

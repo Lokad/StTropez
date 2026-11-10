@@ -17,7 +17,7 @@ fixture results are supporting evidence; they do not replace an integrated host 
 | Large documents | Normal Unicode/CRLF sources, 100,000 lines of about 2.4 million UTF-16 units, and long-line controls exercise beginning/middle/end edits and navigation. Input contexts, rendered rows, reads and DOM stay bounded; ordinary edits do not export the complete document. Unsupported contextual geometry stays explicitly identified. |
 | Responsiveness | Repeated source- and hardware-labelled samples include semantic assertions, raw timings, background traffic and both views. Report input-handler duration separately from interaction readiness and complete action/workflow proxies. Bulk operations show progress, yield, reject stale targets and cancel without partial commits. |
 | Lifecycle and package | Close/replace/dispose during work releases views, listeners, subscriptions and leases without losing owned unsaved work. The restored assets-only package exercises the pilot surface without checkout fallback. |
-| Native input and accessibility | Real IME/reconversion, OS clipboard, keyboard-only and screen-reader checks have a declared support record. Unavailable checks remain unverified, and the native baseline stays available. Automation does not satisfy this device gate. |
+| Native input | Real IME/reconversion, OS clipboard and keyboard-only checks have a declared support record. Unavailable checks remain unverified, and the native baseline stays available. Automation does not satisfy this device gate. |
 
 Useful automated host evaluation may proceed while device checks are unavailable. Keep that
 status separate from complete M3/native qualification, and continue independent implementation
@@ -48,7 +48,7 @@ in its canonical reply. Reloading starts a new fixture; this is not durable stor
    current reference while Find remains there. After a compatible host remount, a fresh query in
    **Find source** keeps its working/reference context; remount starts no old search or provider
    request and moves no focus. A replaced target requires choosing its source again.
-   Native clipboard and accessibility remain unverified.
+   Native clipboard remains unverified.
    Enable **Link review scrolling** to follow corresponding vertical positions in either pane;
    clear it for independent scrolling. Selections, horizontal offsets and reference identity stay
    independent. Enable **Align review rows** to add empty padding beside unequal changed blocks;
@@ -111,7 +111,7 @@ working pane always uses the bounded candidate. The baseline may rebuild its wea
 cache after history navigation. Its export counts are diagnostic; the zero ordinary-export gate
 applies to the candidate. Text, history, selection and save behavior are checked for both adapters.
 
-Real IME/reconversion, OS/app/menu clipboard, NVDA/Narrator and physical display latency remain
+Real IME/reconversion, OS/app/menu clipboard and physical display latency remain
 unverified without recorded device evidence. Keyboard automation and synthetic composition do
 not satisfy those checks. Native token-preserving drag movement in the current WebKit evaluation
 environment is also unverified; tokenless internal drops are refused without changing source text.
@@ -199,7 +199,7 @@ Delivery order:
 3. Keep historical timing failures and unresolved attribution explicit. Rerun or trace them only
    for a new hypothesis with a bounded experiment. Separate own-listener, complete readiness and
    workflow clocks; a larger correctness timeout does not qualify latency.
-4. Obtain native-device/accessibility evidence when available and continue independent work
+4. Obtain native-device evidence when available and continue independent work
    meanwhile. Further font/shaping expansion requires a reproduced pilot defect.
 
 All runtime code remains dependency-free, core logic stays headless, and host services and

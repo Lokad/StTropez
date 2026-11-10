@@ -6,11 +6,11 @@ import type { SignatureInput, SignatureResult } from "../probes/signature.ts";
 import { HostCell } from "../shared/observable.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate; stop: () => void };
 type Job = { session: Session; input: SignatureInput; selections: SelectionSet; folds: number; authority: string; lease: ResourceLease | undefined;
-    description: () => void; timer: number; invalid: boolean; ready: boolean; result?: SignatureResult };
-export type SignatureSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; visible: boolean; pending: boolean; id: string;
+    timer: number; invalid: boolean; ready: boolean; result?: SignatureResult };
+export type SignatureSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; visible: boolean; pending: boolean;
     status: "idle" | "pending" | "ready" | "empty" | "expired" | "failed"; message: string; view: string | null; left: number; top: number;
     before: string; parameter: string; after: string; documentation: string; parameterDocumentation: string; activeSignature: number; signatureCount: number; argument: number | null; work: number; total: number }>;
-let sessionSerial = 0, presentationSerial = 0;
+let sessionSerial = 0;
 /** One captured signature lane per host; automatic requests are debounced outside input handlers. */
 export class HostSignatureTools {
     private readonly workspace: Workspace;
@@ -30,7 +30,7 @@ export class HostSignatureTools {
     private layout: { win: Window; observer: MutationObserver; frame: number | undefined } | undefined;
     private readonly worker = navigationMetrics();
     private readonly counts = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0, scheduled: 0 };
-    private readonly cell = new HostCell<SignatureSnapshot>({ available: false, connected: false, disconnected: false, visible: false, pending: false, id: `host-signature-${++presentationSerial}`,
+    private readonly cell = new HostCell<SignatureSnapshot>({ available: false, connected: false, disconnected: false, visible: false, pending: false,
         status: "idle", message: "Use Ctrl/Cmd+Shift+Space for signature help.", view: null, left: 8, top: 8, before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", activeSignature: 0, signatureCount: 0, argument: null, work: 0, total: 0 });
     readonly state = this.cell.observable;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, beforeRequest: () => void) { this.workspace = workspace; this.canCapture = canCapture; this.beforeRequest = beforeRequest; }
@@ -69,7 +69,7 @@ export class HostSignatureTools {
     private releasePending(job: Job): void { job.session.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.lease?.release(); job.lease = undefined; }
     private stopAuto(): void { if (this.auto) this.auto.session.editor.element.ownerDocument.defaultView!.clearTimeout(this.auto.timer); this.auto = undefined; }
     private clear(status: SignatureSnapshot["status"], message: string): void {
-        const job = this.job; this.job = undefined; if (job) { job.invalid = true; this.releasePending(job); job.description(); if (!job.ready) this.drop(); }
+        const job = this.job; this.job = undefined; if (job) { job.invalid = true; this.releasePending(job); if (!job.ready) this.drop(); }
         this.stopLayout(); this.publish({ status, message, visible: false, before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", activeSignature: 0, signatureCount: 0, argument: null, work: 0, total: 0 });
     }
     readonly dismiss = (): void => { this.armed = false; this.stopAuto(); if (this.job && !this.job.ready) this.counts.cancelled++; this.clear("idle", "Signature help dismissed."); };
@@ -95,7 +95,7 @@ export class HostSignatureTools {
     private show(job: Job, index: number): void {
         const result = job.result!, signature = result.signatures[index], argument = result.call?.argument ?? null, parameter = argument === null ? undefined : signature?.parameters[argument];
         if (!signature) {
-            job.description(); job.description = () => {}; this.stopLayout();
+            this.stopLayout();
             if (result.reason === "no-call" || result.reason === "depth-limit") this.armed = false;
             this.publish({ status: "empty", visible: false, message: result.reason === "depth-limit" ? "Signature nesting exceeds the local provider limit." : "No supported signature in this captured context.", before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", signatureCount: 0, argument: null }); return;
         }
@@ -120,7 +120,7 @@ export class HostSignatureTools {
         let input: SignatureInput; try { input = validateSignatureInput({ id: ++this.sequence, document: doc.id, revision: doc.revision, length: doc.buffer.length, offset: selected.selection.head, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
         catch (error) { this.armed = false; this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid signature context." }); return; } this.fault = undefined;
         const win = s.editor.element.ownerDocument.defaultView!, job: Job = { session: s, input, selections: selected.selectionSet, folds: s.editor.view.folding.getSnapshot().generation, authority: this.authority(doc.id),
-            lease: this.workspace.acquire(doc.resourceId), description: s.editor.describe(this.cell.get().id), timer: 0, invalid: false, ready: false }; this.job = job; this.counts.requested++;
+            lease: this.workspace.acquire(doc.resourceId), timer: 0, invalid: false, ready: false }; this.job = job; this.counts.requested++;
         this.publish({ status: "pending", visible: true, message: "Reading captured signature context.", total: input.offset, work: 0, ...this.position() }); this.trackLayout();
         try {
             this.client ??= createNavigationClient(win, this.worker, undefined, () => {

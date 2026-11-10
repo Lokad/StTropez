@@ -15,7 +15,7 @@ export function navigationActions(tools: HostNavigationTools) {
 }
 export function mountNavigationPanel(host: HTMLElement, tools: HostNavigationTools): () => void {
     const owner = host.ownerDocument, heading = owner.createElement("h2"), status = owner.createElement("output"), progress = owner.createElement("progress"), notes = owner.createElement("ul"), controls = owner.createElement("div"), label = owner.createElement("label"), include = owner.createElement("input");
-    heading.textContent = "Symbol navigation"; status.setAttribute("aria-label", "Symbol navigation status"); status.setAttribute("aria-live", "polite");
+    heading.textContent = "Symbol navigation"; status.setAttribute("aria-label", "Symbol navigation status");
     progress.setAttribute("aria-label", "Symbol navigation progress"); notes.setAttribute("aria-label", "Navigation results"); include.type = "checkbox"; label.append(include, "Include declarations in references"); include.onchange = () => tools.setIncludeDeclaration(include.checked);
     const buttons = navigationActions(tools).map(action => { const button = owner.createElement("button"); button.textContent = action.label; button.onclick = action.invoke; controls.append(button); return button; });
     host.replaceChildren(heading, status, progress, label, controls, notes); let previous: NavigationSnapshot | undefined;

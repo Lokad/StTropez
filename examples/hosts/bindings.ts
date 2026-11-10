@@ -76,7 +76,7 @@ export class ViewBindings {
         this.reviewStatus?.remove(); this.reviewStatus = undefined;
         if (!host) return;
         this.reviewStatus = host.ownerDocument.createElement("output"); this.reviewStatus.setAttribute("aria-label", "Reference operation status");
-        this.reviewStatus.setAttribute("aria-live", "polite"); this.reviewStatus.textContent = this.reviewResult; host.append(this.reviewStatus);
+        this.reviewStatus.textContent = this.reviewResult; host.append(this.reviewStatus);
         const publication = this.controller.comparisonReference.getSnapshot(), baseline = publication.baseline;
         this.referenceGeneration = publication.generation;
         const view = this.retainedView("comparison", this.controller.source.documentId);

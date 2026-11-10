@@ -17,7 +17,7 @@ export function draftActions(draft: HostDraftRecovery) {
 }
 export function mountDraftPanel(host: HTMLElement, draft: HostDraftRecovery): () => void {
     const owner = host.ownerDocument, title = owner.createElement("h2"), status = owner.createElement("output"), progress = owner.createElement("progress"), protection = owner.createElement("p"), preview = owner.createElement("pre"), nav = owner.createElement("div"), listeners = new AbortController();
-    title.textContent = "Draft recovery"; status.setAttribute("aria-label", "Draft recovery status"); status.setAttribute("aria-live", "polite");
+    title.textContent = "Draft recovery"; status.setAttribute("aria-label", "Draft recovery status");
     const buttons = draftActions(draft).map(action => { const b = owner.createElement("button"); b.textContent = action.label; b.addEventListener("click", action.invoke, { signal: listeners.signal }); nav.append(b); return b; });
     progress.setAttribute("aria-label", "Draft storage progress"); host.replaceChildren(title, status, progress, protection, nav, preview);
     const render = () => { const s = draft.state.getSnapshot(); status.textContent = s.message; progress.hidden = !s.busy; protection.textContent = s.unprotected ? "Current inputs need a recovery checkpoint before leaving." : "Checkpoint copies do not save or run inputs.";

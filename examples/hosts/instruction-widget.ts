@@ -60,7 +60,7 @@ export function mountInstructionWidget(host: HTMLElement, lane: HTMLElement, edi
                 if (key === "s") controller.save(); else { const d = controller.workspace.document(controller.source.documentId); controller.workspace[key === "y" || event.shiftKey ? "redo" : "undo"]({ documentId: d.id, expectedRevision: d.revision }); }
             }, { signal });
         }
-        status = owner.createElement("output"); status.setAttribute("aria-label", "Instruction status"); status.setAttribute("aria-live", "polite"); panel.append(status);
+        status = owner.createElement("output"); status.setAttribute("aria-label", "Instruction status"); panel.append(status);
         const controls = owner.createElement("div");
         const button = (name: string, invoke: () => void) => { const b = owner.createElement("button"); b.textContent = name; b.addEventListener("click", invoke, { signal }); controls.append(b); return b; };
         copy = button("Capture instruction copy", model.captureCopy); finish = button("Finish instruction copy", model.finishCopy); cancel = button("Cancel instruction copy", model.cancelCopy);

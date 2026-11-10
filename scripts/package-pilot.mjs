@@ -82,7 +82,7 @@ export async function runPackagedPilot(browser,baseUrl,{directory,packageSha256,
                 "The whole workflow proxy includes controls, transport, local settlement, full-source/range oracles and cleanup, with no imposed service delay or point budget. " +
                 "Semantic mode has one diagnostic sample per corpus and includes its screenshot inside the workflow proxy; it establishes no tail estimate. Benchmark mode has three warmups and ten measurements without screenshots. " +
                 "Explicit save captures export once; ordinary typing creates buffers with zero exports. Undo can restore a previously explicitly exported saved buffer. " +
-                "Native IME, reconversion, OS clipboard, assistive technology, physical display latency and production tails remain unverified."};
+                "Native IME, reconversion, OS clipboard, physical display latency and production tails remain unverified."};
         const path=`${directory}/pilot-${benchmark?"bench-":""}${browser.browserType().name()}.json`;await writeFile(path,JSON.stringify(report,null,2));return report;
     }catch(error){const path=`${directory}/pilot-failure-${Date.now()}`;await writeFile(path+".json",JSON.stringify({source,packageSha256,activeCase,error:String(error?.stack??error),cases,snapshot:page?await page.evaluate(()=>window.hostFixture?.snapshot()).catch(()=>null):null,errors},null,2));if(page)await page.screenshot({path:path+".png",fullPage:true}).catch(()=>{});throw error;}
     finally{await page?.close();}

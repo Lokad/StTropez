@@ -17,7 +17,7 @@ does not qualify the production renderer or native-device input.
 The separate [bounded editing candidate](editing-candidate.md) maps a small native context to
 range transactions and uses local native glyph rectangles over the [viewport](viewport.md).
 It preserves the same identities, selections and history, while leaving long contextual-line
-geometry and native-device/accessibility qualification open.
+geometry and native-device qualification open.
 The [comparison controller](comparison.md) captures an independent reference buffer/version
 and one working tab. Refresh and acceptance advance the reference through captured tickets;
 they never implicitly save the working resource. Browser panes reuse the same buffer/view
@@ -155,9 +155,9 @@ is independent of committing an editor transaction.
 
 ## Rendering and language services
 
-Keep DOM rendering as the initial production direction for accessibility and native text
-interaction. Benchmark input approaches before choosing a hidden textarea or contenteditable
-implementation. Canvas and GPU text rendering add hit-testing, accessibility and composition
+Keep DOM rendering as the initial production direction for native text interaction.
+Benchmark input approaches before choosing a hidden textarea or contenteditable
+implementation. Canvas and GPU text rendering add hit-testing and composition
 burdens and require measured justification. The native textarea scaffold settles neither choice.
 The [read-only viewport layer](viewport.md) now bounds DOM/range work in both axes and keeps
 logical scroll ranges separate from browser scroll extents. It shares indexed documents and

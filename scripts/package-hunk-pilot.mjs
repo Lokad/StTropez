@@ -274,7 +274,7 @@ export async function runPackagedHunkPilot(browser, baseUrl, { directory, packag
                 "Only q after revert/correction receives point targets: handler<=16ms,ready<=100/250ms,action<=200/500ms. Adapter elapsed excludes beforeinput and observers; full q readiness starts at beforeinput. Hunk and whole-workflow metrics have no keystroke budget. " +
                 "Initial mount/probe/ready excluded; workflow runs from first actual edit through disposal/explicit release, including controls/transport/local settlement/oracles/cleanup. No imposed service delay. SemanticN1 includes screenshots and establishes no tail; repeated3warm+10measurements exclude screenshots. " +
                 "Explicit save captures serialize; ordinary edit buffers exportzero. Undo can restore an explicitly exported saved buffer. This short-row hunk control is not a full-document bulk revert, cold startup, React packaged host, production tail or speedup experiment. " +
-                "All prior misses remain; nativeIME/reconversion/OSclipboard/AT/physicaldisplay unverified. No process CPU or complete task attribution." };
+                "All prior misses remain; nativeIME/reconversion/OSclipboard/physicaldisplay unverified. No process CPU or complete task attribution." };
         await writeFile(`${directory}/hunk-${benchmark ? "bench-" : ""}${browser.browserType().name()}.json`, JSON.stringify(report, null, 2));
         return report;
     } catch (error) {

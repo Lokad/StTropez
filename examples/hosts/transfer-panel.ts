@@ -5,7 +5,7 @@ import { formActions, formSaveKey } from "./configuration-panel.ts";
 export function mountTransferPanel(host: HTMLElement, controller: HostController): () => void {
     const owner = host.ownerDocument, listeners = new AbortController(), transfer = controller.transfer, outputs = controller.runResources;
     const title = owner.createElement("h2"), form = owner.createElement("div"), status = owner.createElement("output"), nav = owner.createElement("div"), preview = owner.createElement("pre");
-    title.textContent = "Transfer workspace"; status.setAttribute("aria-label", "Transfer save status"); status.setAttribute("aria-live", "polite");
+    title.textContent = "Transfer workspace"; status.setAttribute("aria-label", "Transfer save status");
     const fields = ([['destination', 'Transfer destination'], ['batchSize', 'Transfer batch size']] as const).map(([key, name]) => {
         const label = owner.createElement("label"), field = owner.createElement("input"); label.textContent = name; if (key === "batchSize") field.inputMode = "numeric";
         field.addEventListener("input", () => transfer.update(key, field.value), { signal: listeners.signal }); label.append(field); form.append(label); return { key, field }; });

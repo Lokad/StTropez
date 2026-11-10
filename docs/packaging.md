@@ -30,7 +30,7 @@ After packing, `node scripts/test-package.mjs --transitions-only` runs this focu
 add `--browser=firefox` or `--browser=webkit` to select another engine. Reports are recorded in
 `artifacts/package/transitions-<browser>.json`. These controlled local fixture versions qualify
 the restore/staging mechanism; they do not claim arbitrary released-version compatibility,
-native input/accessibility or display latency. The focused mode records no timing distributions.
+native input or display latency. The focused mode records no timing distributions.
 
 The proof inspects the actual ZIP entries and dependency metadata, checks SHA-256 integrity,
 copies the package and generic fixture to a fresh OS temporary directory, and restores using
@@ -90,7 +90,7 @@ retain raw samples and distinguish the input adapter handler, input to full revi
 (all working views, immutable reference, caret, scans, diff and two animation frames), the
 complete point-action automation proxy, and the whole workflow proxy including controls,
 local settlement, oracles and cleanup. Workflow timings have no point-action budget.
-Native IME/reconversion, OS clipboard, assistive technology and physical display latency
+Native IME/reconversion, OS clipboard and physical display latency
 remain separate device checks. Pilot reports and images are under `artifacts/package/`.
 
 The restored hunk scenario keeps a reviewed save pending while actual comparison controls
@@ -127,7 +127,7 @@ The host reader keeps the complete source in native DOM text nodes. For longer f
 DOM adapter maps text-node and element-boundary selections to raw source offsets, preserving
 direction and CRLF boundaries through activation. This uses browser primitives without an
 additional runtime dependency. Engines without that CSS optimization still retain the full text.
-Native Find, clipboard and assistive-technology behavior require device qualification; DOM
+Native Find and clipboard behavior require device qualification; DOM
 selection checks alone do not establish those capabilities. Native selection string serialization
 can vary by engine even for a single text node; raw DOM Range text is the source-preservation oracle.
 
@@ -139,7 +139,7 @@ movement follows browser rules. The adapter normalizes CRLF/surrogate boundaries
 bridges DOM chunk boundaries and reveals the native text geometry in the reader's scroller.
 Escape focuses **Edit**; Tab keeps normal host navigation. Deletion/history keys do not change
 read-only text. Keyboard/pointer listeners share the host's abort/disposal lifecycle. These checks
-cover automated desktop browser behavior, with native input, OS clipboard and screen readers
+cover automated desktop browser behavior, with native input, OS clipboard
 still requiring the support records described above.
 
 Full-document native selection remains a large-reader responsiveness limit. A registered
@@ -203,7 +203,7 @@ isolated consumer build, allowing the same journeys to run under a separate brow
 scenario; the default runs both. The large source contains 2,400,044 UTF-16 units with the same
 Unicode/CRLF header, while the 116-unit normal control stays unchanged.
 Own input-handler observations are not complete interaction latency or production percentiles.
-This local host fixture does not qualify retained heap, native IME/OS clipboard/accessibility,
+This local host fixture does not qualify retained heap, native IME/OS clipboard,
 durable storage, arbitrary deployment failures or a consuming application's adoption policy.
 
 ## Inactive-document workspace
@@ -228,7 +228,7 @@ a consuming-host responsibility.
 artifact. `artifacts/package/workspace-*` records ten switches, typing/shared undo, Find routing,
 close/reopen and stale/delayed discard journeys, with DOM/resource/subscription bounds. Individual
 handler observations are separate from full interaction and cold activation latency. These
-counts do not prove retained heap bytes; native input/accessibility and release qualification
+counts do not prove retained heap bytes; native input and release qualification
 remain open.
 
 A separate fixed-budget experiment before the fragmented native reader, in Chromium
@@ -249,7 +249,7 @@ logical subscriptions are separate from the browser's DOM listener counter. Back
 and embedder heap fields were recorded without a pass criterion. The large read-only baseline
 alone reported about 95.2 MB of embedder heap before any editor models existed. These results
 therefore do not qualify total process, native-layout or peak memory, GC pauses, other engines,
-or interaction latency. Production scope and native input/accessibility gates remain open.
+or interaction latency. Production scope and native input gates remain open.
 
 ## Build bridge
 
@@ -360,7 +360,7 @@ after packing. `--prepare-only` checks declarations and bundling without startin
 Only the isolated point keystroke has handler, all-pane readiness and complete automation
 action targets. Setup and the full workflow have separate elapsed clocks; workflow time
 includes controls, assertions and local service settlement. These measurements do not
-establish physical display latency, native IME, platform clipboard or assistive-technology
+establish physical display latency, native IME, platform clipboard
 behavior. A prepared consumer alone is not a completed runtime qualification.
 
 The separate [horizontal positioning stage](positioning.md) reuses owned GSUB provenance,

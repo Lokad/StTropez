@@ -109,7 +109,7 @@ export async function runPackageTransitions({ project, consumer, entries, assets
         }
         await release(retainedPage); retainedPage = undefined; assert.deepEqual(errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
         const report = { schemaVersion: 1, source, environment: environment(), browser: browser.version(), consumer, fixturePackages, steps, originalPayloadVersion: assets.version, originalStage: steps.at(-1).root, retainedGenerations: roots.size, sentinelUnchanged: true, packagePayloadsUnchanged: true, timingsMeasured: false,
-            limits: "Controlled local evaluation versions of this payload; fixture-only optional worker. Qualifies NuGet restore/stage transitions and isolated frontend usability, not arbitrary released-version compatibility, publishing, native input/accessibility or display latency." };
+            limits: "Controlled local evaluation versions of this payload; fixture-only optional worker. Qualifies NuGet restore/stage transitions and isolated frontend usability, not arbitrary released-version compatibility, publishing, native input or display latency." };
         await mkdir("artifacts/package", { recursive: true }); await writeFile(`artifacts/package/transitions-${browserName}.json`, JSON.stringify(report, null, 2));
         console.log("Local package transitions A→B→A and identical-payload root reuse passed; old stages and live source remain intact."); return report;
     } finally { await retainedPage?.close(); await browser?.close(); await new Promise(resolve => server.close(resolve)); }

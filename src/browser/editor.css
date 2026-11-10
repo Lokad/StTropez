@@ -44,7 +44,6 @@
     font: inherit; line-height: inherit; tab-size: inherit; direction: var(--st-text-direction, ltr); opacity: 0; }
 .st-composing .st-input-context { width: 240px; max-width: 40%; opacity: 1; color: inherit; background: var(--st-background, #131b27); }
 .st-input-caret, .st-input-secondary-caret { position: absolute; width: 1px; pointer-events: none; background: var(--st-foreground, #e1e7ef); }
-.st-input-help { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .st-text-drop-caret { position: absolute; width: 2px; pointer-events: none; background: var(--st-foreground, #e1e7ef); }
 .st-text-drag-preview { position: fixed; left: 8px; top: 8px; max-width: 320px; max-height: 80px; overflow: hidden; white-space: pre-wrap;
     padding: 4px 8px; pointer-events: none; color: var(--st-foreground, #e1e7ef); background: var(--st-background, #131b27); border: 1px solid currentColor; }

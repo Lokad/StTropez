@@ -65,6 +65,6 @@ Focused regressions cover raw Unicode/BOM/CRLF, chunk and token boundaries, alph
 normal/100k sources, keyboard form entry, markers, complete-set history, malformed
 later choices, safe labels, stale input/authority/tokens, reconnect, secondary identity
 and cleanup. Synthetic composition/table guards do not qualify native IME, OS/app
-clipboard, accessibility or physical display. Those remain unverified. Candidate
+clipboard or physical display. Those remain unverified. Candidate
 beforeinput listener duration, command dispatch and complete worker/view/review
 readiness are distinct clocks; bulk correctness is not a latency pass.

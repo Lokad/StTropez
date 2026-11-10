@@ -66,9 +66,9 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
         await completionCaret(page); await page.evaluate(() => window.hostFixture.setProviderDelay(1000)); await primary(page).press("Control+Space");
         const selection = (await snapshot(page)).bindings.views.map(v => ({ id: v.id, selection: v.selection }));
         await page.evaluate(() => window.hostFixture.unmount());
-        // The persistent draft service keeps its document, metadata and configuration observers;
-        // view/provider subscriptions are gone. Full host disposal below must release all three.
-        expect((await snapshot(page)).diagnostics).toMatchObject({ subscriptions: 3, leases: 2, views: 2 });
+        // Durable recovery keeps source document/metadata, configuration and transfer observers;
+        // view/provider subscriptions are gone. Full host disposal below must release all four.
+        expect((await snapshot(page)).diagnostics).toMatchObject({ subscriptions: 4, leases: 2, views: 2 });
         expect((await snapshot(page)).bindings.language.sessions).toEqual([]);
         await page.evaluate(() => window.hostFixture.mount()); await ready(page);
         expect((await snapshot(page)).bindings.views.map(v => ({ id: v.id, selection: v.selection }))).toEqual(selection);
