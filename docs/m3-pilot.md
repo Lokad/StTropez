@@ -31,7 +31,8 @@ After `npm ci` and `npm run dev`, open the
 Run the following journey in either host. The services are local, deferred fixtures:
 **Finish save**, **Deliver proposal** and **Finish remote review** complete pending responses
 explicitly, so you can edit while they are in flight. **Finish save** trims trailing whitespace
-in its canonical reply. Reloading starts a new fixture; this is not durable storage.
+in its canonical reply. Reloading resets the simulated services. Explicit
+[draft checkpoints](host-drafts.md) separately offer independent restore choices for unsaved inputs.
 
 1. In **Primary source**, type a correction. Select text with Shift+Arrow and replace it;
    move by word, line and page. Check the same text in **Secondary source**. Use Ctrl+Z and
@@ -162,6 +163,52 @@ documents define supported syntax, bounds and remaining semantic/native qualific
   and request its captured edits. [Server-edit policy](server-edits.md) covers whole-batch validation,
   participating undo, explicit affected-resource reveal and acknowledgement/reconnect behavior.
 
+
+## Try the LSP provider route
+
+After the same `npm ci` and `npm run dev`, open the
+[plain LSP host](http://127.0.0.1:4173/hosts/plain/?editor=candidate&language=lsp) or
+[React LSP host](http://127.0.0.1:4173/hosts/react/?editor=candidate&language=lsp).
+This route uses actual LSP 3.17 over JSON-RPC 2.0 and WebSocket, with UTF-16 positions. The pinned
+3.17.5 reference peer is a development dependency; the distributed runtime keeps zero package
+dependencies. A production language provider is not required for this evaluation.
+
+Focus a working source. Ctrl+Space requests completion; hover, F12/Shift+F12 and F2 use captured
+provider hover, navigation and rename flows. Ctrl/Cmd+. opens provider action choices. Select a
+choice, inspect its edits, then choose **Apply captured action**. A command choice instead shows
+**Execute captured action** and its captured command name and argument count. Merely selecting a
+choice never executes it. An unadvertised command disables the whole choice, including its edit.
+
+Execution applies any initial edit as one atomic shared undo transaction and synchronizes it
+before sending the command. Further provider edits appear in the existing **Workspace provider**
+panel; use **Apply captured provider edits** or **Decline captured provider edits** for that batch.
+Each applied phase remains separately undoable. Failure or lost acknowledgement after a commit
+retains those edits; reconnect never replays either phase. A busy review lane prevents execution
+before the initial edit. Later focus changes cannot retarget the captured origin or resources.
+
+The panel also offers **Register provider review command**, **Request provider review edits** and
+**Request provider workspace status** independently. Comparison baselines stay immutable, while
+Save/Run keep their captured primary resource even after another changed resource is revealed.
+See [action commands](lsp-code-actions.md), [server-edit decisions](lsp-server-edits.md) and the
+[supported subset](lsp.md) for limits, cancellation and remaining protocol gaps. Signature help,
+module links, colors and domain tools retain their separately declared worker fixtures.
+
+## Qualification scope
+
+The automated pilot covers both hosts, normal and 100k-line sources, actual editing/history,
+comparison, captured Save/Run and lifecycle guards in Chromium, Firefox and WebKit. Restored
+assets qualify a separately built React host without checkout-source fallback. A tracked-files-only
+checkout also passes public locked dependency installation, strict checks/build, reference-peer
+protocol tests and focused normal/100k editor/LSP/reference-Find journeys. Its compiled modules,
+declarations, CSS and license assets match the qualified package byte for byte. Browser binaries
+were reused; the clean trial is setup and correctness evidence, not a new browser-install test.
+
+These results qualify the documented evaluation surface. Native IME/dead keys/AltGr/reconversion,
+OS/app/menu clipboard, native unload, token-preserving WebKit drag and physical display checks
+remain unverified. Scoped Chromium retained V8/DOM observations do not establish process/backing/
+peak memory, GC pauses or other-engine retention. Production/constrained hardware, release and
+consuming-host adoption gates remain separate in the [acceptance inventory](acceptance.md).
+Correctness journeys and generous timeouts make no new latency-tail or heap claim.
 
 ## Measurement boundaries
 

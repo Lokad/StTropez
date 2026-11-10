@@ -21,6 +21,10 @@ worker fixture add incremental visible highlighting, completion and scoped diagn
 Full contextual-line geometry, language-protocol support and recovery
 remain roadmap work.
 
+The [LSP provider route](docs/m3-pilot.md#try-the-lsp-provider-route) adds actual captured protocol
+workflows and explicit command/server-edit decisions. [Qualification limits](docs/m3-pilot.md#qualification-scope)
+keep native, performance and adoption claims scoped.
+
 ## Run
 
 Requires Node.js 24 or newer.
