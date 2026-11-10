@@ -112,6 +112,32 @@ pointer/focus work. Hunk and whole-workflow clocks have no single-keystroke budg
 post-revert keyboard point is assessed against the declared typing targets. Initial mount
 and initial readiness are outside the workflow clock; range oracles and cleanup are inside.
 
+## Static preview and explicit activation
+
+`npm run test:package:activation` restores an isolated consumer whose initial page shows exact
+Unicode/CRLF text without requesting editor JavaScript, CSS or a worker. Its small host module
+loads a separate compiled editing entry and the packaged CSS only after **Edit**. Failed module
+or CSS loading retains the preview and offers retry. Cancelling activation invalidates late
+responses before they can create a model or mount a view.
+
+**Read only** detaches the editor and Find controller while keeping the resource, complete
+selection set and shared undo history. Selecting new text in the preview deliberately replaces
+the set with that single selection on the next activation. Composition and queued edits guard switchback;
+caret repaint work can be cancelled safely. The regex worker is requested only after opting in
+to regular expressions. Worker failure reports an unavailable search while typing and literal
+Find remain usable. Final disposal releases models, views, subscriptions and leases and retains
+the last committed text in the host preview. Module code already evaluated stays browser-cached.
+
+The consumer uses only public declarations and precompiled restored assets. The report counts
+host/bootstrap and editing JavaScript, CSS, worker and WASM bytes separately and retains actual
+request paths. Normal and 100,000-line journeys exercise typing, complete selections, undo/redo,
+switchback, failure/retry and disposal. Run the existing archive with
+`node scripts/test-package.mjs --activation-only --browser=firefox` (or `webkit`) to check another
+engine without rebuilding the library. Reports and images are `artifacts/package/activation-*`.
+Own input-handler observations are not complete interaction latency or production percentiles.
+This local host fixture does not qualify retained heap, native IME/OS clipboard/accessibility,
+durable storage, arbitrary deployment failures or a consuming application's adoption policy.
+
 ## Build bridge
 
 Restore imports `build/StTropez.Assets.props` and `.targets` and exposes `StTropezAssetRoot`.

@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Explicit editor activation</title>
+<style>body { font: 16px system-ui; margin: 24px; } button,input { margin: 4px; } pre { height: 320px; overflow: auto; border: 1px solid #8193a7; padding: 12px; } #editor { height: 320px; } output { display: block; margin: 8px 0; } [hidden] { display: none !important; }</style></head>
+<body><h1>Source preview</h1><nav aria-label="Source actions"><button id="edit">Edit</button><button id="cancel" disabled>Cancel activation</button><button id="preview" disabled>Read only</button></nav>
+<output id="status" aria-live="polite">Read only</output><pre id="text" tabindex="0" aria-label="Source preview"></pre><div id="editor" hidden></div>
+<label>Find <input id="query" disabled></label><label><input id="regex" type="checkbox" disabled>Regular expression</label><button id="next" disabled>Next match</button><output id="find-status" aria-live="polite"></output>
+<script type="module" src="/activation.js"></script></body></html>

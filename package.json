@@ -32,6 +32,7 @@
     "test:package:hunk": "npm run pack:nuget && node scripts/test-package.mjs --hunk-only",
     "bench:package-hunk": "npm run pack:nuget && node scripts/test-package.mjs --hunk-only --bench",
     "test:package:react": "npm run pack:nuget && node scripts/test-package.mjs --react-only",
+    "test:package:activation": "npm run pack:nuget && node scripts/test-package.mjs --activation-only",
     "bench:package-react": "npm run pack:nuget && node scripts/test-package.mjs --react-only --bench",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.core.json",
     "test": "node --test tests/*.test.ts",
