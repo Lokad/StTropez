@@ -97,21 +97,26 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     function positionCaret(): void {
         frame = undefined; if (disposed) return;
         const { selection: selected, selectionSet } = view.getSnapshot(), rectangle = clientBox(root), focused = owner.activeElement === input;
+        const currentDocument = workspace.observeDocument(documentId).getSnapshot();
         let state = viewport.snapshot(), point = viewport.coordsAt(selected.head, selected.headAffinity);
         let visible = point && point.left >= rectangle.left && point.left < rectangle.right
             && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
         const prior = caretLayout;
         // Reuse bounded reveal after layout changes hide a previously visible focused head.
         // Explicit scrolling, new selections/revisions and inactive views retain their own positions.
-        if (!visible && focused && !composing && prior?.visible && prior.focused && state.revision === prior.state.revision
-            && state.selectionSet === prior.state.selectionSet && state.foldGeneration === prior.state.foldGeneration
-            && state.scrollTop === prior.state.scrollTop && state.scrollLeft === prior.state.scrollLeft
-            && (state.width !== prior.state.width || state.height !== prior.state.height || state.columnWidth !== prior.state.columnWidth || state.lineHeight !== prior.state.lineHeight)) {
+        const retainLayout = !visible && focused && !composing && prior?.visible && prior.focused && state.revision === prior.state.revision
+            && currentDocument?.revision === state.revision && selectionSet === state.selectionSet && state.selectionSet === prior.state.selectionSet
+            && state.foldGeneration === prior.state.foldGeneration && view.folding.getSnapshot().generation === state.foldGeneration
+            && state.scrollTop === prior.state.scrollTop && state.scrollLeft === prior.state.scrollLeft;
+        const layoutChanged = retainLayout && (state.width !== prior.state.width || state.height !== prior.state.height || state.columnWidth !== prior.state.columnWidth || state.lineHeight !== prior.state.lineHeight);
+        if (layoutChanged) {
             viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" }); viewport.flush();
             state = viewport.snapshot(); point = viewport.coordsAt(selected.head, selected.headAffinity);
             visible = point && point.left >= rectangle.left && point.left < rectangle.right && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
         }
-        caretLayout = { state, visible: !!visible, focused: focused && !composing };
+        // DOM layout can advance before ResizeObserver queues a render. Retain the last valid
+        // placement until measured metrics arrive, then attempt reveal once even if no point exists.
+        if (!retainLayout || layoutChanged) caretLayout = { state, visible: !!visible, focused: focused && !composing };
         caret.hidden = !visible || selected.anchor !== selected.head || composing || owner.activeElement !== input;
         const left = ((point?.left ?? rectangle.left) - rectangle.left) / rectangle.zoom;
         const top = ((point?.top ?? rectangle.top) - rectangle.top) / rectangle.zoom;
@@ -120,7 +125,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         input.style.top = `${root.scrollTop + Math.max(0, Math.min(root.clientHeight - 24, top))}px`;
         caret.style.left = `${root.scrollLeft + left}px`; caret.style.top = `${root.scrollTop + top}px`;
         for (const element of [input, caret]) element.style.height = `${point ? point.height / rectangle.zoom : viewport.snapshot().lineHeight}px`;
-        const buffer = workspace.observeDocument(documentId).getSnapshot()?.buffer;
+        const buffer = currentDocument?.buffer;
         const points = [];
         if (!composing && owner.activeElement === input && buffer && state.selectionSet === selectionSet && state.lastLine > state.firstLine) {
             const from = buffer.offsetAt(state.firstLine), to = state.lastLine < buffer.lineCount ? buffer.offsetAt(state.lastLine) : buffer.length;

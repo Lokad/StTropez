@@ -95,6 +95,8 @@ resize or font-metric change would hide it. It reuses nearest reveal and local f
 without changing text, complete selections or history. A changed revision, selection, fold or
 explicit scroll expires that placement decision; inactive views and deliberately offscreen carets
 keep their scroll positions. This does not supply the missing global contextual geometry.
+A host layout change during a render retains the last valid placement until new geometry is
+measured, including when the DOM changes before the resize notification arrives.
 The [cooperative paragraph index](bidi.md) can resolve the complete requested range in bounded
 advances, with captured revision/tab guards. Its development controls exercise that stage
 independently. The renderer still needs exact global font advances and shaping before it can

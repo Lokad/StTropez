@@ -91,6 +91,20 @@ for (const host of ["plain", "react"]) test(`${host} bounded long-context reveal
         expect(resizedPoint.y).toBeGreaterThanOrEqual(0); expect(resizedPoint.y).toBeLessThan(page.viewportSize()!.height);
         await page.mouse.click(resizedPoint.x, resizedPoint.y); await ready(page); await expect(input).toBeFocused();
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection.head).toBe(2048);
+        const beforePendingLayout = await snapshot(page);
+        await input.evaluate(node => {
+            const root = node.closest<HTMLElement>(".st-editing-candidate")!;
+            // The viewport queues its caret callback before this host layout change.
+            root.addEventListener("sttropez-render", () => { root.style.width = "140px"; root.style.setProperty("--st-font-size", "24px"); }, { once: true });
+            window.hostFixture.setSourceReadOnly(true);
+        });
+        await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.width).toBe(140);
+        await ready(page); await expect.poll(visible).toBe(true); await expect(input).toBeFocused();
+        await input.pressSequentially("Q"); await ready(page);
+        const afterPendingLayout = await snapshot(page); expect(afterPendingLayout.source).toEqual(beforePendingLayout.source); expect(afterPendingLayout.history).toEqual(beforePendingLayout.history);
+        expect(afterPendingLayout.bindings.views.map(v => v.selectionSet)).toEqual(beforePendingLayout.bindings.views.map(v => v.selectionSet));
+        expect(await page.evaluate(() => window.hostFixture.range(2047, 2049))).toBe(original.slice(2047, 2049));
+        await page.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await ready(page);
         // A host control can own focus while an editor changes size; that editor must not pan.
         await page.getByRole("textbox", { name: "Configuration path", exact: true }).focus(); await ready(page);
         const inactiveLeft = (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollLeft;
