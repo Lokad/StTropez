@@ -203,6 +203,10 @@ protocol tests and focused normal/100k editor/LSP/reference-Find journeys. Its c
 declarations, CSS and license assets match the qualified package byte for byte. Browser binaries
 were reused; the clean trial is setup and correctness evidence, not a new browser-install test.
 
+A separate [LSP lifecycle retention check](performance.md#lsp-lifecycle-retention) qualifies the
+documented settled owner-release boundary for retained Chromium V8/DOM, including pending decisions
+and remount. Immediate post-detach collection remains unqualified; the experiment is closed.
+
 These results qualify the documented evaluation surface. Native IME/dead keys/AltGr/reconversion,
 OS/app/menu clipboard, native unload, token-preserving WebKit drag and physical display checks
 remain unverified. Scoped Chromium retained V8/DOM observations do not establish process/backing/

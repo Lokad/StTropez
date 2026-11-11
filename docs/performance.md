@@ -202,6 +202,34 @@ latency. Compare reports only when their timing boundaries match; older frame re
 one readiness frame. Integrated host workflow reports also wait for comparison work and both
 comparison viewports, so they are a different workload from earlier source-only host reports.
 
+## LSP lifecycle retention
+
+A separate headless source-host experiment on Windows/Chromium 156.0.8078.4 covers plain and React,
+normal and 100k-line sources, immutable comparison, typing/history, confirmed commands, server-edit
+Apply/Decline, cancellation, remount and disposal during a pending decision. Each condition has one
+identical warmup followed by four phases with three forced-GC observations: 48 observations total.
+The parent target/isolate remains stable; the same-origin pilot frame must expose its execution
+context in that target. Exact source/reference bytes, complete-set history, actual protocol paths
+and final live-ownership counters are checked independently of the memory readings.
+
+The final boundary is explicit host disposal, closure of sockets and live views/leases/subscriptions/
+jobs, release of the embedding frame, then two animation frames before the first collection.
+The host retains its document graph until that embedding owner is released. All 12 final samples
+meet the unchanged limits against their condition's minimum warmed baseline: +4 MiB V8 used heap,
++32 DOM nodes and +0 event listeners. Observed maxima are +5,376 bytes, +0 nodes and +0 listeners.
+Owned-phase observations describe the live working set and have no additional pass threshold.
+
+Immediate post-detach collection exceeded these limits in the first sample of three conditions;
+later collections returned near baseline. One control restored the existing collector's two-frame
+settlement step before the first GC and passed every final sample. This supports an inference that
+collection ordering affected the first reading; no internal engine retainer attribution was proved.
+The immediate post-detach boundary remains unqualified.
+
+`Runtime.getHeapUsage.usedSize` and `Memory.getDOMCounters` define this retained V8/DOM scope.
+Other reported heap fields are descriptive. These results establish neither native/backing/total-
+process/peak memory, GC pauses, other-engine retention nor production or physical-display latency.
+The settlement frames are a memory collection boundary, not an interaction-latency measurement.
+
 ## WASM decision
 
 Prioritize bounding work and isolating host updates. WASM does not remove DOM layout, native
