@@ -15,9 +15,10 @@ import { runPackageTransitions } from "./package-transitions.mjs";
 const hunkOnly = process.argv.includes("--hunk-only");
 const transitionsOnly = process.argv.includes("--transitions-only");
 const reactOnly = process.argv.includes("--react-only"), prepareOnly = process.argv.includes("--prepare-only");
+const lspOnly = process.argv.includes("--lsp-only");
 const activationOnly = process.argv.includes("--activation-only");
 const workspaceOnly = process.argv.includes("--workspace-only"), deferredOnly = activationOnly || workspaceOnly;
-const pilotOnly = deferredOnly || reactOnly || hunkOnly || process.argv.includes("--pilot-only"), benchmark = process.argv.includes("--bench");
+const pilotOnly = deferredOnly || reactOnly || lspOnly || hunkOnly || process.argv.includes("--pilot-only"), benchmark = process.argv.includes("--bench");
 const browserName = process.argv.find(arg => arg.startsWith("--browser="))?.slice("--browser=".length) ?? "chromium";
 const corpus = process.argv.find(arg => arg.startsWith("--corpus="))?.slice("--corpus=".length) ?? "all";
 assert.ok(["chromium", "firefox", "webkit"].includes(browserName), `Unknown browser: ${browserName}`);
@@ -28,6 +29,7 @@ assert.ok(!prepareOnly || ((reactOnly || deferredOnly) && !benchmark), "Preparat
 assert.ok(!transitionsOnly || (!pilotOnly && !prepareOnly && !benchmark), "Transition-only checks cannot be combined with pilot or benchmark modes.");
 assert.ok(!deferredOnly || (!reactOnly && !hunkOnly && !process.argv.includes("--pilot-only") && !benchmark), "Deferred activation checks are an independent correctness scenario.");
 assert.ok(!workspaceOnly || !activationOnly, "Select one deferred activation scenario.");
+assert.ok(!lspOnly || (!reactOnly && !hunkOnly && !deferredOnly && !prepareOnly && !benchmark && !process.argv.includes("--pilot-only")), "The minimal LSP consumer is one independent correctness scenario.");
 
 const project = resolve(".");
 const archive = await readFile("artifacts/nuget/feed/StTropez.Assets.0.0.0-local.nupkg");
@@ -84,7 +86,7 @@ const compilerOptions = { target: "ES2022", module: "NodeNext", moduleResolution
         "sttropez/protocol": [join(assetRoot, "protocol/index.d.ts")],
     } };
 if (reactHost) Object.assign(compilerOptions, reactHost.compilerOptions, { paths: { ...compilerOptions.paths, ...reactHost.compilerOptions.paths } });
-const compilerFiles = deferredOnly ? ["activation-main.ts", workspaceOnly ? "workspace.ts" : "activate.ts"] : ["main.ts", "pilot.ts", ...(reactHost?.compilerFiles ?? [])];
+const compilerFiles = lspOnly ? ["lsp.ts"] : deferredOnly ? ["activation-main.ts", workspaceOnly ? "workspace.ts" : "activate.ts"] : ["main.ts", "pilot.ts", ...(reactHost?.compilerFiles ?? [])];
 await writeFile(join(consumer, "package.json"), '{"type":"module"}');
 await writeFile(join(consumer, "tsconfig.json"), JSON.stringify({ compilerOptions, files: compilerFiles }));
 const compilerOutput = execFileSync(process.execPath, [join(project, "node_modules/typescript/bin/tsc"), "-p", join(consumer, "tsconfig.json"),
@@ -99,7 +101,7 @@ if (reactHost) {
     }
     assert.ok(typeInputs.length >= compilerFiles.length, "Compiler input evidence is missing.");
 }
-const bundle = await build({ absWorkingDir: consumer, entryPoints: deferredOnly ? { activation: "activation-main.ts", ...(workspaceOnly ? { workspace: "workspace.ts" } : { activate: "activate.ts" }) } : { app: "main.ts", pilot: "pilot.ts", ...reactHost?.entryPoints }, bundle: true, format: "esm", platform: "browser",
+const bundle = await build({ absWorkingDir: consumer, entryPoints: lspOnly ? { lsp: "lsp.ts" } : deferredOnly ? { activation: "activation-main.ts", ...(workspaceOnly ? { workspace: "workspace.ts" } : { activate: "activate.ts" }) } : { app: "main.ts", pilot: "pilot.ts", ...reactHost?.entryPoints }, bundle: true, format: "esm", platform: "browser",
     ...(deferredOnly ? { splitting: true, minify: true } : {}),
     outdir: join(consumer, "site"), alias: { sttropez: assetRoot }, metafile: true,
     ...(reactHost ? { nodePaths: reactHost.nodePaths, define: { "process.env.NODE_ENV": '"development"' } } : {}),
@@ -116,6 +118,7 @@ await cp(join(assetRoot, "UNICODE-LICENSE.txt"), join(consumer, "site/UNICODE-LI
 await cp(join(consumer, "index.html"), join(consumer, "site/index.html"));
 await cp(join(consumer, "pilot.html"), join(consumer, "site/pilot.html"));
 if (reactHost) await writeFile(join(consumer, "site/react.html"), reactHost.html);
+if (lspOnly) await cp(join(consumer, "lsp.html"), join(consumer, "site/lsp.html"));
 if (deferredOnly) { const html = await readFile(join(consumer, "activation.html"), "utf8"); await writeFile(join(consumer, "site/activation.html"), workspaceOnly ? html.replace("<body>", "<body data-workspace>") : html); }
 const activationOutputs = deferredOnly ? Object.fromEntries(Object.entries(bundle.metafile.outputs).map(([path, value]) => {
     const name = relative(join(consumer, "site"), resolve(consumer, path)).replaceAll("\\", "/"); assert.ok(!name.startsWith("..")); return [name, { bytes: value.bytes, imports: value.imports, entryPoint: value.entryPoint ?? null }];
@@ -123,7 +126,7 @@ const activationOutputs = deferredOnly ? Object.fromEntries(Object.entries(bundl
 await mkdir("artifacts/package", { recursive: true });
 await writeFile("artifacts/package/restored-consumer.json", JSON.stringify({ schemaVersion: 1,
     packageSha256: createHash("sha256").update(archive).digest("hex"), consumer, assetRoot,
-    browser: browserName, mode: prepareOnly ? "prepare-only" : benchmark ? "benchmark" : pilotOnly ? "pilot" : "full", scenario: workspaceOnly ? "workspace" : activationOnly ? "activation" : reactOnly ? "react" : hunkOnly ? "hunk" : pilotOnly ? "recovery" : "all", corpus,
+    browser: browserName, mode: prepareOnly ? "prepare-only" : benchmark ? "benchmark" : pilotOnly ? "pilot" : "full", scenario: lspOnly ? "lsp" : workspaceOnly ? "workspace" : activationOnly ? "activation" : reactOnly ? "react" : hunkOnly ? "hunk" : pilotOnly ? "recovery" : "all", corpus,
     declarations: { files: compilerFiles, strict: true, skipLibCheck: false, passed: true, ...(reactHost ? { inputs: typeInputs } : {}) },
     inputs: Object.keys(bundle.metafile.inputs).sort(), assets,
     ...(deferredOnly ? { activationOutputs } : {}),
@@ -139,13 +142,14 @@ if (prepareOnly) {
 } else {
 const server = createServer(async (request, response) => {
     const path = new URL(request.url, "http://localhost").pathname;
-    const file = { "/": deferredOnly ? "activation.html" : "index.html", "/app.js": "app.js", "/pilot": "pilot.html", "/pilot.js": "pilot.js", "/editor.css": "editor.css", "/regex-worker.js": "regex-worker.js", "/UNICODE-LICENSE.txt": "UNICODE-LICENSE.txt",
+    const file = { "/": lspOnly ? "lsp.html" : deferredOnly ? "activation.html" : "index.html", "/lsp.js": "lsp.js", "/app.js": "app.js", "/pilot": "pilot.html", "/pilot.js": "pilot.js", "/editor.css": "editor.css", "/regex-worker.js": "regex-worker.js", "/UNICODE-LICENSE.txt": "UNICODE-LICENSE.txt",
         ...(deferredOnly ? Object.fromEntries(Object.keys(activationOutputs).map(name => ["/" + name, name])) : {}),
         ...(reactHost ? { "/hosts/react/": "react.html", "/host-react.js": "host-react.js", "/host-react.css": "host-react.css", "/provider-worker.js": "provider-worker.js" } : {}) }[path];
     if (!file) { response.writeHead(404).end(); return; }
     response.setHeader("Content-Type", file.endsWith("js") ? "text/javascript" : file.endsWith("css") ? "text/css" : file.endsWith("txt") ? "text/plain" : "text/html");
     response.end(await readFile(join(consumer, "site", file)));
 });
+const stopFixture = lspOnly ? (await import("../examples/protocol/fixture-server.ts")).attachProtocolFixture(server) : () => {};
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 let browser;
 try {
@@ -354,7 +358,11 @@ try {
         const { runPackagedWorkspace } = await import("./package-workspace.mjs");
         await runPackagedWorkspace(browser, `http://127.0.0.1:${server.address().port}`, { directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), outputs: activationOutputs, corpus });
     }
-    if (!deferredOnly && !reactOnly && !hunkOnly) await runPackagedPilot(browser, `http://127.0.0.1:${server.address().port}`, {
+    if (lspOnly) {
+        const { runPackagedLsp } = await import("./package-lsp.mjs");
+        await runPackagedLsp(browser, `http://127.0.0.1:${server.address().port}`, { packageSha256: createHash("sha256").update(archive).digest("hex") });
+    }
+    if (!deferredOnly && !reactOnly && !lspOnly && !hunkOnly) await runPackagedPilot(browser, `http://127.0.0.1:${server.address().port}`, {
         directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), benchmark,
     });
     if (!reactOnly && (hunkOnly || !pilotOnly)) await runPackagedHunkPilot(browser, `http://127.0.0.1:${server.address().port}`, {
@@ -363,6 +371,7 @@ try {
     console.log(`Restored integrated pilot passed in ${browserName}. Consumer retained: ${consumer}`);
 } finally {
     await browser?.close();
+    stopFixture();
     await new Promise(resolve => server.close(resolve));
 }
 }

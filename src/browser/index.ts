@@ -7,6 +7,8 @@ export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, Rendere
 export { mountEditingCandidate } from "./editing-candidate.ts";
 export { openWebSocketTransport } from "./lsp-websocket.ts";
 export type { WebSocketTransportOptions } from "./lsp-websocket.ts";
+export { createLspEditor } from "./lsp-editor.ts";
+export type { LspEditorController, LspEditorOptions, LspEditorSnapshot, LspEditorDiagnostic } from "./lsp-editor.ts";
 export type { EditingCandidate } from "./editing-candidate.ts";
 export { createFindController } from "./find.ts";
 export type { FindController, FindSnapshot, FindOptions, FindBackend, FindQueryCapture, FindSearchCursor, FindPlanCursor, FindPlanStep, FindConfiguration } from "./find.ts";

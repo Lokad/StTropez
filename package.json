@@ -36,6 +36,7 @@
     "test:package:hunk": "npm run pack:nuget && node scripts/test-package.mjs --hunk-only",
     "bench:package-hunk": "npm run pack:nuget && node scripts/test-package.mjs --hunk-only --bench",
     "test:package:react": "npm run pack:nuget && node scripts/test-package.mjs --react-only",
+    "test:package:lsp": "npm run pack:nuget && node scripts/test-package.mjs --lsp-only",
     "test:package:activation": "npm run pack:nuget && node scripts/test-package.mjs --activation-only",
     "test:package:workspace": "npm run pack:nuget && node scripts/test-package.mjs --workspace-only",
     "bench:package-react": "npm run pack:nuget && node scripts/test-package.mjs --react-only --bench",

@@ -109,6 +109,8 @@ and [rename/workspace-text-edit](docs/lsp-rename.md) host adapters, plus
 [code-action choices and resolve](docs/lsp-code-actions.md) and
 [workspace commands with server-edit decisions](docs/lsp-server-edits.md). Its supported-subset
 matrix keeps the remaining language-feature/edit work explicit.
+The [public integration APIs](docs/lsp-integration.md) serve both hosts and an isolated consumer;
+`npm run test:package:lsp` qualifies that minimal restored-package boundary.
 The [find controller](docs/search.md) and [provider/presentation fixture](docs/providers.md)
 add revision-checked workflows to that view, with explicit scope and scheduling limits.
 The [comparison controller](docs/comparison.md) and `/comparison/` fixture add an immutable

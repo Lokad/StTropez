@@ -85,8 +85,10 @@ Only the active confirmed command scope receives incoming edits; unclaimed reque
 command or capability change during a command quarantines the lane until a fresh connection,
 because incoming `workspace/applyEdit` has no originating command ID. This prevents an abandoned
 command's later edit from being assigned to the next intent. Reads and typing continue independently.
-Remaining editor/feature presentation adapters still live in examples; their promotion into a small
-supported editor integration, automatic completion and selected missing LSP routes remain open.
+The [public editor integration](lsp-integration.md) supplies captured browser coordination and
+headless hover/navigation/rename/action clients. Both hosts reuse those exports. Optional host
+preparation hooks contain custom-message policy. Automatic completion and the selected missing
+LSP routes remain open.
 
 Documents synchronize when both open/close and incremental changes are enabled by static or
 matching dynamic capabilities. Losing that coverage closes the managed remote document; regaining

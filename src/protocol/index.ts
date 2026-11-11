@@ -9,6 +9,10 @@ export type { LspDiagnostic, LspDiagnostics, LspCompletionPlan, LspCompletion, L
 export { decodeLspCodeActions, decodeLspResolvedCodeAction } from "./lsp-code-actions.ts";
 export type { LspCommand, LspCodeAction, LspCodeActions } from "./lsp-code-actions.ts";
 export { LspWorkspace } from "./lsp-workspace.ts";
-export type { LspWorkspaceOptions, LspWorkspaceScope, LspSessionAccess, LspDiagnosticState, LspWorkspaceSnapshot } from "./lsp-workspace.ts";
+export type { LspWorkspaceOptions, LspWorkspaceScope, LspSessionAccess, LspPrepare, LspDiagnosticState, LspWorkspaceSnapshot } from "./lsp-workspace.ts";
 export { createLspCommandRunner } from "./lsp-command.ts";
 export type { LspCommandScope, LspCommandReceipt } from "./lsp-command.ts";
+export { createLspHoverClient } from "./lsp-hover.ts";
+export { createLspRenameClient } from "./lsp-rename.ts";
+export { createLspNavigationClient } from "./lsp-navigation.ts";
+export { createLspActionClient } from "./lsp-actions.ts";

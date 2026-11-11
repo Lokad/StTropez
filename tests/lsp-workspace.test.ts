@@ -6,7 +6,7 @@ import type { DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTe
 import { referencePeer } from "../examples/protocol/reference-peer.ts";
 import { Workspace } from "../src/core/workspace.ts";
 import type { LspRequestContext, RpcScheduler, RpcTransport } from "../src/protocol/index.ts";
-const { LspWorkspace, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
+const { LspWorkspace, createLspCommandRunner, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 const settled = async () => { await setImmediate(); await setImmediate(); };
 const latch = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; };
 
@@ -123,4 +123,35 @@ test("shared diagnostic placement preserves unknown freshness and expires on edi
     const replacement = a.attachDocument(f.source.documentId); await a.flush(); assert.equal(beforeReuse.isCurrent(), false);
     assert.equal(a.observeDiagnostics(replacement).getSnapshot().status, "empty"); assert.equal(first.getSnapshot().status, "expired");
     const buffer = f.workspace.document(f.source.documentId).buffer; assert.equal(buffer.slice(0, buffer.length), "a😀\r\nsource!"); assert.deepEqual(f.errors, []);
+});
+
+test("command reservation blocks competing preparation before sync and preserves reads during recovery", async t => {
+    const f = fixture(t), a = f.provider.createScope(), b = f.provider.createScope(), doc = a.attachDocument(f.source.documentId); b.attachDocument(f.source.documentId); await a.connect();
+    const first = createLspCommandRunner(a), second = createLspCommandRunner(b), entered = latch<void>(), answer = latch<string>(); let prepared = 0;
+    t.after(() => { first.dispose(); second.dispose(); });
+    const scope = (insert: string) => ({ snapshots: () => [f.workspace.document(f.source.documentId)], isCurrent: () => true,
+        prepare: () => { prepared++; f.edit(f.source.documentId, insert); }, review: async () => ({ applied: false }) });
+    await assert.rejects(second.run("test.edit", ["x".repeat(8193)], scope("B")), RangeError); assert.equal(prepared, 0);
+    f.peers[0]!.rpc.onRequest("workspace/executeCommand", () => { entered.resolve(); return answer.promise; });
+    const pending = first.run("test.edit", [], scope("A")), rejected = assert.rejects(pending, error => error instanceof RpcError && error.code === -32800);
+    await assert.rejects(second.run("test.edit", [], scope("B")), RpcError); assert.equal(prepared, 1); await entered.promise;
+    assert.deepEqual(await b.requestDocument("textDocument/definition", b.attachDocument(f.source.documentId), index => ({ position: index.at(0) })).result, []);
+    first.dispose(); await rejected; answer.resolve("late"); await settled();
+    await assert.rejects(second.run("test.edit", [], scope("B")), RpcError); assert.equal(prepared, 1); assert.equal(f.provider.state.getSnapshot().phase, "ready");
+    await f.provider.reconnect(); f.peers[1]!.rpc.onRequest("workspace/executeCommand", () => "done"); await second.run("test.edit", [], scope("B"));
+    const buffer = f.workspace.document(f.source.documentId).buffer; assert.equal(buffer.slice(0, buffer.length), "a😀\r\nsourceAB"); assert.equal(prepared, 2);
+    const reservation = b.reserveCommand(); assert.equal(reservation.isCurrent(), true); reservation.release(); assert.equal(f.provider.state.getSnapshot().commandAvailable, true);
+    assert.equal(f.provider.state.getSnapshot().commandRequiresReconnect, false); assert.ok(a.synchronized(doc)!.isCurrent()); assert.deepEqual(f.errors, []);
+});
+
+test("disposing a custom-request scope expires its context and settles a hanging handler without disconnecting peers", { timeout: 3000 }, async t => {
+    const f = fixture(t), a = f.provider.createScope(), b = f.provider.createScope(), entered = latch<void>(), notice = latch<void>(), answer = latch<string>();
+    const document = b.attachDocument(f.source.documentId); let context: LspRequestContext | undefined;
+    a.onRequest("host/custom", async (_value, captured) => { context = captured; captured.onCancel(() => notice.resolve()); entered.resolve(); return answer.promise; });
+    await b.connect(); const request = f.peers[0]!.rpc.sendRequest("host/custom", {});
+    const rejected = assert.rejects(request, (error: unknown) => error instanceof Error && "code" in error && error.code === -32800);
+    await entered.promise; assert.equal(context!.isCurrent(), true); a.dispose(); await rejected; await notice.promise;
+    assert.equal(context!.isCurrent(), false); assert.equal(context!.cancelled, true); answer.resolve("late"); await settled();
+    assert.deepEqual(await b.requestDocument("textDocument/definition", document, index => ({ position: index.at(0) })).result, []);
+    assert.equal(f.provider.snapshot().protocol.incomingRequests, 0); assert.equal(f.provider.snapshot().terminated, 0); assert.deepEqual(f.errors, []);
 });

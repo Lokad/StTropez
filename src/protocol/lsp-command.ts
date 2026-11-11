@@ -1,5 +1,5 @@
 import type { DocumentSnapshot } from "../core/workspace.ts";
-import { RpcError } from "./json-rpc.ts";
+import { jsonSnapshot, RpcError } from "./json-rpc.ts";
 import type { JsonValue } from "./json-rpc.ts";
 import { decodeLspApplyEdit } from "./lsp-features.ts";
 import type { LspApplyEdit, LspApplyEditResult } from "./lsp-features.ts";
@@ -38,14 +38,17 @@ export function createLspCommandRunner(session: LspWorkspaceScope, notify: () =>
     return Object.freeze({ sync, isCurrent: () => !disposed && (!active || current(active)),
         run: async (command: string, args: readonly JsonValue[], scope: LspCommandScope, allowEdits = true): Promise<LspCommandReceipt> => {
             if (disposed || active || !scope.isCurrent() || !session.commandNames().includes(command)) throw new RpcError(-32801, "Captured command is unavailable or changed.");
+            const argumentsValue = jsonSnapshot(args);
+            if (!Array.isArray(argumentsValue) || JSON.stringify(argumentsValue).length > 8192) throw new RangeError("LSP command arguments exceed their limit.");
+            const reservation = session.reserveCommand();
             const state = session.state.getSnapshot(), op: Active = { scope, allowEdits, epoch: state.epoch, generation: state.registrationGeneration }; active = op;
             try {
                 scope.prepare?.(); await sync(scope);
-                if (!current(op) || !scope.isCurrent()) throw new RpcError(-32801, "Captured command intent changed.");
-                op.call = session.requestCommand(command, args, 120000); const value = await op.call.result;
+                if (!current(op) || !scope.isCurrent() || !reservation.isCurrent()) throw new RpcError(-32801, "Captured command intent changed.");
+                op.call = session.requestCommand(command, argumentsValue, 120000); const value = await op.call.result;
                 if (!current(op) || !scope.isCurrent()) throw new RpcError(-32801, "Captured command intent changed.");
                 return Object.freeze({ value, decision: op.decision });
-            } finally { op.call?.cancel(); if (active === op) active = undefined; changed(); }
+            } finally { op.call?.cancel(); reservation.release(); if (active === op) active = undefined; changed(); }
         },
         snapshot: () => Object.freeze({ received, refused }),
         dispose: () => { if (disposed) return; disposed = true; stopState(); stopApply(); active?.call?.cancel(); changed(); invalidations.clear(); } });

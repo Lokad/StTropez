@@ -4,6 +4,8 @@ The plain and React development hosts accept `?editor=candidate&language=lsp` to
 WebSocket provider. Their default local worker remains a separate fixture. The LSP route opens a
 real session using the pinned 3.17.5 reference peer; it never falls back to that worker. Both hosts
 reuse the same provider controls, captured view ownership, Workspace transactions and history.
+Their generic controller is the exported `createLspEditor`; the
+[public integration guide](lsp-integration.md) covers its lifetime and independent consumers.
 Hover, definition/reference navigation, [rename/edit previews](lsp-rename.md) and
 [code-action discovery/resolve](lsp-code-actions.md) also use LSP in this route. Other language
 tools retain their separately declared worker fixtures until their LSP adapters are delivered.
