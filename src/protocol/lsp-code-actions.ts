@@ -37,7 +37,10 @@ export function decodeLspCodeActions(value: unknown, origin: LspDocumentCapture,
         if (item.isPreferred !== undefined && typeof item.isPreferred !== "boolean") invalid();
         let disabled: string | null = null;
         if (item.disabled !== undefined) { if (!record(item.disabled)) invalid(); disabled = text(item.disabled.reason, 1024); }
-        if (item.diagnostics !== undefined) { decodeLspDiagnostics({ uri: origin.document.uri, version: origin.version, diagnostics: item.diagnostics }, origin); opaque(item.diagnostics, 16384); }
+        if (item.diagnostics !== undefined) {
+            const diagnostics = decodeLspDiagnostics({ uri: origin.document.uri, version: origin.version, diagnostics: item.diagnostics }, origin);
+            if (diagnostics.items.some(item => item.placement !== "placed")) invalid(); opaque(item.diagnostics, 16384);
+        }
         if (item.data !== undefined) opaque(item.data, 8192);
         const edit = item.edit === undefined ? null : decodeLspWorkspaceEdit(item.edit, resolve), cmd = item.command === undefined ? null : command(item.command);
         if (edit) for (const change of edit.documents) for (const at of change.edits) { if (++edits > 1024 || (units += at.insert.length) > 65536) invalid(); }

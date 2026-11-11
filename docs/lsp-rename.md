@@ -24,7 +24,7 @@ Bounds are 100 unique documents, 1,024 edits, 16,384 inserted units per edit and
 inserted units. File creation/rename/deletion and change annotations are explicitly unsupported.
 No server URI is fetched, launched or retargeted to another resource.
 
-The host keeps an independent captured project connection, source revision, complete selection
+The host uses a feature scope on the shared provider connection and keeps its captured source revision, complete selection
 set, fold generation, tab/view identity and every working resource's revision/edit authority.
 Pending input/composition/table conversion prevents capture. Editing, changed selections/folds,
 name changes, authority changes, remount and expired session/capability generations cancel or

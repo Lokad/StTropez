@@ -36,7 +36,8 @@ export function attachProtocolFixture(server: Server) {
         socket.on("message", (data, binary) => { if (binary) socket.close(1003, "Text only"); else owner?.message(data.toString()); });
         socket.on("error", () => socket.close());
         const peer = referencePeer(port);
-        const documents = new Map<string, TextDocument>(), syncFailures: string[] = [];
+        const documents = new Map<string, TextDocument>(), syncFailures: string[] = [], syncCounts = new Map<string, { open: number; change: number; close: number }>(); let initializeCount = 0;
+        const countSync = (uri: string, kind: "open" | "change" | "close") => { const counts = syncCounts.get(uri) ?? { open: 0, change: 0, close: 0 }; counts[kind]++; syncCounts.set(uri, counts); };
         const pending = new Set<() => void>(); let completionConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, completionStyle = "edits";
         let hoverConfig: { delay: number; fault?: "malformed" | "failure" | "markup" } | undefined, navigationConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, definitionLinks = false;
         let renameConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, versionedEdits = false;
@@ -59,7 +60,7 @@ export function attachProtocolFixture(server: Server) {
             return items;
         };
         const publish = (doc: TextDocument) => { peer.sendNotification("textDocument/publishDiagnostics", { uri: doc.uri, version: doc.version, diagnostics: diagnosticItems(doc) }); };
-        peer.onRequest(InitializeRequest.type, (params): InitializeResult => { definitionLinks = params.capabilities.textDocument?.definition?.linkSupport === true;
+        peer.onRequest(InitializeRequest.type, (params): InitializeResult => { initializeCount++; definitionLinks = params.capabilities.textDocument?.definition?.linkSupport === true;
             versionedEdits = params.capabilities.workspace?.workspaceEdit?.documentChanges === true;
             actionLiterals = params.capabilities.textDocument?.codeAction?.codeActionLiteralSupport !== undefined;
             actionResolve = params.capabilities.textDocument?.codeAction?.dataSupport === true && params.capabilities.textDocument.codeAction.resolveSupport?.properties.includes("edit") === true;
@@ -70,14 +71,15 @@ export function attachProtocolFixture(server: Server) {
         peer.onNotification(InitializedNotification.type, () => { initialized = true; });
         const sync = (update: () => void) => { try { if (!initialized) throw new Error("Synchronization before initialized"); update(); } catch (error) { syncFailures.push(String(error)); } };
         peer.onNotification("textDocument/didOpen", (params: DidOpenTextDocumentParams) => sync(() => { const doc = params.textDocument;
-            if (documents.has(doc.uri)) throw new Error("Duplicate open"); const opened = TextDocument.create(doc.uri, doc.languageId, doc.version, doc.text); documents.set(doc.uri, opened); publish(opened); }));
+            if (documents.has(doc.uri)) throw new Error("Duplicate open"); const opened = TextDocument.create(doc.uri, doc.languageId, doc.version, doc.text); documents.set(doc.uri, opened); countSync(doc.uri, "open"); publish(opened); }));
         peer.onNotification("textDocument/didChange", (params: DidChangeTextDocumentParams) => sync(() => {
             const before = documents.get(params.textDocument.uri); if (!before || params.textDocument.version <= before.version) throw new Error("Invalid change version");
             let text = before.getText(); for (const change of params.contentChanges) { if (!("range" in change)) throw new Error("Expected incremental changes");
                 text = TextDocument.applyEdits(TextDocument.create(before.uri, before.languageId, before.version, text), [{ range: change.range, newText: change.text }]); }
-            const changed = TextDocument.create(before.uri, before.languageId, params.textDocument.version, text); documents.set(before.uri, changed); publish(changed);
+            const changed = TextDocument.create(before.uri, before.languageId, params.textDocument.version, text); documents.set(before.uri, changed); countSync(before.uri, "change"); publish(changed);
         }));
-        peer.onNotification("textDocument/didClose", (params: DidCloseTextDocumentParams) => sync(() => { if (!documents.delete(params.textDocument.uri)) throw new Error("Close without open"); }));
+        peer.onNotification("textDocument/didClose", (params: DidCloseTextDocumentParams) => sync(() => { if (!documents.delete(params.textDocument.uri)) throw new Error("Close without open"); countSync(params.textDocument.uri, "close"); }));
+        peer.onRequest("fixture/synchronization", () => ({ initialize: initializeCount, failures: [...syncFailures], documents: [...syncCounts].map(([uri, counts]) => ({ uri, ...counts, version: documents.get(uri)?.version ?? null })) }));
         peer.onRequest("fixture/register", (params: RegistrationParams) => peer.sendRequest(RegistrationRequest.type, params));
         peer.onRequest("fixture/unregister", (params: UnregistrationParams) => peer.sendRequest(UnregistrationRequest.type, params));
         peer.onRequest("fixture/document", (params: { uri: string; from: number; to: number }) => {
@@ -167,7 +169,7 @@ export function attachProtocolFixture(server: Server) {
         peer.onRequest("fixture/projectConfig", async (params: typeof projectConfig) => {
             if (!params || !["register", "unregister", "review", "status"].includes(params.kind) || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure", "ack"].includes(params.fault)) throw new ResponseError(-32602, "Invalid project configuration");
             projectConfig = { ...params }; if (params.fault === "failure" && (params.kind === "register" || params.kind === "unregister")) throw new ResponseError(-32001, "Fixture registration unavailable");
-            if (params.kind === "register") { await peer.sendRequest(RegistrationRequest.type, { registrations: [{ id: "fixture-review", method: "workspace/executeCommand", registerOptions: { commands: ["fixture.review"] } }] }); projectRegistered = true; }
+            if (params.kind === "register" && !projectRegistered) { await peer.sendRequest(RegistrationRequest.type, { registrations: [{ id: "fixture-review", method: "workspace/executeCommand", registerOptions: { commands: ["fixture.review"] } }] }); projectRegistered = true; }
             if (params.kind === "unregister") { await peer.sendRequest(UnregistrationRequest.type, { unregisterations: [{ id: "fixture-review", method: "workspace/executeCommand" }] }); projectRegistered = false; }
             return null;
         });
@@ -249,10 +251,11 @@ export function attachProtocolFixture(server: Server) {
         peer.onRequest("fixture/completionStyle", (params: { style: string }) => {
             if (!params || !["edits", "defaults", "plain"].includes(params.style)) throw new ResponseError(-32602, "Invalid completion style"); completionStyle = params.style; return null;
         });
-        peer.onRequest("fixture/diagnostics", (params: { mode: "normal" | "malformed" | "stale" | "unversioned" | "clear" | "html" }) => {
+        peer.onRequest("fixture/diagnostics", (params: { mode: "normal" | "malformed" | "out-of-bounds" | "stale" | "unversioned" | "clear" | "html" }) => {
             const doc = documents.values().next().value; if (!doc) throw new ResponseError(-32602, "No fixture document");
             const diagnostics = params.mode === "clear" ? [] : diagnosticItems(doc);
-            if (params.mode === "malformed") diagnostics.push({ range: { start: { line: 0, character: 0 }, end: { line: doc.lineCount + 10, character: 0 } }, message: "Invalid final diagnostic", severity: 2 });
+            if (params.mode === "malformed") diagnostics.push({ range: { start: { line: 0, character: 1 }, end: { line: 0, character: 0 } }, message: "Invalid final diagnostic", severity: 2 });
+            if (params.mode === "out-of-bounds") diagnostics.push({ range: { start: { line: doc.lineCount + 10, character: 0 }, end: { line: doc.lineCount + 10, character: 1 } }, message: "Unplaceable diagnostic", severity: 2 });
             if (params.mode === "html") diagnostics.push({ range: { start: doc.positionAt(0), end: doc.positionAt(0) }, message: "<img src=x onerror=unsafe()>", severity: 2 });
             peer.sendNotification("textDocument/publishDiagnostics", { uri: doc.uri, ...(params.mode === "unversioned" ? {} : { version: params.mode === "stale" ? doc.version - 1 : doc.version }), diagnostics }); return { version: doc.version };
         });

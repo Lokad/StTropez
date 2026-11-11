@@ -38,7 +38,8 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP rename host`, 
         await expect(targets(page).filter({ hasText: "café" })).toHaveCount(4);
         const request = requests.filter(r => r.method === "textDocument/rename").at(-1)!; expect(request.params.position).toEqual({ line: 1, character: 8 });
         const initialize = requests.find(r => r.method === "initialize" && r.params.capabilities.textDocument.rename)!; expect(initialize.params.capabilities.workspace.workspaceEdit.documentChanges).toBe(true);
-        expect(responses.at(-1).documentChanges.find((change: any) => change.textDocument.uri === request.params.textDocument.uri).textDocument.version).not.toBe(before.source.revision);
+        const remote = await page.evaluate(uri => window.hostFixture.providerCustom("fixture/document", { uri, from: 0, to: 0 }), request.params.textDocument.uri) as { version: number };
+        expect(responses.at(-1).documentChanges.find((change: any) => change.textDocument.uri === request.params.textDocument.uri).textDocument.version).toBe(remote.version);
         const expected = marker + raw.replace("const catalogue", "const café").replace("\r\ncatalogue;", "\r\ncafé;"); await button(page, "Apply captured rename").click(); await ready(page); await exact(page, expected);
         const companion = before.bindings.navigation.companion!; expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("const café = 1;\r\ncafé;\r\n"); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
         await input(page).press("Control+End"); await input(page).pressSequentially("H"); await ready(page); await input(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, expected);

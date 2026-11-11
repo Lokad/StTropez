@@ -8,7 +8,7 @@ export function actionsControls(tools: HostActionsTools) {
         ...(tools.usesLsp ? [{ label: "Previous action edits", invoke: () => tools.previousPage(), disabled: s.pending || s.page === 0 },
             { label: "Next action edits", invoke: () => tools.nextPage(), disabled: s.pending || (s.page + 1) * 64 >= s.editCount }] : []),
         { label: "Disconnect action provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
-        { label: "Reconnect action provider", invoke: tools.reconnect, disabled: !s.disconnected && s.status !== "failed" }
+        { label: "Reconnect action provider", invoke: tools.reconnect, disabled: !s.disconnected && !s.reconnectRequired && s.status !== "failed" }
     ];
 }
 export const actionsDescription = "Preview an import of the chosen module into the captured working source. Existing exact import lines disable the action. This local fixture uses its own bounded import policy; it does not resolve symbols, modules or types.";

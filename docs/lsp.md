@@ -7,8 +7,8 @@ dependencies. A production language provider is not required for fixture qualifi
 The wire engine is implemented in TypeScript because importing the reference implementation
 would add runtime dependencies; JSON encoding and WebSocket I/O use platform APIs.
 
-The protocol entry provides a wire engine, host-driven client session, and validated feature/edit
-models. Both development hosts have an explicit [LSP editor adapter](lsp-editor.md).
+The protocol entry provides a wire engine, host-driven client session, shared Workspace provider
+ownership and validated feature/edit models. Both development hosts have an explicit [LSP editor adapter](lsp-editor.md).
 The rest of the requested feature matrix remains required. The existing [local worker protocol v1](project-sync.md)
 remains an internal fixture and establishes no LSP compatibility.
 
@@ -19,11 +19,12 @@ remains an internal fixture and establishes no LSP compatibility.
 | Initialization/capabilities | Ordered initialize/initialized, UTF-16 negotiation, immutable capabilities and shutdown/exit. Unsupported position encodings and full synchronization are explicitly refused. |
 | Dynamic registration | Atomic register/unregister batches, unique identifiers, exact method matching and immutable snapshots. Text-document selectors cover language, scheme and bounded glob patterns; notebook and file-watcher registration are not advertised. |
 | Incremental synchronization | Captured URI/resource/document/revision bindings, separate wire versions, queued/coalesced open/change/close and exact raw UTF-16/CRLF/LF/bare-CR conversion. Point changes reuse shared buffer edges and LF metadata. |
-| Diagnostics/completion | Complete bounded validation, captured version/index access, versioned diagnostic anchors and manual completion with insert/replace/additional edits. Both hosts exercise actual typing, shared history, comparison authority, Save/Run and outage/lifecycle guards over WebSocket. Unversioned diagnostics remain plain information without source anchors. |
+| Shared ownership | One exported `LspWorkspace` per workspace/provider configuration, one connection and one binding/stream per participating document. Feature scopes share versions and diagnostics while cancelling and disposing independently. |
+| Diagnostics/completion | Bounded validation, current versioned or explicitly uncertain unversioned snapshot placement, retained unplaceable ranges/messages and shared diagnostic observation. Manual completion supports insert/replace/additional edits; automatic triggers/filtering/resolve remain required work. Both hosts exercise actual typing, history, comparison, Save/Run and lifecycle guards over WebSocket. |
 | Hover/navigation | Bounded literal hover content/optional ranges, definition Location/LocationLink and references validation. Both actual hosts use WebSocket backends with captured project URIs, complete origin selections, target revision/authority checks, unmounted-resource reveal and stale/cancellation/lifecycle guards. See [navigation scope](lsp-navigation.md). |
 | Rename/workspace text edits | Whole-batch URI/range/wire-version validation and exact provider edit previews/application in both hosts. Shared atomic history, unmounted targets, comparison, Save/Run, stale/authority/cancellation guards use existing Workspace transactions. See [supported forms and limits](lsp-rename.md). Optional prepareRename, file operations and annotations remain unsupported. |
 | Code actions | Complete bounded literal/command list validation, disabled/preferred choices and captured lazy edit resolution. Both hosts preview exact multi-resource edits, page large results and apply atomic history transactions. Confirmed advertised Command/edit+Command choices preserve edit-before-command ordering and use the existing captured server-edit decision owner. Failed later phases leave earlier edits explicitly undoable. [Supported scope](lsp-code-actions.md). |
-| Server edits/commands | Advertised static/dynamic global commands and bounded opaque arguments; both hosts explicitly review captured server edits, apply an atomic shared-history transaction and return a decision. Workspace and action-menu commands reuse one review lane with independent connection ownership. Cancellation, withdrawal, disconnect and lost acknowledgements never replay edits. [Supported policy and limits](lsp-server-edits.md). Local worker fixtures establish no LSP compatibility. |
+| Server edits/commands | Advertised static/dynamic global commands and bounded opaque arguments; both hosts explicitly review captured server edits, apply an atomic shared-history transaction and return a decision. Workspace and action-menu commands share one connection and exclusive captured command lane. Cancellation/timeout requires explicit reconnect before another command, while reads remain available. No edit replay. [Supported policy and limits](lsp-server-edits.md). |
 | Cancellation/reconnect | Opening, queued document calls, RPC requests and cooperative sync plans can be cancelled. Reconnect clears registrations/results and reopens current captures; commands never replay automatically. |
 | Host URIs/custom messages | Exact opaque URI bindings, replaceable selector path policy and removable custom request/notification handlers. Custom result schemas, authority and service policy belong to the host. |
 
@@ -54,6 +55,38 @@ waits for the current eligible captures to reach the wire. This is transport ord
 acknowledgement that a language provider has finished analysis. A later request can supply a peer
 barrier. Disconnect preserves local bindings for reconnect; dispose releases session ownership.
 Handles retained by the host retain their last immutable snapshot.
+
+Use `LspWorkspace(workspace, options)` to share that session across features and views. The host
+supplies the transport factory, future-turn scheduler and `documentInfo` mapping from a live
+Workspace snapshot to its opaque URI/language ID. Construction starts no connection. Create a
+feature scope, `attachDocument(id)` or `setDocuments(snapshots)`, then connect/request/flush through
+that scope. `captureProject()` returns the exact synchronized URI captures. An owner holds one
+Workspace lease/observer and one protocol binding per participating document; further scopes reuse
+them. Local edits expire captures immediately and coalesce synchronization after commit delivery.
+The last participant closes the binding and releases its lease after delivery. The host may retain
+its own scope for open, unmounted project resources. Scope disposal releases its calls, subscriptions
+and participation; `scope.disconnect()` cancels that feature's work. Owner `disconnect()` or
+`reconnect()` changes the shared connection. Owner disposal closes every scope and transport.
+Scopes are bounded to 128 by default, in addition to the existing session/document/RPC limits.
+
+`scope.observeDiagnostics(binding)` supplies one stable shared diagnostic snapshot per binding.
+It distinguishes received/current, empty and expired results, rejected stale/invalid batches and
+unknown URIs. A result keeps the provider `version`/`revision` nullable, independently of the explicit
+`snapshotRevision` used to place its validated wire ranges. Unversioned markers have uncertain
+freshness; out-of-bounds ranges retain their message and wire range with null offsets. They grant
+no edit authority. A local edit, close/URI reuse or reconnect expires associations. Invalid or known
+stale pushes preserve the previous valid batch. An unrelated capability registration does not
+manufacture a new analysis revision or erase still-current diagnostic placement.
+
+`createLspCommandRunner(scope)` reuses the captured shared command lane and takes host callbacks
+for live project snapshots, intent currentness, optional preparation and explicit edit review.
+Only the active confirmed command scope receives incoming edits; unclaimed requests are declined.
+`owner.state` exposes `commandAvailable` and `commandRequiresReconnect`. A cancelled/timed-out
+command or capability change during a command quarantines the lane until a fresh connection,
+because incoming `workspace/applyEdit` has no originating command ID. This prevents an abandoned
+command's later edit from being assigned to the next intent. Reads and typing continue independently.
+Remaining editor/feature presentation adapters still live in examples; their promotion into a small
+supported editor integration, automatic completion and selected missing LSP routes remain open.
 
 Documents synchronize when both open/close and incremental changes are enabled by static or
 matching dynamic capabilities. Losing that coverage closes the managed remote document; regaining

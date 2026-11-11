@@ -1,30 +1,33 @@
-import type { DocumentId, DocumentSnapshot, Workspace } from "../../src/index.ts";
-import { RpcError, decodeLspApplyEdit } from "../../src/protocol/index.ts";
-import type { JsonValue, LspApplyEdit, LspApplyEditResult, LspCommandCall, LspDocument, LspRequestContext, LspSession } from "../../src/protocol/index.ts";
-import { captureLspProject, updateLspProject } from "./lsp-project.ts";
+import type { DocumentSnapshot } from "../core/workspace.ts";
+import { RpcError } from "./json-rpc.ts";
+import type { JsonValue } from "./json-rpc.ts";
+import { decodeLspApplyEdit } from "./lsp-features.ts";
+import type { LspApplyEdit, LspApplyEditResult } from "./lsp-features.ts";
+import type { LspCommandCall, LspRequestContext } from "./lsp-session.ts";
+import type { LspWorkspaceScope } from "./lsp-workspace.ts";
 
 export type LspCommandScope = Readonly<{ snapshots: () => readonly DocumentSnapshot[]; isCurrent: () => boolean;
     prepare?: () => void; review: (request: LspApplyEdit, context: LspRequestContext) => Promise<LspApplyEditResult> }>;
 export type LspCommandReceipt = Readonly<{ value: JsonValue; decision: LspApplyEditResult | undefined }>;
 
 /** One confirmed command per session. The host owns decisions and every document mutation. */
-export function createLspCommandRunner(workspace: Workspace, session: LspSession, documents: Map<string, LspDocument>, uri: (id: DocumentId) => string, notify: () => void) {
+export function createLspCommandRunner(session: LspWorkspaceScope, notify: () => void = () => {}) {
     type Active = { scope: LspCommandScope; allowEdits: boolean; epoch: number; generation: number; call?: LspCommandCall<JsonValue>; decision?: LspApplyEditResult };
     const invalidations = new Set<() => void>(); let disposed = false, incoming = false, active: Active | undefined, received = 0, refused = 0;
     const current = (op: Active) => !disposed && active === op && session.state.getSnapshot().phase === "ready" && session.state.getSnapshot().epoch === op.epoch
         && session.state.getSnapshot().registrationGeneration === op.generation && (op.call?.isCurrent() ?? true);
     const changed = () => { for (const invalid of [...invalidations]) invalid(); notify(); };
     const sync = async (scope: LspCommandScope) => { const snapshots = scope.snapshots();
-        updateLspProject(workspace, session, documents, snapshots.map(doc => ({ document: doc.id, revision: doc.revision, length: doc.buffer.length })), new Map(snapshots.map(doc => [doc.id, doc.buffer])), uri); await session.flush(); };
+        session.setDocuments(snapshots); await session.flush(); };
     const stopState = session.state.subscribe(changed), stopApply = session.onRequest("workspace/applyEdit", async (value, context) => {
         received++; const op = active, no = (reason: string) => { refused++; return Object.freeze({ applied: false, failureReason: reason.slice(0, 1024) }); };
         if (!op || !op.allowEdits || incoming || !current(op) || !op.scope.isCurrent()) return no("No available captured edit-review intent.");
         incoming = true;
         try {
-            const captures = captureLspProject(session, documents), request = decodeLspApplyEdit(value, target => captures.get(target));
+            const captures = session.captureProject(), request = decodeLspApplyEdit(value, target => captures.get(target));
             const isCurrent = () => context.isCurrent() && current(op) && op.scope.isCurrent();
             const capturedContext: LspRequestContext = Object.freeze({ id: context.id, epoch: context.epoch, get cancelled() { return context.cancelled || !current(op); }, isCurrent,
-                onCancel: listener => { let done = false; const invalid = () => { if (!done && !isCurrent()) { done = true; queueMicrotask(listener); } };
+                onCancel: listener => { let done = false; const invalid = () => { if (!done && !isCurrent()) { done = true; void Promise.resolve().then(listener); } };
                     const stopCancel = context.onCancel(invalid); invalidations.add(invalid); invalid(); return () => { done = true; stopCancel(); invalidations.delete(invalid); }; } });
             op.decision = await op.scope.review(request, capturedContext);
             if (op.decision.applied && current(op)) { try { await sync(op.scope); } catch { /* A committed edit is never retried or reported as unapplied. */ } }

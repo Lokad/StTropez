@@ -5,15 +5,15 @@ export function projectActions(tools: HostProjectTools) {
     return [
         { label: "Register provider review command", invoke: tools.register, disabled: unavailable || s.registered },
         { label: "Unregister provider review command", invoke: tools.unregister, disabled: unavailable || !s.registered },
-        { label: "Request provider review edits", invoke: tools.requestEdits, disabled: unavailable || !s.registered },
-        { label: "Request provider workspace status", invoke: tools.requestStatus, disabled: unavailable },
+        { label: "Request provider review edits", invoke: tools.requestEdits, disabled: unavailable || !s.registered || s.reconnectRequired },
+        { label: "Request provider workspace status", invoke: tools.requestStatus, disabled: unavailable || s.reconnectRequired },
         { label: "Cancel workspace provider request", invoke: tools.cancel, disabled: !s.pending },
         ...(tools.usesLsp ? [{ label: "Apply captured provider edits", invoke: () => tools.confirmReview(s.review?.token ?? null), disabled: !s.review?.canApply },
             { label: "Decline captured provider edits", invoke: () => tools.declineReview(s.review?.token ?? null), disabled: !s.review },
             { label: "Previous provider edits", invoke: () => tools.previousReviewPage(), disabled: !s.review || s.review.page === 0 },
             { label: "Next provider edits", invoke: () => tools.nextReviewPage(), disabled: !s.review || (s.review.page + 1) * 64 >= s.review.count }] : []),
         { label: "Disconnect workspace provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
-        { label: "Reconnect workspace provider", invoke: tools.reconnect, disabled: !s.disconnected && s.status !== "failed" }
+        { label: "Reconnect workspace provider", invoke: tools.reconnect, disabled: !s.disconnected && !s.reconnectRequired && s.status !== "failed" }
     ] as const;
 }
 export function mountProjectPanel(host: HTMLElement, tools: HostProjectTools): () => void {

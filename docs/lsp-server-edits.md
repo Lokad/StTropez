@@ -52,8 +52,11 @@ The generic fixture qualifies registration/withdrawal, explicit decisions, stale
 cancellation, real disconnect, lost acknowledgement, shared history, comparison and 100k-line
 reviews. It is not a production language provider. Action-menu commands preserve edit-before-command
 ordering, using separate undoable phases for the initial edit and later confirmed server batches.
-A busy review lane blocks execution before any initial edit. Independent provider connections do
-not share connection-loss authority. Arbitrary background server edits remain a host-policy extension point.
+A busy review lane blocks execution before any initial edit. Feature scopes share one provider
+connection and synchronization stream. Cancellation/timeout or capability changes during a command
+require an explicit reconnect before another command; late uncorrelated edits are declined while
+read features and typing remain available. A shared connection loss expires every old capture.
+Arbitrary background server edits remain a host-policy extension point.
 Native IME/OS clipboard/display checks remain unverified. Headless correctness and bounded-preview
 checks make no new latency distribution or heap claim; handler, readiness, automation/IPC/workflow
 and physical-display clocks remain distinct.

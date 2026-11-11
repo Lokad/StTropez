@@ -38,10 +38,11 @@ separate from local document revisions. Session/project bounds remain the [decla
 The generic fixture fails explicitly when its result bound is exceeded instead of pretending its
 response is complete. Semantic completeness belongs to the provider.
 
-The backend owns a project connection independent of hover and completion. Its synchronized-cache
-count describes the last captured project, not a continuously synchronized live workspace or an
-acknowledgement of completed provider analysis. Ordinary typing does no navigation transport work;
-the next query captures current buffers. Capabilities/session changes invalidate previously
+The backend owns a feature scope on the same `LspWorkspace` as hover and completion. Participating
+documents synchronize once across all scopes, including ordinary typing. A navigation request
+captures the current project; its count describes that request's participating documents and does
+not acknowledge completed provider analysis. Cancelling navigation leaves other feature scopes
+usable. Capabilities/session changes invalidate previously
 published results. Source or target revision/authority changes also expire the host result batch.
 Unopened/removed resources cannot be retargeted by tab position or by whichever editor gains focus.
 

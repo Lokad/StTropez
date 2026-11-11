@@ -47,13 +47,17 @@ test("completion defaults, word fallback and whole-list validation refuse unsupp
     assert.equal(decodeLspCompletions(response, capture, 8, () => { throw new Error("Unused word fallback must not reject explicit ranges"); }).items.length, 1);
 });
 
-test("versioned diagnostics validate all anchors before publication; unversioned messages claim no source positions", async () => {
+test("diagnostics separate provider freshness from validated snapshot placement and retain unplaceable wire ranges", async () => {
     const { capture, expire } = await captured(), response: PublishDiagnosticsParams = { uri: capture.document.uri, version: 3,
         diagnostics: [{ range: range(1, 21, 25), message: "<img src=x onerror=unsafe()> TODO", severity: 2, source: "fixture" }] };
     const decoded = decodeLspDiagnostics(response, capture); assert.equal(decoded.revision, 70); assert.equal(decoded.items[0]!.from, capture.index.offsetAt({ line: 1, character: 21 }));
     assert.equal(Object.isFrozen(decoded.items[0]), true); assert.deepEqual(decodeLspDiagnostics({ ...response, diagnostics: [] }, capture).items, []);
-    const { version: _version, ...unversioned } = response; const uncertain = decodeLspDiagnostics(unversioned, capture); assert.equal(uncertain.revision, null); assert.equal(uncertain.items[0]!.from, null);
-    for (const invalid of [{ ...response, version: null }, { ...response, uri: "host+fixture:other" }, { ...response, diagnostics: [...response.diagnostics, { range: range(1, 0, 999), message: "invalid tail" }] }]) assert.throws(() => decodeLspDiagnostics(invalid, capture));
+    const { version: _version, ...unversioned } = response; const uncertain = decodeLspDiagnostics(unversioned, capture);
+    assert.equal(uncertain.revision, null); assert.equal(uncertain.version, null); assert.equal(uncertain.freshness, "unversioned"); assert.equal(uncertain.snapshotRevision, 70);
+    assert.equal(uncertain.items[0]!.from, decoded.items[0]!.from); assert.equal(uncertain.items[0]!.placement, "placed"); assert.deepEqual(uncertain.items[0]!.range, response.diagnostics[0]!.range);
+    for (const version of [undefined, 3]) { const outside = decodeLspDiagnostics({ ...response, version, diagnostics: [{ range: range(100, 0, 999), message: "unplaceable" }] }, capture);
+        assert.equal(outside.items[0]!.placement, "out-of-bounds"); assert.equal(outside.items[0]!.from, null); assert.deepEqual(outside.items[0]!.range, range(100, 0, 999)); }
+    for (const invalid of [{ ...response, version: null }, { ...response, uri: "host+fixture:other" }, { ...response, diagnostics: [...response.diagnostics, { range: range(1, 10, 0), message: "invalid tail" }] }]) assert.throws(() => decodeLspDiagnostics(invalid, capture));
     assert.throws(() => decodeLspDiagnostics({ ...response, version: 2 }, capture), error => error instanceof RpcError && error.code === -32801);
     expire(); assert.throws(() => decodeLspDiagnostics(response, capture), error => error instanceof RpcError && error.code === -32801); assert.throws(() => decodeLspCompletions([], capture, 8), /expired/);
 });

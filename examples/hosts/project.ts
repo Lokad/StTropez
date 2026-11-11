@@ -4,9 +4,9 @@ import { createNavigationClient, navigationMetrics } from "../editing/navigation
 import { validateProjectCommand } from "../probes/project-commands.ts";
 import type { ProjectCommand, ProjectCommandKind, ProjectOutcome, ProjectServerRequest } from "../probes/project-commands.ts";
 import { HostCell } from "../shared/observable.ts";
-import type { LspApplyEdit, LspApplyEditResult, LspRequestContext, LspWorkspaceEdit } from "../../src/protocol/index.ts";
+import type { LspApplyEdit, LspApplyEditResult, LspRequestContext, LspWorkspaceEdit, LspWorkspace } from "../../src/protocol/index.ts";
 import type { LspProjectClient, LspProjectFactory } from "../editing/lsp-project-client.ts";
-import type { LspCommandReceipt, LspCommandScope } from "../editing/lsp-command-runner.ts";
+import type { LspCommandReceipt, LspCommandScope } from "../../src/protocol/index.ts";
 import type { ActionNote } from "./code-actions.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
 type Job = { origin: Session; input: ProjectCommand; documents: Map<string, DocumentSnapshot>; revisions: Map<string, number>; authority: Map<string, string>;
@@ -19,7 +19,7 @@ export type ProjectActionHandle = Readonly<{ cancel: () => void; applied: () => 
 export type ProjectActionIntent = Readonly<{ editor: EditingCandidate; sources: readonly Readonly<{ document: DocumentSnapshot; authority: string }>[];
     edit: LspWorkspaceEdit | null; isCurrent: () => boolean; subscribe: (listener: () => void) => () => void; cancel: () => void;
     execute: (scope: LspCommandScope) => Promise<LspCommandReceipt> }>;
-export type ProjectSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; registered: boolean; pending: boolean;
+export type ProjectSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; registered: boolean; pending: boolean;
     status: "idle" | "pending" | "ready" | "rejected" | "failed" | "cancelled"; message: string; view: string | null; changes: readonly Readonly<{ document: DocumentId; title: string }>[]; review: ProjectReview | null }>;
 let sessionSerial = 0;
 /** Local protocol owner. Server edits use the workspace's existing atomic shared-history transaction. */
@@ -35,6 +35,7 @@ export class HostProjectTools {
     private backend: LspProjectClient | undefined;
     private stopBackend: (() => void) | undefined;
     private readonly backendFactory: LspProjectFactory | undefined;
+    private readonly provider: LspWorkspace | undefined;
     readonly usesLsp: boolean;
     private reviewSerial = 0;
     private registered = false;
@@ -46,10 +47,10 @@ export class HostProjectTools {
     private fault: ProjectCommand["fault"];
     private readonly worker = navigationMetrics();
     private readonly metrics = { requested: 0, serverRequests: 0, applied: 0, rejected: 0, cancelled: 0, failed: 0 };
-    private readonly cell = new HostCell<ProjectSnapshot>({ available: false, connected: false, disconnected: false, registered: false, pending: false, status: "idle", message: "Focus a candidate source to use workspace provider commands.", view: null, changes: [], review: null });
+    private readonly cell = new HostCell<ProjectSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, registered: false, pending: false, status: "idle", message: "Focus a candidate source to use workspace provider commands.", view: null, changes: [], review: null });
     readonly state = this.cell.observable;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, backendFactory?: LspProjectFactory) {
-        this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory; this.usesLsp = backendFactory !== undefined;
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, backendFactory?: LspProjectFactory, provider?: LspWorkspace) {
+        this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory; this.provider = provider; this.usesLsp = backendFactory !== undefined;
     }
     private available(s: Session): boolean {
         const tab = this.workspace.resolveTab(s.target);
@@ -65,7 +66,7 @@ export class HostProjectTools {
             notes: Object.freeze(all.slice(review.page * 64, (review.page + 1) * 64).map(({ doc, edit }) => Object.freeze({ document: doc.documentId, resource: doc.resourceId, title: job.documents.get(doc.documentId)!.title.slice(0, 128), revision: doc.revision, from: edit.from, to: edit.to,
                 insert: edit.insert.slice(0, 256), insertUnits: edit.insert.length, context: doc.buffer.slice(Math.max(0, edit.from - 32), Math.min(edit.to, edit.from + 128)) + (edit.to - edit.from > 128 ? "…" : "") + doc.buffer.slice(edit.to, Math.min(doc.buffer.length, edit.to + 32)) }))) }) : null;
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active), connected: this.backend?.snapshot().connected ?? this.client?.snapshot().connected ?? false,
-            disconnected: this.disconnected, registered: this.registered, pending: !!job, view: this.active?.id ?? null, changes: this.changes, review: preview });
+            disconnected: this.disconnected, reconnectRequired: this.provider?.state.getSnapshot().commandRequiresReconnect ?? false, registered: this.registered, pending: !!job, view: this.active?.id ?? null, changes: this.changes, review: preview });
     }
     private editable(document: DocumentId): boolean { const m = this.workspace.resourceForDocument(document).metadata.getSnapshot(); return m.capabilities.edit.includes("human") && m.capabilities.edit.includes("host") && m.editLock === null; }
     private drop(): void { const client = this.client, backend = this.backend; this.client = undefined; this.backend = undefined; this.stopBackend?.(); this.stopBackend = undefined; this.registered = false; client?.dispose(); backend?.dispose(); }
@@ -106,7 +107,7 @@ export class HostProjectTools {
         this.publish({ status: "cancelled", message: job.applied ? "Provider work cancelled after application; the edit remains available to undo." : "Provider work cancelled; source is unchanged." });
     };
     readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ status: "idle", message: "Workspace provider disconnected; local editing remains available." }); };
-    readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.publish({ status: "idle", message: "Register again to reconnect with current working snapshots." }); };
+    readonly reconnect = (): void => { this.cancel(); this.provider?.disconnect(); this.drop(); this.disconnected = false; this.publish({ status: "idle", message: "Register again to reconnect with current working snapshots." }); };
     attach(id: string, tab: TabId, editor: EditingCandidate): () => void {
         const session = { token: ++sessionSerial, id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(session.token, session);
         editor.input.addEventListener("focus", () => { this.active = session; this.publish(); }, { signal: events.signal });
@@ -185,7 +186,7 @@ export class HostProjectTools {
             else { this.metrics.rejected++; this.finishReview(job, review, { applied: false, failureReason: error instanceof Error ? error.message : "Provider edits refused." }); this.publish({ message: "Provider edit batch refused without application." }); }
         }
     }
-    canRunAction(editor: EditingCandidate): boolean { return this.usesLsp && !this.disposed && !this.job && [...this.sessions.values()].some(session => session.editor === editor && this.available(session)); }
+    canRunAction(editor: EditingCandidate): boolean { return this.usesLsp && !this.disposed && !this.job && !this.provider?.state.getSnapshot().commandRequiresReconnect && [...this.sessions.values()].some(session => session.editor === editor && this.available(session)); }
     /** Transfer a confirmed action to the existing review owner, independent of later focus. */
     beginAction(intent: ProjectActionIntent): ProjectActionHandle | undefined {
         const origin = [...this.sessions.values()].find(session => session.editor === intent.editor && this.available(session));

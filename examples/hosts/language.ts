@@ -231,7 +231,7 @@ export class HostLanguageTools {
     readonly replace = (): void => { this.active?.provider?.apply("replace"); };
     readonly cancel = (): void => { this.active?.provider?.cancel(); };
     readonly disconnect = (): void => { this.active?.provider?.disconnect(); };
-    readonly reconnect = (): void => { if (this.active) { this.active.initialized = true; this.active.provider?.connect(); } };
+    readonly reconnect = (): void => { if (this.active) { this.active.initialized = true; this.active.provider?.disconnect(); this.active.provider?.connect(); } };
     readonly setQuery = (query: string): void => { this.cancelFindCommand(); this.cell.set({ ...this.cell.get(), query }); this.ensureFind(); };
     readonly setWholeWord = (wholeWord: boolean): void => { this.cancelFindCommand(); this.cell.set({ ...this.cell.get(), wholeWord }); this.ensureFind(); };
     readonly setMatchCase = (matchCase: boolean): void => { this.cancelFindCommand(); this.cell.set({ ...this.cell.get(), matchCase }); this.ensureFind(); };

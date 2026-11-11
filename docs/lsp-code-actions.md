@@ -27,14 +27,14 @@ The command must be advertised by the captured session's static or dynamic globa
 an unknown command disables the whole choice, including its edit. Confirmation transfers the
 captured origin/resources/authority to the existing [workspace-provider review owner](lsp-server-edits.md).
 That owner applies any initial edit atomically, synchronizes its new wire versions, then executes
-the command with the original bounded opaque arguments. The action connection advertises applyEdit
-only with its registered handler. Further server edits require Apply/Decline in the existing
+the command with the original bounded opaque arguments. The shared provider advertises applyEdit
+with its owner handler, routing only to the active command scope. Further server edits require Apply/Decline in the existing
 Workspace provider panel; background requests without a confirmed intent remain refused.
 
 The review lane admits one operation. Its observable state updates action availability; a busy
 workspace review prevents execution before any initial edit. Later focus does not retarget the
-origin. The action and workspace adapters keep independent provider connections: losing an idle
-workspace connection cannot cancel an action's captured review. Cancelling, typing, selection/fold
+origin. Action and workspace commands share one provider connection: a connection loss expires
+every feature's old captures. Feature cancellation/disposal remains local. Cancelling, typing, selection/fold
 changes, authority changes, remount, capability withdrawal or disconnect expire the owned command.
 
 Each applied phase is an atomic shared undo transaction: one for the initial action edit, followed

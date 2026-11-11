@@ -5,6 +5,7 @@ import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../editing/presentation.ts";
 import { HostLanguageTools } from "./language.ts";
 import { hostLspFactories } from "../protocol/editor-provider.ts";
+import type { LspWorkspace } from "../../src/protocol/index.ts";
 import { HostHoverTools } from "./hover.ts";
 import { HostTablePaste } from "./table-paste.ts";
 import { HostDomainTools } from "./domain.ts";
@@ -31,6 +32,7 @@ export class ViewBindings {
     private readonly stopDocumentCleanup: () => void;
     private readonly mounted = new Map<string, { editor: BoundEditor; documentId: DocumentId; candidate: EditingCandidate | undefined }>();
     readonly editor: HostEditor;
+    private readonly lspOwner: LspWorkspace | undefined;
     private readonly states = new Map<string, Map<DocumentId, ViewState>>();
     private readonly selections = new Map<string, Map<DocumentId, DocumentView>>();
     private mounts = 0;
@@ -206,13 +208,14 @@ export class ViewBindings {
             return !this.tablePaste.hasPendingInput(documentId) && !(this.review?.working.view.documentId === documentId && busy(this.review.working.snapshot())) && ![...this.mounted.values()].some(value => value.documentId === documentId && busy(value.editor.metrics()));
         };
         const lsp = hostLspFactories(controller.workspace);
+        this.lspOwner = lsp?.owner;
         this.language = new HostLanguageTools(controller.workspace, (event, field, target, composing) => this.handleSaveShortcut(event, field, target, composing), { canCapture, ...(lsp ? { providerFactory: lsp.provider } : {}) });
         this.hover = new HostHoverTools(controller.workspace, kind => { if (kind === "pointer") return !this.signature?.state.getSnapshot().visible; this.signature?.dismiss(); return true; }, lsp ? { createController: lsp.hover, canCapture } : {});
         this.navigation = new HostNavigationTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.navigation);
-        this.project = new HostProjectTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.project);
+        this.project = new HostProjectTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.project, lsp?.owner);
         this.colors = new HostDocumentColors(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
         this.links = new HostDocumentLinks(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
-        this.actions = new HostActionsTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.actions, this.project);
+        this.actions = new HostActionsTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.actions, this.project, lsp?.owner);
         this.rename = new HostRenameTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.rename);
         this.signature = new HostSignatureTools(controller.workspace, canCapture, () => this.hover.dismiss());
         this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.documentId) && !this.review?.working.snapshot().pendingInput
@@ -332,11 +335,12 @@ export class ViewBindings {
         this.stopInputCapture(); this.stopDocumentCleanup();
         this.comparison(null); this.unmount(); this.colors.dispose(); this.links.dispose(); this.actions.dispose(); this.rename.dispose(); this.signature.dispose(); this.project.dispose(); this.navigation.dispose(); this.domain.dispose(); for (const selections of this.selections.values()) for (const view of selections.values()) view.dispose();
         this.selections.clear(); this.states.clear(); this.referenceState = undefined; this.language.clearRetainedView();
+        this.lspOwner?.dispose();
         this.controller.collectLoadedDocument();
     }
     debug() {
         const comparison = this.review?.controller.getSnapshot();
-        return { instruction: this.instructionMount?.debug() ?? null, editor: this.editor, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size, language: this.language.debug(), hover: this.hover.debug(), tablePaste: this.tablePaste.debug(), domain: this.domain.debug(), navigation: this.navigation.debug(), project: this.project.debug(), rename: this.rename.debug(), actions: this.actions.debug(), links: this.links.debug(), colors: this.colors.debug(), signature: this.signature.debug(),
+        return { lsp: this.lspOwner?.snapshot() ?? null, instruction: this.instructionMount?.debug() ?? null, editor: this.editor, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size, language: this.language.debug(), hover: this.hover.debug(), tablePaste: this.tablePaste.debug(), domain: this.domain.debug(), navigation: this.navigation.debug(), project: this.project.debug(), rename: this.rename.debug(), actions: this.actions.debug(), links: this.links.debug(), colors: this.colors.debug(), signature: this.signature.debug(),
         comparison: comparison ? { status: comparison.status, generation: comparison.generation, workingRevision: comparison.working?.revision,
             referenceIsWorkingBuffer: comparison.baseline !== null && comparison.baseline.buffer === comparison.working?.buffer,
             progress: comparison.progress && { work: comparison.progress.work, readUnits: comparison.progress.readUnits,

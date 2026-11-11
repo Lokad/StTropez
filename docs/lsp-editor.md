@@ -17,11 +17,13 @@ an assertion that a provider has completed analysis. Its currentness guard must 
 publishing or applying delayed results. Server ranges are checked against exact raw UTF-16 source;
 invalid lines/characters are refused instead of silently clamped.
 
-Diagnostics replace their previous batch. Versioned pushes must match the current wire version
-before any source markers or navigation are published. Every item is checked before publication,
-so a malformed final item preserves the previous valid batch. Unversioned messages remain visible
-in a separate list, with no claimed source revision, markers or diagnostic navigation. A local edit
-clears prior diagnostics rather than relocating an uncertain provider analysis. Messages are plain
+Diagnostics share one decoded batch across views. Versioned pushes must match the current wire
+version; a malformed final item preserves the previous valid batch. Unversioned pushes retain
+validated wire ranges and may place navigable markers against an explicit current snapshot while
+their provider version/origin revision remain unknown. The controls label that uncertainty separately.
+An out-of-bounds range retains its wire range and message with an explicit unplaceable status and
+no marker. A local edit, reconnect or URI reuse expires the prior associations rather than relocating
+an uncertain analysis. These presentation anchors grant no edit authority. Messages are plain
 text; markup, links and commands are never executed. The bound is 256 items/65,536 text units per
 batch, with 4,096 units per message. Related-information/data presentation is not advertised.
 
@@ -53,11 +55,11 @@ close/open ownership cleanup. Delayed replies neither retarget focus nor edit an
 The comparison reference exposes no completion provider. Working edits
 keep Save/Run on their captured resource; later typing survives an earlier Save receipt.
 
-The example adapter owns one connection/bound document per mounted provider view, connecting
-on explicit view activation. It does not claim a shared project-wide provider cache. Custom fixture
-configuration is supplied through a host hook; session/feature code contains no fixture endpoint or
-message policy. The separate [workspace-provider adapter](lsp-server-edits.md) owns advertised
-commands and explicit server-edit decisions, also used by confirmed action-menu commands. The
+Both hosts own one exported `LspWorkspace` per workspace/provider configuration, connecting on
+explicit view activation. Feature/view scopes share bindings, synchronization and diagnostics;
+disposing one view cannot close another's document or transport. Custom fixture configuration
+stays in host hooks. The [workspace-provider adapter](lsp-server-edits.md) uses that same connection
+and a shared exclusive command lane for confirmed action/workspace commands and edit decisions. The
 [remaining LSP matrix](lsp.md) includes advanced completion and other declared subset gaps.
 Native IME/clipboard and physical-display checks
 remain unverified; all browser qualification stays headless on the shared desktop.

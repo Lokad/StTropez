@@ -8,3 +8,7 @@ export { lspRangeOffsets, decodeLspDiagnostics, decodeLspCompletions, decodeLspH
 export type { LspDiagnostic, LspDiagnostics, LspCompletionPlan, LspCompletion, LspCompletions, LspCompletionFallback, LspHover, LspLocationTarget, LspLocation, LspEditTarget, LspDocumentEdits, LspWorkspaceEdit, LspApplyEdit, LspApplyEditResult } from "./lsp-features.ts";
 export { decodeLspCodeActions, decodeLspResolvedCodeAction } from "./lsp-code-actions.ts";
 export type { LspCommand, LspCodeAction, LspCodeActions } from "./lsp-code-actions.ts";
+export { LspWorkspace } from "./lsp-workspace.ts";
+export type { LspWorkspaceOptions, LspWorkspaceScope, LspSessionAccess, LspDiagnosticState, LspWorkspaceSnapshot } from "./lsp-workspace.ts";
+export { createLspCommandRunner } from "./lsp-command.ts";
+export type { LspCommandScope, LspCommandReceipt } from "./lsp-command.ts";

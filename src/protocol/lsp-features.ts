@@ -3,10 +3,10 @@ import { PositionMap } from "../core/positions.ts";
 import type { TextEdit } from "../core/changes.ts";
 import { RpcError } from "./json-rpc.ts";
 import type { LspDocumentCapture } from "./lsp-session.ts";
-import type { LspLineIndex, LspPosition } from "./lsp-positions.ts";
+import type { LspLineIndex, LspPosition, LspRange } from "./lsp-positions.ts";
 
-export type LspDiagnostic = Readonly<{ from: number | null; to: number | null; message: string; severity: number | null; source: string | null }>;
-export type LspDiagnostics = Readonly<{ uri: string; version: number | null; revision: number | null; items: readonly LspDiagnostic[] }>;
+export type LspDiagnostic = Readonly<{ range: LspRange; placement: "placed" | "out-of-bounds"; from: number | null; to: number | null; message: string; severity: number | null; source: string | null }>;
+export type LspDiagnostics = Readonly<{ uri: string; version: number | null; revision: number | null; snapshotRevision: number; freshness: "versioned" | "unversioned"; items: readonly LspDiagnostic[] }>;
 export type LspCompletionPlan = Readonly<{ edits: readonly TextEdit[]; head: number }>;
 export type LspCompletion = Readonly<{ label: string; detail: string; insert: LspCompletionPlan; replace: LspCompletionPlan }>;
 export type LspCompletions = Readonly<{ incomplete: boolean; items: readonly LspCompletion[] }>;
@@ -32,7 +32,7 @@ function position(value: unknown): LspPosition {
 }
 function range(value: unknown): Readonly<{ start: LspPosition; end: LspPosition }> {
     if (!record(value)) invalid(); const start = position(value.start), end = position(value.end);
-    if (start.line > end.line || start.line === end.line && start.character > end.character) invalid(); return { start, end };
+    if (start.line > end.line || start.line === end.line && start.character > end.character) invalid(); return Object.freeze({ start, end });
 }
 /** Strict source ranges: edit/diagnostic validation never silently clamps a malformed server position. */
 export function lspRangeOffsets(index: LspLineIndex, value: unknown): Readonly<{ from: number; to: number }> {
@@ -40,19 +40,23 @@ export function lspRangeOffsets(index: LspLineIndex, value: unknown): Readonly<{
     if (a.line !== start.line || a.character !== start.character || b.line !== end.line || b.character !== end.character) invalid();
     return Object.freeze({ from, to });
 }
-/** Unversioned messages remain visible information, with no claimed source anchors/revision. */
+/** Place valid wire ranges against this explicit snapshot without inventing a provider version.
+ * Unplaceable ranges retain their message and wire range; malformed structures reject the batch.
+ */
 export function decodeLspDiagnostics(value: unknown, capture: LspDocumentCapture): LspDiagnostics {
     current(capture); if (!record(value) || value.uri !== capture.document.uri || !Array.isArray(value.diagnostics) || value.diagnostics.length > 256) invalid();
     const version = value.version === undefined ? null : value.version;
     if (version !== null && !uint(version) || value.version === null) invalid();
     if (version !== null && version !== capture.version) throw new RpcError(-32801, "Diagnostics refer to another document version.");
     const budget = { units: 65536 }, items = value.diagnostics.map((item: unknown): LspDiagnostic => {
-        if (!record(item)) invalid(); const wire = range(item.range), offsets = version === null ? null : lspRangeOffsets(capture.index, wire);
+        if (!record(item)) invalid(); const wire = range(item.range); let offsets: Readonly<{ from: number; to: number }> | undefined;
+        try { offsets = lspRangeOffsets(capture.index, wire); } catch (error) { if (!(error instanceof TypeError || error instanceof RangeError)) throw error; }
         const message = text(item.message, 4096, budget), source = item.source === undefined ? null : text(item.source, 1024, budget);
         if (item.severity !== undefined && (!uint(item.severity) || item.severity < 1 || item.severity > 4)) invalid();
-        return Object.freeze({ from: offsets?.from ?? null, to: offsets?.to ?? null, message, severity: item.severity as number | undefined ?? null, source });
+        return Object.freeze({ range: wire, placement: offsets ? "placed" : "out-of-bounds", from: offsets?.from ?? null, to: offsets?.to ?? null, message, severity: item.severity as number | undefined ?? null, source });
     });
-    current(capture); return Object.freeze({ uri: capture.document.uri, version, revision: version === null ? null : capture.document.revision, items: Object.freeze(items) });
+    current(capture); return Object.freeze({ uri: capture.document.uri, version, revision: version === null ? null : capture.document.revision,
+        snapshotRevision: capture.document.revision, freshness: version === null ? "unversioned" : "versioned", items: Object.freeze(items) });
 }
 /** Markup and legacy marked strings are displayed literally; the client advertises plain text only. */
 export function decodeLspHover(value: unknown, capture: LspDocumentCapture): LspHover | null {

@@ -1,25 +1,20 @@
-import type { DocumentId, TextBuffer, Workspace } from "../../src/index.ts";
-import { LspSession, RpcError, decodeLspLocations } from "../../src/protocol/index.ts";
-import type { LspCall, LspDocument, LspSessionOptions } from "../../src/protocol/index.ts";
+import type { TextBuffer, Workspace } from "../../src/index.ts";
+import { RpcError, decodeLspLocations } from "../../src/protocol/index.ts";
+import type { LspCall, LspDocument, LspSessionAccess, LspWorkspace } from "../../src/protocol/index.ts";
 import { captureLspProject, updateLspProject } from "./lsp-project.ts";
 import type { NavigationInput } from "../probes/navigation.ts";
 import { validateNavigationInput } from "../probes/navigation.ts";
 import type { NavigationMetrics } from "./navigation-client.ts";
 import type { NavigationService, NavigationOrigin } from "./navigation-service.ts";
 
-export type LspNavigationOptions = Readonly<{ connect: LspSessionOptions["connect"]; uri: (document: DocumentId) => string;
-    beforeRequest?: (session: LspSession, input: NavigationInput) => Promise<unknown> }>;
+export type LspNavigationOptions = Readonly<{ provider: LspWorkspace;
+    beforeRequest?: (session: LspSessionAccess, input: NavigationInput) => Promise<unknown> }>;
 
 /** One host-owned project connection. Only captured working resources can resolve a location URI. */
-export function createLspNavigationClient(workspace: Workspace, clock: Pick<Window, "setTimeout" | "clearTimeout">, counts: NavigationMetrics,
+export function createLspNavigationClient(workspace: Workspace, _clock: Pick<Window, "setTimeout" | "clearTimeout">, counts: NavigationMetrics,
     changed: () => void, options: LspNavigationOptions): NavigationService {
     const documents = new Map<string, LspDocument>(); let busy = false, disposed = false, sequence = 0;
-    const session = new LspSession({ schedule: (ms, callback) => { const timer = clock.setTimeout(callback, ms); return () => clock.clearTimeout(timer); },
-        features: ["textDocument/definition", "textDocument/references"], connect: async context => {
-            const transport = await options.connect(context); counts.created++; let released = false;
-            return { send: message => { counts.posted++; transport.send(message); }, subscribe: listener => transport.subscribe({ message: message => { counts.received++; listener.message(message); }, close: listener.close }),
-                dispose: () => { if (released) return; released = true; counts.terminated++; transport.dispose(); } };
-        } });
+    const session = options.provider.createScope();
     const stopState = session.state.subscribe(changed);
     const run = async (capture: NavigationInput, buffers: ReadonlyMap<string, TextBuffer>, progress: (work: number) => void, fault?: unknown, origin?: NavigationOrigin) => {
         if (disposed || busy) throw new Error("LSP navigation request is unavailable.");
@@ -28,7 +23,7 @@ export function createLspNavigationClient(workspace: Workspace, clock: Pick<Wind
         busy = true; const serial = ++sequence; let call: LspCall<unknown> | undefined;
         const current = () => { if (disposed || serial !== sequence) throw new RpcError(-32800, "LSP navigation cancelled."); };
         try {
-            updateLspProject(workspace, session, documents, input.documents, buffers, options.uri);
+            updateLspProject(workspace, session, documents, input.documents, buffers);
             await session.connect(); await session.flush(); current();
             if (options.beforeRequest) await options.beforeRequest(session, input); current();
             const captures = captureLspProject(session, documents);

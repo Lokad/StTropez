@@ -176,6 +176,14 @@ changes or discarded. Workspace edits validate all documents before changing any
 Allow dynamic capability registration, server-initiated edits, cancellation, reconnect and
 custom messages without emulating another editor's extension API.
 
+The optional protocol layer's `LspWorkspace` owns one existing `LspSession` per workspace/provider
+configuration. Feature scopes share document leases, synchronization, wire versions and diagnostics;
+view/request cancellation has its own lifetime. The host supplies URI/language/transport policy and
+retains edit authorization. Command review is exclusive on that connection, with explicit recovery
+after cancellation. This reuses the existing session, observable stores and Workspace snapshots
+without introducing runtime packages. [The supported subset](lsp.md) distinguishes delivered
+protocol ownership from the remaining reusable editor coordination and feature routes.
+
 Local tokenization and server features are separate contracts. Verify that token classes
 produce the intended visible styles and that unavailable services leave basic editing usable.
 The host may supply a small incremental line tokenizer; a general parser or semantic-token

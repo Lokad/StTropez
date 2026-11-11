@@ -4,7 +4,7 @@ import { createNavigationClient, navigationMetrics } from "../editing/navigation
 import { validateActionInput } from "../probes/actions.ts";
 import type { ActionInput, ActionResult } from "../probes/actions.ts";
 import { HostCell } from "../shared/observable.ts";
-import type { LspCodeAction } from "../../src/protocol/index.ts";
+import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
 import type { LspActionBatch, LspActionClient, LspActionFactory } from "../editing/lsp-action-client.ts";
 import type { HostProjectTools, ProjectActionHandle } from "./project.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
@@ -15,7 +15,7 @@ type Job = { origin: Session; input: ActionInput; document: DocumentSnapshot; se
 export type ActionNote = Readonly<{ document: string; resource: string; title: string; revision: number; from: number; to: number; insert: string; context: string; insertUnits?: number }>;
 export type ActionChoice = Readonly<{ index: number; title: string; kind: string | null; preferred: boolean; disabled: string | null; needsResolve: boolean }>;
 type ActionChange = Readonly<{ document: DocumentId; title: string }>;
-export type ActionsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; canApply: boolean; token: number | null; module: string;
+export type ActionsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; pending: boolean; canApply: boolean; token: number | null; module: string;
     status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied" | "executed"; message: string; title: string; disabled: string | null; work: number; total: number; command: string | null;
     edits: readonly ActionNote[]; changed: ActionChange | null; changes: readonly ActionChange[]; choices: readonly ActionChoice[]; choice: number | null; resolving: boolean; page: number; editCount: number }>;
 let serial = 0;
@@ -30,6 +30,7 @@ export class HostActionsTools {
     private client: ReturnType<typeof createNavigationClient> | undefined;
     private backend: LspActionClient | undefined;
     private readonly backendFactory: LspActionFactory | undefined;
+    private readonly provider: LspWorkspace | undefined;
     private readonly reviewOwner: HostProjectTools | undefined;
     private readonly stopReviewOwner: (() => void) | undefined;
     private execution: { token: number; handle: ProjectActionHandle } | undefined;
@@ -44,9 +45,10 @@ export class HostActionsTools {
     private fault: ActionInput["fault"];
     private readonly worker = navigationMetrics();
     private readonly metrics = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0 };
-    private readonly cell = new HostCell<ActionsSnapshot>({ available: false, connected: false, disconnected: false, pending: false, canApply: false, token: null, module: "sample-utils", status: "idle", message: "Focus a candidate source to preview a module-import action.", title: "", disabled: null, work: 0, total: 0, command: null, edits: [], changed: null, changes: [], choices: [], choice: null, resolving: false, page: 0, editCount: 0 });
+    private readonly cell = new HostCell<ActionsSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, pending: false, canApply: false, token: null, module: "sample-utils", status: "idle", message: "Focus a candidate source to preview a module-import action.", title: "", disabled: null, work: 0, total: 0, command: null, edits: [], changed: null, changes: [], choices: [], choice: null, resolving: false, page: 0, editCount: 0 });
     readonly state = this.cell.observable;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, backendFactory?: LspActionFactory, reviewOwner?: HostProjectTools) {
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, backendFactory?: LspActionFactory, reviewOwner?: HostProjectTools, provider?: LspWorkspace) {
+        this.provider = provider;
         this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory; this.reviewOwner = reviewOwner; this.usesLsp = backendFactory !== undefined;
         this.stopReviewOwner = this.usesLsp ? reviewOwner?.state.subscribe(() => this.publish()) : undefined;
     }
@@ -66,7 +68,7 @@ export class HostActionsTools {
     private disabled(action: LspCodeAction): string | null { return action.disabled ?? (action.command ? !this.reviewOwner || !this.job?.batch?.supports(action.command.command) ? "This command is not advertised by the captured provider." : null : !action.resolve && !action.edit?.documents.some(change => change.edits.length) ? "The provider returned no text changes." : null); }
     private publish(patch: Partial<ActionsSnapshot> = {}): void {
         const job = this.job; this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active), connected: this.backend?.snapshot().connected ?? this.client?.snapshot().connected ?? false,
-            disconnected: this.disconnected, token: this.execution?.token ?? job?.input.id ?? null, pending: !!this.execution || !!job && (!job.ready || job.resolving), choice: job?.choice ?? null, resolving: job?.resolving ?? false, command: job?.selected?.command?.command ?? null,
+            disconnected: this.disconnected, reconnectRequired: this.provider?.state.getSnapshot().commandRequiresReconnect ?? false, token: this.execution?.token ?? job?.input.id ?? null, pending: !!this.execution || !!job && (!job.ready || job.resolving), choice: job?.choice ?? null, resolving: job?.resolving ?? false, command: job?.selected?.command?.command ?? null,
             canApply: !this.execution && !!job?.ready && !job.resolving && this.current(job) && (job.batch ? !!job.selected && !!(job.selected.edit || job.selected.command) && !this.disabled(job.selected)
                 && (!job.selected.command || !!this.reviewOwner?.canRunAction(job.origin.editor)) && (job.selected.edit?.documents ?? []).filter(change => change.edits.length).every(change => this.editable(change.target.document.documentId as DocumentId)) : !!job.result && !job.result.action.disabled && this.editable(job.document.id)) });
     }
@@ -78,7 +80,7 @@ export class HostActionsTools {
     readonly cancel = (): void => { const execution = this.execution, applied = execution?.handle.applied() ?? false; this.execution = undefined; execution?.handle.cancel(); if (this.job || execution) this.metrics.cancelled++; this.release();
         this.publish({ status: "idle", message: applied ? "Action command cancelled after application; the edits remain undoable." : "Action preview dismissed; source is unchanged by this action.", edits: [], title: "", disabled: null, work: 0, total: 0, choices: [], page: 0, editCount: 0 }); };
     readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ message: "Action provider disconnected; local editing remains available." }); };
-    readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.publish({ message: "Preview a fresh action to reconnect with current source." }); };
+    readonly reconnect = (): void => { this.cancel(); this.provider?.disconnect(); this.drop(); this.disconnected = false; this.publish({ message: "Preview a fresh action to reconnect with current source." }); };
     setModule(value: string): void { if (value === this.cell.get().module) return; this.cancel(); this.publish({ module: value.slice(0, 65), status: "idle", message: "Module changed; preview a fresh action.", title: "", disabled: null, edits: [], work: 0, total: 0, choices: [], page: 0, editCount: 0 }); }
     readonly bindModule = (input: HTMLInputElement | null): void => {
         this.moduleEvents?.abort(); this.moduleEvents = undefined; this.moduleInput = input ?? undefined; if (!input || this.disposed) return;

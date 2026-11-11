@@ -1,27 +1,26 @@
 import { codeWordConstituentPattern } from "../../src/index.ts";
 import type { ResourceLease, SelectionSet, TabId, Workspace } from "../../src/index.ts";
 import type { EditingCandidate } from "../../src/browser/index.ts";
-import { LspSession, RpcError, decodeLspCompletions, decodeLspDiagnostics } from "../../src/protocol/index.ts";
-import type { LspCall, LspCompletions, LspCompletionFallback, LspDocument, LspDocumentCapture, LspSessionOptions } from "../../src/protocol/index.ts";
+import { RpcError, decodeLspCompletions } from "../../src/protocol/index.ts";
+import type { LspCall, LspCompletions, LspCompletionFallback, LspDocument, LspDocumentCapture, LspSessionAccess, LspWorkspace } from "../../src/protocol/index.ts";
 import type { Diagnostic, ProviderController, ProviderOptions, ProviderSnapshot } from "./provider-controller.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type Job = { revision: number; selections: SelectionSet; authority: string; folds: number; lease: ResourceLease;
     call?: LspCall<unknown>; capture?: LspDocumentCapture; choices?: LspCompletions; choice: number; cancelled: boolean };
-export type LspProviderOptions = ProviderOptions & Readonly<{ connect: LspSessionOptions["connect"]; uri: string;
-    beforeRequest?: (session: LspSession, configuration: Readonly<{ delay: number; fault?: "malformed" | "failure" }>) => Promise<unknown> }>;
+export type LspProviderOptions = ProviderOptions & Readonly<{ provider: LspWorkspace;
+    beforeRequest?: (session: LspSessionAccess, configuration: Readonly<{ delay: number; fault?: "malformed" | "failure" }>) => Promise<unknown> }>;
 const word = new RegExp(`^(?:${codeWordConstituentPattern})$`, "u");
 
 /** Actual LSP adapter for the shared host controls. No worker fallback or secondary source mirror. */
 export function createLspProviderController(workspace: Workspace, tabId: TabId, editor: EditingCandidate, options: LspProviderOptions): ProviderController {
     const target = workspace.captureTab(tabId), documentId = editor.view.documentId, resource = workspace.resourceForDocument(documentId), tab = workspace.resolveTab(target);
     if (tab?.surface.kind !== "text" || tab.surface.documentId !== documentId || !workspace.ownsDocumentView(editor.view)) throw new Error("LSP provider requires the captured document view.");
-    const win = editor.element.ownerDocument.defaultView!, listeners = new AbortController();
-    const schedule = (ms: number, callback: () => void) => { const timer = win.setTimeout(callback, ms); return () => { win.clearTimeout(timer); }; };
-    const session = new LspSession({ connect: options.connect, schedule, features: ["textDocument/completion"], diagnostics: true }), initial = workspace.document(documentId);
+    const listeners = new AbortController(), session = options.provider.createScope();
     let binding: LspDocument;
-    try { binding = session.bindDocument({ uri: options.uri, resourceId: resource.id, documentId, languageId: "fixture", revision: initial.revision, buffer: initial.buffer }); }
+    try { binding = session.attachDocument(documentId); }
     catch (error) { session.dispose(); throw error; }
+    const diagnosticState = session.observeDiagnostics(binding);
     const counters = { posted: 0, received: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, outOfScope: 0, failed: 0, postedUnits: 0 };
     let job: Job | undefined, disposed = false, delay = 0, fault: "malformed" | "failure" | undefined, connecting: Promise<void> | undefined;
     let diagnostics: readonly Diagnostic[] = [], unversioned: readonly string[] = [], diagnosticRevision = -1;
@@ -49,7 +48,7 @@ export function createLspProviderController(workspace: Workspace, tabId: TabId, 
             if (connecting !== work || disposed) return; connecting = undefined; counters.failed++; release(); clearDiagnostics(); publish("LSP provider unavailable; local editing remains available.");
         });
     };
-    const disconnect = () => { release(); clearDiagnostics(); session.disconnect(); connecting = undefined; publish("LSP provider disconnected; local editing remains available."); };
+    const disconnect = () => { release(); clearDiagnostics(); options.provider.disconnect(); connecting = undefined; publish("LSP provider disconnected; local editing remains available."); };
     const fallback = (capture: LspDocumentCapture, offset: number): LspCompletionFallback => {
         const from = Math.max(0, offset - 2048), to = Math.min(capture.document.buffer.length, offset + 2048), text = capture.document.buffer.slice(from, to), at = offset - from;
         let low = at, high = at;
@@ -98,23 +97,27 @@ export function createLspProviderController(workspace: Workspace, tabId: TabId, 
         const diagnostic = diagnostics[index]; if (!diagnostic || !available() || !idle() || workspace.document(documentId).revision !== diagnosticRevision) return false;
         if (!editor.view.setSelection(diagnosticRevision, { anchor: diagnostic.from, head: diagnostic.to })) return false; editor.viewport.revealOffset(diagnostic.from); editor.focus(); return true;
     };
-    const stops = [session.onNotification("textDocument/publishDiagnostics", value => {
-        if (!available()) return; const capture = session.synchronized(binding); if (!capture) { counters.stale++; return; }
-        try { const decoded = decodeLspDiagnostics(value, capture);
-            diagnostics = decoded.revision === null ? [] : decoded.items.map(item => Object.freeze({ from: item.from!, to: item.to!, message: item.message }));
-            unversioned = decoded.revision === null ? decoded.items.map(item => item.message) : []; diagnosticRevision = decoded.revision ?? -1;
-            publish(decoded.revision === null ? "LSP diagnostics have no version; source locations are unverified." : "Versioned LSP diagnostics updated.");
-        } catch (error) { if (error instanceof RpcError && error.code === -32801) counters.stale++; else counters.invalid++; }
-    }), session.state.subscribe(() => { if (session.state.getSnapshot().phase === "disconnected") { release(); clearDiagnostics(); } publish(cell.get().message); }),
+    let diagnosticStale = 0, diagnosticInvalid = 0;
+    const updateDiagnostics = () => {
+        const state = diagnosticState.getSnapshot(); counters.stale += state.stale - diagnosticStale; counters.invalid += state.invalid - diagnosticInvalid;
+        diagnosticStale = state.stale; diagnosticInvalid = state.invalid;
+        const decoded = available() && state.isCurrent() ? state.result : null;
+        if (!decoded) { clearDiagnostics(); publish(cell.get().message); return; }
+        diagnostics = decoded.items.filter(item => item.placement === "placed").map(item => Object.freeze({ from: item.from!, to: item.to!, message: item.message }));
+        unversioned = decoded.items.filter(item => decoded.freshness === "unversioned" || item.placement !== "placed")
+            .map(item => `${item.message}${item.placement === "placed" ? " (provider version unknown)" : " (range outside the current snapshot)"}`);
+        diagnosticRevision = decoded.snapshotRevision;
+        publish(decoded.freshness === "unversioned" ? "LSP diagnostic locations use the current snapshot; provider version is unknown." : "Versioned LSP diagnostics updated.");
+    };
+    const stops = [diagnosticState.subscribe(updateDiagnostics), session.state.subscribe(() => { if (session.state.getSnapshot().phase === "disconnected") { release(); clearDiagnostics(); } publish(cell.get().message); }),
     workspace.observeDocument(documentId).subscribe(() => {
-        const current = workspace.observeDocument(documentId).getSnapshot(); if (current && current.revision !== binding.getSnapshot().revision) binding.update(binding.getSnapshot().revision, current.revision, current.buffer);
         clearDiagnostics(); expire("LSP results expired after an edit.");
     }), editor.view.subscribe(() => { if (job && editor.view.getSnapshot().selectionSet !== job.selections) expire("LSP completion expired after selection changed."); }),
     resource.metadata.subscribe(() => { if (job && authority() !== job.authority) expire("LSP completion expired after authority changed."); }),
     workspace.tabState.subscribe(() => { if (!available()) { clearDiagnostics(); expire("Captured LSP view is unavailable."); } })];
     editor.input.addEventListener("compositionstart", () => expire("Finish composition before completion."), { signal: listeners.signal });
     editor.input.addEventListener("beforeinput", () => { if (job) expire("LSP completion expired after input."); }, { signal: listeners.signal });
-    if (options.autoConnect !== false) connect();
+    updateDiagnostics(); if (options.autoConnect !== false) connect();
     return Object.freeze({ state: cell.observable, request, apply, chooseCompletion, cancel, connect, disconnect, selectDiagnostic,
         customRequest: (method, params) => session.request(method, params).result,
         setDelay: (value: number) => { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid LSP provider delay."); delay = value; }, faultNext: value => { fault = value; },
