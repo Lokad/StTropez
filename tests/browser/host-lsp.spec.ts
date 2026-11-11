@@ -39,6 +39,77 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         expect(packets).toContain("initialize"); expect(packets).toContain("textDocument/completion"); expect(packets).toContain("textDocument/didChange");
         await expect(page.getByLabel("Source diagnostics", { exact: true }).getByRole("button")).toHaveCount(1); expect((await snapshot(page)).source.exports).toBe(0);
     });
+    test("ordinary prefix growth retains choices and accepts a keyboard selection with one undo transaction", async ({ page }) => {
+        const calls: unknown[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "textDocument/completion") calls.push(value.params.context); }));
+        await seed(page, "const sMORE = 1; // TODO\r\n", 7); await field(page).pressSequentially("a");
+        await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible(); const count = calls.length;
+        await field(page).pressSequentially("m"); await ready(page); await expect(page.getByRole("option", { name: "sampleWithImport", exact: true })).toBeVisible();
+        expect(calls.length).toBe(count); expect(calls[0]).toEqual({ triggerKind: 1 }); const typed = await source(page), depth = (await snapshot(page)).history.undoDepth;
+        await field(page).press("Shift+ArrowDown"); await ready(page); await expect(page.getByRole("option")).toHaveCount(0);
+        const selected = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection; expect(selected.anchor).not.toBe(selected.head);
+        await page.evaluate(() => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: 9, head: 9 }); }); await offer(page);
+        await field(page).press("ArrowDown"); await field(page).press("Enter"); await ready(page);
+        const expected = "// fixture import\r\nconst sampleValue = 1; // TODO\r\n"; expect(await source(page)).toBe(expected); expect((await snapshot(page)).history.undoDepth).toBe(depth + 1);
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: expected.indexOf("sampleValue") + 11, head: expected.indexOf("sampleValue") + 11 });
+        await field(page, "Secondary source").press("Control+z"); expect(await source(page)).toBe(typed); await field(page, "Secondary source").press("Control+Shift+z"); expect(await source(page)).toBe(expected);
+    });
+    test("advertised punctuation triggers completion and Escape preserves the typed source", async ({ page }) => {
+        const calls: unknown[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "textDocument/completion") calls.push(value.params.context); }));
+        await seed(page, "object", 6); await expect.poll(async () => (await provider(page)).connected).toBe(true); await field(page).pressSequentially(".");
+        await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible(); expect(calls.at(-1)).toEqual({ triggerKind: 2, triggerCharacter: "." });
+        await field(page).press("Escape"); await expect(page.getByRole("option")).toHaveCount(0); expect(await source(page)).toBe("object.");
+    });
+    test("incomplete prefix lists refresh, filter provider metadata, resolve and commit with one shared undo", async ({ page }) => {
+        const contexts: unknown[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "textDocument/completion") contexts.push(value.params.context); }));
+        await seed(page, "const sMORE = 1;", 7); await expect.poll(async () => (await provider(page)).connected).toBe(true);
+        await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "incomplete" }));
+        await field(page).pressSequentially("a"); await expect(page.getByLabel("Completion detail", { exact: true })).toContainText("Resolved sample");
+        await expect(page.getByRole("option", { name: "Displayed sibling", exact: true })).toHaveCount(0);
+        await field(page).pressSequentially("mpleV"); await expect.poll(() => contexts).toContainEqual({ triggerKind: 3 });
+        await expect.poll(async () => (await provider(page)).pending).toBe(false);
+        await expect(page.getByRole("option", { name: "sample", exact: true })).toHaveCount(0); await expect(page.getByRole("option", { name: "sampleWithImport", exact: true })).toBeVisible();
+        await field(page).press("ArrowDown"); await expect(page.getByLabel("Completion detail", { exact: true })).toContainText("Resolved sampleWithImport");
+        await expect.poll(async () => (await provider(page)).pending).toBe(false);
+        await expect(page.getByLabel("Completion detail", { exact: true })).toContainText("<b>Literal completion detail</b>"); expect(await page.locator(".host-language b").count()).toBe(0);
+        const typed = await source(page), depth = (await snapshot(page)).history.undoDepth; await field(page).pressSequentially(";"); await ready(page);
+        const expected = "// resolved import\r\nconst sampleValue; = 1;"; expect(await source(page)).toBe(expected); expect((await snapshot(page)).history.undoDepth).toBe(depth + 1);
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection.head).toBe(expected.indexOf("sampleValue;") + 12);
+        await field(page, "Secondary source").press("Control+z"); expect(await source(page)).toBe(typed);
+        await field(page, "Secondary source").press("Control+Shift+z"); expect(await source(page)).toBe(expected);
+    });
+    test("late completion resolution cannot replace a newer selection or survive a document edit", async ({ page }) => {
+        const resolving: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "completionItem/resolve") resolving.push(value.params.label); }));
+        await seed(page, "const sMORE = 1;", 7); await expect.poll(async () => (await provider(page)).connected).toBe(true);
+        await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "interactive" }));
+        await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionResolveConfig", { delay: 650, late: true }));
+        await field(page).pressSequentially("a"); await expect.poll(() => resolving).toContain("sample");
+        await field(page).press("ArrowDown"); await expect(page.getByLabel("Completion detail", { exact: true })).toContainText("Resolved sampleWithImport");
+        await page.waitForTimeout(700); await expect(page.getByLabel("Completion detail", { exact: true })).toContainText("Resolved sampleWithImport");
+        await field(page).press("Tab"); await ready(page); expect(await source(page)).toBe("// resolved import\r\nconst sampleValueMORE = 1;");
+        await seed(page, "const sMORE = 1;", 7);
+        await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionResolveConfig", { delay: 650, late: true }));
+        const count = resolving.length; await field(page).pressSequentially("a"); await expect.poll(() => resolving.length).toBeGreaterThan(count);
+        await field(page).pressSequentially(";"); await page.waitForTimeout(700); await ready(page);
+        expect(await source(page)).toBe("const sa;MORE = 1;"); await expect(page.getByRole("option")).toHaveCount(0);
+    });
+    test("synthetic composition suppresses premature requests and rapid typing cancels bounded automatic work", async ({ page }) => {
+        const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));
+        await seed(page, "const saMORE", 8); await expect.poll(async () => (await provider(page)).connected).toBe(true);
+        await field(page).evaluate(node => { const input = node as HTMLTextAreaElement; input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+            input.setRangeText("m", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", isComposing: true })); });
+        expect(methods.filter(method => method === "textDocument/completion")).toHaveLength(0); await expect(page.getByRole("option")).toHaveCount(0);
+        await field(page).evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "m" })));
+        await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible(); expect(await source(page)).toBe("const samMORE");
+        await field(page).press("Escape"); await seed(page, "const s", 7); await page.evaluate(() => window.hostFixture.setProviderDelay(300));
+        const count = (await provider(page)).posted; await field(page).pressSequentially("a"); await expect.poll(async () => (await provider(page)).pending).toBe(true);
+        await field(page).pressSequentially("mple"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
+        await expect.poll(async () => (await provider(page)).pending).toBe(false); expect(await source(page)).toBe("const sample");
+        const state = await provider(page); expect(state.posted - count).toBeLessThanOrEqual(5); expect(state.protocol?.pendingDocumentRequests).toBe(0); expect(state.protocol?.pendingRequests).toBe(0);
+        await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "interactive" })); await field(page).press("Control+Space");
+        await expect(page.getByLabel("Completion detail", { exact: true })).toContainText("Resolved");
+        await page.evaluate(() => window.hostFixture.providerCustom("fixture/unregister", { unregisterations: [{ id: "fixture-completion", method: "textDocument/completion" }] }));
+        await expect(page.getByRole("option")).toHaveCount(0); expect(await source(page)).toBe("const sample");
+    });
     test("views and language features share one connection and stream through review, detach and reconnect", async ({ page }) => {
         const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));
         type Counts = { initialize: number; failures: string[]; documents: { uri: string; open: number; change: number; close: number; version: number | null }[] };
@@ -110,6 +181,7 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
     });
     test("100k-line beginning/middle/end typing and completion retain bounded input without text exports", async ({ page }, info) => {
         const row = "const saMORE = 123; // row\r\n", text = row.repeat(100_000); await seed(page, text, 8); const diagnostics = [];
+        await expect.poll(async () => (await provider(page)).connected).toBe(true); await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "incomplete" }));
         const wire: unknown[] = []; let currentLine = 0;
         page.on("websocket", socket => socket.on("framesent", frame => {
             const value = JSON.parse(frame.payload.toString()) as { method?: string; params?: { textDocument?: { version?: number; text?: string }; contentChanges?: { range?: unknown; text: string }[] } };
@@ -119,13 +191,17 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         for (const line of [0, 50_000, 99_999]) {
             currentLine = line;
             await field(page).focus(); await page.evaluate(offset => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: offset, head: offset }); }, line * row.length + 8); await ready(page);
-            const started = performance.now(); await field(page).pressSequentially("x"); await ready(page); const completeAutomationMs = performance.now() - started;
-            const metrics = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.metrics!; const completionStart = performance.now(); await offer(page); await field(page).press("Alt+Enter"); await ready(page);
+            const started = performance.now(); await field(page).pressSequentially("m"); await ready(page); const completeAutomationMs = performance.now() - started;
+            const metrics = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.metrics!, completionMetrics = await provider(page), completionStart = performance.now();
+            await expect(page.getByLabel("Completion detail", { exact: true })).toContainText("Resolved sample"); await field(page).pressSequentially("p");
+            await expect.poll(async () => (await provider(page)).pending).toBe(false); await field(page).press("Enter"); await ready(page);
             expect(await page.evaluate(({ from, to }) => window.hostFixture.range(from, to), { from: line * row.length, to: (line + 1) * row.length })).toBe(row.replace("saMORE", "sample"));
             expect(metrics.inputUnits).toBeLessThanOrEqual(4096); expect((await snapshot(page)).source.exports).toBe(0);
-            diagnostics.push({ line, beforeinputHandlerMs: metrics.lastBeforeInputMs, inputHandlerMs: metrics.lastInputMs, beforeinputEvents: metrics.beforeInputEvents, inputEvents: metrics.inputEvents, completeAutomationMs, completionAutomationMs: performance.now() - completionStart });
+            diagnostics.push({ line, beforeinputHandlerMs: metrics.lastBeforeInputMs, inputHandlerMs: metrics.lastInputMs, completionBeforeInputMs: completionMetrics.lastCompletionBeforeInputMs,
+                completionKeydownMs: completionMetrics.lastCompletionKeydownMs, beforeinputEvents: metrics.beforeInputEvents, inputEvents: metrics.inputEvents, completeAutomationMs,
+                completionAutomationMs: performance.now() - completionStart, interactionAutomationMs: performance.now() - started });
         }
-        await info.attach("large-lsp-correctness-clocks", { contentType: "application/json", body: JSON.stringify({ scope: "Three correctness samples: own beforeinput handler vs complete automation action including IPC/assertion polling. No latency-tail, native or physical-display qualification.", diagnostics }) });
+        await info.attach("large-lsp-correctness-clocks", { contentType: "application/json", body: JSON.stringify({ scope: "Three correctness samples. Candidate beforeinput excludes completion capture listener, measured separately. Input handler includes synchronous Core observers. Automation includes IPC/assertion polling and rendering. No latency-tail, native or physical-display qualification.", diagnostics }) });
         } finally { await info.attach("large-lsp-sync-state", { contentType: "application/json", body: JSON.stringify({ line: currentLine, diagnostics, wire, provider: await provider(page), message: await page.getByLabel("Language status", { exact: true }).textContent() }) }); }
     });
 });

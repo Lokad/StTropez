@@ -45,12 +45,13 @@ test("provider scopes share one initialize, binding and incremental stream while
     assert.equal(f.peers.length, 1); const peer = f.peers[0]!, uri = left.getSnapshot().uri;
     assert.equal(peer.events.filter(e => e.method === "initialize").length, 1); assert.equal(peer.events.filter(e => e.method === "open").length, 2);
     assert.equal(left.getSnapshot(), right.getSnapshot()); const old = b.synchronized(right)!;
-    f.edit(); f.edit(f.source.documentId, "second"); f.edit(f.companion.documentId); assert.equal(old.isCurrent(), false); assert.equal(b.synchronized(right), undefined);
+    f.edit(); f.edit(f.source.documentId, "second"); f.edit(f.companion.documentId); assert.equal(old.isCurrent(), false); assert.equal(old.isBindingCurrent!(), true); assert.equal(b.synchronized(right), undefined);
     await Promise.all([a.flush(), b.flush(), c.flush()]); await a.request("test/barrier").result;
     assert.equal(peer.events.filter(e => e.method === "change" && e.uri === uri).length, 1);
     assert.equal(peer.documents.get(uri)!.getText(), "a😀\r\nsource!second"); assert.equal(peer.documents.get(other.getSnapshot().uri)!.getText(), "companion!");
     a.dispose(); await b.flush(); assert.equal(peer.events.filter(e => e.method === "close" && e.uri === uri).length, 0); assert.ok(b.synchronized(right)!.isCurrent());
     right.close(); await b.flush(); await c.request("test/barrier").result; assert.equal(peer.events.filter(e => e.method === "close" && e.uri === uri).length, 1);
+    assert.equal(old.isBindingCurrent!(), false);
     assert.equal(f.provider.snapshot().documents, 1); f.provider.dispose(); await settled();
     assert.equal(f.workspace.diagnostics().leases, 0); assert.equal(f.workspace.diagnostics().subscriptions, 0); assert.equal(f.provider.snapshot().scopes, 0);
     assert.equal(f.provider.snapshot().created, 1); assert.equal(f.provider.snapshot().terminated, 1); assert.equal(f.provider.snapshot().protocol.pendingRequests, 0); assert.deepEqual(f.errors, []);
@@ -70,7 +71,7 @@ test("closing one feature cancels only its pending request and leaves the other 
 test("one reconnect reopens latest shared snapshots once and invalidates old captures without replay", async t => {
     const f = fixture(t), a = f.provider.createScope(), b = f.provider.createScope(), doc = a.attachDocument(f.source.documentId); b.attachDocument(f.source.documentId); b.attachDocument(f.companion.documentId);
     await a.connect(); const before = a.synchronized(doc)!; f.provider.disconnect(); f.edit(); await f.provider.connect(); await b.request("test/barrier").result;
-    assert.equal(before.isCurrent(), false); assert.equal(f.peers.length, 2); const peer = f.peers[1]!;
+    assert.equal(before.isCurrent(), false); assert.equal(before.isBindingCurrent!(), false); assert.equal(f.peers.length, 2); const peer = f.peers[1]!;
     assert.equal(peer.events.filter(e => e.method === "initialize").length, 1); assert.equal(peer.events.filter(e => e.method === "open").length, 2);
     assert.equal(peer.events.filter(e => e.method === "change").length, 0); assert.equal(peer.documents.get(doc.getSnapshot().uri)!.getText(), "a😀\r\nsource!");
     assert.ok(a.synchronized(doc)!.isCurrent()); assert.equal(f.provider.snapshot().created, 2); assert.equal(f.provider.snapshot().terminated, 1);

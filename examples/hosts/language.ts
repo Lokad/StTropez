@@ -227,8 +227,8 @@ export class HostLanguageTools {
         return session.find;
     }
     readonly request = (): void => { if (this.active) { this.activate(this.active); this.active.provider?.request(); } };
-    readonly insert = (): void => { this.active?.provider?.apply("insert"); };
-    readonly replace = (): void => { this.active?.provider?.apply("replace"); };
+    readonly insert = (completionId?: number): void => { this.active?.provider?.apply("insert", completionId); };
+    readonly replace = (completionId?: number): void => { this.active?.provider?.apply("replace", completionId); };
     readonly cancel = (): void => { this.active?.provider?.cancel(); };
     readonly disconnect = (): void => { this.active?.provider?.disconnect(); };
     readonly reconnect = (): void => { if (this.active) { this.active.initialized = true; this.active.provider?.disconnect(); this.active.provider?.connect(); } };
@@ -280,7 +280,7 @@ export class HostLanguageTools {
         this.cell.set({ ...this.cell.get(), foldMessage: "All folds expanded." });
     };
     selectDiagnostic(index: number): void { this.active?.provider?.selectDiagnostic(index); }
-    chooseCompletion(index: number): void { this.active?.provider?.chooseCompletion(index); }
+    chooseCompletion(index: number, completionId?: number): void { this.active?.provider?.chooseCompletion(index, completionId); }
     customRequest(method: string, params: JsonValue): Promise<JsonValue> {
         const provider = this.active?.provider; if (!provider?.customRequest) return Promise.reject(new Error("The active provider has no custom-message extension.")); return provider.customRequest(method, params);
     }

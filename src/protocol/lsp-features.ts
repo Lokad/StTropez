@@ -1,14 +1,19 @@
 import { validateTextEdits } from "../core/changes.ts";
 import { PositionMap } from "../core/positions.ts";
 import type { TextEdit } from "../core/changes.ts";
-import { RpcError } from "./json-rpc.ts";
-import type { LspDocumentCapture } from "./lsp-session.ts";
+import type { DocumentChange } from "../core/workspace.ts";
+import { jsonEqual, jsonSnapshot, RpcError } from "./json-rpc.ts";
+import type { JsonValue } from "./json-rpc.ts";
+import type { LspDocumentCapture, LspDocumentSnapshot } from "./lsp-session.ts";
 import type { LspLineIndex, LspPosition, LspRange } from "./lsp-positions.ts";
 
 export type LspDiagnostic = Readonly<{ range: LspRange; placement: "placed" | "out-of-bounds"; from: number | null; to: number | null; message: string; severity: number | null; source: string | null }>;
 export type LspDiagnostics = Readonly<{ uri: string; version: number | null; revision: number | null; snapshotRevision: number; freshness: "versioned" | "unversioned"; items: readonly LspDiagnostic[] }>;
 export type LspCompletionPlan = Readonly<{ edits: readonly TextEdit[]; head: number }>;
-export type LspCompletion = Readonly<{ label: string; detail: string; insert: LspCompletionPlan; replace: LspCompletionPlan }>;
+export type LspCompletion = Readonly<{ label: string; detail: string; documentation: string; filterText: string; sortText: string; preselect: boolean;
+    commitCharacters: readonly string[]; source: LspDocumentSnapshot; primary: Readonly<{ from: number; insertTo: number; replaceTo: number; text: string }>;
+    additional: readonly TextEdit[]; resolve: JsonValue | null; insert: LspCompletionPlan; replace: LspCompletionPlan }>;
+export type LspCompletionOptions = Readonly<{ resolve?: boolean; commitCharacters?: readonly string[] }>;
 export type LspCompletions = Readonly<{ incomplete: boolean; items: readonly LspCompletion[] }>;
 export type LspCompletionFallback = Readonly<{ from: number; to: number; replaceTo: number }>;
 export type LspHover = Readonly<{ text: string; range: Readonly<{ from: number; to: number }> | null }>;
@@ -26,6 +31,15 @@ function invalid(): never { throw new TypeError("Malformed or unsupported LSP fe
 function current(capture: Pick<LspDocumentCapture, "isCurrent">): void { if (!capture.isCurrent()) throw new RpcError(-32801, "LSP feature capture expired."); }
 function text(value: unknown, maximum: number, budget: { units: number }): string {
     if (typeof value !== "string" || value.length > maximum || (budget.units -= value.length) < 0) invalid(); return value;
+}
+function documentation(value: unknown, budget: { units: number }): string {
+    if (value === undefined) return ""; if (typeof value === "string") return text(value, 16384, budget);
+    if (!record(value) || value.kind !== "plaintext" && value.kind !== "markdown") invalid(); return text(value.value, 16384, budget);
+}
+function commitCharacters(value: unknown, budget: { units: number }): readonly string[] {
+    if (value === undefined) return Object.freeze([]); if (!Array.isArray(value) || value.length > 64) invalid();
+    // LSP specifies length=1; superfluous characters are ignored.
+    return Object.freeze([...new Set(value.map(value => text(value, 64, budget)).filter(value => value.length === 1))]);
 }
 function position(value: unknown): LspPosition {
     if (!record(value) || !uint(value.line) || !uint(value.character)) invalid(); return Object.freeze({ line: value.line, character: value.character });
@@ -136,20 +150,22 @@ export function decodeLspApplyEdit(value: unknown, resolve: (uri: string) => Lsp
 function edit(index: LspLineIndex, value: unknown, budget: { units: number }): TextEdit {
     if (!record(value)) invalid(); return Object.freeze({ ...lspRangeOffsets(index, value.range), insert: text(value.newText, 16384, budget) });
 }
-function plan(index: LspLineIndex, primary: TextEdit, additional: readonly TextEdit[]): LspCompletionPlan {
-    const edits = [...additional, primary].sort((a, b) => a.from - b.from || a.to - b.to); validateTextEdits(index.buffer.length, edits);
+function plan(length: number, primary: TextEdit, additional: readonly TextEdit[]): LspCompletionPlan {
+    const edits = [...additional, primary].sort((a, b) => a.from - b.from || a.to - b.to); validateTextEdits(length, edits);
     for (let i = 1; i < edits.length; i++) if (edits[i]!.from === edits[i - 1]!.from) invalid();
-    const head = new PositionMap(index.buffer.length, additional).map(primary.from, "before").offset + primary.insert.length;
+    const head = new PositionMap(length, additional).map(primary.from, "before").offset + primary.insert.length;
     return Object.freeze({ edits: Object.freeze(edits), head });
 }
 /** Complete validation precedes publication; no server-supplied command, snippet or HTML is executed. */
-export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture, offset: number, fallback: LspCompletionFallback | (() => LspCompletionFallback) = { from: offset, to: offset, replaceTo: offset }): LspCompletions {
-    current(capture); const index = capture.index, point = index.at(offset), budget = { units: 65536 }; let incomplete = false, defaults: Record<string, unknown> = {}, values: unknown[];
+export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture, offset: number, fallback: LspCompletionFallback | (() => LspCompletionFallback) = { from: offset, to: offset, replaceTo: offset }, options: LspCompletionOptions = {}): LspCompletions {
+    current(capture); const index = capture.index, point = index.at(offset), budget = { units: 65536 }, opaqueBudget = { units: 65536 }; let incomplete = false, defaults: Record<string, unknown> = {}, values: unknown[];
     if (value === null) values = [];
     else if (Array.isArray(value)) values = value;
     else { if (!record(value) || typeof value.isIncomplete !== "boolean" || !Array.isArray(value.items)) invalid(); incomplete = value.isIncomplete; values = value.items;
-        if (value.itemDefaults !== undefined) { if (!record(value.itemDefaults) || Object.keys(value.itemDefaults).some(key => !["editRange", "insertTextFormat", "insertTextMode"].includes(key))) invalid(); defaults = value.itemDefaults;
+        if (value.itemDefaults !== undefined) { if (!record(value.itemDefaults) || Object.keys(value.itemDefaults).some(key => !["editRange", "insertTextFormat", "insertTextMode", "commitCharacters", "data"].includes(key))) invalid(); defaults = value.itemDefaults;
             if (defaults.insertTextFormat !== undefined && defaults.insertTextFormat !== 1 || defaults.insertTextMode !== undefined && defaults.insertTextMode !== 1) invalid();
+            commitCharacters(defaults.commitCharacters, budget);
+            if (defaults.data !== undefined) text(JSON.stringify(jsonSnapshot(defaults.data)), 8192, opaqueBudget);
             if (defaults.editRange !== undefined) {
                 const value = defaults.editRange; if (!record(value)) invalid();
                 const insert = lspRangeOffsets(index, "start" in value ? value : value.insert), replace = lspRangeOffsets(index, "start" in value ? value : value.replace);
@@ -160,6 +176,10 @@ export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture
     const items = values.map((item: unknown): LspCompletion => {
         if (!record(item) || item.command !== undefined || (item.insertTextFormat ?? defaults.insertTextFormat ?? 1) !== 1 || (item.insertTextMode ?? defaults.insertTextMode ?? 1) !== 1) invalid();
         const label = text(item.label, 1024, budget); if (!label) invalid(); const detail = item.detail === undefined ? "" : text(item.detail, 4096, budget);
+        const description = documentation(item.documentation, budget), filterText = item.filterText === undefined ? label : text(item.filterText, 1024, budget), sortText = item.sortText === undefined ? label : text(item.sortText, 1024, budget);
+        if (item.preselect !== undefined && typeof item.preselect !== "boolean") invalid();
+        const commits = commitCharacters(item.commitCharacters !== undefined ? item.commitCharacters : defaults.commitCharacters !== undefined ? defaults.commitCharacters : options.commitCharacters, budget);
+        if (item.data !== undefined) text(JSON.stringify(jsonSnapshot(item.data)), 8192, opaqueBudget);
         let insert: TextEdit, replace: TextEdit;
         if (item.textEdit !== undefined) {
             if (!record(item.textEdit)) invalid(); const inserted = text(item.textEdit.newText, 16384, budget);
@@ -179,7 +199,56 @@ export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture
         let additional: TextEdit[] = [];
         if (item.additionalTextEdits !== undefined) { if (!Array.isArray(item.additionalTextEdits) || item.additionalTextEdits.length > 32) invalid(); additional = item.additionalTextEdits.map(value => edit(index, value, budget)).sort((a, b) => a.from - b.from || a.to - b.to); }
         if ((edits += 1 + additional.length) > 1024) invalid();
-        return Object.freeze({ label, detail, insert: plan(index, insert, additional), replace: plan(index, replace, additional) });
+        let resolution: JsonValue | null = null;
+        if (options.resolve) {
+            const wire = { ...item };
+            for (const key of ["data", "commitCharacters", "insertTextFormat", "insertTextMode"]) if (wire[key] === undefined && defaults[key] !== undefined) wire[key] = defaults[key];
+            if (item.textEdit === undefined && defaults.editRange !== undefined) wire.textEdit = { newText: insert.insert, insert: { start: index.at(insert.from), end: index.at(insert.to) }, replace: { start: index.at(replace.from), end: index.at(replace.to) } };
+            resolution = jsonSnapshot(wire); text(JSON.stringify(resolution), 32768, opaqueBudget);
+        }
+        return Object.freeze({ label, detail, documentation: description, filterText, sortText, preselect: item.preselect === true, commitCharacters: commits,
+            source: capture.document, primary: Object.freeze({ from: insert.from, insertTo: insert.to, replaceTo: replace.to, text: insert.insert }), additional: Object.freeze(additional), resolve: resolution,
+            insert: plan(index.buffer.length, insert, additional), replace: plan(index.buffer.length, replace, additional) });
     });
     current(capture); return Object.freeze({ incomplete, items: Object.freeze(items) });
+}
+/** Only advertised lazy display/additional-edit properties may change; primary edits stay captured.
+ * Additional ranges belong to the exact synchronized snapshot captured for the resolve request.
+ */
+export function decodeLspResolvedCompletion(value: unknown, original: LspCompletion, capture: LspDocumentCapture): LspCompletion {
+    current(capture);
+    if (!record(original.resolve) || !record(value)) invalid();
+    if (original.source.uri !== capture.document.uri || original.source.resourceId !== capture.document.resourceId || original.source.documentId !== capture.document.documentId
+        || original.source.revision !== capture.document.revision || original.source.buffer !== capture.document.buffer) throw new RpcError(-32801, "LSP completion source changed before resolution.");
+    const before = { ...original.resolve }, after = { ...value };
+    for (const key of ["detail", "documentation", "additionalTextEdits"]) { delete before[key]; delete after[key]; }
+    if (!jsonEqual(before, after)) throw new TypeError("Resolved LSP completion changed an immutable item property.");
+    const budget = { units: 65536 }, detail = value.detail === undefined ? original.detail : text(value.detail, 4096, budget), description = value.documentation === undefined ? original.documentation : documentation(value.documentation, budget);
+    let additional = original.additional;
+    if (value.additionalTextEdits !== undefined) { if (!Array.isArray(value.additionalTextEdits) || value.additionalTextEdits.length > 32) invalid(); additional = Object.freeze(value.additionalTextEdits.map(value => edit(capture.index, value, budget)).sort((a, b) => a.from - b.from || a.to - b.to)); }
+    const primary = original.primary, insert = Object.freeze({ from: primary.from, to: primary.insertTo, insert: primary.text }), replace = Object.freeze({ from: primary.from, to: primary.replaceTo, insert: primary.text });
+    const result = Object.freeze({ ...original, detail, documentation: description, additional, resolve: null, insert: plan(capture.document.buffer.length, insert, additional), replace: plan(capture.document.buffer.length, replace, additional) });
+    current(capture); return result;
+}
+/** Only an exact single human typing insertion inside the captured primary range can follow a list.
+ * The caller supplies the actual Core change; unknown/composed maps require a fresh provider result.
+ */
+export function rebaseLspCompletion(original: LspCompletion, next: LspDocumentSnapshot, change: DocumentChange, caret: number): LspCompletion | undefined {
+    const before = original.source, mapping = change.mapping, units = next.buffer.length - before.buffer.length, primary = original.primary;
+    if (change.previousRevision !== before.revision || next.revision !== before.revision + 1 || change.origin !== "human" || change.kind !== "typing"
+        || next.uri !== before.uri || next.resourceId !== before.resourceId || next.documentId !== before.documentId || next.languageId !== before.languageId
+        || mapping.oldLength !== before.buffer.length || mapping.newLength !== next.buffer.length || units < 1 || units > 2048
+        || caret < primary.from || caret > primary.insertTo || !mapping.isSingleInsertion?.(caret, units)) return;
+    const from = mapping.map(primary.from, "before").offset, insertTo = mapping.map(primary.insertTo, "after").offset, replaceTo = mapping.map(primary.replaceTo, "after").offset;
+    const additional = Object.freeze(original.additional.map(edit => Object.freeze({ from: mapping.map(edit.from, "after").offset, to: mapping.map(edit.to, edit.from === edit.to ? "after" : "before").offset, insert: edit.insert })));
+    const insert = Object.freeze({ from, to: insertTo, insert: primary.text }), replace = Object.freeze({ from, to: replaceTo, insert: primary.text });
+    return Object.freeze({ ...original, source: next, primary: Object.freeze({ from, insertTo, replaceTo, text: primary.text }), additional,
+        insert: plan(next.buffer.length, insert, additional), replace: plan(next.buffer.length, replace, additional) });
+}
+/** Completion plus its advertised commit character form one intended history transaction. */
+export function lspCompletionPlan(item: LspCompletion, mode: "insert" | "replace", character?: string): LspCompletionPlan {
+    if (character === undefined) return item[mode];
+    if (character.length !== 1 || !item.commitCharacters.includes(character)) invalid();
+    const primary = item.primary, inserted = primary.text.endsWith(character) ? primary.text : primary.text + character;
+    return plan(item.source.buffer.length, { from: primary.from, to: mode === "insert" ? primary.insertTo : primary.replaceTo, insert: inserted }, item.additional);
 }

@@ -18,7 +18,9 @@ export type LspDocument = Readonly<{ getSnapshot: () => LspDocumentSnapshot;
     update: (expectedRevision: number, revision: number, buffer: TextBuffer) => void; close: () => void }>;
 export type LspCall<T> = Readonly<{ result: Promise<T>; cancel: () => void }>;
 export type LspDocumentCapture = Readonly<{ document: LspDocumentSnapshot; index: LspLineIndex; version: number;
-    epoch: number; registrationGeneration: number; isCurrent: () => boolean }>;
+    epoch: number; registrationGeneration: number; isCurrent: () => boolean;
+    /** Same binding/connection/capabilities; permits local revisions and proves no range freshness. */
+    isBindingCurrent?: () => boolean }>;
 export type LspConnectContext = Readonly<{ epoch: number; cancelled: boolean; onCancel: (listener: () => void) => () => void }>;
 export type LspRequestContext = RpcRequestContext & Readonly<{ epoch: number; isCurrent: () => boolean }>;
 export type LspRegistration = Readonly<{ id: string; method: string; registerOptions: JsonValue }>;
@@ -92,8 +94,9 @@ export class LspSession {
         const textDocument: Record<string, JsonValue> = { synchronization: { dynamicRegistration: true, didSave: false, willSave: false, willSaveWaitUntil: false } };
         for (const method of this.features) if (method.startsWith("textDocument/")) textDocument[method.slice("textDocument/".length)] = { dynamicRegistration: true };
         if (this.features.has("textDocument/completion")) textDocument.completion = { dynamicRegistration: true, contextSupport: true,
-            completionItem: { snippetSupport: false, insertReplaceSupport: true, documentationFormat: ["plaintext"], insertTextModeSupport: { valueSet: [1] } },
-            insertTextMode: 1, completionList: { itemDefaults: ["editRange", "insertTextFormat", "insertTextMode"] } };
+            completionItem: { snippetSupport: false, insertReplaceSupport: true, documentationFormat: ["plaintext"], insertTextModeSupport: { valueSet: [1] },
+                commitCharactersSupport: true, preselectSupport: true, resolveSupport: { properties: ["detail", "documentation", "additionalTextEdits"] } },
+            insertTextMode: 1, completionList: { itemDefaults: ["editRange", "insertTextFormat", "insertTextMode", "data", "commitCharacters"] } };
         if (options.diagnostics) textDocument.publishDiagnostics = { versionSupport: true };
         if (this.features.has("textDocument/hover")) textDocument.hover = { dynamicRegistration: true, contentFormat: ["plaintext"] };
         if (this.features.has("textDocument/definition")) textDocument.definition = { dynamicRegistration: true, linkSupport: true };
@@ -319,6 +322,7 @@ export class LspSession {
         const remote = this.remote.get(entry.snapshot.uri); if (!remote || remote.snapshot !== entry.snapshot) return undefined;
         const epoch = this.epoch, generation = this.generation;
         return Object.freeze({ document: remote.snapshot, index: remote.index, version: remote.version, epoch, registrationGeneration: generation,
+            isBindingCurrent: () => this.store.get().phase === "ready" && this.epoch === epoch && this.generation === generation && this.documents.get(remote.snapshot.uri) === entry,
             isCurrent: () => this.store.get().phase === "ready" && this.epoch === epoch && this.generation === generation && this.documents.get(remote.snapshot.uri) === entry
                 && entry.snapshot === remote.snapshot && this.remote.get(remote.snapshot.uri) === remote });
     }

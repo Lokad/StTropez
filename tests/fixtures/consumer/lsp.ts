@@ -33,7 +33,7 @@ const stop = controller.state.subscribe(() => {
     const state = controller.state.getSnapshot(); status.textContent = state.message;
     if (![state, state.diagnostics, state.choices, state.unversionedDiagnostics].every(Object.isFrozen)) throw new Error("Mutable public editor snapshot");
     choices.replaceChildren(...state.choices.map((label, index) => { const item = document.createElement("li"), button = document.createElement("button");
-        button.textContent = label; button.onclick = () => controller.chooseCompletion(index); item.append(button); return item; }));
+        button.textContent = label; button.onclick = () => controller.chooseCompletion(index, state.completionId); item.append(button); return item; }));
 });
 command("Connect", controller.connect); command("Request completion", controller.request); command("Apply completion", () => { controller.apply("replace"); });
 command("Hover", async () => { const value = await hover.run(workspace.document(source.documentId), position()).result;
@@ -57,7 +57,7 @@ command("Code actions", async () => { const at = text().indexOf("TODO"), value =
     result.textContent = `Action choices: ${notes.actions}`; });
 const dispose = () => { if (disposed) return; disposed = true; stop(); controller.destroy(); hover.dispose(); navigation.dispose(); rename.dispose(); actions.dispose(); provider.dispose(); editor.destroy(); };
 const bridge = { text, select: (at: number) => editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at }),
-    state: () => ({ provider: provider.snapshot(), editor: controller.snapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, metrics: editor.snapshot(), errors }),
+    state: () => ({ provider: provider.snapshot(), editor: controller.snapshot(), completion: controller.state.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, metrics: editor.snapshot(), errors }),
     custom: controller.customRequest, dispose };
 Object.assign(window, { publicLsp: bridge });
 declare global { interface Window { publicLsp: typeof bridge } }

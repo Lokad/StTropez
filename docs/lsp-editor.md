@@ -29,27 +29,51 @@ an uncertain analysis. These presentation anchors grant no edit authority. Messa
 text; markup, links and commands are never executed. The bound is 256 items/65,536 text units per
 batch, with 4,096 units per message. Related-information/data presentation is not advertised.
 
-Completion is explicitly requested with Ctrl/Cmd+Space or the existing button. A single captured
-caret is required. Lists, arrays, empty results and the declared 3.17 edit-range defaults are handled.
-All choices are validated before display; choose an item and use Insert or Replace (Alt+Enter).
+Completion follows ordinary prefix typing and advertised trigger characters after input settles.
+Ctrl/Cmd+Space and the existing button retain explicit invocation. A single captured caret is
+required; composition suppresses requests until commit. Hosts can set `automatic: false`.
+Lists, arrays, empty results and the declared 3.17 edit-range/data/commit-character defaults are handled.
+All choices are validated before display; arrows select, Enter replaces, Tab inserts and Escape
+dismisses. Insert/Replace buttons and Alt+Enter remain available.
 Plain text edits, insert/replace ranges and additional same-document edits become one Workspace
 transaction and one shared undo command. The resulting caret includes additional edits before the
 primary edit. Other views retain their mapped selections and can undo/redo the command. When the
 server omits an edit range, the host uses a bounded Unicode word window; explicit server ranges do
-not depend on that heuristic. Lists are shown in server order; further typing expires them, including
-incomplete lists, and requires a fresh request.
+not depend on that heuristic. Choices sort by `sortText` (stable server order for equal keys),
+filter by a case-insensitive `filterText` prefix and honor `preselect` when the previous selection
+is unavailable. Explicit invocation initially shows all choices, including spelling corrections.
+
+A list follows only an exact single human typing insertion inside its primary insert range.
+Core's change metadata must prove that insertion; document/buffer identity, selections, fold
+generation, authority, URI and provider binding must still match. Primary/additional ranges are
+mapped and validated again; undo, host edits, replacements, unknown/composed mappings, navigation
+or capability changes expire the list. Incomplete lists retrigger with context kind 3. The latest
+compatible choices remain visible during refresh. One animation-frame scheduler and existing
+request generations/cancellation bound work; there is no completion cache or background queue.
+
+When advertised, the selected item resolves its literal detail/documentation and additional edits.
+Opaque data and inherited defaults are captured immutably. A delayed response must match the
+current list, selected item, exact synchronized snapshot and provider generation. It cannot change
+the label, primary edit or opaque identity. Additional ranges are validated against the snapshot
+captured for that resolve request. Malformed/failed resolution dismisses the offer. Unresolved
+choices cannot apply; Enter/Tab or a commit character pressed before resolution completes dismiss
+the offer and follow ordinary input, preserving the keystroke. Ready advertised commit characters
+are applied with the completion in one transaction, suppressing duplicate native insertion.
+Each published list ID also changes after prefix filtering; retained controls can pass
+`completionId` to `chooseCompletion`/`apply` to reject an obsolete list or another view's choices.
 
 The completion bounds are 256 choices, 1,024 total edits, 32 additional edits per item, 16,384 units
 per insertion and 65,536 aggregate label/detail/insertion units. Overlaps, conflicting insertions,
 out-of-document positions and malformed final items refuse the entire result. Snippets, indentation
 adjustment and follow-up commands are not advertised and are explicitly refused if supplied.
-Automatic trigger/commit characters, local list filtering, resolve, snippets and rich documentation
-remain unimplemented. They are not implied by basic manual completion interoperability.
+Resolve payloads are bounded to 32,768 units/item, 8,192 opaque data units/item and 65,536 aggregate
+opaque units/list; commit-character lists allow at most 64 entries. Snippet expansion and rich
+Markdown rendering remain unsupported; documentation is literal text.
 
 Pending typing/navigation/table conversion, composition, multiple carets, source revision, selection
 set, fold generation, tab/view ownership and resource authority are checked before capture and
 again before application. A queued caret paint is presentation work and does not invalidate an
-otherwise current capture. Source edits, selection/authority changes, cancellation, disconnect and
+otherwise current capture. Incompatible source edits, selection/authority changes, cancellation, disconnect and
 unmount expire pending offers. Cleanup releases listeners, session work and retained request leases;
 lease release follows Workspace notification delivery. Initial/incremental planning stops at the next
 cooperative boundary when its captured local snapshot changes. Reusing a URI during planning restarts
@@ -62,13 +86,15 @@ explicit view activation. Feature/view scopes share bindings, synchronization an
 disposing one view cannot close another's document or transport. Custom fixture configuration
 stays in host hooks. The [workspace-provider adapter](lsp-server-edits.md) uses that same connection
 and a shared exclusive command lane for confirmed action/workspace commands and edit decisions. The
-[remaining LSP matrix](lsp.md) includes advanced completion and other declared subset gaps.
+[remaining LSP matrix](lsp.md) describes the selected remaining feature gaps.
 Native IME/clipboard and physical-display checks
 remain unverified; all browser qualification stays headless on the shared desktop.
 
 Large-document correctness journeys type and complete at the beginning, middle and end of a
 100,000-line source, with bounded native input and no ordinary text export. Their three recorded
-handler/action samples are diagnostics, not latency-tail measurements. Own beforeinput duration
-and the complete automation action (including IPC/assertion polling) are different clocks; neither
+handler/action samples are diagnostics, not latency-tail measurements. Candidate beforeinput
+duration excludes the separately measured completion capture listener; its input-handler duration
+includes synchronous Core observers. Completion keydown duration is also reported separately.
+The complete automation action includes IPC/assertion polling and rendering; these clocks neither
 establishes physical display or native-device latency. Existing source-labelled latency baselines
 remain the performance qualification; no historical outlier is replayed by this work.

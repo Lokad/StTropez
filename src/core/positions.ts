@@ -8,7 +8,8 @@ export type AnchoredRange = Readonly<{ from: number; to: number; fromAffinity: A
 export type PositionMapping = Readonly<{ oldLength: number; newLength: number;
     map: (offset: number, affinity?: Affinity) => MappedPosition;
     mapRange: (range: AnchoredRange) => AnchoredRange | undefined;
-    invert: () => PositionMapping }>;
+    invert: () => PositionMapping;
+    isSingleInsertion?: (offset: number, units: number) => boolean }>;
 type Change = Readonly<{ from: number; to: number; insertedLength: number }>;
 
 function position(length: number, offset: number): void {
@@ -39,6 +40,10 @@ export class PositionMap implements PositionMapping {
         this.newLength = oldLength + this.changes.reduce((delta, change) => delta + change.insertedLength - (change.to - change.from), 0);
         if (!Number.isSafeInteger(this.newLength)) throw new RangeError("Resulting length exceeds safe positions.");
         Object.freeze(this);
+    }
+    /** Exact change metadata, unlike endpoint probes which cannot exclude other edits. */
+    isSingleInsertion(offset: number, units: number): boolean {
+        const change = this.changes[0]; return this.changes.length === 1 && change!.from === offset && change!.to === offset && change!.insertedLength === units;
     }
     map(offset: number, side: Affinity = "after"): MappedPosition {
         position(this.oldLength, offset); affinity(side);

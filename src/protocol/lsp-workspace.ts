@@ -188,7 +188,8 @@ export class LspWorkspace {
         const capture = (document: LspDocument): LspDocumentCapture | undefined => {
             const entry = handles.get(document); if (!scope.active || !entry || !this.live(entry)) return;
             const value = this.session.synchronized(unwrap(document)); if (!value) return; const generation = scope.generation;
-            return Object.freeze({ ...value, isCurrent: () => current(generation) && handles.has(document) && this.live(entry) && value.isCurrent() });
+            return Object.freeze({ ...value, isBindingCurrent: () => current(generation) && handles.has(document) && entry.active && (value.isBindingCurrent?.() ?? value.isCurrent()),
+                isCurrent: () => current(generation) && handles.has(document) && this.live(entry) && value.isCurrent() });
         };
         const attach = (id: DocumentId): LspDocument => {
             writable(); const existing = documents.get(id), old = existing && handles.get(existing); if (old?.active) { this.synchronize(old); if (!old.active) throw stale(); return existing!; }
@@ -269,7 +270,8 @@ export class LspWorkspace {
             requestDocument: <T = JsonValue>(method: Parameters<LspSession["requestDocument"]>[0], document: LspDocument, params: Parameters<LspSession["requestDocument"]>[2]) => {
                 writable(); const generation = scope.generation, entry = handles.get(document); if (!entry) throw stale(); this.synchronize(entry);
                 const raw = this.session.requestDocument<T>(method, unwrap(document), (index, snapshot, captured) => {
-                    const value = Object.freeze({ ...captured, isCurrent: () => current(generation) && handles.has(document) && this.live(entry) && captured.isCurrent() }); return params(index, snapshot, value);
+                    const value = Object.freeze({ ...captured, isBindingCurrent: () => current(generation) && handles.has(document) && entry.active && (captured.isBindingCurrent?.() ?? captured.isCurrent()),
+                        isCurrent: () => current(generation) && handles.has(document) && this.live(entry) && captured.isCurrent() }); return params(index, snapshot, value);
                 });
                 const call = track({ ...raw, result: raw.result.then(value => { if (!handles.has(document) || !this.live(entry)) throw stale(); return value; }) });
                 const calls = documentCalls.get(document) ?? new Set(); documentCalls.set(document, calls); calls.add(call);

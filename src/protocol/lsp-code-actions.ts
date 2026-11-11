@@ -1,4 +1,4 @@
-import { jsonSnapshot, RpcError } from "./json-rpc.ts";
+import { jsonEqual, jsonSnapshot, RpcError } from "./json-rpc.ts";
 import type { JsonValue } from "./json-rpc.ts";
 import { decodeLspDiagnostics, decodeLspWorkspaceEdit } from "./lsp-features.ts";
 import type { LspEditTarget, LspWorkspaceEdit } from "./lsp-features.ts";
@@ -11,11 +11,6 @@ export type LspCodeActions = readonly LspCodeAction[];
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 function invalid(): never { throw new TypeError("Malformed or unsupported LSP code action."); }
 const current = (capture: LspDocumentCapture) => { if (!capture.isCurrent()) throw new RpcError(-32801, "LSP code-action capture expired."); };
-function same(a: unknown, b: unknown): boolean {
-    if (a === b) return true;
-    if (Array.isArray(a)) return Array.isArray(b) && a.length === b.length && a.every((value, index) => same(value, b[index]));
-    return record(a) && record(b) && Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(key => Object.hasOwn(b, key) && same(a[key], b[key]));
-}
 /** A complete action list is validated before any choice is published or made applicable. */
 export function decodeLspCodeActions(value: unknown, origin: LspDocumentCapture, resolve: (uri: string) => LspEditTarget | undefined, canResolve = false): LspCodeActions {
     current(origin); if (value === null) return Object.freeze([]); if (!Array.isArray(value) || value.length > 64) invalid();
@@ -54,6 +49,6 @@ export function decodeLspCodeActions(value: unknown, origin: LspDocumentCapture,
 export function decodeLspResolvedCodeAction(value: unknown, original: LspCodeAction, origin: LspDocumentCapture, resolve: (uri: string) => LspEditTarget | undefined): LspCodeAction {
     current(origin); if (!record(original.resolve) || !record(value) || value.edit === undefined) invalid();
     const before = original.resolve, after = { ...value }; delete after.edit;
-    if (!same(before, after)) throw new TypeError("Resolved LSP action changed attributes outside its advertised edit property.");
+    if (!jsonEqual(before, after)) throw new TypeError("Resolved LSP action changed attributes outside its advertised edit property.");
     return decodeLspCodeActions([value], origin, resolve)[0]!;
 }

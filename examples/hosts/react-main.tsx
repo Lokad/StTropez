@@ -132,7 +132,8 @@ function LanguageTools() {
     return <section ref={tools.toolsRef} onKeyDown={event => languageToolsKey(event.nativeEvent, tools)} className="host-language" aria-label="Language and find tools"><h2>Language and find</h2>
         <p>Ctrl+Space requests completion; Alt+Enter replaces it. Ctrl+F finds, Ctrl+H replaces, F3 moves to the next match, and Escape returns to source. Ctrl+S saves the working source.</p>
         <output aria-label="Language status">{state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider?.message ?? "Focus a source view to use language actions."}</output>
-        <ul role="listbox" aria-label="Completion choices">{choices.map((label, index) => <li key={`${index}:${label}`} role="option" aria-selected={index === (state.provider?.choiceIndex ?? 0)}><button onClick={() => tools.chooseCompletion(index)}>{label}</button></li>)}</ul>
+        <ul role="listbox" aria-label="Completion choices">{choices.map((label, index) => <li key={`${state.provider?.completionId}:${index}:${label}`} role="option" aria-selected={index === (state.provider?.choiceIndex ?? 0)}><button onClick={() => tools.chooseCompletion(index, state.provider?.completionId)}>{label}</button></li>)}</ul>
+        <pre aria-label="Completion detail">{state.provider?.completionDetail ?? ""}</pre>
         <ul aria-label="Source diagnostics">{state.provider?.diagnostics.map((diagnostic, index) => <li key={`${diagnostic.from}:${diagnostic.to}:${index}`}>
             <button onClick={() => tools.selectDiagnostic(index)}>{diagnostic.from}: {diagnostic.message}</button></li>)}</ul>
         <ul aria-label="Unversioned diagnostics">{state.provider?.unversionedDiagnostics?.map((message, index) => <li key={index}>{message}</li>)}</ul>

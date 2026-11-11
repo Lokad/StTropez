@@ -5,7 +5,7 @@ import type { ApplyWorkspaceEditParams, CodeAction, Command, CompletionList, Pub
 import { TextBuffer } from "../src/core/text-buffer.ts";
 import type { LspDocumentCapture } from "../src/protocol/index.ts";
 
-const { LspLineIndex, decodeLspCompletions, decodeLspDiagnostics, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, decodeLspApplyEdit, decodeLspCodeActions, decodeLspResolvedCodeAction, lspRangeOffsets, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
+const { LspLineIndex, decodeLspCompletions, decodeLspResolvedCompletion, rebaseLspCompletion, lspCompletionPlan, decodeLspDiagnostics, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, decodeLspApplyEdit, decodeLspCodeActions, decodeLspResolvedCodeAction, lspRangeOffsets, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 async function captured(text = "// header\r\nconst saMORE = 1; // TODO\rb\n") {
     const buffer = TextBuffer.from(text), index = await LspLineIndex.create(buffer, async () => {}); let active = true;
     const capture: LspDocumentCapture = Object.freeze({ document: Object.freeze({ uri: "host+fixture:source", languageId: "fixture", resourceId: "resource", documentId: "working", revision: 70, buffer }), index, version: 3, epoch: 2, registrationGeneration: 4, isCurrent: () => active });
@@ -45,6 +45,51 @@ test("completion defaults, word fallback and whole-list validation refuse unsupp
     assert.throws(() => decodeLspCompletions({ ...response, itemDefaults: { ...response.itemDefaults, unknownBehavior: true } }, capture, 8));
     assert.throws(() => decodeLspCompletions({ isIncomplete: false, items: [], itemDefaults: { editRange: range(0, 0, 999) } }, capture, 8));
     assert.equal(decodeLspCompletions(response, capture, 8, () => { throw new Error("Unused word fallback must not reject explicit ranges"); }).items.length, 1);
+});
+
+test("completion metadata and item defaults retain immutable resolve data with bounded filtering and commit characters", async () => {
+    const { capture } = await captured("const saMORE"), response: CompletionList = { isIncomplete: false, itemDefaults: { editRange: { insert: range(0, 6, 8), replace: range(0, 6, 12) }, data: { token: 7 }, commitCharacters: [".", "::", "."] },
+        items: [{ label: "sample", filterText: "sampleAlias", sortText: "01", preselect: true, documentation: { kind: "markdown", value: "<b>literal</b>" } }, { label: "second", data: { token: 8 }, commitCharacters: [";"] }] };
+    const decoded = decodeLspCompletions(response, capture, 8, undefined, { resolve: true }), item = decoded.items[0]!;
+    assert.equal(item.filterText, "sampleAlias"); assert.equal(item.sortText, "01"); assert.equal(item.preselect, true); assert.equal(item.documentation, "<b>literal</b>"); assert.deepEqual(item.commitCharacters, ["."]);
+    assert.equal(item.source, capture.document); assert.deepEqual(item.primary, { from: 6, insertTo: 8, replaceTo: 12, text: "sample" });
+    const opaque = item.resolve as { data: { token: number }; textEdit: unknown }; assert.equal(opaque.data.token, 7); assert.ok(opaque.textEdit); assert.ok(Object.isFrozen(opaque.data));
+    assert.deepEqual(decoded.items[1]!.commitCharacters, [";"]); assert.deepEqual((decoded.items[1]!.resolve as { data: unknown }).data, { token: 8 });
+    response.itemDefaults!.data.token = 99; assert.equal(opaque.data.token, 7);
+    assert.deepEqual(decodeLspCompletions([{ label: "sample" }], capture, 8, undefined, { commitCharacters: [";"] }).items[0]!.commitCharacters, [";"]);
+    for (const bad of [{ label: "bad", filterText: 1 }, { label: "bad", sortText: false }, { label: "bad", preselect: 1 }, { label: "bad", commitCharacters: null }, { label: "bad", data: "x".repeat(8193) }]) assert.throws(() => decodeLspCompletions([response.items[0], bad], capture, 8, undefined, { resolve: true }));
+});
+
+test("completion resolution permits captured display/additional edits but refuses retargeting, overlap and stale documents", async () => {
+    const { capture, expire } = await captured("const saMORE"), item = decodeLspCompletions([{ label: "sample", data: { token: 1 }, textEdit: { newText: "sample", insert: range(0, 6, 8), replace: range(0, 6, 12) } }], capture, 8, undefined, { resolve: true }).items[0]!;
+    const wire = item.resolve as Record<string, unknown>, reply = { ...wire, detail: "resolved detail", documentation: "literal documentation", additionalTextEdits: [{ range: range(0, 0, 0), newText: "// import\r\n" }] };
+    const resolved = decodeLspResolvedCompletion(reply, item, capture); assert.equal(resolved.resolve, null); assert.equal(resolved.detail, "resolved detail"); assert.equal(resolved.documentation, "literal documentation");
+    const after = capture.document.buffer.apply(resolved.replace.edits).buffer; assert.equal(after.slice(0, after.length), "// import\r\nconst sample"); assert.equal(resolved.replace.head, after.length);
+    const commitItem = { ...resolved, commitCharacters: Object.freeze([";"]) }, committed = lspCompletionPlan(commitItem, "replace", ";"), committedText = capture.document.buffer.apply(committed.edits).buffer;
+    assert.equal(committedText.slice(0, committedText.length), "// import\r\nconst sample;"); assert.equal(committed.head, committedText.length); assert.throws(() => lspCompletionPlan(commitItem, "insert", "."));
+    for (const invalid of [{ ...reply, label: "other" }, { ...reply, data: { token: 2 } }, { ...reply, textEdit: { newText: "other", range: range(0, 6, 12) } },
+        { ...reply, additionalTextEdits: [{ range: range(0, 7, 8), newText: "overlap" }] }, { ...reply, additionalTextEdits: [{ range: range(0, 0, 999), newText: "outside" }] }]) assert.throws(() => decodeLspResolvedCompletion(invalid, item, capture));
+    assert.throws(() => decodeLspResolvedCompletion(reply, item, { ...capture, document: { ...capture.document, revision: 71 } }));
+    expire(); assert.throws(() => decodeLspResolvedCompletion(reply, item, capture), error => error instanceof RpcError && error.code === -32801);
+});
+
+test("compatible prefix rebasing uses exact commit metadata and resolves additions against the newly synchronized snapshot", async () => {
+    const { capture } = await captured("const saMORE"), item = decodeLspCompletions([{ label: "sample", data: { token: 1 }, textEdit: { newText: "sample", insert: range(0, 6, 8), replace: range(0, 6, 12) },
+        additionalTextEdits: [{ range: range(0, 0, 0), newText: "// import\r\n" }] }], capture, 8, undefined, { resolve: true }).items[0]!;
+    const applied = capture.document.buffer.apply([{ from: 8, to: 8, insert: "m" }]), next = Object.freeze({ ...capture.document, revision: 71, buffer: applied.buffer });
+    const change = Object.freeze({ previousRevision: 70, transactionId: 1, origin: "human" as const, kind: "typing" as const, mapping: applied.mapping });
+    const rebased = rebaseLspCompletion(item, next, change, 8)!; assert.ok(rebased); assert.equal(rebased.source, next); assert.equal(rebased.primary.insertTo, 9); assert.equal(rebased.primary.replaceTo, 13);
+    const after = next.buffer.apply(rebased.replace.edits).buffer; assert.equal(after.slice(0, after.length), "// import\r\nconst sample");
+    const currentCapture = { ...capture, document: next, version: 4, index: await LspLineIndex.create(next.buffer, async () => {}) };
+    const resolved = decodeLspResolvedCompletion({ ...item.resolve as object, additionalTextEdits: [{ range: range(0, 13, 13), newText: ";" }] }, rebased, currentCapture);
+    const result = next.buffer.apply(resolved.replace.edits).buffer; assert.equal(result.slice(0, result.length), "const sample;"); assert.equal(resolved.replace.head, 12);
+    assert.equal(rebaseLspCompletion(item, next, { ...change, previousRevision: 69 }, 8), undefined);
+    assert.equal(rebaseLspCompletion(item, next, { ...change, kind: "undo" }, 8), undefined);
+    assert.equal(rebaseLspCompletion(item, next, { ...change, origin: "host" }, 8), undefined);
+    const unrelated = capture.document.buffer.apply([{ from: 0, to: 1, insert: "C" }, { from: 8, to: 8, insert: "m" }]);
+    assert.equal(rebaseLspCompletion(item, { ...next, buffer: unrelated.buffer }, { ...change, mapping: unrelated.mapping }, 8), undefined);
+    const unknown = { oldLength: applied.mapping.oldLength, newLength: applied.mapping.newLength, map: applied.mapping.map.bind(applied.mapping), mapRange: applied.mapping.mapRange.bind(applied.mapping), invert: applied.mapping.invert.bind(applied.mapping) };
+    assert.equal(rebaseLspCompletion(item, next, { ...change, mapping: unknown }, 8), undefined);
 });
 
 test("diagnostics separate provider freshness from validated snapshot placement and retain unplaceable wire ranges", async () => {

@@ -44,6 +44,12 @@ export function jsonSnapshot(value: unknown): JsonValue {
     if (!json(value)) throw new TypeError("Expected bounded JSON values.");
     return immutable(JSON.parse(JSON.stringify(value)) as JsonValue);
 }
+/** Structural comparison for captured JSON; property order has no protocol meaning. */
+export function jsonEqual(a: unknown, b: unknown): boolean {
+    if (a === b) return true;
+    if (Array.isArray(a)) return Array.isArray(b) && a.length === b.length && a.every((value, index) => jsonEqual(value, b[index]));
+    return object(a) && object(b) && Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(key => Object.hasOwn(b, key) && jsonEqual(a[key], b[key]));
+}
 function methodName(method: string): void {
     if (!method || method.startsWith("rpc.")) throw new TypeError("Invalid application RPC method.");
 }

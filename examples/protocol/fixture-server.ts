@@ -36,9 +36,13 @@ export function attachProtocolFixture(server: Server) {
         socket.on("message", (data, binary) => { if (binary) socket.close(1003, "Text only"); else owner?.message(data.toString()); });
         socket.on("error", () => socket.close());
         const peer = referencePeer(port);
+        // A queued notification can meet a peer that closed after its last document change.
+        // Observe the async writer failure so one disposed test client cannot stop the server.
+        const notify = (method: string, params: unknown) => peer.sendNotification(method, params).catch(() => { if (socket.readyState === 1) socket.close(1011, "Fixture notification failed"); });
         const documents = new Map<string, TextDocument>(), syncFailures: string[] = [], syncCounts = new Map<string, { open: number; change: number; close: number }>(); let initializeCount = 0;
         const countSync = (uri: string, kind: "open" | "change" | "close") => { const counts = syncCounts.get(uri) ?? { open: 0, change: 0, close: 0 }; counts[kind]++; syncCounts.set(uri, counts); };
-        const pending = new Set<() => void>(); let completionConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, completionStyle = "edits";
+        const pending = new Set<() => void>(); let completionConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, completionStyle = "edits", interactiveCompletion = false;
+        let completionResolveConfig: { delay: number; late?: boolean; fault?: "retarget" | "malformed" } = { delay: 0 };
         let hoverConfig: { delay: number; fault?: "malformed" | "failure" | "markup" } | undefined, navigationConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, definitionLinks = false;
         let renameConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, versionedEdits = false;
         type ActionConfig = { module: string; delay: number; fault?: "malformed" | "failure" | "incomplete" | "markup" };
@@ -59,7 +63,7 @@ export function attachProtocolFixture(server: Server) {
             while ((at = text.indexOf("TODO", at)) >= 0 && items.length < 256) { items.push({ range: { start: doc.positionAt(at), end: doc.positionAt(at + 4) }, message: "Resolve this placeholder.", severity: 2 }); at += 4; }
             return items;
         };
-        const publish = (doc: TextDocument) => { peer.sendNotification("textDocument/publishDiagnostics", { uri: doc.uri, version: doc.version, diagnostics: diagnosticItems(doc) }); };
+        const publish = (doc: TextDocument) => { void notify("textDocument/publishDiagnostics", { uri: doc.uri, version: doc.version, diagnostics: diagnosticItems(doc) }); };
         peer.onRequest(InitializeRequest.type, (params): InitializeResult => { initializeCount++; definitionLinks = params.capabilities.textDocument?.definition?.linkSupport === true;
             versionedEdits = params.capabilities.workspace?.workspaceEdit?.documentChanges === true;
             actionLiterals = params.capabilities.textDocument?.codeAction?.codeActionLiteralSupport !== undefined;
@@ -248,8 +252,28 @@ export function attachProtocolFixture(server: Server) {
             if (!params || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure"].includes(params.fault)) throw new ResponseError(-32602, "Invalid fixture configuration");
             completionConfig = { ...params }; return null;
         });
-        peer.onRequest("fixture/completionStyle", (params: { style: string }) => {
-            if (!params || !["edits", "defaults", "plain"].includes(params.style)) throw new ResponseError(-32602, "Invalid completion style"); completionStyle = params.style; return null;
+        peer.onRequest("fixture/completionStyle", async (params: { style: string }) => {
+            if (!params || !["edits", "defaults", "plain", "interactive", "incomplete"].includes(params.style)) throw new ResponseError(-32602, "Invalid completion style");
+            const interactive = params.style === "interactive" || params.style === "incomplete";
+            if (interactive && !interactiveCompletion) await peer.sendRequest(RegistrationRequest.type, { registrations: [{ id: "fixture-completion", method: "textDocument/completion",
+                registerOptions: { documentSelector: null, resolveProvider: true, triggerCharacters: ["."], allCommitCharacters: [";"] } }] });
+            if (!interactive && interactiveCompletion) await peer.sendRequest(UnregistrationRequest.type, { unregisterations: [{ id: "fixture-completion", method: "textDocument/completion" }] });
+            interactiveCompletion = interactive; completionStyle = params.style; return null;
+        });
+        peer.onRequest("fixture/completionResolveConfig", (params: typeof completionResolveConfig) => {
+            if (!params || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.late !== undefined && typeof params.late !== "boolean"
+                || params.fault !== undefined && !["retarget", "malformed"].includes(params.fault)) throw new ResponseError(-32602, "Invalid completion resolve configuration");
+            completionResolveConfig = { ...params }; return null;
+        });
+        peer.onRequest("completionItem/resolve", (params: CompletionList["items"][number], token) => {
+            const config = completionResolveConfig; completionResolveConfig = { delay: 0 };
+            return deferred(config.delay, config.late ? { isCancellationRequested: false, onCancellationRequested: () => ({ dispose() {} }) } : token, () => {
+                const data = params.data as { uri?: string; import?: boolean } | undefined, doc = data?.uri ? documents.get(data.uri) : undefined;
+                if (!doc) throw new ResponseError(-32602, "Completion resolve document unavailable");
+                const additionalTextEdits = data?.import ? [{ range: { start: doc.positionAt(0), end: doc.positionAt(0) }, newText: "// resolved import\r\n" }] : [];
+                if (config.fault === "malformed") additionalTextEdits.push({ range: { start: doc.positionAt(0), end: { line: doc.lineCount + 1, character: 0 } }, newText: "bad" });
+                return { ...params, ...(config.fault === "retarget" ? { label: "Retargeted" } : {}), detail: `Resolved ${params.label}`, documentation: "<b>Literal completion detail</b>", additionalTextEdits };
+            });
         });
         peer.onRequest("fixture/diagnostics", (params: { mode: "normal" | "malformed" | "out-of-bounds" | "stale" | "unversioned" | "clear" | "html" }) => {
             const doc = documents.values().next().value; if (!doc) throw new ResponseError(-32602, "No fixture document");
@@ -257,9 +281,9 @@ export function attachProtocolFixture(server: Server) {
             if (params.mode === "malformed") diagnostics.push({ range: { start: { line: 0, character: 1 }, end: { line: 0, character: 0 } }, message: "Invalid final diagnostic", severity: 2 });
             if (params.mode === "out-of-bounds") diagnostics.push({ range: { start: { line: doc.lineCount + 10, character: 0 }, end: { line: doc.lineCount + 10, character: 1 } }, message: "Unplaceable diagnostic", severity: 2 });
             if (params.mode === "html") diagnostics.push({ range: { start: doc.positionAt(0), end: doc.positionAt(0) }, message: "<img src=x onerror=unsafe()>", severity: 2 });
-            peer.sendNotification("textDocument/publishDiagnostics", { uri: doc.uri, ...(params.mode === "unversioned" ? {} : { version: params.mode === "stale" ? doc.version - 1 : doc.version }), diagnostics }); return { version: doc.version };
+            return notify("textDocument/publishDiagnostics", { uri: doc.uri, ...(params.mode === "unversioned" ? {} : { version: params.mode === "stale" ? doc.version - 1 : doc.version }), diagnostics }).then(() => ({ version: doc.version }));
         });
-        peer.onRequest("textDocument/completion", (params: { textDocument: { uri: string }; position: { line: number; character: number } }, token) => {
+        peer.onRequest("textDocument/completion", (params: { textDocument: { uri: string }; position: { line: number; character: number }; context?: { triggerKind?: number } }, token) => {
             const doc = documents.get(params.textDocument.uri); if (!doc) throw new ResponseError(-32602, "Document not open");
             const config = completionConfig, style = completionStyle; completionConfig = { delay: 0 };
             return new Promise<CompletionList>((resolve, reject) => {
@@ -272,6 +296,11 @@ export function attachProtocolFixture(server: Server) {
                     const insert = { start: doc.positionAt(from + completion.from), end: doc.positionAt(offset) }, replace = { start: insert.start, end: doc.positionAt(from + completion.replaceTo) };
                     const items: CompletionList["items"] = [{ label: "sample", textEdit: { newText: "sample", insert, replace } },
                         { label: "sampleWithImport", textEdit: { newText: "sampleValue", insert, replace }, ...(from + completion.from > 0 ? { additionalTextEdits: [{ range: { start: doc.positionAt(0), end: doc.positionAt(0) }, newText: "// fixture import\r\n" }] } : {}) }];
+                    if (style === "interactive" || style === "incomplete") {
+                        resolve({ isIncomplete: style === "incomplete" && params.context?.triggerKind !== 3, itemDefaults: { commitCharacters: [";"], data: { uri: doc.uri } }, items: [
+                            { label: "Displayed sibling", filterText: "sibling", sortText: "00", preselect: true, textEdit: { newText: "sibling", insert, replace } },
+                            ...items.map(({ additionalTextEdits: _additional, ...item }, index) => ({ ...item, filterText: index ? "sampleValue" : "sample", sortText: index ? "20" : "10", data: { uri: doc.uri, import: index === 1 } }))] }); return;
+                    }
                     if (config.fault === "malformed") items.push({ label: "invalid final item", textEdit: { newText: "bad", range: { start: insert.start, end: { line: doc.lineCount + 10, character: 0 } } } });
                     if (style === "edits" || config.fault) resolve({ isIncomplete: false, items });
                     else resolve({ isIncomplete: false, ...(style === "defaults" ? { itemDefaults: { editRange: { insert, replace }, insertTextFormat: 1, insertTextMode: 1 } } : {}),
@@ -284,7 +313,7 @@ export function attachProtocolFixture(server: Server) {
         peer.onRequest("shutdown", () => null); peer.onNotification("exit", () => port.dispose());
         peer.onRequest("fixture/echo", (params: unknown) => params);
         peer.onRequest("fixture/roundtrip", (params: unknown) => peer.sendRequest("host/echo", params));
-        peer.onRequest("fixture/notice", (params: unknown) => { peer.sendNotification("fixture/notice", params); return null; });
+        peer.onRequest("fixture/notice", (params: unknown) => notify("fixture/notice", params).then(() => null));
         peer.onRequest("fixture/state", () => ({ held, initialized }));
         peer.onRequest("fixture/fail", () => { throw new ResponseError(-32001, "Fixture rejection", { retryable: true }); });
         peer.onRequest("fixture/hold", (_params: unknown, token) => new Promise((_resolve, reject) => {

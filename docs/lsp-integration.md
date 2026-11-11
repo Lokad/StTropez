@@ -70,4 +70,7 @@ editor and exercises the actual WebSocket provider through these exports, includ
 additional completion edits, undo, inspection/navigation, rename, action resolution
 and final disposal. The separate host suites cover their richer review/Save/Run UI.
 This boundary test does not establish native IME/OS clipboard or full LSP compatibility.
-Automatic completion and signature/link/color LSP routes remain required implementation work.
+Automatic completion uses the same public controller: prefix/advertised-trigger invocation,
+compatible filtering, incomplete refresh, selected-item resolve and keyboard/commit acceptance.
+The [completion contract](lsp-editor.md) defines exact rebasing, pending-resolution input policy
+and generation IDs for retained host controls. Signature/link/color LSP routes remain required work.
