@@ -1,7 +1,8 @@
 # Public editor integration
 
 `sttropez/protocol` exports `LspWorkspace`, `createLspHoverClient`,
-`createLspNavigationClient`, `createLspRenameClient`, `createLspActionClient` and
+`createLspNavigationClient`, `createLspRenameClient`, `createLspActionClient`,
+`createLspSignatureClient`, `createLspLinkClient`, `createLspColorClient` and
 `createLspCommandRunner`. `sttropez/browser` exports `createLspEditor` for a mounted
 editing candidate. They share the existing session, synchronized documents and
 diagnostics. Both development hosts use these implementations; their small wrappers
@@ -33,6 +34,9 @@ expires that client's work. Other clients retain their connection and participat
 | Navigation | `run(snapshots, originId, offset, "definition" or "references", includeDeclaration?, prepare?)` returns exact validated targets and a batch guard. |
 | Rename | `run(snapshots, originId, offset, newName, prepare?)` returns a complete validated workspace text-edit preview. |
 | Actions | `run(snapshots, originId, from, to, prepare?)` returns choices, supported-command/currentness checks and captured `resolve`/`execute` methods. |
+| Signature | `run(document, offset, context?, prepare?)` returns a cancellable call with active signature/parameter models, literal documentation and a currentness guard. |
+| Links | `run(document, prepare?)` returns validated items, currentness and explicit captured item `resolve`. Opening belongs to the host. |
+| Colors | `run(document, prepare?)` returns validated items, currentness and captured `presentations(item, rgba, prepare?)`. The host previews and applies the selected edits. |
 
 Project snapshots must still match their Workspace resource, document, revision and
 buffer. URI resolution uses those explicitly participating host resources, including
@@ -67,10 +71,13 @@ document, request and scope bounds remain [explicit](lsp.md).
 consumer, checks its public declarations and bundles a minimal plain TypeScript host.
 That host imports no example controller, React package or library source. It mounts an
 editor and exercises the actual WebSocket provider through these exports, including
-additional completion edits, undo, inspection/navigation, rename, action resolution
+additional completion edits, undo, inspection/navigation, rename, action resolution, signature help,
+link resolution and color presentation/application
 and final disposal. The separate host suites cover their richer review/Save/Run UI.
 This boundary test does not establish native IME/OS clipboard or full LSP compatibility.
 Automatic completion uses the same public controller: prefix/advertised-trigger invocation,
 compatible filtering, incomplete refresh, selected-item resolve and keyboard/commit acceptance.
 The [completion contract](lsp-editor.md) defines exact rebasing, pending-resolution input policy
-and generation IDs for retained host controls. Signature/link/color LSP routes remain required work.
+and generation IDs for retained host controls. [Signature/link/color contracts](lsp-language.md)
+describe their capability, validation and host-policy boundaries. Owner snapshots supply actual
+connection/open/change/close accounting; feature adapters report their own intent state.

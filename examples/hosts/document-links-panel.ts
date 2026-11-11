@@ -23,7 +23,7 @@ export function mountDocumentLinksPanel(host: HTMLElement, tools: HostDocumentLi
     const render = () => { const s = tools.state.getSnapshot(); status.textContent = s.message; for (const [i, action] of documentLinkActions(tools).entries()) { buttons[i]!.disabled = action.disabled; buttons[i]!.onclick = action.invoke; }
         if (previous === s.links && token === s.token && page === s.page) return; previous = s.links; token = s.token; page = s.page;
         list.replaceChildren(...s.links.map(link => { const li = owner.createElement("li"), button = owner.createElement("button"), text = owner.createElement("p"), captured = s.token;
-            button.textContent = documentLinkLabel(link); button.disabled = !link.target || s.status !== "ready"; button.onclick = () => tools.open(captured, link.ordinal); text.textContent = documentLinkDetails(link); li.append(button, text); return li; }));
+            button.textContent = documentLinkLabel(link); button.disabled = !link.target && !link.resolvable || s.status !== "ready"; button.onclick = () => tools.open(captured, link.ordinal); text.textContent = documentLinkDetails(link); li.append(button, text); return li; }));
     };
     const stop = tools.state.subscribe(render); render(); return () => { stop(); tools.bindList(null); host.replaceChildren(); };
 }

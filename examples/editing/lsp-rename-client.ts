@@ -14,5 +14,5 @@ export function createLspRenameClient(_workspace: Workspace, _clock: Pick<Window
         run: (snapshots: readonly DocumentSnapshot[], origin: DocumentId, offset: number, newName: string, configuration: LspRenameConfiguration) =>
             client.run(snapshots, origin, offset, newName, options.beforeRequest ? session => options.beforeRequest!(session, configuration) : undefined),
         faultIdle: () => { if (client.snapshot().disposed || client.snapshot().busy || !client.snapshot().connected) return false; options.provider.disconnect(); return true; },
-        snapshot: () => Object.freeze({ ...client.snapshot(), created: 0, terminated: 0, shared: true }) });
+        snapshot: () => Object.freeze({ ...client.snapshot(), transport: "lsp3.17" }) });
 }

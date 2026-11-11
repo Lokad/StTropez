@@ -32,6 +32,6 @@ export function createLspProjectClient(_workspace: Workspace, _clock: Pick<Windo
         },
         isCurrent: () => !disposed && runner.isCurrent(),
         faultIdle: () => { if (disposed || busy || session.state.getSnapshot().phase !== "ready") return false; options.provider.disconnect(); return true; },
-        snapshot: () => Object.freeze({ connected: session.state.getSnapshot().phase === "ready", busy, disposed, version: "LSP3.17", epoch: session.state.getSnapshot().epoch, registered: session.commandNames().includes(options.reviewCommand), created: 0, terminated: 0, shared: true, ...runner.snapshot(), protocol: session.snapshotOwnership() }),
+        snapshot: () => Object.freeze({ connected: session.state.getSnapshot().phase === "ready", busy, disposed, version: "LSP3.17", epoch: session.state.getSnapshot().epoch, registered: session.commandNames().includes(options.reviewCommand), ...runner.snapshot(), protocol: session.snapshotOwnership() }),
         dispose: () => { if (disposed) return; disposed = true; runner.dispose(); listeners.clear(); session.dispose(); } });
 }

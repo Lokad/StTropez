@@ -1,5 +1,9 @@
 # Captured module document links
 
+This page describes the default local-worker fixture. The `language=lsp` route
+uses [public document-link discovery/resolve](lsp-language.md) with the same host
+controls and captured opening policy.
+
 Both candidate hosts offer **Add module companion**, **Discover module links**,
 paged results, explicit Open buttons and **Return to link origin**. The companion
 registers the module name `sample-utils` to an owned working resource. The module

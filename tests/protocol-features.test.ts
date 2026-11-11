@@ -6,11 +6,42 @@ import { TextBuffer } from "../src/core/text-buffer.ts";
 import type { LspDocumentCapture } from "../src/protocol/index.ts";
 
 const { LspLineIndex, decodeLspCompletions, decodeLspResolvedCompletion, rebaseLspCompletion, lspCompletionPlan, decodeLspDiagnostics, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, decodeLspApplyEdit, decodeLspCodeActions, decodeLspResolvedCodeAction, lspRangeOffsets, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
+const { decodeLspSignatureHelp, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspColor, decodeLspDocumentColors, decodeLspColorPresentations } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 async function captured(text = "// header\r\nconst saMORE = 1; // TODO\rb\n") {
     const buffer = TextBuffer.from(text), index = await LspLineIndex.create(buffer, async () => {}); let active = true;
     const capture: LspDocumentCapture = Object.freeze({ document: Object.freeze({ uri: "host+fixture:source", languageId: "fixture", resourceId: "resource", documentId: "working", revision: 70, buffer }), index, version: 3, epoch: 2, registrationGeneration: 4, isCurrent: () => active });
     return { capture, expire: () => { active = false; } };
 }
+test("signature help validates the complete literal result and normalizes active signatures and parameters", async () => {
+    const { capture, expire } = await captured("😀 call("), value = { activeSignature: 1, activeParameter: 1, signatures: [
+        { label: "call(x: number, y: number)", parameters: [{ label: "x: number" }, { label: [16, 25], documentation: { kind: "markdown", value: "<b>literal</b>" } }] },
+        { label: "call(value: string)", activeParameter: 0, parameters: [{ label: [5, 18] }] }] };
+    const result = decodeLspSignatureHelp(value, capture)!; assert.equal(result.activeSignature, 1); assert.equal(result.signatures[0]!.activeParameter, 1); assert.equal(result.signatures[1]!.activeParameter, 0);
+    assert.equal(result.signatures[0]!.parameters[1]!.documentation, "<b>literal</b>"); assert.ok(Object.isFrozen(result.signatures[0]!.parameters)); assert.ok(Object.isFrozen(result.wire));
+    assert.equal(decodeLspSignatureHelp({ ...value, activeSignature: 999, activeParameter: 999 }, capture)!.activeSignature, 0);
+    assert.equal(decodeLspSignatureHelp({ signatures: [{ label: "empty()" }] }, capture)!.signatures[0]!.activeParameter, null); assert.equal(decodeLspSignatureHelp(null, capture), null);
+    for (const invalid of [{ signatures: null }, { ...value, activeParameter: -1 }, { signatures: [{ label: "call(x)", parameters: [{ label: "missing" }] }] },
+        { signatures: [{ label: "call(x)", parameters: [{ label: [0, 99] }] }] }, { signatures: [...value.signatures, { label: 7 }] }, { signatures: Array(33).fill(value.signatures[0]) }]) assert.throws(() => decodeLspSignatureHelp(invalid, capture));
+    expire(); assert.throws(() => decodeLspSignatureHelp(value, capture), error => error instanceof RpcError && error.code === -32801);
+});
+test("document links retain opaque host URIs and resolve only the captured target and tooltip", async () => {
+    const { capture, expire } = await captured('import "module";'), wire = { range: range(0, 8, 14), data: { token: 3 }, tooltip: "<b>literal</b>" };
+    const links = decodeLspDocumentLinks([wire, { ...wire, target: "host+opaque:%2F resource" }], capture, true); assert.equal(links[0]!.target, null); assert.equal(links[1]!.target, "host+opaque:%2F resource"); assert.ok(Object.isFrozen(links[0]!.resolve));
+    const resolved = decodeLspResolvedDocumentLink({ ...wire, target: "custom:unknown", tooltip: "Resolved literal" }, links[0]!, capture); assert.equal(resolved.target, "custom:unknown"); assert.equal(resolved.resolve, null);
+    for (const invalid of [{ ...wire, target: "" }, { ...wire, range: range(0, 8, 99) }, { ...wire, tooltip: 7 }, { ...wire, data: "x".repeat(8193) }]) assert.throws(() => decodeLspDocumentLinks([wire, invalid], capture, true));
+    assert.throws(() => decodeLspResolvedDocumentLink({ ...wire, target: "custom:x", data: { token: 4 } }, links[0]!, capture));
+    assert.throws(() => decodeLspResolvedDocumentLink({ ...wire, range: range(0, 0, 2), target: "custom:x" }, links[0]!, capture));
+    assert.deepEqual(decodeLspDocumentLinks(null, capture), []); expire(); assert.throws(() => decodeLspResolvedDocumentLink({ ...wire, target: "custom:x" }, links[0]!, capture), error => error instanceof RpcError && error.code === -32801);
+});
+test("document colors and presentations validate channels, fallback text and every additional edit before publication", async () => {
+    const { capture, expire } = await captured("const c = #fff;"), color = { red: 1, green: 0, blue: .5, alpha: .25 };
+    const colors = decodeLspDocumentColors([{ range: range(0, 10, 14), color }], capture), reference = colors[0]!; assert.ok(Object.isFrozen(reference.color)); assert.deepEqual(decodeLspColor(color), color);
+    const presentations = decodeLspColorPresentations([{ label: "#123" }, { label: "Explicit", textEdit: { range: range(0, 10, 14), newText: "rgba(1,2,3,.5)" }, additionalTextEdits: [{ range: range(0, 0, 0), newText: "// color\r\n" }] }], reference, capture);
+    const after = capture.document.buffer.apply(presentations[1]!.edits).buffer; assert.equal(after.slice(0, after.length), "// color\r\nconst c = rgba(1,2,3,.5);"); assert.equal(presentations[0]!.edits[0]!.insert, "#123");
+    for (const invalid of [{ ...color, alpha: NaN }, { ...color, red: 2 }, { ...color, blue: "0" }, {}]) assert.throws(() => decodeLspDocumentColors([{ range: range(0, 10, 14), color: invalid }], capture));
+    for (const invalid of [{ label: "bad", additionalTextEdits: [{ range: range(0, 11, 12), newText: "overlap" }] }, { label: "bad", textEdit: { range: range(0, 10, 99), newText: "bad" } }, { label: "x".repeat(4097) }]) assert.throws(() => decodeLspColorPresentations([{ label: "valid" }, invalid], reference, capture));
+    assert.deepEqual(decodeLspColorPresentations([], reference, capture), []); expire(); assert.throws(() => decodeLspDocumentColors([], capture), error => error instanceof RpcError && error.code === -32801);
+});
 const range = (line: number, start: number, end: number) => ({ start: { line, character: start }, end: { line, character: end } });
 
 test("completion insert/replace plans and additional edits preserve raw text and the resulting caret", async () => {

@@ -29,6 +29,11 @@ export async function runPackagedLsp(browser, url, { packageSha256 }) {
         const beforeCommit = await text(), commitDepth = (await state()).history.undoDepth; await input.pressSequentially(";");
         assert.ok((await text()).startsWith("// resolved import\r\nconst sampleValue;")); assert.equal((await state()).history.undoDepth, commitDepth + 1);
         await input.press("Control+z"); assert.equal(await text(), beforeCommit);
+        await button("Signature").click(); await expect.poll(async () => (await state()).notes.signature).toBe("fallback?: string");
+        await button("Links").click(); await expect.poll(async () => (await state()).notes.linkUri).toContain("consumer+opaque:project/");
+        await button("Colors").click(); await expect.poll(async () => (await state()).notes.colorPresentations ?? 0).toBeGreaterThan(0);
+        const beforeColor = await text(), colorDepth = (await state()).history.undoDepth; await button("Apply color").click(); await expect.poll(async () => (await state()).notes.colorApplied).toBe(true);
+        assert.equal((await state()).history.undoDepth, colorDepth + 1); assert.equal(await text(), "// color presentation\r\n" + beforeColor.replace("#abc", "rgba(1, 2, 3, 0.5)")); await input.press("Control+z"); assert.equal(await text(), beforeColor);
         const counts = await page.evaluate(() => window.publicLsp.custom("fixture/synchronization", {})); assert.equal(counts.initialize, 1); assert.deepEqual(counts.failures, []); assert.ok(counts.documents.every(document => document.open === 1));
         await page.evaluate(() => window.publicLsp.dispose()); const final = await state(); assert.equal(final.provider.scopes, 0); assert.equal(final.provider.created, final.provider.terminated);
         assert.deepEqual([final.diagnostics.leases, final.diagnostics.views, final.diagnostics.subscriptions], [0, 0, 0]); assert.deepEqual(final.errors, []); assert.deepEqual(errors, []);

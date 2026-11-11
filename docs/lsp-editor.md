@@ -7,8 +7,8 @@ reuse the same provider controls, captured view ownership, Workspace transaction
 Their generic controller is the exported `createLspEditor`; the
 [public integration guide](lsp-integration.md) covers its lifetime and independent consumers.
 Hover, definition/reference navigation, [rename/edit previews](lsp-rename.md) and
-[code-action discovery/resolve](lsp-code-actions.md) also use LSP in this route. Other language
-tools retain their separately declared worker fixtures until their LSP adapters are delivered.
+[code-action discovery/resolve](lsp-code-actions.md), [signature help, links and colors](lsp-language.md)
+also use LSP in this route. Local tokenization and domain tools retain their independent fixtures.
 The fixture recognizes simple words and TODO markers; it establishes protocol/host behavior, not
 general language semantics. There is no production service or provider prerequisite.
 

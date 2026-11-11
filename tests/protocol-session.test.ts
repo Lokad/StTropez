@@ -86,6 +86,18 @@ test("code-action resolve options follow matching registrations and immutable ne
     assert.equal(capture.isCurrent(), false); assert.deepEqual(session.featureOptions("textDocument/codeAction", document), []);
 });
 
+test("signature/link/color negotiation honors static selectors and one color registration grants both related requests", async t => {
+    const host = fixture(t, { positionEncoding: "utf-16", textDocumentSync: 2, colorProvider: { id: "static-color", documentSelector: [{ language: "other" }] }, signatureHelpProvider: { triggerCharacters: ["("], retriggerCharacters: [","] }, documentLinkProvider: { resolveProvider: true } });
+    const session = new LspSession({ ...host, features: ["textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor", "textDocument/colorPresentation"] }); t.after(() => session.dispose());
+    const document = session.bindDocument(input()); await session.connect(); const peer = host.peers[0]!, caps = peer.initialize()!.capabilities.textDocument!;
+    assert.equal(caps.signatureHelp?.contextSupport, true); assert.equal(caps.signatureHelp?.signatureInformation?.activeParameterSupport, true); assert.equal(caps.documentLink?.tooltipSupport, true); assert.equal(caps.colorProvider?.dynamicRegistration, true);
+    assert.equal("documentColor" in caps, false); assert.equal("colorPresentation" in caps, false); assert.equal(session.canRequest("textDocument/documentColor", document), false); assert.equal(session.canRequest("textDocument/colorPresentation", document), false);
+    assert.equal(session.featureOptions("textDocument/documentLink", document)[0]!.resolveProvider, true);
+    await peer.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "dynamic-color", method: "textDocument/documentColor", registerOptions: { documentSelector: [{ language: "typescript" }] } }] });
+    assert.equal(session.canRequest("textDocument/documentColor", document), true); assert.equal(session.canRequest("textDocument/colorPresentation", document), true); const capture = session.synchronized(document)!;
+    await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "dynamic-color", method: "textDocument/documentColor" }] });
+    assert.equal(session.canRequest("textDocument/colorPresentation", document), false); assert.equal(capture.isCurrent(), false);
+});
 test("workspace commands require advertised bounded options, reject stale registrations and never replay", async t => {
     const host = fixture(t, { positionEncoding: "utf-16", textDocumentSync: 2, executeCommandProvider: { commands: ["status"] } }), session = new LspSession({ ...host, features: ["workspace/executeCommand"] }); t.after(() => session.dispose()); await session.connect(); const peer = host.peers[0]!;
     let finish: ((value: unknown) => void) | undefined, executed = 0;

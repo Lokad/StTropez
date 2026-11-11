@@ -119,7 +119,7 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         await expect.poll(async () => (await sync()).documents.find(doc => doc.uri === uri)!.change).toBe(baseline.documents[0]!.change + 1);
         const typed = text.replace("saMORE", "saxMORE"); expect(await source(page)).toBe(typed); await offer(page); await button(page, "Cancel request").click();
         await button(page, "Add navigation companion").click(); await field(page).focus();
-        await page.evaluate(at => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: at, head: at }); }, typed.indexOf("catalogue") + 2);
+        await page.evaluate(at => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: at, head: at }); }, typed.indexOf("catalogue") + 2); await ready(page);
         await field(page).press("Control+k"); await field(page).press("Control+i"); await expect(page.getByRole("tooltip")).toContainText("catalogue"); await field(page).press("Escape");
         await field(page).press("F12"); await expect(field(page, "Secondary source")).toBeFocused(); await button(page, "Open source review").click(); await ready(page);
         await field(page, "Comparison working source").focus(); const before = await snapshot(page);

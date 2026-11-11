@@ -9,7 +9,8 @@ import type { LspSelector, LspUriPath } from "./lsp-selector.ts";
 
 const providers = { "textDocument/completion": "completionProvider", "textDocument/hover": "hoverProvider",
     "textDocument/definition": "definitionProvider", "textDocument/references": "referencesProvider",
-    "textDocument/rename": "renameProvider", "textDocument/codeAction": "codeActionProvider", "workspace/executeCommand": "executeCommandProvider" } as const;
+    "textDocument/rename": "renameProvider", "textDocument/codeAction": "codeActionProvider", "workspace/executeCommand": "executeCommandProvider",
+    "textDocument/signatureHelp": "signatureHelpProvider", "textDocument/documentLink": "documentLinkProvider", "textDocument/documentColor": "colorProvider", "textDocument/colorPresentation": "colorProvider" } as const;
 export type LspFeature = keyof typeof providers;
 export type LspDocumentFeature = Exclude<LspFeature, "workspace/executeCommand">;
 export type LspCommandCall<T> = RpcCall<T> & Readonly<{ isCurrent: () => boolean }>;
@@ -62,6 +63,7 @@ export class LspSession {
     private readonly handles = new WeakMap<LspDocument, Entry>();
     private readonly remote = new Map<string, Remote>();
     private readonly registrations = new Map<string, Registration>();
+    private readonly staticSelectors = new Map<string, LspSelector>();
     private readonly requests = new Map<string, RequestHandler>();
     private readonly requestStops = new Map<string, () => void>();
     private readonly notifications = new Map<string, Set<NotificationHandler>>();
@@ -99,6 +101,12 @@ export class LspSession {
             insertTextMode: 1, completionList: { itemDefaults: ["editRange", "insertTextFormat", "insertTextMode", "data", "commitCharacters"] } };
         if (options.diagnostics) textDocument.publishDiagnostics = { versionSupport: true };
         if (this.features.has("textDocument/hover")) textDocument.hover = { dynamicRegistration: true, contentFormat: ["plaintext"] };
+        if (this.features.has("textDocument/signatureHelp")) textDocument.signatureHelp = { dynamicRegistration: true, contextSupport: true,
+            signatureInformation: { documentationFormat: ["plaintext"], parameterInformation: { labelOffsetSupport: true }, activeParameterSupport: true } };
+        if (this.features.has("textDocument/documentLink")) textDocument.documentLink = { dynamicRegistration: true, tooltipSupport: true };
+        if (this.features.has("textDocument/documentColor") || this.features.has("textDocument/colorPresentation")) {
+            delete textDocument.documentColor; delete textDocument.colorPresentation; textDocument.colorProvider = { dynamicRegistration: true };
+        }
         if (this.features.has("textDocument/definition")) textDocument.definition = { dynamicRegistration: true, linkSupport: true };
         if (this.features.has("textDocument/codeAction")) textDocument.codeAction = { dynamicRegistration: true,
             codeActionLiteralSupport: { codeActionKind: { valueSet: ["quickfix", "refactor", "source"] } },
@@ -168,6 +176,8 @@ export class LspSession {
         if (sync !== undefined && sync !== 0 && sync !== 2 && !object(sync)) throw new TypeError("Only incremental LSP synchronization is supported.");
         if (object(sync) && (sync.openClose !== undefined && typeof sync.openClose !== "boolean" || sync.change !== undefined && sync.change !== 0 && sync.change !== 2)) throw new TypeError("Invalid or unsupported synchronization capability.");
         for (const provider of Object.values(providers)) if (capabilities[provider] !== undefined && typeof capabilities[provider] !== "boolean" && !object(capabilities[provider])) throw new TypeError("Malformed feature capability.");
+        for (const provider of Object.values(providers)) { const value = capabilities[provider];
+            if (object(value) && Object.hasOwn(value, "documentSelector")) this.staticSelectors.set(provider, compileLspSelector(value.documentSelector, this.options.pathForUri)); }
         if (this.features.has("workspace/executeCommand") && capabilities.executeCommandProvider !== undefined) commandOptions(capabilities.executeCommandProvider);
         this.capabilities = capabilities as Readonly<Record<string, JsonValue>>;
         this.sync = { openClose: sync === 2 || object(sync) && sync.openClose === true, change: sync === 2 || object(sync) && sync.change === 2 };
@@ -201,7 +211,7 @@ export class LspSession {
         const next = new Map(this.registrations);
         for (const item of params.registrations) {
             if (!object(item) || typeof item.id !== "string" || !item.id || typeof item.method !== "string" || next.has(item.id) ||
-                !syncMethods.includes(item.method) && !this.features.has(item.method as LspFeature) || !object(item.registerOptions)) throw new RpcError(-32602, "Unsupported or duplicate registration.");
+                !syncMethods.includes(item.method) && !this.features.has(item.method as LspFeature) && !(item.method === "textDocument/documentColor" && this.features.has("textDocument/colorPresentation")) || !object(item.registerOptions)) throw new RpcError(-32602, "Unsupported or duplicate registration.");
             if (item.method === "textDocument/didChange" && item.registerOptions.syncKind !== 2) throw new RpcError(-32602, "Only incremental changes are supported.");
             if (item.id.length > 256 || JSON.stringify(item.registerOptions).length > 65536) throw new RpcError(-32602, "Registration options exceed their limit.");
             let selector: LspSelector;
@@ -224,18 +234,23 @@ export class LspSession {
         }
         for (const id of ids) this.registrations.delete(id); this.generation++; this.publish(); this.kick(); return null;
     }
-    private registered(method: string, document: LspDocumentSnapshot): boolean { return [...this.registrations.values()].some(item => item.value.method === method && item.selector(document)); }
+    private matchesRegistration(registered: string, method: string): boolean { return registered === method || registered === "textDocument/documentColor" && method === "textDocument/colorPresentation"; }
+    private registered(method: string, document: LspDocumentSnapshot): boolean { return [...this.registrations.values()].some(item => this.matchesRegistration(item.value.method, method) && item.selector(document)); }
     private syncs(document: LspDocumentSnapshot): boolean { return (this.sync.openClose || this.registered("textDocument/didOpen", document)) && (this.sync.change || this.registered("textDocument/didChange", document)); }
     canRequest(method: LspDocumentFeature, document: LspDocument): boolean {
-        const entry = this.entry(document), capability = this.capabilities[providers[method]];
-        return this.store.get().phase === "ready" && this.features.has(method) && this.syncs(entry.snapshot) && (capability === true || object(capability) || this.registered(method, entry.snapshot));
+        const entry = this.entry(document);
+        return this.store.get().phase === "ready" && this.features.has(method) && this.syncs(entry.snapshot) && (this.staticAvailable(method, entry.snapshot) || this.registered(method, entry.snapshot));
+    }
+    private staticAvailable(method: LspDocumentFeature, document: LspDocumentSnapshot): boolean {
+        const provider = providers[method], capability = this.capabilities[provider];
+        return (capability === true || object(capability)) && (this.staticSelectors.get(provider)?.(document) ?? true);
     }
     /** Static and matching dynamic options only; selectors and session readiness use the request policy. */
     featureOptions(method: LspDocumentFeature, document: LspDocument): readonly Readonly<Record<string, JsonValue>>[] {
         if (!this.canRequest(method, document)) return Object.freeze([]);
         const entry = this.entry(document), capability = this.capabilities[providers[method]], values: Readonly<Record<string, JsonValue>>[] = [];
-        if (object(capability)) values.push(capability); else if (capability === true) values.push(empty);
-        for (const item of this.registrations.values()) if (item.value.method === method && item.selector(entry.snapshot) && object(item.value.registerOptions)) values.push(item.value.registerOptions);
+        if (this.staticAvailable(method, entry.snapshot)) { if (object(capability)) values.push(capability); else if (capability === true) values.push(empty); }
+        for (const item of this.registrations.values()) if (this.matchesRegistration(item.value.method, method) && item.selector(entry.snapshot) && object(item.value.registerOptions)) values.push(item.value.registerOptions);
         return Object.freeze(values);
     }
     private collectCommands(registrations: ReadonlyMap<string, Registration> = this.registrations): readonly string[] {
@@ -360,7 +375,7 @@ export class LspSession {
         this.epoch++; this.release(this.cancelOpening); this.cancelOpening = undefined; this.connectWork = undefined;
         this.release(this.scheduled); this.scheduled = undefined; for (const pause of this.pauses) { this.release(pause.stop); pause.reject(failure); } this.pauses.clear();
         const rpc = this.rpc; this.rpc = undefined; this.release(() => rpc?.dispose(failure)); this.pumping = false; this.dirty = false; this.settle(failure); this.documentCalls.clear();
-        this.remote.clear(); this.registrations.clear(); this.requestStops.clear(); this.capabilities = empty; this.sync = { openClose: false, change: false }; this.generation++;
+        this.remote.clear(); this.registrations.clear(); this.staticSelectors.clear(); this.requestStops.clear(); this.capabilities = empty; this.sync = { openClose: false, change: false }; this.generation++;
         if (dispose) { this.documents.clear(); this.totalUnits = 0; this.requests.clear(); this.notifications.clear(); }
         this.publish(dispose ? "disposed" : "disconnected", error.message);
         if (dispose) for (const stop of [...this.subscriptions]) this.release(stop);

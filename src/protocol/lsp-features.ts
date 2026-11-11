@@ -25,6 +25,13 @@ export type LspDocumentEdits = Readonly<{ target: LspEditTarget; edits: readonly
 export type LspWorkspaceEdit = Readonly<{ documents: readonly LspDocumentEdits[]; isCurrent: () => boolean }>;
 export type LspApplyEdit = Readonly<{ label: string | null; edit: LspWorkspaceEdit }>;
 export type LspApplyEditResult = Readonly<{ applied: boolean; failureReason?: string }>;
+export type LspSignature = Readonly<{ label: string; documentation: string; activeParameter: number | null;
+    parameters: readonly Readonly<{ from: number; to: number; documentation: string }>[] }>;
+export type LspSignatureHelp = Readonly<{ signatures: readonly LspSignature[]; activeSignature: number; wire: JsonValue }>;
+export type LspDocumentLink = Readonly<{ from: number; to: number; target: string | null; tooltip: string; resolve: JsonValue | null }>;
+export type LspColor = Readonly<{ red: number; green: number; blue: number; alpha: number }>;
+export type LspDocumentColor = Readonly<{ from: number; to: number; color: LspColor }>;
+export type LspColorPresentation = Readonly<{ label: string; edits: readonly TextEdit[] }>;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const uint = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 0x7fffffff;
 function invalid(): never { throw new TypeError("Malformed or unsupported LSP feature result."); }
@@ -251,4 +258,61 @@ export function lspCompletionPlan(item: LspCompletion, mode: "insert" | "replace
     if (character.length !== 1 || !item.commitCharacters.includes(character)) invalid();
     const primary = item.primary, inserted = primary.text.endsWith(character) ? primary.text : primary.text + character;
     return plan(item.source.buffer.length, { from: primary.from, to: mode === "insert" ? primary.insertTo : primary.replaceTo, insert: inserted }, item.additional);
+}
+/** Literal display only; active indices use the protocol's default-to-first policy. */
+export function decodeLspSignatureHelp(value: unknown, capture: LspDocumentCapture): LspSignatureHelp | null {
+    current(capture); if (value === null) return null;
+    if (!record(value) || !Array.isArray(value.signatures) || value.signatures.length > 32
+        || value.activeSignature !== undefined && !uint(value.activeSignature) || value.activeParameter !== undefined && !uint(value.activeParameter)) invalid();
+    const budget = { units: 65536 }, signatures = value.signatures.map((item: unknown): LspSignature => {
+        if (!record(item) || item.parameters !== undefined && (!Array.isArray(item.parameters) || item.parameters.length > 64) || item.activeParameter !== undefined && !uint(item.activeParameter)) invalid();
+        const label = text(item.label, 4096, budget), description = documentation(item.documentation, budget);
+        const parameters = (item.parameters as unknown[] | undefined ?? []).map(parameter => {
+            if (!record(parameter)) invalid(); const at = parameter.label; let from: number, to: number;
+            if (typeof at === "string") { text(at, 4096, budget); from = label.indexOf(at); to = from + at.length; if (from < 0) invalid(); }
+            else { if (!Array.isArray(at) || at.length !== 2 || !uint(at[0]) || !uint(at[1]) || at[0] > at[1] || at[1] > label.length) invalid(); from = at[0]; to = at[1]; }
+            return Object.freeze({ from, to, documentation: documentation(parameter.documentation, budget) });
+        });
+        const active = item.activeParameter ?? value.activeParameter ?? 0;
+        return Object.freeze({ label, documentation: description, parameters: Object.freeze(parameters), activeParameter: parameters.length ? typeof active === "number" && active < parameters.length ? active : 0 : null });
+    });
+    const active = value.activeSignature as number | undefined ?? 0, wire = jsonSnapshot(value); text(JSON.stringify(wire), 131072, { units: 131072 }); current(capture);
+    return Object.freeze({ signatures: Object.freeze(signatures), activeSignature: active < signatures.length ? active : 0, wire });
+}
+export function decodeLspDocumentLinks(value: unknown, capture: LspDocumentCapture, resolve = false): readonly LspDocumentLink[] {
+    current(capture); if (value === null) return Object.freeze([]);
+    if (!Array.isArray(value) || value.length > 1024) invalid(); const budget = { units: 65536 }, opaque = { units: 65536 };
+    const links = value.map((item: unknown): LspDocumentLink => {
+        if (!record(item)) invalid(); const range = lspRangeOffsets(capture.index, item.range), target = item.target === undefined ? null : text(item.target, 4096, budget);
+        if (target === "") invalid(); const tooltip = item.tooltip === undefined ? "" : text(item.tooltip, 4096, budget);
+        if (item.data !== undefined) text(JSON.stringify(jsonSnapshot(item.data)), 8192, opaque);
+        const wire = resolve ? jsonSnapshot(item) : null; if (wire) text(JSON.stringify(wire), 16384, opaque);
+        return Object.freeze({ ...range, target, tooltip, resolve: wire });
+    }); current(capture); return Object.freeze(links);
+}
+export function decodeLspResolvedDocumentLink(value: unknown, original: LspDocumentLink, capture: LspDocumentCapture): LspDocumentLink {
+    current(capture); if (!record(original.resolve) || !record(value)) invalid();
+    const before = { ...original.resolve }, after = { ...value }; for (const key of ["target", "tooltip"]) { delete before[key]; delete after[key]; }
+    if (!jsonEqual(before, after)) throw new TypeError("Resolved document link changed its captured range or identity.");
+    const link = decodeLspDocumentLinks([value], capture)[0]!; if (link.from !== original.from || link.to !== original.to) invalid(); return link;
+}
+export function decodeLspColor(value: unknown): LspColor {
+    if (!record(value) || ![value.red, value.green, value.blue, value.alpha].every(n => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1)) invalid();
+    return Object.freeze({ red: value.red as number, green: value.green as number, blue: value.blue as number, alpha: value.alpha as number });
+}
+export function decodeLspDocumentColors(value: unknown, capture: LspDocumentCapture): readonly LspDocumentColor[] {
+    current(capture); if (!Array.isArray(value) || value.length > 1024) invalid();
+    const colors = value.map((item: unknown) => { if (!record(item)) invalid(); return Object.freeze({ ...lspRangeOffsets(capture.index, item.range), color: decodeLspColor(item.color) }); });
+    current(capture); return Object.freeze(colors);
+}
+export function decodeLspColorPresentations(value: unknown, reference: LspDocumentColor, capture: LspDocumentCapture): readonly LspColorPresentation[] {
+    current(capture); if (!Array.isArray(value) || value.length > 64) invalid(); capture.index.at(reference.from); capture.index.at(reference.to);
+    const budget = { units: 65536 }; let count = 0;
+    const presentations = value.map((item: unknown) => {
+        if (!record(item)) invalid(); const label = text(item.label, 4096, budget), primary = item.textEdit === undefined ? Object.freeze({ from: reference.from, to: reference.to, insert: label }) : edit(capture.index, item.textEdit, budget);
+        if (item.additionalTextEdits !== undefined && (!Array.isArray(item.additionalTextEdits) || item.additionalTextEdits.length > 32)) invalid();
+        const additional = (item.additionalTextEdits as unknown[] | undefined ?? []).map(value => edit(capture.index, value, budget));
+        if ((count += 1 + additional.length) > 1024) invalid();
+        return Object.freeze({ label, edits: plan(capture.document.buffer.length, primary, additional).edits });
+    }); current(capture); return Object.freeze(presentations);
 }

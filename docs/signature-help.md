@@ -1,5 +1,9 @@
 # Captured signature help
 
+This page describes the default local-worker fixture. The `language=lsp` host route
+uses the shared public provider instead; its [signature contract](lsp-language.md)
+defines advertised triggers and protocol active-parameter defaults.
+
 The plain and React candidate hosts show signature help beside the primary caret. Type `lookup(`,
 `format(` or `café(` to try the local provider. Opening brackets still pair normally. Active help
 updates after settled typing, argument commas, selection/navigation and shared undo/redo while
@@ -55,5 +59,5 @@ edits; Save/Run retain the primary working identity even when help comes from co
 Measurements distinguish the candidate's own input handler, whole synchronous command dispatch,
 background synchronization/scan and complete all-view/widget readiness. Single controls and
 functional deadlines qualify neither latency tails nor native input, clipboard or
-physical display. Remaining language semantics, rename/actions/links/colors and needed consuming-
-host/protocol qualification stay required.
+physical display. General language semantics and application-specific service policy remain
+outside these fixtures; the [declared LSP subset](lsp.md) is qualified separately.

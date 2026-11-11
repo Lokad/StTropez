@@ -9,8 +9,8 @@ would add runtime dependencies; JSON encoding and WebSocket I/O use platform API
 
 The protocol entry provides a wire engine, host-driven client session, shared Workspace provider
 ownership and validated feature/edit models. Both development hosts have an explicit [LSP editor adapter](lsp-editor.md).
-The rest of the requested feature matrix remains required. The existing [local worker protocol v1](project-sync.md)
-remains an internal fixture and establishes no LSP compatibility.
+The selected feature routes below use that same public integration. The existing
+[local worker protocol v1](project-sync.md) remains an internal fixture and establishes no LSP compatibility.
 
 | Area | Current status / next work |
 | --- | --- |
@@ -25,6 +25,9 @@ remains an internal fixture and establishes no LSP compatibility.
 | Rename/workspace text edits | Whole-batch URI/range/wire-version validation and exact provider edit previews/application in both hosts. Shared atomic history, unmounted targets, comparison, Save/Run, stale/authority/cancellation guards use existing Workspace transactions. See [supported forms and limits](lsp-rename.md). Optional prepareRename, file operations and annotations remain unsupported. |
 | Code actions | Complete bounded literal/command list validation, disabled/preferred choices and captured lazy edit resolution. Both hosts preview exact multi-resource edits, page large results and apply atomic history transactions. Confirmed advertised Command/edit+Command choices preserve edit-before-command ordering and use the existing captured server-edit decision owner. Failed later phases leave earlier edits explicitly undoable. [Supported scope](lsp-code-actions.md). |
 | Server edits/commands | Advertised static/dynamic global commands and bounded opaque arguments; both hosts explicitly review captured server edits, apply an atomic shared-history transaction and return a decision. Workspace and action-menu commands share one connection and exclusive captured command lane. Cancellation/timeout requires explicit reconnect before another command, while reads remain available. No edit replay. [Supported policy and limits](lsp-server-edits.md). |
+| Signature help | Advertised trigger/retrigger context, explicit invocation, literal overload/parameter presentation and captured cancellation. Public client and both hosts use the shared provider; UTF-16 parameter offsets and protocol active-index defaults are validated. [Contract](lsp-language.md). |
+| Document links | Validated ranges, exact opaque targets and captured lazy resolution. Host-controlled opening permits only registered captured resources; outside destinations and late focus changes cannot trigger an opening. [Contract](lsp-language.md). |
+| Document colors | Normalized RGBA/range validation, provider presentation choices, fallback labels and complete additional-edit validation. Explicit host preview/application uses one shared undo transaction. One color registration covers discovery and presentation requests. [Contract](lsp-language.md). |
 | Cancellation/reconnect | Opening, queued document calls, RPC requests and cooperative sync plans can be cancelled. Reconnect clears registrations/results and reopens current captures; commands never replay automatically. |
 | Host URIs/custom messages | Exact opaque URI bindings, replaceable selector path policy and removable custom request/notification handlers. Custom result schemas, authority and service policy belong to the host. |
 
@@ -87,8 +90,8 @@ because incoming `workspace/applyEdit` has no originating command ID. This preve
 command's later edit from being assigned to the next intent. Reads and typing continue independently.
 The [public editor integration](lsp-integration.md) supplies captured browser coordination and
 headless hover/navigation/rename/action clients. Both hosts reuse those exports. Optional host
-preparation hooks contain custom-message policy. The selected signature/link/color
-LSP routes remain open.
+preparation hooks contain custom-message policy. Signature/link/color clients use
+that same scope/capture lifetime and the [selected language contract](lsp-language.md).
 
 Documents synchronize when both open/close and incremental changes are enabled by static or
 matching dynamic capabilities. Losing that coverage closes the managed remote document; regaining

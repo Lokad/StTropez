@@ -19,5 +19,5 @@ export function createLspActionClient(_workspace: Workspace, _clock: Pick<Window
                 batch.resolve(action, options.beforeResolve ? session => options.beforeResolve!(session, configuration) : undefined) });
         },
         faultIdle: () => { if (client.snapshot().disposed || client.snapshot().busy || !client.snapshot().connected) return false; options.provider.disconnect(); return true; },
-        snapshot: () => Object.freeze({ ...client.snapshot(), created: 0, terminated: 0, shared: true }) });
+        snapshot: () => Object.freeze({ ...client.snapshot(), transport: "lsp3.17" }) });
 }

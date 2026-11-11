@@ -17,6 +17,9 @@ import { validDomainModule } from "../probes/domain.ts";
 import { reviewHeader, reviewFooter } from "../probes/project-commands.ts";
 import type { ProjectCommand } from "../probes/project-commands.ts";
 import type { ApplyWorkspaceEditResult } from "vscode-languageserver-protocol/node.js";
+import { SignatureScanner } from "../probes/signature.ts";
+import { ModuleLinksCursor } from "../probes/links.ts";
+import { DocumentColorsCursor, hexColor, rgbaColor, validateRgba } from "../probes/colors.ts";
 
 /** Generic development peer. It is separate from the internal worker-v1 fixture and production assets. */
 export function attachProtocolFixture(server: Server) {
@@ -43,6 +46,11 @@ export function attachProtocolFixture(server: Server) {
         const countSync = (uri: string, kind: "open" | "change" | "close") => { const counts = syncCounts.get(uri) ?? { open: 0, change: 0, close: 0 }; counts[kind]++; syncCounts.set(uri, counts); };
         const pending = new Set<() => void>(); let completionConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, completionStyle = "edits", interactiveCompletion = false;
         let completionResolveConfig: { delay: number; late?: boolean; fault?: "retarget" | "malformed" } = { delay: 0 };
+        let signatureConfig: { delay: number; fault?: "malformed" | "failure" | "markup" } = { delay: 0 };
+        let linksConfig: { delay: number; fault?: "malformed" | "failure" | "incomplete" | "markup"; aliases: { module: string; uri: string }[] } = { delay: 0, aliases: [] };
+        let linksResolveConfig: { delay: number; fault?: "outside" | "malformed" } = { delay: 0 };
+        type ColorConfig = { delay: number; fault?: "malformed" | "failure" | "incomplete" | "markup" };
+        let colorDiscoveryConfig: ColorConfig = { delay: 0 }, colorPresentationConfig: ColorConfig = { delay: 0 };
         let hoverConfig: { delay: number; fault?: "malformed" | "failure" | "markup" } | undefined, navigationConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, definitionLinks = false;
         let renameConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, versionedEdits = false;
         type ActionConfig = { module: string; delay: number; fault?: "malformed" | "failure" | "incomplete" | "markup" };
@@ -71,7 +79,7 @@ export function attachProtocolFixture(server: Server) {
             applyEditSupport = params.capabilities.workspace?.applyEdit === true;
             return { capabilities: { positionEncoding: "utf-16", textDocumentSync: 2, definitionProvider: true, referencesProvider: true, renameProvider: true,
                 codeActionProvider: { resolveProvider: true, codeActionKinds: ["quickfix", "refactor", "source"] }, executeCommandProvider: { commands: ["fixture.status"] },
-                completionProvider: { triggerCharacters: ["."] }, hoverProvider: params.initializationOptions?.fixtureDynamic !== true }, serverInfo: { name: "Generic protocol fixture" } }; });
+                completionProvider: { triggerCharacters: ["."] }, ...(params.initializationOptions?.fixtureDynamicLanguage ? {} : { signatureHelpProvider: { triggerCharacters: ["("], retriggerCharacters: [","] }, documentLinkProvider: { resolveProvider: true }, colorProvider: true }), hoverProvider: params.initializationOptions?.fixtureDynamic !== true }, serverInfo: { name: "Generic protocol fixture" } }; });
         peer.onNotification(InitializedNotification.type, () => { initialized = true; });
         const sync = (update: () => void) => { try { if (!initialized) throw new Error("Synchronization before initialized"); update(); } catch (error) { syncFailures.push(String(error)); } };
         peer.onNotification("textDocument/didOpen", (params: DidOpenTextDocumentParams) => sync(() => { const doc = params.textDocument;
@@ -95,6 +103,78 @@ export function attachProtocolFixture(server: Server) {
             const result = provideHover({ operation: "hover", id: 1, revision: doc.version, text: text.slice(from, to), offset: offset - from, delay: 0 });
             return { text, from, result, range: result.range && { start: doc.positionAt(from + result.range.from), end: doc.positionAt(from + result.range.to) } };
         };
+        peer.onRequest("fixture/signatureConfig", (params: typeof signatureConfig) => {
+            if (!params || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure", "markup"].includes(params.fault)) throw new ResponseError(-32602, "Invalid signature configuration"); signatureConfig = { ...params }; return null;
+        });
+        peer.onRequest("fixture/linksConfig", (params: typeof linksConfig) => {
+            if (!params || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure", "incomplete", "markup"].includes(params.fault)
+                || !Array.isArray(params.aliases) || params.aliases.length > 100 || params.aliases.some(alias => !validDomainModule(alias.module) || typeof alias.uri !== "string" || !alias.uri || alias.uri.length > 4096)) throw new ResponseError(-32602, "Invalid link fixture configuration");
+            linksConfig = { ...params }; return null;
+        });
+        peer.onRequest("fixture/colorConfig", (params: ColorConfig & { kind: "discovery" | "presentation" }) => {
+            if (!params || !["discovery", "presentation"].includes(params.kind) || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure", "incomplete", "markup"].includes(params.fault)) throw new ResponseError(-32602, "Invalid color fixture configuration");
+            if (params.kind === "discovery") colorDiscoveryConfig = { ...params }; else colorPresentationConfig = { ...params }; return null;
+        });
+        peer.onRequest("textDocument/documentColor", (params: { textDocument: { uri: string } }, token) => {
+            const doc = documents.get(params.textDocument.uri); if (!doc) throw new ResponseError(-32602, "Document not open"); const config = colorDiscoveryConfig;
+            return deferred(config.delay, token, async () => {
+                if (config.fault === "failure") throw new ResponseError(-32001, "Fixture colors unavailable"); const buffer = TextBuffer.from(doc.getText());
+                const cursor = new DocumentColorsCursor({ id: 1, document: "source", revision: doc.version, length: buffer.length, delay: 0 }, buffer); let step = cursor.next();
+                while (!step.result) { if (token.isCancellationRequested) throw new ResponseError(-32800, "Fixture colors cancelled"); await setImmediate(); step = cursor.next(); }
+                if (step.result.truncated) throw new ResponseError(-32001, "Fixture color result limit exceeded");
+                const colors = step.result.colors.map(item => ({ range: { start: doc.positionAt(item.from), end: doc.positionAt(item.to) }, color: item.color }));
+                if (config.fault === "malformed") colors.push({ range: { start: doc.positionAt(0), end: { line: doc.lineCount + 1, character: 0 } }, color: { red: 2, green: 0, blue: 0, alpha: 1 } });
+                return config.fault === "incomplete" ? { partial: colors } : colors;
+            });
+        });
+        peer.onRequest("textDocument/colorPresentation", (params: { textDocument: { uri: string }; color: unknown; range: import("vscode-languageserver-protocol/node.js").Range }, token) => {
+            const doc = documents.get(params.textDocument.uri); if (!doc) throw new ResponseError(-32602, "Document not open"); const config = colorPresentationConfig;
+            return deferred(config.delay, token, () => {
+                if (config.fault === "failure") throw new ResponseError(-32001, "Fixture presentations unavailable"); const color = validateRgba(params.color), hex = hexColor(color), rgba = rgbaColor(color);
+                const choices: import("vscode-languageserver-protocol/node.js").ColorPresentation[] = [...hex ? [{ label: hex }] : [],
+                    { label: config.fault === "markup" ? "<b>Literal color label</b>" : rgba, textEdit: { range: params.range, newText: rgba },
+                        additionalTextEdits: [{ range: { start: doc.positionAt(0), end: doc.positionAt(0) }, newText: "// color presentation\r\n" }] }];
+                if (config.fault === "malformed") choices.push({ label: "invalid final", textEdit: { range: { start: doc.positionAt(0), end: { line: doc.lineCount + 1, character: 0 } }, newText: "bad" } });
+                return config.fault === "incomplete" ? { partial: choices } : choices;
+            });
+        });
+        peer.onRequest("fixture/linksResolveConfig", (params: typeof linksResolveConfig) => {
+            if (!params || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["outside", "malformed"].includes(params.fault)) throw new ResponseError(-32602, "Invalid link resolve configuration"); linksResolveConfig = { ...params }; return null;
+        });
+        peer.onRequest("textDocument/documentLink", (params: { textDocument: { uri: string } }, token) => {
+            const doc = documents.get(params.textDocument.uri); if (!doc) throw new ResponseError(-32602, "Document not open"); const config = linksConfig;
+            return deferred(config.delay, token, async () => {
+                if (config.fault === "failure") throw new ResponseError(-32001, "Fixture links unavailable"); const buffer = TextBuffer.from(doc.getText());
+                const cursor = new ModuleLinksCursor({ id: 1, resource: "fixture", document: "source", revision: doc.version, length: buffer.length, aliases: [], delay: 0 }, buffer);
+                let step = cursor.next(); while (!step.result) { if (token.isCancellationRequested) throw new ResponseError(-32800, "Fixture links cancelled"); await setImmediate(); step = cursor.next(); }
+                if (step.result.truncated) throw new ResponseError(-32001, "Fixture link result limit exceeded");
+                const links = step.result.links.map(link => ({ range: { start: doc.positionAt(link.from), end: doc.positionAt(link.to) }, tooltip: config.fault === "markup" ? "<b>Literal link tooltip</b>" : `Resolve ${link.module}`,
+                    data: { uri: doc.uri, version: doc.version, module: link.module, target: config.aliases.find(alias => alias.module === link.module)?.uri ?? null } }));
+                if (config.fault === "malformed") links.push({ range: { start: { line: 0, character: 0 }, end: { line: doc.lineCount + 1, character: 0 } }, tooltip: "Invalid final link", data: { uri: doc.uri, version: doc.version, module: "bad", target: null } });
+                return config.fault === "incomplete" ? { partial: links } : links;
+            });
+        });
+        peer.onRequest("documentLink/resolve", (params: { range: unknown; data: { uri: string; version: number; module: string; target: string | null } }, token) => {
+            const config = linksResolveConfig; linksResolveConfig = { delay: 0 };
+            return deferred(config.delay, token, () => {
+                const doc = documents.get(params.data?.uri); if (!doc || params.data.version !== doc.version) throw new ResponseError(-32801, "Fixture link expired");
+                return { ...params, ...(config.fault === "malformed" ? { range: { start: { line: 0, character: 0 }, end: { line: doc.lineCount + 1, character: 0 } } } : {}),
+                    ...(config.fault === "outside" ? { target: "host+fixture:outside-project" } : params.data.target ? { target: params.data.target } : {}), tooltip: `Resolved ${params.data.module}` };
+            });
+        });
+        peer.onRequest("textDocument/signatureHelp", (params: { textDocument: { uri: string }; position: { line: number; character: number } }, token) => {
+            const doc = documents.get(params.textDocument.uri); if (!doc) throw new ResponseError(-32602, "Document not open"); const config = signatureConfig; signatureConfig = { delay: 0 };
+            return deferred(config.delay, token, async () => {
+                if (config.fault === "failure") throw new ResponseError(-32001, "Fixture signature unavailable");
+                const text = doc.getText(), offset = doc.offsetAt(params.position), scanner = new SignatureScanner();
+                for (let from = 0; from < offset; from += 16384) { if (token.isCancellationRequested) throw new ResponseError(-32800, "Fixture signature cancelled"); scanner.feed(text.slice(from, Math.min(offset, from + 16384)), from); await setImmediate(); }
+                const result = scanner.result({ id: 1, document: doc.uri, revision: doc.version, length: text.length, offset, delay: 0 });
+                return { activeSignature: result.activeSignature, activeParameter: result.call?.argument ?? 0, signatures: [
+                    ...result.signatures.map(item => ({ label: item.label, documentation: config.fault === "markup" ? "<b>Literal signature documentation</b>" : item.documentation,
+                        parameters: item.parameters.map(parameter => ({ label: [parameter.from, parameter.to], documentation: parameter.documentation })) })),
+                    ...config.fault === "malformed" ? [{ label: 7 }] : []] };
+            });
+        });
         peer.onRequest("fixture/hoverConfig", (params: NonNullable<typeof hoverConfig>) => {
             if (!params || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure", "markup"].includes(params.fault)) throw new ResponseError(-32602, "Invalid hover configuration"); hoverConfig = { ...params }; return null;
         });

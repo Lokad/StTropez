@@ -1,17 +1,23 @@
-import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, Workspace } from "../../src/index.ts";
+import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, TextBuffer, Workspace } from "../../src/index.ts";
 import type { EditingCandidate } from "../../src/browser/index.ts";
 import { createNavigationClient, navigationMetrics } from "../editing/navigation-client.ts";
 import { linkLimits, validateLinksInput } from "../probes/links.ts";
-import type { LinksInput, ModuleLink } from "../probes/links.ts";
+import type { LinksInput, LinksResult, ModuleLink } from "../probes/links.ts";
 import { validDomainModule } from "../probes/domain.ts";
 import { HostCell } from "../shared/observable.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
 type Source = { document: DocumentSnapshot; authority: string };
+export type HostModuleLink = ModuleLink & Readonly<{ resolvable?: boolean }>;
+export type LinkBackend = Readonly<{ links: (input: LinksInput, buffer: TextBuffer, progress: (work: number) => void) => Promise<Omit<LinksResult, "links"> & Readonly<{ links: readonly HostModuleLink[] }>>;
+    resolve?: (link: HostModuleLink) => Promise<HostModuleLink>; isCurrent?: () => boolean; faultIdle?: () => boolean;
+    snapshot: () => Readonly<{ connected: boolean; busy: boolean; transport?: string }>; dispose: () => void }>;
+export type LinkBackendFactory = (clock: Window, changed: () => void) => LinkBackend;
 type Job = { origin: Session; input: LinksInput; generation: number; selections: SelectionSet; folds: number; sources: Map<string, Source>; targets: Map<string, Session>;
-    leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; opened: boolean; links: readonly ModuleLink[] };
-export type LinkNote = ModuleLink & Readonly<{ ordinal: number; line: number; column: number; title: string; targetTitle: string | null }>;
+    leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; opened: boolean; links: readonly HostModuleLink[];
+    resolving?: number | undefined; resolveSelection?: SelectionSet; resolveFolds?: number };
+export type LinkNote = HostModuleLink & Readonly<{ ordinal: number; line: number; column: number; title: string; targetTitle: string | null }>;
 export type DocumentLinksSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; token: number | null; requestView: string | null;
-    status: "idle" | "pending" | "ready" | "failed" | "expired"; message: string; work: number; total: number; count: number; page: number; links: readonly LinkNote[]; canReturn: boolean }>;
+    status: "idle" | "pending" | "ready" | "resolving" | "failed" | "expired"; message: string; work: number; total: number; count: number; page: number; links: readonly LinkNote[]; canReturn: boolean }>;
 let serial = 0;
 /** Host-owned aliases and explicit reveal. No provider target is executed as a URL. */
 export class HostDocumentLinks {
@@ -24,7 +30,8 @@ export class HostDocumentLinks {
     private readonly sessions = new Map<number, Session>();
     private active: Session | undefined;
     private job: Job | undefined;
-    private client: ReturnType<typeof createNavigationClient> | undefined;
+    private client: LinkBackend | undefined;
+    private readonly factory: LinkBackendFactory | undefined;
     private list: HTMLElement | undefined;
     private listEvents: AbortController | undefined;
     private sequence = 0;
@@ -37,7 +44,7 @@ export class HostDocumentLinks {
     private readonly metrics = { requested: 0, opened: 0, returned: 0, cancelled: 0, expired: 0, failed: 0 };
     private readonly cell = new HostCell<DocumentLinksSnapshot>({ available: false, connected: false, disconnected: false, pending: false, token: null, requestView: null, status: "idle", message: "Focus a candidate source to discover module links.", work: 0, total: 0, count: 0, page: 0, links: [], canReturn: false });
     readonly state = this.cell.observable;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined) { this.workspace = workspace; this.canCapture = canCapture; this.present = present; }
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, factory?: LinkBackendFactory) { this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.factory = factory; }
     private available(s: Session): boolean {
         const tab = this.workspace.resolveTab(s.target);
         return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.snapshot().disposed && this.workspace.ownsDocumentView(s.editor.view)
@@ -45,8 +52,9 @@ export class HostDocumentLinks {
     }
     private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
     private current(job: Job): boolean {
-        if (this.job !== job || job.invalid || this.disposed || job.generation !== this.generation) return false;
+        if (this.job !== job || job.invalid || this.disposed || job.generation !== this.generation || !(this.client?.isCurrent?.() ?? true)) return false;
         try { for (const { document: doc, authority } of job.sources.values()) if (this.workspace.observeDocument(doc.id).getSnapshot()?.revision !== doc.revision || this.authority(doc.id) !== authority || !this.canCapture(doc.id)) return false; } catch { return false; }
+        if (job.resolving !== undefined && (job.origin.editor.view.getSnapshot().selectionSet !== job.resolveSelection || job.origin.editor.view.folding.getSnapshot().generation !== job.resolveFolds)) return false;
         return job.ready || this.available(job.origin) && job.origin.editor.view.getSnapshot().selectionSet === job.selections && job.origin.editor.view.folding.getSnapshot().generation === job.folds;
     }
     private publish(patch: Partial<DocumentLinksSnapshot> = {}): void {
@@ -55,12 +63,12 @@ export class HostDocumentLinks {
             return { ...link, ordinal: state.page * linkLimits.page + i, line: line + 1, column: link.from - doc.buffer.offsetAt(line) + 1, title: doc.title.slice(0, 128), targetTitle: link.target ? job.sources.get(link.target.document)!.document.title.slice(0, 128) : null };
         }) : [];
         this.cell.set({ ...state, available: !!this.active && this.available(this.active), connected: this.client?.snapshot().connected ?? false, disconnected: this.disconnected,
-            pending: !!job && !job.ready, token: job?.input.id ?? null, requestView: job?.origin.id ?? null, count: job?.links.length ?? 0, links, canReturn: !!job?.opened });
+            pending: !!job && (!job.ready || job.resolving !== undefined), token: job?.input.id ?? null, requestView: job?.origin.id ?? null, count: job?.links.length ?? 0, links, canReturn: !!job?.opened });
     }
     private drop(): void { const client = this.client; this.client = undefined; client?.dispose(); }
     private release(): void {
         const job = this.job; this.job = undefined; if (!job) return; job.invalid = true;
-        job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.stops.splice(0).forEach(stop => stop()); job.leases.splice(0).forEach(lease => lease.release()); if (!job.ready) this.drop();
+        job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.stops.splice(0).forEach(stop => stop()); job.leases.splice(0).forEach(lease => lease.release()); if (!job.ready || job.resolving !== undefined) this.drop();
     }
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.release(); this.publish({ status: "idle", message: "Module links dismissed.", work: 0, total: 0, page: 0 }); };
     readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ message: "Link provider disconnected; local editing remains available." }); };
@@ -72,7 +80,7 @@ export class HostDocumentLinks {
     };
     attach(id: string, tab: TabId, editor: EditingCandidate): () => void {
         const s = { token: ++serial, id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
-        editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
+        editor.input.addEventListener("focus", () => { if (this.active !== s && this.job?.resolving !== undefined) this.cancel(); this.active = s; this.publish(); }, { signal: events.signal });
         editor.input.addEventListener("keydown", event => {
             if (event.defaultPrevented || event.isComposing || editor.snapshot().composing || event.key !== "F4" || event.ctrlKey || event.metaKey || event.altKey) return;
             if (event.shiftKey && !this.job?.opened) return; event.preventDefault(); event.stopImmediatePropagation(); this.active = s; if (event.shiftKey) this.returnToOrigin(); else this.start(true);
@@ -103,7 +111,8 @@ export class HostDocumentLinks {
             job.stops.push(origin.editor.view.subscribe(changed), origin.editor.view.folding.subscribe(changed), this.workspace.tabState.subscribe(changed));
             job.timer = win.setTimeout(() => { if (this.job === job && !job.ready) { this.release(); this.metrics.failed++; this.publish({ status: "failed", message: "Link provider timed out; source is unchanged." }); } }, 30000);
             this.publish({ status: "pending", message: `Discovering exact module-import links from ${origin.id}.`, work: 0, total: doc.buffer.length, page: 0 });
-            this.client ??= createNavigationClient(win, this.worker, undefined, () => { if (this.client && !this.client.snapshot().connected && !this.client.snapshot().busy) { this.drop(); this.release(); this.publish({ status: "failed", message: "Link connection failed; discover fresh links." }); } else this.publish(); });
+            const connectionChanged = () => { if (this.client && (!this.client.snapshot().connected && !this.client.snapshot().busy || this.job?.ready && !this.current(this.job))) { this.drop(); this.release(); this.publish({ status: "failed", message: "Link connection or capture changed; discover fresh links." }); } else this.publish(); };
+            this.client ??= this.factory ? this.factory(win, connectionChanged) : createNavigationClient(win, this.worker, undefined, connectionChanged);
             void this.client.links(input, doc.buffer, work => { if (this.current(job)) this.publish({ work }); }).then(result => {
                 if (!this.current(job)) { changed(); return; } job.ready = true; job.links = result.links; win.clearTimeout(job.timer);
                 const at = result.links.findIndex(l => l.from <= selected.selection.head && selected.selection.head <= l.to), page = at < 0 ? 0 : Math.floor(at / linkLimits.page);
@@ -113,7 +122,7 @@ export class HostDocumentLinks {
         } catch (error) { this.release(); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Link provider is unavailable." }); }
     }
     private place(job: Job, document: DocumentId, selections: SelectionSet | null): boolean {
-        if (!job.ready || !this.current(job) || !this.canCapture(document)) { this.publish({ message: "Finish pending input or discover fresh links." }); return false; }
+        if (!job.ready || job.resolving !== undefined || !this.current(job) || !this.canCapture(document)) { this.publish({ message: "Finish pending input or discover fresh links." }); return false; }
         this.presenting = true;
         try {
             const captured = job.targets.get(document), editor = captured && this.available(captured) ? captured.editor : this.present(document);
@@ -122,7 +131,17 @@ export class HostDocumentLinks {
             if (!applied) return false; job.opened = true; editor.viewport.revealOffset(editor.view.getSnapshot().selection.head); editor.focus(); this.publish(); return true;
         } finally { this.presenting = false; }
     }
-    open(token: number | null, ordinal: number): void { const job = this.job; if (!job || token !== job.input.id || !Number.isSafeInteger(ordinal)) return; const link = job.links[ordinal]; if (!link?.target) return;
+    open(token: number | null, ordinal: number): void { const job = this.job; if (!job || token !== job.input.id || !Number.isSafeInteger(ordinal) || job.resolving !== undefined || !this.current(job)) return; const link = job.links[ordinal]; if (!link) return;
+        if (!link.target && link.resolvable && this.client?.resolve) {
+            job.resolving = ordinal; job.resolveSelection = job.origin.editor.view.getSnapshot().selectionSet; job.resolveFolds = job.origin.editor.view.folding.getSnapshot().generation;
+            const owner = job.origin.editor.element.ownerDocument, focused = owner.activeElement; this.publish({ status: "resolving", message: "Resolving the captured provider link." });
+            void this.client.resolve(link).then(resolved => {
+                if (!this.current(job) || job.links[ordinal] !== link) return; job.links = Object.freeze(job.links.map((value, index) => index === ordinal ? resolved : value)); job.resolving = undefined;
+                this.publish({ status: "ready", message: resolved.target ? "Resolved a host-authorized destination." : "Provider link target is outside the host's captured resources." });
+                if (resolved.target && (owner.activeElement === focused || owner.activeElement === owner.body && (!focused?.isConnected || !!this.list?.contains(focused)))) this.open(token, ordinal);
+            }).catch(error => { if (this.job !== job) return; this.release(); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Link resolution failed; source is unchanged." }); }); return;
+        }
+        if (!link.target) return;
         if (this.place(job, link.target.document as DocumentId, null)) { this.metrics.opened++; this.publish({ message: `Opened captured module ${link.module}.` }); } }
     readonly returnToOrigin = (): void => { const job = this.job; if (job?.opened && this.place(job, job.input.document as DocumentId, job.selections)) { this.metrics.returned++; this.publish({ message: "Returned to the captured source and complete selection set." }); } };
     readonly nextPage = (): void => { const s = this.cell.get(); if ((s.page + 1) * linkLimits.page < s.count) this.publish({ page: s.page + 1 }); };
@@ -136,7 +155,7 @@ export class HostDocumentLinks {
         this.setAlias("sample-utils", this.companion); this.publish({ message: "Module companion registered for sample-utils. Discover links in an exact import line." }); };
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid links delay."); this.delay = value; }
     faultNext(value: NonNullable<LinksInput["fault"]>): void { this.fault = value; }
-    faultIdle(): boolean { return this.client?.faultIdle() ?? false; }
+    faultIdle(): boolean { return this.client?.faultIdle?.() ?? false; }
     debug() { const job = this.job; return { ...this.metrics, worker: { ...this.worker }, state: this.cell.get(), capture: job ? { input: job.input, view: job.origin.id, selections: job.selections } : null, companion: this.companion ?? null, aliases: [...this.aliases].map(([module, document]) => ({ module, document })), generation: this.generation, transport: this.client?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
     dispose(): void { if (this.disposed) return; this.cancel(); this.drop(); this.bindList(null); this.aliases.clear(); this.disposed = true; this.active = undefined; this.publish(); }
 }

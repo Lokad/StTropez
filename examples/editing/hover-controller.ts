@@ -98,7 +98,7 @@ export function createHoverController(workspace: Workspace, tabId: TabId, editor
         cancel: () => { if (disposed) return; if (pending) counts.cancelled++; clear("idle", "Symbol information dismissed."); },
         setDelay: (value: number) => { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid hover delay."); delay = value; },
         faultNext: (value: NonNullable<HoverInput["fault"]>) => { fault = value; },
-        snapshot: () => Object.freeze({ ...counts, created: options.backend?.snapshot().created ?? counts.created, connected: options.backend?.snapshot().connected ?? worker !== undefined, pending: pending !== undefined, disposed,
+        snapshot: () => Object.freeze({ ...counts, connected: options.backend?.snapshot().connected ?? worker !== undefined, pending: pending !== undefined, disposed,
             ...(options.backend ? { transport: options.backend.snapshot().transport } : {}) }),
         destroy: () => { if (disposed) return; disposed = true; stopBackend?.(); disconnect(); options.backend?.dispose(); editor.input.removeEventListener("compositionstart", composition); } });
 }

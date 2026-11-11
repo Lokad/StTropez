@@ -204,7 +204,7 @@ export class HostLanguageTools {
                 this.stopFolds?.(); this.stopFolds = undefined;
             }
             unsubscribe(); listeners.abort(); session.stopFind?.(); session.find?.destroy();
-            const counts = session.provider?.snapshot(); if (counts) for (const key of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[key] += counts[key];
+            const counts = session.provider?.snapshot(); if (counts) for (const key of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[key] += counts[key] ?? 0;
             session.provider?.destroy(); session.presentation.clear(); this.sessions.delete(session.id);
             if (this.active === session) this.active = undefined; this.publish();
         };

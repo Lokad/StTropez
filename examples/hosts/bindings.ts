@@ -213,11 +213,12 @@ export class ViewBindings {
         this.hover = new HostHoverTools(controller.workspace, kind => { if (kind === "pointer") return !this.signature?.state.getSnapshot().visible; this.signature?.dismiss(); return true; }, lsp ? { createController: lsp.hover, canCapture } : {});
         this.navigation = new HostNavigationTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.navigation);
         this.project = new HostProjectTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.project, lsp?.owner);
-        this.colors = new HostDocumentColors(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
-        this.links = new HostDocumentLinks(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId));
+        this.colors = new HostDocumentColors(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.colors);
+        this.links = new HostDocumentLinks(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.links);
         this.actions = new HostActionsTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.actions, this.project, lsp?.owner);
         this.rename = new HostRenameTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.rename);
-        this.signature = new HostSignatureTools(controller.workspace, canCapture, () => this.hover.dismiss());
+        this.signature = new HostSignatureTools(controller.workspace, canCapture, () => this.hover.dismiss(), lsp?.signature,
+            () => { const provider = this.language.state.getSnapshot().provider; return !!provider && (provider.pending || provider.offerText !== null); });
         this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.documentId) && !this.review?.working.snapshot().pendingInput
             && ![...this.mounted.values()].some(value => value.editor.metrics()?.pendingInput),
             documentId => this.selections.get("primary")?.get(documentId) ?? this.selections.get("comparison")?.get(documentId) ?? this.selections.get("secondary")?.get(documentId));

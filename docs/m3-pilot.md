@@ -176,7 +176,8 @@ This route uses actual LSP 3.17 over JSON-RPC 2.0 and WebSocket, with UTF-16 pos
 3.17.5 reference peer is a development dependency; the distributed runtime keeps zero package
 dependencies. A production language provider is not required for this evaluation.
 
-Focus a working source. Ctrl+Space requests completion; hover, F12/Shift+F12 and F2 use captured
+Focus a working source. Prefix typing requests completion automatically; Ctrl+Space retains
+explicit invocation. Hover, F12/Shift+F12 and F2 use captured
 provider hover, navigation and rename flows. Ctrl/Cmd+. opens provider action choices. Select a
 choice, inspect its edits, then choose **Apply captured action**. A command choice instead shows
 **Execute captured action** and its captured command name and argument count. Merely selecting a
@@ -193,8 +194,9 @@ The panel also offers **Register provider review command**, **Request provider r
 **Request provider workspace status** independently. Comparison baselines stay immutable, while
 Save/Run keep their captured primary resource even after another changed resource is revealed.
 See [action commands](lsp-code-actions.md), [server-edit decisions](lsp-server-edits.md) and the
-[supported subset](lsp.md) for limits, cancellation and remaining protocol gaps. Signature help,
-module links, colors and domain tools retain their separately declared worker fixtures.
+[supported subset](lsp.md) for limits, cancellation and remaining protocol gaps.
+[Signature help, links/resolve and color presentations](lsp-language.md) also use the shared
+LSP provider and existing host controls. Local tokenization and domain tools remain separate fixtures.
 
 ## Qualification scope
 

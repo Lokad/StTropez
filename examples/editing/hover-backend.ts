@@ -4,5 +4,5 @@ export type AbsoluteHover = Readonly<{ revision: number; range: Readonly<{ from:
 export type HoverBackend = Readonly<{
     run: (document: DocumentSnapshot, offset: number, configuration: Pick<HoverInput, "delay" | "fault">) => Readonly<{ result: Promise<AbsoluteHover | null>; cancel: () => void }>;
     subscribe: (listener: () => void) => () => void; disconnect: () => void; dispose: () => void;
-    snapshot: () => Readonly<{ connected: boolean; created: number; transport: "lsp3.17" }>;
+    snapshot: () => Readonly<{ connected: boolean; transport: "lsp3.17" }>;
 }>;

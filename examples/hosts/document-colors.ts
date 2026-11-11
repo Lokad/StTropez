@@ -1,14 +1,19 @@
-import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, Workspace } from "../../src/index.ts";
+import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, TextBuffer, Workspace } from "../../src/index.ts";
 import type { EditingCandidate } from "../../src/browser/index.ts";
 import type { EditingPresentation } from "../editing/presentation.ts";
 import { createNavigationClient, navigationMetrics } from "../editing/navigation-client.ts";
 import { colorLimits, parseColor, rgbaColor, sameColor, validateColorsInput, validateColorPresentationInput } from "../probes/colors.ts";
-import type { ColorFault, ColorsInput, ColorReference, ColorPresentationInput, ColorPresentationsResult } from "../probes/colors.ts";
+import type { ColorFault, ColorsInput, ColorsResult, ColorReference, ColorPresentationInput, ColorPresentationsResult } from "../probes/colors.ts";
 import { DomainAnnotationIndex } from "../probes/domain.ts";
 import { renameSelections } from "../probes/rename.ts";
 import { HostCell } from "../shared/observable.ts";
+type HostColorPresentations = Omit<ColorPresentationsResult, "presentations"> & Readonly<{ presentations: readonly (Omit<ColorPresentationsResult["presentations"][number], "id"> & Readonly<{ id: string }>)[] }>;
+export type ColorBackend = Readonly<{ colors: (input: ColorsInput, buffer: TextBuffer, progress: (work: number) => void) => Promise<ColorsResult>;
+    colorPresentations: (input: ColorPresentationInput, buffer: TextBuffer) => Promise<HostColorPresentations>; isCurrent?: () => boolean; faultIdle?: () => boolean;
+    snapshot: () => Readonly<{ connected: boolean; busy: boolean; transport?: string }>; dispose: () => void }>;
+export type ColorBackendFactory = (clock: Window, changed: () => void) => ColorBackend;
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate; presentation: EditingPresentation };
-type Preview = { input: ColorPresentationInput; selections: SelectionSet; folds: number; timer: number; invalid: boolean; result: ColorPresentationsResult | undefined; choice: "hex" | "rgba" };
+type Preview = { input: ColorPresentationInput; selections: SelectionSet; folds: number; timer: number; invalid: boolean; result: HostColorPresentations | undefined; choice: string };
 type Job = { origin: Session; input: ColorsInput; document: DocumentSnapshot; selections: SelectionSet; folds: number; authority: string; lease: ResourceLease; stops: (() => void)[]; timer: number; invalid: boolean;
     colors: readonly ColorReference[] | undefined; index: DomainAnnotationIndex | undefined; selected: number; preview: Preview | undefined };
 export type ColorNote = ColorReference & Readonly<{ ordinal: number; line: number; column: number; css: string }>;
@@ -26,7 +31,8 @@ export class HostDocumentColors {
     private readonly sessions = new Map<number, Session>();
     private active: Session | undefined;
     private job: Job | undefined;
-    private client: ReturnType<typeof createNavigationClient> | undefined;
+    private client: ColorBackend | undefined;
+    private readonly factory: ColorBackendFactory | undefined;
     private valueInput: HTMLInputElement | undefined;
     private list: HTMLElement | undefined;
     private fieldEvents: AbortController | undefined;
@@ -42,13 +48,13 @@ export class HostDocumentColors {
     private readonly metrics = { requested: 0, previews: 0, applied: 0, unchanged: 0, cancelled: 0, expired: 0, failed: 0 };
     private readonly cell = new HostCell<DocumentColorsSnapshot>({ available: false, connected: false, disconnected: false, pending: false, token: null, previewToken: null, view: null, status: "idle", message: "Focus a source to discover color literals.", work: 0, total: 0, count: 0, page: 0, colors: [], selected: -1, value: "", css: null, presentation: "", choices: [], edits: [], canPreview: false, canApply: false, changed: null });
     readonly state = this.cell.observable;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined) { this.workspace = workspace; this.canCapture = canCapture; this.present = present; }
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, factory?: ColorBackendFactory) { this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.factory = factory; }
     private available(s: Session): boolean { const tab = this.workspace.resolveTab(s.target); return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.snapshot().disposed && this.workspace.ownsDocumentView(s.editor.view)
         && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot(); }
     private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
     private editable(id: DocumentId): boolean { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return m.capabilities.edit.includes("human") && m.capabilities.edit.includes("host") && m.editLock === null; }
     private current(job: Job): boolean { try { return this.job === job && !job.invalid && this.available(job.origin) && this.workspace.observeDocument(job.document.id).getSnapshot()?.revision === job.document.revision && this.authority(job.document.id) === job.authority && this.canCapture(job.document.id)
-        && (!!job.colors || job.origin.editor.view.getSnapshot().selectionSet === job.selections && job.origin.editor.view.folding.getSnapshot().generation === job.folds); } catch { return false; } }
+        && (this.client?.isCurrent?.() ?? true) && (!!job.colors || job.origin.editor.view.getSnapshot().selectionSet === job.selections && job.origin.editor.view.folding.getSnapshot().generation === job.folds); } catch { return false; } }
     private currentPreview(job: Job, preview: Preview): boolean { const proposed = parseColor(this.cell.get().value); return this.current(job) && job.preview === preview && !preview.invalid && !!proposed && sameColor(proposed, preview.input.proposed)
         && job.origin.editor.view.getSnapshot().selectionSet === preview.selections && job.origin.editor.view.folding.getSnapshot().generation === preview.folds; }
     private publish(patch: Partial<DocumentColorsSnapshot> = {}): void {
@@ -65,12 +71,14 @@ export class HostDocumentColors {
         if (!colors && !s.presentation.colors) return; s.presentation.colors = colors; s.editor.viewport.invalidate(); }
     private syncAll(): void { for (const s of this.sessions.values()) this.sync(s); }
     private drop(): void { const client = this.client; this.client = undefined; this.dropping = true; try { client?.dispose(); } finally { this.dropping = false; } }
-    private clearPreview(job: Job): void { const preview = job.preview; job.preview = undefined; if (!preview) return; preview.invalid = true; job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(preview.timer); if (!preview.result) this.drop(); }
+    private clearPreview(job: Job): void { const preview = job.preview; job.preview = undefined; if (!preview) return; preview.invalid = true; job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(preview.timer);
+        if (!preview.result) { this.drop(); if (this.factory && this.job === job) this.release(); } }
     private release(): void { const job = this.job; this.job = undefined; if (!job) return; job.invalid = true; this.clearPreview(job); job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.stops.splice(0).forEach(stop => stop()); job.lease.release(); if (!job.colors) this.drop(); this.syncAll(); }
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.release(); this.publish({ status: "idle", message: "Color references and presentation preview dismissed.", work: 0, total: 0, page: 0 }); };
     readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ message: "Color provider disconnected; local editing remains available." }); };
     readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.publish({ message: "Discover fresh colors to reconnect." }); };
-    private connectionChanged(): void { if (this.dropping) return; if (this.client && !this.client.snapshot().connected && !this.client.snapshot().busy) { const job = this.job; if (job) this.clearPreview(job); this.drop(); this.publish({ status: "failed", message: "Color connection failed; request a fresh preview or rediscover." }); } else this.publish(); }
+    private connectionChanged(): void { if (this.dropping) return; if (this.job && !this.current(this.job)) { this.changed(this.job); return; }
+        if (this.client && !this.client.snapshot().connected && !this.client.snapshot().busy) { const job = this.job; if (job) this.clearPreview(job); this.drop(); this.publish({ status: "failed", message: "Color connection failed; request a fresh preview or rediscover." }); } else this.publish(); }
     private changed(job: Job): void {
         if (this.publishing || this.job !== job) return;
         if (!this.current(job)) { job.invalid = true; queueMicrotask(() => { if (this.job === job) { this.release(); this.metrics.expired++; this.publish({ status: "expired", message: "Captured resource, revision, authority or view changed; rediscover colors." }); } }); }
@@ -81,7 +89,7 @@ export class HostDocumentColors {
     readonly bindValue = (input: HTMLInputElement | null): void => { this.fieldEvents?.abort(); this.fieldEvents = undefined; this.valueInput = input ?? undefined; if (!input || this.disposed) return; const events = new AbortController(); this.fieldEvents = events;
         input.addEventListener("keydown", event => { if (event.defaultPrevented || event.isComposing) return; if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); const origin = this.job?.origin ?? this.active; this.cancel(); if (origin && this.available(origin)) origin.editor.focus(); }
             else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) { event.preventDefault(); this.preview(); } }, { signal: events.signal }); };
-    setValue(value: string): void { if (value === this.cell.get().value) return; if (this.job) this.clearPreview(this.job); this.publish({ value: value.slice(0, colorLimits.literal + 1), status: this.job?.colors ? "colors" : this.cell.get().status, message: "Proposed color changed; preview before confirming." }); }
+    setValue(value: string): void { if (value === this.cell.get().value) return; if (this.job) this.clearPreview(this.job); this.publish({ value: value.slice(0, colorLimits.literal + 1), status: this.job?.colors ? "colors" : "idle", message: this.job ? "Proposed color changed; preview before confirming." : "Proposed color changed; discover colors before previewing." }); }
     attach(id: string, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation): () => void {
         const s = { token: ++serial, id, target: this.workspace.captureTab(tab), editor, presentation }, events = new AbortController(); this.sessions.set(s.token, s); this.sync(s);
         editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
@@ -101,28 +109,30 @@ export class HostDocumentColors {
         try {
             const changed = () => this.changed(job); job.stops.push(this.workspace.observeDocument(doc.id).subscribe(changed), this.workspace.resourceForDocument(doc.id).metadata.subscribe(changed), origin.editor.view.subscribe(changed), origin.editor.view.folding.subscribe(changed), this.workspace.tabState.subscribe(changed));
             job.timer = win.setTimeout(() => { if (this.job === job && !job.colors) { this.release(); this.metrics.failed++; this.publish({ status: "failed", message: "Color discovery timed out; source is unchanged." }); } }, 30000);
-            this.publish({ status: "scan", message: `Discovering bounded color literals from ${origin.id}.`, page: 0, work: 0, total: doc.buffer.length }); this.client ??= createNavigationClient(win, this.worker, undefined, () => this.connectionChanged());
-            void this.client.colors(input, doc.buffer, work => { if (this.current(job)) this.publish({ work }); }).then(result => {
+            this.publish({ status: "scan", message: `Discovering bounded color literals from ${origin.id}.`, page: 0, work: 0, total: doc.buffer.length }); this.ensureClient(win);
+            void this.client!.colors(input, doc.buffer, work => { if (this.current(job)) this.publish({ work }); }).then(result => {
                 if (!this.current(job)) { this.changed(job); return; } job.colors = result.colors; job.index = new DomainAnnotationIndex(result.colors.map((color, i) => ({ id: `color-${i}`, from: color.from, to: color.to, label: color.label }))); win.clearTimeout(job.timer);
                 const at = result.colors.findIndex(c => c.from <= selected.selection.head && selected.selection.head <= c.to); job.selected = result.colors.length ? Math.max(0, at) : -1; this.syncAll();
-                this.publish({ status: "colors", message: `${result.colors.length} color literals. Inspect one, preview presentations and confirm explicitly.`, work: input.length, page: job.selected < 0 ? 0 : Math.floor(job.selected / colorLimits.page), value: result.colors[job.selected]?.text ?? "" });
+                const color = result.colors[job.selected]; this.publish({ status: "colors", message: `${result.colors.length} color literals. Inspect one, preview presentations and confirm explicitly.`, work: this.factory ? 0 : input.length, page: job.selected < 0 ? 0 : Math.floor(job.selected / colorLimits.page), value: color ? this.factory ? rgbaColor(color.color) : color.text : "" });
                 if (keyboard && this.job === job && this.current(job) && this.list?.isConnected && win.document.activeElement === origin.editor.input) this.list.focus();
             }).catch(error => { if (this.job !== job) return; this.release(); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Color discovery failed." }); });
         } catch (error) { this.release(); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Color provider unavailable." }); }
     }
-    inspect(token: number | null, ordinal: number): void { const job = this.job; if (!job?.colors || token !== job.input.id || !Number.isSafeInteger(ordinal) || !job.colors[ordinal] || !this.current(job)) return; this.clearPreview(job); job.selected = ordinal; const value = job.colors[ordinal]!.text; this.publish({ status: "colors", value, message: "Inspecting a captured color. Edit the host value and preview before confirming." }); if (this.valueInput) { this.valueInput.value = value; this.valueInput.focus(); this.valueInput.select(); } }
+    inspect(token: number | null, ordinal: number): void { const job = this.job; if (!job?.colors || token !== job.input.id || !Number.isSafeInteger(ordinal) || !job.colors[ordinal] || !this.current(job)) return; this.clearPreview(job); if (this.job !== job) return; job.selected = ordinal; const color = job.colors[ordinal]!, value = this.factory ? rgbaColor(color.color) : color.text; this.publish({ status: "colors", value, message: "Inspecting a captured color. Edit the host value and preview before confirming." }); if (this.valueInput) { this.valueInput.value = value; this.valueInput.focus(); this.valueInput.select(); } }
     readonly preview = (): void => {
         const job = this.job, proposed = parseColor(this.cell.get().value); if (!job?.colors?.[job.selected] || !this.current(job) || !proposed) { this.publish({ message: "Discover a source color and enter a supported proposed literal first." }); return; }
+        if (job.preview && !job.preview.result) { this.publish({ message: "Finish the current presentation request or change the proposed value and rediscover." }); return; }
         this.clearPreview(job); let input: ColorPresentationInput;
-        try { input = validateColorPresentationInput({ ...job.input, id: ++this.sequence, discovery: job.input.id, reference: job.colors[job.selected], proposed, delay: this.delay, fault: this.fault }, job.document.buffer); }
+        try { const value = { ...job.input, id: ++this.sequence, discovery: job.input.id, reference: job.colors[job.selected]!, proposed, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }; input = this.factory ? Object.freeze(value) : validateColorPresentationInput(value, job.document.buffer); }
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid presentation capture." }); return; }
         this.fault = undefined; const selected = job.origin.editor.view.getSnapshot(), preview: Preview = { input, selections: selected.selectionSet, folds: job.origin.editor.view.folding.getSnapshot().generation, timer: 0, invalid: false, result: undefined, choice: "rgba" }; job.preview = preview; this.metrics.previews++; const win = job.origin.editor.element.ownerDocument.defaultView!;
         preview.timer = win.setTimeout(() => { if (this.job === job && job.preview === preview && !preview.result) { this.clearPreview(job); this.metrics.failed++; this.publish({ status: "failed", message: "Presentation timed out; validated color references remain available." }); } }, 30000);
-        this.publish({ status: "presentations", message: "Waiting for captured color presentation edits." }); this.client ??= createNavigationClient(win, this.worker, undefined, () => this.connectionChanged());
-        void this.client.colorPresentations(input, job.document.buffer).then(result => { if (!this.currentPreview(job, preview)) { this.changed(job); return; } preview.result = result; preview.choice = result.presentations[0]!.id; win.clearTimeout(preview.timer); this.publish({ status: "presentations", message: "Review every proposed edit and presentation before confirming." }); })
+        this.publish({ status: "presentations", message: "Waiting for captured color presentation edits." }); this.ensureClient(win);
+        void this.client!.colorPresentations(input, job.document.buffer).then(result => { if (!this.currentPreview(job, preview)) { this.changed(job); return; } preview.result = result; preview.choice = result.presentations[0]?.id ?? ""; win.clearTimeout(preview.timer); this.publish({ status: "presentations", message: result.presentations.length ? "Review every proposed edit and presentation before confirming." : "No provider presentation for the captured color." }); })
             .catch(error => { if (this.job !== job || job.preview !== preview) return; this.clearPreview(job); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Color presentation failed; source is unchanged." }); });
     };
-    setPresentation(id: string): void { const job = this.job, preview = job?.preview; if (!job || !preview?.result || !this.currentPreview(job, preview) || !preview.result.presentations.some(p => p.id === id)) return; preview.choice = id as "hex" | "rgba"; this.publish(); }
+    private ensureClient(win: Window): void { this.client ??= this.factory ? this.factory(win, () => this.connectionChanged()) : createNavigationClient(win, this.worker, undefined, () => this.connectionChanged()); }
+    setPresentation(id: string): void { const job = this.job, preview = job?.preview; if (!job || !preview?.result || !this.currentPreview(job, preview) || !preview.result.presentations.some(p => p.id === id)) return; preview.choice = id; this.publish(); }
     apply(token: number | null, previewToken: number | null, id: string): void {
         const job = this.job, preview = job?.preview, choice = preview?.result?.presentations.find(p => p.id === id);
         if (!job || !preview || !choice || token !== job.input.id || previewToken !== preview.input.id || id !== preview.choice || !this.currentPreview(job, preview) || !this.editable(job.document.id)) { this.publish({ message: "Use a fresh applicable presentation with edit permission." }); return; }
@@ -140,7 +150,7 @@ export class HostDocumentColors {
     readonly previousPage = (): void => { const s = this.cell.get(); if (s.page) this.publish({ page: s.page - 1 }); };
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid color delay."); this.delay = value; }
     faultNext(value: ColorFault): void { this.fault = value; }
-    faultIdle(): boolean { return this.client?.faultIdle() ?? false; }
+    faultIdle(): boolean { return this.client?.faultIdle?.() ?? false; }
     debug() { const job = this.job; return { ...this.metrics, worker: { ...this.worker }, state: this.cell.get(), capture: job ? { input: job.input, view: job.origin.id, selections: job.preview?.selections ?? job.selections } : null, transport: this.client?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), decoratedViews: [...this.sessions.values()].filter(s => !!s.presentation.colors).length, disposed: this.disposed }; }
     dispose(): void { if (this.disposed) return; this.cancel(); this.drop(); this.bindList(null); this.bindValue(null); this.disposed = true; this.active = undefined; this.publish({ changed: null }); }
 }

@@ -186,7 +186,7 @@ function DocumentLinksTools() {
     return <section className="host-language" aria-label="Module document links"><h2>Module document links</h2><p>{documentLinkDescription}</p>
         <output aria-label="Module link status">{s.message}</output>
         <div>{documentLinkActions(tools).map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
-        <ul ref={tools.bindList} tabIndex={-1} aria-label="Module link results">{s.links.map(link => <li key={link.from}><button disabled={!link.target || s.status !== "ready"} onClick={() => tools.open(s.token, link.ordinal)}>{documentLinkLabel(link)}</button><p>{documentLinkDetails(link)}</p></li>)}</ul></section>;
+        <ul ref={tools.bindList} tabIndex={-1} aria-label="Module link results">{s.links.map(link => <li key={link.from}><button disabled={!link.target && !link.resolvable || s.status !== "ready"} onClick={() => tools.open(s.token, link.ordinal)}>{documentLinkLabel(link)}</button><p>{documentLinkDetails(link)}</p></li>)}</ul></section>;
 }
 function ActionsTools() {
     const tools = bindings.actions, s = useObserved(tools.state);

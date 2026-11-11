@@ -17,5 +17,5 @@ export function createLspProviderController(workspace: Workspace, tabId: TabId, 
         disconnect: () => { controller.cancel(); options.provider.disconnect(); },
         setDelay: (value: number) => { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid fixture delay."); delay = value; },
         faultNext: (value: "malformed" | "failure") => { fault = value; },
-        snapshot: () => Object.freeze({ ...controller.snapshot(), outOfScope: 0, postedUnits: 0 }) });
+        snapshot: controller.snapshot });
 }

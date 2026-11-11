@@ -16,3 +16,7 @@ export { createLspHoverClient } from "./lsp-hover.ts";
 export { createLspRenameClient } from "./lsp-rename.ts";
 export { createLspNavigationClient } from "./lsp-navigation.ts";
 export { createLspActionClient } from "./lsp-actions.ts";
+export { decodeLspSignatureHelp, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspColor, decodeLspDocumentColors, decodeLspColorPresentations } from "./lsp-features.ts";
+export type { LspSignature, LspSignatureHelp, LspDocumentLink, LspColor, LspDocumentColor, LspColorPresentation } from "./lsp-features.ts";
+export { createLspSignatureClient, createLspLinkClient, createLspColorClient } from "./lsp-language.ts";
+export type { LspSignatureContext } from "./lsp-language.ts";
