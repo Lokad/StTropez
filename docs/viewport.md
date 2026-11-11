@@ -90,6 +90,11 @@ estimated logical scroll map or reading the whole line. Manual scrolling clears 
 offset, affinity and viewport position; `restoreView` ignores an anchor from another revision.
 This preserves same-revision remounts without claiming a measured global horizontal origin or
 complete contextual shaping. Complete rows continue to use their ordinary measured scroll path.
+The bounded input adapter also retains a previously visible focused selection head when a host
+resize or font-metric change would hide it. It reuses nearest reveal and local fragment placement
+without changing text, complete selections or history. A changed revision, selection, fold or
+explicit scroll expires that placement decision; inactive views and deliberately offscreen carets
+keep their scroll positions. This does not supply the missing global contextual geometry.
 The [cooperative paragraph index](bidi.md) can resolve the complete requested range in bounded
 advances, with captured revision/tab guards. Its development controls exercise that stage
 independently. The renderer still needs exact global font advances and shaping before it can

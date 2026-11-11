@@ -93,11 +93,25 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         commandTimers.forEach(timer => win.clearTimeout(timer)); commandTimers.clear();
     }
     const scheduleCaret = () => { if (!disposed && frame === undefined) frame = win.requestAnimationFrame(positionCaret); };
+    let caretLayout: Readonly<{ state: ReturnType<TextViewport["snapshot"]>; visible: boolean; focused: boolean }> | undefined;
     function positionCaret(): void {
         frame = undefined; if (disposed) return;
-        const { selection: selected, selectionSet } = view.getSnapshot(), point = viewport.coordsAt(selected.head, selected.headAffinity), rectangle = clientBox(root);
-        const visible = point && point.left >= rectangle.left && point.left < rectangle.right
+        const { selection: selected, selectionSet } = view.getSnapshot(), rectangle = clientBox(root), focused = owner.activeElement === input;
+        let state = viewport.snapshot(), point = viewport.coordsAt(selected.head, selected.headAffinity);
+        let visible = point && point.left >= rectangle.left && point.left < rectangle.right
             && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
+        const prior = caretLayout;
+        // Reuse bounded reveal after layout changes hide a previously visible focused head.
+        // Explicit scrolling, new selections/revisions and inactive views retain their own positions.
+        if (!visible && focused && !composing && prior?.visible && prior.focused && state.revision === prior.state.revision
+            && state.selectionSet === prior.state.selectionSet && state.foldGeneration === prior.state.foldGeneration
+            && state.scrollTop === prior.state.scrollTop && state.scrollLeft === prior.state.scrollLeft
+            && (state.width !== prior.state.width || state.height !== prior.state.height || state.columnWidth !== prior.state.columnWidth || state.lineHeight !== prior.state.lineHeight)) {
+            viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" }); viewport.flush();
+            state = viewport.snapshot(); point = viewport.coordsAt(selected.head, selected.headAffinity);
+            visible = point && point.left >= rectangle.left && point.left < rectangle.right && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
+        }
+        caretLayout = { state, visible: !!visible, focused: focused && !composing };
         caret.hidden = !visible || selected.anchor !== selected.head || composing || owner.activeElement !== input;
         const left = ((point?.left ?? rectangle.left) - rectangle.left) / rectangle.zoom;
         const top = ((point?.top ?? rectangle.top) - rectangle.top) / rectangle.zoom;
@@ -106,7 +120,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         input.style.top = `${root.scrollTop + Math.max(0, Math.min(root.clientHeight - 24, top))}px`;
         caret.style.left = `${root.scrollLeft + left}px`; caret.style.top = `${root.scrollTop + top}px`;
         for (const element of [input, caret]) element.style.height = `${point ? point.height / rectangle.zoom : viewport.snapshot().lineHeight}px`;
-        const state = viewport.snapshot(), buffer = workspace.observeDocument(documentId).getSnapshot()?.buffer;
+        const buffer = workspace.observeDocument(documentId).getSnapshot()?.buffer;
         const points = [];
         if (!composing && owner.activeElement === input && buffer && state.selectionSet === selectionSet && state.lastLine > state.firstLine) {
             const from = buffer.offsetAt(state.firstLine), to = state.lastLine < buffer.lineCount ? buffer.offsetAt(state.lastLine) : buffer.length;
@@ -962,7 +976,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         destroy: () => {
             if (disposed) return; disposed = true;
             if (executingInput) recoverInput(executingInput, "pending-input-detached");
-            cancelWord(); nativeOrder = undefined; wordInput = undefined; insertion = undefined; composition = undefined; graphemeCache = undefined; preferred = undefined;
+            cancelWord(); nativeOrder = undefined; wordInput = undefined; insertion = undefined; composition = undefined; graphemeCache = undefined; preferred = undefined; caretLayout = undefined;
             if (composing && input.value !== context.text) conflict("composition-detached");
             composing = false; stopDrag(); textDrag.destroy();
             if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
