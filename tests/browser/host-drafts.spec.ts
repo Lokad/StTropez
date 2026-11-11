@@ -74,6 +74,52 @@ async function exact(p: Page, value: string): Promise<void> { expect(await p.eva
 async function warning(p: Page): Promise<boolean> { return p.evaluate(() => { const e = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; }); }
 async function restore(p: Page, name: string): Promise<void> { await button(p, name).click(); await expect(button(p, "Confirm draft action")).toBeEnabled(); await button(p, "Confirm draft action").click(); await ready(p); }
 async function dispose(p: Page): Promise<void> { await p.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(p); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.draft?.disposed).toBe(true); }
+async function closeWithDecision(p: Page, accept: boolean): Promise<void> {
+    // close(runBeforeUnload) returns before closure; dismissal must leave the same page alive.
+    const handled = p.waitForEvent("dialog").then(async dialog => { expect(dialog.type()).toBe("beforeunload"); await (accept ? dialog.accept() : dialog.dismiss()); });
+    const closed = accept ? p.waitForEvent("close") : undefined;
+    await Promise.all([p.close({ runBeforeUnload: true }), handled]);
+    if (closed) await closed;
+}
+for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} browser close decisions retain live work and offer only explicit checkpoint recovery`, async ({ page: p }) => {
+    test.setTimeout(120000); const errors: string[] = []; p.on("pageerror", e => errors.push(e.message));
+    await p.goto(`/hosts/${host}/?editor=candidate`); await ready(p);
+    const raw = "close café😀 é\r\n" + "const stableValue = 123;\r\n".repeat(large ? 100000 : 10) + "tail";
+    await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, raw);
+    // Trusted browser input supplies user activation; no global keyboard or OS clipboard is used.
+    await source(p).press("Control+End"); await source(p).pressSequentially("K");
+    await p.getByRole("textbox", { name: "Configuration path", exact: true }).fill("checkpoint.csv"); await ready(p); await keep(p);
+    expect((await snapshot(p)).draft!.unprotected).toBe(false);
+    await button(p, "Open source review").click(); await ready(p);
+    await p.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 4, head: 1 }, { anchor: 12, head: 8 }], 1); }); await ready(p);
+    await button(p, "Save source").click(); await expect.poll(async () => (await snapshot(p)).pendingSaves.length).toBe(1);
+    const pending = await snapshot(p); expect(pending.draft!.unprotected).toBe(false);
+    // Checkpoint coverage does not cover an unsettled service request.
+    await closeWithDecision(p, false); expect(p.isClosed()).toBe(false); await ready(p); await preserved(p, pending, raw + "K");
+    let after = await snapshot(p); expect(after.pendingSaves).toEqual(pending.pendingSaves); expect(after.diagnostics).toEqual(pending.diagnostics);
+    expect(after.hostSubscriptions).toBe(pending.hostSubscriptions); expect(after.bindings.comparison!.baseline).toEqual(pending.bindings.comparison!.baseline); expect(after.draft!.disposed).toBe(false);
+    await button(p, "Finish save").click(); await expect.poll(async () => (await snapshot(p)).pendingCommands).toBe(0);
+    await source(p).press("Control+End"); await source(p).pressSequentially("L"); await ready(p);
+    const later = await snapshot(p); expect(later.draft!.unprotected).toBe(true); expect(later.source.exports).toBe(0);
+    await closeWithDecision(p, false); await ready(p); await preserved(p, later, raw + "KL");
+    // A cancelled close did not dispose handlers or history in either view.
+    await source(p, "Secondary source").press("Control+z"); await ready(p); await exact(p, raw + "K");
+    await source(p, "Secondary source").press("Control+Shift+z"); await ready(p); await exact(p, raw + "KL");
+    const context = p.context(), url = p.url(); await closeWithDecision(p, true); expect(p.isClosed()).toBe(true);
+    const reopened = await context.newPage(); reopened.on("pageerror", e => errors.push(e.message)); await reopened.goto(url); await ready(reopened);
+    await exact(reopened, "start"); await expect(reopened.getByRole("textbox", { name: "Configuration path", exact: true })).toHaveValue("source.csv");
+    expect((await snapshot(reopened)).draft).toMatchObject({ present: true, valid: true, sourceUnits: raw.length + 1 });
+    await stored(reopened, raw + "K"); await restore(reopened, "Restore source draft"); await exact(reopened, raw + "K");
+    await expect(reopened.getByRole("textbox", { name: "Configuration path", exact: true })).toHaveValue("source.csv");
+    const restored = await snapshot(reopened); await restore(reopened, "Restore configuration draft");
+    await expect(reopened.getByRole("textbox", { name: "Configuration path", exact: true })).toHaveValue("checkpoint.csv");
+    after = await snapshot(reopened); expect(after.source).toEqual(restored.source); expect(after.history).toEqual(restored.history);
+    expect(after.source.exports).toBe(0); expect(after.pendingSaves).toEqual([]); expect(after.pendingRuns).toEqual([]);
+    // Covered, settled inputs can really close without showing a confirmation.
+    const dialogs: string[] = []; reopened.on("dialog", async dialog => { dialogs.push(dialog.type()); await dialog.accept(); });
+    const closed = reopened.waitForEvent("close"); await reopened.close({ runBeforeUnload: true }); await closed;
+    expect(dialogs).toEqual([]); expect(errors).toEqual([]);
+});
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} durable drafts restore independent inputs after true reload and preserve history Save/Run`, async ({ page: p }) => {
     test.setTimeout(120000); p.on("pageerror", e => { throw e; }); await p.goto(`/hosts/${host}/?editor=candidate`); await ready(p);
     const raw = "café😀 é;\r\n" + "const stableValue = 123;\r\n".repeat(large ? 100000 : 10) + "tail";

@@ -123,6 +123,9 @@ The hosts also offer explicit [draft checkpoints and reload recovery](host-draft
 Keep a recovery draft before leaving unsaved inputs. Reload offers independent source and
 configuration restore choices; neither applies automatically or restores an old undo stack.
 Later edits, failed storage and unsettled input/requests keep the navigation guard active.
+Actual headless browser-close checks cover dismissing confirmation without losing live work,
+accepting it with explicit checkpoint recovery, and closing covered, settled inputs without a
+prompt in all three engines. Native application shutdown remains unverified.
 
 These tools share the pilot's captured identities, history and review. Their detailed policy
 documents define supported syntax, bounds and remaining semantic/native qualification gaps.
@@ -198,8 +201,8 @@ module links, colors and domain tools retain their separately declared worker fi
 The automated pilot covers both hosts, normal and 100k-line sources, actual editing/history,
 comparison, captured Save/Run and lifecycle guards in Chromium, Firefox and WebKit. Restored
 assets qualify a separately built React host without checkout-source fallback. A tracked-files-only
-checkout also passes public locked dependency installation, strict checks/build, reference-peer
-protocol tests and focused normal/100k editor/LSP/reference-Find journeys. Its compiled modules,
+checkout also passes public locked dependency installation, strict checks/build, all 499 model
+tests and focused normal/100k editor/LSP/reference-Find journeys. Its compiled modules,
 declarations, CSS and license assets match the qualified package byte for byte. Browser binaries
 were reused; the clean trial is setup and correctness evidence, not a new browser-install test.
 

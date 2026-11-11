@@ -66,8 +66,14 @@ The host installs a `beforeunload` guard when current inputs lack checkpoint cov
 or input is pending, or host requests/acknowledgements remain unsettled. Browser confirmation can
 keep the page open so the user can checkpoint, finish or cancel the work. A checkpoint does not
 save or run inputs, replay service requests or persist the synthetic server. Browser unload
-prompts are not a crash/power-loss guarantee and require the consuming host's declared browser
-and device checks. The draft service outlives view unmounts; full host disposal releases its
+prompts are not a crash/power-loss guarantee. Headless Chromium, Firefox and WebKit tests use
+the browser's actual close confirmation in both hosts with normal and 100k-line sources.
+Dismissing close retains text, complete selections, shared history, comparison identity and a
+pending Save, even when inputs have checkpoint coverage. Accepting close offers only the stored
+checkpoint on reopening: source and configuration restore independently and never automatically.
+Covered inputs with settled requests close without a prompt. These page-close checks do not
+qualify native application shutdown or the consuming host's storage and device policy.
+The draft service outlives view unmounts; full host disposal releases its
 observers, navigation listeners and storage connection. Native IME/reconversion, OS clipboard, mobile termination and
 physical display behavior remain unverified. The baseline adapter remains available for bounded
 switchback evaluation; portable undo and production adoption are separate gates.
