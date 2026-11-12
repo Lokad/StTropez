@@ -118,6 +118,15 @@ function detachView(): void {
     comparison = undefined; editor = undefined; reviewLabel = undefined;
     element("editor").replaceChildren(); element("panel-content").replaceChildren();
 }
+function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEditor: EditingCandidate) {
+    return mountDemoLanguage(capturedProject.workspace, capturedProject.files, file, capturedEditor, capturedProject.language, target => {
+        if (disposed || project !== capturedProject || editor !== capturedEditor) return;
+        const destination = capturedProject.files.find(file => file.resource.documentId === target.documentId);
+        if (!destination || capturedProject.workspace.document(target.documentId).revision !== target.revision) return;
+        mountFile(destination, true); destination.view.setSelection(target.revision, { anchor: target.from, head: target.to });
+        editor?.viewport.revealOffset(target.from); editor?.focus();
+    });
+}
 function mountFile(file: DemoFile, focus = false): void {
     if (!project || disposed || editor?.snapshot().composing) return;
     const viewState = editor?.captureView();
@@ -160,7 +169,7 @@ function mountFile(file: DemoFile, focus = false): void {
     };
     stopFind = find.state.subscribe(renderFind); if (!element("find-bar").hidden) find.setQuery(field("find-query").value);
     stopView = file.view.subscribe(renderMetadata);
-    languageView = mountDemoLanguage(project.workspace, file, editor, project.language);
+    languageView = attachLanguage(project, file, editor);
     renderMetadata(); renderLanguage(); renderOutput(); if (focus) editor.focus();
 }
 const savedViews = new Map<string, ReturnType<EditingCandidate["captureView"]>>();
@@ -207,6 +216,7 @@ on("replace-all", () => { find?.replaceAll(field("replacement").value); });
 on("compare", () => setPanel("changes")); on("analysis-retry", () => presentation.retry());
 on("complete", () => languageView?.complete());
 on("inspect-type", () => languageView?.inspect()); on("signature", () => languageView?.signature());
+on("definition", () => languageView?.definition()); on("references", () => languageView?.references()); on("rename", () => languageView?.rename());
 const codeMenu = element("code-menu") as HTMLDetailsElement;
 codeMenu.addEventListener("click", event => { if ((event.target as HTMLElement).closest("button")) codeMenu.open = false; }, { signal: listeners.signal });
 document.addEventListener("pointerdown", event => { if (!codeMenu.contains(event.target as Node)) codeMenu.open = false; }, { signal: listeners.signal });
@@ -217,7 +227,7 @@ on("language-retry", () => {
     const captured = project, file = active, view = editor; if (!captured || !file || !view) return;
     languageView?.destroy(); languageView = undefined;
     void captured.language.retry().then(() => {
-        if (!disposed && project === captured && editor === view) languageView = mountDemoLanguage(captured.workspace, file, view, captured.language);
+        if (!disposed && project === captured && editor === view) languageView = attachLanguage(captured, file, view);
     }).catch(() => {});
 });
 on("panel-collapse", () => {

@@ -2,7 +2,7 @@
 
 The root demo uses TypeScript 5.9.3 for syntax/JavaScript emission in a worker and
 typescript-language-server 5.1.3 with the same compiler for type checking, completion,
-hover and signature help.
+hover, signature help, definition/reference navigation and rename.
 The Node host uses vscode-uri 3.1.0 to provide the server's canonical file URIs, including
 Windows drive spelling/escaping. These are pinned development dependencies. Shipped modules
 and NuGet assets retain zero third-party runtime dependencies and exclude the provider/compiler.
@@ -11,8 +11,8 @@ and NuGet assets retain zero third-party runtime dependencies and exclude the pr
 sample and bridges text JSON-RPC 2.0 messages between WebSocket and the provider's stdio.
 StTropez's public `LspWorkspace`, WebSocket transport and editor completion controller own
 negotiation, UTF-16 synchronization, capture/response validation and completion edits/history.
-Completion, hover and signature help are exposed as standard language features in this demo;
-definition/reference navigation, rename and code actions remain to be connected.
+Completion, hover, signature help, definition/reference navigation and rename use standard
+language features in this demo. Code actions remain to be connected.
 The existing deterministic protocol fixture keeps its separate `/lsp-fixture` route.
 
 ## Current workflows
@@ -30,9 +30,19 @@ The existing deterministic protocol fixture keeps its separate `/lsp-fixture` ro
   argument. Code → Signature help or Ctrl+Shift+Space requests it explicitly. Completion gets
   the first Escape when both are open. Overload controls appear when the provider offers choices.
   Edits, navigation, composition, file switches and disposal invalidate captured popup work.
+- F12 or Code → Go to definition opens the validated sample file and selects its symbol.
+  Shift+F12 or Find references offers captured locations; arrows/Enter or a click choose one,
+  and Escape closes the list. Definitions outside the sample, including standard library files,
+  are unavailable. Late results cannot follow later file focus or typing.
+- F2 or Code → Rename symbol captures the source, then offers a new-name preview. Changing the
+  name requires a fresh preview. Apply commits all validated file edits as one undo command;
+  edits, changed selection/authority, file switches and provider restart expire old previews.
+  Renaming at the function definition updates the importing file too. At an imported alias,
+  TypeScript may instead introduce a local alias; the preview shows the actual provider edits.
 - A failed provider leaves typing, history, comparison and local saves usable. Retry creates
   a fresh provider connection with current document snapshots. Switching samples suspends
-  the inactive provider; file switches retain the same project synchronization stream.
+  the inactive provider; file switches retain the same project synchronization stream. Retry
+  keeps the current input element, view state and offline edits while replacing provider scopes.
 - Closing a view disposes its completion scope/popup. Closing the project cancels requests,
   disposes synchronization and requests server cleanup. The host stops the owned process and
   removes its allocated workspace. Idle allocations expire after two minutes as a fallback.

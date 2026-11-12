@@ -14,15 +14,18 @@
                 <button id="complete" title="Ctrl+Space">Complete</button>
                 <button id="inspect-type" title="Ctrl+K, Ctrl+I">Inspect type</button>
                 <button id="signature" title="Ctrl+Shift+Space">Signature help</button>
+                <button id="definition" title="F12">Go to definition</button>
+                <button id="references" title="Shift+F12">Find references</button>
+                <button id="rename" title="F2">Rename symbol</button>
             </div></details>
             <button id="compare">Compare</button><button id="reset">Reset</button>
             <button id="save" class="primary" title="Save in this browser (Ctrl+S)">Save locally</button>
         </div>
     </header>
     <div class="intro"><p id="description">Opening the editor…</p><button id="walkthrough-toggle">Quick tour</button></div>
-    <aside id="walkthrough" hidden>Change a value → open pricing.ts → compare your changes → undo → save locally.
-        Hover over a symbol for its type; Code lists language commands. Use Problems to find type errors.
-        Symbol navigation and rename are being connected next.</aside>
+    <aside id="walkthrough" hidden>Change a value → inspect its type → follow its definition → rename it → compare → undo → save locally.
+        Hover inspects a symbol; F12 follows its definition and F2 renames it. Code lists the commands.
+        Use Problems to find type errors.</aside>
     <nav id="files" aria-label="Project files"></nav>
     <section id="recovery-offer" aria-label="Draft recovery" hidden>
         <span id="recovery-message"></span><button id="recovery-restore">Restore draft</button>

@@ -28,6 +28,7 @@ export function mountDemoInspection(workspace: Workspace, file: DemoFile, editor
     const stopSignature = mountSignaturePopup(host, signature, true);
     const detachHover = hover.attach("source", file.tab, editor), detachSignature = signature.attach("source", file.tab, editor);
     return Object.freeze({
+        dismiss: () => { hover.dismiss(); signature.dismiss(); },
         inspect: () => { editor.focus(); hover.inspectCaret("source"); },
         signature: () => { cancelCompletion(); editor.focus(); signature.inspect(); },
         destroy: () => { detachHover(); detachSignature(); signature.dispose(); stopHover(); stopSignature(); host.remove(); },

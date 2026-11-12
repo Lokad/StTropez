@@ -101,6 +101,11 @@ export class HostRenameTools {
         return () => { if (detached) return; detached = true; if (this.job?.origin === s) this.cancel(); events.abort(); this.sessions.delete(s.token); if (this.active === s) this.active = undefined; if (!this.sessions.size) this.drop(); this.publish(); };
     }
     readonly prepare = (): void => this.start(false);
+    /** A host command names the mounted source explicitly, including after an async mount. */
+    begin(id: string): void {
+        const source = [...this.sessions.values()].find(session => session.id === id);
+        if (!source) return; this.active = source; this.start(true);
+    }
     private start(keyboard: boolean): void {
         const origin = this.active;
         if (this.disconnected || !origin || !this.available(origin)) { this.publish({ message: "Focus an available source and reconnect first." }); return; }

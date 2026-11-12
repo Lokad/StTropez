@@ -11,6 +11,16 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 #code-menu summary { cursor: pointer; border: 1px solid #36435a; border-radius: 5px; background: #1b273a; padding: 7px 11px; }
 #code-menu > div { position: absolute; top: calc(100% + 6px); right: 0; min-width: 170px; z-index: 30; padding: 5px; border: 1px solid #40536e; border-radius: 6px; background: #1b283c; box-shadow: 0 8px 28px #0007; }
 #code-menu button { display: block; width: 100%; border: 0; text-align: left; }
+.demo-symbols, .demo-rename { position: fixed; z-index: 25; width: min(350px, calc(100vw - 16px)); max-height: min(270px, calc(100vh - 16px)); overflow: auto; padding: 12px; border: 1px solid #50627f; border-radius: 7px; background: #1b283c; box-shadow: 0 8px 28px #0007; font-size: 12px; }
+.demo-symbols > button { display: block; width: 100%; margin-top: 5px; text-align: left; }
+.demo-symbols > button[data-chosen="true"] { background: #365474; color: #e2fff6; }
+.demo-symbols p, .demo-rename p { margin: 0 0 10px; }
+.demo-rename h2 { margin: 0 0 10px; font-size: 15px; }
+.demo-rename label { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.demo-rename input { min-width: 0; width: 100%; }
+.demo-rename button { font-size: 12px; margin: 0 4px 6px 0; }
+.demo-rename ol { padding-left: 20px; line-height: 1.8; }
+.demo-rename del { color: #ed9a9a; } .demo-rename ins { color: #8ce0ca; }
 .demo-language-popups .host-symbol-info { position: fixed; z-index: 19; width: min(420px, calc(100vw - 16px)); max-height: 290px; overflow: auto; padding: 12px 16px; border: 1px solid #50627f; border-radius: 7px; background: #1b283c; color: #dbe5f4; box-shadow: 0 8px 28px #0007; font-size: 12px; }
 .demo-language-popups pre { margin: 0; font: 13px/1.6 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .demo-language-popups p, .demo-language-popups span { font-size: 12px; color: #abc5d9; }

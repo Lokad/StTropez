@@ -4,9 +4,11 @@ import type { Workspace } from "../../src/index.ts";
 import type { DemoFile } from "./project.ts";
 import type { DemoLanguage } from "./language.ts";
 import { mountDemoInspection } from "./inspect.ts";
+import { mountDemoSymbols } from "./symbols.ts";
+import type { DemoSymbolTarget } from "./symbols.ts";
 
 /** Contextual completion UI around the public editor controller. It never changes text itself. */
-export function mountDemoLanguage(workspace: Workspace, file: DemoFile, editor: EditingCandidate, language: DemoLanguage) {
+export function mountDemoLanguage(workspace: Workspace, files: readonly DemoFile[], file: DemoFile, editor: EditingCandidate, language: DemoLanguage, open: (target: DemoSymbolTarget) => void) {
     const target = workspace.captureTab(file.tab), listeners = new AbortController();
     const popup = document.createElement("div"), choices = document.createElement("div"), detail = document.createElement("pre");
     popup.className = "demo-completion"; popup.hidden = true; popup.setAttribute("role", "listbox"); popup.setAttribute("aria-label", "Completions");
@@ -14,6 +16,7 @@ export function mountDemoLanguage(workspace: Workspace, file: DemoFile, editor: 
     let controller: LspEditorController | undefined, stop: (() => void) | undefined, disposed = false, rendered = "";
     let accepting: Readonly<{ id: number; index: number }> | undefined;
     let inspection: ReturnType<typeof mountDemoInspection> | undefined;
+    let symbols: ReturnType<typeof mountDemoSymbols> | undefined;
     const valid = () => !disposed && editor.element.isConnected && !editor.snapshot().disposed && workspace.resolveTab(target)?.surface.kind === "text";
     const render = () => {
         const state = controller?.state.getSnapshot();
@@ -56,8 +59,10 @@ export function mountDemoLanguage(workspace: Workspace, file: DemoFile, editor: 
         if (!valid()) return;
         controller = createLspEditor(workspace, file.tab, editor, { provider, autoConnect: false, canCapture: valid });
         inspection = mountDemoInspection(workspace, file, editor, provider, valid, () => !!controller?.state.getSnapshot().choices.length, () => controller?.cancel());
+        symbols = mountDemoSymbols(workspace, files, file, editor, provider, valid, () => { controller?.cancel(); inspection?.dismiss(); }, open);
         stop = controller.state.subscribe(render); controller.connect(); render();
     }).catch(() => { /* The project state renders a retry action while editing stays usable. */ });
     return Object.freeze({ complete: () => { editor.focus(); controller?.request(); }, inspect: () => inspection?.inspect(), signature: () => inspection?.signature(),
-        destroy: () => { disposed = true; accepting = undefined; listeners.abort(); stop?.(); inspection?.destroy(); controller?.destroy(); popup.remove(); } });
+        definition: () => symbols?.definition(), references: () => symbols?.references(), rename: () => symbols?.rename(),
+        destroy: () => { disposed = true; accepting = undefined; listeners.abort(); stop?.(); symbols?.destroy(); inspection?.destroy(); controller?.destroy(); popup.remove(); } });
 }

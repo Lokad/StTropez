@@ -81,7 +81,7 @@ export class DemoLanguage {
                     },
                     rootUri: config.rootUri, clientInfo: { name: "StTropez demo" },
                     schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
-                    features: ["textDocument/completion", "textDocument/hover", "textDocument/signatureHelp"], diagnostics: false,
+                    features: ["textDocument/completion", "textDocument/hover", "textDocument/signatureHelp", "textDocument/definition", "textDocument/references", "textDocument/rename"], diagnostics: false,
                     maxDocumentUnits: 8_000_000, maxTotalUnits: 16_000_000, rpc: { maxMessageUnits: 16 * 1024 * 1024 },
                     documentInfo: document => { const info = mappings.get(document.id); return info && { uri: info.uri, languageId: "typescript" }; },
                 });

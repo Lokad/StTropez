@@ -47,9 +47,11 @@ TypeScript 5.9.3 runs in a development worker for syntax colors and JavaScript e
 A local TypeScript language server supplies live type checking and contextual language tools.
 Open Problems to select an error, use Ctrl+Space for completion, or hover over a symbol for its
 type. Signature help follows function arguments; Ctrl+Shift+Space requests it explicitly.
+F12 follows a definition, Shift+F12 lists references, and F2 previews a rename. Rename the
+function at its definition to update both files; imported aliases can have a local rename.
 The Code menu exposes these commands. Enter or a click accepts a resolved completion; Escape
 dismisses popups. Provider failure leaves editing and saves available, with a separate retry action.
-Symbol navigation, rename and code actions are next. See the [demo language integration](docs/demo-language.md) for its
+Quick fixes are next. See the [demo language integration](docs/demo-language.md) for its
 supported subset and ownership.
 The server binds to loopback only and does not open a browser window.
 
