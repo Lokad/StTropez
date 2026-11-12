@@ -27,6 +27,18 @@ the editor view or the shared provider. Disposed controllers accept no new subsc
 Feature clients take that same owner. Their `state` observes provider capabilities;
 request results are immutable models with currentness guards. `cancel()` or `dispose()`
 expires that client's work. Other clients retain their connection and participation.
+The read clients share one capture/lifetime implementation: caller buffers/revisions and
+project membership are rechecked across connection, preparation and dispatch. An old
+position cannot be reinterpreted in newly synchronized text. Supersession invalidates
+earlier results even on unchanged documents and promptly cancels obsolete wire work.
+Cancellation also settles a request waiting on host preparation; it cannot stop arbitrary
+host code, whose late completion is ignored. Releasing an already completed call is a no-op;
+client cancellation, supersession and disposal still expire its published result.
+
+Explicit cancellation/error cleanup releases that feature's document participation.
+Success retains the binding for result currentness and subsequent queries; same-document
+supersession reuses it. Command preparation remains a separate host mutation policy: it may
+commit an explicitly authorized phase and supply its new snapshots before command dispatch.
 
 | Client | Request/result |
 | --- | --- |
