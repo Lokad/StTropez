@@ -43,8 +43,13 @@ while it is pending. Recovery status shows when the captured draft is stored; th
 can still be pending, and abrupt browser termination is not a guarantee of recovery.
 Unsaved work prompts before leaving the page. If another page saves the same sample,
 review its saved copy before explicitly saving your version, or download your local changes.
-TypeScript 5.9.3 runs in a development worker for syntax colors and JavaScript emission;
-type checking, completion and symbol commands are not connected to this demo yet.
+TypeScript 5.9.3 runs in a development worker for syntax colors and JavaScript emission.
+A local TypeScript language server supplies live type checking and completion: open Problems
+to select an error, or use Ctrl+Space (or Complete) for suggestions at the caret. Enter or a click
+accepts the resolved suggestion; Escape dismisses it. Provider failure leaves editing and saves
+available, with a separate retry action. Hover, symbol navigation, rename and code actions are
+the next integration steps. See the [demo language integration](docs/demo-language.md) for its
+supported subset and ownership.
 The server binds to loopback only and does not open a browser window.
 
 `npm run dev` is an alias for the same server. The older mixed-surface workspace fixture is

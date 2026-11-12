@@ -50,7 +50,7 @@ Enjoy your visit.\`;
 console.log(invitation, accents, emoji);
 ` } };
     return { id, title: id === "errors" ? "Fix a type error" : "Shopping cart",
-        description: id === "errors" ? "The discount should be a number. Replace the string with 0.1; type checking will be connected in the next checkpoint."
+        description: id === "errors" ? "The discount should be a number. Open Problems, then replace the string with 0.1 to fix the error."
             : "A small project to explore. Edit the cart, open pricing.ts, then compare your changes.",
         files: { "main.ts": id === "errors" ? main.replace("calculateTotal(cart, 0.1)", 'calculateTotal(cart, "10%")') : main, "pricing.ts": pricing } };
 }

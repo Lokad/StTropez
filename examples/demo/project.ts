@@ -5,6 +5,7 @@ import type { DraftStore } from "../hosts/draft-store.ts";
 import { demoSample } from "./samples.ts";
 import type { DemoSample, SampleId } from "./samples.ts";
 import { DemoRecovery } from "./recovery.ts";
+import { DemoLanguage } from "./language.ts";
 
 export type DemoFile = Readonly<{ name: string; resource: TextResourceHandle; tab: TabId; view: DocumentView }>;
 type StoredProject = Readonly<{ version: 1; files: Readonly<Record<string, string>> }>;
@@ -25,10 +26,12 @@ export class DemoProject {
     readonly files: readonly DemoFile[];
     readonly sample: DemoSample;
     readonly recovery: DemoRecovery;
+    readonly language: DemoLanguage;
     private readonly store: DraftStore;
     private token: string | null = null;
     private readonly baselines = new Map<string, ComparisonBaseline>();
     private disposed = false;
+    private languageDisposed = false;
     private conflict: Conflict | undefined;
     private reviewedRevisions: readonly number[] | undefined;
     saving = false;
@@ -45,6 +48,7 @@ export class DemoProject {
         });
         if (saved) this.message = "Opened the copy saved in this browser.";
         this.recovery = new DemoRecovery(this.workspace, this.files, id, () => this.token, inputIdle);
+        this.language = new DemoLanguage(this.workspace, this.files, id);
     }
     static async open(id: SampleId, inputIdle: () => boolean): Promise<DemoProject> {
         const store = createBrowserDraftStore(window, { name: "sttropez-demo-projects-v1", slot: id });
@@ -120,7 +124,7 @@ export class DemoProject {
                 : error instanceof Error ? `Could not save: ${error.message}` : "Could not save. Your edits are intact.";
         } finally {
             tickets.forEach(({ ticket }) => ticket.finish()); this.saving = false;
-            if (this.disposed) this.release(); else changed();
+            if (this.disposed) { if (this.languageDisposed) this.release(); } else changed();
         }
     }
     reset(): void {
@@ -134,7 +138,7 @@ export class DemoProject {
     dispose(): void {
         if (this.disposed) return; this.disposed = true;
         this.recovery.dispose();
-        if (!this.saving) this.release();
+        void this.language.dispose().then(() => { this.languageDisposed = true; if (!this.saving) this.release(); });
     }
     private release(): void {
         this.files.forEach(file => { file.view.dispose(); this.workspace.close(file.tab); this.workspace.releaseResource(file.resource.id, true); });

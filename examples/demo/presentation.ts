@@ -16,6 +16,7 @@ export class DemoPresentation {
     private renderedRevision = -1;
     private disposed = false;
     search: Readonly<{ revision: number; ranges: readonly Readonly<{ from: number; to: number }>[] }> | undefined;
+    diagnostics: Readonly<{ documentId: string; revision: number; ranges: readonly Readonly<{ from: number; to: number }>[] }> | undefined;
     javascript = "";
     status: "starting" | "pending" | "ready" | "failed" = "starting";
     private readonly changed: () => void;
@@ -67,6 +68,9 @@ export class DemoPresentation {
         if (this.search?.revision === line.revision) for (const range of this.search.ranges) {
             if (range.from < line.to && range.to > line.from) result.push({ ...range, className: "demo-search" });
         }
+        if (this.diagnostics?.documentId === line.documentId && this.diagnostics.revision === line.revision) for (const range of this.diagnostics.ranges) {
+            if (range.from < line.to && range.to > line.from) result.push({ ...range, className: "demo-diagnostic" });
+        }
         return result;
     };
     retry(): void {
@@ -76,6 +80,6 @@ export class DemoPresentation {
     }
     dispose(): void {
         this.disposed = true; this.job++; if (this.timer !== undefined) window.clearTimeout(this.timer);
-        this.worker?.terminate(); this.worker = undefined; this.capture = undefined; this.spans = new Uint32Array(); this.search = undefined;
+        this.worker?.terminate(); this.worker = undefined; this.capture = undefined; this.spans = new Uint32Array(); this.search = undefined; this.diagnostics = undefined;
     }
 }

@@ -22,10 +22,10 @@ import { ModuleLinksCursor } from "../probes/links.ts";
 import { DocumentColorsCursor, hexColor, rgbaColor, validateRgba } from "../probes/colors.ts";
 
 /** Generic development peer. It is separate from the internal worker-v1 fixture and production assets. */
-export function attachProtocolFixture(server: Server) {
+export function attachProtocolFixture(server: Server, options: Readonly<{ allowOtherUpgrades?: boolean }> = {}) {
     const sockets = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 }), release = new Set<() => void>();
     const onUpgrade = (request: import("node:http").IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => {
-        if (new URL(request.url ?? "/", "http://localhost").pathname !== "/lsp-fixture") { socket.destroy(); return; }
+        if (new URL(request.url ?? "/", "http://localhost").pathname !== "/lsp-fixture") { if (!options.allowOtherUpgrades) socket.destroy(); return; }
         sockets.handleUpgrade(request, socket, head, connection => sockets.emit("connection", connection, request));
     };
     server.on("upgrade", onUpgrade);

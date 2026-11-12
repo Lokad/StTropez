@@ -9,7 +9,7 @@ import { NotificationScope, Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import type { JsonValue } from "../protocol/index.ts";
 
-type Job = { id: number; revision: number; buffer: TextBuffer; caret: number; prefixFrom: number | undefined; selections: SelectionSet; authority: string; folds: number; lease: ResourceLease;
+type Job = { id: number; revision: number; buffer: TextBuffer; caret: number; selections: SelectionSet; authority: string; folds: number; lease: ResourceLease;
     call?: LspCall<unknown>; capture?: LspDocumentCapture; choices?: LspCompletions; visible: readonly LspCompletion[]; choice: number; cancelled: boolean; pendingList: boolean; requestGeneration: number;
     resolution?: { item: LspCompletion; revision: number; call?: LspCall<unknown> } | undefined };
 type Input = { revision: number; selections: SelectionSet; caret: number; data: string; word: boolean; trigger: string | undefined; reused: boolean; after?: SelectionSet };
@@ -86,8 +86,15 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
         return { from: from + low, to: offset, replaceTo: from + high };
     };
     const filter = (captured: Job, prefix: boolean) => {
-        const selected = captured.visible[captured.choice], content = prefix && captured.prefixFrom !== undefined ? captured.buffer.slice(captured.prefixFrom, captured.caret).toLowerCase() : "";
-        captured.visible = Object.freeze((captured.choices?.items ?? []).filter(item => !content || item.filterText.toLowerCase().startsWith(content)));
+        const selected = captured.visible[captured.choice], prefixes = new Map<number, string>();
+        captured.visible = Object.freeze((captured.choices?.items ?? []).filter(item => {
+            // Providers may include punctuation (for example the member-access dot) in their
+            // edit/filter prefix. Query that exact range, with the same bounded word-read limit.
+            const from = item.primary.from, units = captured.caret - from;
+            if (!prefixes.has(from)) prefixes.set(from, prefix && units >= 0 && units <= 2048 ? captured.buffer.slice(from, captured.caret).toLowerCase() : "");
+            const content = prefixes.get(from)!;
+            return !content || item.filterText.toLowerCase().startsWith(content);
+        }));
         const previous = selected && captured.visible.findIndex(item => item === selected); captured.choice = previous !== undefined && previous >= 0 ? previous : Math.max(0, captured.visible.findIndex(item => item.preselect));
         captured.id = ++completionSequence;
     };
@@ -98,9 +105,8 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
         if (selections.ranges.length !== 1 || selected.anchor !== selected.head) { publish("Place one caret before requesting completion."); return; }
         if (!connecting && session.state.getSnapshot().phase !== "ready") { publish("Reconnect the LSP provider before requesting completion."); return; }
         const previous = invocation.automatic && job?.choices && current(job) && bindingCurrent(job) ? job : undefined, provisional = previous?.choices, provisionalVisible = previous?.visible;
-        release(); const document = workspace.document(documentId); let prefixFrom: number | undefined;
-        try { prefixFrom = wordRange(document.buffer, selected.head).from; } catch { /* Explicit provider ranges do not require a word window. */ }
-        const captured: Job = { id: ++completionSequence, revision: document.revision, buffer: document.buffer, caret: selected.head, prefixFrom, selections, authority: authority(), folds: editor.view.folding.getSnapshot().generation,
+        release(); const document = workspace.document(documentId);
+        const captured: Job = { id: ++completionSequence, revision: document.revision, buffer: document.buffer, caret: selected.head, selections, authority: authority(), folds: editor.view.folding.getSnapshot().generation,
             lease: workspace.acquire(resource.id), choice: previous?.choice ?? 0, cancelled: false, pendingList: true, requestGeneration: 0, visible: provisionalVisible ?? Object.freeze([]), ...(provisional ? { choices: provisional } : {}), ...(previous?.capture ? { capture: previous.capture } : {}) };
         job = captured; counters.posted++; publish("LSP completion pending.");
         void (async () => {

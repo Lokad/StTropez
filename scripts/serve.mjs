@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { attachProtocolFixture } from "../examples/protocol/fixture-server.ts";
+import { attachDemoProvider } from "../examples/demo/provider-server.ts";
 
 export async function startServer(port) {
     await mkdir("artifacts/site", { recursive: true });
@@ -42,7 +43,10 @@ export async function startServer(port) {
     } }], entryPoints: { app: "examples/demo/main.ts", "workspace-fixture": "examples/playground/main.ts", "demo-syntax-worker": "examples/demo/syntax-worker.ts", fonts: "tests/fixtures/fonts/main.ts", comparison: "examples/comparison/main.ts", editing: "examples/editing/main.ts", viewport: "examples/viewport/main.ts", probe: "examples/probes/main.ts", "provider-worker": "examples/probes/provider-worker.ts",
         "regex-worker": "src/browser/regex-worker.ts", "protocol-fixture": "examples/protocol/main.ts", "host-plain": "examples/hosts/plain-main.ts", "host-react": "examples/hosts/react-main.tsx" }, outdir: "artifacts/site",
         bundle: true, format: "esm", platform: "browser", target: "es2022", sourcemap: true });
-    const server = createServer((request, response) => {
+    const server = createServer((request, response) => { void handle(request, response).catch(() => { if (!response.headersSent) response.writeHead(500); response.end("Development service failed."); }); });
+    const demoProvider = attachDemoProvider(server);
+    async function handle(request, response) {
+        if (await demoProvider.handle(request, response)) return;
         if (request.method !== "GET" && request.method !== "HEAD") { response.writeHead(405, { Allow: "GET, HEAD" }).end(); return; }
         let path;
         try { path = decodeURIComponent(new URL(request.url, "http://localhost").pathname); }
@@ -53,16 +57,20 @@ export async function startServer(port) {
         response.writeHead(200, { "Content-Type": /\.js$/.test(path) ? "text/javascript" : /\.css$/.test(path) ? "text/css" : /\.map$/.test(path) ? "application/json" : "text/html",
             "Content-Length": bytes.length, "Cache-Control": "no-store" });
         response.end(request.method === "HEAD" ? undefined : bytes);
+    }
+    const releaseProtocolFixture = attachProtocolFixture(server, { allowOtherUpgrades: true });
+    server.on("upgrade", (request, socket) => {
+        const path = new URL(request.url, "http://localhost").pathname;
+        if (path !== "/lsp-fixture" && !/^\/demo-provider\/[a-f0-9-]+$/.test(path)) socket.destroy();
     });
-    const releaseProtocolFixture = attachProtocolFixture(server);
     try {
         await builder.watch(); await initial;
         if (failed) throw new Error("Initial development build failed.");
         await new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, "127.0.0.1", resolve); });
-    } catch (error) { releaseProtocolFixture(); await builder.dispose(); throw error; }
+    } catch (error) { releaseProtocolFixture(); await demoProvider.close(); await builder.dispose(); throw error; }
     let closing;
     return { url: `http://127.0.0.1:${server.address().port}`, close: () => closing ??= (async () => {
-        releaseProtocolFixture(); await builder.dispose(); await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+        releaseProtocolFixture(); await demoProvider.close(); await builder.dispose(); await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     })() };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -5,6 +5,7 @@ import type { DemoFile } from "./project.ts";
 import { DemoPresentation } from "./presentation.ts";
 import { sampleChoices } from "./samples.ts";
 import type { SampleId } from "./samples.ts";
+import { mountDemoLanguage } from "./language-view.ts";
 import "./style.css";
 
 const element = (id: string) => document.getElementById(id)!;
@@ -17,6 +18,7 @@ let project: DemoProject | undefined, active: DemoFile | undefined, editor: Edit
 let comparison: TextComparison | undefined, find: FindController | undefined;
 let panel: "javascript" | "problems" | "changes" = "javascript", disposed = false, opening = 0;
 let stopWorkspace: (() => void) | undefined, stopRecovery: (() => void) | undefined, stopView: (() => void) | undefined, stopFind: (() => void) | undefined;
+let stopLanguage: (() => void) | undefined, languageView: ReturnType<typeof mountDemoLanguage> | undefined;
 let viewListeners: AbortController | undefined;
 let reviewLabel: HTMLSpanElement | undefined;
 const presentation = new DemoPresentation(() => { editor?.viewport.invalidate(); renderOutput(); renderMetadata(); });
@@ -42,6 +44,43 @@ function renderGutter(): void {
         number.style.top = `${12 + line * viewport.lineHeight - viewport.scrollTop}px`; spans.push(number);
     }
     gutter.replaceChildren(...spans);
+}
+function renderProblems(): void {
+    if (!project || panel !== "problems") return;
+    const captured = project, state = captured.language.state.getSnapshot(), host = element("panel-content");
+    const list = document.createElement("div"); list.className = "demo-problems";
+    if (!state.diagnostics.length) {
+        const note = document.createElement("p"); note.className = "panel-note";
+        note.textContent = state.status === "failed" ? state.message : state.checking || state.status === "starting" ? "Checking types…" : "No problems in this project.";
+        list.append(note);
+    }
+    for (const problem of state.diagnostics) {
+        const item = document.createElement("button"); item.textContent = `${problem.name} · TS${problem.code}: ${problem.message}`;
+        item.addEventListener("click", () => {
+            const file = captured.files.find(file => file.resource.documentId === problem.documentId);
+            if (project !== captured || !file || editor?.snapshot().composing || captured.workspace.document(problem.documentId).revision !== problem.revision) return;
+            mountFile(file, true); file.view.setSelection(problem.revision, { anchor: problem.from, head: problem.to });
+            editor?.viewport.revealOffset(problem.from); editor?.focus();
+        }); list.append(item);
+    }
+    host.replaceChildren(list);
+}
+function renderLanguage(): void {
+    if (!project || disposed) return;
+    const state = project.language.state.getSnapshot();
+    element("language-status").textContent = state.status === "failed" ? "Language service unavailable" : state.status === "starting" ? "Starting language service…"
+        : state.checking ? "Checking types…" : state.status === "ready" ? "Language ready" : "Language service idle";
+    element("language-retry").hidden = state.status !== "failed";
+    element("language-status").title = state.message;
+    const problems = document.querySelector<HTMLButtonElement>('[data-panel="problems"]')!;
+    problems.textContent = state.diagnostics.length ? `Problems (${state.diagnostics.length})` : "Problems";
+    if (active) {
+        const revision = project.workspace.document(active.resource.documentId).revision;
+        presentation.diagnostics = { documentId: active.resource.documentId, revision,
+            ranges: state.diagnostics.filter(problem => problem.documentId === active!.resource.documentId && problem.revision === revision) };
+        editor?.viewport.invalidate();
+    }
+    renderProblems();
 }
 function renderMetadata(): void {
     if (!project || !active || disposed) return;
@@ -71,6 +110,7 @@ function renderMetadata(): void {
     presentation.update(current);
 }
 function detachView(): void {
+    languageView?.destroy(); languageView = undefined;
     stopView?.(); stopView = undefined; stopFind?.(); stopFind = undefined;
     viewListeners?.abort(); viewListeners = undefined;
     find?.destroy(); find = undefined; presentation.search = undefined;
@@ -97,11 +137,7 @@ function mountFile(file: DemoFile, focus = false): void {
     } else {
         editor = mountEditingCandidate(element("editor"), project.workspace, file.tab,
             { view: file.view, ariaLabel: file.name, decorate: presentation.decorate });
-        if (panel === "problems") {
-            const note = document.createElement("p"); note.className = "panel-note";
-            note.textContent = "Type checking is not connected yet. Syntax coloring and JavaScript output use TypeScript; they do not verify types.";
-            element("panel-content").append(note);
-        }
+        renderProblems();
     }
     if (savedViews.has(file.view.id)) editor.restoreView(savedViews.get(file.view.id)!);
     viewListeners = new AbortController();
@@ -124,7 +160,8 @@ function mountFile(file: DemoFile, focus = false): void {
     };
     stopFind = find.state.subscribe(renderFind); if (!element("find-bar").hidden) find.setQuery(field("find-query").value);
     stopView = file.view.subscribe(renderMetadata);
-    renderMetadata(); renderOutput(); if (focus) editor.focus();
+    languageView = mountDemoLanguage(project.workspace, file, editor, project.language);
+    renderMetadata(); renderLanguage(); renderOutput(); if (focus) editor.focus();
 }
 const savedViews = new Map<string, ReturnType<EditingCandidate["captureView"]>>();
 async function openSample(id: SampleId): Promise<void> {
@@ -135,8 +172,9 @@ async function openSample(id: SampleId): Promise<void> {
     if (disposed || generation !== opening) return;
     stopWorkspace?.(); stopWorkspace = undefined;
     stopRecovery?.(); stopRecovery = undefined;
+    stopLanguage?.(); stopLanguage = undefined;
     if (active && editor) savedViews.set(active.view.id, editor.captureView());
-    detachView(); active = undefined; project = next;
+    detachView(); project?.language.suspend(); active = undefined; project = next;
     sample.value = id; sample.disabled = false;
     element("description").textContent = next.sample.description;
     const tabs = next.files.map(file => {
@@ -146,6 +184,7 @@ async function openSample(id: SampleId): Promise<void> {
     element("files").replaceChildren(...tabs);
     stopWorkspace = next.workspace.subscribe(renderMetadata);
     stopRecovery = next.recovery.state.subscribe(renderMetadata);
+    stopLanguage = next.language.state.subscribe(renderLanguage);
     mountFile(next.files.find(file => file.name === activeFiles.get(id)) ?? next.files[0]!);
 }
 function setPanel(next: typeof panel): void {
@@ -166,6 +205,14 @@ on("find-next", () => { find?.next(); }); on("find-previous", () => { find?.next
 on("replace-current", () => { find?.replaceCurrent(field("replacement").value); });
 on("replace-all", () => { find?.replaceAll(field("replacement").value); });
 on("compare", () => setPanel("changes")); on("analysis-retry", () => presentation.retry());
+on("complete", () => languageView?.complete());
+on("language-retry", () => {
+    const captured = project, file = active, view = editor; if (!captured || !file || !view) return;
+    languageView?.destroy(); languageView = undefined;
+    void captured.language.retry().then(() => {
+        if (!disposed && project === captured && editor === view) languageView = mountDemoLanguage(captured.workspace, file, view, captured.language);
+    }).catch(() => {});
+});
 on("panel-collapse", () => {
     if (panel === "changes") setPanel("javascript");
     const collapsed = element("workspace").classList.toggle("collapsed"); element("panel-collapse").textContent = collapsed ? "Show" : "Hide";
@@ -220,7 +267,7 @@ window.addEventListener("beforeunload", event => {
     if ([...projects.values()].some(project => project.dirty())) { event.preventDefault(); event.returnValue = ""; }
 }, { signal: listeners.signal });
 window.addEventListener("pagehide", () => {
-    disposed = true; opening++; listeners.abort(); stopWorkspace?.(); stopRecovery?.(); detachView(); presentation.dispose();
+    disposed = true; opening++; listeners.abort(); stopWorkspace?.(); stopRecovery?.(); stopLanguage?.(); detachView(); presentation.dispose();
     for (const project of projects.values()) project.dispose(); projects.clear(); savedViews.clear();
 }, { once: true });
 await openSample("pricing");

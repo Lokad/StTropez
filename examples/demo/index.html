@@ -10,13 +10,14 @@
     <header><a class="brand" href="/">STTROPEZ<span>TypeScript editor</span></a>
         <div class="toolbar"><label>Example <select id="sample"></select></label>
             <button id="find-toggle" title="Find (Ctrl+F)">Find</button>
+            <button id="complete" title="TypeScript completion (Ctrl+Space)">Complete</button>
             <button id="compare">Compare</button><button id="reset">Reset</button>
             <button id="save" class="primary" title="Save in this browser (Ctrl+S)">Save locally</button>
         </div>
     </header>
     <div class="intro"><p id="description">Opening the editor…</p><button id="walkthrough-toggle">Quick tour</button></div>
     <aside id="walkthrough" hidden>Change a value → open pricing.ts → compare your changes → undo → save locally.
-        Type checking, symbol navigation and rename will become available with the language service.</aside>
+        Use Ctrl+Space for completion and Problems to find type errors. Symbol navigation and rename are being connected next.</aside>
     <nav id="files" aria-label="Project files"></nav>
     <section id="recovery-offer" aria-label="Draft recovery" hidden>
         <span id="recovery-message"></span><button id="recovery-restore">Restore draft</button>
@@ -43,7 +44,8 @@
         </section>
     </main>
     <footer><output id="status"></output><span id="recovery-status"></span><button id="recovery-retry" hidden>Check recovery</button>
-        <span id="cursor"></span><span id="analysis-status"></span><button id="analysis-retry" hidden>Retry</button></footer>
+        <span id="cursor"></span><span id="analysis-status"></span><button id="analysis-retry" hidden>Retry</button>
+        <span id="language-status"></span><button id="language-retry" hidden>Retry language service</button></footer>
     <script type="module" src="/app.js"></script>
 </body>
 </html>
