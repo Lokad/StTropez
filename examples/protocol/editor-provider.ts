@@ -34,7 +34,8 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
     connection.createScope().setDocuments(owner.getSnapshot().documents.filter(document => document.key.variant === "working"));
     return Object.freeze({
         owner: connection,
-        signature: (_clock, changed) => lspSignatureBackend(owner, connection, changed),
+        signature: (_clock, changed) => lspSignatureBackend(owner, connection, changed,
+            input => session => session.request("fixture/signatureConfig", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) }).result),
         links: (_clock, changed) => lspLinkBackend(owner, connection, id => uri(owner, id), changed),
         colors: (_clock, changed) => lspColorBackend(owner, connection, changed),
         provider: (workspace, tab, editor, options) => createLspProviderController(workspace, tab, editor, { ...options, provider: connection,

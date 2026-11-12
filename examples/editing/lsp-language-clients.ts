@@ -10,17 +10,16 @@ import { rgbaColor } from "../probes/colors.ts";
 import type { ColorReference } from "../probes/colors.ts";
 
 /** Only fixture configuration and host presentation models live in these wrappers. */
-export function lspSignatureBackend(workspace: Workspace, provider: LspWorkspace, changed: () => void): SignatureBackend {
+export function lspSignatureBackend(workspace: Workspace, provider: LspWorkspace, changed: () => void, prepare?: (input: SignatureInput) => LspPrepare): SignatureBackend {
     const client = createLspSignatureClient(provider); let busy = false, disposed = false, result: (LspSignatureHelp & Readonly<{ isCurrent: () => boolean }>) | null = null, serial = 0;
     const stop = client.subscribe(changed);
-    const prepare = (input: SignatureInput): LspPrepare => session => session.request("fixture/signatureConfig", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) }).result;
     return Object.freeze({
         trigger: (document, character, retrigger) => client.options(document).some(option => [...Array.isArray(option.triggerCharacters) ? option.triggerCharacters : [], ...retrigger && Array.isArray(option.retriggerCharacters) ? option.retriggerCharacters : []].includes(character)),
         signature: async (input, buffer, _progress, context) => {
             const token = ++serial, previous = result, doc = workspace.document(input.document as DocumentId); result = null; busy = true;
             try {
-                if (doc.revision !== input.revision || doc.buffer !== buffer) throw new Error("Signature fixture capture changed.");
-                const help = await client.run(doc, input.offset, { ...context ?? { triggerKind: 1, isRetrigger: false }, ...(context?.isRetrigger && previous ? { activeSignatureHelp: previous.wire } : {}) }, prepare(input)).result;
+                if (doc.revision !== input.revision || doc.buffer !== buffer) throw new Error("Signature capture changed.");
+                const help = await client.run(doc, input.offset, { ...context ?? { triggerKind: 1, isRetrigger: false }, ...(context?.isRetrigger && previous ? { activeSignatureHelp: previous.wire } : {}) }, prepare?.(input)).result;
                 if (disposed || token !== serial || help && !help.isCurrent()) throw new Error("Signature result expired."); result = help;
                 return Object.freeze({ id: input.id, document: input.document, revision: input.revision, reason: help?.signatures.length ? "ready" as const : "no-call" as const,
                     call: null, signatures: help?.signatures ?? Object.freeze([]), activeSignature: help?.activeSignature ?? 0 });

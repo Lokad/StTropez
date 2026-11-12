@@ -7,8 +7,8 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
-import { StreamMessageReader, StreamMessageWriter } from "vscode-languageserver-protocol/node.js";
-import type { Message } from "vscode-languageserver-protocol/node.js";
+import { StreamMessageReader, StreamMessageWriter, TextDocument } from "vscode-languageserver-protocol/node.js";
+import type { Message, DidOpenTextDocumentParams, DidChangeTextDocumentParams } from "vscode-languageserver-protocol/node.js";
 import { URI } from "vscode-uri";
 import { demoSample, sampleChoices } from "./samples.ts";
 import type { SampleId } from "./samples.ts";
@@ -73,7 +73,8 @@ export function attachDemoProvider(server: Server) {
         const reader = new StreamMessageReader(child.stdout), writer = new StreamMessageWriter(child.stdin);
         const shutdownId = "sttropez-demo-shutdown";
         const resolving = new Map<string | number, Readonly<{ data: unknown; present: boolean }>>();
-        const completing = new Map<string | number, Readonly<{ line: number; character: number }>>();
+        const completing = new Map<string | number, Readonly<{ line: number; character: number; prefix: string }>>();
+        const documents = new Map<string, TextDocument>();
         let finish!: () => void, force: NodeJS.Timeout | undefined;
         const terminal = new Promise<void>(resolve => { finish = resolve; });
         const send = (value: unknown) => {
@@ -109,7 +110,7 @@ export function attachDemoProvider(server: Server) {
                     // The pinned server can return a computed-property candidate that only replaces
                     // the earlier dot, outside a later typed prefix. Such a range cannot satisfy the
                     // LSP completion contract at this caret. Retain the valid candidates unchanged.
-                    value.result.items = value.result.items.filter(item => {
+                    let items = value.result.items.filter(item => {
                         if (!object(item) || !object(item.textEdit) || !object(item.textEdit.range)) return true;
                         const range = item.textEdit.range;
                         if (!object(range.start) || !object(range.end) || typeof range.start.line !== "number" || typeof range.end.line !== "number"
@@ -117,6 +118,16 @@ export function attachDemoProvider(server: Server) {
                         return (range.start.line < position.line || range.start.line === position.line && range.start.character <= position.character)
                             && (range.end.line > position.line || range.end.line === position.line && range.end.character >= position.character);
                     });
+                    // Global lists exceed the client's bounded decoding budget. Narrow on the
+                    // captured word before paging; isIncomplete requests a fresh page as it grows.
+                    if (items.length > 256) {
+                        const prefix = position.prefix.toLowerCase();
+                        const matches = items.filter(item => !prefix || object(item) && typeof (item.filterText ?? item.label) === "string"
+                            && String(item.filterText ?? item.label).toLowerCase().startsWith(prefix));
+                        items = matches.slice(0, 256);
+                        value.result.isIncomplete = value.result.isIncomplete === true || matches.length > 256;
+                    }
+                    value.result.items = items;
                 }
             }
             if (!stopped && socket.readyState === 1) socket.send(JSON.stringify(message));
@@ -149,6 +160,18 @@ export function attachDemoProvider(server: Server) {
                 message.params = { command: "typescript.tsserverRequest", arguments: [kind === "semantic" ? "semanticDiagnosticsSync" : "syntacticDiagnosticsSync", { file: document.path }, {}] };
             }
             if (message.method === "workspace/didChangeWorkspaceFolders" || message.method === "workspace/didChangeConfiguration") { reject(message.id, "The demo owns project configuration."); return; }
+            try {
+                if (message.method === "textDocument/didOpen") {
+                    const doc = (message.params as DidOpenTextDocumentParams).textDocument;
+                    documents.set(doc.uri, TextDocument.create(doc.uri, doc.languageId, doc.version, doc.text));
+                } else if (message.method === "textDocument/didChange") {
+                    const params = message.params as DidChangeTextDocumentParams, before = documents.get(params.textDocument.uri);
+                    if (!before) throw new Error("Document not open."); let text = before.getText();
+                    for (const change of params.contentChanges) text = "range" in change
+                        ? TextDocument.applyEdits(TextDocument.create(before.uri, before.languageId, before.version, text), [{ range: change.range, newText: change.text }]) : change.text;
+                    documents.set(before.uri, TextDocument.create(before.uri, before.languageId, params.textDocument.version, text));
+                } else if (message.method === "textDocument/didClose" && object(message.params) && object(message.params.textDocument)) documents.delete(String(message.params.textDocument.uri));
+            } catch { socket.close(1003, "Invalid demo document synchronization"); return; }
             if (message.method === "completionItem/resolve" && object(message.params) && (typeof message.id === "number" || typeof message.id === "string")) {
                 if (resolving.size >= 128) { reject(message.id, "Too many pending completion resolutions."); return; }
                 resolving.set(message.id, { data: message.params.data, present: Object.hasOwn(message.params, "data") });
@@ -156,7 +179,11 @@ export function attachDemoProvider(server: Server) {
             if (message.method === "textDocument/completion" && object(message.params) && object(message.params.position)
                 && typeof message.params.position.line === "number" && typeof message.params.position.character === "number" && (typeof message.id === "number" || typeof message.id === "string")) {
                 if (completing.size >= 128) { reject(message.id, "Too many pending completion lists."); return; }
-                completing.set(message.id, { line: message.params.position.line, character: message.params.position.character });
+                const { line, character } = message.params.position;
+                const doc = object(message.params.textDocument) && documents.get(String(message.params.textDocument.uri));
+                const before = doc ? doc.getText({ start: { line, character: Math.max(0, character - 2048) }, end: { line, character } }) : "";
+                const prefix = before.match(/[\p{L}\p{N}\p{Pc}\p{M}\u200c\u200d$]*$/u)?.[0] ?? "";
+                completing.set(message.id, { line, character, prefix });
             }
             if (message.method === "$/cancelRequest" && object(message.params) && (typeof message.params.id === "number" || typeof message.params.id === "string")) {
                 resolving.delete(message.params.id); completing.delete(message.params.id);

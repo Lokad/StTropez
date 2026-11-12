@@ -1,0 +1,35 @@
+import type { Workspace } from "../../src/index.ts";
+import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { LspWorkspace } from "../../src/protocol/index.ts";
+import { createLspHoverClient } from "../editing/lsp-hover-client.ts";
+import { createHoverController } from "../editing/hover-controller.ts";
+import { lspSignatureBackend } from "../editing/lsp-language-clients.ts";
+import { HostHoverTools } from "../hosts/hover.ts";
+import { mountHoverPanel } from "../hosts/hover-panel.ts";
+import { HostSignatureTools } from "../hosts/signature.ts";
+import { mountSignaturePopup } from "../hosts/signature-panel.ts";
+import type { DemoFile } from "./project.ts";
+
+/** Reuses host interaction/capture controllers; provider text is always rendered literally. */
+export function mountDemoInspection(workspace: Workspace, file: DemoFile, editor: EditingCandidate, provider: LspWorkspace,
+    valid: () => boolean, completionOpen: () => boolean, cancelCompletion: () => void) {
+    const host = document.createElement("div"); host.className = "demo-language-popups"; document.body.append(host);
+    // Pending caret paint does not invalidate an already committed model selection.
+    const canCapture = () => { const state = editor.snapshot(); return valid() && !state.composing && !state.pendingInput && !state.pendingCommand; };
+    const hover = new HostHoverTools(workspace, kind => {
+        if (kind === "pointer") return canCapture() && !completionOpen() && !signature.state.getSnapshot().visible;
+        signature.dismiss(); cancelCompletion(); return canCapture();
+    }, { canCapture, createController: (workspace, tab, editor, canCapture) => createHoverController(workspace, tab, editor,
+        { canCapture, backend: createLspHoverClient({ provider }) }) });
+    const signature = new HostSignatureTools(workspace, canCapture, () => hover.dismiss(),
+        (_clock, changed) => lspSignatureBackend(workspace, provider, changed), completionOpen);
+    // Remove code-fence marker lines for plain display; content still goes through textContent.
+    const stopHover = mountHoverPanel(host, hover, text => text.replace(/^```[\w-]*\r?$/gm, "").trim());
+    const stopSignature = mountSignaturePopup(host, signature, true);
+    const detachHover = hover.attach("source", file.tab, editor), detachSignature = signature.attach("source", file.tab, editor);
+    return Object.freeze({
+        inspect: () => { editor.focus(); hover.inspectCaret("source"); },
+        signature: () => { cancelCompletion(); editor.focus(); signature.inspect(); },
+        destroy: () => { detachHover(); detachSignature(); signature.dispose(); stopHover(); stopSignature(); host.remove(); },
+    });
+}

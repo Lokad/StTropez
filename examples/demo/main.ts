@@ -206,6 +206,13 @@ on("replace-current", () => { find?.replaceCurrent(field("replacement").value); 
 on("replace-all", () => { find?.replaceAll(field("replacement").value); });
 on("compare", () => setPanel("changes")); on("analysis-retry", () => presentation.retry());
 on("complete", () => languageView?.complete());
+on("inspect-type", () => languageView?.inspect()); on("signature", () => languageView?.signature());
+const codeMenu = element("code-menu") as HTMLDetailsElement;
+codeMenu.addEventListener("click", event => { if ((event.target as HTMLElement).closest("button")) codeMenu.open = false; }, { signal: listeners.signal });
+document.addEventListener("pointerdown", event => { if (!codeMenu.contains(event.target as Node)) codeMenu.open = false; }, { signal: listeners.signal });
+codeMenu.addEventListener("keydown", event => {
+    if (event.key === "Escape" && codeMenu.open) { event.preventDefault(); codeMenu.open = false; codeMenu.querySelector("summary")!.focus(); }
+}, { signal: listeners.signal });
 on("language-retry", () => {
     const captured = project, file = active, view = editor; if (!captured || !file || !view) return;
     languageView?.destroy(); languageView = undefined;

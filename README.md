@@ -44,11 +44,12 @@ can still be pending, and abrupt browser termination is not a guarantee of recov
 Unsaved work prompts before leaving the page. If another page saves the same sample,
 review its saved copy before explicitly saving your version, or download your local changes.
 TypeScript 5.9.3 runs in a development worker for syntax colors and JavaScript emission.
-A local TypeScript language server supplies live type checking and completion: open Problems
-to select an error, or use Ctrl+Space (or Complete) for suggestions at the caret. Enter or a click
-accepts the resolved suggestion; Escape dismisses it. Provider failure leaves editing and saves
-available, with a separate retry action. Hover, symbol navigation, rename and code actions are
-the next integration steps. See the [demo language integration](docs/demo-language.md) for its
+A local TypeScript language server supplies live type checking and contextual language tools.
+Open Problems to select an error, use Ctrl+Space for completion, or hover over a symbol for its
+type. Signature help follows function arguments; Ctrl+Shift+Space requests it explicitly.
+The Code menu exposes these commands. Enter or a click accepts a resolved completion; Escape
+dismisses popups. Provider failure leaves editing and saves available, with a separate retry action.
+Symbol navigation, rename and code actions are next. See the [demo language integration](docs/demo-language.md) for its
 supported subset and ownership.
 The server binds to loopback only and does not open a browser window.
 
