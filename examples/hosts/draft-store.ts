@@ -8,8 +8,9 @@ export type DraftStore = Readonly<{
 }>;
 
 /** Example-host service. The editor package never opens storage. */
-export function createBrowserDraftStore(owner: Window & typeof globalThis): DraftStore {
-    const name = "sttropez-example-drafts-v1", slot = "working-inputs", watchers = new Set<() => void>();
+export function createBrowserDraftStore(owner: Window & typeof globalThis,
+    options: Readonly<{ name?: string; slot?: string }> = {}): DraftStore {
+    const name = options.name ?? "sttropez-example-drafts-v1", slot = options.slot ?? "working-inputs", watchers = new Set<() => void>();
     let opening: Promise<IDBDatabase> | undefined, closed = false;
     let channel: BroadcastChannel | undefined;
     try { channel = new owner.BroadcastChannel(name); channel.onmessage = () => { for (const changed of [...watchers]) changed(); }; } catch { /* Storage operations still enforce captured tokens. */ }

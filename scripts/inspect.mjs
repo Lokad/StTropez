@@ -1,12 +1,20 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { openHarness } from "./browser-harness.mjs";
 
+async function captureDemo(harness) {
+    await harness.page.goto(new URL("/", harness.page.url()).href);
+    await harness.page.waitForFunction(() => document.querySelector("#analysis-status")?.textContent?.includes("syntax & emit"));
+    await harness.page.screenshot({ path: "artifacts/inspect/demo.png", fullPage: true });
+}
+async function inspect() {
 const harness = await openHarness();
 try {
     await mkdir("artifacts/inspect", { recursive: true });
+    if (process.argv.includes("--demo-only")) { await captureDemo(harness); if (harness.errors.length) throw new Error(harness.errors.join("\n")); return; }
     await harness.page.screenshot({ path: "artifacts/inspect/playground.png", fullPage: true });
     const snapshot = await harness.page.evaluate(() => window.sttropez.snapshot());
     await writeFile("artifacts/inspect/state.json", JSON.stringify({ browser: harness.browser.version(), snapshot, errors: harness.errors }, null, 2));
+    await captureDemo(harness);
     await harness.page.goto(new URL("/probes/", harness.page.url()).href);
     await harness.page.waitForFunction(() => window.probe?.ready);
     await harness.page.screenshot({ path: "artifacts/inspect/probes.png", fullPage: true });
@@ -237,3 +245,5 @@ try {
     if (harness.errors.length) throw new Error(harness.errors.join("\n"));
     console.log("Wrote artifacts/inspect/playground.png and state.json");
 } finally { await harness.close(); }
+}
+await inspect();

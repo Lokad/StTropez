@@ -1,0 +1,188 @@
+import { mountEditingCandidate, mountTextComparison, createFindController } from "../../src/browser/index.ts";
+import type { EditingCandidate, FindController, TextComparison } from "../../src/browser/index.ts";
+import { DemoProject } from "./project.ts";
+import type { DemoFile } from "./project.ts";
+import { DemoPresentation } from "./presentation.ts";
+import { sampleChoices } from "./samples.ts";
+import type { SampleId } from "./samples.ts";
+import "./style.css";
+
+const element = (id: string) => document.getElementById(id)!;
+const field = (id: string) => element(id) as HTMLInputElement;
+const button = (id: string) => element(id) as HTMLButtonElement;
+const projects = new Map<SampleId, DemoProject>(), activeFiles = new Map<SampleId, string>();
+const listeners = new AbortController(), sample = element("sample") as HTMLSelectElement;
+for (const choice of sampleChoices) { const option = document.createElement("option"); option.value = choice.id; option.textContent = choice.title; sample.append(option); }
+let project: DemoProject | undefined, active: DemoFile | undefined, editor: EditingCandidate | undefined;
+let comparison: TextComparison | undefined, find: FindController | undefined;
+let panel: "javascript" | "problems" | "changes" = "javascript", disposed = false, opening = 0;
+let stopWorkspace: (() => void) | undefined, stopView: (() => void) | undefined, stopFind: (() => void) | undefined;
+let viewListeners: AbortController | undefined;
+const presentation = new DemoPresentation(() => { editor?.viewport.invalidate(); renderOutput(); renderMetadata(); });
+
+function renderOutput(): void {
+    if (panel !== "javascript") return;
+    const host = element("panel-content");
+    if (presentation.status === "ready") {
+        let pre = host.querySelector("pre"); if (!pre) { pre = document.createElement("pre"); host.replaceChildren(pre); }
+        pre.textContent = presentation.javascript || "// This file emits no JavaScript.\n";
+    } else {
+        const note = document.createElement("p"); note.className = "panel-note";
+        note.textContent = presentation.status === "failed" ? "JavaScript output is unavailable. Use Retry to restart analysis. Your source is still editable."
+            : "Updating JavaScript…"; host.replaceChildren(note);
+    }
+}
+function renderGutter(): void {
+    if (!editor || panel === "changes") return;
+    const viewport = editor.viewport.snapshot(), gutter = element("gutter");
+    const spans: HTMLSpanElement[] = [];
+    for (let line = viewport.firstLine; line <= viewport.lastLine; line++) {
+        const number = document.createElement("span"); number.textContent = String(line + 1);
+        number.style.top = `${12 + line * viewport.lineHeight - viewport.scrollTop}px`; spans.push(number);
+    }
+    gutter.replaceChildren(...spans);
+}
+function renderMetadata(): void {
+    if (!project || !active || disposed) return;
+    const current = project.workspace.document(active.resource.documentId), selection = active.view.getSnapshot().selection;
+    const line = current.buffer.lineAt(selection.head), column = selection.head - current.buffer.offsetAt(line);
+    element("cursor").textContent = `Ln ${line + 1}, Col ${column + 1}`;
+    element("status").textContent = project.message;
+    element("analysis-status").textContent = presentation.status === "failed" ? "Analysis unavailable" : presentation.status === "ready"
+        ? "TypeScript 5.9.3 · syntax & emit" : "TypeScript · analyzing…";
+    element("analysis-retry").hidden = presentation.status !== "failed";
+    button("save").disabled = project.saving;
+    for (const file of project.files) {
+        const tab = element("files").querySelector<HTMLButtonElement>(`[data-file="${file.name}"]`);
+        if (tab) { tab.textContent = `${file.name}${file.resource.metadata.getSnapshot().dirty ? " ●" : ""}`; tab.setAttribute("aria-pressed", String(file === active)); }
+    }
+    document.title = `${project.dirty() ? "● " : ""}${active.name} · StTropez`;
+    presentation.update(current);
+}
+function detachView(): void {
+    stopView?.(); stopView = undefined; stopFind?.(); stopFind = undefined;
+    viewListeners?.abort(); viewListeners = undefined;
+    find?.destroy(); find = undefined; presentation.search = undefined;
+    if (comparison) comparison.destroy(); else editor?.destroy();
+    comparison = undefined; editor = undefined;
+    element("editor").replaceChildren(); element("panel-content").replaceChildren();
+}
+function mountFile(file: DemoFile, focus = false): void {
+    if (!project || disposed) return;
+    const viewState = editor?.captureView();
+    const previous = active;
+    if (previous && viewState) savedViews.set(previous.view.id, viewState);
+    detachView(); active = file; activeFiles.set(project.sample.id, file.name);
+    element("workspace").classList.toggle("reviewing", panel === "changes");
+    if (panel === "changes") {
+        comparison = mountTextComparison(element("panel-content"), project.workspace, file.tab, project.baseline(file),
+            { view: file.view, workingDecorate: presentation.decorate, ariaLabel: `Changes in ${file.name}` });
+        editor = comparison.working;
+    } else {
+        editor = mountEditingCandidate(element("editor"), project.workspace, file.tab,
+            { view: file.view, ariaLabel: file.name, decorate: presentation.decorate });
+        if (panel === "problems") {
+            const note = document.createElement("p"); note.className = "panel-note";
+            note.textContent = "Type checking is not connected yet. Syntax coloring and JavaScript output use TypeScript; they do not verify types.";
+            element("panel-content").append(note);
+        }
+    }
+    if (savedViews.has(file.view.id)) editor.restoreView(savedViews.get(file.view.id)!);
+    viewListeners = new AbortController();
+    editor.element.addEventListener("sttropez-render", renderGutter, { signal: viewListeners.signal });
+    editor.element.addEventListener("keydown", event => {
+        if (event.isComposing || editor?.snapshot().composing || event.defaultPrevented) return;
+        if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+            const key = event.key.toLowerCase();
+            if (key === "f" || key === "h") { event.preventDefault(); openFind(key === "h"); }
+        } else if (event.key === "F3") { event.preventDefault(); find?.next(event.shiftKey ? -1 : 1); }
+    }, { signal: viewListeners.signal });
+    find = createFindController(project.workspace, file.tab, editor);
+    find.setOptions({ matchCase: false });
+    const renderFind = () => {
+        const snapshot = find!.state.getSnapshot(); presentation.search = { revision: snapshot.revision, ranges: snapshot.preview };
+        element("find-status").textContent = snapshot.message || `${snapshot.count} matches`;
+        editor?.viewport.invalidate();
+    };
+    stopFind = find.state.subscribe(renderFind); if (!element("find-bar").hidden) find.setQuery(field("find-query").value);
+    stopView = file.view.subscribe(renderMetadata);
+    renderMetadata(); renderOutput(); if (focus) editor.focus();
+}
+const savedViews = new Map<string, ReturnType<EditingCandidate["captureView"]>>();
+async function openSample(id: SampleId): Promise<void> {
+    const generation = ++opening; sample.disabled = true;
+    let next = projects.get(id);
+    if (!next) { next = await DemoProject.open(id); if (disposed) { next.dispose(); return; } projects.set(id, next); }
+    if (disposed || generation !== opening) return;
+    stopWorkspace?.(); stopWorkspace = undefined;
+    if (active && editor) savedViews.set(active.view.id, editor.captureView());
+    detachView(); active = undefined; project = next;
+    sample.value = id; sample.disabled = false;
+    element("description").textContent = next.sample.description;
+    const tabs = next.files.map(file => {
+        const tab = document.createElement("button"); tab.dataset.file = file.name; tab.textContent = file.name;
+        return tab;
+    });
+    element("files").replaceChildren(...tabs);
+    stopWorkspace = next.workspace.subscribe(renderMetadata);
+    mountFile(next.files.find(file => file.name === activeFiles.get(id)) ?? next.files[0]!);
+}
+function setPanel(next: typeof panel): void {
+    if (!active) return; panel = next;
+    element("workspace").classList.remove("collapsed"); element("panel-collapse").textContent = "Hide";
+    for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.setAttribute("aria-pressed", String(tab.dataset.panel === panel));
+    mountFile(active);
+}
+function openFind(replace = false): void {
+    element("find-bar").hidden = false; element("replace-controls").hidden = !replace;
+    find?.setQuery(field("find-query").value); const target = field(replace ? "replacement" : "find-query"); target.focus(); target.select();
+}
+function closeFind(): void { element("find-bar").hidden = true; find?.cancel(); editor?.focus(); }
+const on = (id: string, action: () => void) => element(id).addEventListener("click", action, { signal: listeners.signal });
+on("find-toggle", () => openFind()); on("find-close", closeFind);
+on("replace-toggle", () => { element("replace-controls").hidden = !element("replace-controls").hidden; });
+on("find-next", () => { find?.next(); }); on("find-previous", () => { find?.next(-1); });
+on("replace-current", () => { find?.replaceCurrent(field("replacement").value); });
+on("replace-all", () => { find?.replaceAll(field("replacement").value); });
+on("compare", () => setPanel("changes")); on("analysis-retry", () => presentation.retry());
+on("panel-collapse", () => {
+    if (panel === "changes") setPanel("javascript");
+    const collapsed = element("workspace").classList.toggle("collapsed"); element("panel-collapse").textContent = collapsed ? "Show" : "Hide";
+});
+on("walkthrough-toggle", () => { element("walkthrough").hidden = !element("walkthrough").hidden; });
+on("reset", () => {
+    if (!project || !window.confirm("Restore the original sample in all its files? You can undo this change. The saved copy changes only when you save locally.")) return;
+    project.reset(); renderMetadata();
+});
+async function save(): Promise<void> {
+    const captured = project; if (!captured) return;
+    await captured.save(renderMetadata);
+    if (!disposed && project === captured && comparison && active) {
+        const ticket = comparison.controller.beginRefresh(); ticket.complete(captured.baseline(active));
+    }
+}
+on("save", () => { void save(); });
+for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.addEventListener("click", () => setPanel(tab.dataset.panel as typeof panel), { signal: listeners.signal });
+field("find-query").addEventListener("input", () => find?.setQuery(field("find-query").value), { signal: listeners.signal });
+element("find-bar").addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.preventDefault(); closeFind(); }
+    else if (event.key === "Enter") { event.preventDefault(); if (event.target === field("replacement")) find?.replaceCurrent(field("replacement").value); else find?.next(event.shiftKey ? -1 : 1); }
+}, { signal: listeners.signal });
+sample.addEventListener("change", () => { void openSample(sample.value as SampleId); }, { signal: listeners.signal });
+element("files").addEventListener("click", event => {
+    const name = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-file]")?.dataset.file;
+    const file = project?.files.find(file => file.name === name); if (file) mountFile(file, true);
+}, { signal: listeners.signal });
+window.addEventListener("keydown", event => {
+    if (!event.isComposing && !editor?.snapshot().composing && (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s") {
+        event.preventDefault(); void save();
+    }
+}, { signal: listeners.signal });
+window.addEventListener("beforeunload", event => {
+    if ([...projects.values()].some(project => project.dirty())) { event.preventDefault(); event.returnValue = ""; }
+}, { signal: listeners.signal });
+window.addEventListener("pagehide", () => {
+    disposed = true; opening++; listeners.abort(); stopWorkspace?.(); detachView(); presentation.dispose();
+    for (const project of projects.values()) project.dispose(); projects.clear(); savedViews.clear();
+}, { once: true });
+await openSample("pricing");

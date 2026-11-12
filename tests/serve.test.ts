@@ -13,13 +13,13 @@ test("development assets follow completed watched builds, reject private paths a
     const previous = process.cwd(); await mkdir(join(previous, "artifacts"), { recursive: true });
     const fixture = await mkdtemp(join(previous, "artifacts/dev-server-test-"));
     const put = async (path: string, text: string) => { const file = join(fixture, path); await mkdir(dirname(file), { recursive: true }); await writeFile(file, text); };
-    for (const path of ["playground", "probes", "viewport", "editing", "comparison", "protocol"]) await put(`examples/${path}/index.html`, `<title>${path}</title>`);
+    for (const path of ["demo", "playground", "probes", "viewport", "editing", "comparison", "protocol"]) await put(`examples/${path}/index.html`, `<title>${path}</title>`);
     for (const host of ["plain", "react"]) await put(`examples/hosts/${host}.html`, `<title>${host}</title>`);
-    for (const path of ["playground/main.ts", "comparison/main.ts", "editing/main.ts", "viewport/main.ts", "protocol/main.ts", "probes/main.ts", "probes/provider-worker.ts", "hosts/plain-main.ts", "hosts/react-main.tsx"]) await put(`examples/${path}`, "export const ready = true;");
+    for (const path of ["demo/main.ts", "demo/syntax-worker.ts", "playground/main.ts", "comparison/main.ts", "editing/main.ts", "viewport/main.ts", "protocol/main.ts", "probes/main.ts", "probes/provider-worker.ts", "hosts/plain-main.ts", "hosts/react-main.tsx"]) await put(`examples/${path}`, "export const ready = true;");
     await put("tests/fixtures/fonts/index.html", "<title>fonts</title>");
     await put("tests/fixtures/fonts/main.ts", "export const ready = true;");
-    await put("examples/playground/main.ts", 'import "./theme.css"; export const ready = true;');
-    await put("examples/playground/theme.css", "body { color: blue; }");
+    await put("examples/demo/main.ts", 'import "./theme.css"; export const ready = true;');
+    await put("examples/demo/theme.css", "body { color: blue; }");
     await put("src/browser/regex-worker.ts", 'globalThis.postMessage("worker-first");');
     await put("private.txt", "not a public asset");
     await put("package.json", '{"type":"module"}'); await put("tsconfig.json", '{}');
@@ -34,6 +34,10 @@ test("development assets follow completed watched builds, reject private paths a
     };
     try {
         process.chdir(fixture); server = await startServer(0);
+        assert.equal(await (await get("/")).text(), "<title>demo</title>");
+        assert.equal(await (await get("/workspace/")).text(), "<title>playground</title>");
+        assert.equal((await get("/workspace-fixture.js")).status, 200);
+        assert.equal((await get("/demo-syntax-worker.js")).status, 200);
         assert.equal(await (await get("/hosts/react/")).text(), "<title>react</title>");
         assert.equal(await (await get("/hosts/react/index.html")).text(), "<title>react</title>");
         assert.equal(await (await get("/protocol/")).text(), "<title>protocol</title>"); assert.equal((await get("/protocol-fixture.js")).status, 200);

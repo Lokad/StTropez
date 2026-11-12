@@ -4,7 +4,7 @@ import { corpus } from "../fixtures/workloads.ts";
 test("real typing reaches the document and moving the surface preserves identity and selection", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
-    await page.goto("/");
+    await page.goto("/workspace/");
     await expect.poll(() => page.evaluate(() => window.sttropez?.ready)).toBe(true);
     const editor = page.getByRole("textbox", { name: "Transform source" });
     const before = await page.evaluate(() => window.sttropez.snapshot());
@@ -26,7 +26,7 @@ test("real typing reaches the document and moving the surface preserves identity
 test("deferred Save and explicit Run preserve their source/configuration targets while views move and typing continues", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
-    await page.goto("/");
+    await page.goto("/workspace/");
     const input = page.getByRole("textbox", { name: "Transform source", exact: true });
     const secondary = page.getByRole("textbox", { name: "Secondary source view", exact: true });
     await input.fill("submitted  ");
@@ -54,7 +54,7 @@ test("deferred Save and explicit Run preserve their source/configuration targets
 test("host typed form has no dummy document and updates independently of source text", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
-    await page.goto("/");
+    await page.goto("/workspace/");
     await expect.poll(() => page.evaluate(() => window.sttropez?.ready)).toBe(true);
     const before = await page.evaluate(() => window.sttropez.snapshot());
     await page.getByRole("textbox", { name: "Source path" }).fill("incoming/other.csv");
@@ -68,7 +68,7 @@ test("host typed form has no dummy document and updates independently of source 
 
 test("read-only transitions reach both views and reject an in-flight composition attempt", async ({ page }) => {
     page.on("pageerror", error => { throw error; });
-    await page.goto("/");
+    await page.goto("/workspace/");
     const input = page.getByRole("textbox", { name: "Transform source", exact: true });
     await input.fill("retained");
     // Synthetic composition covers the adapter's refusal/recovery path only.
@@ -88,7 +88,7 @@ test("read-only transitions reach both views and reject an in-flight composition
 
 test("native LF selection and deletion map to exact CRLF model ranges and history restores original text", async ({ page }) => {
     page.on("pageerror", error => { throw error; });
-    await page.goto("/"); await page.evaluate(() => window.sttropez.loadCorpus("unicode"));
+    await page.goto("/workspace/"); await page.evaluate(() => window.sttropez.loadCorpus("unicode"));
     const input = page.getByRole("textbox", { name: "Transform source", exact: true }), original = corpus("unicode");
     await expect(input).toHaveValue(original.replaceAll("\r\n", "\n"));
     await input.evaluate((node: HTMLTextAreaElement) => node.setSelectionRange(0, 0)); await input.pressSequentially("Q");
@@ -101,7 +101,7 @@ test("native LF selection and deletion map to exact CRLF model ranges and histor
 });
 
 test("pointer focus places the caret at the clicked character and undo preserves that selection", async ({ page }) => {
-    page.on("pageerror", error => { throw error; }); await page.goto("/");
+    page.on("pageerror", error => { throw error; }); await page.goto("/workspace/");
     const input = page.getByRole("textbox", { name: "Transform source", exact: true });
     await input.fill("abcde"); await page.getByRole("button", { name: "Save source", exact: true }).focus();
     const point = await input.evaluate((node: HTMLTextAreaElement) => {

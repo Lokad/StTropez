@@ -7,7 +7,9 @@ import { attachProtocolFixture } from "../examples/protocol/fixture-server.ts";
 
 export async function startServer(port) {
     await mkdir("artifacts/site", { recursive: true });
-    await copyFile("examples/playground/index.html", "artifacts/site/index.html");
+    await copyFile("examples/demo/index.html", "artifacts/site/index.html");
+    await mkdir("artifacts/site/workspace", { recursive: true });
+    await copyFile("examples/playground/index.html", "artifacts/site/workspace/index.html");
     await mkdir("artifacts/site/probes", { recursive: true });
     await copyFile("examples/probes/index.html", "artifacts/site/probes/index.html");
     await mkdir("artifacts/site/viewport", { recursive: true });
@@ -25,7 +27,7 @@ export async function startServer(port) {
         await copyFile(`examples/hosts/${mode}.html`, `artifacts/site/hosts/${mode}/index.html`);
     }
     const site = resolve("artifacts/site"), pages = new Map(await Promise.all(
-        ["/", "/probes/", "/viewport/", "/editing/", "/comparison/", "/protocol/", "/fonts/", "/hosts/plain/", "/hosts/react/"].flatMap(path => [path, path + "index.html"])
+        ["/", "/workspace/", "/probes/", "/viewport/", "/editing/", "/comparison/", "/protocol/", "/fonts/", "/hosts/plain/", "/hosts/react/"].flatMap(path => [path, path + "index.html"])
             .map(async path => [path, await readFile(resolve(site, "." + (path.endsWith("/") ? path + "index.html" : path)))])));
     let modules = new Map(), failed = false, firstBuild;
     const initial = new Promise(resolve => { firstBuild = resolve; });
@@ -37,7 +39,7 @@ export async function startServer(port) {
             if (!failed) modules = new Map(result.outputFiles.map(file => ["/" + relative(site, file.path).replaceAll("\\", "/"), file.contents]));
             firstBuild();
         });
-    } }], entryPoints: { app: "examples/playground/main.ts", fonts: "tests/fixtures/fonts/main.ts", comparison: "examples/comparison/main.ts", editing: "examples/editing/main.ts", viewport: "examples/viewport/main.ts", probe: "examples/probes/main.ts", "provider-worker": "examples/probes/provider-worker.ts",
+    } }], entryPoints: { app: "examples/demo/main.ts", "workspace-fixture": "examples/playground/main.ts", "demo-syntax-worker": "examples/demo/syntax-worker.ts", fonts: "tests/fixtures/fonts/main.ts", comparison: "examples/comparison/main.ts", editing: "examples/editing/main.ts", viewport: "examples/viewport/main.ts", probe: "examples/probes/main.ts", "provider-worker": "examples/probes/provider-worker.ts",
         "regex-worker": "src/browser/regex-worker.ts", "protocol-fixture": "examples/protocol/main.ts", "host-plain": "examples/hosts/plain-main.ts", "host-react": "examples/hosts/react-main.tsx" }, outdir: "artifacts/site",
         bundle: true, format: "esm", platform: "browser", target: "es2022", sourcemap: true });
     const server = createServer((request, response) => {

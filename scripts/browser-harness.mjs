@@ -10,7 +10,7 @@ export async function openHarness() {
         const errors = [];
         page.on("pageerror", error => errors.push(error.message));
         page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
-        await page.goto(server.url);
+        await page.goto(new URL("/workspace/", server.url).href);
         await page.waitForFunction(() => window.sttropez?.ready === true);
         return { browser, page, errors, close: async () => { await browser.close(); await server.close(); } };
     } catch (error) {

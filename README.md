@@ -29,12 +29,22 @@ Requires Node.js 24 or newer.
 
 ```sh
 npm ci
-npm run browsers:install
-npm run dev
+npm run demo
 ```
 
-Open `http://127.0.0.1:4173`. The playground uses synthetic data and makes no application
-service requests. The development server binds to loopback only.
+Open `http://127.0.0.1:4173` for the TypeScript editor demo. Edit the shopping cart, switch to
+`pricing.ts`, inspect generated JavaScript, find/replace text, compare changes and save locally.
+Save locally stores all files of that sample in this browser; another page's saved copy is
+protected by a version check. Samples retain their edits while you switch between them.
+Reset restores the sample through undoable edits. Unsaved work prompts before leaving the page;
+automatic draft recovery and a richer conflict-resolution flow are still being connected.
+TypeScript 5.9.3 runs in a development worker for syntax colors and JavaScript emission;
+type checking, completion and symbol commands are not connected to this demo yet.
+The server binds to loopback only and does not open a browser window.
+
+`npm run dev` is an alias for the same server. The older mixed-surface workspace fixture is
+at `/workspace/`; the technical host/editor routes remain available for qualification.
+Install the test browsers with `npm run browsers:install` before running browser checks.
 It serves the last completed build while source watching compiles updates. Reload after a build
 finishes to use those updates; asset requests do not start compilation or delay worker startup.
 An unsuccessful build returns a development error until the source is corrected.
@@ -70,7 +80,8 @@ See [runtime ownership](docs/editor-ownership.md) for composition, caret and del
 | --- | --- |
 | `src/core` | Documents, resource keys, tab lifetimes, transactions; no DOM |
 | `src/browser` | Explicitly mounted and disposed browser views |
-| `examples/playground` | Synthetic mixed-surface host and development-only agent hooks |
+| `examples/demo` | TypeScript editor demo and development-only compiler worker |
+| `examples/playground` | Technical mixed-surface workspace fixture at `/workspace/` |
 | `experiments` | Development storage comparisons; excluded from the runtime and package |
 | `tests` | Model invariants and real browser interactions |
 | `scripts` | Build, local server, screenshots and benchmark runner |

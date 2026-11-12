@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>StTropez · TypeScript editor</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+    <header><a class="brand" href="/">STTROPEZ<span>TypeScript editor</span></a>
+        <div class="toolbar"><label>Example <select id="sample"></select></label>
+            <button id="find-toggle" title="Find (Ctrl+F)">Find</button>
+            <button id="compare">Compare</button><button id="reset">Reset</button>
+            <button id="save" class="primary" title="Save in this browser (Ctrl+S)">Save locally</button>
+        </div>
+    </header>
+    <div class="intro"><p id="description">Opening the editor…</p><button id="walkthrough-toggle">Quick tour</button></div>
+    <aside id="walkthrough" hidden>Change a value → open pricing.ts → compare your changes → undo → save locally.
+        Type checking, symbol navigation and rename will become available with the language service.</aside>
+    <nav id="files" aria-label="Project files"></nav>
+    <section id="find-bar" aria-label="Find and replace" hidden>
+        <input id="find-query" aria-label="Find text" placeholder="Find in this file">
+        <button id="find-previous" title="Previous match (Shift+Enter)">↑</button><button id="find-next" title="Next match (Enter)">↓</button>
+        <button id="replace-toggle">Replace…</button><span id="replace-controls" hidden><input id="replacement" aria-label="Replacement text" placeholder="Replace with">
+            <button id="replace-current">Replace</button><button id="replace-all">Replace all</button></span>
+        <output id="find-status"></output><button id="find-close" title="Close find (Escape)">Close</button>
+    </section>
+    <main id="workspace">
+        <section id="source-column" aria-label="Source code"><div id="gutter" aria-hidden="true"></div><div id="editor"></div></section>
+        <section id="secondary" aria-label="Output and review">
+            <nav id="panels" aria-label="Output panels"><button data-panel="javascript" aria-pressed="true">JavaScript</button>
+                <button data-panel="problems" aria-pressed="false">Problems</button><button data-panel="changes" aria-pressed="false">Changes</button>
+                <button id="panel-collapse" title="Toggle output panel">Hide</button></nav>
+            <div id="panel-content"></div>
+        </section>
+    </main>
+    <footer><output id="status"></output><span id="cursor"></span><span id="analysis-status"></span><button id="analysis-retry" hidden>Retry</button></footer>
+    <script type="module" src="/app.js"></script>
+</body>
+</html>
