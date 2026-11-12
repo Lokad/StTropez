@@ -2,7 +2,7 @@
 
 The root demo uses TypeScript 5.9.3 for syntax/JavaScript emission in a worker and
 typescript-language-server 5.1.3 with the same compiler for type checking, completion,
-hover, signature help, definition/reference navigation and rename.
+hover, signature help, definition/reference navigation, rename and edit-only quick fixes.
 The Node host uses vscode-uri 3.1.0 to provide the server's canonical file URIs, including
 Windows drive spelling/escaping. These are pinned development dependencies. Shipped modules
 and NuGet assets retain zero third-party runtime dependencies and exclude the provider/compiler.
@@ -11,8 +11,8 @@ and NuGet assets retain zero third-party runtime dependencies and exclude the pr
 sample and bridges text JSON-RPC 2.0 messages between WebSocket and the provider's stdio.
 StTropez's public `LspWorkspace`, WebSocket transport and editor completion controller own
 negotiation, UTF-16 synchronization, capture/response validation and completion edits/history.
-Completion, hover, signature help, definition/reference navigation and rename use standard
-language features in this demo. Code actions remain to be connected.
+Completion, hover, signature help, definition/reference navigation, rename and quick fixes use
+standard language requests in this demo, with the bounded host adaptations described below.
 The existing deterministic protocol fixture keeps its separate `/lsp-fixture` route.
 
 ## Current workflows
@@ -39,6 +39,10 @@ The existing deterministic protocol fixture keeps its separate `/lsp-fixture` ro
   edits, changed selection/authority, file switches and provider restart expire old previews.
   Renaming at the function definition updates the importing file too. At an imported alias,
   TypeScript may instead introduce a local alias; the preview shows the actual provider edits.
+- Ctrl+. or Code → Quick fix requests fixes for the current error/range. Review the named fix
+  and its before/after text, then Apply fix or Enter; Escape cancels. The real spelling fix for
+  a mistyped known name is qualified. The existing action controller validates every captured
+  file and permission, and applies the exact edit batch as one shared undo command.
 - A failed provider leaves typing, history, comparison and local saves usable. Retry creates
   a fresh provider connection with current document snapshots. Switching samples suspends
   the inactive provider; file switches retain the same project synchronization stream. Retry
@@ -57,6 +61,20 @@ all document captures and the request generation before publication. Edits, susp
 or changed provider participation reject a late result. This is a documented host extension,
 not qualification of standard LSP diagnostic pull. Each syntactic or semantic response
 contributes at most 256 diagnostics per file/check; wider presentation remains a support limit.
+
+Quick fixes need the pinned server's diagnostic codes. Before requesting standard code actions,
+the host obtains fresh syntactic/semantic results over the same captured public request scope.
+The bridge correlates each response with every open mirrored file/version; any file change
+clears its cache. Only a current complete diagnostic context is forwarded, narrowed to the
+requested range and quick-fix kind. A refresh for unchanged files retains valid context while
+pending; malformed replacement results invalidate that kind. This is a provider host adaptation,
+not qualification of standard diagnostic pull or generic diagnostic metadata passthrough.
+
+The pinned provider attaches an empty-title `_typescript.applyCodeActionCommand` even to some
+pure edits. The bridge removes only that demonstrated no-op form when its nested command list
+is absent or empty. Edits, metadata and target ranges still reach the unchanged strict decoder.
+No action command executes. Fixes requiring other commands, package installation, file creation
+or targets outside the known sample remain unsupported.
 
 Pinned-provider completion behaviors are adapted by the development bridge. It preserves
 the input item's opaque data when resolution replaces the server's cache key, and excludes
@@ -79,6 +97,7 @@ commands and project configuration changes are rejected.
 Focused qualification uses a real provider for type-error correction, member completion and
 resolution/history, pointer/keyboard inspection, argument changes and popup Escape priority,
 held real responses after edits/file switches, startup failure/retry,
+spelling-fix preview/apply/history, concurrent diagnostic refresh, related-file invalidation,
 incremental synchronization, reconnect and owned process/workspace cleanup. Full packaged
 provider integration and integrated responsiveness remain later milestones. Headless checks
 do not qualify native IME, OS clipboard or physical input/display behavior.

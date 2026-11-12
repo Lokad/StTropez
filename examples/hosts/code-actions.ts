@@ -13,7 +13,7 @@ type Job = { origin: Session; input: ActionInput; document: DocumentSnapshot; se
     sources: Map<DocumentId, Readonly<{ document: DocumentSnapshot; authority: string }>>; leases: ResourceLease[];
     stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; result: ActionResult | undefined;
     batch?: LspActionBatch; selected?: LspCodeAction; choice: number | null; resolving: boolean; page: number };
-export type ActionNote = Readonly<{ document: string; resource: string; title: string; revision: number; from: number; to: number; insert: string; context: string; insertUnits?: number }>;
+export type ActionNote = Readonly<{ document: string; resource: string; title: string; revision: number; from: number; to: number; insert: string; context: string; before?: string; insertUnits?: number }>;
 export type ActionChoice = Readonly<{ index: number; title: string; kind: string | null; preferred: boolean; disabled: string | null; needsResolve: boolean }>;
 type ActionChange = Readonly<{ document: DocumentId; title: string }>;
 export type ActionsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; pending: boolean; canApply: boolean; token: number | null; module: string;
@@ -118,6 +118,11 @@ export class HostActionsTools {
         let detached = false; return () => { if (detached) return; detached = true; if (this.job?.origin === s) this.cancel(); events.abort(); this.sessions.delete(s.token); if (this.active === s) this.active = undefined; if (!this.sessions.size) this.drop(); this.publish(); };
     }
     readonly request = (): void => this.start(false);
+    /** Start a host command from its named mounted source, independent of later focus. */
+    begin(id: string): void {
+        const source = [...this.sessions.values()].find(session => session.id === id);
+        if (!source) return; this.active = source; this.start(false);
+    }
     private start(keyboard: boolean): void {
         const origin = this.active, module = this.cell.get().module;
         if (this.disconnected || !origin || !this.available(origin)) { this.publish({ message: "Focus an available source and reconnect first." }); return; }
@@ -195,7 +200,8 @@ export class HostActionsTools {
         const action = job.selected; if (!action || !this.current(job)) return;
         const changes = action.edit?.documents.flatMap(change => change.edits.map(edit => ({ doc: change.target.document, edit }))) ?? [], disabled = this.disabled(action);
         const edits = Object.freeze(changes.slice(job.page * 64, (job.page + 1) * 64).map(({ doc, edit }) => Object.freeze({ document: doc.documentId, resource: doc.resourceId,
-            title: job.sources.get(doc.documentId as DocumentId)!.document.title.slice(0, 128), revision: doc.revision, from: edit.from, to: edit.to, insert: edit.insert.slice(0, 256), insertUnits: edit.insert.length,
+            title: job.sources.get(doc.documentId as DocumentId)!.document.title.slice(0, 128), revision: doc.revision, from: edit.from, to: edit.to,
+            before: doc.buffer.slice(edit.from, Math.min(edit.to, edit.from + 256)) + (edit.to - edit.from > 256 ? "…" : ""), insert: edit.insert.slice(0, 256), insertUnits: edit.insert.length,
             context: doc.buffer.slice(Math.max(0, edit.from - 32), Math.min(edit.to, edit.from + 128)) + (edit.to - edit.from > 128 ? "…" : "") + doc.buffer.slice(edit.to, Math.min(doc.buffer.length, edit.to + 32)) })));
         this.publish({ status: "ready", title: action.title, disabled, edits, editCount: changes.length, page: job.page,
             message: disabled ?? (action.command ? `Confirm execution of ${action.command.title} (${action.command.command}) with ${action.command.arguments.length} captured arguments after ${changes.length} edits. Any further provider edits require a decision in Workspace provider.` : `Review ${changes.length} captured provider edits before confirming. Every target must permit application.`) });

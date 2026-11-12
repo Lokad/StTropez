@@ -112,5 +112,6 @@ export function mountDemoSymbols(workspace: Workspace, files: readonly DemoFile[
         ...files.flatMap(file => [workspace.observeDocument(file.resource.documentId).subscribe(changed), file.resource.metadata.subscribe(changed)])];
     editor.input.addEventListener("blur", () => queueMicrotask(() => { if (!disposed) changed(); }), { signal: events.signal });
     return Object.freeze({ definition: () => request("definition"), references: () => request("references"), rename: beginRename,
+        dismiss: () => { cancelNavigation(); closeRename(false); }, isOpen: () => !!query || !renamePopup.hidden,
         destroy: () => { disposed = true; events.abort(); stops.forEach(stop => stop()); detachRename(); stopRename(); rename.bindName(null); rename.dispose(); navigation.dispose(); popup.remove(); renamePopup.remove(); } });
 }

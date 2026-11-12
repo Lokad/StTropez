@@ -51,7 +51,8 @@ F12 follows a definition, Shift+F12 lists references, and F2 previews a rename. 
 function at its definition to update both files; imported aliases can have a local rename.
 The Code menu exposes these commands. Enter or a click accepts a resolved completion; Escape
 dismisses popups. Provider failure leaves editing and saves available, with a separate retry action.
-Quick fixes are next. See the [demo language integration](docs/demo-language.md) for its
+Use Ctrl+. or Code → Quick fix to review a provider fix before applying it. The spelling fix
+for a mistyped known name is supported and undoable. See the [demo language integration](docs/demo-language.md) for its
 supported subset and ownership.
 The server binds to loopback only and does not open a browser window.
 

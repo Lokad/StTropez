@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { StreamMessageReader, StreamMessageWriter, TextDocument } from "vscode-languageserver-protocol/node.js";
-import type { Message, DidOpenTextDocumentParams, DidChangeTextDocumentParams } from "vscode-languageserver-protocol/node.js";
+import type { Message, DidOpenTextDocumentParams, DidChangeTextDocumentParams, Diagnostic, Range } from "vscode-languageserver-protocol/node.js";
 import { URI } from "vscode-uri";
 import { demoSample, sampleChoices } from "./samples.ts";
 import type { SampleId } from "./samples.ts";
@@ -75,6 +75,10 @@ export function attachDemoProvider(server: Server) {
         const resolving = new Map<string | number, Readonly<{ data: unknown; present: boolean }>>();
         const completing = new Map<string | number, Readonly<{ line: number; character: number; prefix: string }>>();
         const documents = new Map<string, TextDocument>();
+        type Problem = Readonly<{ from: number; to: number; wire: Diagnostic }>;
+        type Kind = "semantic" | "syntactic";
+        const diagnosing = new Map<string | number, Readonly<{ document: TextDocument; project: readonly TextDocument[]; kind: Kind }>>(), acting = new Set<string | number>();
+        const problems = new Map<string, { document: TextDocument; semantic?: readonly Problem[]; syntactic?: readonly Problem[] }>();
         let finish!: () => void, force: NodeJS.Timeout | undefined;
         const terminal = new Promise<void>(resolve => { finish = resolve; });
         const send = (value: unknown) => {
@@ -101,6 +105,35 @@ export function attachDemoProvider(server: Server) {
             const value = message as unknown as Record<string, unknown>;
             if (value.id === shutdownId) { void send({ jsonrpc: "2.0", method: "exit" }).then(() => child.stdin.end()).catch(() => {}); return; }
             if (typeof value.id === "string" || typeof value.id === "number") {
+                const diagnostic = diagnosing.get(value.id); diagnosing.delete(value.id);
+                // Correlate read-command results with the actual mirrored document, never a later
+                // version or the provider's unversioned diagnostic pushes.
+                if (diagnostic && diagnostic.project.length === documents.size && diagnostic.project.every(doc => documents.get(doc.uri) === doc)) {
+                    const doc = diagnostic.document, previous = problems.get(doc.uri); if (previous) delete previous[diagnostic.kind];
+                    if (object(value.result) && value.result.success === true && Array.isArray(value.result.body)) {
+                        const batch: Problem[] = [];
+                        for (const item of value.result.body.slice(0, 256)) {
+                            if (!object(item) || !Number.isSafeInteger(item.start) || !Number.isSafeInteger(item.length) || !Number.isSafeInteger(item.code) || typeof item.message !== "string") break;
+                            const from = item.start as number, to = from + (item.length as number);
+                            if (from < 0 || to < from || to > doc.getText().length || item.message.length > 4096) break;
+                            batch.push({ from, to, wire: { range: { start: doc.positionAt(from), end: doc.positionAt(to) }, message: item.message, code: item.code as number,
+                                severity: item.category === "warning" ? 2 : 1, source: "typescript" } });
+                        }
+                        if (batch.length === Math.min(256, value.result.body.length)) {
+                            const cached = problems.get(doc.uri) ?? { document: doc }; cached[diagnostic.kind] = batch; problems.set(doc.uri, cached);
+                        }
+                    }
+                }
+                if (acting.delete(value.id) && Array.isArray(value.result)) value.result = value.result.map(action => {
+                    if (!object(action) || !object(action.edit) || !object(action.command) || action.command.command !== "_typescript.applyCodeActionCommand"
+                        || action.command.title !== "" || !Array.isArray(action.command.arguments) || action.command.arguments.length !== 1) return action;
+                    const argument = action.command.arguments[0]; if (!object(argument) || !object(argument.action)) return action;
+                    const commands = argument.action.commands;
+                    if (commands !== undefined && (!Array.isArray(commands) || commands.length !== 0)) return action;
+                    // The pinned provider adds this empty-title no-op to pure quick fixes. No
+                    // provider command is executed; its edit still passes the generic decoder.
+                    const { command: _noOp, ...pure } = action; return pure;
+                });
                 const original = resolving.get(value.id); resolving.delete(value.id);
                 // This pinned provider replaces its cache key during resolve. Keep opaque client data
                 // stable; all edits, labels and behavior-bearing fields still reach strict decoding.
@@ -156,6 +189,9 @@ export function attachDemoProvider(server: Server) {
                 const document = object(params) && Object.values(project.documents).find(doc => doc.uri === params.uri);
                 const kind = object(params) ? params.kind : undefined;
                 if (!document || kind !== "semantic" && kind !== "syntactic") { reject(message.id, "Expected a captured demo diagnostic request."); return; }
+                const captured = documents.get(document.uri);
+                if (!captured || diagnosing.size >= 128 || typeof message.id !== "string" && typeof message.id !== "number") { reject(message.id, "Expected an open document and a bounded diagnostic request."); return; }
+                diagnosing.set(message.id, { document: captured, project: [...documents.values()], kind });
                 message.method = "workspace/executeCommand";
                 message.params = { command: "typescript.tsserverRequest", arguments: [kind === "semantic" ? "semanticDiagnosticsSync" : "syntacticDiagnosticsSync", { file: document.path }, {}] };
             }
@@ -163,6 +199,7 @@ export function attachDemoProvider(server: Server) {
             try {
                 if (message.method === "textDocument/didOpen") {
                     const doc = (message.params as DidOpenTextDocumentParams).textDocument;
+                    problems.clear();
                     documents.set(doc.uri, TextDocument.create(doc.uri, doc.languageId, doc.version, doc.text));
                 } else if (message.method === "textDocument/didChange") {
                     const params = message.params as DidChangeTextDocumentParams, before = documents.get(params.textDocument.uri);
@@ -170,11 +207,27 @@ export function attachDemoProvider(server: Server) {
                     for (const change of params.contentChanges) text = "range" in change
                         ? TextDocument.applyEdits(TextDocument.create(before.uri, before.languageId, before.version, text), [{ range: change.range, newText: change.text }]) : change.text;
                     documents.set(before.uri, TextDocument.create(before.uri, before.languageId, params.textDocument.version, text));
-                } else if (message.method === "textDocument/didClose" && object(message.params) && object(message.params.textDocument)) documents.delete(String(message.params.textDocument.uri));
+                    problems.clear();
+                } else if (message.method === "textDocument/didClose" && object(message.params) && object(message.params.textDocument)) {
+                    const uri = String(message.params.textDocument.uri); documents.delete(uri); problems.clear();
+                }
             } catch { socket.close(1003, "Invalid demo document synchronization"); return; }
             if (message.method === "completionItem/resolve" && object(message.params) && (typeof message.id === "number" || typeof message.id === "string")) {
                 if (resolving.size >= 128) { reject(message.id, "Too many pending completion resolutions."); return; }
                 resolving.set(message.id, { data: message.params.data, present: Object.hasOwn(message.params, "data") });
+            }
+            if (message.method === "textDocument/codeAction") {
+                const params = message.params, doc = object(params) && object(params.textDocument) && documents.get(String(params.textDocument.uri));
+                const cached = doc ? problems.get(doc.uri) : undefined;
+                if (!doc || cached?.document !== doc || !cached.semantic || !cached.syntactic || !object(params) || !object(params.range)
+                    || typeof message.id !== "string" && typeof message.id !== "number" || acting.size >= 128) { reject(message.id, "Request current captured diagnostics before quick fixes."); return; }
+                const range = params.range as unknown as Range;
+                if (!range.start || !range.end || ![range.start.line, range.start.character, range.end.line, range.end.character].every(n => Number.isSafeInteger(n) && n >= 0)) { reject(message.id, "Expected a diagnostic range."); return; }
+                const from = doc.offsetAt(range.start), to = doc.offsetAt(range.end);
+                if (to < from) { reject(message.id, "Expected an ordered diagnostic range."); return; }
+                const overlapping = [...cached.syntactic, ...cached.semantic].filter(item => from === to ? item.from <= from && item.to >= to
+                    : item.from === item.to ? from <= item.from && item.from <= to : item.from < to && item.to > from).slice(0, 256);
+                params.context = { triggerKind: 1, only: ["quickfix"], diagnostics: overlapping.map(item => item.wire) }; acting.add(message.id);
             }
             if (message.method === "textDocument/completion" && object(message.params) && object(message.params.position)
                 && typeof message.params.position.line === "number" && typeof message.params.position.character === "number" && (typeof message.id === "number" || typeof message.id === "string")) {
@@ -186,7 +239,7 @@ export function attachDemoProvider(server: Server) {
                 completing.set(message.id, { line, character, prefix });
             }
             if (message.method === "$/cancelRequest" && object(message.params) && (typeof message.params.id === "number" || typeof message.params.id === "string")) {
-                resolving.delete(message.params.id); completing.delete(message.params.id);
+                resolving.delete(message.params.id); completing.delete(message.params.id); diagnosing.delete(message.params.id); acting.delete(message.params.id);
             }
             if (message.method === "workspace/executeCommand") {
                 const params = message.params;

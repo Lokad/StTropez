@@ -1,6 +1,6 @@
 import type { DocumentId, Observable, Workspace } from "../../src/index.ts";
 import { LspWorkspace } from "../../src/protocol/index.ts";
-import type { LspWorkspaceScope, RpcCall } from "../../src/protocol/index.ts";
+import type { LspWorkspaceScope, RpcCall, LspSessionAccess } from "../../src/protocol/index.ts";
 import { openWebSocketTransport } from "../../src/browser/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { DemoFile } from "./project.ts";
@@ -81,7 +81,7 @@ export class DemoLanguage {
                     },
                     rootUri: config.rootUri, clientInfo: { name: "StTropez demo" },
                     schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
-                    features: ["textDocument/completion", "textDocument/hover", "textDocument/signatureHelp", "textDocument/definition", "textDocument/references", "textDocument/rename"], diagnostics: false,
+                    features: ["textDocument/completion", "textDocument/hover", "textDocument/signatureHelp", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction"], diagnostics: false,
                     maxDocumentUnits: 8_000_000, maxTotalUnits: 16_000_000, rpc: { maxMessageUnits: 16 * 1024 * 1024 },
                     documentInfo: document => { const info = mappings.get(document.id); return info && { uri: info.uri, languageId: "typescript" }; },
                 });
@@ -108,6 +108,16 @@ export class DemoLanguage {
         if (!this.active || !this.scope || this.disposed) return;
         if (this.timer) clearTimeout(this.timer);
         this.timer = setTimeout(() => { this.timer = undefined; void this.check(); }, 180);
+    }
+    async prepareActions(session: LspSessionAccess, file: DemoFile): Promise<void> {
+        const config = this.config, lifecycle = this.lifecycle;
+        if (!config || !this.valid(lifecycle) || !this.files.includes(file)) throw new Error("The language service is unavailable.");
+        const uri = config.documents[file.name]!.uri;
+        for (const kind of ["syntactic", "semantic"] as const) {
+            const value = await session.request("sttropez/diagnostics", { uri, kind }).result;
+            if (!this.valid(lifecycle) || this.config !== config) throw new Error("The quick-fix context changed.");
+            if (!object(value) || value.success !== true || !Array.isArray(value.body)) throw new Error("Current diagnostics are unavailable.");
+        }
     }
     private async check(): Promise<void> {
         const scope = this.scope; if (!scope || !this.active || this.disposed) return;

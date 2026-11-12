@@ -217,6 +217,7 @@ on("compare", () => setPanel("changes")); on("analysis-retry", () => presentatio
 on("complete", () => languageView?.complete());
 on("inspect-type", () => languageView?.inspect()); on("signature", () => languageView?.signature());
 on("definition", () => languageView?.definition()); on("references", () => languageView?.references()); on("rename", () => languageView?.rename());
+on("quickfix", () => languageView?.quickfix());
 const codeMenu = element("code-menu") as HTMLDetailsElement;
 codeMenu.addEventListener("click", event => { if ((event.target as HTMLElement).closest("button")) codeMenu.open = false; }, { signal: listeners.signal });
 document.addEventListener("pointerdown", event => { if (!codeMenu.contains(event.target as Node)) codeMenu.open = false; }, { signal: listeners.signal });
