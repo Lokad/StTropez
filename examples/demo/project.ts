@@ -4,6 +4,7 @@ import { createBrowserDraftStore } from "../hosts/draft-store.ts";
 import type { DraftStore } from "../hosts/draft-store.ts";
 import { demoSample } from "./samples.ts";
 import type { DemoSample, SampleId } from "./samples.ts";
+import { DemoRecovery } from "./recovery.ts";
 
 export type DemoFile = Readonly<{ name: string; resource: TextResourceHandle; tab: TabId; view: DocumentView }>;
 type StoredProject = Readonly<{ version: 1; files: Readonly<Record<string, string>> }>;
@@ -23,6 +24,7 @@ export class DemoProject {
     readonly workspace = new Workspace();
     readonly files: readonly DemoFile[];
     readonly sample: DemoSample;
+    readonly recovery: DemoRecovery;
     private readonly store: DraftStore;
     private token: string | null = null;
     private readonly baselines = new Map<string, ComparisonBaseline>();
@@ -31,7 +33,7 @@ export class DemoProject {
     private reviewedRevisions: readonly number[] | undefined;
     saving = false;
     message = "Changes are kept in this page until you save locally.";
-    private constructor(id: SampleId, store: DraftStore, token: string | null, saved: StoredProject | null) {
+    private constructor(id: SampleId, store: DraftStore, token: string | null, saved: StoredProject | null, inputIdle: () => boolean) {
         this.sample = demoSample(id); this.store = store; this.token = token;
         this.files = Object.entries(this.sample.files).map(([name, initial]) => {
             const resource = this.workspace.createTextResource({ scope: `demo:${id}`, resource: name, variant: "working" }, name,
@@ -42,8 +44,9 @@ export class DemoProject {
             return { name, resource, tab, view };
         });
         if (saved) this.message = "Opened the copy saved in this browser.";
+        this.recovery = new DemoRecovery(this.workspace, this.files, id, () => this.token, inputIdle);
     }
-    static async open(id: SampleId): Promise<DemoProject> {
+    static async open(id: SampleId, inputIdle: () => boolean): Promise<DemoProject> {
         const store = createBrowserDraftStore(window, { name: "sttropez-demo-projects-v1", slot: id });
         try {
             const stored = await store.read();
@@ -52,11 +55,11 @@ export class DemoProject {
                 const names = Object.keys(demoSample(id).files);
                 saved = readProject(stored.value, names);
             }
-            return new DemoProject(id, store, stored?.token ?? null, saved);
+            return new DemoProject(id, store, stored?.token ?? null, saved, inputIdle);
         } catch (error) {
             await store.close();
             // Storage failure must leave the editor available; saves continue to fail safely.
-            const project = new DemoProject(id, createBrowserDraftStore(window, { name: "sttropez-demo-projects-v1", slot: id }), null, null);
+            const project = new DemoProject(id, createBrowserDraftStore(window, { name: "sttropez-demo-projects-v1", slot: id }), null, null, inputIdle);
             project.message = error instanceof Error ? error.message : "Local storage is unavailable. You can still edit.";
             return project;
         }
@@ -130,6 +133,7 @@ export class DemoProject {
     }
     dispose(): void {
         if (this.disposed) return; this.disposed = true;
+        this.recovery.dispose();
         if (!this.saving) this.release();
     }
     private release(): void {

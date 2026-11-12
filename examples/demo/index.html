@@ -18,6 +18,10 @@
     <aside id="walkthrough" hidden>Change a value → open pricing.ts → compare your changes → undo → save locally.
         Type checking, symbol navigation and rename will become available with the language service.</aside>
     <nav id="files" aria-label="Project files"></nav>
+    <section id="recovery-offer" aria-label="Draft recovery" hidden>
+        <span id="recovery-message"></span><button id="recovery-restore">Restore draft</button>
+        <button id="recovery-download">Download draft</button><button id="recovery-keep">Keep current files</button>
+    </section>
     <section id="save-conflict" aria-label="Saved copy changed" hidden>
         <span>Another page saved this sample.</span><button id="conflict-review">Review saved copy</button>
         <button id="conflict-save">Save my reviewed version</button><button id="download">Download my changes</button>
@@ -38,7 +42,8 @@
             <div id="panel-content"></div>
         </section>
     </main>
-    <footer><output id="status"></output><span id="cursor"></span><span id="analysis-status"></span><button id="analysis-retry" hidden>Retry</button></footer>
+    <footer><output id="status"></output><span id="recovery-status"></span><button id="recovery-retry" hidden>Check recovery</button>
+        <span id="cursor"></span><span id="analysis-status"></span><button id="analysis-retry" hidden>Retry</button></footer>
     <script type="module" src="/app.js"></script>
 </body>
 </html>

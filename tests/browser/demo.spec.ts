@@ -23,14 +23,58 @@ test("demo edits real files, preserves selection/history, finds text and reviews
     await page.getByRole("button", { name: "Replace all", exact: true }).click();
     await page.getByRole("button", { name: "Close", exact: true }).click();
     await page.getByRole("button", { name: "Compare", exact: true }).click();
+    await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toBeFocused();
     await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
     await expect(page.locator(".st-comparison-controls output")).not.toContainText("0 changes");
     await page.getByRole("button", { name: "Next change", exact: true }).click();
     await page.getByRole("button", { name: "Use baseline", exact: true }).click();
     await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
+    await expect(page.locator(".st-comparison-panes > section").last()).not.toContainText("/* Mine */");
+    await page.getByRole("textbox", { name: "Comparison working source", exact: true }).press("Control+z");
+    await expect(page.locator(".st-comparison-panes > section").last()).toContainText("/* Mine */");
     await page.getByRole("button", { name: "JavaScript", exact: true }).click();
     await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
     expect(errors).toEqual([]);
+});
+
+test("demo retains independent samples and resets both project files through shared history", async ({ page }) => {
+    page.on("dialog", dialog => dialog.accept());
+    await page.goto("/");
+    const main = page.getByRole("textbox", { name: "main.ts", exact: true });
+    await main.press("Control+Home"); await main.pressSequentially("/* Cart edit */");
+    await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
+    const helper = page.getByRole("textbox", { name: "pricing.ts", exact: true });
+    await helper.press("Control+Home"); await helper.pressSequentially("/* Helper edit */");
+    await page.locator("#sample").selectOption("unicode");
+    const unicode = page.getByRole("textbox", { name: "greetings.ts", exact: true });
+    await unicode.press("Control+Home"); await unicode.pressSequentially("/* Unicode edit */");
+    await page.locator("#sample").selectOption("pricing");
+    await expect(helper).toBeVisible(); await expect(page.locator("#editor")).toContainText("/* Helper edit */");
+    await page.getByRole("button", { name: "Reset", exact: true }).click();
+    await expect(helper).toBeFocused(); await expect(page.locator("#files")).not.toContainText("●");
+    await expect(page.locator("#editor")).not.toContainText("/* Helper edit */");
+    await helper.press("Control+z");
+    await expect(page.locator("#editor")).toContainText("/* Helper edit */");
+    await page.getByRole("button", { name: "main.ts ●", exact: true }).click();
+    await expect(page.locator("#editor")).toContainText("/* Cart edit */");
+    await page.locator("#sample").selectOption("unicode");
+    await expect(page.locator("#editor")).toContainText("/* Unicode edit */");
+});
+
+test("demo colors clipped template text with whole-file context and refreshes it after edits", async ({ page }) => {
+    await page.goto("/");
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    await source.press("Control+a");
+    await page.keyboard.insertText('const longText = `' + "x".repeat(12_000) + ' visible tail`;');
+    await source.press("Control+End");
+    await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
+    await expect(page.locator("#editor .demo-token-string").filter({ hasText: "visible tail" })).toBeVisible();
+    await source.press("Control+Home"); await page.keyboard.insertText("/* open comment\n");
+    await source.press("Control+End");
+    await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
+    await expect(page.locator("#editor .demo-token-comment").filter({ hasText: "visible tail" })).toBeVisible();
+    await source.press("Control+z"); await source.press("Control+End");
+    await expect(page.locator("#editor .demo-token-string").filter({ hasText: "visible tail" })).toBeVisible();
 });
 
 test("demo save receipts retain their captured files and leave later typing dirty", async ({ page }) => {
@@ -122,6 +166,7 @@ test("demo local save persists both files and prevents a stale page from replaci
     await saveReviewed.click();
     await expect(peer.locator("#status")).toContainText("Saved in this browser");
     await expect(peer.locator("#save-conflict")).toBeHidden();
+    await expect(peer.locator(".demo-review-labels")).toHaveText("Saved copyYour changes");
     await page.reload();
     await expect(page.locator("#editor")).toContainText("// Peer changes");
     await expect(page.locator("#editor")).toContainText("// Revised locally");

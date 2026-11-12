@@ -36,8 +36,12 @@ Open `http://127.0.0.1:4173` for the TypeScript editor demo. Edit the shopping c
 `pricing.ts`, inspect generated JavaScript, find/replace text, compare changes and save locally.
 Save locally stores all files of that sample in this browser; another page's saved copy is
 protected by a version check. Samples retain their edits while you switch between them.
-Reset restores the sample through undoable edits. Unsaved work prompts before leaving the page;
-automatic draft recovery is still being connected. If another page saves the same sample,
+Reset restores the sample through undoable edits. After a short pause, a recovery draft captures
+the committed contents of all changed files. On reload, explicitly restore or download that draft,
+or keep the current files. Restore is one undoable operation and expires if the files change
+while it is pending. Recovery status shows when the captured draft is stored; the latest keystrokes
+can still be pending, and abrupt browser termination is not a guarantee of recovery.
+Unsaved work prompts before leaving the page. If another page saves the same sample,
 review its saved copy before explicitly saving your version, or download your local changes.
 TypeScript 5.9.3 runs in a development worker for syntax colors and JavaScript emission;
 type checking, completion and symbol commands are not connected to this demo yet.

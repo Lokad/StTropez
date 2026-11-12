@@ -10,6 +10,7 @@ different measures; reducing a matrix alone does not prove a time saving.
 | Indexed text, UTF-16 mapping and complete selections | `text-buffer`, `positions`, `utf16-ranges`, `selections` model tests | `editing`, `host-raw-crlf-caret`, `host-multiple-input` browser tests |
 | Revision guards, shared history and detached views | `workspace`, `history`, `resources` models | Plain candidate host journey; native controls for selection/history; selected React mount/lifecycle journeys |
 | Save/conflict/agent/review transitions | `save-review`, `host-save-conflict`, `host-save-failure`, `agent`, `comparison` models | Save/conflict, comparison and complete host journeys; restored normal/100k pilots |
+| Demo recovery captures and syntax classification | `demo-recovery` owns delayed restore/discard, linked history, disposal and unchanged-draft reuse; `demo-syntax` owns compiler classification | `demo-recovery` owns real storage/reload/failure; `demo` owns file/sample switching, find, review, save and visible coloring |
 | Positional LSP captures, supersession and cancellation | `lsp-clients` models | Small affected hover/navigation/rename/action host integrations |
 | Provider sharing, diagnostics and command ownership | `lsp-workspace` and protocol session/RPC models | Minimal restored LSP consumer; selected plain/React integration |
 | Signature/link/color client behavior | Named independent cases in `lsp-workspace`; decoder combinations in `protocol-features` | Selected language browser journeys, not every source-model permutation through a package |

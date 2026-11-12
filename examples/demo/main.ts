@@ -16,8 +16,9 @@ for (const choice of sampleChoices) { const option = document.createElement("opt
 let project: DemoProject | undefined, active: DemoFile | undefined, editor: EditingCandidate | undefined;
 let comparison: TextComparison | undefined, find: FindController | undefined;
 let panel: "javascript" | "problems" | "changes" = "javascript", disposed = false, opening = 0;
-let stopWorkspace: (() => void) | undefined, stopView: (() => void) | undefined, stopFind: (() => void) | undefined;
+let stopWorkspace: (() => void) | undefined, stopRecovery: (() => void) | undefined, stopView: (() => void) | undefined, stopFind: (() => void) | undefined;
 let viewListeners: AbortController | undefined;
+let reviewLabel: HTMLSpanElement | undefined;
 const presentation = new DemoPresentation(() => { editor?.viewport.invalidate(); renderOutput(); renderMetadata(); });
 
 function renderOutput(): void {
@@ -54,6 +55,14 @@ function renderMetadata(): void {
     button("save").disabled = project.saving;
     element("save-conflict").hidden = !project.hasConflict();
     button("conflict-save").disabled = !project.canSaveReviewed();
+    if (reviewLabel) reviewLabel.textContent = project.isReviewingConflict() ? "Other page's saved copy" : "Saved copy";
+    const recovery = project.recovery.state.getSnapshot();
+    element("recovery-offer").hidden = !recovery.present;
+    element("recovery-message").textContent = recovery.message;
+    element("recovery-status").textContent = recovery.present ? "Recovery draft available" : recovery.message;
+    element("recovery-retry").hidden = recovery.status !== "failed";
+    button("recovery-restore").disabled = !project.recovery.canRestore();
+    button("recovery-keep").disabled = recovery.busy;
     for (const file of project.files) {
         const tab = element("files").querySelector<HTMLButtonElement>(`[data-file="${file.name}"]`);
         if (tab) { tab.textContent = `${file.name}${file.resource.metadata.getSnapshot().dirty ? " ●" : ""}`; tab.setAttribute("aria-pressed", String(file === active)); }
@@ -66,11 +75,11 @@ function detachView(): void {
     viewListeners?.abort(); viewListeners = undefined;
     find?.destroy(); find = undefined; presentation.search = undefined;
     if (comparison) comparison.destroy(); else editor?.destroy();
-    comparison = undefined; editor = undefined;
+    comparison = undefined; editor = undefined; reviewLabel = undefined;
     element("editor").replaceChildren(); element("panel-content").replaceChildren();
 }
 function mountFile(file: DemoFile, focus = false): void {
-    if (!project || disposed) return;
+    if (!project || disposed || editor?.snapshot().composing) return;
     const viewState = editor?.captureView();
     const previous = active;
     if (previous && viewState) savedViews.set(previous.view.id, viewState);
@@ -81,6 +90,7 @@ function mountFile(file: DemoFile, focus = false): void {
             { view: file.view, workingDecorate: presentation.decorate, scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
         const labels = document.createElement("div"); labels.className = "demo-review-labels";
         const savedLabel = document.createElement("span"), workingLabel = document.createElement("span");
+        reviewLabel = savedLabel;
         savedLabel.textContent = project.isReviewingConflict() ? "Other page's saved copy" : "Saved copy"; workingLabel.textContent = "Your changes";
         labels.append(savedLabel, workingLabel); element("panel-content").prepend(labels);
         editor = comparison.working;
@@ -96,6 +106,8 @@ function mountFile(file: DemoFile, focus = false): void {
     if (savedViews.has(file.view.id)) editor.restoreView(savedViews.get(file.view.id)!);
     viewListeners = new AbortController();
     editor.element.addEventListener("sttropez-render", renderGutter, { signal: viewListeners.signal });
+    editor.input.addEventListener("compositionstart", renderMetadata, { signal: viewListeners.signal });
+    editor.input.addEventListener("compositionend", renderMetadata, { signal: viewListeners.signal });
     editor.element.addEventListener("keydown", event => {
         if (event.isComposing || editor?.snapshot().composing || event.defaultPrevented) return;
         if ((event.ctrlKey || event.metaKey) && !event.altKey) {
@@ -116,11 +128,13 @@ function mountFile(file: DemoFile, focus = false): void {
 }
 const savedViews = new Map<string, ReturnType<EditingCandidate["captureView"]>>();
 async function openSample(id: SampleId): Promise<void> {
+    if (editor?.snapshot().composing) { sample.value = project!.sample.id; return; }
     const generation = ++opening; sample.disabled = true;
     let next = projects.get(id);
-    if (!next) { next = await DemoProject.open(id); if (disposed) { next.dispose(); return; } projects.set(id, next); }
+    if (!next) { next = await DemoProject.open(id, () => project?.sample.id !== id || !editor?.snapshot().composing); if (disposed) { next.dispose(); return; } projects.set(id, next); }
     if (disposed || generation !== opening) return;
     stopWorkspace?.(); stopWorkspace = undefined;
+    stopRecovery?.(); stopRecovery = undefined;
     if (active && editor) savedViews.set(active.view.id, editor.captureView());
     detachView(); active = undefined; project = next;
     sample.value = id; sample.disabled = false;
@@ -131,13 +145,14 @@ async function openSample(id: SampleId): Promise<void> {
     });
     element("files").replaceChildren(...tabs);
     stopWorkspace = next.workspace.subscribe(renderMetadata);
+    stopRecovery = next.recovery.state.subscribe(renderMetadata);
     mountFile(next.files.find(file => file.name === activeFiles.get(id)) ?? next.files[0]!);
 }
 function setPanel(next: typeof panel): void {
-    if (!active) return; panel = next;
+    if (!active || editor?.snapshot().composing) return; panel = next;
     element("workspace").classList.remove("collapsed"); element("panel-collapse").textContent = "Hide";
     for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.setAttribute("aria-pressed", String(tab.dataset.panel === panel));
-    mountFile(active);
+    mountFile(active, true);
 }
 function openFind(replace = false): void {
     element("find-bar").hidden = false; element("replace-controls").hidden = !replace;
@@ -157,11 +172,11 @@ on("panel-collapse", () => {
 });
 on("walkthrough-toggle", () => { element("walkthrough").hidden = !element("walkthrough").hidden; });
 on("reset", () => {
-    if (!project || !window.confirm("Restore the original sample in all its files? You can undo this change. The saved copy changes only when you save locally.")) return;
-    project.reset(); renderMetadata();
+    if (!project || editor?.snapshot().composing || !window.confirm("Restore the original sample in all its files? You can undo this change. The saved copy changes only when you save locally.")) return;
+    project.reset(); renderMetadata(); editor?.focus();
 });
 async function save(reviewed = false): Promise<void> {
-    const captured = project; if (!captured) return;
+    const captured = project; if (!captured || editor?.snapshot().composing) return;
     await captured.save(renderMetadata, reviewed);
     if (!disposed && project === captured && comparison && active) {
         const ticket = comparison.controller.beginRefresh(); ticket.complete(captured.baseline(active));
@@ -170,11 +185,20 @@ async function save(reviewed = false): Promise<void> {
 on("save", () => { void save(); });
 on("conflict-review", () => { if (project?.reviewConflict()) { setPanel("changes"); renderMetadata(); } });
 on("conflict-save", () => { void save(true); });
+on("recovery-restore", () => { void project?.recovery.restore(); });
+on("recovery-keep", () => { void project?.recovery.keepCurrent(); });
+on("recovery-retry", () => { void project?.recovery.refresh(); });
+function download(text: string, name: string): void {
+    const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+    const link = document.createElement("a"); link.href = url; link.download = name; link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+on("recovery-download", () => {
+    const draft = project?.recovery.download(); if (draft) download(draft, `${project!.sample.id}-recovery.json`);
+});
 on("download", () => {
     if (!project) return;
-    const url = URL.createObjectURL(new Blob([project.download()], { type: "application/json" }));
-    const link = document.createElement("a"); link.href = url; link.download = `${project.sample.id}-changes.json`; link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    download(project.download(), `${project.sample.id}-changes.json`);
 });
 for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.addEventListener("click", () => setPanel(tab.dataset.panel as typeof panel), { signal: listeners.signal });
 field("find-query").addEventListener("input", () => find?.setQuery(field("find-query").value), { signal: listeners.signal });
@@ -196,7 +220,7 @@ window.addEventListener("beforeunload", event => {
     if ([...projects.values()].some(project => project.dirty())) { event.preventDefault(); event.returnValue = ""; }
 }, { signal: listeners.signal });
 window.addEventListener("pagehide", () => {
-    disposed = true; opening++; listeners.abort(); stopWorkspace?.(); detachView(); presentation.dispose();
+    disposed = true; opening++; listeners.abort(); stopWorkspace?.(); stopRecovery?.(); detachView(); presentation.dispose();
     for (const project of projects.values()) project.dispose(); projects.clear(); savedViews.clear();
 }, { once: true });
 await openSample("pricing");
