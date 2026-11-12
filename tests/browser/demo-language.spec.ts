@@ -31,7 +31,11 @@ test("real member completion preserves provider punctuation, resolves, applies o
     await expect(page.locator("#editor")).toContainText("cart.map");
     await source.press("Control+z"); await expect(page.locator("#editor")).toContainText("cart.ma");
     await expect(page.locator("#editor")).not.toContainText("cart.map");
-    await source.press("Control+Space"); await expect(page.locator(".demo-completion")).toBeVisible();
+    await source.press("Control+Space"); await expect(page.getByRole("option", { name: "map", exact: true })).toBeVisible();
+    await expect(page.getByRole("option", { name: "at", exact: true })).toHaveCount(0);
+    await source.press("Enter"); await expect(page.locator("#editor")).toContainText("cart.map");
+    await source.press("Control+z"); await expect(page.locator("#editor")).toContainText("cart.ma");
+    await source.press("Control+Space"); await expect(page.getByRole("option", { name: "map", exact: true })).toBeVisible();
     await source.press("Escape"); await expect(page.locator(".demo-completion")).toBeHidden();
     await expect(source).toBeFocused();
 });

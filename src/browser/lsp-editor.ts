@@ -17,7 +17,9 @@ type Invocation = Readonly<{ kind: 1 | 2 | 3; character?: string; automatic?: bo
 export type LspEditorDiagnostic = Readonly<{ from: number; to: number; message: string }>;
 export type LspEditorSnapshot = Readonly<{ message: string; connected: boolean; pending: boolean; offerText: string | null;
     diagnostics: readonly LspEditorDiagnostic[]; diagnosticRevision: number; choices: readonly string[]; choiceIndex: number; completionId: number; completionDetail: string; resolving: boolean; unversionedDiagnostics: readonly string[] }>;
-export type LspEditorOptions = Readonly<{ provider: LspWorkspace; autoConnect?: boolean; automatic?: boolean; canCapture?: () => boolean;
+export type LspEditorOptions = Readonly<{ provider: LspWorkspace; autoConnect?: boolean; automatic?: boolean;
+    /** Narrow explicit requests using each item's captured edit prefix, as automatic requests do. */
+    filterManualCompletions?: boolean; canCapture?: () => boolean;
     prepareCompletion?: (session: LspSessionAccess) => Promise<unknown>; onError?: (error: unknown) => void }>;
 export type LspEditorController = Readonly<{ state: Observable<LspEditorSnapshot>; request: () => void; apply: (mode: "insert" | "replace", completionId?: number) => boolean;
     chooseCompletion: (index: number, completionId?: number) => boolean; cancel: () => void; connect: () => void; selectDiagnostic: (index: number) => boolean;
@@ -123,7 +125,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
             const configuration = session.featureOptions("textDocument/completion", binding), commits = configuration.flatMap(option => Array.isArray(option.allCommitCharacters) ? option.allCommitCharacters.filter((value): value is string => typeof value === "string").slice(0, 64) : []);
             const choices = decodeLspCompletions(result, captured.capture, selected.head, () => wordRange(captured.capture!.document.buffer, selected.head), { resolve: configuration.some(option => option.resolveProvider === true), commitCharacters: commits });
             captured.choices = Object.freeze({ ...choices, items: Object.freeze(choices.items.map((item, order) => ({ item, order })).sort((a, b) => a.item.sortText < b.item.sortText ? -1 : a.item.sortText > b.item.sortText ? 1 : a.order - b.order).map(value => value.item)) });
-            captured.pendingList = false; filter(captured, invocation.automatic === true);
+            captured.pendingList = false; filter(captured, invocation.automatic === true || options.filterManualCompletions === true);
             if (!captured.visible.length) { release(); publish("No LSP completions for this caret."); return; }
             publish("LSP completion ready.");
             resolveSelected(captured);

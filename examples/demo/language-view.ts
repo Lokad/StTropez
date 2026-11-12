@@ -59,7 +59,7 @@ export function mountDemoLanguage(workspace: Workspace, files: readonly DemoFile
     }, { capture: true, signal: listeners.signal });
     void language.connect().then(provider => {
         if (!valid()) return;
-        controller = createLspEditor(workspace, file.tab, editor, { provider, autoConnect: false, canCapture: valid });
+        controller = createLspEditor(workspace, file.tab, editor, { provider, autoConnect: false, filterManualCompletions: true, canCapture: valid });
         inspection = mountDemoInspection(workspace, file, editor, provider, valid, () => !!controller?.state.getSnapshot().choices.length || !!symbols?.isOpen() || !!actions?.isOpen(),
             () => controller?.cancel(), () => { symbols?.dismiss(); actions?.dismiss(); });
         symbols = mountDemoSymbols(workspace, files, file, editor, provider, valid, () => { controller?.cancel(); inspection?.dismiss(); actions?.dismiss(); }, open);

@@ -42,6 +42,9 @@ server omits an edit range, the host uses a bounded Unicode word window; explici
 not depend on that heuristic. Choices sort by `sortText` (stable server order for equal keys),
 filter by a case-insensitive `filterText` prefix and honor `preselect` when the previous selection
 is unavailable. Explicit invocation initially shows all choices, including spelling corrections.
+Hosts can opt into `filterManualCompletions: true` to apply the same bounded, item-edit-range
+prefix filter to explicit requests. The TypeScript demo uses this policy so requesting at an
+existing member prefix immediately shows matching choices; spelling fixes use its quick-fix UI.
 
 A list follows only an exact single human typing insertion inside its primary insert range.
 Core's change metadata must prove that insertion; document/buffer identity, selections, fold
