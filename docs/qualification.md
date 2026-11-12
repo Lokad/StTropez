@@ -46,7 +46,7 @@ LSP and React routes against the same immutable package and staged asset root. E
 checks package/asset hashes, zero runtime dependencies, strict declarations and input isolation.
 It records its own consuming fixture, not a repeated source-model matrix.
 
-Select routes with `--scenarios=full,lsp,react` (also `pilot,hunk,activation,workspace`). The
+Select routes with `--scenarios=full,lsp,react` (also `pilot,hunk,activation,workspace,demo`). The
 full route owns installation/upgrade/downgrade/root-reuse checks. Use `--skip-transitions` only
 when packaging inputs are unchanged and those transitions already have applicable evidence.
 `test:package:lsp` and the other single-route wrappers use the same coordinator.
@@ -58,6 +58,14 @@ reuses that archive. Rebuild after runtime, declarations or package inputs chang
 The coordinator rejects package/source changes during a campaign. `--reuse-consumer=<metadata>`
 is the lower-level staged-root option; a different package hash or root is rejected before use.
 Evidence is under `artifacts/package/qualification/` and remains local.
+
+`npm run test:package -- --scenarios=full,lsp,demo` additionally stages the actual TypeScript
+demo host against the same restored public modules, declarations, CSS and regex worker. It
+reuses the source demo's complete walkthrough and concurrent-save conflict helpers, including
+real provider quick fixes, comparison, project saving and explicit multi-file recovery. Both
+the runtime and erased type-import graphs reject checkout library sources/private imports.
+The compiler and loopback language provider remain development-host dependencies. This proof
+does not install another package into the consumer or ship the compiler/provider in NuGet.
 
 Headless tests do not establish native IME, OS clipboard, physical display or production hardware
 qualification. Keep those gates explicit and continue independent implementation work. On a shared

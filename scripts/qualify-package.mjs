@@ -5,11 +5,13 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { sourceIdentity } from "./measurement.mjs";
 
 const choices = { full: [], lsp: ["--lsp-only"], react: ["--react-only"], pilot: ["--pilot-only"],
-    hunk: ["--hunk-only"], activation: ["--activation-only"], workspace: ["--workspace-only"] };
+    hunk: ["--hunk-only"], activation: ["--activation-only"], workspace: ["--workspace-only"], demo: [] };
 const selected = (process.argv.find(arg => arg.startsWith("--scenarios="))?.slice("--scenarios=".length) ?? "full,lsp,react").split(",");
-assert.ok(selected.length && new Set(selected).size === selected.length && selected.every(name => Object.hasOwn(choices, name)), "Select distinct package scenarios: full,lsp,react,pilot,hunk,activation,workspace.");
+assert.ok(selected.length && new Set(selected).size === selected.length && selected.every(name => Object.hasOwn(choices, name)), "Select distinct package scenarios: full,lsp,react,pilot,hunk,activation,workspace,demo.");
+assert.ok(!selected.includes("demo") || selected.some(name => name !== "demo"), "Pair demo with a restored consumer, for example --scenarios=full,lsp,demo.");
 // Installation transitions belong to the full route, before any staged-root reuse.
 if (selected.includes("full")) selected.splice(0, 0, ...selected.splice(selected.indexOf("full"), 1));
+if (selected.includes("demo")) selected.push(...selected.splice(selected.indexOf("demo"), 1));
 const source = await sourceIdentity();
 if (!process.argv.includes("--existing")) {
     assert.ok(process.env.npm_execpath, "Run through npm run test:package, or pack once and pass --existing.");
@@ -23,7 +25,7 @@ await mkdir(directory, { recursive: true });
 const staged = `${directory}/staged-consumer.json`;
 for (const [index, scenario] of selected.entries()) {
     assert.equal(await hash(), packageSha256, "Package changed during qualification.");
-    const args = ["scripts/test-package.mjs", ...choices[scenario]];
+    const args = [scenario === "demo" ? "scripts/package-demo.mjs" : "scripts/test-package.mjs", ...choices[scenario]];
     if (index) args.push(`--reuse-consumer=${staged}`);
     if (process.argv.includes("--skip-transitions")) args.push("--skip-transitions");
     args.push(...process.argv.filter(arg => arg.startsWith("--browser=")));
