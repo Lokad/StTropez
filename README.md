@@ -53,7 +53,8 @@ The Code menu exposes these commands. Enter or a click accepts a resolved comple
 dismisses popups. Provider failure leaves editing and saves available, with a separate retry action.
 Use Ctrl+. or Code → Quick fix to review a provider fix before applying it. The spelling fix
 for a mistyped known name is supported and undoable. See the [demo language integration](docs/demo-language.md) for its
-supported subset and ownership.
+supported subset and ownership. [Demo qualification](docs/demo-qualification.md) records the
+restored-package workflow, integrated normal/100k measurements and remaining device checks.
 The server binds to loopback only and does not open a browser window.
 
 `npm run dev` is an alias for the same server. The older mixed-surface workspace fixture is

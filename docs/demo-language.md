@@ -98,6 +98,8 @@ Focused qualification uses a real provider for type-error correction, member com
 resolution/history, pointer/keyboard inspection, argument changes and popup Escape priority,
 held real responses after edits/file switches, startup failure/retry,
 spelling-fix preview/apply/history, concurrent diagnostic refresh, related-file invalidation,
-incremental synchronization, reconnect and owned process/workspace cleanup. Full packaged
-provider integration and integrated responsiveness remain later milestones. Headless checks
-do not qualify native IME, OS clipboard or physical input/display behavior.
+incremental synchronization, reconnect and owned process/workspace cleanup. The actual demo's
+restored-package walkthrough and integrated normal/100k measurements are recorded in
+[demo qualification](demo-qualification.md), including separate handler, editor-frame,
+automation, compiler and provider clocks. Headless checks do not qualify native IME,
+OS clipboard or physical input/display behavior.

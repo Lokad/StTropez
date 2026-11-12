@@ -66,6 +66,9 @@ real provider quick fixes, comparison, project saving and explicit multi-file re
 the runtime and erased type-import graphs reject checkout library sources/private imports.
 The compiler and loopback language provider remain development-host dependencies. This proof
 does not install another package into the consumer or ship the compiler/provider in NuGet.
+The [integrated demo campaign](demo-qualification.md#integrated-responsiveness) reuses that
+stage with `scripts/package-demo.mjs --reuse-consumer=<metadata> --measure-only`; it compiles
+only a test-instrumented host and reports the editor and language-service clocks separately.
 
 Headless tests do not establish native IME, OS clipboard, physical display or production hardware
 qualification. Keep those gates explicit and continue independent implementation work. On a shared

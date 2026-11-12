@@ -33,6 +33,7 @@ test("real member completion preserves provider punctuation, resolves, applies o
     await expect(page.locator("#editor")).not.toContainText("cart.map");
     await source.press("Control+Space"); await expect(page.getByRole("option", { name: "map", exact: true })).toBeVisible();
     await expect(page.getByRole("option", { name: "at", exact: true })).toHaveCount(0);
+    await expect(page.locator(".demo-completion pre")).toContainText("map");
     await source.press("Enter"); await expect(page.locator("#editor")).toContainText("cart.map");
     await source.press("Control+z"); await expect(page.locator("#editor")).toContainText("cart.ma");
     await source.press("Control+Space"); await expect(page.getByRole("option", { name: "map", exact: true })).toBeVisible();

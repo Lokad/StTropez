@@ -13,6 +13,7 @@ import { attachDemoProvider } from "../examples/demo/provider-server.ts";
 import { runDemoWalkthrough, runDemoConflict } from "../tests/browser/demo-walkthrough.ts";
 import { sourceIdentity } from "./measurement.mjs";
 import { consumerCompilerRoots, within } from "./package-react-host.mjs";
+import { demoMeasurementHook, measureDemo } from "./measure-demo.mjs";
 
 const project = resolve("."), source = await sourceIdentity();
 const reusePath = process.argv.find(arg => arg.startsWith("--reuse-consumer="))?.slice("--reuse-consumer=".length);
@@ -20,6 +21,8 @@ assert.ok(reusePath, "Restore a package first, then pass --reuse-consumer=<metad
 const browserName = process.argv.find(arg => arg.startsWith("--browser="))?.slice("--browser=".length) ?? "chromium";
 assert.ok(["chromium", "firefox", "webkit"].includes(browserName));
 const prepareOnly = process.argv.includes("--prepare-only");
+const measureOnly = process.argv.includes("--measure-only");
+assert.ok(!measureOnly || browserName === "chromium" && !prepareOnly, "Integrated measurement requires Chromium without --prepare-only.");
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 const archivePath = "artifacts/nuget/feed/StTropez.Assets.0.0.0-local.nupkg", archive = await readFile(archivePath);
 const packageSha256 = hash(archive), reused = JSON.parse(await readFile(reusePath, "utf8"));
@@ -106,7 +109,13 @@ for (const path of compilerOutput.split(/\r?\n/).filter(Boolean)) {
 const runtimeEntries = Object.fromEntries(Object.entries(entryPoints).map(([name, path]) => [name, join(hostRoot, path)]));
 const site = join(hostRoot, "site"), bundle = await build({ absWorkingDir: project, entryPoints: runtimeEntries, outdir: site,
     bundle: true, platform: "browser", format: "esm", target: "es2022", metafile: true,
-    tsconfigRaw: {}, alias: { sttropez: assetRoot }, nodePaths: [join(project, "node_modules")] });
+    tsconfigRaw: {}, alias: { sttropez: assetRoot }, nodePaths: [join(project, "node_modules")],
+    ...(measureOnly ? { plugins: [{ name: "demo-measurement-host", setup(builder) {
+        builder.onLoad({ filter: /[\\/]demo[\\/]main\.ts$/ }, async args => {
+            assert.equal(args.path, join(hostRoot, "examples/demo/main.ts"));
+            return { contents: await readFile(args.path, "utf8") + demoMeasurementHook, loader: "ts" };
+        });
+    } }] } : {}) });
 const inputs = Object.keys(bundle.metafile.inputs).sort();
 const compilerMetadata = JSON.parse(await readFile(join(demoCompiler, "package.json"), "utf8"));
 const disabledHostModules = new Set(Object.entries(compilerMetadata.browser).filter(([, value]) => value === false).map(([name]) => `(disabled):${name}`));
@@ -121,7 +130,7 @@ await copyFile(join(project, "examples/demo/index.html"), join(site, "index.html
 await copyFile(join(assetRoot, assets.entries.regexWorker), join(site, "regex-worker.js"));
 await copyFile(join(assetRoot, "UNICODE-LICENSE.txt"), join(site, "UNICODE-LICENSE.txt"));
 const evidence = { schemaVersion: 1, sourceSha256: source.sha256, packageSha256, consumer, assetRoot: reused.assetRoot, reusedStage: true,
-    browser: browserName, scenario: "demo", mode: prepareOnly ? "prepare-only" : "walkthrough",
+    browser: browserName, scenario: "demo", mode: prepareOnly ? "prepare-only" : measureOnly ? "measurement" : "walkthrough",
     declarations: { strict: true, skipLibCheck: false, passed: true, files: compilerFiles, inputs: typeInputs },
     sources: sources.sort((a, b) => a.path.localeCompare(b.path)), inputs, librarySourceCompilation: false,
     host: { node: process.version, compiler: JSON.parse(await readFile(join(project, "node_modules/typescript/package.json"), "utf8")).version,
@@ -144,7 +153,8 @@ if (!prepareOnly) {
         await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
         browser = await ({ chromium, firefox, webkit })[browserName].launch({ headless: true });
         const url = `http://127.0.0.1:${server.address().port}/`, journeys = {};
-        for (const [name, run] of [["walkthrough", runDemoWalkthrough], ["conflict", runDemoConflict]]) {
+        if (measureOnly) evidence.measurement = await measureDemo(browser, url, { sourceSha256: source.sha256, packageSha256 });
+        for (const [name, run] of measureOnly ? [] : [["walkthrough", runDemoWalkthrough], ["conflict", runDemoConflict]]) {
             const context = await browser.newContext({ viewport: { width: 1200, height: 760 } });
             try { journeys[name] = await run(await context.newPage(), url); console.log(`Restored demo ${name} passed (${browserName}).`); }
             finally { await context.close(); }
@@ -158,6 +168,6 @@ if (!prepareOnly) {
     }
 }
 await checkStage(); assert.equal((await sourceIdentity()).sha256, source.sha256, "Source changed during qualification.");
-await writeFile(`artifacts/package/demo-${prepareOnly ? "prepared" : browserName}.json`, JSON.stringify(evidence, null, 2) + "\n");
-if (!prepareOnly) await writeFile("artifacts/package/restored-consumer.json", JSON.stringify(evidence, null, 2) + "\n");
+await writeFile(`artifacts/package/demo-${prepareOnly ? "prepared" : measureOnly ? "measurement" : browserName}.json`, JSON.stringify(evidence, null, 2) + "\n");
+if (!prepareOnly && !measureOnly) await writeFile("artifacts/package/restored-consumer.json", JSON.stringify(evidence, null, 2) + "\n");
 console.log(`Restored demo ${prepareOnly ? "declarations and bundle prepared" : "qualified"}: ${consumer}`);
