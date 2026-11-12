@@ -1,5 +1,7 @@
 import { clientBox } from "./dom-coordinates.ts";
-import type { Affinity, DocumentView, SelectionSet, TabTarget, Workspace } from "../index.ts";
+import type { Affinity } from "../core/positions.ts";
+import type { DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
+import type { SelectionSet } from "../core/selections.ts";
 import { applyTextDrop, captureTextTransfer, isCurrentTextTransfer } from "./text-transfer.ts";
 import type { TextTransferCapture } from "./text-transfer.ts";
 import type { TextViewport } from "./viewport.ts";

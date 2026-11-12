@@ -1,5 +1,7 @@
-import { codeWordConstituentPattern } from "../index.ts";
-import type { ResourceLease, SelectionSet, TabId, TextBuffer, Workspace } from "../index.ts";
+import { codeWordConstituentPattern } from "../core/words.ts";
+import type { ResourceLease, TabId, Workspace } from "../core/workspace.ts";
+import type { SelectionSet } from "../core/selections.ts";
+import type { TextBuffer } from "../core/text-buffer.ts";
 import type { EditingCandidate } from "./editing-candidate.ts";
 import { RpcError, decodeLspCompletions, decodeLspResolvedCompletion, lspCompletionPlan, rebaseLspCompletion } from "../protocol/index.ts";
 import type { LspCall, LspCompletion, LspCompletions, LspCompletionFallback, LspDocument, LspDocumentCapture, LspSessionAccess, LspWorkspace } from "../protocol/index.ts";

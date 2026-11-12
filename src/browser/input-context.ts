@@ -1,5 +1,8 @@
-import { PositionMap, composePositionMaps, importText } from "../index.ts";
-import type { Affinity, Selection, TextBuffer } from "../index.ts";
+import { PositionMap, composePositionMaps } from "../core/positions.ts";
+import { importText } from "../core/newlines.ts";
+import type { Affinity } from "../core/positions.ts";
+import type { Selection } from "../core/history.ts";
+import type { TextBuffer } from "../core/text-buffer.ts";
 
 export type InputContext = Readonly<{ text: string; from: number; to: number; nativeAnchor: number; nativeHead: number;
     toModel: (offset: number, affinity?: Affinity) => number; toNative: (offset: number, affinity?: Affinity) => number }>;

@@ -42,7 +42,7 @@ function backing(text: string): Backing {
     for (let index = 0; index + 1 < lines.length; index++) gaps[gapBase + index] = lines[index + 1]! - lines[index]! - 1;
     for (let index = gapBase - 1; index > 0; index--) gaps[index] = Math.max(gaps[index * 2]!, gaps[index * 2 + 1]!);
     // Owned indexes never escape the private root or change after construction. As in
-    // AdvanceIndex, float64 preserves numeric range without freezing every array entry.
+    // other immutable numeric indexes, float64 preserves numeric range without freezing every array entry.
     return Object.freeze({ text, lines, gaps, gapBase });
 }
 function original(text: string): Root { return text.length ? piece(backing(text), 0, text.length) : null; }

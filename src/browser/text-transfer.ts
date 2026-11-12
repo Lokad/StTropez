@@ -1,5 +1,8 @@
-import { createSelectionSet, planSelectionEdits, PositionMap } from "../index.ts";
-import type { DocumentId, DocumentView, SelectionSet, TabTarget, TextBuffer, Workspace } from "../index.ts";
+import { createSelectionSet, planSelectionEdits } from "../core/selections.ts";
+import { PositionMap } from "../core/positions.ts";
+import type { DocumentId, DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
+import type { SelectionSet } from "../core/selections.ts";
+import type { TextBuffer } from "../core/text-buffer.ts";
 
 /** Internal transfer ticket. Identity/revision/set belong to the captured source, never focus. */
 export type TextTransferCapture = Readonly<{ workspace: Workspace; tab: TabTarget; documentId: DocumentId;

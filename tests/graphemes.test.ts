@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
-import { TextBuffer, normalizeText, createGraphemeCursor, createNormalizedGraphemeCursor, graphemeBoundaries, GraphemeLimitError, graphemeBreakProperty, indicConjunctBreak, extendedPictographic, unicodeGraphemeVersion } from "../src/index.ts";
-import type { GraphemeCursor, GraphemeIndex, NormalizedText } from "../src/index.ts";
+import { TextBuffer, createGraphemeCursor, graphemeBoundaries, GraphemeLimitError, graphemeBreakProperty, indicConjunctBreak, extendedPictographic, unicodeGraphemeVersion } from "../src/index.ts";
+import type { GraphemeCursor, GraphemeIndex } from "../src/index.ts";
 const fixture = async (name: string) => gunzipSync(await readFile(new URL(`fixtures/graphemes/${name}.txt.gz`, import.meta.url))).toString("utf8");
 function finish(cursor: GraphemeCursor, budget = 256): GraphemeIndex { let previous = cursor.snapshot(); while (true) { const step = cursor.next(budget); assert.ok(Object.isFrozen(step)); assert.ok(step.workUnits - previous.workUnits <= budget + 256); if (step.status === "ready") return step.result!; assert.equal(step.status, "running"); assert.equal(step.result, null); previous = step; } }
 const records = (text: string) => text.trim().split(/\r?\n/).map(line => line.split(";").map(v => v.trim()));
@@ -18,24 +18,15 @@ test("Unicode18 grapheme, conjunct and pictographic properties match every revie
     for (const cp of [-1, NaN, .5, 0x110000]) { assert.throws(() => graphemeBreakProperty(cp)); assert.throws(() => indicConjunctBreak(cp)); assert.throws(() => extendedPictographic(cp)); }
     console.log("Grapheme facts: 1114112 code points /3 properties.");
 });
-test("complete Unicode18 extended-grapheme corpus agrees for strings, ropes and normalized point coordinates", async () => {
+test("complete Unicode18 extended-grapheme corpus agrees for strings and ropes", async () => {
     let rows = 0, boundaries = 0; for (const line of (await fixture("GraphemeBreakTest")).trim().split(/\r?\n/)) {
         const tokens = line.trim().split(/\s+/), units: number[] = [], points: number[] = [], cps: number[] = []; let utf16 = 0;
         for (const token of tokens) { if (token === "÷") { units.push(utf16); points.push(cps.length); } else if (token !== "×") { const cp = parseInt(token, 16); cps.push(cp); utf16 += cp > 0xffff ? 2 : 1; } }
         const text = String.fromCodePoint(...cps), buffer = TextBuffer.from(text), cursor = createGraphemeCursor(buffer), result = finish(cursor, [256, 777, 4096][rows % 3]); assert.deepEqual(result.boundaries(), units, `${rows}:rope:${line}`); assert.deepEqual(graphemeBoundaries(text), units, `${rows}:string`);
         assert.equal(buffer.readMetrics().textExports, 0); assert.equal(cursor.snapshot().readUnits, buffer.readMetrics().sliceUnits); cursor.dispose();
-        const normalized = normalizeText(buffer, { form: "none" }), normalizedCursor = createNormalizedGraphemeCursor(normalized), normalizedIndex = finish(normalizedCursor); assert.deepEqual(normalizedIndex.boundaries(), points, `${rows}:points`); assert.equal(normalizedCursor.snapshot().readUnits, 0); normalizedCursor.dispose(); boundaries += units.length; rows++;
+        boundaries += units.length; rows++;
     }
-    assert.ok(rows > 700); console.log(`Grapheme conformance: ${rows} rows /${boundaries} boundaries /3 input kinds.`);
-});
-test("canonical decomposition preserves grapheme source extents throughout the conformance corpus", async () => {
-    let rows = 0, clusters = 0; for (const line of (await fixture("GraphemeBreakTest")).trim().split(/\r?\n/)) {
-        let input = "", at = 0; const expected: number[] = []; for (const token of line.trim().split(/\s+/)) { if (token === "÷") expected.push(at); else if (token !== "×") { const cp = parseInt(token, 16), char = String.fromCodePoint(cp); input += char; at += char.length; } }
-        const normalized = normalizeText(TextBuffer.from(input), { form: "NFD" }), cursor = createNormalizedGraphemeCursor(normalized), index = finish(cursor); assert.equal(index.clusterCount, expected.length - 1, `cluster count ${rows}`);
-        for (let i = 0; i < index.clusterCount; i++) { const range = index.clusterAt(i), origins = new Map<number, number>(); for (let p = range.from; p < range.to; p++) for (const source of normalized.at(p).sources) origins.set(source.from, source.to);
-            const values = [...origins].sort(([a], [b]) => a - b); assert.equal(values[0]![0], expected[i]); assert.equal(values.at(-1)![1], expected[i + 1]); for (let p = 1; p < values.length; p++) assert.equal(values[p - 1]![1], values[p]![0]); clusters++; }
-        cursor.dispose(); rows++;
-    } console.log(`Grapheme NFD invariance: ${rows} rows /${clusters} source clusters.`);
+    assert.ok(rows > 700); console.log(`Grapheme conformance: ${rows} rows /${boundaries} boundaries /2 input kinds.`);
 });
 test("emoji sequences, RI parity and Unicode18 conjuncts use full left context", () => {
     for (const text of ["👩🏽‍💻", "🇫🇷🇬🇷🇯", "\u094dक", "क्\u0308क", "\u1cf5क", "\u0600A", "각", "\u{16d63}\u{16d67}"]) { const cursor = createGraphemeCursor(text), index = finish(cursor); assert.equal(index.to, text.length); assert.equal(index.boundaryAt(0), 0); assert.equal(index.boundaryAt(index.boundaryCount - 1), text.length); cursor.dispose(); }
@@ -61,5 +52,5 @@ test("cancellation, copied options and limits expose no partial index and preser
     const source = TextBuffer.from("a".repeat(40_000)); for (const phase of ["scan", "publish"] as const) { const cursor = createGraphemeCursor(source); let step = cursor.next(256); while (step.status === "running" && step.phase !== phase) step = cursor.next(256); assert.equal(step.status, "running", phase); assert.equal(step.result, null); cursor.dispose(); cursor.dispose(); assert.equal(cursor.next().status, "disposed"); assert.equal(cursor.snapshot().result, null); }
     const options = { from: 1, to: 3 }, cursor = createGraphemeCursor(source, options); options.to = 20_000; const index = finish(cursor); cursor.dispose(); assert.deepEqual(index.boundaries(), [1, 2, 3]); assert.equal(index.source.kind, "buffer");
     for (const options of [{ maxOperations: 1 }, { maxClusters: 2 }]) { const c = createGraphemeCursor(source, options); assert.throws(() => finish(c), GraphemeLimitError); assert.equal(c.snapshot().status, "failed"); assert.equal(c.snapshot().result, null); c.dispose(); }
-    assert.throws(() => createNormalizedGraphemeCursor({} as NormalizedText)); assert.throws(() => createGraphemeCursor(source, { to: -1 })); assert.throws(() => createGraphemeCursor(source, { maxClusters: 0 })); const c = createGraphemeCursor(source); for (const b of [0, 255, .5, NaN, Infinity]) assert.throws(() => c.next(b)); assert.equal(c.snapshot().workUnits, 0); c.dispose();
+    assert.throws(() => createGraphemeCursor(source, { to: -1 })); assert.throws(() => createGraphemeCursor(source, { maxClusters: 0 })); const c = createGraphemeCursor(source); for (const b of [0, 255, .5, NaN, Infinity]) assert.throws(() => c.next(b)); assert.equal(c.snapshot().workUnits, 0); c.dispose();
 });

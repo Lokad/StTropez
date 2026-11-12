@@ -1,8 +1,7 @@
-import { SfntFont } from "../core/font-data.ts";
 import { NotificationScope, Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 
-export type FontAssetVersion = Readonly<{ fontId: string; generation: number; family: string; data: SfntFont }>;
+export type FontAssetVersion = Readonly<{ fontId: string; generation: number; family: string }>;
 export type FontAssetSnapshot = Readonly<{ fontId: string; generation: number; status: "idle" | "loading" | "ready" | "failed" | "disposed";
     current: FontAssetVersion | null; failure: string | null }>;
 export type FontLoadResult = Readonly<{ generation: number; status: "ready" | "stale" | "failed" | "disposed" }>;
@@ -26,8 +25,7 @@ export function createFontAssetController(owner: Document, fontId: string,
             scope.assertWritable(); if (disposed) throw new Error("Font asset is disposed.");
             if (!Number.isSafeInteger(expectedGeneration) || expectedGeneration < 0) throw new RangeError("Invalid font generation.");
             if (expectedGeneration !== store.get().generation) return null;
-            const bytes = new Uint8Array(input), data = SfntFont.from(bytes);
-            if (data.metadata.container !== "sfnt") throw new Error("Native font registration requires a single SFNT face.");
+            const bytes = new Uint8Array(input);
             const nonce = Array.from(win.crypto.getRandomValues(new Uint32Array(4)), value => value.toString(16).padStart(8, "0")).join("");
             const face = new win.FontFace(`_stfont_${nonce}`, bytes.buffer), generation = store.get().generation + 1;
             publish({ ...store.get(), generation, status: "loading", failure: null });
@@ -39,7 +37,7 @@ export function createFontAssetController(owner: Document, fontId: string,
             const settled = face.load().then((): FontLoadResult => {
                 if (!live(generation)) return Object.freeze({ generation, status: disposed ? "disposed" : "stale" });
                 const previous = currentFace; try { owner.fonts.add(face); } catch (error) { return failed(error); } currentFace = face;
-                const current = Object.freeze({ fontId, generation, family: face.family, data });
+                const current = Object.freeze({ fontId, generation, family: face.family });
                 publish({ fontId, generation, status: "ready", current, failure: null }); if (previous) owner.fonts.delete(previous);
                 return Object.freeze({ generation, status: "ready" });
             }, failed);

@@ -1,11 +1,14 @@
 import { clientBox, cssZoom } from "./dom-coordinates.ts";
-import type { DocumentId, DocumentSnapshot, DocumentView, Selection, SelectionSet, TabId, TextBuffer, Workspace } from "../index.ts";
+import type { DocumentId, DocumentSnapshot, DocumentView, TabId, Workspace } from "../core/workspace.ts";
+import type { Selection } from "../core/history.ts";
+import type { SelectionSet } from "../core/selections.ts";
+import type { TextBuffer } from "../core/text-buffer.ts";
 import type { ViewState } from "./index.ts";
 import { scrollAxis } from "./scroll.ts";
 import type { ScrollAxis } from "./scroll.ts";
 import { rowGeometry } from "./text-geometry.ts";
 import type { CaretRectangle } from "./text-geometry.ts";
-import type { Affinity } from "../index.ts";
+import type { Affinity } from "../core/positions.ts";
 import { createFoldRegions, FoldIndex } from "../core/folding.ts";
 import { sameSelectionSet } from "../core/selections.ts";
 import type { ComparisonRowIndex } from "../core/comparison-rows.ts";

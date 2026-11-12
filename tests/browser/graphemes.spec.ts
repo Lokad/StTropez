@@ -14,12 +14,12 @@ async function setup(page: Page, text: string, head: number) {
 test.beforeEach(({ page }) => { page.on("pageerror", error => { throw error; }); });
 
 test("all Unicode 18 grapheme cases agree with gold while native differences remain observable", async ({ page, browser }, info) => {
-    await page.goto("/shaping/"); await page.waitForFunction(() => window.shapingFixture?.ready);
+    await page.goto("/fonts/"); await page.waitForFunction(() => window.nativeFontFixture?.ready);
     const lines = gunzipSync(await readFile("tests/fixtures/graphemes/GraphemeBreakTest.txt.gz")).toString("utf8").trim().split(/\r?\n/);
     const cases = lines.map(line => { let text = ""; const boundaries: number[] = []; for (const token of line.split(/\s+/)) { if (token === "÷") boundaries.push(text.length); else if (token !== "×") text += String.fromCodePoint(parseInt(token, 16)); } return { text, boundaries }; });
     const observed = await page.evaluate(cases => {
         const native = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-        const rows = cases.map((c, row) => ({ row, text: c.text, gold: c.boundaries, core: window.shapingFixture.graphemes(c.text), native: [...native.segment(c.text)].map(s => s.index).concat(c.text.length) }));
+        const rows = cases.map((c, row) => ({ row, text: c.text, gold: c.boundaries, core: window.nativeFontFixture.graphemes(c.text), native: [...native.segment(c.text)].map(s => s.index).concat(c.text.length) }));
         return { rows: rows.length, markers: cases.reduce((n, c) => n + c.boundaries.length, 0), coreDifferences: rows.filter(r => JSON.stringify(r.gold) !== JSON.stringify(r.core)), nativeDifferences: rows.filter(r => JSON.stringify(r.gold) !== JSON.stringify(r.native)) };
     }, cases);
     const nativeSha256 = createHash("sha256").update(JSON.stringify(observed.nativeDifferences)).digest("hex");

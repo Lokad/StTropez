@@ -1,11 +1,9 @@
 import type { TextBuffer } from "./text-buffer.ts";
-import { ownedNormalizedText } from "./unicode-normalization.ts";
-import type { NormalizedText } from "./unicode-normalization.ts";
 import { graphemeProperties, graphemeUnicodeVersion } from "./grapheme-data.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import { utf16CodePointAt } from "./utf16.ts";
 
-export type GraphemeSource = Readonly<{ kind: "buffer"; buffer: TextBuffer }> | Readonly<{ kind: "string"; text: string }> | Readonly<{ kind: "normalized"; text: NormalizedText }>;
+export type GraphemeSource = Readonly<{ kind: "buffer"; buffer: TextBuffer }> | Readonly<{ kind: "string"; text: string }>;
 export type GraphemeRange = Readonly<{ from: number; to: number }>;
 export type GraphemeOptions = Readonly<{ from?: number; to?: number; maxOperations?: number; maxClusters?: number }>;
 export type GraphemeProgress = Readonly<{ status: "running" | "ready" | "failed" | "disposed"; phase: "scan" | "publish";
@@ -20,7 +18,7 @@ export const ownedGraphemeIndex = (value: unknown): value is GraphemeIndex => ty
 let publish: (source: GraphemeSource, from: number, to: number, blocks: readonly (readonly number[])[], count: number) => GraphemeIndex;
 const range = (length: number, from: number, to: number) => { if (![from, to].every(Number.isSafeInteger) || from < 0 || from > to || to > length) throw new RangeError("Invalid grapheme range."); };
 
-/** Immutable extended-grapheme boundaries. Coordinates are UTF-16 for buffer/string, points for normalized input. */
+/** Immutable extended-grapheme boundaries. Coordinates are absolute UTF-16 offsets. */
 export class GraphemeIndex {
     readonly source: GraphemeSource; readonly from: number; readonly to: number; readonly clusterCount: number; readonly boundaryCount: number; readonly unicodeVersion = graphemeUnicodeVersion;
     readonly #blocks: readonly (readonly number[])[];
@@ -53,17 +51,14 @@ function* segment(source: GraphemeSource, from: number, to: number, maxOperation
     let offset = from, windowFrom = from, window = "", previous = -1, regionalCount = 0, emojiExtends = false, previousZwjAfterEmoji = false, linker = false;
     while (offset < to) {
         c.phase = "scan"; let cp: number, width: number;
-        if (source.kind === "normalized") { cp = source.text.at(offset).codePoint; width = 1; }
-        else {
-            if (offset >= windowFrom + window.length) {
-                windowFrom = offset; const end = Math.min(to, offset + 256); window = source.kind === "buffer" ? source.buffer.slice(offset, end) : source.text.slice(offset, end); let reads = window.length;
-                const last = window.charCodeAt(window.length - 1); if (last >= 0xd800 && last <= 0xdbff && end < to) { const tail = source.kind === "buffer" ? source.buffer.slice(end, end + 1) : source.text.slice(end, end + 1); reads++; const low = tail.charCodeAt(0); if (low >= 0xdc00 && low <= 0xdfff) window += tail; }
-                c.reads += reads;
-                // A surrogate peek can make a window 257 units. Charge it across exact quanta.
-                for (let remaining = reads; remaining > 0;) { const n = Math.min(remaining, 256 - (c.work - c.yielded)); tick(n); remaining -= n; if (pause()) yield; }
-            }
-            cp = utf16CodePointAt(window, offset - windowFrom); width = cp > 0xffff ? 2 : 1;
+        if (offset >= windowFrom + window.length) {
+            windowFrom = offset; const end = Math.min(to, offset + 256); window = source.kind === "buffer" ? source.buffer.slice(offset, end) : source.text.slice(offset, end); let reads = window.length;
+            const last = window.charCodeAt(window.length - 1); if (last >= 0xd800 && last <= 0xdbff && end < to) { const tail = source.kind === "buffer" ? source.buffer.slice(end, end + 1) : source.text.slice(end, end + 1); reads++; const low = tail.charCodeAt(0); if (low >= 0xdc00 && low <= 0xdfff) window += tail; }
+            c.reads += reads;
+            // A surrogate peek can make a window 257 units. Charge it across exact quanta.
+            for (let remaining = reads; remaining > 0;) { const n = Math.min(remaining, 256 - (c.work - c.yielded)); tick(n); remaining -= n; if (pause()) yield; }
         }
+        cp = utf16CodePointAt(window, offset - windowFrom); width = cp > 0xffff ? 2 : 1;
         tick(); if (pause()) yield; const properties = graphemeProperties(cp), current = properties & 15, incb = properties >>> 4 & 3, pictographic = !!(properties & 64);
         let breaks = previous >= 0;
         if (previous === 1 && current === 2) breaks = false; // GB3
@@ -94,9 +89,6 @@ function create(source: GraphemeSource, length: number, options: GraphemeOptions
     const c: Counters = { phase: "scan", scanned: 0, reads: 0, points: 0, boundaries: 0, clusters: 0, work: 0, yielded: 0 }; return drive(segment(source, from, to, maxOperations, maxClusters, c), c);
 }
 export function createGraphemeCursor(source: TextBuffer | string, options: GraphemeOptions = {}): GraphemeCursor { return create(typeof source === "string" ? Object.freeze({ kind: "string", text: source }) : Object.freeze({ kind: "buffer", buffer: source }), source.length, options); }
-export function createNormalizedGraphemeCursor(text: NormalizedText, options: GraphemeOptions = {}): GraphemeCursor {
-    if (!ownedNormalizedText(text)) throw new TypeError("Normalized graphemes require owned immutable text."); return create(Object.freeze({ kind: "normalized", text }), text.length, options);
-}
 export function graphemeBoundaries(text: string): readonly number[] {
     if (typeof text !== "string") throw new TypeError("Invalid grapheme text."); const cursor = createGraphemeCursor(text); try { let step = cursor.next(65536); while (step.status === "running") step = cursor.next(65536); return step.result!.boundaries(); } finally { cursor.dispose(); }
 }

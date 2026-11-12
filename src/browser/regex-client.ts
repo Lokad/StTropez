@@ -1,4 +1,6 @@
-import type { SearchMatch, SearchStep, TextBuffer, TextEdit } from "../index.ts";
+import type { SearchMatch, SearchStep } from "../core/search.ts";
+import type { TextBuffer } from "../core/text-buffer.ts";
+import type { TextEdit } from "../core/changes.ts";
 import { regexChunkUnits, regexMatchLimit, regexSourceLimit } from "./regex-session.ts";
 type Reply = Readonly<{ operation: string; id: number; revision: number; received?: number; matches?: readonly SearchMatch[]; count?: number; message?: string;
     edits?: readonly TextEdit[]; ordinal?: number; from?: number; to?: number; units?: number; text?: string; outputLength?: number }>;

@@ -46,19 +46,9 @@ The restored resolver checks bidi levels/order, and actual visual keys traverse 
 The proof verifies the Unicode notice in the archive, generated stage and served consumer output.
 It also advances a compiled `BidiCursor` over a large buffer and queries the immutable result
 after disposal. The restored index controller validates expected revisions and releases its lease.
-The compiled advance builder also constructs 2.4 million numeric entries, releases its input,
-queries beyond native coordinate limits and splices while retaining the old root. Its windows
-check bounded traversal, negative/zero cells and shared numeric leaves. This tests measured-value
-storage; the consumer does not claim a complete font shaper or global glyph projection.
-The compiled font-data reader also maps an original host-generated font, reads nominal metrics
-and variation glyphs, and constructs an advance index. The browser font controller loads those
-same copied bytes, verifies native kerning/ligature widths and releases its owned native face
-while captured core metrics survive. The fixture supplies its own font bytes; no font asset or
-third-party font dependency is added to the editor package. These checks do not qualify complete
-shaping or global layout; see [owned font data](fonts.md).
-The restored GSUB plan also forms the fixture's actual ligature, verifies its nominal advance
-against the native width and retains both source components. This proves compiled substitution
-data/application and declarations; it does not qualify a complete script/positioning engine.
+The browser font controller registers copied host-supplied bytes and releases only its owned
+face. The consumer measures the registered face and queries compiled grapheme boundaries;
+no custom font parser or shaping engine is shipped. See [native font registration](fonts.md).
 The consumer also supplies a visible decoration callback and performs literal search/replace
 plus undo through the restored find controller. Language service workers remain host-owned.
 The restored comparison also uses buffer-based resource creation and exact line alignment,
@@ -362,10 +352,3 @@ action targets. Setup and the full workflow have separate elapsed clocks; workfl
 includes controls, assertions and local service settlement. These measurements do not
 establish physical display latency, native IME, platform clipboard
 behavior. A prepared consumer alone is not a completed runtime qualification.
-
-The separate [horizontal positioning stage](positioning.md) reuses owned GSUB provenance,
-implements explicit GPOS/legacy policies and publishes retained signed pen advances.
-The clean consumer also exercises the compiled [Unicode pipeline](unicode-shaping.md), including
-compatibility decomposition, nominal mapping and repeated original source components through a ligature.
-It also exercises compiled contextual script interpretation, cooperative glyph partitions and owned
-subrun views feeding separate feature plans.

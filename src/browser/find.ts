@@ -1,5 +1,10 @@
-import { LiteralSearch } from "../index.ts";
-import type { DocumentId, Observable, SearchMatch, SearchStep, SelectionSet, TabId, TextBuffer, TextEdit, Workspace } from "../index.ts";
+import { LiteralSearch } from "../core/search.ts";
+import type { DocumentId, TabId, Workspace } from "../core/workspace.ts";
+import type { Observable } from "../core/observable.ts";
+import type { SearchMatch, SearchStep } from "../core/search.ts";
+import type { SelectionSet } from "../core/selections.ts";
+import type { TextBuffer } from "../core/text-buffer.ts";
+import type { TextEdit } from "../core/changes.ts";
 import { NotificationScope, Store } from "../core/observable.ts";
 import type { EditingCandidate } from "./editing-candidate.ts";
 export type FindOptions = Readonly<{ wholeWord?: boolean; matchCase?: boolean; regularExpression?: boolean }>;

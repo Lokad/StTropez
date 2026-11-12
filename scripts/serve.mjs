@@ -18,14 +18,14 @@ export async function startServer(port) {
     await copyFile("examples/comparison/index.html", "artifacts/site/comparison/index.html");
     await mkdir("artifacts/site/protocol", { recursive: true });
     await copyFile("examples/protocol/index.html", "artifacts/site/protocol/index.html");
-    await mkdir("artifacts/site/shaping", { recursive: true });
-    await copyFile("examples/shaping/index.html", "artifacts/site/shaping/index.html");
+    await mkdir("artifacts/site/fonts", { recursive: true });
+    await copyFile("tests/fixtures/fonts/index.html", "artifacts/site/fonts/index.html");
     for (const mode of ["plain", "react"]) {
         await mkdir(`artifacts/site/hosts/${mode}`, { recursive: true });
         await copyFile(`examples/hosts/${mode}.html`, `artifacts/site/hosts/${mode}/index.html`);
     }
     const site = resolve("artifacts/site"), pages = new Map(await Promise.all(
-        ["/", "/probes/", "/viewport/", "/editing/", "/comparison/", "/protocol/", "/shaping/", "/hosts/plain/", "/hosts/react/"].flatMap(path => [path, path + "index.html"])
+        ["/", "/probes/", "/viewport/", "/editing/", "/comparison/", "/protocol/", "/fonts/", "/hosts/plain/", "/hosts/react/"].flatMap(path => [path, path + "index.html"])
             .map(async path => [path, await readFile(resolve(site, "." + (path.endsWith("/") ? path + "index.html" : path)))])));
     let modules = new Map(), failed = false, firstBuild;
     const initial = new Promise(resolve => { firstBuild = resolve; });
@@ -37,7 +37,7 @@ export async function startServer(port) {
             if (!failed) modules = new Map(result.outputFiles.map(file => ["/" + relative(site, file.path).replaceAll("\\", "/"), file.contents]));
             firstBuild();
         });
-    } }], entryPoints: { app: "examples/playground/main.ts", shaping: "examples/shaping/main.ts", comparison: "examples/comparison/main.ts", editing: "examples/editing/main.ts", viewport: "examples/viewport/main.ts", probe: "examples/probes/main.ts", "provider-worker": "examples/probes/provider-worker.ts",
+    } }], entryPoints: { app: "examples/playground/main.ts", fonts: "tests/fixtures/fonts/main.ts", comparison: "examples/comparison/main.ts", editing: "examples/editing/main.ts", viewport: "examples/viewport/main.ts", probe: "examples/probes/main.ts", "provider-worker": "examples/probes/provider-worker.ts",
         "regex-worker": "src/browser/regex-worker.ts", "protocol-fixture": "examples/protocol/main.ts", "host-plain": "examples/hosts/plain-main.ts", "host-react": "examples/hosts/react-main.tsx" }, outdir: "artifacts/site",
         bundle: true, format: "esm", platform: "browser", target: "es2022", sourcemap: true });
     const server = createServer((request, response) => {

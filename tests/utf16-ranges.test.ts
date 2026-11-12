@@ -1,16 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { TextBuffer, normalizeText, createGraphemeCursor, BidiCursor } from "../src/index.ts";
+import { TextBuffer, createGraphemeCursor, BidiCursor } from "../src/index.ts";
 
-test("heated normalization keeps clipped surrogate provenance inside every requested form/range", () => {
-    for (let sample = 0; sample < 5000; sample++) {
-        const text = "AᅡÅﬁ́Ǻ̧\nᆨ‍कB\r𖵣̧\nAᅡ😀्́" + "x".repeat(sample % 9), buffer = TextBuffer.from(text), end = text.indexOf("😀") + 1, start = sample % 7;
-        for (const form of ["none", "NFC", "NFD", "NFKC", "NFKD"] as const) { const result = normalizeText(buffer, { from: start, to: end, form }), last = result.at(result.length - 1);
-            assert.equal(last.codePoint, 0xd83d); assert.deepEqual(last.sources, [{ from: end - 1, to: end }]);
-            for (let i = 0; i < result.length; i++) for (const source of result.at(i).sources) assert.ok(source.from >= start && source.to <= end);
-        }
-    }
-});
 
 test("heated clipped grapheme windows cannot turn a raw high surrogate into an emoji continuation", () => {
     for (let i = 0; i < 5000; i++) for (const source of ["👩‍💻", TextBuffer.from("👩‍💻")]) {

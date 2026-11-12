@@ -306,26 +306,10 @@ try {
     const paragraph = await page.evaluate(() => window.consumer.paragraph());
     assert.ok(paragraph.advances > 1); assert.equal(paragraph.level, 1); assert.equal(paragraph.retainedLevel, 1); assert.equal(paragraph.exports, 0);
     assert.equal(paragraph.current, true); assert.equal(paragraph.mainLevel, 1); assert.equal(paragraph.rejected, true); assert.equal(paragraph.releasedLease, true); assert.equal(paragraph.sourceRevision, true);
-    const advances = await page.evaluate(() => window.consumer.advances());
-    assert.equal(advances.total, 77_400_000); assert.equal(advances.changedTotal, 77_399_969); assert.equal(advances.origin, 2_399_980 * 32.25);
-    assert.equal(advances.cells, 10); assert.equal(advances.first, 2_399_980); assert.ok(advances.readValues <= 512); assert.equal(advances.truncated, false);
-    assert.ok(advances.retained.values < 2_401_024); assert.equal(advances.disposed, "disposed"); assert.deepEqual(advances.signed, [{ index: 1, from: 4, to: 4, advance: 0 }]);
     const graphemes = await page.evaluate(() => window.consumer.graphemes());
-    const fontNormalization = await page.evaluate(() => window.consumer.fontNormalization());
-    const glyphVisibility = await page.evaluate(() => window.consumer.glyphVisibility());
-    assert.deepEqual(glyphVisibility, { glyphs: [2, 0, 3], hidden: [false, true, false], widths: [600, 0, 700], total: 1300, preserved: 1800, source: [{ from: 1, to: 2 }],
-        properties: { defaultIgnorable: true, zeroWidthJoiner: true, zeroWidthNonJoiner: false, variationSelector: false, substituted: false, ligated: false }, released: true, exports: 0 });
-    assert.deepEqual(fontNormalization, { form: "font", text: "A\u0301α", clusters: 2, runs: 2, fonts: [0, 1], origin: [{ from: 0, to: 1 }], rows: [{ from: 0, to: 2, fontIndex: 0, glyphs: [2, 9], units: 600 }, { from: 2, to: 3, fontIndex: 1, glyphs: [7], units: 1000 }], released: true, nativeReleased: true, exports: 0 });
-    assert.deepEqual(graphemes, { version: "18.0.0", raw: [0, 4, 9, 11], normalized: [0, 2, 5], coordinates: ["buffer", "normalized"], scripts: 2, origin: [{ from: 0, to: 1 }], released: true, exports: 0 });
+    assert.deepEqual(graphemes, { version: "18.0.0", boundaries: [0, 4, 9, 11], coordinate: "buffer", released: true, exports: 0 });
     const font = await page.evaluate(() => window.consumer.font());
-    assert.deepEqual(font, { result: "ready", current: true, ownedFaces: 1, unitsPerEm: 1000, glyphCount: 10,
-        nominalUnits: 1550, variation: 8, native: [155, 120, 50], copiedNominalA: 600, released: true, retainedA: 600, retainedPositioned: 1200,
-        positioning: { pairUnits: 1200, pairPrefix: 500, ligatureUnits: 500, source: [[{ from: 0, to: 1 }], [{ from: 1, to: 2 }]] },
-        cursor: { units: 500, disposed: "disposed", resultReleased: true },
-        scripts: { runs: 2, clusters: 5, rows: [{ script: "Latn", from: 0, to: 4, glyphs: [6, 2, 3], units: 1700 }, { script: "Grek", from: 4, to: 5, glyphs: [0], units: 500 }], missing: 1, repeatedOrigin: [{ from: 0, to: 1 }], released: true },
-        glyphPipeline: { inputGlyphs: 2, glyphs: [6], units: 500, source: [[{ from: 0, to: 1 }], [{ from: 1, to: 2 }]], released: true },
-        unicode: { version: "18.0.0", text: "fiAB", points: 4, glyphs: [6, 2, 3], units: 1700, components: [[{ from: 0, to: 1 }], [{ from: 0, to: 1 }]], script: "Latn", extensions: ["Hira", "Kana"], mappingReleased: true },
-        substitution: { glyphs: [6], components: [[{ from: 0, to: 1 }], [{ from: 1, to: 2 }]], units: 500 } });
+    assert.equal(font.status, "ready"); assert.equal(font.current, true); assert.equal(font.released, true); assert.ok(Math.abs(font.width - 60) < .05);
     assert.deepEqual(errors, []);
     await mkdir("artifacts/package", { recursive: true });
     await page.screenshot({ path: "artifacts/package/consumer.png" });
@@ -334,7 +318,7 @@ try {
         consumer, browser: browser.version(), node: process.version, dotnet: dotnet(["--version"]).trim(),
         typescript: JSON.parse(await readFile("node_modules/typescript/package.json", "utf8")).version,
         esbuild: JSON.parse(await readFile("node_modules/esbuild/package.json", "utf8")).version,
-        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, bidi, paragraph, advances, font, graphemes, fontNormalization, glyphVisibility, find, caseFind, regex, folding, clipboardBoundary, selectionSets, multipleInput, comparison, readonlyIndent, findAuthority, saveReview, style, errors }, null, 2));
+        actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, bidi, paragraph, font, graphemes, find, caseFind, regex, folding, clipboardBoundary, selectionSets, multipleInput, comparison, readonlyIndent, findAuthority, saveReview, style, errors }, null, 2));
     console.log("Restored package: declarations, storage/mappings, modules, visible CSS and actual edit passed. Evidence: artifacts/package/");
     console.log(`Isolated consumer retained for inspection: ${consumer}`);
     await page.close();

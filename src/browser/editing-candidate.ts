@@ -1,6 +1,16 @@
 import { clientBox, cssZoom } from "./dom-coordinates.ts";
-import { PositionMap, textDifference, WordCursor, createGraphemeCursor, createSelectionSet, planSelectionEdits } from "../index.ts";
-import type { Affinity, DocumentView, EditKind, Selection, SelectionSet, TabId, TextBuffer, TextEdit, Workspace, GraphemeCursor, GraphemeIndex } from "../index.ts";
+import { PositionMap } from "../core/positions.ts";
+import { textDifference } from "../core/changes.ts";
+import { WordCursor } from "../core/words.ts";
+import { createGraphemeCursor } from "../core/graphemes.ts";
+import { createSelectionSet, planSelectionEdits } from "../core/selections.ts";
+import type { Affinity } from "../core/positions.ts";
+import type { DocumentView, TabId, Workspace } from "../core/workspace.ts";
+import type { EditKind, Selection } from "../core/history.ts";
+import type { SelectionSet } from "../core/selections.ts";
+import type { TextBuffer } from "../core/text-buffer.ts";
+import type { TextEdit } from "../core/changes.ts";
+import type { GraphemeCursor, GraphemeIndex } from "../core/graphemes.ts";
 import type { ViewState } from "./index.ts";
 import { inputContext } from "./input-context.ts";
 import { localAsciiGraphemePoint } from "../core/grapheme-point.ts";

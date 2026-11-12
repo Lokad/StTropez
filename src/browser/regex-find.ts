@@ -1,6 +1,6 @@
 import { createRegexCursor } from "./regex-client.ts";
 import type { FindBackend, FindQueryCapture } from "./find.ts";
-import type { SearchMatch } from "../index.ts";
+import type { SearchMatch } from "../core/search.ts";
 export type RegexFindBackendOptions = Readonly<{ clock: Pick<Window, "setTimeout" | "clearTimeout">; createWorker: () => Worker;
     timeoutMs?: number; maxOutputUnits?: number }>;
 

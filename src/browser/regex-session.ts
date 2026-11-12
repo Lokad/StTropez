@@ -1,5 +1,5 @@
 import { regexExpression, regexMatches, regexReplacement } from "../core/regex-search.ts";
-import type { TextEdit } from "../index.ts";
+import type { TextEdit } from "../core/changes.ts";
 export const regexChunkUnits = 32768;
 export const regexSourceLimit = 32 * 1024 * 1024;
 export const regexMatchLimit = 1_000_000;

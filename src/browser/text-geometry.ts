@@ -1,5 +1,6 @@
-import { resolveBidi, graphemeBoundaries } from "../index.ts";
-import type { Affinity } from "../index.ts";
+import { resolveBidi } from "../core/bidi.ts";
+import { graphemeBoundaries } from "../core/graphemes.ts";
+import type { Affinity } from "../core/positions.ts";
 
 export type CaretRectangle = Readonly<{ offset: number; affinity: Affinity; left: number; top: number; height: number; revision: number; padding?: true }>;
 export { graphemeBoundaries };

@@ -1,5 +1,12 @@
-import { applyTextEdits, exportText, PositionMap, textDifference } from "../index.ts";
-import type { Affinity, DocumentId, DocumentSnapshot, DocumentView, EditKind, FoldRange, PositionMapping, Selection, SelectionSet, TextBuffer, Workspace, TabId, ViewId } from "../index.ts";
+import { applyTextEdits, textDifference } from "../core/changes.ts";
+import { exportText } from "../core/newlines.ts";
+import { PositionMap } from "../core/positions.ts";
+import type { Affinity, PositionMapping } from "../core/positions.ts";
+import type { DocumentId, DocumentSnapshot, DocumentView, Workspace, TabId, ViewId } from "../core/workspace.ts";
+import type { EditKind, Selection } from "../core/history.ts";
+import type { FoldRange } from "../core/folding.ts";
+import type { SelectionSet } from "../core/selections.ts";
+import type { TextBuffer } from "../core/text-buffer.ts";
 import { captureNativeInsertion, resolveNativeInsertion } from "./input-target.ts";
 import type { NativeInsertionTarget } from "./input-target.ts";
 export { mountTextViewport } from "./viewport.ts";

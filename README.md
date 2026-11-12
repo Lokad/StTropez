@@ -120,14 +120,6 @@ The [host workflows](docs/host-workflows.md) run proposal/correction/save/acknow
 captured Run through both editor modes in the plain and React hosts, including input recovery.
 The [bidi resolver and caret geometry](docs/bidi.md) combine Unicode conformance tests with
 native shaping on complete bounded rows; contextual long-line layout remains open.
-The [Unicode layout stage](docs/unicode-shaping.md) supplies versioned normalization with exact
-source provenance and cooperative nominal mapping into the glyph substitution/positioning pipeline.
-The [script stage](docs/script-itemization.md) resolves contextual runs and partitions owned glyphs
-for independent feature selection without copying their records, preserving complete
-[Unicode 18 graphemes](docs/graphemes.md). The editing candidate indexes long logical lines
-cooperatively for whole-cluster commands.
-The [font-aware stage](docs/font-normalization.md) selects canonical representations and complete
-graphemes from a captured host font cascade, preserving original spans and variation pairs.
-Nominal coverage and explicit fixture feature dispatch do not qualify complete language shaping.
-The [glyph visibility stage](docs/glyph-visibility.md) carries control properties through
-substitution and suppresses uninterpreted default-ignorable ink and advances during positioning.
+The editor preserves [Unicode 18 graphemes](docs/graphemes.md) and cooperatively indexes long
+logical lines for whole-cluster commands. [Native font registration](docs/fonts.md) owns loaded
+faces and generations; text shaping and measurement use browser APIs.
