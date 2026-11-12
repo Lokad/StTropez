@@ -79,12 +79,13 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     const view = options.view ?? workspace.createDocumentView(documentId), owner = host.ownerDocument, browserWindow = owner.defaultView;
     if (!browserWindow) { if (!options.view) view.dispose(); throw new Error("Viewport requires an attached browser document."); }
     const win = browserWindow;
-    const root = owner.createElement("div"), spacer = owner.createElement("div"), layer = owner.createElement("div"), probe = owner.createElement("span"), foldLayer = owner.createElement("div");
+    const root = owner.createElement("div"), spacer = owner.createElement("div"), layer = owner.createElement("div"), probeHost = owner.createElement("div"), probe = owner.createElement("span"), foldLayer = owner.createElement("div");
     root.className = "st-viewport"; root.tabIndex = 0; root.setAttribute("role", "region"); root.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
     spacer.className = "st-viewport-spacer"; spacer.setAttribute("aria-hidden", "true");
     layer.className = "st-viewport-layer"; probe.className = "st-viewport-measure"; probe.textContent = "M".repeat(64); probe.setAttribute("aria-hidden", "true");
+    probeHost.className = "st-viewport-measure-host"; probeHost.setAttribute("aria-hidden", "true"); probeHost.append(probe);
     foldLayer.className = "st-fold-controls"; const foldButtons = new Map<string, HTMLButtonElement>();
-    root.append(spacer, layer, probe, foldLayer); host.append(root);
+    root.append(spacer, layer, probeHost, foldLayer); host.append(root);
     const listeners = new AbortController(), padding = viewportPadding;
     let frame: number | undefined, disposed = false, previous: DocumentSnapshot | undefined;
     let top = 0, left = 0, width = 0, height = 0, lineHeight = 22.4, columnWidth = 8.4;
@@ -361,10 +362,12 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         const next: Row[] = [], blanks: number[] = [];
         for (let visible = firstRow; visible < lastRow; visible++) { if (gapAt(index, visible)) blanks.push(visible); else next.push(row(document.buffer, index.lineAt(visible))); }
         partialRows = next.filter(row => !row.complete).length;
-        spacer.style.width = `${x.physicalExtent}px`; spacer.style.height = `${y.physicalExtent}px`;
+        // A fitting document must not fill rounded client metrics: a fractional viewport can be
+        // slightly smaller, making classic scrollbars repeatedly add/remove each other.
+        spacer.style.width = `${Math.min(x.extent, x.physicalExtent)}px`; spacer.style.height = `${Math.min(y.extent, y.physicalExtent)}px`;
         const physicalLeft = x.toPhysical(left), physicalTop = y.toPhysical(top);
         root.scrollLeft = physicalLeft; root.scrollTop = physicalTop;
-        layer.style.width = `${width}px`; layer.style.height = `${height}px`;
+        layer.style.width = "100%"; layer.style.height = "100%";
         layer.style.transform = `translate(${physicalLeft}px, ${physicalTop}px)`;
         textUnits = 0;
         for (const item of next) {
