@@ -37,7 +37,8 @@ Open `http://127.0.0.1:4173` for the TypeScript editor demo. Edit the shopping c
 Save locally stores all files of that sample in this browser; another page's saved copy is
 protected by a version check. Samples retain their edits while you switch between them.
 Reset restores the sample through undoable edits. Unsaved work prompts before leaving the page;
-automatic draft recovery and a richer conflict-resolution flow are still being connected.
+automatic draft recovery is still being connected. If another page saves the same sample,
+review its saved copy before explicitly saving your version, or download your local changes.
 TypeScript 5.9.3 runs in a development worker for syntax colors and JavaScript emission;
 type checking, completion and symbol commands are not connected to this demo yet.
 The server binds to loopback only and does not open a browser window.

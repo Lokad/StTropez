@@ -20,6 +20,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 #files button { padding: 10px 18px; border: 0; border-radius: 6px 6px 0 0; background: transparent; color: #9aabc2; }
 #files button[aria-pressed="true"] { background: #131c2b; color: #e7f0fc; box-shadow: inset 0 2px #8cddca; }
 #find-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 9px 24px; background: #192438; }
+#save-conflict { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 24px; background: #403329; color: #efd3ac; font-size: 13px; }
 #find-status { color: #a2b4cd; font-size: 12px; } #replace-controls { display: inline-flex; gap: 6px; }
 main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); }
 #source-column { min-width: 0; min-height: 0; display: grid; grid-template-columns: 54px minmax(0, 1fr); background: var(--st-background); }
@@ -35,7 +36,9 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 3
 .panel-note { padding: 24px; max-width: 560px; color: #9caec7; font-size: 13px; line-height: 1.7; }
 main.reviewing { grid-template-columns: minmax(0, 1fr); } main.reviewing #source-column { display: none; }
 main.collapsed { grid-template-columns: minmax(0, 1fr) auto; } main.collapsed #panel-content, main.collapsed [data-panel] { display: none; }
-.st-comparison { height: 100%; display: flex; flex-direction: column; } .st-comparison-panes { flex: 1; min-height: 0; }
+.demo-review-labels { height: 38px; display: grid; grid-template-columns: 1fr 1fr; align-items: center; padding: 0 14px; color: #afc2d9; font-size: 13px; border-bottom: 1px solid #29384e; }
+.st-comparison { height: calc(100% - 38px); display: flex; flex-direction: column; } .st-comparison-panes { flex: 1; min-height: 0; }
+.st-comparison-panes > section > h3, .st-comparison-controls > label { display: none; }
 .st-comparison-controls { flex-wrap: wrap; font-size: 12px; } .st-comparison-preview { max-height: 100px; }
 footer { display: flex; gap: 20px; align-items: center; min-height: 38px; padding: 8px 20px; border-top: 1px solid #29384e; font-size: 12px; color: #a6b9d0; }
 #status { flex: 1; } #cursor, #analysis-status { white-space: nowrap; }

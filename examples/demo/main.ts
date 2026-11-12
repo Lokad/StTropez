@@ -52,6 +52,8 @@ function renderMetadata(): void {
         ? "TypeScript 5.9.3 · syntax & emit" : "TypeScript · analyzing…";
     element("analysis-retry").hidden = presentation.status !== "failed";
     button("save").disabled = project.saving;
+    element("save-conflict").hidden = !project.hasConflict();
+    button("conflict-save").disabled = !project.canSaveReviewed();
     for (const file of project.files) {
         const tab = element("files").querySelector<HTMLButtonElement>(`[data-file="${file.name}"]`);
         if (tab) { tab.textContent = `${file.name}${file.resource.metadata.getSnapshot().dirty ? " ●" : ""}`; tab.setAttribute("aria-pressed", String(file === active)); }
@@ -76,7 +78,11 @@ function mountFile(file: DemoFile, focus = false): void {
     element("workspace").classList.toggle("reviewing", panel === "changes");
     if (panel === "changes") {
         comparison = mountTextComparison(element("panel-content"), project.workspace, file.tab, project.baseline(file),
-            { view: file.view, workingDecorate: presentation.decorate, ariaLabel: `Changes in ${file.name}` });
+            { view: file.view, workingDecorate: presentation.decorate, scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
+        const labels = document.createElement("div"); labels.className = "demo-review-labels";
+        const savedLabel = document.createElement("span"), workingLabel = document.createElement("span");
+        savedLabel.textContent = project.isReviewingConflict() ? "Other page's saved copy" : "Saved copy"; workingLabel.textContent = "Your changes";
+        labels.append(savedLabel, workingLabel); element("panel-content").prepend(labels);
         editor = comparison.working;
     } else {
         editor = mountEditingCandidate(element("editor"), project.workspace, file.tab,
@@ -154,14 +160,22 @@ on("reset", () => {
     if (!project || !window.confirm("Restore the original sample in all its files? You can undo this change. The saved copy changes only when you save locally.")) return;
     project.reset(); renderMetadata();
 });
-async function save(): Promise<void> {
+async function save(reviewed = false): Promise<void> {
     const captured = project; if (!captured) return;
-    await captured.save(renderMetadata);
+    await captured.save(renderMetadata, reviewed);
     if (!disposed && project === captured && comparison && active) {
         const ticket = comparison.controller.beginRefresh(); ticket.complete(captured.baseline(active));
     }
 }
 on("save", () => { void save(); });
+on("conflict-review", () => { if (project?.reviewConflict()) { setPanel("changes"); renderMetadata(); } });
+on("conflict-save", () => { void save(true); });
+on("download", () => {
+    if (!project) return;
+    const url = URL.createObjectURL(new Blob([project.download()], { type: "application/json" }));
+    const link = document.createElement("a"); link.href = url; link.download = `${project.sample.id}-changes.json`; link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+});
 for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.addEventListener("click", () => setPanel(tab.dataset.panel as typeof panel), { signal: listeners.signal });
 field("find-query").addEventListener("input", () => find?.setQuery(field("find-query").value), { signal: listeners.signal });
 element("find-bar").addEventListener("keydown", event => {

@@ -105,6 +105,49 @@ test("demo local save persists both files and prevents a stale page from replaci
     await expect(page.locator("#editor")).toContainText("// First page");
     await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
     await expect(page.locator("#editor")).toContainText("// Saved helper");
+    const download = peer.waitForEvent("download");
+    await peer.getByRole("button", { name: "Download my changes", exact: true }).click();
+    expect((await download).suggestedFilename()).toBe("pricing-changes.json");
+    await peer.getByRole("button", { name: "Review saved copy", exact: true }).click();
+    await expect(peer.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
+    await expect(peer.locator(".demo-review-labels")).toHaveText("Other page's saved copyYour changes");
+    await expect(peer.locator(".st-comparison-panes > section").first()).toContainText("// First page");
+    await expect(peer.locator(".st-comparison-panes > section").last()).toContainText("// Peer changes");
+    const saveReviewed = peer.getByRole("button", { name: "Save my reviewed version", exact: true });
+    await expect(saveReviewed).toBeEnabled();
+    const working = peer.getByRole("textbox", { name: "Comparison working source", exact: true });
+    await working.press("Control+Home"); await working.pressSequentially("// Revised locally\n");
+    await expect(saveReviewed).toBeDisabled();
+    await peer.getByRole("button", { name: "Review saved copy", exact: true }).click();
+    await saveReviewed.click();
+    await expect(peer.locator("#status")).toContainText("Saved in this browser");
+    await expect(peer.locator("#save-conflict")).toBeHidden();
+    await page.reload();
+    await expect(page.locator("#editor")).toContainText("// Peer changes");
+    await expect(page.locator("#editor")).toContainText("// Revised locally");
+    await expect(page.locator("#editor")).not.toContainText("// First page");
+});
+
+test("demo storage failure preserves edits and a retry saves the captured project", async ({ page }) => {
+    await page.addInitScript(() => {
+        const put = IDBObjectStore.prototype.put;
+        let failed = false;
+        IDBObjectStore.prototype.put = function (...args: Parameters<IDBObjectStore["put"]>) {
+            if (!failed && this.transaction.db.name === "sttropez-demo-projects-v1") {
+                failed = true; throw new DOMException("No space", "QuotaExceededError");
+            }
+            return put.apply(this, args);
+        };
+    });
+    await page.goto("/");
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    await source.press("Control+Home"); await source.pressSequentially("// Keep these changes\n");
+    await source.press("Control+s");
+    await expect(page.locator("#status")).toContainText("Could not save");
+    await expect(page.locator("#editor")).toContainText("// Keep these changes");
+    await expect(page.getByRole("button", { name: "main.ts ●", exact: true })).toBeVisible();
+    await source.press("Control+s");
+    await expect(page.locator("#status")).toContainText("Saved in this browser");
 });
 
 test("demo rejects obsolete analysis, supports multiline colors and keeps editing after worker failure", async ({ page }) => {

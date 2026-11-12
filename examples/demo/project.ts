@@ -1,5 +1,5 @@
-import { Workspace } from "../../src/index.ts";
-import type { ComparisonBaseline, DocumentView, TabId, TextResourceHandle } from "../../src/index.ts";
+import { TextBuffer, Workspace } from "../../src/index.ts";
+import type { ComparisonBaseline, DocumentView, SaveReview, TabId, TextResourceHandle } from "../../src/index.ts";
 import { createBrowserDraftStore } from "../hosts/draft-store.ts";
 import type { DraftStore } from "../hosts/draft-store.ts";
 import { demoSample } from "./samples.ts";
@@ -7,6 +7,16 @@ import type { DemoSample, SampleId } from "./samples.ts";
 
 export type DemoFile = Readonly<{ name: string; resource: TextResourceHandle; tab: TabId; view: DocumentView }>;
 type StoredProject = Readonly<{ version: 1; files: Readonly<Record<string, string>> }>;
+type Conflict = Readonly<{ token: string; baselines: ReadonlyMap<string, ComparisonBaseline> }>;
+
+function readProject(value: unknown, names: readonly string[]): StoredProject {
+    const candidate = value as Partial<StoredProject> | null;
+    if (!candidate || candidate.version !== 1 || !candidate.files || Object.keys(candidate.files).length !== names.length
+        || names.some(name => typeof candidate.files![name] !== "string" || candidate.files![name]!.length > 8_000_000)) {
+        throw new Error("The saved project cannot be read. Its stored copy has been left untouched.");
+    }
+    return candidate as StoredProject;
+}
 
 /** The host composes existing workspace/save/storage primitives; it owns no alternative text model. */
 export class DemoProject {
@@ -17,6 +27,8 @@ export class DemoProject {
     private token: string | null = null;
     private readonly baselines = new Map<string, ComparisonBaseline>();
     private disposed = false;
+    private conflict: Conflict | undefined;
+    private reviewedRevisions: readonly number[] | undefined;
     saving = false;
     message = "Changes are kept in this page until you save locally.";
     private constructor(id: SampleId, store: DraftStore, token: string | null, saved: StoredProject | null) {
@@ -37,13 +49,8 @@ export class DemoProject {
             const stored = await store.read();
             let saved: StoredProject | null = null;
             if (stored) {
-                const value = stored.value as Partial<StoredProject> | null;
                 const names = Object.keys(demoSample(id).files);
-                if (!value || value.version !== 1 || !value.files || Object.keys(value.files).length !== names.length
-                    || names.some(name => typeof value.files![name] !== "string" || value.files![name]!.length > 8_000_000)) {
-                    throw new Error("The saved project cannot be read. Its stored copy has been left untouched.");
-                }
-                saved = value as StoredProject;
+                saved = readProject(stored.value, names);
             }
             return new DemoProject(id, store, stored?.token ?? null, saved);
         } catch (error) {
@@ -54,20 +61,42 @@ export class DemoProject {
             return project;
         }
     }
-    baseline(file: DemoFile): ComparisonBaseline { return this.baselines.get(file.name)!; }
+    baseline(file: DemoFile): ComparisonBaseline {
+        return this.reviewedRevisions ? this.conflict!.baselines.get(file.name)! : this.baselines.get(file.name)!;
+    }
     dirty(): boolean { return this.files.some(file => file.resource.metadata.getSnapshot().dirty); }
-    async save(changed: () => void): Promise<void> {
+    hasConflict(): boolean { return this.conflict !== undefined; }
+    isReviewingConflict(): boolean { return this.reviewedRevisions !== undefined; }
+    reviewConflict(): boolean {
+        if (this.disposed || this.saving || !this.conflict) return false;
+        this.reviewedRevisions = this.files.map(file => this.workspace.document(file.resource.documentId).revision);
+        this.message = "Comparing against the other page's saved copy. Review each file before saving your version.";
+        return true;
+    }
+    canSaveReviewed(): boolean {
+        return !this.disposed && !this.saving && !!this.reviewedRevisions
+            && this.files.every((file, i) => this.workspace.document(file.resource.documentId).revision === this.reviewedRevisions![i]);
+    }
+    download(): string {
+        return JSON.stringify({ version: 1, files: Object.fromEntries(this.files.map(file => [file.name, this.workspace.document(file.resource.documentId).text])) }, null, 2);
+    }
+    async save(changed: () => void, reviewed = false): Promise<void> {
         if (this.disposed || this.saving) return;
+        if (reviewed && !this.canSaveReviewed()) return;
         this.saving = true;
-        const tickets = this.files.map(file => ({ file, ticket: this.workspace.captureSave(file.resource),
+        const expected = reviewed ? this.conflict!.token : this.token;
+        const tickets = this.files.map(file => ({ file, ticket: this.workspace.captureSave(file.resource, reviewed
+            ? { target: this.workspace.captureResource(file.resource.id), expectedRevision: this.workspace.document(file.resource.documentId).revision,
+                expectedServerVersion: expected! } satisfies SaveReview : undefined),
             buffer: this.workspace.document(file.resource.documentId).buffer }));
         const token = crypto.randomUUID();
         try {
             const submissions = tickets.map(({ ticket }) => ticket.start());
             this.message = "Saving locally…"; changed();
-            await this.store.write({ token, value: { version: 1, files: Object.fromEntries(submissions.map((submission, i) => [tickets[i]!.file.name, submission.value])) } }, this.token);
+            await this.store.write({ token, value: { version: 1, files: Object.fromEntries(submissions.map((submission, i) => [tickets[i]!.file.name, submission.value])) } }, expected);
             if (this.disposed) return;
             this.token = token;
+            this.conflict = undefined; this.reviewedRevisions = undefined;
             for (const { file, ticket, buffer } of tickets) {
                 ticket.accept({ serverVersion: token }); this.baselines.set(file.name, { buffer, version: token });
             }
@@ -75,9 +104,16 @@ export class DemoProject {
         } catch (error) {
             // The store checks the captured token in one read/write transaction across every file.
             const remote = await this.store.read().catch(() => null);
-            for (const { ticket } of tickets) { if (remote && remote.token !== this.token) ticket.conflict(); else ticket.fail(); }
-            this.message = remote && remote.token !== this.token
-                ? "Another page saved this sample. Your edits are intact; reload to open its saved copy, or copy your changes first."
+            for (const { ticket } of tickets) { if (remote && remote.token !== expected) ticket.conflict(); else ticket.fail(); }
+            this.reviewedRevisions = undefined;
+            if (remote && remote.token !== expected) {
+                try {
+                    const saved = readProject(remote.value, this.files.map(file => file.name));
+                    this.conflict = { token: remote.token, baselines: new Map(Object.entries(saved.files).map(([name, text]) => [name, { buffer: TextBuffer.from(text), version: remote.token }])) };
+                } catch { this.conflict = undefined; }
+            }
+            this.message = remote && remote.token !== expected
+                ? "Another page saved this sample. Your edits are intact. Review the saved copy or download your changes."
                 : error instanceof Error ? `Could not save: ${error.message}` : "Could not save. Your edits are intact.";
         } finally {
             tickets.forEach(({ ticket }) => ticket.finish()); this.saving = false;
