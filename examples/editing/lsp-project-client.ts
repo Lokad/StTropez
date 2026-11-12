@@ -1,4 +1,3 @@
-import type { Workspace } from "../../src/index.ts";
 import { RpcError } from "../../src/protocol/index.ts";
 import type { LspSessionAccess, LspWorkspace } from "../../src/protocol/index.ts";
 import type { ProjectCommand } from "../probes/project-commands.ts";
@@ -9,10 +8,10 @@ export type LspProjectScope = LspCommandScope;
 export type LspProjectOptions = Readonly<{ provider: LspWorkspace; reviewCommand: string; statusCommand: string;
     beforeRequest?: (session: LspSessionAccess, input: ProjectCommand) => Promise<unknown> }>;
 export type LspProjectClient = ReturnType<typeof createLspProjectClient>;
-export type LspProjectFactory = (clock: Pick<Window, "setTimeout" | "clearTimeout">) => LspProjectClient;
+export type LspProjectFactory = () => LspProjectClient;
 
 /** One explicit command scope; incoming edit requests can only enter that scope's captured review. */
-export function createLspProjectClient(_workspace: Workspace, _clock: Pick<Window, "setTimeout" | "clearTimeout">, options: LspProjectOptions) {
+export function createLspProjectClient(options: LspProjectOptions) {
     const listeners = new Set<() => void>(); let disposed = false, busy = false;
     const changed = () => { for (const listener of [...listeners]) listener(); };
     const session = options.provider.createScope();

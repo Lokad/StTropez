@@ -1,3 +1,4 @@
+import { mountInputCaret } from "./input-caret.ts";
 import { clientBox, cssZoom } from "./dom-coordinates.ts";
 import { PositionMap } from "../core/positions.ts";
 import { textDifference } from "../core/changes.ts";
@@ -24,7 +25,7 @@ import { mountTextDragDrop } from "./text-drag-drop.ts";
 
 export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport;
     focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
-    snapshot: () => Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number; queuedInputTurns: number; maxQueuedInputTurnMs: number; queuedInputWorkMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; pendingCaret: boolean; pendingCommand: boolean; pendingDragScroll: boolean; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; composing: boolean; pendingInput: boolean; queuedInputUnits: number; pendingWord: boolean; wordScanSteps: number; maxWordScanStepMs: number; pendingGrapheme: boolean; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number; disposed: boolean }>;
+    snapshot: () => Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number; maxQueuedInputTurnMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; pendingCaret: boolean; pendingCommand: boolean; pendingDragScroll: boolean; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; composing: boolean; pendingInput: boolean; queuedInputUnits: number; pendingWord: boolean; wordScanSteps: number; maxWordScanStepMs: number; pendingGrapheme: boolean; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number; disposed: boolean }>;
     destroy: () => void }>;
 let nextMount = 0;
 
@@ -41,8 +42,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     try { viewport = mountTextViewport(host, workspace, tabId, { ...options, view }); }
     catch (error) { if (!options.view) view.dispose(); throw error; }
     const root = viewport.element;
-    const owner = host.ownerDocument, win = owner.defaultView!, input = owner.createElement("textarea"), caret = owner.createElement("div"), secondaryCarets = owner.createElement("div");
-    const caretNodes: HTMLDivElement[] = [];
+    const owner = host.ownerDocument, win = owner.defaultView!, input = owner.createElement("textarea");
     const scope = ++nextMount, listeners = new AbortController();
     root.classList.add("st-editing-candidate"); root.tabIndex = -1;
     root.querySelector(".st-viewport-layer")!.setAttribute("aria-hidden", "true");
@@ -51,8 +51,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     input.setAttribute("form", "");
     input.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
     input.setAttribute("autocapitalize", "off");
-    caret.className = "st-input-caret"; caret.setAttribute("aria-hidden", "true");
-    secondaryCarets.setAttribute("aria-hidden", "true"); root.append(input, caret, secondaryCarets);
+    root.append(input);
     let revision = workspace.document(documentId).revision, context: InputContext = inputContext(workspace.document(documentId).buffer, view.getSnapshot().selection);
     let disposed = false, composing = false, selecting = false, committing = false, escaped = false;
     const escapeState = (value: boolean) => {
@@ -60,8 +59,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         escaped = value; root.toggleAttribute("data-st-tab-escape", value);
         for (const button of root.querySelectorAll<HTMLButtonElement>(".st-fold-button")) button.tabIndex = value ? -1 : 0;
     };
-    let frame: number | undefined, commits = 0, conflicts = 0, serial = 0, inputEvents = 0, lastInputMs = 0;
-    let beforeInputEvents = 0, lastBeforeInputMs = 0, queuedInputTurns = 0, maxQueuedInputTurnMs = 0, queuedInputWorkMs = 0;
+    let commits = 0, conflicts = 0, serial = 0, inputEvents = 0, lastInputMs = 0;
+    let beforeInputEvents = 0, lastBeforeInputMs = 0, maxQueuedInputTurnMs = 0;
     let keydownEvents = 0, lastKeydownMs = 0;
     let navigationTurns = 0, navigationPreparationMs = 0, maxNavigationTurnMs = 0, navigationWorkMs = 0, navigationDepth = 0;
     let wordSelectionEvents = 0, lastWordSelectionMs = 0, maxWordSelectionTurnMs = 0;
@@ -102,64 +101,9 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     function cancelCommandTimers(): void {
         commandTimers.forEach(timer => win.clearTimeout(timer)); commandTimers.clear();
     }
-    const scheduleCaret = () => { if (!disposed && frame === undefined) frame = win.requestAnimationFrame(positionCaret); };
-    let caretLayout: Readonly<{ state: ReturnType<TextViewport["snapshot"]>; visible: boolean; focused: boolean }> | undefined;
-    function positionCaret(): void {
-        frame = undefined; if (disposed) return;
-        const { selection: selected, selectionSet } = view.getSnapshot(), rectangle = clientBox(root), focused = owner.activeElement === input;
-        const currentDocument = workspace.observeDocument(documentId).getSnapshot();
-        let state = viewport.snapshot(), point = viewport.coordsAt(selected.head, selected.headAffinity);
-        let visible = point && point.left >= rectangle.left && point.left < rectangle.right
-            && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
-        const prior = caretLayout;
-        // Reuse bounded reveal after layout changes hide a previously visible focused head.
-        // Explicit scrolling, new selections/revisions and inactive views retain their own positions.
-        const retainLayout = !visible && focused && !composing && prior?.visible && prior.focused && state.revision === prior.state.revision
-            && currentDocument?.revision === state.revision && selectionSet === state.selectionSet && state.selectionSet === prior.state.selectionSet
-            && state.foldGeneration === prior.state.foldGeneration && view.folding.getSnapshot().generation === state.foldGeneration
-            && state.scrollTop === prior.state.scrollTop && state.scrollLeft === prior.state.scrollLeft;
-        const layoutChanged = retainLayout && (state.width !== prior.state.width || state.height !== prior.state.height || state.columnWidth !== prior.state.columnWidth || state.lineHeight !== prior.state.lineHeight);
-        if (layoutChanged) {
-            viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" }); viewport.flush();
-            state = viewport.snapshot(); point = viewport.coordsAt(selected.head, selected.headAffinity);
-            visible = point && point.left >= rectangle.left && point.left < rectangle.right && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
-        }
-        // DOM layout can advance before ResizeObserver queues a render. Retain the last valid
-        // placement until measured metrics arrive, then attempt reveal once even if no point exists.
-        if (!retainLayout || layoutChanged) caretLayout = { state, visible: !!visible, focused: focused && !composing };
-        caret.hidden = !visible || selected.anchor !== selected.head || composing || owner.activeElement !== input;
-        const left = ((point?.left ?? rectangle.left) - rectangle.left) / rectangle.zoom;
-        const top = ((point?.top ?? rectangle.top) - rectangle.top) / rectangle.zoom;
-        // Bound the native input anchor while the display caret follows the text, including clipped rows.
-        input.style.left = `${root.scrollLeft + Math.max(0, Math.min(root.clientWidth - 2, left))}px`;
-        input.style.top = `${root.scrollTop + Math.max(0, Math.min(root.clientHeight - 24, top))}px`;
-        caret.style.left = `${root.scrollLeft + left}px`; caret.style.top = `${root.scrollTop + top}px`;
-        for (const element of [input, caret]) element.style.height = `${point ? point.height / rectangle.zoom : viewport.snapshot().lineHeight}px`;
-        const buffer = currentDocument?.buffer;
-        const points = [];
-        if (!composing && owner.activeElement === input && buffer && state.selectionSet === selectionSet && state.lastLine > state.firstLine) {
-            const from = buffer.offsetAt(state.firstLine), to = state.lastLine < buffer.lineCount ? buffer.offsetAt(state.lastLine) : buffer.length;
-            // Heads of normalized disjoint ranges are ordered. Measure only visible candidates,
-            // using the same bounded native row geometry as the primary caret.
-            let low = 0, high = selectionSet.ranges.length;
-            while (low < high) { const middle = (low + high) >>> 1;
-                if (selectionSet.ranges[middle]!.head < from) low = middle + 1; else high = middle; }
-            for (let index = low; index < selectionSet.ranges.length; index++) {
-                const range = selectionSet.ranges[index]!; if (range.head > to) break;
-                if (index === selectionSet.primary || range.anchor !== range.head) continue;
-                if (view.folding.getSnapshot().index.hiddenBy(buffer.lineAt(range.head))) continue;
-                const at = viewport.coordsAt(range.head, range.headAffinity);
-                if (at && at.left >= rectangle.left && at.left < rectangle.right
-                    && at.top + at.height > rectangle.top && at.top < rectangle.bottom) points.push(at);
-            }
-        }
-        while (caretNodes.length > points.length) caretNodes.pop()!.remove();
-        points.forEach((at, index) => {
-            let node = caretNodes[index];
-            if (!node) { node = owner.createElement("div"); node.className = "st-input-secondary-caret"; caretNodes.push(node); secondaryCarets.append(node); }
-            node.style.left = `${root.scrollLeft + (at.left - rectangle.left) / rectangle.zoom}px`; node.style.top = `${root.scrollTop + (at.top - rectangle.top) / rectangle.zoom}px`; node.style.height = `${at.height / rectangle.zoom}px`;
-        });
-    }
+    const caretLayer = mountInputCaret(root, input, view, viewport,
+        () => workspace.observeDocument(documentId).getSnapshot(), () => composing);
+    const scheduleCaret = caretLayer.schedule;
     function refresh(): void {
         if (disposed || selecting || committing) return;
         const state = resource.getSnapshot(); input.disabled = !workspace.resolveTab(target) || state.state !== "ready";
@@ -172,7 +116,11 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             if (graphemeCache?.buffer !== document.buffer) graphemeCache = undefined;
             const capture = rangeCommand?.capture ?? graphemeJob?.capture;
             if (capture && (capture.revision !== document.revision || capture.selectionSet !== selectionSet || capture.deleting && input.readOnly)) cancelWord();
-            context = inputContext(document.buffer, selected); revision = document.revision; projectedSet = selectionSet;
+            // Projection is refreshed only outside composition. The captured model selection and
+            // LF mapping remain together until the native edit is committed or recovered.
+            context = inputContext(document.buffer, selected);
+            revision = document.revision;
+            projectedSet = selectionSet;
             if (input.value !== context.text) input.value = context.text;
             const anchor = context.nativeAnchor, head = context.nativeHead;
             if (input.selectionStart !== Math.min(anchor, head) || input.selectionEnd !== Math.max(anchor, head)
@@ -274,7 +222,12 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const document = workspace.document(documentId), plan = planSelectionEdits(document.buffer.length, view.getSnapshot().selectionSet, insert);
         apply(plan.edits, plan.selectionSet, kind, type, document.revision);
     }
-    const validCommand = (capture: CommandCapture) => !disposed && !composing && !input.disabled && !(capture.deleting && input.readOnly) && !!workspace.resolveTab(target) && workspace.observeDocument(documentId).getSnapshot()?.revision === capture.revision && view.getSnapshot().selectionSet === capture.selectionSet;
+    // Delayed commands belong to this captured tab, revision and complete selection set.
+    // cancelWord releases scans, row preparation and ordered input; no focused-view lookup occurs later.
+    const validCommand = (capture: CommandCapture) => !disposed && !composing && !input.disabled
+        && !(capture.deleting && input.readOnly) && !!workspace.resolveTab(target)
+        && workspace.observeDocument(documentId).getSnapshot()?.revision === capture.revision
+        && view.getSnapshot().selectionSet === capture.selectionSet;
     function withGraphemes(capture: CommandCapture, offset: number, side: -1 | 1, purpose: "word" | "word-selection" | "grapheme", done: (point: GraphemePoint) => void,
         turn: (work: () => void) => void = work => work()): void {
         cancelScans(); if (!validCommand(capture)) return;
@@ -694,7 +647,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (!ordered || rangeCommand || ordered.native || orderedTimer !== undefined) return;
         const timer = win.setTimeout(() => { const began = win.performance.now();
             try { commandTimers.delete(timer); if (orderedTimer === timer) orderedTimer = undefined; drainInput(); }
-            finally { const elapsed = win.performance.now() - began; queuedInputTurns++; queuedInputWorkMs += elapsed; maxQueuedInputTurnMs = Math.max(maxQueuedInputTurnMs, elapsed); }
+            finally { const elapsed = win.performance.now() - began; maxQueuedInputTurnMs = Math.max(maxQueuedInputTurnMs, elapsed); }
         }, 0);
         orderedTimer = timer; commandTimers.add(timer);
     }
@@ -812,10 +765,30 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         } else commit(type);
         lastInputMs = win.performance.now() - start; inputEvents++;
     }, { signal: listeners.signal });
-    input.addEventListener("compositionstart", () => { cancelWord(); cancelCommandTimers(); wordInput = undefined; insertion = undefined; syncSelection();
+    function startComposition(): void {
+        cancelWord();
+        cancelCommandTimers();
+        wordInput = undefined;
+        insertion = undefined;
+        syncSelection();
         view.folding.revealSelection(view.folding.getSnapshot());
-        composition = captureInput("insertCompositionText", null); composing = true; group = undefined; root.classList.add("st-composing"); viewport.invalidate(); scheduleCaret(); }, { signal: listeners.signal });
-    input.addEventListener("compositionend", () => { const captured = composition; composition = undefined; composing = false; root.classList.remove("st-composing"); viewport.invalidate(); commit("insertCompositionText", captured); }, { signal: listeners.signal });
+        composition = captureInput("insertCompositionText", null);
+        composing = true;
+        group = undefined;
+        root.classList.add("st-composing");
+        viewport.invalidate();
+        scheduleCaret();
+    }
+    function endComposition(): void {
+        const captured = composition;
+        composition = undefined;
+        composing = false;
+        root.classList.remove("st-composing");
+        viewport.invalidate();
+        commit("insertCompositionText", captured);
+    }
+    input.addEventListener("compositionstart", startComposition, { signal: listeners.signal });
+    input.addEventListener("compositionend", endComposition, { signal: listeners.signal });
     input.addEventListener("select", syncSelection, { signal: listeners.signal });
     // Tab can reset the browser range after focus dispatch. It changes focus, not model selection.
     input.addEventListener("keyup", event => { if (event.key === "Tab") refresh(); else syncSelection(); }, { signal: listeners.signal });
@@ -985,17 +958,26 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     return Object.freeze({ element: root, input, view, viewport, focus,
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state: ViewState) => { viewport.restoreView(state); refresh(); },
-        snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, queuedInputTurns, maxQueuedInputTurnMs, queuedInputWorkMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs, pendingCaret: frame !== undefined, pendingCommand: rangeCommand !== undefined || wordJob !== undefined || graphemeJob !== undefined,
+        snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs, pendingCaret: caretLayer.pending(), pendingCommand: rangeCommand !== undefined || wordJob !== undefined || graphemeJob !== undefined,
             pendingDragScroll: dragFrame !== undefined, dragScrollFrames, maxDragScrollStepMs, commits, conflicts, composing, pendingInput: ordered !== undefined || executingInput !== undefined || rangeCommand?.capture.deleting === true,
             queuedInputUnits: ordered?.units ?? 0, pendingWord: rangeCommand?.purpose === "word" || wordJob !== undefined || graphemeJob?.purpose === "word" || graphemeJob?.purpose === "word-selection" || ordered?.purpose === "word", wordScanSteps, maxWordScanStepMs, pendingGrapheme: rangeCommand?.purpose === "grapheme" || graphemeJob !== undefined || ordered?.purpose === "grapheme", graphemeScanSteps, maxGraphemeScanStepMs, visualMoves, disposed }),
         destroy: () => {
             if (disposed) return; disposed = true;
             if (executingInput) recoverInput(executingInput, "pending-input-detached");
-            cancelWord(); nativeOrder = undefined; wordInput = undefined; insertion = undefined; composition = undefined; graphemeCache = undefined; preferred = undefined; caretLayout = undefined;
+            cancelWord();
+            nativeOrder = undefined; wordInput = undefined;
+            insertion = undefined; composition = undefined;
+            graphemeCache = undefined; preferred = undefined;
             if (composing && input.value !== context.text) conflict("composition-detached");
-            composing = false; stopDrag(); textDrag.destroy();
-            if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
+            composing = false;
+            stopDrag();
+            textDrag.destroy();
+            caretLayer.dispose();
             cancelCommandTimers();
-            listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); input.value = ""; caretNodes.length = 0; secondaryCarets.replaceChildren(); viewport.destroy(); if (!options.view) view.dispose();
+            listeners.abort();
+            subscriptions.forEach(unsubscribe => unsubscribe());
+            input.value = "";
+            viewport.destroy();
+            if (!options.view) view.dispose();
         } });
 }

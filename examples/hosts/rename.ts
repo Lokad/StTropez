@@ -126,7 +126,7 @@ export class HostRenameTools {
             job.timer = win.setTimeout(() => { if (this.job === job && !job.ready) { this.release(); this.metrics.failed++; this.publish({ status: "failed", message: "Rename provider timed out; source is unchanged.", locations: [] }); } }, 30000);
             this.publish({ status: "pending", message: this.usesLsp ? "Requesting the provider's complete rename edit preview." : `Preparing all lexical matches of ${symbol} across ${documents.length} captured working resources.`, symbol, ...(keyboard ? { name: symbol } : {}), locations: [], page: 0, work: 0, total });
             if (this.backendFactory) {
-                this.backend ??= this.backendFactory(win); job.stops.push(this.backend.subscribe(() => {
+                this.backend ??= this.backendFactory(); job.stops.push(this.backend.subscribe(() => {
                     if (job.ready && this.backend && !this.backend.snapshot().connected && !this.backend.snapshot().busy) this.disconnected = true;
                     changed(); this.publish();
                 }));

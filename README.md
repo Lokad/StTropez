@@ -5,21 +5,19 @@ structured configuration, review and data operations. Production code has **zero
 third-party dependencies**. React, editor libraries and compiler runtimes are not
 required by the package.
 
-This is an early scaffold. It contains headless text and typed resource lifecycles,
-revision-checked edits, scoped observables, ownership leases, save receipts and captured Run
-ports. The playground mounts two native text views and an independent typed configuration form,
-with synthetic deferred saves and an explicit preview command.
-The plain and React development hosts add exclusive agent requests, human correction, exact
-save/acknowledgement receipts and retry, stable refs and controller-preserving error recovery.
+The M3 editor/review pilot supports actual typing, selection/navigation, shared undo/redo,
+comparison and hunk reversion, captured saves/conflicts, recovery and explicit host lifecycle.
+The plain and React development hosts combine these with typed configuration, synthetic
+deferred services and captured Run/agent decisions through stable controllers and refs.
 Try the [integrated editor/review pilot](docs/m3-pilot.md#try-the-integrated-pilot) for direct
 host links and a walkthrough of editing, comparison, captured saves, conflicts and remount.
 Documents use an immutable indexed piece tree, bounded shared undo/redo, mapped view selections,
-atomic multi-document edits and explicit newline conversion. The textarea remains an input and
-instrumentation baseline. A bounded viewport and experimental bounded-input candidate provide
-local glyph coordinates and document/history editing. Literal find/replace and a host-owned
-worker fixture add incremental visible highlighting, completion and scoped diagnostics.
-Full contextual-line geometry, language-protocol support and recovery
-remain roadmap work.
+atomic multi-document edits and explicit newline conversion. The bounded input adapter and
+viewport provide editing and measured local caret geometry; the native textarea remains a
+control. Literal find/replace and the public LSP route support host integration. The separate
+worker protocol is an internal fixture. Native IME, OS clipboard and physical-display checks
+remain unverified; full contextual long-line geometry and production adoption remain scoped
+qualification gaps.
 
 The [LSP provider route](docs/m3-pilot.md#try-the-lsp-provider-route) adds actual captured protocol
 workflows and explicit command/server-edit decisions. [Qualification limits](docs/m3-pilot.md#qualification-scope)
@@ -47,20 +45,24 @@ assertion limits are separate. Pass `--workers=1` to Playwright for a serial foc
 npm run check          # Type checking, model tests, build, Chromium tests
 npm run test:browsers  # Chromium, Firefox and WebKit
 npm run inspect        # Screenshot and machine-readable state
-npm run bench          # Browser timing samples and machine metadata
+npm run bench          # Representative model and bounded-editor timing samples
+npm run bench:pilot    # Explicit integrated input/review/save measurements
+npm run bench:all      # Explicit broader performance inventory
 npm run bench:trace    # Separate layout/paint attribution diagnostic
 npm run bench:storage  # Flat/chunk/piece comparison, separate from browser timing
 npm run bench:viewport # Bounded read-only rendering and programmatic edits
 npm run bench:editing  # Actual keyboard input through the bounded candidate
 npm run bench:services # Piece search, atomic replacement and a real worker result
 npm run bench:bulk     # Isolated multi-range construction and traversal
-npm run test:package   # Local NuGet pack, isolated restore and browser edit (.NET SDK 10+)
+npm run test:package   # One pack/restore, then full, LSP and React consumers (.NET SDK 10+)
 ```
 
 Generated evidence is in `artifacts/`; failed browser tests also retain traces in
 `test-results/`. Missing browsers, missing readiness, page errors and missing tests
-cause failures. Separate benchmarks cover the native-input baseline, bounded viewport and
-experimental input candidate. Their frame timing is a scheduling proxy, not measured physical paint.
+cause failures. [Qualification ownership](docs/qualification.md) separates focused changes,
+broad boundaries and performance runs. Input-handler time, frame readiness and complete
+scripted action latency are different clocks; none establishes physical input/display latency.
+See [runtime ownership](docs/editor-ownership.md) for composition, caret and delayed work.
 
 ## Layout
 

@@ -1,16 +1,16 @@
 import { createLspActionClient as createClient } from "../../src/protocol/index.ts";
 import type { LspSessionAccess, LspWorkspace } from "../../src/protocol/index.ts";
-import type { DocumentId, DocumentSnapshot, Workspace } from "../../src/index.ts";
+import type { DocumentId, DocumentSnapshot } from "../../src/index.ts";
 export type LspActionConfiguration = Readonly<{ module: string; delay: number; fault?: "malformed" | "failure" | "incomplete" | "markup" }>;
 export type LspActionOptions = Readonly<{ provider: LspWorkspace;
     beforeRequest?: (session: LspSessionAccess, configuration: LspActionConfiguration) => Promise<unknown>;
     beforeResolve?: (session: LspSessionAccess, configuration: LspActionConfiguration) => Promise<unknown> }>;
 export type LspActionClient = ReturnType<typeof createLspActionClient>;
 export type LspActionBatch = Awaited<ReturnType<LspActionClient["run"]>>;
-export type LspActionFactory = (clock: Pick<Window, "setTimeout" | "clearTimeout">) => LspActionClient;
+export type LspActionFactory = () => LspActionClient;
 
 /** Fixture configuration around the exported protocol client. */
-export function createLspActionClient(_workspace: Workspace, _clock: Pick<Window, "setTimeout" | "clearTimeout">, options: LspActionOptions) {
+export function createLspActionClient(options: LspActionOptions) {
     const client = createClient(options.provider);
     return Object.freeze({ ...client,
         run: async (snapshots: readonly DocumentSnapshot[], origin: DocumentId, from: number, to: number, configuration: LspActionConfiguration) => {

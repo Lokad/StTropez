@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve, relative } from "node:path";
+import { join, resolve, relative, isAbsolute, sep } from "node:path";
 import { createServer } from "node:http";
 import { build } from "esbuild";
 import { unzipSync, strFromU8 } from "fflate";
@@ -14,6 +14,8 @@ import { runPackageTransitions } from "./package-transitions.mjs";
 
 const hunkOnly = process.argv.includes("--hunk-only");
 const transitionsOnly = process.argv.includes("--transitions-only");
+const skipTransitions = process.argv.includes("--skip-transitions");
+const reusePath = process.argv.find(arg => arg.startsWith("--reuse-consumer="))?.slice("--reuse-consumer=".length);
 const reactOnly = process.argv.includes("--react-only"), prepareOnly = process.argv.includes("--prepare-only");
 const lspOnly = process.argv.includes("--lsp-only");
 const activationOnly = process.argv.includes("--activation-only");
@@ -33,6 +35,10 @@ assert.ok(!lspOnly || (!reactOnly && !hunkOnly && !deferredOnly && !prepareOnly 
 
 const project = resolve(".");
 const archive = await readFile("artifacts/nuget/feed/StTropez.Assets.0.0.0-local.nupkg");
+const packageSha256 = createHash("sha256").update(archive).digest("hex");
+const reused = reusePath ? JSON.parse(await readFile(reusePath, "utf8")) : undefined;
+assert.ok(!transitionsOnly || (!reused && !skipTransitions), "Transition qualification requires its own install sequence.");
+if (reused) assert.equal(reused.packageSha256, packageSha256, "Staged consumer belongs to a different package; restore the selected artifact again.");
 const entries = unzipSync(archive);
 const assets = JSON.parse(strFromU8(entries["assets/manifest.json"]));
 assert.equal(strFromU8(entries["assets/UNICODE-LICENSE.txt"]), await readFile("licenses/Unicode-3.0.txt", "utf8"));
@@ -54,20 +60,25 @@ const nuspec = strFromU8(entries["StTropez.Assets.nuspec"]);
 assert.ok(!/<dependency\b/.test(nuspec), "Package must not depend on managed or third-party packages.");
 
 // Separate directory, local feed and isolated restore cache; no checkout/source fallback.
-const consumer = await realpath(await mkdtemp(join(tmpdir(), "sttropez-consumer-")));
+const consumer = await realpath(reused?.consumer ?? await mkdtemp(join(tmpdir(), "sttropez-consumer-")));
+const consumerLocation = relative(project, consumer);
+assert.ok(consumerLocation === ".." || consumerLocation.startsWith(`..${sep}`) || isAbsolute(consumerLocation), "Consumer must remain outside the checkout.");
+if (!reused) {
 await cp("tests/fixtures/consumer", consumer, { recursive: true });
 await mkdir(join(consumer, "feed"));
 await writeFile(join(consumer, "feed/StTropez.Assets.0.0.0-local.nupkg"), archive);
 await writeFile(join(consumer, "NuGet.Config"), '<configuration><packageSources><clear/><add key="local" value="feed"/></packageSources></configuration>');
+}
 const dotnet = args => execFileSync("dotnet", args, { cwd: consumer, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-const transitions = transitionsOnly || !pilotOnly && !prepareOnly && !benchmark
+const transitions = transitionsOnly || !reused && !skipTransitions && !pilotOnly && !prepareOnly && !benchmark
     ? await runPackageTransitions({ project, consumer, entries, assets, browserName, dotnet }) : undefined;
 if (!transitionsOnly) {
-if (!transitions) {
+if (!transitions && !reused) {
 dotnet(["restore", "Consumer.csproj", "--packages", join(consumer, "packages"), "--configfile", "NuGet.Config"]);
 dotnet(["msbuild", "Consumer.csproj", "-target:PrepareFrontend", "-verbosity:minimal"]);
 }
 const assetRoot = (await readFile(join(consumer, "assets-root.txt"), "utf8")).trim();
+if (reused) assert.equal(await realpath(assetRoot), await realpath(reused.assetRoot), "Restored asset root changed between consumers.");
 assert.ok(relative(consumer, await realpath(assetRoot)).replaceAll("\\", "/").startsWith("obj/sttropez/"), `Stage escaped generated directory: ${assetRoot}`);
 const restored = JSON.parse(await readFile(join(consumer, "obj/project.assets.json"), "utf8"));
 assert.deepEqual(Object.keys(restored.libraries), ["StTropez.Assets/0.0.0-local"]);
@@ -125,7 +136,7 @@ const activationOutputs = deferredOnly ? Object.fromEntries(Object.entries(bundl
 })) : {};
 await mkdir("artifacts/package", { recursive: true });
 await writeFile("artifacts/package/restored-consumer.json", JSON.stringify({ schemaVersion: 1,
-    packageSha256: createHash("sha256").update(archive).digest("hex"), consumer, assetRoot,
+    packageSha256, consumer, assetRoot, reusedStage: !!reused,
     browser: browserName, mode: prepareOnly ? "prepare-only" : benchmark ? "benchmark" : pilotOnly ? "pilot" : "full", scenario: lspOnly ? "lsp" : workspaceOnly ? "workspace" : activationOnly ? "activation" : reactOnly ? "react" : hunkOnly ? "hunk" : pilotOnly ? "recovery" : "all", corpus,
     declarations: { files: compilerFiles, strict: true, skipLibCheck: false, passed: true, ...(reactHost ? { inputs: typeInputs } : {}) },
     inputs: Object.keys(bundle.metafile.inputs).sort(), assets,

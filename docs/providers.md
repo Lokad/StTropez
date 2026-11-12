@@ -2,7 +2,9 @@
 
 The editing fixture combines local incremental highlighting, a real worker completion request
 and scoped diagnostics over the bounded view. The host owns the worker, UI, protocol and service
-lifecycle. The runtime has no networking, language client, framework or worker dependency.
+lifecycle. This worker protocol is an internal fixture. The separate public LSP integration
+has its own supported subset; this fixture does not establish LSP compatibility. Runtime
+modules retain zero third-party dependencies.
 The narrow fixture reuses the existing tokenizer/worker rather than importing an editor/client
 runtime. It is not an implementation of a full language protocol.
 

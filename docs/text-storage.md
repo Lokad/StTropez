@@ -19,7 +19,7 @@ backings and splits descriptors without copying their text. Its AVL branches cac
 LF count and height. Edits copy affected paths; unchanged nodes and backings are shared.
 
 Backing LF offsets and longest-line gap indexes use owned `Float64Array` storage, following
-the existing advance index. They never escape the private tree and are never changed after
+other immutable numeric indexes. They never escape the private tree and are never changed after
 construction; public buffers and descriptors remain frozen. Float64 preserves the numeric
 range of the previous arrays. This avoids a measured bulk-review stall caused by freezing
 hundreds of thousands of numeric properties in one browser engine. No runtime dependency or

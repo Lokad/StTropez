@@ -6,7 +6,7 @@ export type LspHoverOptions = Readonly<{ provider: LspWorkspace;
     beforeRequest?: (session: LspSessionAccess, configuration: Pick<HoverInput, "delay" | "fault">) => Promise<unknown> }>;
 
 /** Fixture configuration around the exported protocol client. */
-export function createLspHoverClient(_clock: Pick<Window, "setTimeout" | "clearTimeout">, options: LspHoverOptions): HoverBackend {
+export function createLspHoverClient(options: LspHoverOptions): HoverBackend {
     const client = createClient(options.provider);
     return Object.freeze({ ...client, disconnect: client.cancel, snapshot: () => Object.freeze({ ...client.snapshot(), transport: "lsp3.17" }),
         run: (document, offset, configuration) => client.run(document, offset, options.beforeRequest ? session => options.beforeRequest!(session, configuration) : undefined) });

@@ -13,9 +13,11 @@ test("development assets follow completed watched builds, reject private paths a
     const previous = process.cwd(); await mkdir(join(previous, "artifacts"), { recursive: true });
     const fixture = await mkdtemp(join(previous, "artifacts/dev-server-test-"));
     const put = async (path: string, text: string) => { const file = join(fixture, path); await mkdir(dirname(file), { recursive: true }); await writeFile(file, text); };
-    for (const path of ["playground", "probes", "viewport", "editing", "comparison", "protocol", "shaping"]) await put(`examples/${path}/index.html`, `<title>${path}</title>`);
+    for (const path of ["playground", "probes", "viewport", "editing", "comparison", "protocol"]) await put(`examples/${path}/index.html`, `<title>${path}</title>`);
     for (const host of ["plain", "react"]) await put(`examples/hosts/${host}.html`, `<title>${host}</title>`);
-    for (const path of ["playground/main.ts", "shaping/main.ts", "comparison/main.ts", "editing/main.ts", "viewport/main.ts", "protocol/main.ts", "probes/main.ts", "probes/provider-worker.ts", "hosts/plain-main.ts", "hosts/react-main.tsx"]) await put(`examples/${path}`, "export const ready = true;");
+    for (const path of ["playground/main.ts", "comparison/main.ts", "editing/main.ts", "viewport/main.ts", "protocol/main.ts", "probes/main.ts", "probes/provider-worker.ts", "hosts/plain-main.ts", "hosts/react-main.tsx"]) await put(`examples/${path}`, "export const ready = true;");
+    await put("tests/fixtures/fonts/index.html", "<title>fonts</title>");
+    await put("tests/fixtures/fonts/main.ts", "export const ready = true;");
     await put("examples/playground/main.ts", 'import "./theme.css"; export const ready = true;');
     await put("examples/playground/theme.css", "body { color: blue; }");
     await put("src/browser/regex-worker.ts", 'globalThis.postMessage("worker-first");');
@@ -35,6 +37,7 @@ test("development assets follow completed watched builds, reject private paths a
         assert.equal(await (await get("/hosts/react/")).text(), "<title>react</title>");
         assert.equal(await (await get("/hosts/react/index.html")).text(), "<title>react</title>");
         assert.equal(await (await get("/protocol/")).text(), "<title>protocol</title>"); assert.equal((await get("/protocol-fixture.js")).status, 200);
+        assert.equal(await (await get("/fonts/")).text(), "<title>fonts</title>"); assert.equal((await get("/fonts.js")).status, 200);
         const worker = await get("/regex-worker.js"); assert.equal(worker.status, 200); assert.match(worker.headers.get("content-type")!, /javascript/); assert.match(await worker.text(), /worker-first/);
         const head = await get("/regex-worker.js", { method: "HEAD" }); assert.equal(head.status, 200); assert.ok(Number(head.headers.get("content-length")) > 0); assert.equal(await head.text(), "");
         assert.match((await get("/app.css")).headers.get("content-type")!, /css/); assert.equal((await get("/app.js.map")).status, 200);

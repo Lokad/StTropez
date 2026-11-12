@@ -256,7 +256,7 @@ export class HostProjectTools {
             job.timer = win.setTimeout(() => { if (this.job === job) { this.cancel(); this.publish({ status: "failed", message: "Workspace provider timed out; any applied edit remains available to undo." }); } }, this.usesLsp ? 120000 : 30000);
             this.publish({ status: "pending", message: `Waiting for captured provider ${kind}.` });
             if (this.backendFactory) {
-                if (!this.backend) { this.backend = this.backendFactory(win); this.stopBackend = this.backend.subscribe(() => this.connectionChanged()); }
+                if (!this.backend) { this.backend = this.backendFactory(); this.stopBackend = this.backend.subscribe(() => this.connectionChanged()); }
                 job.providerCurrent = () => this.backend?.isCurrent() ?? false;
                 void this.backend.run(input, { snapshots: () => [...job.documents.values()], isCurrent: () => this.current(job), review: (request, context) => this.review(job, request, context) }).then(result => {
                     if (this.job !== job) return; this.release(job); this.registered = result.registered;

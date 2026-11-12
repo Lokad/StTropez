@@ -9,7 +9,7 @@ export type LspNavigationOptions = Readonly<{ provider: LspWorkspace;
     beforeRequest?: (session: LspSessionAccess, input: NavigationInput) => Promise<unknown> }>;
 
 /** Development query/counter contracts around the exported protocol client. */
-export function createLspNavigationClient(workspace: Workspace, _clock: Pick<Window, "setTimeout" | "clearTimeout">, counts: NavigationMetrics,
+export function createLspNavigationClient(workspace: Workspace, counts: NavigationMetrics,
     changed: () => void, options: LspNavigationOptions): NavigationService {
     const client = createClient(options.provider), stop = client.state.subscribe(changed);
     return Object.freeze({

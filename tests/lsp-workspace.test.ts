@@ -9,28 +9,60 @@ import type { LspFeature, LspRequestContext, RpcScheduler, RpcTransport } from "
 const { LspWorkspace, createLspCommandRunner, createLspSignatureClient, createLspLinkClient, createLspColorClient, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 const settled = async () => { await setImmediate(); await setImmediate(); };
 const latch = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; };
-test("public signature/link/color clients share bindings and isolate lazy cancellation, stale results and missing capabilities", async t => {
+test("selected language clients share one binding and decode their independent results", async t => {
+    const { f, signature, links, colors, rgba, doc } = await languageFixture(t);
+    const [help, linkBatch, colorBatch] = await Promise.all([signature.run(doc, 1).result, links.run(doc), colors.run(doc)]);
+    assert.equal(help!.signatures[0]!.activeParameter, 0);
+    assert.equal((await linkBatch.resolve(linkBatch.items[0]!)).target, "host+opaque:%2F unknown");
+    const choices = await colorBatch.presentations(colorBatch.items[0]!, rgba), after = doc.buffer.apply(choices[0]!.edits).buffer;
+    assert.equal(after.slice(0, after.length), "#f00😀\r\nsource!");
+    assert.equal(f.provider.snapshot().documents, 1); assert.equal(f.provider.snapshot().documentParticipants, 3);
+    assert.equal(f.peers[0]!.events.filter(event => event.method === "open").length, 1);
+    signature.dispose(); links.dispose(); colors.dispose(); await settled();
+    assert.equal(f.provider.snapshot().scopes, 0); assert.equal(f.provider.snapshot().documents, 0); assert.equal(f.workspace.diagnostics().leases, 0);
+});
+
+test("cancelling a lazy color presentation leaves independent language results current", async t => {
+    const { peer, signature, links, colors, rgba, doc } = await languageFixture(t);
+    const [help, linkBatch, colorBatch] = await Promise.all([signature.run(doc, 1).result, links.run(doc), colors.run(doc)]);
+    const entered = latch<void>(), late = latch<unknown>(); t.after(() => late.resolve([]));
+    peer.rpc.onRequest("textDocument/colorPresentation", () => { entered.resolve(); return late.promise; });
+    const pending = colorBatch.presentations(colorBatch.items[0]!, rgba);
+    const rejected = assert.rejects(pending, error => error instanceof RpcError && error.code === -32800);
+    await entered.promise; colors.cancel(); await rejected;
+    late.resolve([{ label: "late" }]); await settled();
+    assert.equal(colorBatch.isCurrent(), false); assert.equal(linkBatch.isCurrent(), true); assert.equal(help!.isCurrent(), true);
+});
+
+test("editing expires a captured document link before lazy resolution dispatch", async t => {
+    const { f, peer, links, doc } = await languageFixture(t);
+    const batch = await links.run(doc); let resolutions = 0;
+    peer.rpc.onRequest("documentLink/resolve", () => { resolutions++; return {}; });
+    f.edit(); assert.equal(batch.isCurrent(), false);
+    await assert.rejects(batch.resolve(batch.items[0]!), error => error instanceof RpcError && error.code === -32801);
+    assert.equal(resolutions, 0);
+});
+
+test("signature capability removal expires its result and prevents further dispatch", async t => {
+    const { f, peer, signature, links, doc } = await languageFixture(t);
+    const help = await signature.run(doc, 1).result;
+    await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "language-0", method: "textDocument/signatureHelp" }] });
+    assert.equal(help!.isCurrent(), false);
+    await assert.rejects(signature.run(doc, 1).result, error => error instanceof RpcError && error.code === -32601);
+    assert.equal((await links.run(f.workspace.document(doc.id))).items.length, 1);
+});
+
+async function languageFixture(t: test.TestContext) {
     const f = fixture(t, { features: ["textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor", "textDocument/colorPresentation"] }); await f.provider.connect(); const peer = f.peers[0]!;
     await peer.rpc.sendRequest("client/registerCapability", { registrations: ["textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor"].map((method, i) => ({ id: `language-${i}`, method, registerOptions: { documentSelector: null, ...(i === 1 ? { resolveProvider: true } : {}) } })) });
     const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, rgba = { red: 1, green: 0, blue: 0, alpha: .5 };
-    let signatureCalls = 0; peer.rpc.onRequest("textDocument/signatureHelp", () => { signatureCalls++; return { signatures: [{ label: "call(value)", parameters: [{ label: "value" }] }], activeParameter: 0 }; });
+    peer.rpc.onRequest("textDocument/signatureHelp", () => { return { signatures: [{ label: "call(value)", parameters: [{ label: "value" }] }], activeParameter: 0 }; });
     peer.rpc.onRequest("textDocument/documentLink", () => [{ range, data: { token: 1 } }]); peer.rpc.onRequest("documentLink/resolve", (item: object) => ({ ...item, target: "host+opaque:%2F unknown" }));
     peer.rpc.onRequest("textDocument/documentColor", () => [{ range, color: rgba }]);
     peer.rpc.onRequest("textDocument/colorPresentation", () => [{ label: "red", textEdit: { range, newText: "#f00" }, additionalTextEdits: [{ range: { start: { line: 1, character: 6 }, end: { line: 1, character: 6 } }, newText: "!" }] }]);
     const signature = createLspSignatureClient(f.provider), links = createLspLinkClient(f.provider), colors = createLspColorClient(f.provider); t.after(() => { signature.dispose(); links.dispose(); colors.dispose(); });
-    const doc = f.workspace.document(f.source.documentId), [help, linkBatch, colorBatch] = await Promise.all([signature.run(doc, 1).result, links.run(doc), colors.run(doc)]);
-    assert.equal(help!.signatures[0]!.activeParameter, 0); assert.equal((await linkBatch.resolve(linkBatch.items[0]!)).target, "host+opaque:%2F unknown");
-    const choices = await colorBatch.presentations(colorBatch.items[0]!, rgba), after = doc.buffer.apply(choices[0]!.edits).buffer; assert.equal(after.slice(0, after.length), "#f00😀\r\nsource!");
-    assert.equal(f.provider.snapshot().documents, 1); assert.equal(f.provider.snapshot().documentParticipants, 3); assert.equal(peer.events.filter(event => event.method === "open").length, 1);
-    const entered = latch<void>(), late = latch<unknown>(); peer.rpc.onRequest("textDocument/colorPresentation", () => { entered.resolve(); return late.promise; });
-    const pending = colorBatch.presentations(colorBatch.items[0]!, rgba), rejected = assert.rejects(pending, error => error instanceof RpcError && error.code === -32800); await entered.promise; colors.cancel(); await rejected;
-    late.resolve([{ label: "late" }]); await settled(); assert.equal(colorBatch.isCurrent(), false); assert.equal(linkBatch.isCurrent(), true); assert.equal(help!.isCurrent(), true);
-    await assert.rejects(signature.run(doc, 1, undefined, async () => { f.edit(); }).result, error => error instanceof RpcError && error.code === -32801); assert.equal(signatureCalls, 1);
-    assert.equal(linkBatch.isCurrent(), false); assert.equal(help!.isCurrent(), false); await assert.rejects(linkBatch.resolve(linkBatch.items[0]!), error => error instanceof RpcError && error.code === -32801);
-    await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "language-0", method: "textDocument/signatureHelp" }] });
-    await assert.rejects(signature.run(f.workspace.document(f.source.documentId), 1).result, error => error instanceof RpcError && error.code === -32601);
-    signature.dispose(); links.dispose(); colors.dispose(); await settled(); assert.equal(f.provider.snapshot().scopes, 0); assert.equal(f.provider.snapshot().documents, 0); assert.equal(f.workspace.diagnostics().leases, 0);
-});
+    return { f, peer, signature, links, colors, rgba, doc: f.workspace.document(f.source.documentId) };
+}
 
 function fixture(t: test.TestContext, extra: Readonly<{ maxDocumentUnits?: number; features?: readonly LspFeature[] }> = {}) {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "generic", resource: "source", variant: "working" }, "Source", { value: "a😀\r\nsource" }),

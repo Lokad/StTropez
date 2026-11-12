@@ -102,10 +102,9 @@ advances, with captured revision/tab guards. Its development controls exercise t
 independently. The renderer still needs exact global font advances and shaping before it can
 consume the index as qualified long-line geometry.
 
-The [native shaping experiment](shaping.md) supplies whole-context range observations and
-separate layout/query/edit measurements. Its counterexamples reject independent fragment
-shaping and canvas-prefix origins as general solutions. Its full-source DOM is proportional,
-so it remains outside the bounded viewport and production package.
+Browser-native shaping remains responsible for text layout. Independent fragment measurements
+and canvas-prefix origins do not establish general whole-line geometry. No custom font/shaping
+pipeline is shipped; [native font registration](fonts.md) only manages host-supplied faces.
 
 The component owns a region beneath the supplied host, subscribes only to its document/view,
 metadata and tabs, and schedules bounded animation frames. A supplied `DocumentView` remains

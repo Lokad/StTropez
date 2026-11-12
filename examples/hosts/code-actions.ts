@@ -4,6 +4,7 @@ import { createNavigationClient, navigationMetrics } from "../editing/navigation
 import { validateActionInput } from "../probes/actions.ts";
 import type { ActionInput, ActionResult } from "../probes/actions.ts";
 import { HostCell } from "../shared/observable.ts";
+import { RpcError } from "../../src/protocol/index.ts";
 import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
 import type { LspActionBatch, LspActionClient, LspActionFactory } from "../editing/lsp-action-client.ts";
 import type { HostProjectTools, ProjectActionHandle } from "./project.ts";
@@ -59,11 +60,25 @@ export class HostActionsTools {
     }
     private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
     private editable(id: DocumentId): boolean { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return m.capabilities.edit.includes("human") && m.capabilities.edit.includes("host") && m.editLock === null; }
-    private current(job: Job): boolean {
-        if (this.job !== job || job.invalid || !this.available(job.origin) || job.input.module !== this.cell.get().module || job.batch && !job.batch.isCurrent()
+    private currentCapture(job: Job): boolean {
+        if (this.job !== job || job.invalid || !this.available(job.origin) || job.input.module !== this.cell.get().module
             || job.origin.editor.view.getSnapshot().selectionSet !== job.selections || job.origin.editor.view.folding.getSnapshot().generation !== job.folds) return false;
         try { for (const source of job.sources.values()) if (!this.canCapture(source.document.id) || this.workspace.observeDocument(source.document.id).getSnapshot()?.revision !== source.document.revision || this.authority(source.document.id) !== source.authority) return false; } catch { return false; }
         return true;
+    }
+    private current(job: Job): boolean { return this.currentCapture(job) && (!job.batch || job.batch.isCurrent()); }
+    private expire(job: Job): void {
+        if (this.job !== job || job.invalid) return;
+        job.invalid = true;
+        queueMicrotask(() => {
+            if (this.job !== job) return;
+            this.release();
+            this.metrics.expired++;
+            this.publish({ status: "expired", message: this.usesLsp && this.disconnected
+                ? "Action provider disconnected; reconnect and preview fresh actions."
+                : "Captured resource, selection, view, module or authority changed; preview a fresh action.",
+                edits: [], title: "", choices: [], page: 0, editCount: 0 });
+        });
     }
     private disabled(action: LspCodeAction): string | null { return action.disabled ?? (action.command ? !this.reviewOwner || !this.job?.batch?.supports(action.command.command) ? "This command is not advertised by the captured provider." : null : !action.resolve && !action.edit?.documents.some(change => change.edits.length) ? "The provider returned no text changes." : null); }
     private publish(patch: Partial<ActionsSnapshot> = {}): void {
@@ -117,14 +132,20 @@ export class HostActionsTools {
         this.fault = undefined; const win = origin.editor.element.ownerDocument.defaultView!, job: Job = { origin, input, document: doc, selections: selected.selectionSet, folds: origin.editor.view.folding.getSnapshot().generation,
             sources: new Map(documents.map(doc => [doc.id, { document: doc, authority: this.authority(doc.id) }])), leases: [], stops: [], timer: 0, invalid: false, ready: false, result: undefined, choice: null, resolving: false, page: 0 };
         this.job = job; this.metrics.requested++;
-        const changed = () => { if (!this.publishing && this.job === job && !this.current(job)) { job.invalid = true; queueMicrotask(() => { if (this.job === job) { this.release(); this.metrics.expired++; this.publish({ status: "expired", message: this.usesLsp && this.disconnected ? "Action provider disconnected; reconnect and preview fresh actions." : "Captured resource, selection, view, module or authority changed; preview a fresh action.", edits: [], title: "", choices: [], page: 0, editCount: 0 }); } }); } };
+        const changed = () => {
+            if (this.publishing || this.job !== job) return;
+            // Resolution owns its terminal error. Client cleanup can expire the provider batch
+            // before that rejection reaches us; local capture changes still expire immediately.
+            if (this.currentCapture(job) && (job.resolving || this.current(job))) return;
+            this.expire(job);
+        };
         try {
             for (const doc of documents) { job.leases.push(this.workspace.acquire(doc.resourceId)); job.stops.push(this.workspace.observeDocument(doc.id).subscribe(changed), this.workspace.resourceForDocument(doc.id).metadata.subscribe(changed)); }
             job.stops.push(origin.editor.view.subscribe(changed), origin.editor.view.folding.subscribe(changed), this.workspace.tabState.subscribe(changed));
             job.timer = win.setTimeout(() => { if (this.job === job && !job.ready) { this.release(); this.metrics.failed++; this.publish({ status: "failed", message: "Action provider timed out; source is unchanged.", edits: [], choices: [] }); } }, 30000);
             this.publish({ status: "pending", message: this.usesLsp ? "Requesting captured provider actions." : `Preparing an import action for ${origin.id}.`, edits: [], title: "", disabled: null, work: 0, total: doc.buffer.length });
             if (this.backendFactory) {
-                this.backend ??= this.backendFactory(win); job.stops.push(this.backend.subscribe(() => {
+                this.backend ??= this.backendFactory(); job.stops.push(this.backend.subscribe(() => {
                     if (job.ready && this.backend && !this.backend.snapshot().connected) this.disconnected = true;
                     changed(); this.publish();
                 }));
@@ -154,8 +175,21 @@ export class HostActionsTools {
         job.resolving = true; this.publish({ status: "pending", title: action.title, edits: [], editCount: 0, page: 0, disabled: null, message: "Resolving the captured action's edit preview." });
         job.timer = win.setTimeout(() => { if (this.job === job && job.resolving) { this.release(); this.metrics.failed++; this.publish({ status: "failed", message: "Action resolution timed out; source is unchanged.", edits: [], choices: [], editCount: 0 }); } }, 30000);
         void job.batch!.resolve(action, configuration).then(resolved => {
-            if (!this.current(job) || job.choice !== index) return; job.selected = resolved; job.resolving = false; win.clearTimeout(job.timer); this.showChoice(job);
-        }).catch(error => { if (this.job !== job) return; this.release(); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Action resolution failed; source is unchanged.", edits: [], choices: [], title: "", editCount: 0 }); });
+            if (this.job !== job || job.choice !== index) return;
+            if (!this.current(job)) { this.expire(job); return; }
+            job.selected = resolved;
+            job.resolving = false;
+            win.clearTimeout(job.timer);
+            this.showChoice(job);
+        }).catch(error => {
+            if (this.job !== job) return;
+            if (!this.currentCapture(job) || error instanceof RpcError && (error.code === -32800 || error.code === -32801)) {
+                this.expire(job); return;
+            }
+            this.release(); this.drop(); this.metrics.failed++;
+            this.publish({ status: "failed", message: error instanceof Error ? error.message : "Action resolution failed; source is unchanged.",
+                edits: [], choices: [], title: "", editCount: 0 });
+        });
     }
     private showChoice(job: Job): void {
         const action = job.selected; if (!action || !this.current(job)) return;
