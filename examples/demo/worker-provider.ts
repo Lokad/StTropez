@@ -2,7 +2,7 @@ import type { LspConnectContext, RpcTransport } from "../../src/protocol/index.t
 import type { DemoProvider } from "./provider.ts";
 
 /** Browser-only example host; no compiler or worker policy is added to the editor library. */
-export async function openDemoProvider(_sample: string, signal: AbortSignal, names: readonly string[]): Promise<DemoProvider> {
+export async function openDemoProvider(_sample: string, signal: AbortSignal, names: readonly string[], backing: Readonly<Record<string, string>> = {}): Promise<DemoProvider> {
     if (signal.aborted) throw new Error("Language startup was cancelled.");
     const transports = new Set<() => void>(); let closed = false;
     return Object.freeze({ endpoint: "worker:typescript", rootUri: "file:///sttropez/",
@@ -36,7 +36,7 @@ export async function openDemoProvider(_sample: string, signal: AbortSignal, nam
                     }));
                 }
             });
-            worker.postMessage({ start: true, names });
+            worker.postMessage({ start: true, names, backing });
         }),
         close: async () => { closed = true; for (const dispose of [...transports]) dispose(); },
     });

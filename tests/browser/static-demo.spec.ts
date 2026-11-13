@@ -1,4 +1,9 @@
 import { expect, test } from "@playwright/test";
+import { runDemoUnopenedNavigation } from "./demo-walkthrough.ts";
+
+test("unopened targets load for navigation and atomic rename with read-only declarations and return", async ({ page, baseURL }) => {
+    await runDemoUnopenedNavigation(page, baseURL!);
+});
 import { runDemoCompletionCatalogue, runDemoConflict, runDemoSnippets, runDemoWalkthrough, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoHighlights, runDemoDocumentation } from "./demo-walkthrough.ts";
 
 test("documentation renders provider formatting and opens permitted help through the host", async ({ page, baseURL }) => { await runDemoDocumentation(page, baseURL!); });

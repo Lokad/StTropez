@@ -32,6 +32,30 @@ before publishing any result. All locations within the configured transport limi
 the decoder imposes no additional result-count quota. The demo and evaluation hosts page results
 in groups of 64, retaining access to later locations by keyboard and controls.
 
+The public navigation, rename and action clients accept asynchronous host loading through
+`LspWorkspace`'s optional `resolveTarget(uri, context)`. Wire structure is validated before
+loading missing targets. The context identifies navigation or editing, the captured source
+(null for server-proposed edits), source/provider currentness and cancellation notification.
+Return a retained `LspEditTarget` and an idempotent `release`; return undefined for unavailable
+URIs. Use an exact immutable buffer, resource/document identity, revision, UTF-16 `LspLineIndex`
+and an independent currentness guard. A closed target has `version: null`; a local revision must
+never stand in for an unknown wire version. The host owns URI policy, contents and access rights.
+Loading does not require an editor view or `didOpen`, authorize an edit, or open an external URL.
+
+Cancellation, supersession, disposal and provider changes settle pending loading and release
+retention, including a host result arriving after cancellation. Successful targets remain
+retained until the client is canceled, reused or disposed; server-edit targets live through the
+host's decision. Resolved target guards expire with that lifetime. Hosts should check the context
+before publishing loaded resources and connect `onCancel` to their own loading operation. The
+complete batch is checked again after loading, including target ranges, versions and identities.
+
+The main demo's **Unopened files & navigation** sample initially creates only `main.ts` as an
+editor resource. F12 loads editable `labels.ts` or read-only `contracts.d.ts`; Alt+Left and
+Code → Back to previous location restore the source selection and view. Renaming the exported
+`LabelOptions` type loads the unopened module for one atomic multi-file edit. Saved and recovery
+inventories include unopened editable contents and exclude declarations. Standard-library and
+outside-sample URIs remain unavailable under this demo's host policy.
+
 The host navigation backend binds the captured working project, synchronizes it and then sends
 the actual source position. A local word heuristic may label the request, but does not suppress
 LSP queries at other valid positions. Definition link support is negotiated; references send the

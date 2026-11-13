@@ -8,8 +8,9 @@ export type DemoProvider = DemoProviderBootstrap & Readonly<{
 }>;
 
 /** Local development host. The static build substitutes its example-owned worker provider. */
-export async function openDemoProvider(sample: string, signal: AbortSignal, names: readonly string[]): Promise<DemoProvider> {
-    const response = await fetch(new URL(`demo-provider?sample=${encodeURIComponent(sample)}`, document.baseURI), { method: "POST", signal });
+export async function openDemoProvider(sample: string, signal: AbortSignal, names: readonly string[], backing: Readonly<Record<string, string>> = {}): Promise<DemoProvider> {
+    const response = await fetch(new URL(`demo-provider?sample=${encodeURIComponent(sample)}`, document.baseURI), { method: "POST", signal,
+        ...(Object.keys(backing).length ? { body: JSON.stringify(backing), headers: { "Content-Type": "application/json" } } : {}) });
     if (!response.ok) throw new Error("The TypeScript service could not start.");
     const config = await response.json() as DemoProviderBootstrap;
     if (typeof config?.endpoint !== "string" || !/^\/demo-provider\/[a-f0-9-]+$/.test(config.endpoint) || typeof config.rootUri !== "string"

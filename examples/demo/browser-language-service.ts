@@ -22,6 +22,7 @@ const display = (parts: readonly ts.SymbolDisplayPart[] | undefined, maximum = 4
  */
 export class BrowserLanguageService {
     private readonly files = new Map<string, OpenFile>();
+    private readonly backing = new Map<string, OpenFile>();
     private readonly allowed = new Map<string, string>();
     private readonly libraries = new Map<string, ts.IScriptSnapshot>();
     private readonly snapshots = new Map<string, Readonly<{ version: number; snapshot: ts.IScriptSnapshot }>>();
@@ -32,9 +33,14 @@ export class BrowserLanguageService {
     private serial = 0;
     private disposed = false;
 
-    constructor(libraries: Readonly<Record<string, string>>, names: readonly string[]) {
-        if (!names.length || names.length > 16 || new Set(names).size !== names.length || names.some(name => !/^[\w-]+\.ts$/.test(name))) throw new Error("Invalid demo file names.");
+    constructor(libraries: Readonly<Record<string, string>>, names: readonly string[], backing: Readonly<Record<string, string>> = {}) {
+        if (!names.length || names.length > 16 || new Set(names).size !== names.length || names.some(name => !/^[\w-]+(?:\.d)?\.ts$/.test(name))) throw new Error("Invalid demo file names.");
         for (const name of names) this.allowed.set(`file:///sttropez/${name}`, `/sttropez/${name}`);
+        for (const [name, text] of Object.entries(backing)) {
+            const uri = `file:///sttropez/${name}`, path = this.allowed.get(uri);
+            if (!path || typeof text !== "string" || text.length > 8_000_000) throw new Error("Invalid unopened demo file.");
+            this.backing.set(uri, { path, document: TextDocument.create(uri, "typescript", 0, text) });
+        }
         for (const [name, text] of Object.entries(libraries)) {
             if (!/^lib[\w.-]*\.d\.ts$/.test(name) || typeof text !== "string") throw new Error("Invalid compiler library asset.");
             this.libraries.set(`/lib/${name}`, ts.ScriptSnapshot.fromString(text));
@@ -43,7 +49,7 @@ export class BrowserLanguageService {
             moduleResolution: ts.ModuleResolutionKind.Bundler, allowNonTsExtensions: false, types: [] };
         const host: ts.LanguageServiceHost = {
             getCompilationSettings: () => options, getCurrentDirectory: () => "/sttropez", getNewLine: () => "\n", useCaseSensitiveFileNames: () => true,
-            getProjectVersion: () => String(this.version), getScriptFileNames: () => [...this.files.values()].map(file => file.path),
+            getProjectVersion: () => String(this.version), getScriptFileNames: () => [...new Set([...this.backing.values(), ...this.files.values()].map(file => file.path))],
             getScriptVersion: path => String(this.fileAt(path)?.document.version ?? 0),
             getDefaultLibFileName: () => `/lib/${ts.getDefaultLibFileName(options)}`,
             fileExists: path => this.libraries.has(path) || !!this.fileAt(path),
@@ -59,7 +65,7 @@ export class BrowserLanguageService {
         };
         this.service = ts.createLanguageService(host);
     }
-    private fileAt(path: string): OpenFile | undefined { return [...this.files.values()].find(file => file.path === path); }
+    private fileAt(path: string): OpenFile | undefined { return [...this.files.values(), ...this.backing.values()].find(file => file.path === path); }
     private file(uri: unknown): OpenFile {
         const file = this.files.get(string(uri)); if (!file) throw new RpcError(-32602, "Only open demo files are available."); return file;
     }
@@ -71,10 +77,10 @@ export class BrowserLanguageService {
     }
     private span(file: OpenFile, span: ts.TextSpan) { return { start: file.document.positionAt(span.start), end: file.document.positionAt(span.start + span.length) }; }
     private edits(changes: readonly ts.FileTextChanges[]) {
-        if (changes.some(change => change.isNewFile || !this.fileAt(change.fileName))) throw new RpcError(-32602, "Edits outside open demo files are unsupported.");
+        if (changes.some(change => change.isNewFile || !this.fileAt(change.fileName))) throw new RpcError(-32602, "Edits outside known demo files are unsupported.");
         return { documentChanges: changes.map(change => {
             const file = this.fileAt(change.fileName)!;
-            return { textDocument: { uri: file.document.uri, version: file.document.version },
+            return { textDocument: { uri: file.document.uri, version: this.files.has(file.document.uri) ? file.document.version : null },
                 edits: change.textChanges.map(edit => ({ range: this.span(file, edit.span), newText: edit.newText })) };
         }) };
     }
@@ -109,6 +115,10 @@ export class BrowserLanguageService {
             definitionProvider: true, referencesProvider: true, renameProvider: { prepareProvider: true }, codeActionProvider: { codeActionKinds: ["quickfix"] }, foldingRangeProvider: true, documentHighlightProvider: true,
         } };
         if (method === "shutdown") return null;
+        if (method === "sttropez/readDocument") {
+            const uri = string(object(params).uri), file = this.files.get(uri) ?? this.backing.get(uri);
+            if (!file) throw new RpcError(-32602, "Unknown demo file."); return { uri, text: file.document.getText() };
+        }
         if (method === "sttropez/diagnostics") {
             const p = object(params), file = this.file(p.uri);
             if (p.kind !== "syntactic" && p.kind !== "semantic") throw new RpcError(-32602, "Unknown diagnostic kind.");
@@ -205,5 +215,5 @@ export class BrowserLanguageService {
         }
         throw new RpcError(-32601, "Unsupported browser demo request.");
     }
-    dispose(): void { if (this.disposed) return; this.disposed = true; this.service.dispose(); this.files.clear(); this.libraries.clear(); this.snapshots.clear(); this.completions.clear(); this.previousCompletions.clear(); }
+    dispose(): void { if (this.disposed) return; this.disposed = true; this.service.dispose(); this.files.clear(); this.backing.clear(); this.libraries.clear(); this.snapshots.clear(); this.completions.clear(); this.previousCompletions.clear(); }
 }

@@ -59,12 +59,19 @@ The existing deterministic protocol fixture keeps its separate `/lsp-fixture` ro
 - F12 or Code → Go to definition opens the validated sample file and selects its symbol.
   Shift+F12 or Find references offers captured locations; arrows/Enter or a click choose one,
   and Escape closes the list. Definitions outside the sample, including standard library files,
-  are unavailable. Late results cannot follow later file focus or typing.
+  are unavailable. Late results cannot follow later file focus or typing. Alt+Left or Code → Back
+  to previous location returns to the source selection and view; edited sources keep their mapped
+  selections. The **Unopened files & navigation** sample starts with only `main.ts` registered.
+  Its host resolves `labels.ts` and read-only `contracts.d.ts` asynchronously using the public
+  `resolveTarget` callback. The demo-owned `sttropez/readDocument` message reads only known sample
+  contents; it is not a standard LSP file-loading method. Save and recovery preserve unopened
+  editable contents without saving read-only declarations.
 - F2 or Code → Rename symbol captures the source, then offers a new-name preview. Changing the
   name requires a fresh preview. Apply commits all validated file edits as one undo command;
   edits, changed selection/authority, file switches and provider restart expire old previews.
   Renaming at the function definition updates the importing file too. At an imported alias,
   TypeScript may instead introduce a local alias; the preview shows the actual provider edits.
+  Rename the exported `LabelOptions` type to exercise edits to an unopened module.
 - Ctrl+. or Code → Quick fix requests fixes for the current error/range. Review the named fix
   and its before/after text, then Apply fix or Enter; Escape cancels. The real spelling fix for
   a mistyped known name is qualified. The existing action controller validates every captured

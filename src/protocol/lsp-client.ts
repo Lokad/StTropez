@@ -3,9 +3,11 @@ import { RpcError } from "./json-rpc.ts";
 import type { JsonValue } from "./json-rpc.ts";
 import type { LspDocument, LspDocumentCapture, LspDocumentFeature, LspDocumentSnapshot } from "./lsp-session.ts";
 import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
+import { createLspTargets } from "./lsp-targets.ts";
+import type { LspTargetContext } from "./lsp-targets.ts";
 
 type Request = { generation: number; pending: number; cancelled: boolean; reject: (error: Error) => void;
-    cancellation: Promise<never>; snapshots: readonly DocumentSnapshot[]; identities: ReadonlyMap<string, LspDocumentSnapshot> };
+    cancellation: Promise<never>; cleanups: Set<() => void>; snapshots: readonly DocumentSnapshot[]; identities: ReadonlyMap<string, LspDocumentSnapshot> };
 const cancelled = () => new RpcError(-32800, "LSP feature request cancelled.");
 const stale = () => new RpcError(-32801, "Captured LSP documents changed.");
 const matches = (snapshot: DocumentSnapshot, value: LspDocumentSnapshot) => value.documentId === snapshot.id
@@ -33,6 +35,7 @@ export function createLspClient(provider: LspWorkspace) {
         if (previous) {
             previous.cancelled = true;
             previous.reject(cancelled());
+            for (const cleanup of [...previous.cleanups]) cleanup(); previous.cleanups.clear();
         }
         scope.disconnect();
         if (releaseDocuments) release();
@@ -64,7 +67,7 @@ export function createLspClient(provider: LspWorkspace) {
         invalidate(false);
         let reject!: (error: Error) => void;
         const cancellation = new Promise<never>((_resolve, no) => { reject = no; });
-        const op: Request = { generation, snapshots: Object.freeze([...snapshots]), identities: new Map(), pending: 1, cancelled: false, cancellation, reject };
+        const op: Request = { generation, snapshots: Object.freeze([...snapshots]), identities: new Map(), pending: 1, cancelled: false, cancellation, reject, cleanups: new Set() };
         latest = op;
         const work = (async () => {
             documents = scope.setDocuments(op.snapshots);
@@ -88,11 +91,21 @@ export function createLspClient(provider: LspWorkspace) {
             validate(op);
             const isGenerationCurrent = () => current(op) && scope.state.getSnapshot().phase === "ready"
                 && scope.state.getSnapshot().epoch === capture!.epoch && scope.state.getSnapshot().registrationGeneration === capture!.registrationGeneration;
-            const isCurrent = () => isGenerationCurrent() && !!captures && [...captures.values()].every(value => value.isCurrent());
+            const capturesCurrent = () => isGenerationCurrent() && !!captures && [...captures.values()].every(value => value.isCurrent());
+            const targets = createLspTargets(captures!, scope.resolveTarget, { source: capture!.document, isCurrent: capturesCurrent,
+                onCancel: listener => { op.cleanups.add(listener); return () => { op.cleanups.delete(listener); }; } });
+            const isCurrent = targets.isCurrent;
             if (!isCurrent()) throw stale();
-            return Object.freeze({ response, capture: capture!, captures: captures!, target, isCurrent, isGenerationCurrent,
+            return Object.freeze({ response, capture: capture!, captures: captures!, target, isCurrent, isGenerationCurrent, targetForUri: targets.get,
+                resolveTargets: (uris: readonly string[], purpose: LspTargetContext["purpose"]) => wait(op, async () => {
+                    const stop = scope.state.subscribe(() => { if (!isCurrent()) void Promise.resolve().then(() => {
+                        if (current(op) && !isCurrent()) { invalidate(true); notify(); }
+                    }); });
+                    try { await targets.resolve(uris, purpose); validate(op); if (!isCurrent()) throw stale(); }
+                    finally { stop(); }
+                }),
                 decode: <T>(read: () => T): T => {
-                    try { validate(op); return read(); }
+                    try { validate(op); if (!isCurrent()) throw stale(); return read(); }
                     catch (error) {
                         if (current(op)) { invalidate(true); notify(); }
                         throw error;

@@ -6,6 +6,25 @@ import { BrowserLanguageService } from "../examples/demo/browser-language-servic
 import { demoSample } from "../examples/demo/samples.ts";
 import type { CompletionList, CompletionItem } from "vscode-languageserver-protocol/browser.js";
 
+test("browser provider resolves closed sample modules and declarations without pretending they are synchronized", () => {
+    const sample = demoSample("navigation"), backing = { ...sample.files, ...sample.declarations };
+    const provider = new BrowserLanguageService({}, Object.keys(backing), backing), uri = "file:///sttropez/main.ts", text = backing["main.ts"]!;
+    const doc = TextDocument.create(uri, "typescript", 1, text);
+    try {
+        provider.notify("textDocument/didOpen", { textDocument: { uri, languageId: "typescript", version: 1, text } });
+        const at = (word: string) => ({ textDocument: { uri }, position: doc.positionAt(text.lastIndexOf(word) + 2) });
+        for (const [symbol, name] of [["formatLabel", "labels.ts"], ["RecordId", "contracts.d.ts"]]) {
+            const locations = provider.request("textDocument/definition", at(symbol!)) as { uri: string }[];
+            assert.equal(locations[0]!.uri, `file:///sttropez/${name}`);
+            assert.deepEqual(provider.request("sttropez/readDocument", { uri: locations[0]!.uri }), { uri: locations[0]!.uri, text: backing[name!] });
+        }
+        const renamed = provider.request("textDocument/rename", { ...at("LabelOptions"), newName: "DisplayOptions" }) as { documentChanges: { textDocument: { uri: string; version: number | null }; edits: unknown[] }[] };
+        assert.equal(renamed.documentChanges.find(item => item.textDocument.uri.endsWith("/labels.ts"))!.textDocument.version, null);
+        assert.equal(renamed.documentChanges.find(item => item.textDocument.uri === uri)!.textDocument.version, 1);
+        assert.throws(() => provider.request("sttropez/readDocument", { uri: "file:///outside.ts" }));
+    } finally { provider.dispose(); }
+});
+
 test("browser TypeScript occurrences distinguish writes and reads in raw UTF-16 source", () => {
     const provider = new BrowserLanguageService({}, ["main.ts"]), uri = "file:///sttropez/main.ts";
     const text = "// 😀\r\nlet value = 1;\r\nvalue = value + 1;\r\n", document = TextDocument.create(uri, "typescript", 1, text);

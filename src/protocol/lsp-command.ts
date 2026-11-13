@@ -1,7 +1,8 @@
 import type { DocumentSnapshot } from "../core/workspace.ts";
 import { jsonSnapshot, RpcError } from "./json-rpc.ts";
 import type { JsonValue } from "./json-rpc.ts";
-import { decodeLspApplyEdit } from "./lsp-features.ts";
+import { decodeLspApplyEdit, lspApplyEditUris } from "./lsp-features.ts";
+import { createLspTargets } from "./lsp-targets.ts";
 import type { LspApplyEdit, LspApplyEditResult } from "./lsp-features.ts";
 import type { LspCommandCall, LspRequestContext } from "./lsp-session.ts";
 import type { LspWorkspaceScope } from "./lsp-workspace.ts";
@@ -23,17 +24,22 @@ export function createLspCommandRunner(session: LspWorkspaceScope, notify: () =>
         received++; const op = active, no = (reason: string) => { refused++; return Object.freeze({ applied: false, failureReason: reason.slice(0, 1024) }); };
         if (!op || !op.allowEdits || incoming || !current(op) || !op.scope.isCurrent()) return no("No available captured edit-review intent.");
         incoming = true;
+        let targets: ReturnType<typeof createLspTargets> | undefined;
         try {
-            const captures = session.captureProject(), request = decodeLspApplyEdit(value, target => captures.get(target));
+            const captures = session.captureProject();
             const isCurrent = () => context.isCurrent() && current(op) && op.scope.isCurrent();
             const capturedContext: LspRequestContext = Object.freeze({ id: context.id, epoch: context.epoch, get cancelled() { return context.cancelled || !current(op); }, isCurrent,
                 onCancel: listener => { let done = false; const invalid = () => { if (!done && !isCurrent()) { done = true; void Promise.resolve().then(listener); } };
                     const stopCancel = context.onCancel(invalid); invalidations.add(invalid); invalid(); return () => { done = true; stopCancel(); invalidations.delete(invalid); }; } });
+            targets = createLspTargets(captures, session.resolveTarget, { source: null,
+                isCurrent: () => capturedContext.isCurrent() && [...captures.values()].every(capture => capture.isCurrent()), onCancel: capturedContext.onCancel });
+            await targets.resolve(lspApplyEditUris(value), "edit");
+            const request = decodeLspApplyEdit(value, targets.get);
             op.decision = await op.scope.review(request, capturedContext);
             if (op.decision.applied && current(op)) { try { await sync(op.scope); } catch { /* A committed edit is never retried or reported as unapplied. */ } }
             return op.decision;
         } catch (error) { op.decision = no(error instanceof Error ? error.message : "Invalid workspace edit request."); return op.decision; }
-        finally { incoming = false; changed(); }
+        finally { targets?.dispose(); incoming = false; changed(); }
     });
     return Object.freeze({ sync, isCurrent: () => !disposed && (!active || current(active)),
         run: async (command: string, args: readonly JsonValue[], scope: LspCommandScope, allowEdits = true): Promise<LspCommandReceipt> => {

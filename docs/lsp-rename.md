@@ -25,6 +25,13 @@ document limits and transport message/JSON limits remain host-configurable. Dire
 callers own input-size policy. File creation/rename/deletion and change annotations are explicitly unsupported.
 No server URI is fetched, launched or retargeted to another resource.
 
+Public rename, code-action and server-edit clients share the optional asynchronous
+[`resolveTarget` host contract](lsp-navigation.md). Missing targets are retained through complete
+validation and host application. Closed null-version targets need no prior synchronization;
+explicit numeric versions still require matching captured wire versions. The demo's exported
+`LabelOptions` rename exercises an initially unregistered module, preview, atomic undo/redo and
+save/reload. Read-only targets cannot acquire editing permission by being resolved.
+
 The host uses a feature scope on the shared provider connection and keeps its captured source revision, complete selection
 set, fold generation, tab/view identity and every working resource's revision/edit authority.
 Pending input/composition/table conversion prevents capture. Editing, changed selections/folds,

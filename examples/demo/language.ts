@@ -1,6 +1,6 @@
 import type { DocumentId, Observable, Workspace } from "../../src/index.ts";
-import { LspWorkspace } from "../../src/protocol/index.ts";
-import type { LspWorkspaceScope, RpcCall, LspSessionAccess } from "../../src/protocol/index.ts";
+import { LspWorkspace, LspLineIndex } from "../../src/protocol/index.ts";
+import type { LspWorkspaceScope, RpcCall, LspSessionAccess, LspTargetResolver } from "../../src/protocol/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { DemoFile } from "./project.ts";
 import { openDemoProvider } from "./provider.ts";
@@ -9,11 +9,14 @@ import type { DemoProvider } from "./provider.ts";
 export type DemoDiagnostic = Readonly<{ documentId: DocumentId; name: string; revision: number; from: number; to: number; message: string; code: number }>;
 type State = Readonly<{ status: "suspended" | "starting" | "ready" | "failed"; checking: boolean; message: string; diagnostics: readonly DemoDiagnostic[] }>;
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+type Inventory = Readonly<{ names: readonly string[]; backing: () => Readonly<Record<string, string>>; load: (name: string, text: string) => DemoFile }>;
 
 /** Provider/diagnostic ownership for one demo project; editor views have shorter independent lifetimes. */
 export class DemoLanguage {
     private readonly workspace: Workspace;
-    private readonly files: readonly DemoFile[];
+    private readonly getFiles: () => readonly DemoFile[];
+    private get files(): readonly DemoFile[] { return this.getFiles(); }
+    private readonly inventory: Inventory | undefined;
     private readonly sample: string;
     private readonly cell = new HostCell<State>({ status: "suspended", checking: false, message: "Language service is idle.", diagnostics: [] });
     readonly state: Observable<State> = this.cell.observable;
@@ -32,14 +35,19 @@ export class DemoLanguage {
     private active = false;
     private disposed = false;
     private disposal: Promise<void> | undefined;
-    constructor(workspace: Workspace, files: readonly DemoFile[], sample: string) {
-        this.workspace = workspace; this.files = files; this.sample = sample;
-        this.buffers = files.map(file => workspace.document(file.resource.documentId).buffer);
+    constructor(workspace: Workspace, files: readonly DemoFile[] | (() => readonly DemoFile[]), sample: string, inventory?: Inventory) {
+        this.workspace = workspace; this.getFiles = typeof files === "function" ? files : () => files; this.sample = sample; this.inventory = inventory;
+        this.buffers = this.files.map(file => workspace.document(file.resource.documentId).buffer);
         this.stopWorkspace = workspace.subscribe(() => {
-            const next = files.map(file => workspace.document(file.resource.documentId).buffer);
-            if (next.every((buffer, i) => buffer === this.buffers[i])) return;
+            const next = this.files.map(file => workspace.document(file.resource.documentId).buffer);
+            if (next.length === this.buffers.length && next.every((buffer, i) => buffer === this.buffers[i])) return;
             this.buffers = next; this.invalidate(); if (this.active) this.schedule();
         });
+    }
+    filesChanged(): void {
+        this.buffers = this.files.map(file => this.workspace.document(file.resource.documentId).buffer);
+        this.scope?.setDocuments(this.files.map(file => this.workspace.document(file.resource.documentId)));
+        this.invalidate(); if (this.active) this.schedule();
     }
     private publish(patch: Partial<State>): void { if (!this.disposed) this.cell.set({ ...this.cell.get(), ...patch }); }
     private invalidate(): void {
@@ -66,17 +74,43 @@ export class DemoLanguage {
         const work = (async () => {
             let config: DemoProvider | undefined, owner: LspWorkspace | undefined;
             try {
-                config = await openDemoProvider(this.sample, abort.signal, this.files.map(file => file.name));
+                config = await openDemoProvider(this.sample, abort.signal, this.inventory?.names ?? this.files.map(file => file.name), this.inventory?.backing());
                 if (!this.valid(lifecycle)) throw new Error("Language startup was cancelled.");
                 const capturedProvider = config;
-                const mappings = new Map(this.files.map(file => [file.resource.documentId, config!.documents[file.name]!]));
+                const resolveTarget: LspTargetResolver = async (uri, context) => {
+                    const targetLifecycle = this.lifecycle;
+                    const name = Object.keys(capturedProvider.documents).find(name => capturedProvider.documents[name]!.uri === uri);
+                    if (!name || !this.inventory || this.config !== capturedProvider || !this.valid(targetLifecycle) || !context.isCurrent()) return undefined;
+                    let file = this.files.find(file => file.name === name);
+                    if (!file) {
+                        const call = this.scope!.request("sttropez/readDocument", { uri }), stop = context.onCancel(() => call.cancel());
+                        let response: unknown; try { response = await call.result; } finally { stop(); }
+                        if (!this.valid(targetLifecycle) || !context.isCurrent()) throw new Error("The target load expired.");
+                        if (!object(response) || response.uri !== uri || typeof response.text !== "string" || response.text.length > 8_000_000) throw new Error("Invalid target contents.");
+                        file = this.inventory.load(name, response.text);
+                    }
+                    const resource = file.resource, document = this.workspace.document(resource.documentId), metadata = resource.metadata.getSnapshot();
+                    const lease = this.workspace.acquire(resource.id), identity = this.workspace.captureResource(resource.id);
+                    const current = () => this.valid(targetLifecycle) && this.config === capturedProvider && this.workspace.resolveResource(identity) === resource
+                        && this.workspace.document(document.id).buffer === document.buffer && this.workspace.document(document.id).revision === document.revision
+                        && resource.metadata.getSnapshot().capabilities === metadata.capabilities && resource.metadata.getSnapshot().editLock === metadata.editLock;
+                    try {
+                        const index = await LspLineIndex.create(document.buffer, async () => { await new Promise(resolve => setTimeout(resolve, 0)); if (!current() || !context.isCurrent()) throw new Error("The target changed."); });
+                        if (!current() || !context.isCurrent()) throw new Error("The target changed.");
+                        const binding = this.scope!.setDocuments(this.files.map(file => this.workspace.document(file.resource.documentId))).get(document.id);
+                        const sent = binding && this.scope!.synchronized(binding);
+                        return { target: { document: { uri, languageId: "typescript", resourceId: resource.id, documentId: document.id, revision: document.revision, buffer: document.buffer },
+                            index, version: sent?.document.buffer === document.buffer ? sent.version : null, isCurrent: current }, release: lease.release };
+                    } catch (error) { lease.release(); throw error; }
+                };
                 owner = new LspWorkspace(this.workspace, {
                     connect: context => capturedProvider.connect(context),
                     rootUri: config.rootUri, clientInfo: { name: "StTropez demo" }, markdownDocumentation: true,
                     schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
                     features: ["textDocument/completion", "textDocument/hover", "textDocument/signatureHelp", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction", "textDocument/foldingRange", "textDocument/documentHighlight"], diagnostics: false,
                     maxDocumentUnits: 8_000_000, maxTotalUnits: 16_000_000, rpc: { maxMessageUnits: 16 * 1024 * 1024 },
-                    documentInfo: document => { const info = mappings.get(document.id); return info && { uri: info.uri, languageId: "typescript" }; },
+                    documentInfo: document => { const file = this.files.find(file => file.resource.documentId === document.id), info = file && capturedProvider.documents[file.name];
+                        return info && { uri: info.uri, languageId: "typescript" }; }, resolveTarget,
                 });
                 abort.signal.addEventListener("abort", () => owner?.dispose(), { once: true });
                 const scope = owner.createScope(); scope.setDocuments(this.files.map(file => this.workspace.document(file.resource.documentId)));

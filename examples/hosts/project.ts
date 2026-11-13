@@ -143,6 +143,18 @@ export class HostProjectTools {
         this.metrics.serverRequests++;
         if (!this.current(job) || !context.isCurrent() || !request.edit.isCurrent() || job.review) { this.metrics.rejected++; return Promise.resolve({ applied: false, failureReason: "Captured edit intent is unavailable or changed." }); }
         if (!request.edit.documents.some(change => change.edits.length)) return Promise.resolve({ applied: true });
+        // A server request can resolve targets beyond the initial command project. Its resolver
+        // retains them through this decision; the command retains them until its final receipt.
+        for (const change of request.edit.documents) {
+            const target = change.target.document; if (job.documents.has(target.documentId)) continue;
+            const document = this.workspace.getSnapshot().documents.find(document => document.id === target.documentId);
+            if (!document || document.resourceId !== target.resourceId || document.revision !== target.revision || document.buffer !== target.buffer
+                || !change.target.isCurrent() || !this.canCapture(document.id)) return Promise.resolve({ applied: false, failureReason: "A resolved edit target changed." });
+            job.leases.push(this.workspace.acquire(document.resourceId)); job.documents.set(document.id, document);
+            job.revisions.set(document.id, document.revision); job.authority.set(document.id, this.authority(document.id));
+            const changed = () => { if (!this.publishing && this.job === job && !this.current(job)) { job.invalid = true; queueMicrotask(() => { if (this.job === job) this.cancel(); }); } };
+            job.stops.push(this.workspace.observeDocument(document.id).subscribe(changed), this.workspace.resourceForDocument(document.id).metadata.subscribe(changed));
+        }
         return new Promise(resolve => {
             const review: Review = { token: ++this.reviewSerial, request, context, finish: resolve, stop: () => {}, timer: 0, page: 0 }; job.review = review;
             review.stop = context.onCancel(() => { if (this.finishReview(job, review, { applied: false, failureReason: "Provider edit request cancelled or invalidated." })) this.publish({ message: "Provider edit request cancelled; no pending decision remains." }); });

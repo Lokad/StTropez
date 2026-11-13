@@ -90,7 +90,18 @@ export class HostActionsTools {
     private drop(): void { const client = this.client, backend = this.backend; this.client = undefined; this.backend = undefined; client?.dispose(); backend?.dispose(); }
     private release(): void {
         const job = this.job; this.job = undefined; if (!job) return; job.invalid = true;
-        job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.stops.splice(0).forEach(stop => stop()); job.leases.splice(0).forEach(lease => lease.release()); if (!job.ready || job.resolving) this.drop();
+        job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.stops.splice(0).forEach(stop => stop()); job.leases.splice(0).forEach(lease => lease.release()); if (!job.ready || job.resolving) this.drop(); else if (!this.execution) this.backend?.cancel();
+    }
+    private retainTargets(job: Job, actions: readonly LspCodeAction[]): void {
+        for (const action of actions) for (const change of action.edit?.documents ?? []) {
+            const target = change.target.document; if (job.sources.has(target.documentId as DocumentId)) continue;
+            const document = this.workspace.getSnapshot().documents.find(document => document.id === target.documentId);
+            if (!document || document.resourceId !== target.resourceId || document.revision !== target.revision || document.buffer !== target.buffer
+                || !change.target.isCurrent() || !this.canCapture(document.id)) throw new Error("A resolved action target changed.");
+            job.sources.set(document.id, { document, authority: this.authority(document.id) });
+            const changed = () => { if (!this.publishing && this.job === job && !this.current(job)) this.expire(job); };
+            job.stops.push(this.workspace.observeDocument(document.id).subscribe(changed), this.workspace.resourceForDocument(document.id).metadata.subscribe(changed));
+        }
     }
     readonly cancel = (): void => { const execution = this.execution, applied = execution?.handle.applied() ?? false; this.execution = undefined; execution?.handle.cancel(); if (this.job || execution) this.metrics.cancelled++; this.release();
         this.publish({ status: "idle", message: applied ? "Action command cancelled after application; the edits remain undoable." : "Action preview dismissed; source is unchanged by this action.", edits: [], title: "", disabled: null, work: 0, total: 0, choices: [], page: 0, editCount: 0 }); };
@@ -155,7 +166,7 @@ export class HostActionsTools {
                     changed(); this.publish();
                 }));
                 void this.backend.run(documents, doc.id, input.from, input.to, input).then(batch => {
-                    job.batch = batch; if (!this.current(job)) { changed(); return; } job.ready = true; win.clearTimeout(job.timer);
+                    job.batch = batch; if (!this.current(job)) { changed(); return; } this.retainTargets(job, batch.actions); job.ready = true; win.clearTimeout(job.timer);
                     const choices = Object.freeze(batch.actions.map((action, index) => Object.freeze({ index, title: action.title, kind: action.kind, preferred: action.preferred, disabled: this.disabled(action), needsResolve: action.resolve !== null })));
                     this.publish({ status: "ready", choices, message: choices.length ? "Choose a captured action and review its edits before applying." : "No provider actions for this captured range.", work: input.length });
                     if (batch.actions[0]?.edit && !this.disabled(batch.actions[0])) this.selectChoice(0);
@@ -182,7 +193,7 @@ export class HostActionsTools {
         void job.batch!.resolve(action, configuration).then(resolved => {
             if (this.job !== job || job.choice !== index) return;
             if (!this.current(job)) { this.expire(job); return; }
-            job.selected = resolved;
+            this.retainTargets(job, [resolved]); job.selected = resolved;
             job.resolving = false;
             win.clearTimeout(job.timer);
             this.showChoice(job);

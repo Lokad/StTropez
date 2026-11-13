@@ -9,7 +9,7 @@ import type { DemoSymbolTarget } from "./symbols.ts";
 import { mountDemoActions } from "./actions.ts";
 
 /** Contextual completion UI around the public editor controller. It never changes text itself. */
-export function mountDemoLanguage(workspace: Workspace, files: readonly DemoFile[], file: DemoFile, editor: EditingCandidate, language: DemoLanguage, open: (target: DemoSymbolTarget) => void) {
+export function mountDemoLanguage(workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: EditingCandidate, language: DemoLanguage, open: (target: DemoSymbolTarget) => void) {
     const target = workspace.captureTab(file.tab), listeners = new AbortController();
     const popup = document.createElement("div"), count = document.createElement("div"), choices = document.createElement("div"), detail = document.createElement("pre");
     popup.className = "demo-completion"; popup.hidden = true; popup.setAttribute("role", "listbox"); popup.setAttribute("aria-label", "Completions");

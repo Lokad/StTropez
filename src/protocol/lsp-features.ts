@@ -108,29 +108,38 @@ export function decodeLspHover(value: unknown, capture: LspDocumentCapture): Lsp
     const range = value.range === undefined ? null : lspRangeOffsets(capture.index, value.range); current(capture);
     return contents ? Object.freeze({ text: contents, content, range }) : null;
 }
-/** Resolve opaque URIs through captured host buffers; never fetch or open a server-supplied URI. */
-export function decodeLspLocations(value: unknown, kind: "definition" | "references", origin: LspDocumentCapture,
-    resolve: (uri: string) => LspLocationTarget | undefined): readonly LspLocation[] {
-    current(origin); const values = value === null ? [] : Array.isArray(value) ? value : kind === "definition" && record(value) ? [value] : invalid();
+function locationEntries(value: unknown, kind: "definition" | "references") {
+    const values = value === null ? [] : Array.isArray(value) ? value : kind === "definition" && record(value) ? [value] : invalid();
     let links: boolean | undefined;
-    const items = values.map((item: unknown): LspLocation => {
+    return values.map((item: unknown) => {
         if (!record(item)) invalid(); const link = "targetUri" in item;
         if (link && (kind !== "definition" || !Array.isArray(value)) || links !== undefined && links !== link) invalid(); links = link;
         const uri = link ? item.targetUri : item.uri;
         if (typeof uri !== "string" || !uri || link && ("uri" in item || "range" in item)) invalid();
+        const targetRange = range(link ? item.targetRange : item.range), selected = link ? range(item.targetSelectionRange) : targetRange;
+        const before = (a: LspPosition, b: LspPosition) => a.line < b.line || a.line === b.line && a.character < b.character;
+        if (before(selected.start, targetRange.start) || before(targetRange.end, selected.end)) invalid();
+        return { uri, targetRange, selected, originRange: link && item.originSelectionRange !== undefined ? range(item.originSelectionRange) : null };
+    });
+}
+/** Validate every wire entry before asking the host to load missing targets. */
+export const lspLocationUris = (value: unknown, kind: "definition" | "references"): readonly string[] => locationEntries(value, kind).map(item => item.uri);
+/** Resolve opaque URIs through captured host buffers; never fetch or open a server-supplied URI. */
+export function decodeLspLocations(value: unknown, kind: "definition" | "references", origin: LspDocumentCapture,
+    resolve: (uri: string) => LspLocationTarget | undefined): readonly LspLocation[] {
+    current(origin);
+    const items = locationEntries(value, kind).map((item): LspLocation => {
+        const { uri } = item;
         const target = resolve(uri); if (!target || target.document.uri !== uri || target.index.buffer !== target.document.buffer) throw new TypeError("LSP location URI is outside the captured host project.");
         current(target);
-        const targetRange = lspRangeOffsets(target.index, link ? item.targetRange : item.range), selected = link ? lspRangeOffsets(target.index, item.targetSelectionRange) : targetRange;
-        if (selected.from < targetRange.from || selected.to > targetRange.to) invalid();
-        const originRange = link && item.originSelectionRange !== undefined ? lspRangeOffsets(origin.index, item.originSelectionRange) : null;
+        const targetRange = lspRangeOffsets(target.index, item.targetRange), selected = lspRangeOffsets(target.index, item.selected);
+        const originRange = item.originRange ? lspRangeOffsets(origin.index, item.originRange) : null;
         return Object.freeze({ target, from: selected.from, to: selected.to, targetRange, originRange });
     });
     current(origin); for (const item of items) current(item.target); return Object.freeze(items);
 }
-/** Normalize a complete text-only batch; the host checks edit authority again at application. */
-export function decodeLspWorkspaceEdit(value: unknown, resolve: (uri: string) => LspEditTarget | undefined): LspWorkspaceEdit {
+function workspaceEditEntries(value: unknown) {
     if (!record(value) || value.changeAnnotations !== undefined) invalid();
-    const identities = new Set<string>();
     const entries: Readonly<{ uri: unknown; version?: unknown; edits: unknown }>[] = [];
     // LSP prefers versioned documentChanges when both representations are supplied.
     if (value.documentChanges !== undefined) {
@@ -145,13 +154,24 @@ export function decodeLspWorkspaceEdit(value: unknown, resolve: (uri: string) =>
         if (!record(value.changes)) invalid();
         for (const [uri, edits] of Object.entries(value.changes)) entries.push({ uri, edits });
     }
-    const documents = entries.map(({ uri, version, edits: values }): LspDocumentEdits => {
+    return entries.map(({ uri, version, edits: values }) => {
         if (typeof uri !== "string" || !uri || !Array.isArray(values)) invalid();
+        const edits = values.map((item: unknown) => {
+            if (!record(item) || "annotationId" in item) invalid(); return { range: range(item.range), newText: text(item.newText) };
+        });
+        return { uri, version, edits };
+    });
+}
+export const lspWorkspaceEditUris = (value: unknown): readonly string[] => workspaceEditEntries(value).map(item => item.uri);
+/** Normalize a complete text-only batch; the host checks edit authority again at application. */
+export function decodeLspWorkspaceEdit(value: unknown, resolve: (uri: string) => LspEditTarget | undefined): LspWorkspaceEdit {
+    const identities = new Set<string>();
+    const documents = workspaceEditEntries(value).map(({ uri, version, edits: values }): LspDocumentEdits => {
         const target = resolve(uri);
         if (!target || target.document.uri !== uri || target.index.buffer !== target.document.buffer) throw new TypeError("LSP edit URI is outside the captured host project.");
         current(target); if (identities.has(target.document.documentId)) throw new TypeError("LSP edits must name each captured document once."); identities.add(target.document.documentId);
         if (version !== undefined && version !== null && version !== target.version) throw new RpcError(-32801, "LSP edit refers to another wire document version.");
-        const edits = values.map((item: unknown) => { if (!record(item) || "annotationId" in item) invalid(); return edit(target.index, item); })
+        const edits = values.map(item => edit(target.index, item))
             .sort((a, b) => a.from - b.from || a.to - b.to);
         // Stable sorting preserves the server's order for insertions at the same position.
         validateTextEdits(target.document.buffer.length, edits); return Object.freeze({ target, edits: Object.freeze(edits) });
@@ -160,9 +180,14 @@ export function decodeLspWorkspaceEdit(value: unknown, resolve: (uri: string) =>
     if (!isCurrent()) throw new RpcError(-32801, "LSP edit capture expired.");
     return Object.freeze({ documents: Object.freeze(documents), isCurrent });
 }
-export function decodeLspApplyEdit(value: unknown, resolve: (uri: string) => LspEditTarget | undefined): LspApplyEdit {
+function applyEditValue(value: unknown) {
     if (!record(value) || value.label !== undefined && typeof value.label !== "string") invalid();
-    return Object.freeze({ label: value.label as string | undefined ?? null, edit: decodeLspWorkspaceEdit(value.edit, resolve) });
+    return value;
+}
+export const lspApplyEditUris = (value: unknown): readonly string[] => lspWorkspaceEditUris(applyEditValue(value).edit);
+export function decodeLspApplyEdit(value: unknown, resolve: (uri: string) => LspEditTarget | undefined): LspApplyEdit {
+    const body = applyEditValue(value);
+    return Object.freeze({ label: body.label as string | undefined ?? null, edit: decodeLspWorkspaceEdit(body.edit, resolve) });
 }
 function edit(index: LspLineIndex, value: unknown, budget?: { units: number }, maximum = Number.MAX_SAFE_INTEGER): TextEdit {
     if (!record(value)) invalid(); return Object.freeze({ ...lspRangeOffsets(index, value.range), insert: text(value.newText, maximum, budget) });

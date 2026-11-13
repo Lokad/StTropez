@@ -11,17 +11,17 @@ function fail(error: unknown): void {
 }
 scope.addEventListener("message", (event: MessageEvent<unknown>) => {
     if (typeof event.data === "string") { listener?.message(event.data); return; }
-    const data = event.data as { start?: boolean; names?: string[] } | null;
+    const data = event.data as { start?: boolean; names?: string[]; backing?: Record<string, string> } | null;
     if (started || !data?.start || !Array.isArray(data.names)) return; started = true;
     void (async () => {
         const response = await fetch(new URL("typescript-libs.json", import.meta.url));
         if (!response.ok) throw new Error("TypeScript library assets could not load.");
-        provider = new BrowserLanguageService(await response.json() as Record<string, string>, data.names!);
+        provider = new BrowserLanguageService(await response.json() as Record<string, string>, data.names!, data.backing);
         const transport: RpcTransport = { send: message => scope.postMessage(message),
             subscribe: receiver => { listener = receiver; return () => { listener = undefined; }; }, dispose: () => provider?.dispose() };
         rpc = new JsonRpcConnection(transport, { schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
             maxMessageUnits: 16 * 1024 * 1024, maxPending: 128, onError: fail });
-        for (const method of ["initialize", "shutdown", "sttropez/diagnostics", "textDocument/completion", "completionItem/resolve", "textDocument/hover",
+        for (const method of ["initialize", "shutdown", "sttropez/readDocument", "sttropez/diagnostics", "textDocument/completion", "completionItem/resolve", "textDocument/hover",
             "textDocument/signatureHelp", "textDocument/definition", "textDocument/references", "textDocument/prepareRename", "textDocument/rename", "textDocument/codeAction", "textDocument/foldingRange", "textDocument/documentHighlight"]) {
             rpc.onRequest(method, params => provider!.request(method, params));
         }

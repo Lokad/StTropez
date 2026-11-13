@@ -1,7 +1,7 @@
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { spawn } from "node:child_process";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -176,6 +176,15 @@ export function attachDemoProvider(server: Server) {
                 message.params = { ...message.params, rootUri: project.rootUri, rootPath: project.directory,
                     workspaceFolders: [{ uri: project.rootUri, name: "Demo project" }], initializationOptions };
             } else if (!confined(message.params, project)) { reject(message.id, "Only this demo project's documents are available."); return; }
+            if (message.method === "sttropez/readDocument") {
+                const params = message.params, id = message.id;
+                const document = object(params) && Object.values(project.documents).find(doc => doc.uri === params.uri);
+                if (!document || typeof id !== "string" && typeof id !== "number") { reject(id, "Expected a known demo file."); return; }
+                const mirrored = documents.get(document.uri);
+                void (mirrored ? Promise.resolve(mirrored.getText()) : readFile(document.path, "utf8")).then(text => {
+                    if (!stopped && socket.readyState === 1) socket.send(JSON.stringify({ jsonrpc: "2.0", id, result: { uri: document.uri, text } }));
+                }).catch(() => reject(id, "The demo file could not be read.")); return;
+            }
             if (message.method === "sttropez/diagnostics") {
                 const params = message.params;
                 const document = object(params) && Object.values(project.documents).find(doc => doc.uri === params.uri);
@@ -281,13 +290,24 @@ export function attachDemoProvider(server: Server) {
             if (request.method !== "POST" || url.pathname !== "/demo-provider") { json(response, 405, { error: "Use POST to open a demo project." }); return true; }
             const sample = url.searchParams.get("sample");
             if (!sampleChoices.some(choice => choice.id === sample)) { json(response, 400, { error: "Unknown demo sample." }); return true; }
+            const definition = demoSample(sample as SampleId), files = { ...definition.files, ...definition.declarations };
+            try {
+                const chunks: Buffer[] = []; let bytes = 0;
+                for await (const chunk of request) { bytes += chunk.length; if (bytes > 16 * 1024 * 1024) throw new Error(); chunks.push(chunk); }
+                const backing: unknown = bytes ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {};
+                if (!object(backing)) throw new Error();
+                for (const [name, text] of Object.entries(backing)) {
+                    if (!Object.hasOwn(files, name) || typeof text !== "string" || text.length > 8_000_000
+                        || definition.declarations?.[name] !== undefined && text !== definition.declarations[name]) throw new Error();
+                    files[name] = text;
+                }
+            } catch { json(response, 400, { error: "Invalid unopened demo files." }); return true; }
             if (projects.size >= 32) { json(response, 503, { error: "Close another demo page before opening a provider." }); return true; }
             const directory = await mkdtemp(join(resolve(tmpdir()), "sttropez-demo-"));
             const project: Project = { id: crypto.randomUUID(), directory, rootUri: URI.file(directory).toString(), documents: {},
                 idle: undefined, connection: undefined, stopping: Promise.resolve(), stopProcess: undefined, removed: false };
             projects.set(project.id, project);
             try {
-                const files = demoSample(sample as SampleId).files;
                 await Promise.all(Object.entries(files).map(async ([name, text]) => {
                     if (basename(name) !== name || !name.endsWith(".ts")) throw new Error("Unexpected demo filename.");
                     const path = join(directory, name); project.documents[name] = { path, uri: URI.file(path).toString() }; await writeFile(path, text, { flag: "wx" });

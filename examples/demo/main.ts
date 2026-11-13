@@ -137,6 +137,7 @@ function renderMetadata(): void {
         ? "TypeScript 5.9.3 · syntax & emit" : "TypeScript · analyzing…";
     element("analysis-retry").hidden = presentation.status !== "failed";
     button("save").disabled = project.saving;
+    button("navigate-back").disabled = !locations.some(location => location.project === project);
     element("save-conflict").hidden = !project.hasConflict();
     button("conflict-save").disabled = !project.canSaveReviewed();
     if (reviewLabel) reviewLabel.textContent = project.isReviewingConflict() ? "Other page's saved copy" : "Saved copy";
@@ -148,8 +149,9 @@ function renderMetadata(): void {
     button("recovery-restore").disabled = !project.recovery.canRestore();
     button("recovery-keep").disabled = recovery.busy;
     for (const file of project.files) {
-        const tab = element("files").querySelector<HTMLButtonElement>(`[data-file="${file.name}"]`);
-        if (tab) { tab.textContent = `${file.name}${file.resource.metadata.getSnapshot().dirty ? " ●" : ""}`; tab.setAttribute("aria-pressed", String(file === active)); }
+        let tab = element("files").querySelector<HTMLButtonElement>(`[data-file="${file.name}"]`);
+        if (!tab) { tab = document.createElement("button"); tab.dataset.file = file.name; element("files").append(tab); }
+        tab.textContent = `${file.name}${file.readOnly ? " (read-only)" : file.resource.metadata.getSnapshot().dirty ? " ●" : ""}`; tab.setAttribute("aria-pressed", String(file === active));
     }
     document.title = `${project.dirty() ? "● " : ""}${active.name} · StTropez`;
     presentation.update(current, project.sample.id === "outline");
@@ -168,10 +170,13 @@ function detachView(): void {
 }
 function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEditor: EditingCandidate) {
     if (capturedProject.sample.id === "outline") return;
-    return mountDemoLanguage(capturedProject.workspace, capturedProject.files, file, capturedEditor, capturedProject.language, target => {
+    return mountDemoLanguage(capturedProject.workspace, () => capturedProject.files, file, capturedEditor, capturedProject.language, target => {
         if (disposed || project !== capturedProject || editor !== capturedEditor) return;
         const destination = capturedProject.files.find(file => file.resource.documentId === target.documentId);
         if (!destination || capturedProject.workspace.document(target.documentId).revision !== target.revision) return;
+        locations.push({ project: capturedProject, file, revision: capturedProject.workspace.document(file.resource.documentId).revision,
+            selected: file.view.getSnapshot().selectionSet, view: capturedEditor.captureView() });
+        if (locations.length > 100) locations.shift();
         mountFile(destination, true); destination.view.setSelection(target.revision, { anchor: target.from, head: target.to });
         editor?.viewport.revealOffset(target.from); editor?.focus();
     });
@@ -206,7 +211,8 @@ function mountFile(file: DemoFile, focus = false): void {
         renderProblems();
     }
     editor.configureLanguage(editingConfiguration());
-    if (savedViews.has(file.view)) editor.restoreView(savedViews.get(file.view)!);
+    if (savedViews.has(file.view)) editor.restoreView({ ...savedViews.get(file.view)!, ...file.view.getSnapshot().selection,
+        selectionSet: file.view.getSnapshot().selectionSet });
     folding = mountDemoFolding(project, file, editor, () => editingConfiguration().tabSize!);
     stopFolding = folding.state.subscribe(renderFolding); renderFolding();
     viewListeners = new AbortController();
@@ -215,6 +221,7 @@ function mountFile(file: DemoFile, focus = false): void {
     editor.input.addEventListener("compositionend", renderMetadata, { signal: viewListeners.signal });
     editor.element.addEventListener("keydown", event => {
         if (event.isComposing || editor?.snapshot().composing || event.defaultPrevented) return;
+        if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.key === "ArrowLeft") { event.preventDefault(); goBack(); return; }
         if ((event.ctrlKey || event.metaKey) && !event.altKey) {
             const key = event.key.toLowerCase();
             if (key === "f" || key === "h") { event.preventDefault(); openFind(key === "h"); }
@@ -234,6 +241,18 @@ function mountFile(file: DemoFile, focus = false): void {
 }
 // View IDs are local to a Workspace; each sample owns a separate workspace.
 const savedViews = new Map<DemoFile["view"], ReturnType<EditingCandidate["captureView"]>>();
+const locations: { project: DemoProject; file: DemoFile; revision: number; selected: ReturnType<DemoFile["view"]["getSnapshot"]>["selectionSet"]; view: ReturnType<EditingCandidate["captureView"]> }[] = [];
+function goBack(): void {
+    if (!project || !editor || editor.snapshot().composing || editor.snapshot().pendingInput || editor.snapshot().pendingCommand) return;
+    let index = locations.length - 1; while (index >= 0 && locations[index]!.project !== project) index--; if (index < 0) return;
+    const location = locations.splice(index, 1)[0]!;
+    mountFile(location.file, true);
+    // Unchanged sources restore the exact directed selection set; edited sources keep their mapped view selections.
+    if (project.workspace.document(location.file.resource.documentId).revision === location.revision) {
+        location.file.view.setSelections(location.revision, location.selected.ranges, location.selected.primary); editor?.restoreView(location.view);
+    }
+    renderMetadata(); editor?.focus();
+}
 async function openSample(id: SampleId): Promise<void> {
     if (editor?.snapshot().composing) { sample.value = project!.sample.id; return; }
     const generation = ++opening; sample.disabled = true;
@@ -281,6 +300,7 @@ on("compare", () => setPanel("changes")); on("analysis-retry", () => presentatio
 on("complete", () => languageView?.complete());
 on("inspect-type", () => languageView?.inspect()); on("signature", () => languageView?.signature());
 on("definition", () => languageView?.definition()); on("references", () => languageView?.references()); on("rename", () => languageView?.rename());
+on("navigate-back", goBack);
 on("quickfix", () => languageView?.quickfix());
 for (const command of ["line-comment", "block-comment", "indent", "outdent"] as const) on(command, () => {
     if (editor?.runCommand(command)) editor.focus();

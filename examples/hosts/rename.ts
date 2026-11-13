@@ -68,7 +68,7 @@ export class HostRenameTools {
     private release(): void {
         const job = this.job; this.job = undefined;
         if (!job) return; job.invalid = true; job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer);
-        job.stops.splice(0).forEach(stop => stop()); job.leases.splice(0).forEach(lease => lease.release()); if (!job.ready) this.drop();
+        job.stops.splice(0).forEach(stop => stop()); job.leases.splice(0).forEach(lease => lease.release()); if (!job.ready) this.drop(); else this.backend?.cancel();
     }
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.release(); this.publish({ status: "idle", message: "Rename preview dismissed; source is unchanged.", locations: [], work: 0, total: 0, page: 0 }); };
     readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ message: "Rename provider disconnected; local editing remains available." }); };
@@ -137,6 +137,16 @@ export class HostRenameTools {
                 }));
                 void this.backend.run(documents, doc.id, selected.selection.head, job.name!, input).then(plan => {
                     job.workspaceEdit = plan; if (!this.current(job)) { changed(); return; }
+                    // The provider client may have retained additional host-resolved targets.
+                    // Capture those exact workspace identities before presentation or application.
+                    for (const change of plan.documents) {
+                        const target = change.target.document; if (job.documents.has(target.documentId)) continue;
+                        const document = this.workspace.getSnapshot().documents.find(document => document.id === target.documentId);
+                        if (!document || document.resourceId !== target.resourceId || document.revision !== target.revision || document.buffer !== target.buffer
+                            || !change.target.isCurrent() || !this.canCapture(document.id)) throw new Error("A resolved rename target changed.");
+                        job.documents.set(document.id, document); job.authority.set(document.id, this.authority(document.id));
+                        job.stops.push(this.workspace.observeDocument(document.id).subscribe(changed), this.workspace.resourceForDocument(document.id).metadata.subscribe(changed));
+                    }
                     job.locations = Object.freeze(plan.documents.flatMap(change => change.edits.map((edit, editIndex) => Object.freeze({ document: change.target.document.documentId, revision: change.target.document.revision, from: edit.from, to: edit.to, declaration: false, editIndex }))));
                     job.ready = true; win.clearTimeout(job.timer); this.showPage(0); this.publish({ status: "ready", message: `Preview ${job.locations.length} provider edits for this new name. Review the captured targets before applying.`, work: total });
                 }).catch(error => { if (this.job !== job) return; this.release(); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Rename provider failed; source is unchanged.", locations: [] }); });

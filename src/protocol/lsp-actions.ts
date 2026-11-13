@@ -1,7 +1,7 @@
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
 import { RpcError } from "./json-rpc.ts";
 import { createLspClient } from "./lsp-client.ts";
-import { decodeLspCodeActions, decodeLspResolvedCodeAction } from "./lsp-code-actions.ts";
+import { decodeLspCodeActions, decodeLspResolvedCodeAction, lspCodeActionUris } from "./lsp-code-actions.ts";
 import type { LspCodeAction } from "./lsp-code-actions.ts";
 import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
 import { createLspCommandRunner } from "./lsp-command.ts";
@@ -29,7 +29,8 @@ export function createLspActionClient(provider: LspWorkspace) {
                     ...(item.severity === null ? {} : { severity: item.severity }), ...(item.source === null ? {} : { source: item.source }) })) } };
             }, prepare).result;
             const canResolve = session.featureOptions("textDocument/codeAction", value.target).some(options => options.resolveProvider === true);
-            const actions = value.decode(() => decodeLspCodeActions(value.response, value.capture, uri => value.captures.get(uri), canResolve));
+            const uris = value.decode(() => lspCodeActionUris(value.response)); await value.resolveTargets(uris, "edit");
+            const actions = value.decode(() => decodeLspCodeActions(value.response, value.capture, value.targetForUri, canResolve));
             const commandCurrent = value.isGenerationCurrent;
             return Object.freeze({ actions, isCurrent: value.isCurrent, commandCurrent,
                 supports: (command: string) => commandCurrent() && session.commandNames().includes(command),
@@ -43,7 +44,8 @@ export function createLspActionClient(provider: LspWorkspace) {
                 resolve: async (action: LspCodeAction, prepareResolve?: LspPrepare) => {
                     if (!value.isCurrent() || busy() || !actions.includes(action) || !action.resolve) throw new RpcError(-32801, "Captured action cannot be resolved.");
                     const response = await value.follow("textDocument/codeAction", "codeAction/resolve", action.resolve, prepareResolve);
-                    return value.decode(() => decodeLspResolvedCodeAction(response, action, value.capture, uri => value.captures.get(uri)));
+                    const uris = value.decode(() => lspCodeActionUris([response])); await value.resolveTargets(uris, "edit");
+                    return value.decode(() => decodeLspResolvedCodeAction(response, action, value.capture, value.targetForUri));
                 } });
         },
         snapshot: () => Object.freeze({ ...client.snapshot(), busy: busy(), version: "LSP3.17" }),

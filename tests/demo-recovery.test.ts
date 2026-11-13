@@ -3,6 +3,7 @@ import test from "node:test";
 import { Workspace } from "../src/index.ts";
 import { DemoRecovery } from "../examples/demo/recovery.ts";
 import type { DraftStore, StoredDraft } from "../examples/hosts/draft-store.ts";
+import type { DemoFile } from "../examples/demo/project.ts";
 
 class MemoryDraftStore implements DraftStore {
     row: StoredDraft | null = { token: "draft-1", value: { version: 1, sample: "sample", baseVersion: null, files: { "a.ts": "draft A", "b.ts": "draft B" } } };
@@ -44,6 +45,48 @@ async function ready(recovery: DemoRecovery): Promise<void> {
         });
     });
 }
+
+test("partial editor inventories checkpoint every file and restore only against the original read intent", async t => {
+    for (const scenario of ["checkpoint", "load-during-checkpoint", "restore", "stale", "redundant", "loaded-during-read"] as const) {
+        const workspace = new Workspace(), store = new MemoryDraftStore(), files: DemoFile[] = [], unloaded: Record<string, string> = { "a.ts": "original a.ts", "b.ts": "original b.ts" };
+        let recovery: DemoRecovery | undefined;
+        const load = (name: string) => {
+            const resource = workspace.createTextResource({ scope: "partial", resource: name, variant: "working" }, name, { value: unloaded[name]! });
+            const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "editor");
+            files.push({ name, resource, tab, view: workspace.createDocumentView(resource.documentId) }); delete unloaded[name]; recovery?.filesChanged();
+        };
+        load("a.ts");
+        if (scenario === "checkpoint" || scenario === "load-during-checkpoint") store.row = null;
+        if (scenario === "redundant") store.row = { token: "redundant", value: { version: 1, sample: "sample", baseVersion: null, files: { "a.ts": "original a.ts", "b.ts": "original b.ts" } } };
+        if (scenario === "loaded-during-read") store.row = { token: "genuine", value: { version: 1, sample: "sample", baseVersion: null, files: { "a.ts": "original a.ts", "b.ts": "draft B" } } };
+        let finish!: (row: StoredDraft | null) => void;
+        if (scenario === "stale" || scenario === "loaded-during-read") store.read = () => new Promise(resolve => { finish = resolve; });
+        recovery = new DemoRecovery(workspace, () => files, "sample", () => null, () => true, store,
+            { names: ["a.ts", "b.ts"], unloaded: () => unloaded, prepare: () => { for (const name of Object.keys(unloaded)) load(name); } });
+        const captured = recovery; t.after(() => captured.dispose());
+        const edit = () => workspace.edit({ documentId: files[0]!.resource.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "newer " }] });
+        if (scenario === "stale") { await Promise.resolve(); edit(); finish(store.row); }
+        if (scenario === "loaded-during-read") { await Promise.resolve(); load("b.ts"); finish(store.row); }
+        await ready(recovery);
+        if (scenario === "checkpoint" || scenario === "load-during-checkpoint") {
+            if (scenario === "load-during-checkpoint") {
+                const stop = captured.state.subscribe(() => { if (captured.state.getSnapshot().status === "writing") { stop(); load("b.ts"); } });
+            }
+            edit(); await new Promise<void>(resolve => { const stop = captured.state.subscribe(() => { if (captured.state.getSnapshot().status === "protected") { stop(); resolve(); } }); });
+            assert.equal(files.length, scenario === "checkpoint" ? 1 : 2); assert.equal(store.writes, 1);
+            assert.deepEqual((store.row!.value as { files: unknown }).files, { "a.ts": "newer original a.ts", "b.ts": "original b.ts" });
+        } else if (scenario === "redundant") {
+            assert.equal(files.length, 2); assert.equal(store.row, null); assert.equal(recovery.state.getSnapshot().present, false);
+        } else if (scenario === "loaded-during-read") {
+            assert.equal(files.length, 2); assert.equal(recovery.canRestore(), false); assert.equal(store.row?.token, "genuine");
+            assert.match(recovery.download()!, /draft B/); await recovery.restore();
+            assert.deepEqual(files.map(file => workspace.document(file.resource.documentId).text), ["original a.ts", "original b.ts"]);
+        } else {
+            assert.equal(files.length, 2); assert.equal(recovery.canRestore(), scenario === "restore"); await recovery.restore();
+            assert.deepEqual(files.map(file => workspace.document(file.resource.documentId).text), scenario === "restore" ? ["draft A", "draft B"] : ["newer original a.ts", "original b.ts"]);
+        }
+    }
+});
 
 test("recovery restores the named files atomically with one linked undo unit", async t => {
     const f = fixture(); t.after(() => f.recovery.dispose()); await ready(f.recovery);

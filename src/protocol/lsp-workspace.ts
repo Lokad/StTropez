@@ -7,6 +7,7 @@ import { RpcError } from "./json-rpc.ts";
 import type { JsonValue, RpcCall } from "./json-rpc.ts";
 import { decodeLspDiagnostics } from "./lsp-features.ts";
 import type { LspDiagnostics } from "./lsp-features.ts";
+import type { LspTargetResolver } from "./lsp-targets.ts";
 
 export type LspSessionAccess = Pick<LspSession, "state" | "connect" | "disconnect" | "dispose" | "flush" | "bindDocument" | "synchronized" | "requestDocument" | "canRequest" | "featureOptions" | "commandNames" | "requestCommand" | "request" | "notify" | "onRequest" | "onNotification" | "snapshotOwnership">;
 /** Optional host custom-message preparation, inside the feature's captured request lifetime. */
@@ -18,12 +19,15 @@ export type LspWorkspaceScope = Omit<LspSessionAccess, "state"> & Readonly<{
     captureProject: () => ReadonlyMap<string, LspDocumentCapture>;
     observeDiagnostics: (document: LspDocument) => Observable<LspDiagnosticState>;
     reserveCommand: () => Readonly<{ isCurrent: () => boolean; release: () => void }>;
+    resolveTarget: LspTargetResolver;
 }>;
 export type LspDiagnosticState = Readonly<{ status: "empty" | "current" | "expired"; result: LspDiagnostics | null;
     received: number; stale: number; invalid: number; isCurrent: () => boolean }>;
 export type LspWorkspaceSnapshot = LspSessionSnapshot & Readonly<{ commandAvailable: boolean; commandRequiresReconnect: boolean }>;
 export type LspWorkspaceOptions = LspSessionOptions & Readonly<{
     documentInfo: (document: DocumentSnapshot) => Readonly<{ uri: string; languageId: string }> | undefined;
+    /** Load an opaque URI on demand, returning a retained immutable target; never open a view here. */
+    resolveTarget?: LspTargetResolver;
     maxScopes?: number;
 }>;
 
@@ -232,6 +236,15 @@ export class LspWorkspace {
                 result => finish(() => { if (isCurrent()) resolve(result); else reject(cancelled()); }), error => finish(() => reject(error)));
         });
         const api: LspWorkspaceScope = Object.freeze({ state,
+            resolveTarget: async (uri, context) => {
+                writable(); const generation = scope.generation;
+                if (!context.isCurrent()) throw stale();
+                const result = await this.options.resolveTarget?.(uri, context); if (!result) return undefined;
+                let released = false;
+                const release = () => { if (released) return; released = true; try { result.release(); } catch (error) { this.report(error); } };
+                if (!current(generation) || !context.isCurrent()) { release(); throw stale(); }
+                return Object.freeze({ target: result.target, release });
+            },
             reserveCommand: () => { const intent = reserve(); return Object.freeze({ isCurrent: () => this.commandCurrent(intent),
                 release: () => { if (this.command === intent) this.endCommand(intent, intent.sent); } }); },
             attachDocument: attach,

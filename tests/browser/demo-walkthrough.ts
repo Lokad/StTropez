@@ -1,6 +1,45 @@
 import { expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
+export async function runDemoUnopenedNavigation(page: Page, url = "/") {
+    await page.goto(url); await page.locator("#sample").selectOption("navigation");
+    const main = page.getByRole("textbox", { name: "main.ts", exact: true }), labels = page.getByRole("textbox", { name: "labels.ts", exact: true });
+    await expect(page.locator("#files button")).toHaveText(["main.ts"]);
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await select(page, main, "const label = formatLabel"); await main.press("ArrowRight"); await main.press("ArrowLeft");
+    const cursor = await page.locator("#cursor").textContent();
+    await main.press("F12"); await expect(labels).toBeVisible();
+    await expect(page.locator("#editor")).toContainText("export function formatLabel");
+    await labels.press("Control+End"); await page.keyboard.insertText("// edit the loaded module\n");
+    await expect(page.locator("#files")).toContainText("labels.ts ●"); await labels.press("Control+z");
+    await labels.press("Alt+ArrowLeft"); await expect(main).toBeFocused(); await expect(page.locator("#cursor")).toHaveText(cursor!);
+    await select(page, main, "const record: RecordId"); await main.press("ArrowRight"); await main.press("ArrowLeft"); await main.press("F12");
+    const declaration = page.getByRole("textbox", { name: "contracts.d.ts", exact: true }); await expect(declaration).toBeVisible();
+    await expect(page.locator("#files")).toContainText("contracts.d.ts (read-only)");
+    const before = await declaration.inputValue(); await declaration.press("Control+End"); await declaration.press("x"); await expect(declaration).toHaveValue(before);
+    await declaration.press("Alt+ArrowLeft"); await expect(main).toBeFocused();
+    await page.locator("#save").click(); await expect(page.locator("#status")).toContainText("Saved in this browser");
+    await page.reload(); await page.locator("#sample").selectOption("navigation");
+    await expect(page.locator("#files button")).toHaveText(["main.ts"]); await expect(page.locator("#recovery-offer")).toBeHidden();
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await select(page, main, "export interface LabelOptions"); await main.press("ArrowRight"); await main.press("ArrowLeft"); await main.press("F2");
+    const rename = page.getByRole("dialog", { name: "Rename symbol", exact: true });
+    await rename.getByRole("textbox", { name: "New name", exact: true }).fill("DisplayOptions"); await rename.getByRole("button", { name: "Preview rename", exact: true }).click();
+    await expect(rename.getByLabel("Rename status")).toContainText("Review 3 changes");
+    await rename.getByRole("button", { name: "Apply rename", exact: true }).click(); await expect(rename).toBeHidden();
+    await expect(page.locator("#editor")).toContainText("export interface DisplayOptions");
+    await page.locator('#files [data-file="labels.ts"]').click(); await expect(page.locator("#editor")).toContainText("options: DisplayOptions");
+    await labels.press("Control+z"); await expect(page.locator("#editor")).toContainText("options: LabelOptions");
+    await page.locator('#files [data-file="main.ts"]').click(); await expect(page.locator("#editor")).toContainText("export interface LabelOptions");
+    await main.press("Control+y"); await page.locator("#save").click(); await expect(page.locator("#status")).toContainText("Saved in this browser");
+    await page.reload(); await page.locator("#sample").selectOption("navigation");
+    await expect(page.locator("#files button")).toHaveText(["main.ts"]); await expect(page.locator("#recovery-offer")).toBeHidden();
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await expect(page.locator("#editor")).toContainText("export interface DisplayOptions");
+    await select(page, main, "const label = formatLabel"); await main.press("ArrowRight"); await main.press("ArrowLeft"); await main.press("F12");
+    await expect(labels).toBeVisible(); await expect(page.locator("#editor")).toContainText("options: DisplayOptions");
+}
+
 /** Shared by source, static and restored-assets demos; all commands use visible controls. */
 export async function runDemoDocumentation(page: Page, url = "/") {
     const guide = "https://www.typescriptlang.org/docs/handbook/2/functions.html";

@@ -10,6 +10,7 @@ export { decodeLspCodeActions, decodeLspResolvedCodeAction } from "./lsp-code-ac
 export type { LspCommand, LspCodeAction, LspCodeActions } from "./lsp-code-actions.ts";
 export { LspWorkspace } from "./lsp-workspace.ts";
 export type { LspWorkspaceOptions, LspWorkspaceScope, LspSessionAccess, LspPrepare, LspDiagnosticState, LspWorkspaceSnapshot } from "./lsp-workspace.ts";
+export type { LspTargetContext, LspResolvedTarget, LspTargetResolver } from "./lsp-targets.ts";
 export { createLspCommandRunner } from "./lsp-command.ts";
 export type { LspCommandScope, LspCommandReceipt } from "./lsp-command.ts";
 export { createLspHoverClient } from "./lsp-hover.ts";

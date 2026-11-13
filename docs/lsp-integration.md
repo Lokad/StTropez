@@ -52,8 +52,11 @@ commit an explicitly authorized phase and supply its new snapshots before comman
 | Occurrences | `createLspHighlightClient(provider).run(document, offset, prepare?)` returns a cancellable call with text/read/write items, indexed `intersect(from, to)` and a currentness guard. The independent browser `createLspHighlightController` owns caret/focus/input lifetime; host decorations own colors. |
 
 Project snapshots must still match their Workspace resource, document, revision and
-buffer. URI resolution uses those explicitly participating host resources, including
-unmounted targets. No server URI is automatically fetched or opened. The host chooses
+buffer. URI resolution first uses those explicitly participating host resources, including
+unmounted targets. An optional `resolveTarget` on `LspWorkspace` loads missing targets through
+the host's asynchronous policy, returning an exact retained target and release callback. Its
+source/provider intent and cancellation context do not grant edit authority. See the
+[loading and retention contract](lsp-navigation.md). No server URI is automatically fetched or opened. The host chooses
 navigation/opening policy and rechecks currentness and resource authority before an
 edit decision. Existing `Workspace.editDocuments` applies a complete authorized batch
 as one shared undo transaction. The library supplies validated plans and request lifetime;

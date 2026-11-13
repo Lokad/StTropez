@@ -1,5 +1,6 @@
-export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue" | "templates" | "results" | "outline" | "documentation";
-export type DemoSample = Readonly<{ id: SampleId; title: string; description: string; files: Readonly<Record<string, string>> }>;
+export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue" | "templates" | "results" | "outline" | "documentation" | "navigation";
+export type DemoSample = Readonly<{ id: SampleId; title: string; description: string; files: Readonly<Record<string, string>>;
+    initialFiles?: readonly string[]; declarations?: Readonly<Record<string, string>> }>;
 
 const pricing = `export interface CartItem {
     name: string;
@@ -36,10 +37,17 @@ export const sampleChoices: readonly Readonly<{ id: SampleId; title: string }>[]
     { id: "results", title: "Project-wide results · 1,200 uses" },
     { id: "outline", title: "Host outline · indentation folding" },
     { id: "documentation", title: "Documentation & help links" },
+    { id: "navigation", title: "Unopened files & navigation" },
 ]);
 
 /** Large fixtures are built only on explicit selection. */
 export function demoSample(id: SampleId): DemoSample {
+    if (id === "navigation") return { id, title: "Unopened files & navigation",
+        description: "Go to definition (F12) on formatLabel to load labels.ts, or on RecordId to read contracts.d.ts. Only main.ts starts in the editor. Alt+Left returns to the original location; labels.ts remains editable and saves with the project.",
+        initialFiles: ["main.ts"],
+        files: { "main.ts": 'import { formatLabel } from "./labels";\nimport type { RecordId } from "./contracts";\n\nexport interface LabelOptions { prefix: string; }\nconst record: RecordId = "record-42";\nconst label = formatLabel(record);\nconsole.log(label);\n',
+            "labels.ts": 'import type { LabelOptions } from "./main";\n\n/** Format a stable label for display. */\nexport function formatLabel(id: string, options: LabelOptions = { prefix: "Label" }): string {\n  return `${options.prefix}: ${id}`;\n}\n' },
+        declarations: { "contracts.d.ts": '/** An identifier supplied by a host contract. This declaration is read-only. */\nexport type RecordId = `record-${number}`;\n' } };
     if (id === "documentation") return { id, title: "Documentation & help",
         description: "Inspect applyDiscount with Hover or Code → Inspect type. Its documentation has formatting and a help link. Inside the call, use Code → Signature help. Help links open the TypeScript handbook; edited programs are never executed.",
         files: { "documentation.ts": [

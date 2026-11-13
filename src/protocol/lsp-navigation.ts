@@ -1,6 +1,6 @@
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
 import { createLspClient } from "./lsp-client.ts";
-import { decodeLspLocations } from "./lsp-features.ts";
+import { decodeLspLocations, lspLocationUris } from "./lsp-features.ts";
 import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
 
 /** Captured read-only queries; the host chooses how to present each validated target. */
@@ -11,7 +11,8 @@ export function createLspNavigationClient(provider: LspWorkspace) {
             if (kind !== "definition" && kind !== "references" || typeof includeDeclaration !== "boolean") throw new TypeError("Invalid LSP navigation query.");
             const value = await client.request(snapshots, origin, kind === "definition" ? "textDocument/definition" : "textDocument/references", capture => ({
                 position: capture.index.at(offset), ...(kind === "references" ? { context: { includeDeclaration } } : {}) }), prepare).result;
-            const locations = value.decode(() => decodeLspLocations(value.response, kind, value.capture, uri => value.captures.get(uri)));
+            const uris = value.decode(() => lspLocationUris(value.response, kind)); await value.resolveTargets(uris, "navigation");
+            const locations = value.decode(() => decodeLspLocations(value.response, kind, value.capture, value.targetForUri));
             return Object.freeze({ locations, isCurrent: value.isCurrent });
         },
         snapshot: () => Object.freeze({ ...client.snapshot(), ...client.inspection(), busy: client.isBusy(), version: "LSP3.17", epoch: provider.state.getSnapshot().epoch }) });

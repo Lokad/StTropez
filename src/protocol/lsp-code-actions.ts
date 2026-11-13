@@ -1,6 +1,6 @@
 import { jsonEqual, jsonSnapshot, RpcError } from "./json-rpc.ts";
 import type { JsonValue } from "./json-rpc.ts";
-import { decodeLspDiagnostics, decodeLspWorkspaceEdit } from "./lsp-features.ts";
+import { decodeLspDiagnostics, decodeLspWorkspaceEdit, lspWorkspaceEditUris } from "./lsp-features.ts";
 import type { LspEditTarget, LspWorkspaceEdit } from "./lsp-features.ts";
 import type { LspDocumentCapture } from "./lsp-session.ts";
 
@@ -11,6 +11,10 @@ export type LspCodeActions = readonly LspCodeAction[];
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 function invalid(): never { throw new TypeError("Malformed or unsupported LSP code action."); }
 const current = (capture: LspDocumentCapture) => { if (!capture.isCurrent()) throw new RpcError(-32801, "LSP code-action capture expired."); };
+export function lspCodeActionUris(value: unknown): readonly string[] {
+    if (value === null) return []; if (!Array.isArray(value)) invalid();
+    return value.flatMap(item => { if (!record(item)) invalid(); return item.edit === undefined ? [] : lspWorkspaceEditUris(item.edit); });
+}
 /** A complete action list is validated before any choice is published or made applicable. */
 export function decodeLspCodeActions(value: unknown, origin: LspDocumentCapture, resolve: (uri: string) => LspEditTarget | undefined, canResolve = false): LspCodeActions {
     current(origin); if (value === null) return Object.freeze([]); if (!Array.isArray(value)) invalid();

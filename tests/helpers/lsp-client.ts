@@ -3,7 +3,7 @@ import type { TestContext } from "node:test";
 import { setImmediate } from "node:timers/promises";
 import { Workspace } from "../../src/core/workspace.ts";
 import { referencePeer } from "../../examples/protocol/reference-peer.ts";
-import type { RpcTransport } from "../../src/protocol/index.ts";
+import type { LspTargetResolver, RpcTransport } from "../../src/protocol/index.ts";
 
 export const protocol = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../../src/protocol/index.ts") as typeof import("../../src/protocol/index.ts");
 export const settled = async () => { await setImmediate(); await setImmediate(); };
@@ -12,7 +12,7 @@ export const latch = <T>() => {
     const promise = new Promise<T>(yes => { resolve = yes; });
     return { promise, resolve };
 };
-export function clientFixture(t: TestContext, connect?: () => Promise<void>) {
+export function clientFixture(t: TestContext, connect?: () => Promise<void>, resolveTarget?: LspTargetResolver) {
     const workspace = new Workspace();
     const source = workspace.createTextResource({ scope: "public-client", resource: "source", variant: "working" }, "Source", { value: "alpha beta" });
     const other = workspace.createTextResource({ scope: "public-client", resource: "other", variant: "working" }, "Other", { value: "gamma delta" });
@@ -39,6 +39,7 @@ export function clientFixture(t: TestContext, connect?: () => Promise<void>) {
     peer.onRequest("workspace/executeCommand", () => null);
     peer.listen();
     const provider = new protocol.LspWorkspace(workspace, {
+        ...(resolveTarget ? { resolveTarget } : {}),
         documentInfo: document => ({ uri: `generic:${document.resourceId}`, languageId: "generic" }),
         features: ["textDocument/hover", "textDocument/foldingRange", "textDocument/documentHighlight", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction", "textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor", "textDocument/colorPresentation", "workspace/executeCommand"],
         applyEdit: true,

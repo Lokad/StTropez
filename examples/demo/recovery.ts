@@ -10,12 +10,13 @@ type Capture = readonly Readonly<{ file: DemoFile; document: DocumentSnapshot; m
 type Offer = Readonly<{ envelope: StoredDraft; draft: Draft; capture: Capture }>;
 type RecoveryState = Readonly<{ status: "checking" | "idle" | "pending" | "writing" | "protected" | "offer" | "failed";
     busy: boolean; present: boolean; message: string }>;
+type Inventory = Readonly<{ names: readonly string[]; unloaded: () => Readonly<Record<string, string>>; prepare: () => void }>;
 
-function decode(envelope: StoredDraft, sample: string, files: readonly DemoFile[]): Draft {
+function decode(envelope: StoredDraft, sample: string, names: readonly string[]): Draft {
     const value = envelope.value as Partial<Draft> | null;
     if (envelope.token === "invalid" || !value || value.version !== 1 || value.sample !== sample || value.baseVersion !== null && typeof value.baseVersion !== "string"
-        || !value.files || typeof value.files !== "object" || Array.isArray(value.files) || Object.keys(value.files).length !== files.length
-        || files.some(file => !Object.hasOwn(value.files!, file.name) || typeof value.files![file.name] !== "string" || value.files![file.name]!.length > 8_000_000)) {
+        || !value.files || typeof value.files !== "object" || Array.isArray(value.files) || Object.keys(value.files).length !== names.length
+        || names.some(name => !Object.hasOwn(value.files!, name) || typeof value.files![name] !== "string" || value.files![name]!.length > 8_000_000)) {
         throw new Error("The recovery draft cannot be read. It has been left untouched.");
     }
     return value as Draft;
@@ -37,7 +38,9 @@ function matches(capture: Capture, draft: Draft): boolean {
 /** Multi-file demo policy. Reuses the fixture's CAS store; no alternate document/history engine. */
 export class DemoRecovery {
     private readonly workspace: Workspace;
-    private readonly files: readonly DemoFile[];
+    private readonly getFiles: () => readonly DemoFile[];
+    private get files(): readonly DemoFile[] { return this.getFiles(); }
+    private readonly inventory: Inventory | undefined;
     private readonly sample: string;
     private readonly baseVersion: () => string | null;
     private readonly inputIdle: () => boolean;
@@ -57,25 +60,28 @@ export class DemoRecovery {
     private readonly stopWorkspace: () => void;
     private readonly stopStore: () => void;
 
-    constructor(workspace: Workspace, files: readonly DemoFile[], sample: string, baseVersion: () => string | null,
-        inputIdle: () => boolean, store = createBrowserDraftStore(window, { name: "sttropez-demo-recovery-v1", slot: sample })) {
-        this.workspace = workspace; this.files = files; this.sample = sample; this.baseVersion = baseVersion;
+    constructor(workspace: Workspace, files: readonly DemoFile[] | (() => readonly DemoFile[]), sample: string, baseVersion: () => string | null,
+        inputIdle: () => boolean, store = createBrowserDraftStore(window, { name: "sttropez-demo-recovery-v1", slot: sample }), inventory?: Inventory) {
+        this.workspace = workspace; this.getFiles = typeof files === "function" ? files : () => files; this.inventory = inventory; this.sample = sample; this.baseVersion = baseVersion;
         this.inputIdle = inputIdle; this.store = store; this.observed = this.capture();
-        this.stopWorkspace = workspace.subscribe(() => {
-            const next = this.capture();
-            if (next.every((item, index) => item.document.buffer === this.observed[index]!.document.buffer
-                && item.metadata.dirty === this.observed[index]!.metadata.dirty && item.metadata.serverVersion === this.observed[index]!.metadata.serverVersion)) return;
-            this.observed = next; this.generation++; this.schedule();
-        });
+        this.stopWorkspace = workspace.subscribe(() => this.filesChanged());
         this.stopStore = store.watch(() => { void this.refresh(); });
         void this.refresh();
+    }
+    filesChanged(): void {
+        const next = this.capture();
+        if (next.length === this.observed.length && next.every((item, index) => item.document.id === this.observed[index]!.document.id
+            && item.document.buffer === this.observed[index]!.document.buffer && item.metadata.dirty === this.observed[index]!.metadata.dirty
+            && item.metadata.serverVersion === this.observed[index]!.metadata.serverVersion)) return;
+        this.observed = next; this.generation++; this.schedule();
     }
     private capture(): Capture {
         return this.files.map(file => ({ file, document: this.workspace.document(file.resource.documentId), metadata: file.resource.metadata.getSnapshot(),
             target: this.workspace.captureResource(file.resource.id), tab: this.workspace.captureTab(file.tab) }));
     }
     private targetsCurrent(capture: Capture): boolean {
-        return !this.disposed && this.inputIdle() && capture.every(item => this.workspace.resolveResource(item.target) === item.file.resource
+        const files = this.files;
+        return !this.disposed && this.inputIdle() && capture.length === files.length && capture.every(item => files.includes(item.file) && this.workspace.resolveResource(item.target) === item.file.resource
             && this.workspace.resolveTab(item.tab)?.surface.kind === "text" && this.workspace.ownsDocumentView(item.file.view)
             && this.workspace.document(item.document.id).revision === item.document.revision
             && item.file.resource.metadata.getSnapshot() === item.metadata && item.metadata.editLock === null
@@ -92,7 +98,7 @@ export class DemoRecovery {
         this.cancelTimer();
         if (this.disposed || !this.loaded || this.running || this.offer || this.cell.get().status === "failed") return;
         if (!this.dirty() && this.token === null) return;
-        if (this.checkpointed && this.observed.every((item, index) => item.document.buffer === this.checkpointed![index]!.document.buffer
+        if (this.checkpointed && this.observed.length === this.checkpointed.length && this.observed.every((item, index) => item.document.id === this.checkpointed![index]!.document.id && item.document.buffer === this.checkpointed![index]!.document.buffer
             && item.metadata.dirty === this.checkpointed![index]!.metadata.dirty && item.metadata.serverVersion === this.checkpointed![index]!.metadata.serverVersion)) return;
         this.publish("pending", "Updating recovery…");
         // The input/notification path compares immutable handles; text export happens only here.
@@ -117,7 +123,7 @@ export class DemoRecovery {
     refresh(): Promise<void> {
         if (this.disposed) return Promise.resolve();
         if (this.running) { this.refreshRequested = true; return this.running; }
-        const capture = this.capture();
+        let capture = this.capture();
         return this.run(async () => {
             this.publish("checking", "Checking recovery…");
             const envelope = await this.store.read(); if (this.disposed) return;
@@ -134,7 +140,14 @@ export class DemoRecovery {
             this.offer = undefined;
             this.checkpointed = undefined;
             if (envelope) {
-                const draft = decode(envelope, this.sample, this.files);
+                const draft = decode(envelope, this.sample, this.inventory?.names ?? this.files.map(file => file.name));
+                // A complete draft may name a file that has no editor resource yet. Materialize
+                // the saved/default inventory before offering an atomic restore, retaining any
+                // stale original capture so loading can never silently authorize later edits.
+                if (this.inventory && this.files.length !== this.inventory.names.length) {
+                    const originalCurrent = this.targetsCurrent(capture); this.inventory.prepare();
+                    if (originalCurrent) capture = this.capture();
+                }
                 // A save may finish just before the page closes, ahead of deferred draft cleanup.
                 // Compare content during this asynchronous read, never on an edit notification.
                 // Only the exact redundant token can be removed; distinct peer work stays offered.
@@ -166,7 +179,7 @@ export class DemoRecovery {
     }
     private checkpoint(): Promise<void> {
         if (this.disposed || this.offer || !this.loaded) return Promise.resolve();
-        const capture = this.capture(), dirty = this.dirty(), expected = this.token, baseVersion = this.baseVersion();
+        const capture = this.capture(), dirty = this.dirty(), expected = this.token, baseVersion = this.baseVersion(), unloaded = { ...this.inventory?.unloaded() };
         return this.run(async () => {
             this.publish("writing", "Updating recovery…");
             if (!dirty) {
@@ -176,7 +189,7 @@ export class DemoRecovery {
             }
             const token = crypto.randomUUID();
             const draft: Draft = { version: 1, sample: this.sample, baseVersion,
-                files: Object.fromEntries(capture.map(item => [item.file.name, item.document.text])) };
+                files: { ...unloaded, ...Object.fromEntries(capture.map(item => [item.file.name, item.document.text])) } };
             await this.store.write({ token, value: draft }, expected);
             if (!this.disposed) { this.token = token; this.checkpointed = capture; this.publish("protected", "Recovery draft captured in this browser."); }
         });

@@ -8,6 +8,15 @@ provider/compiler pair, supported subset and host adaptations.
 
 ## Delivered workflow
 
+The **Unopened files & navigation** sample demonstrates an editable module and a read-only
+declaration absent from the initial editor resources. The shared source/static/restored-assets
+journey covers F12 loading, return navigation, atomic rename/undo/redo across an unopened file,
+and save/reload. A held-content source check rejects loading after edits or sample changes;
+an injected standard edit action exercises preview/application of another newly resolved target.
+Partial-inventory recovery tests cover complete draft contents, redundant saved drafts and a
+stale read that cannot authorize replacing newer edits. Native/device qualification remains
+separate. The public [target-loading contract](lsp-navigation.md) defines retention and authority.
+
 The **Documentation & help links** sample has a shared source/static/restored-assets journey
 for formatted hover/signature content, active-parameter documentation, explicit permitted help
 opening and popup placement. The public renderer preserves plaintext, creates no provider HTML

@@ -9,7 +9,7 @@ import type { DemoFile } from "./project.ts";
 export type DemoSymbolTarget = Readonly<{ documentId: DocumentId; revision: number; from: number; to: number }>;
 
 /** Host presentation around validated public results. Navigation may replace this editor view. */
-export function mountDemoSymbols(workspace: Workspace, files: readonly DemoFile[], file: DemoFile, editor: EditingCandidate,
+export function mountDemoSymbols(workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: EditingCandidate,
     provider: LspWorkspace, valid: () => boolean, dismissOther: () => void, open: (target: DemoSymbolTarget) => void) {
     const events = new AbortController(), navigation = createLspNavigationClient(provider);
     const popup = document.createElement("section"); popup.className = "demo-symbols"; popup.hidden = true; popup.setAttribute("aria-label", "Symbol locations");
@@ -32,7 +32,7 @@ export function mountDemoSymbols(workspace: Workspace, files: readonly DemoFile[
     };
     const choose = (captured: Query, location: LspLocation) => {
         if (query !== captured || !captured.current() || !captured.result?.isCurrent() || !location.target.isCurrent()) return;
-        const file = files.find(file => file.resource.documentId === location.target.document.documentId); if (!file) return;
+        const file = files().find(file => file.resource.documentId === location.target.document.documentId); if (!file) return;
         const target = { documentId: file.resource.documentId, revision: location.target.document.revision, from: location.from, to: location.to };
         cancelNavigation(); open(target);
     };
@@ -42,7 +42,7 @@ export function mountDemoSymbols(workspace: Workspace, files: readonly DemoFile[
         const note = document.createElement("p"); note.textContent = message;
         const first = Math.floor(captured.choice / 64) * 64, total = captured.result?.locations.length ?? 0;
         const buttons = captured.result?.locations.slice(first, first + 64).flatMap((location, index) => {
-            const file = files.find(file => file.resource.documentId === location.target.document.documentId); if (!file) return [];
+            const file = files().find(file => file.resource.documentId === location.target.document.documentId); if (!file) return [];
             const button = document.createElement("button"), doc = workspace.document(file.resource.documentId), line = doc.buffer.lineAt(location.from);
             button.textContent = `${doc.title} · ${line + 1}:${location.from - doc.buffer.offsetAt(line) + 1}`;
             button.dataset.location = String(first + index);
@@ -62,7 +62,7 @@ export function mountDemoSymbols(workspace: Workspace, files: readonly DemoFile[
     };
     const request = (kind: "definition" | "references") => {
         if (!idle()) return; dismissOther(); closeRename(false); cancelNavigation(); editor.focus();
-        const snapshots = files.map(file => workspace.document(file.resource.documentId)), selected = editor.view.getSnapshot().selectionSet;
+        const snapshots = files().map(file => workspace.document(file.resource.documentId)), selected = editor.view.getSnapshot().selectionSet;
         const folds = editor.view.folding.getSnapshot().index, metadata = snapshots.map(doc => workspace.resourceForDocument(doc.id).metadata.getSnapshot());
         const captured: Query = { choice: 0, message: "", current: () => idle() && editor.view.getSnapshot().selectionSet === selected
             && folds.sameProjection(editor.view.folding.getSnapshot().index) && (document.activeElement === editor.input || popup.contains(document.activeElement))
@@ -74,7 +74,8 @@ export function mountDemoSymbols(workspace: Workspace, files: readonly DemoFile[
             captured.result = result;
             if (kind === "definition" && result.locations.length === 1) choose(captured, result.locations[0]!);
             else showNavigation(captured, result.locations.length ? `Choose a ${kind === "definition" ? "definition" : "reference"}.` : `No ${kind} in this sample.`);
-        }).catch(() => { if (query === captured && captured.current()) showNavigation(captured, "This location is unavailable in the sample."); });
+        }).catch(error => { if (query === captured && captured.current()) showNavigation(captured,
+            error instanceof Error ? `Cannot open this location: ${error.message}` : "This location is unavailable in the sample."); });
     };
     const rename = new HostRenameTools(workspace, () => idle(), id => id === file.resource.documentId && valid() ? editor : undefined, () => createLspRenameClient({ provider }));
     const heading = document.createElement("h2"), status = document.createElement("p"), label = document.createElement("label"), name = document.createElement("input");
@@ -122,7 +123,7 @@ export function mountDemoSymbols(workspace: Workspace, files: readonly DemoFile[
     } };
     // Expanded discovery metadata does not change the captured source projection.
     const stops = [editor.view.subscribe(changed), editor.view.folding.subscribe(changed), workspace.tabState.subscribe(changed), provider.state.subscribe(changed),
-        ...files.flatMap(file => [workspace.observeDocument(file.resource.documentId).subscribe(changed), file.resource.metadata.subscribe(changed)])];
+        ...files().flatMap(file => [workspace.observeDocument(file.resource.documentId).subscribe(changed), file.resource.metadata.subscribe(changed)])];
     editor.input.addEventListener("blur", () => queueMicrotask(() => { if (!disposed) changed(); }), { signal: events.signal });
     return Object.freeze({ definition: () => request("definition"), references: () => request("references"), rename: beginRename,
         dismiss: () => { cancelNavigation(); closeRename(false); }, isOpen: () => !!query || !renamePopup.hidden,
