@@ -36,14 +36,14 @@ const record = (value: unknown): value is Record<string, unknown> => !!value && 
 const uint = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 0x7fffffff;
 function invalid(): never { throw new TypeError("Malformed or unsupported LSP feature result."); }
 function current(capture: Pick<LspDocumentCapture, "isCurrent">): void { if (!capture.isCurrent()) throw new RpcError(-32801, "LSP feature capture expired."); }
-function text(value: unknown, maximum: number, budget: { units: number }): string {
-    if (typeof value !== "string" || value.length > maximum || (budget.units -= value.length) < 0) invalid(); return value;
+function text(value: unknown, maximum: number, budget?: { units: number }): string {
+    if (typeof value !== "string" || value.length > maximum || budget && (budget.units -= value.length) < 0) invalid(); return value;
 }
-function documentation(value: unknown, budget: { units: number }): string {
+function documentation(value: unknown, budget?: { units: number }): string {
     if (value === undefined) return ""; if (typeof value === "string") return text(value, 16384, budget);
     if (!record(value) || value.kind !== "plaintext" && value.kind !== "markdown") invalid(); return text(value.value, 16384, budget);
 }
-function commitCharacters(value: unknown, budget: { units: number }): readonly string[] {
+function commitCharacters(value: unknown, budget?: { units: number }): readonly string[] {
     if (value === undefined) return Object.freeze([]); if (!Array.isArray(value) || value.length > 64) invalid();
     // LSP specifies length=1; superfluous characters are ignored.
     return Object.freeze([...new Set(value.map(value => text(value, 64, budget)).filter(value => value.length === 1))]);
@@ -154,7 +154,7 @@ export function decodeLspApplyEdit(value: unknown, resolve: (uri: string) => Lsp
     if (!record(value) || value.label !== undefined && (typeof value.label !== "string" || value.label.length > 256)) invalid();
     return Object.freeze({ label: value.label as string | undefined ?? null, edit: decodeLspWorkspaceEdit(value.edit, resolve) });
 }
-function edit(index: LspLineIndex, value: unknown, budget: { units: number }): TextEdit {
+function edit(index: LspLineIndex, value: unknown, budget?: { units: number }): TextEdit {
     if (!record(value)) invalid(); return Object.freeze({ ...lspRangeOffsets(index, value.range), insert: text(value.newText, 16384, budget) });
 }
 function plan(length: number, primary: TextEdit, additional: readonly TextEdit[]): LspCompletionPlan {
@@ -165,35 +165,37 @@ function plan(length: number, primary: TextEdit, additional: readonly TextEdit[]
 }
 /** Complete validation precedes publication; no server-supplied command, snippet or HTML is executed. */
 export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture, offset: number, fallback: LspCompletionFallback | (() => LspCompletionFallback) = { from: offset, to: offset, replaceTo: offset }, options: LspCompletionOptions = {}): LspCompletions {
-    current(capture); const index = capture.index, point = index.at(offset), budget = { units: 65536 }, opaqueBudget = { units: 65536 }; let incomplete = false, defaults: Record<string, unknown> = {}, values: unknown[];
+    // Candidate count and aggregate item text are not protocol validity rules. The session's
+    // configurable RPC message limit bounds transport; hosts bound presentation independently.
+    current(capture); const index = capture.index, point = index.at(offset); let incomplete = false, defaults: Record<string, unknown> = {}, values: unknown[];
     if (value === null) values = [];
     else if (Array.isArray(value)) values = value;
     else { if (!record(value) || typeof value.isIncomplete !== "boolean" || !Array.isArray(value.items)) invalid(); incomplete = value.isIncomplete; values = value.items;
         if (value.itemDefaults !== undefined) { if (!record(value.itemDefaults) || Object.keys(value.itemDefaults).some(key => !["editRange", "insertTextFormat", "insertTextMode", "commitCharacters", "data"].includes(key))) invalid(); defaults = value.itemDefaults;
             if (defaults.insertTextFormat !== undefined && defaults.insertTextFormat !== 1 || defaults.insertTextMode !== undefined && defaults.insertTextMode !== 1) invalid();
-            commitCharacters(defaults.commitCharacters, budget);
-            if (defaults.data !== undefined) text(JSON.stringify(jsonSnapshot(defaults.data)), 8192, opaqueBudget);
+            commitCharacters(defaults.commitCharacters);
+            if (defaults.data !== undefined) text(JSON.stringify(jsonSnapshot(defaults.data)), 8192);
             if (defaults.editRange !== undefined) {
                 const value = defaults.editRange; if (!record(value)) invalid();
                 const insert = lspRangeOffsets(index, "start" in value ? value : value.insert), replace = lspRangeOffsets(index, "start" in value ? value : value.replace);
                 if (insert.from !== replace.from || insert.to > replace.to || insert.from > offset || insert.to < offset || [insert.from, insert.to, replace.to].some(at => index.at(at).line !== point.line)) invalid();
             }
         } }
-    if (values.length > 256) invalid(); let edits = 0, fallbackRange: LspCompletionFallback | undefined;
+    let fallbackRange: LspCompletionFallback | undefined;
     const items = values.map((item: unknown): LspCompletion => {
         if (!record(item) || item.command !== undefined || (item.insertTextFormat ?? defaults.insertTextFormat ?? 1) !== 1 || (item.insertTextMode ?? defaults.insertTextMode ?? 1) !== 1) invalid();
-        const label = text(item.label, 1024, budget); if (!label) invalid(); const detail = item.detail === undefined ? "" : text(item.detail, 4096, budget);
-        const description = documentation(item.documentation, budget), filterText = item.filterText === undefined ? label : text(item.filterText, 1024, budget), sortText = item.sortText === undefined ? label : text(item.sortText, 1024, budget);
+        const label = text(item.label, 1024); if (!label) invalid(); const detail = item.detail === undefined ? "" : text(item.detail, 4096);
+        const description = documentation(item.documentation), filterText = item.filterText === undefined ? label : text(item.filterText, 1024), sortText = item.sortText === undefined ? label : text(item.sortText, 1024);
         if (item.preselect !== undefined && typeof item.preselect !== "boolean") invalid();
-        const commits = commitCharacters(item.commitCharacters !== undefined ? item.commitCharacters : defaults.commitCharacters !== undefined ? defaults.commitCharacters : options.commitCharacters, budget);
-        if (item.data !== undefined) text(JSON.stringify(jsonSnapshot(item.data)), 8192, opaqueBudget);
+        const commits = commitCharacters(item.commitCharacters !== undefined ? item.commitCharacters : defaults.commitCharacters !== undefined ? defaults.commitCharacters : options.commitCharacters);
+        if (item.data !== undefined) text(JSON.stringify(jsonSnapshot(item.data)), 8192);
         let insert: TextEdit, replace: TextEdit;
         if (item.textEdit !== undefined) {
-            if (!record(item.textEdit)) invalid(); const inserted = text(item.textEdit.newText, 16384, budget);
+            if (!record(item.textEdit)) invalid(); const inserted = text(item.textEdit.newText, 16384);
             if ("range" in item.textEdit) { if ("insert" in item.textEdit || "replace" in item.textEdit) invalid(); insert = replace = Object.freeze({ ...lspRangeOffsets(index, item.textEdit.range), insert: inserted }); }
             else { insert = Object.freeze({ ...lspRangeOffsets(index, item.textEdit.insert), insert: inserted }); replace = Object.freeze({ ...lspRangeOffsets(index, item.textEdit.replace), insert: inserted }); }
         } else {
-            const editRange = defaults.editRange, inserted = text(editRange === undefined ? item.insertText ?? label : item.textEditText ?? label, 16384, budget);
+            const editRange = defaults.editRange, inserted = text(editRange === undefined ? item.insertText ?? label : item.textEditText ?? label, 16384);
             if (editRange !== undefined) {
                 if (!record(editRange)) invalid();
                 if ("start" in editRange) insert = replace = Object.freeze({ ...lspRangeOffsets(index, editRange), insert: inserted });
@@ -204,14 +206,13 @@ export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture
         if (insert.from !== replace.from || insert.to > replace.to || insert.from > offset || insert.to < offset) invalid();
         for (const at of [insert.from, insert.to, replace.to]) if (index.at(at).line !== point.line) invalid();
         let additional: TextEdit[] = [];
-        if (item.additionalTextEdits !== undefined) { if (!Array.isArray(item.additionalTextEdits) || item.additionalTextEdits.length > 32) invalid(); additional = item.additionalTextEdits.map(value => edit(index, value, budget)).sort((a, b) => a.from - b.from || a.to - b.to); }
-        if ((edits += 1 + additional.length) > 1024) invalid();
+        if (item.additionalTextEdits !== undefined) { if (!Array.isArray(item.additionalTextEdits) || item.additionalTextEdits.length > 32) invalid(); additional = item.additionalTextEdits.map(value => edit(index, value)).sort((a, b) => a.from - b.from || a.to - b.to); }
         let resolution: JsonValue | null = null;
         if (options.resolve) {
             const wire = { ...item };
             for (const key of ["data", "commitCharacters", "insertTextFormat", "insertTextMode"]) if (wire[key] === undefined && defaults[key] !== undefined) wire[key] = defaults[key];
             if (item.textEdit === undefined && defaults.editRange !== undefined) wire.textEdit = { newText: insert.insert, insert: { start: index.at(insert.from), end: index.at(insert.to) }, replace: { start: index.at(replace.from), end: index.at(replace.to) } };
-            resolution = jsonSnapshot(wire); text(JSON.stringify(resolution), 32768, opaqueBudget);
+            resolution = jsonSnapshot(wire); text(JSON.stringify(resolution), 32768);
         }
         return Object.freeze({ label, detail, documentation: description, filterText, sortText, preselect: item.preselect === true, commitCharacters: commits,
             source: capture.document, primary: Object.freeze({ from: insert.from, insertTo: insert.to, replaceTo: replace.to, text: insert.insert }), additional: Object.freeze(additional), resolve: resolution,

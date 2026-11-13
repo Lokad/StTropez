@@ -1,4 +1,9 @@
 import { test, expect } from "@playwright/test";
+import { runDemoCompletionCatalogue } from "./demo-walkthrough.ts";
+
+test("real provider retains the 1200-field catalogue through filtering, acceptance and undo", async ({ page }) => {
+    await runDemoCompletionCatalogue(page);
+});
 
 test("real TypeScript diagnostics select the captured error and clear after correction", async ({ page }) => {
     const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));

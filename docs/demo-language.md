@@ -86,11 +86,13 @@ candidates whose edit range fails to contain the requested caret. Other item fie
 additional edits reach the public client's strict decoder unchanged. The editor filters each
 candidate against its own edit prefix, including punctuation, using bounded reads shared by
 candidates with the same start offset.
-The provider can offer over 1,000 global candidates at an empty argument. The development host
-uses the existing reference document implementation to capture the bounded word prefix, narrows
-oversized lists against that prefix and returns at most 256 candidates. A truncated page is
-marked incomplete so further typing requests a fresh page. The editor's strict decoding budget
-stays unchanged; a later prefix can reach candidates beyond the initial page.
+Both demo providers retain complete candidate lists and the provider's own incomplete flag.
+The **Completion catalogue · 1,200 fields** sample uses the real TypeScript provider: at the end,
+type `catalogue.`, use Up to reach `item1199`, or type `item119` to narrow to ten candidates.
+Tab accepts the selected item; Undo restores the prefix. The popup renders at most 16 rows and
+shows the selected position/count, including an explicit partial-list label when applicable.
+The browser provider retains resolution references for the current and preceding response only;
+older keys expire. The library's configurable transport limit remains separate from presentation.
 
 The bridge fixes the project root/compiler settings, validates addressed document URIs and
 read-command file paths, and writes only known sample files in its allocated workspace.

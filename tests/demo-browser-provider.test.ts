@@ -5,6 +5,19 @@ import { TextDocument } from "vscode-languageserver-protocol/browser.js";
 import { BrowserLanguageService } from "../examples/demo/browser-language-service.ts";
 import { demoSample } from "../examples/demo/samples.ts";
 
+test("the real TypeScript catalogue returns every field and bounds lazy keys by response lifetime", () => {
+    const provider = new BrowserLanguageService({}, ["catalogue.ts"]), uri = "file:///sttropez/catalogue.ts";
+    const text = demoSample("catalogue").files["catalogue.ts"]! + "catalogue.", doc = TextDocument.create(uri, "typescript", 1, text);
+    try {
+        provider.notify("textDocument/didOpen", { textDocument: { uri, languageId: "typescript", version: 1, text } });
+        const request = () => provider.request("textDocument/completion", { textDocument: { uri }, position: doc.positionAt(text.length) }) as { isIncomplete: boolean; items: { label: string; data: unknown }[] };
+        const first = request(); assert.equal(first.items.length, 1200); assert.equal(first.isIncomplete, false);
+        const tail = first.items.find(item => item.label === "item1199")!; assert.ok(tail);
+        request(); assert.match(JSON.stringify(provider.request("completionItem/resolve", tail)), /item1199/);
+        request(); assert.throws(() => provider.request("completionItem/resolve", tail), /no longer available/);
+    } finally { provider.dispose(); }
+});
+
 test("browser TypeScript provider preserves raw UTF-16/CRLF changes and confines versioned open files", async () => {
     const libraries = Object.fromEntries(await Promise.all((await readdir("node_modules/typescript-demo/lib"))
         .filter(name => /^lib[\w.-]*\.d\.ts$/.test(name)).map(async name => [name, await readFile(`node_modules/typescript-demo/lib/${name}`, "utf8")])));

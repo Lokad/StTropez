@@ -43,6 +43,10 @@ that exact offered draft. A draft already identical to the current saved files i
 reopen; token checks prevent cleanup from deleting a newer draft written by another page.
 Caret/scroll snapshots belong to the actual document view, independently of workspace-local IDs.
 
+The completion catalogue sample offers 1,200 fields from a real TypeScript object. Every matching
+candidate remains reachable through typing or arrow keys, while the popup renders at most 16 rows.
+Its position/count and partial-list indicator distinguish the visible window from provider results.
+
 ## Build and qualify
 
 ```sh
@@ -62,7 +66,8 @@ and clears only its verified generated `artifacts/pages` directory before rebuil
 
 Run `npm run test:demo` for Chromium, Firefox and WebKit. The suite reuses the complete source
 demo walkthrough/conflict helpers, checks that every request stays below the repository path
-and no backend/WebSocket is used, and exercises worker failure/retry and large-file editing.
+and no backend/WebSocket is used, and exercises worker failure/retry, large-file editing and the
+same completion catalogue journey used by the local provider and restored-assets demo.
 The focused provider test covers raw UTF-16/CRLF incremental edits, versions and file confinement.
 Setting `STTROPEZ_DEMO_URL` runs the same browser tests against a deployed site without starting
 a local preview server. All unattended browsers run headless.

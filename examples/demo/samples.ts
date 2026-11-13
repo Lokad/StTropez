@@ -1,4 +1,4 @@
-export type SampleId = "pricing" | "errors" | "unicode" | "large";
+export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue";
 export type DemoSample = Readonly<{ id: SampleId; title: string; description: string; files: Readonly<Record<string, string>> }>;
 
 const pricing = `export interface CartItem {
@@ -31,10 +31,16 @@ console.log(message);
 export const sampleChoices: readonly Readonly<{ id: SampleId; title: string }>[] = Object.freeze([
     { id: "pricing", title: "Shopping cart" }, { id: "errors", title: "Fix a type error" },
     { id: "unicode", title: "Languages & Unicode" }, { id: "large", title: "Large file · 100,000 lines" },
+    { id: "catalogue", title: "Completion catalogue · 1,200 fields" },
 ]);
 
 /** Large fixtures are built only on explicit selection. */
 export function demoSample(id: SampleId): DemoSample {
+    if (id === "catalogue") return { id, title: "Completion catalogue",
+        description: "Go to the end (Ctrl+End), type catalogue. and explore 1,200 fields. Filter by typing item119, then choose with arrows and Tab.",
+        files: { "catalogue.ts": "// A real TypeScript object supplies every completion candidate.\nconst catalogue = {\n"
+            + Array.from({ length: 1200 }, (_, i) => `    item${String(i).padStart(4, "0")}: ${i},`).join("\n")
+            + "\n};\n\n// Try catalogue. on the next line, or request completion with Ctrl+Space.\n" } };
     if (id === "large") return { id, title: "Large file", description: "Jump to the end, edit, search and undo in a 100,000-line file.",
         files: { "large.ts": Array.from({ length: 100_000 }, (_, i) => `// Row ${i + 1}: try editing or searching here.`).join("\n") } };
     if (id === "unicode") return { id, title: "Languages & Unicode", description: "Select and edit accents, emoji and text in different writing systems.", files: {

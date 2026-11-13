@@ -5,6 +5,7 @@ import { RpcError } from "../../src/protocol/index.ts";
 type ObjectValue = Record<string, unknown>;
 type Document = ReturnType<typeof TextDocument.create>;
 type OpenFile = Readonly<{ path: string; document: Document }>;
+type CompletionReference = Readonly<{ uri: string; offset: number; entry: ts.CompletionEntry }>;
 const object = (value: unknown): ObjectValue => {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new RpcError(-32602, "Expected structured provider parameters.");
     return value as ObjectValue;
@@ -23,7 +24,8 @@ export class BrowserLanguageService {
     private readonly allowed = new Map<string, string>();
     private readonly libraries = new Map<string, ts.IScriptSnapshot>();
     private readonly snapshots = new Map<string, Readonly<{ version: number; snapshot: ts.IScriptSnapshot }>>();
-    private readonly completions = new Map<number, Readonly<{ uri: string; offset: number; entry: ts.CompletionEntry }>>();
+    private completions = new Map<number, CompletionReference>();
+    private previousCompletions = new Map<number, CompletionReference>();
     private readonly service: ts.LanguageService;
     private version = 0;
     private serial = 0;
@@ -114,7 +116,7 @@ export class BrowserLanguageService {
                 code: d.code, message: ts.flattenDiagnosticMessageText(d.messageText, "\n").slice(0, 4096) })) };
         }
         if (method === "completionItem/resolve") {
-            const p = object(params), stored = this.completions.get(integer(object(p.data).key));
+            const p = object(params), key = integer(object(p.data).key), stored = this.completions.get(key) ?? this.previousCompletions.get(key);
             if (!stored) throw new RpcError(-32801, "Completion is no longer available.");
             const file = this.file(stored.uri), entry = stored.entry;
             const details = this.service.getCompletionEntryDetails(file.path, stored.offset, entry.name, {}, entry.source, {}, entry.data);
@@ -136,20 +138,18 @@ export class BrowserLanguageService {
             if (!info) return null;
             const before = file.document.getText().slice(Math.max(0, offset - 2048), offset), prefix = before.match(/[\p{L}\p{N}\p{Pc}\p{M}\u200c\u200d$]*$/u)?.[0] ?? "";
             const fallback = info.optionalReplacementSpan ?? { start: offset - prefix.length, length: prefix.length };
-            let entries = info.entries.filter(entry => !entry.isSnippet && !entry.hasAction && !entry.source);
-            const oversized = entries.length > 256;
-            if (oversized) entries = entries.filter(entry => (entry.filterText ?? entry.name).toLowerCase().startsWith(prefix.toLowerCase()));
-            // A client may keep a provisional page visible while an incomplete list refreshes.
-            // Keep its opaque resolution keys available within a small bounded cache.
-            while (this.completions.size > 256) this.completions.delete(this.completions.keys().next().value!);
-            const items = entries.slice(0, 256).flatMap(entry => {
+            const entries = info.entries.filter(entry => !entry.isSnippet && !entry.hasAction && !entry.source);
+            // Retain the current and preceding response while a client refreshes a provisional
+            // list. Bound lifetime by responses without silently dropping candidates within one.
+            this.previousCompletions = this.completions; this.completions = new Map();
+            const items = entries.flatMap(entry => {
                 const span = entry.replacementSpan ?? fallback;
                 if (span.start > offset || span.start + span.length < offset) return [];
                 const key = ++this.serial; this.completions.set(key, { uri: file.document.uri, offset, entry });
                 return [{ label: entry.name, sortText: entry.sortText, filterText: entry.filterText ?? (span.start < fallback.start ? entry.insertText ?? entry.name : entry.name),
                     textEdit: { range: this.span(file, span), newText: entry.insertText ?? entry.name }, data: { key } }];
             });
-            return { isIncomplete: !!info.isIncomplete || entries.length > 256, items };
+            return { isIncomplete: !!info.isIncomplete, items };
         }
         if (method === "textDocument/hover") {
             const info = this.service.getQuickInfoAtPosition(file.path, offset);
@@ -189,5 +189,5 @@ export class BrowserLanguageService {
         }
         throw new RpcError(-32601, "Unsupported browser demo request.");
     }
-    dispose(): void { if (this.disposed) return; this.disposed = true; this.service.dispose(); this.files.clear(); this.libraries.clear(); this.snapshots.clear(); this.completions.clear(); }
+    dispose(): void { if (this.disposed) return; this.disposed = true; this.service.dispose(); this.files.clear(); this.libraries.clear(); this.snapshots.clear(); this.completions.clear(); this.previousCompletions.clear(); }
 }

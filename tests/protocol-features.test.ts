@@ -72,10 +72,24 @@ test("completion defaults, word fallback and whole-list validation refuse unsupp
         { label: "duplicate insert", textEdit: { newText: "x", range: range(0, 8, 8) }, additionalTextEdits: [{ range: range(0, 8, 8), newText: "bad" }] }]) {
         assert.throws(() => decodeLspCompletions([{ label: "valid" }, bad], capture, 8, fallback));
     }
-    assert.throws(() => decodeLspCompletions({ ...response, items: Array.from({ length: 257 }, () => ({ label: "x" })) }, capture, 8));
+    assert.equal(decodeLspCompletions({ ...response, items: Array.from({ length: 257 }, () => ({ label: "x" })) }, capture, 8).items.length, 257);
     assert.throws(() => decodeLspCompletions({ ...response, itemDefaults: { ...response.itemDefaults, unknownBehavior: true } }, capture, 8));
     assert.throws(() => decodeLspCompletions({ isIncomplete: false, items: [], itemDefaults: { editRange: range(0, 0, 999) } }, capture, 8));
     assert.equal(decodeLspCompletions(response, capture, 8, () => { throw new Error("Unused word fallback must not reject explicit ranges"); }).items.length, 1);
+});
+
+test("completion catalogues retain every candidate and reject malformed later edits without truncation", async () => {
+    const { capture } = await captured("const saMORE\r\n"), fallback = { from: 6, to: 8, replaceTo: 12 };
+    const values = Array.from({ length: 1200 }, (_, index) => ({ label: `sample${String(index).padStart(4, "0")}`,
+        detail: "A useful catalogue entry with lazily supplied documentation.", data: { index, context: "retained for resolution" } }));
+    for (const incomplete of [false, true]) {
+        const result = decodeLspCompletions({ isIncomplete: incomplete, items: values }, capture, 8, fallback, { resolve: true });
+        assert.equal(result.items.length, 1200); assert.equal(result.incomplete, incomplete);
+        const tail = result.items[1199]!;
+        assert.equal(capture.document.buffer.apply(tail.replace.edits).buffer.text(), "const sample1199\r\n");
+        assert.deepEqual((tail.resolve as { data: unknown }).data, values[1199]!.data);
+    }
+    assert.throws(() => decodeLspCompletions([...values, { label: "bad tail", textEdit: { range: range(0, 0, 999), newText: "invalid" } }], capture, 8, fallback));
 });
 
 test("completion metadata and item defaults retain immutable resolve data with bounded filtering and commit characters", async () => {

@@ -1,6 +1,33 @@
 import { expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
+/** Complete provider lists stay navigable while the host bounds rendered rows. */
+export async function runDemoCompletionCatalogue(page: Page, url = "/") {
+    await page.goto(url); await page.locator("#sample").selectOption("catalogue");
+    const source = page.getByRole("textbox", { name: "catalogue.ts", exact: true });
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await source.press("Control+End"); await source.pressSequentially("catalogue.");
+    await source.press("Escape"); await source.press("Control+Space");
+    await expect(page.getByRole("option", { name: "item0000", exact: true })).toBeVisible();
+    const popup = page.getByRole("listbox", { name: "Completions", exact: true });
+    expect(await popup.getByRole("option").count()).toBeLessThanOrEqual(16);
+    await expect(popup.locator(".demo-completion-count")).toHaveText("1 of 1200 · type to filter");
+    await source.press("ArrowUp");
+    await expect(page.getByRole("option", { name: "item1199", exact: true })).toHaveAttribute("aria-selected", "true");
+    expect(await popup.getByRole("option").count()).toBeLessThanOrEqual(16);
+    await expect(popup.locator(".demo-completion-count")).toHaveText("1200 of 1200 · type to filter");
+    await expect(page.locator(".demo-completion pre")).toContainText("item1199:");
+    await source.press("Tab"); await expect(page.locator("#editor")).toContainText("catalogue.item1199");
+    await source.press("Control+z"); await expect(page.locator("#editor")).not.toContainText("catalogue.item1199");
+    await source.press("Control+Space"); await expect(page.getByRole("option", { name: "item0000", exact: true })).toBeVisible();
+    await source.pressSequentially("item119");
+    await expect(popup.getByRole("option")).toHaveCount(10);
+    await source.press("ArrowUp");
+    await expect(page.locator(".demo-completion pre")).toContainText("item1199:");
+    await source.press("Enter"); await expect(page.locator("#editor")).toContainText("catalogue.item1199");
+    return Object.freeze({ candidates: 1200, renderedRowLimit: 16, lastCandidateReachable: true, prefixFiltering: true, keyboardAcceptance: true, undo: true });
+}
+
 async function select(page: Page, source: Locator, text: string) {
     await source.press("Control+f"); await page.getByRole("textbox", { name: "Find text", exact: true }).fill(text);
     await expect(page.locator("#find-status")).toHaveText("1 matches"); await page.locator("#find-next").click();

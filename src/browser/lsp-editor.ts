@@ -16,7 +16,7 @@ type Input = { revision: number; selections: SelectionSet; caret: number; data: 
 type Invocation = Readonly<{ kind: 1 | 2 | 3; character?: string; automatic?: boolean }>;
 export type LspEditorDiagnostic = Readonly<{ from: number; to: number; message: string }>;
 export type LspEditorSnapshot = Readonly<{ message: string; connected: boolean; pending: boolean; offerText: string | null;
-    diagnostics: readonly LspEditorDiagnostic[]; diagnosticRevision: number; choices: readonly string[]; choiceIndex: number; completionId: number; completionDetail: string; resolving: boolean; unversionedDiagnostics: readonly string[] }>;
+    diagnostics: readonly LspEditorDiagnostic[]; diagnosticRevision: number; choices: readonly string[]; choiceIndex: number; completionId: number; completionIncomplete: boolean; completionDetail: string; resolving: boolean; unversionedDiagnostics: readonly string[] }>;
 export type LspEditorOptions = Readonly<{ provider: LspWorkspace; autoConnect?: boolean; automatic?: boolean;
     /** Narrow explicit requests using each item's captured edit prefix, as automatic requests do. */
     filterManualCompletions?: boolean; canCapture?: () => boolean;
@@ -47,7 +47,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
     const emptyDiagnostics: readonly LspEditorDiagnostic[] = Object.freeze([]), emptyMessages: readonly string[] = Object.freeze([]);
     let diagnostics = emptyDiagnostics, unversioned = emptyMessages, diagnosticRevision = -1;
     const notifications = new NotificationScope(error => options.onError?.(error)), observers = new Set<() => void>();
-    const cell = new Store<LspEditorSnapshot>(Object.freeze({ message: "LSP provider disconnected; local editing remains available.", connected: false, pending: false, offerText: null, diagnostics, diagnosticRevision, choices: Object.freeze([]), choiceIndex: 0, completionId: 0, completionDetail: "", resolving: false, unversionedDiagnostics: Object.freeze([]) }), notifications);
+    const cell = new Store<LspEditorSnapshot>(Object.freeze({ message: "LSP provider disconnected; local editing remains available.", connected: false, pending: false, offerText: null, diagnostics, diagnosticRevision, choices: Object.freeze([]), choiceIndex: 0, completionId: 0, completionIncomplete: false, completionDetail: "", resolving: false, unversionedDiagnostics: Object.freeze([]) }), notifications);
     const state: Observable<LspEditorSnapshot> = Object.freeze({ getSnapshot: cell.observable.getSnapshot, subscribe: listener => {
         notifications.assertWritable(); if (disposed) throw new Error("LSP editor is disposed."); const stop = cell.observable.subscribe(listener);
         const release = () => { stop(); observers.delete(release); }; observers.add(release); return release;
@@ -61,7 +61,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
     const bindingCurrent = (captured: Job) => !!captured.capture && (captured.capture.isBindingCurrent?.() ?? captured.capture.isCurrent());
     const publish = (message: string) => { const selected = job?.visible[job.choice], changed = new Set<Store<unknown>>(); cell.set(Object.freeze({ message, connected: session.state.getSnapshot().phase === "ready", pending: !!job && (job.pendingList || !!job.resolution || !!selected?.resolve),
         offerText: job?.visible[job.choice]?.label ?? null, choices: Object.freeze(job?.visible.map(item => item.label) ?? []), choiceIndex: job?.choice ?? 0, completionId: job?.id ?? 0,
-        completionDetail: selected ? [selected.detail, selected.documentation].filter(Boolean).join("\n") : "", resolving: !!job?.resolution,
+        completionIncomplete: job?.choices?.incomplete ?? false, completionDetail: selected ? [selected.detail, selected.documentation].filter(Boolean).join("\n") : "", resolving: !!job?.resolution,
         diagnostics, diagnosticRevision, unversionedDiagnostics: unversioned }), changed); notifications.deliver([...changed]); };
     const release = () => {
         const old = job; job = undefined; if (!old) return; old.cancelled = true; old.call?.cancel(); old.resolution?.call?.cancel(); old.resolution = undefined;

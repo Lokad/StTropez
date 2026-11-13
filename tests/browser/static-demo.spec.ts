@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { runDemoConflict, runDemoWalkthrough } from "./demo-walkthrough.ts";
+import { runDemoCompletionCatalogue, runDemoConflict, runDemoWalkthrough } from "./demo-walkthrough.ts";
 import { runDemoPresentationContinuity } from "./demo-presentation.ts";
 
 // Native scrollbar drags are part of the demo's user journey, including headless Chromium.
@@ -51,7 +51,7 @@ test("reset names its sample and recovery follows the stored draft across sample
     await expect(page.locator("#editor")).not.toContainText("My previous large-file edits");
 });
 
-test("browser global completion refreshes its bounded page after a typed prefix", async ({ page, baseURL }) => {
+test("browser global completion filters its catalogue after a typed prefix", async ({ page, baseURL }) => {
     await page.goto(baseURL!); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+End"); await source.pressSequentially("\ncalculateTotal(cart, ");
@@ -59,6 +59,10 @@ test("browser global completion refreshes its bounded page after a typed prefix"
     await source.pressSequentially("Mat"); await expect(page.getByRole("option", { name: "Math", exact: true })).toBeVisible();
     await source.press("Escape"); await expect(page.getByRole("listbox", { name: "Completions", exact: true })).toBeHidden();
     await expect(source).toBeFocused();
+});
+
+test("the real 1200-field catalogue reaches the last candidate with bounded rows, keyboard acceptance and undo", async ({ page, baseURL }) => {
+    await runDemoCompletionCatalogue(page, baseURL!);
 });
 
 test("browser worker failure leaves typing/save usable and Retry synchronizes the latest code", async ({ page, baseURL }) => {

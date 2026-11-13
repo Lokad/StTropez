@@ -11,9 +11,10 @@ import { mountDemoActions } from "./actions.ts";
 /** Contextual completion UI around the public editor controller. It never changes text itself. */
 export function mountDemoLanguage(workspace: Workspace, files: readonly DemoFile[], file: DemoFile, editor: EditingCandidate, language: DemoLanguage, open: (target: DemoSymbolTarget) => void) {
     const target = workspace.captureTab(file.tab), listeners = new AbortController();
-    const popup = document.createElement("div"), choices = document.createElement("div"), detail = document.createElement("pre");
+    const popup = document.createElement("div"), count = document.createElement("div"), choices = document.createElement("div"), detail = document.createElement("pre");
     popup.className = "demo-completion"; popup.hidden = true; popup.setAttribute("role", "listbox"); popup.setAttribute("aria-label", "Completions");
-    popup.append(choices, detail); document.body.append(popup);
+    count.className = "demo-completion-count";
+    popup.append(count, choices, detail); document.body.append(popup);
     let controller: LspEditorController | undefined, stop: (() => void) | undefined, disposed = false, rendered = "";
     let accepting: Readonly<{ id: number; index: number }> | undefined;
     let inspection: ReturnType<typeof mountDemoInspection> | undefined;
@@ -24,7 +25,8 @@ export function mountDemoLanguage(workspace: Workspace, files: readonly DemoFile
         const state = controller?.state.getSnapshot();
         popup.hidden = !valid() || !state?.choices.length || state.offerText === null;
         if (!state || popup.hidden) return;
-        const key = `${state.completionId}:${state.choiceIndex}:${state.choices.join("\0")}`;
+        count.textContent = `${state.choiceIndex + 1} of ${state.choices.length}${state.completionIncomplete ? " · partial list" : ""} · type to filter`;
+        const key = `${state.completionId}:${state.choiceIndex}`;
         if (rendered !== key) {
             rendered = key;
             const first = Math.max(0, state.choiceIndex - 7), last = Math.min(state.choices.length, first + 16);

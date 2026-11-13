@@ -65,12 +65,16 @@ are applied with the completion in one transaction, suppressing duplicate native
 Each published list ID also changes after prefix filtering; retained controls can pass
 `completionId` to `chooseCompletion`/`apply` to reject an obsolete list or another view's choices.
 
-The completion bounds are 256 choices, 1,024 total edits, 32 additional edits per item, 16,384 units
-per insertion and 65,536 aggregate label/detail/insertion units. Overlaps, conflicting insertions,
+Completion lists have no fixed candidate count or aggregate text/edit quota. Transport size is
+controlled by the host's `rpc.maxMessageUnits` (4,194,304 UTF-16 units by default); presentation
+limits belong to the host. `completionIncomplete` preserves the provider's partial-list status,
+independently of client filtering. The demo keeps at most 16 candidate rows while every matching
+candidate remains reachable. Per-item bounds remain 32 additional edits and 16,384 units per
+insertion. Overlaps, conflicting insertions,
 out-of-document positions and malformed final items refuse the entire result. Snippets, indentation
 adjustment and follow-up commands are not advertised and are explicitly refused if supplied.
-Resolve payloads are bounded to 32,768 units/item, 8,192 opaque data units/item and 65,536 aggregate
-opaque units/list; commit-character lists allow at most 64 entries. Snippet expansion and rich
+Resolve payloads are bounded to 32,768 units/item and 8,192 opaque data units/item;
+commit-character lists allow at most 64 entries. Snippet expansion and rich
 Markdown rendering remain unsupported; documentation is literal text.
 
 Pending typing/navigation/table conversion, composition, multiple carets, source revision, selection

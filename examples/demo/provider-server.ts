@@ -73,7 +73,7 @@ export function attachDemoProvider(server: Server) {
         const reader = new StreamMessageReader(child.stdout), writer = new StreamMessageWriter(child.stdin);
         const shutdownId = "sttropez-demo-shutdown";
         const resolving = new Map<string | number, Readonly<{ data: unknown; present: boolean }>>();
-        const completing = new Map<string | number, Readonly<{ line: number; character: number; prefix: string }>>();
+        const completing = new Map<string | number, Readonly<{ line: number; character: number }>>();
         const documents = new Map<string, TextDocument>();
         type Problem = Readonly<{ from: number; to: number; wire: Diagnostic }>;
         type Kind = "semantic" | "syntactic";
@@ -143,7 +143,7 @@ export function attachDemoProvider(server: Server) {
                     // The pinned server can return a computed-property candidate that only replaces
                     // the earlier dot, outside a later typed prefix. Such a range cannot satisfy the
                     // LSP completion contract at this caret. Retain the valid candidates unchanged.
-                    let items = value.result.items.filter(item => {
+                    value.result.items = value.result.items.filter(item => {
                         if (!object(item) || !object(item.textEdit) || !object(item.textEdit.range)) return true;
                         const range = item.textEdit.range;
                         if (!object(range.start) || !object(range.end) || typeof range.start.line !== "number" || typeof range.end.line !== "number"
@@ -151,16 +151,6 @@ export function attachDemoProvider(server: Server) {
                         return (range.start.line < position.line || range.start.line === position.line && range.start.character <= position.character)
                             && (range.end.line > position.line || range.end.line === position.line && range.end.character >= position.character);
                     });
-                    // Global lists exceed the client's bounded decoding budget. Narrow on the
-                    // captured word before paging; isIncomplete requests a fresh page as it grows.
-                    if (items.length > 256) {
-                        const prefix = position.prefix.toLowerCase();
-                        const matches = items.filter(item => !prefix || object(item) && typeof (item.filterText ?? item.label) === "string"
-                            && String(item.filterText ?? item.label).toLowerCase().startsWith(prefix));
-                        items = matches.slice(0, 256);
-                        value.result.isIncomplete = value.result.isIncomplete === true || matches.length > 256;
-                    }
-                    value.result.items = items;
                 }
             }
             if (!stopped && socket.readyState === 1) socket.send(JSON.stringify(message));
@@ -233,10 +223,7 @@ export function attachDemoProvider(server: Server) {
                 && typeof message.params.position.line === "number" && typeof message.params.position.character === "number" && (typeof message.id === "number" || typeof message.id === "string")) {
                 if (completing.size >= 128) { reject(message.id, "Too many pending completion lists."); return; }
                 const { line, character } = message.params.position;
-                const doc = object(message.params.textDocument) && documents.get(String(message.params.textDocument.uri));
-                const before = doc ? doc.getText({ start: { line, character: Math.max(0, character - 2048) }, end: { line, character } }) : "";
-                const prefix = before.match(/[\p{L}\p{N}\p{Pc}\p{M}\u200c\u200d$]*$/u)?.[0] ?? "";
-                completing.set(message.id, { line, character, prefix });
+                completing.set(message.id, { line, character });
             }
             if (message.method === "$/cancelRequest" && object(message.params) && (typeof message.params.id === "number" || typeof message.params.id === "string")) {
                 resolving.delete(message.params.id); completing.delete(message.params.id); diagnosing.delete(message.params.id); acting.delete(message.params.id);
