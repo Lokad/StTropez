@@ -14,6 +14,7 @@ import { demoSample, sampleChoices } from "./samples.ts";
 import type { SampleId } from "./samples.ts";
 import { demoTemplateCompletions, demoTemplateUri, resolveDemoTemplate } from "./completion-templates.ts";
 import { demoDiagnosticFixture } from "./diagnostics.ts";
+import { demoProjectActions } from "./action-fixture.ts";
 
 const compiler = fileURLToPath(import.meta.resolve("typescript-demo/lib/tsserver.js"));
 const executable = fileURLToPath(new URL("lib/cli.mjs", import.meta.resolve("typescript-language-server/package.json")));
@@ -244,6 +245,10 @@ export function attachDemoProvider(server: Server) {
             }
             if (message.method === "textDocument/codeAction") {
                 const params = message.params, doc = object(params) && object(params.textDocument) && documents.get(String(params.textDocument.uri));
+                const actions = doc && demoProjectActions(doc, [...documents.values()]);
+                if (actions && (typeof message.id === "string" || typeof message.id === "number")) {
+                    socket.send(JSON.stringify({ jsonrpc: "2.0", id: message.id, result: actions })); return;
+                }
                 const cached = doc ? problems.get(doc.uri) : undefined;
                 if (!doc || cached?.document !== doc || !cached.semantic || !cached.syntactic || !object(params) || !object(params.range)
                     || typeof message.id !== "string" && typeof message.id !== "number" || acting.size >= 128) { reject(message.id, "Request current captured diagnostics before quick fixes."); return; }

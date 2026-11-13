@@ -72,10 +72,19 @@ The existing deterministic protocol fixture keeps its separate `/lsp-fixture` ro
   Renaming at the function definition updates the importing file too. At an imported alias,
   TypeScript may instead introduce a local alias; the preview shows the actual provider edits.
   Rename the exported `LabelOptions` type to exercise edits to an unopened module.
-- Ctrl+. or Code → Quick fix requests fixes for the current error/range. Review the named fix
-  and its before/after text, then Apply fix or Enter; Escape cancels. The real spelling fix for
-  a mistyped known name is qualified. The existing action controller validates every captured
-  file and permission, and applies the exact edit batch as one shared undo command.
+- Ctrl+. or Code → Quick fix requests fixes for the current error/range. Clicking an ordinary
+  small single-file fix applies it directly; receiving a response or selecting with arrows does
+  not apply anything. The before/after preview remains available, with Apply fix or Enter;
+  Escape cancels. Broader actions stay in preview when selected. The existing controller
+  validates every captured file and permission and commits one shared undo command.
+  This demo policy treats an edit-only quickfix to the current file with at most four edits
+  and 256 replaced/inserted UTF-16 units as direct; it is not a library restriction.
+  Explicit activation survives lazy resolution only while its original capture stays current.
+- **Project actions** is a small, labeled provider fixture for a refactoring spanning two files.
+  Its fixed sample-name replacement travels through standard code-action decoding, previews
+  every edit, rejects stale captures and applies atomically. Undo from either participating
+  file restores both files. Both demo providers share this fixture; TypeScript continues to
+  check and color the editable code. This is not a general-purpose rename implementation.
 - A failed provider leaves typing, history, comparison and local saves usable. Retry creates
   a fresh provider connection with current document snapshots. Switching samples suspends
   the inactive provider; file switches retain the same project synchronization stream. Retry
@@ -176,7 +185,8 @@ commands and project configuration changes are rejected.
 Focused qualification uses a real provider for type-error correction, member completion and
 resolution/history, pointer/keyboard inspection, argument changes and popup Escape priority,
 held real responses after edits/file switches, startup failure/retry,
-spelling-fix preview/apply/history, concurrent diagnostic refresh, related-file invalidation,
+direct spelling-fix selection/history, delayed activated resolution, reviewed two-file actions,
+concurrent diagnostic refresh, related-file invalidation,
 incremental synchronization, reconnect and owned process/workspace cleanup. The actual demo's
 restored-package walkthrough and integrated normal/100k measurements are recorded in
 [demo qualification](demo-qualification.md), including separate handler, editor-frame,

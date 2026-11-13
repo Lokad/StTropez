@@ -4,6 +4,7 @@ import { TextDocument } from "vscode-languageserver-protocol/browser.js";
 import { RpcError } from "../../src/protocol/index.ts";
 import { demoTemplateCompletions, demoTemplateUri, resolveDemoTemplate } from "./completion-templates.ts";
 import { demoDiagnosticFixture } from "./diagnostics.ts";
+import { demoProjectActions } from "./action-fixture.ts";
 
 type ObjectValue = Record<string, unknown>;
 type Document = ReturnType<typeof TextDocument.create>;
@@ -114,7 +115,7 @@ export class BrowserLanguageService {
             positionEncoding: "utf-16", textDocumentSync: { openClose: true, change: 2 },
             completionProvider: { triggerCharacters: ["."], resolveProvider: true }, hoverProvider: true,
             signatureHelpProvider: { triggerCharacters: ["(", ","], retriggerCharacters: [","] },
-            definitionProvider: true, referencesProvider: true, renameProvider: { prepareProvider: true }, codeActionProvider: { codeActionKinds: ["quickfix"] }, foldingRangeProvider: true, documentHighlightProvider: true,
+            definitionProvider: true, referencesProvider: true, renameProvider: { prepareProvider: true }, codeActionProvider: { codeActionKinds: ["quickfix", "refactor.rename"] }, foldingRangeProvider: true, documentHighlightProvider: true,
         } };
         if (method === "shutdown") return null;
         if (method === "sttropez/readDocument") {
@@ -145,6 +146,7 @@ export class BrowserLanguageService {
         }
         if (method === "textDocument/codeAction") {
             const p = object(params), file = this.file(object(p.textDocument).uri), at = range(p.range);
+            const actions = demoProjectActions(file.document, [...this.files.values()].map(file => file.document)); if (actions) return actions;
             const from = file.document.offsetAt(at.start), to = file.document.offsetAt(at.end);
             const codes = [...this.service.getSyntacticDiagnostics(file.path), ...this.service.getSemanticDiagnostics(file.path)]
                 .filter(d => (d.start ?? 0) <= to && (d.start ?? 0) + (d.length ?? 0) >= from).map(d => d.code);

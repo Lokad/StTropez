@@ -183,10 +183,16 @@ export class HostActionsTools {
             if (keyboard && this.moduleInput && this.current(job)) { this.moduleInput.value = module; this.moduleInput.focus(); this.moduleInput.select(); }
         } catch (error) { this.release(); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Action provider unavailable.", edits: [] }); }
     }
-    selectChoice(index: number): void {
+    selectChoice(index: number): void { this.choose(index); }
+    /** Explicit user activation, with host policy evaluated again after any lazy resolution. */
+    activateChoice(index: number, token: number | null, apply: (action: LspCodeAction) => boolean): void {
+        const job = this.job; if (!job || token !== job.input.id) return;
+        this.choose(index, action => { if (this.job === job && this.current(job) && apply(action)) this.apply(token); });
+    }
+    private choose(index: number, activated?: (action: LspCodeAction) => void): void {
         const job = this.job, action = job?.batch?.actions[index]; if (!job?.ready || job.resolving || !action || !this.current(job)) return;
         job.choice = index; job.selected = action; job.page = 0; job.choicePage = Math.floor(index / 16);
-        if (!action.resolve || this.disabled(action)) { this.showChoice(job); return; }
+        if (!action.resolve || this.disabled(action)) { this.showChoice(job); if (!this.disabled(action)) activated?.(action); return; }
         const win = job.origin.editor.element.ownerDocument.defaultView!, configuration = { module: job.input.module, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }; this.fault = undefined;
         job.resolving = true; this.publish({ status: "pending", title: action.title, edits: [], editCount: 0, page: 0, disabled: null, message: "Resolving the captured action's edit preview." });
         job.timer = win.setTimeout(() => { if (this.job === job && job.resolving) { this.release(); this.metrics.failed++; this.publish({ status: "failed", message: "Action resolution timed out; source is unchanged.", edits: [], choices: [], editCount: 0 }); } }, 30000);
@@ -197,6 +203,7 @@ export class HostActionsTools {
             job.resolving = false;
             win.clearTimeout(job.timer);
             this.showChoice(job);
+            activated?.(resolved);
         }).catch(error => {
             if (this.job !== job) return;
             if (!this.currentCapture(job) || error instanceof RpcError && (error.code === -32800 || error.code === -32801)) {

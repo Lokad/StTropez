@@ -1,6 +1,6 @@
 import type { Workspace } from "../../src/index.ts";
 import type { EditingCandidate } from "../../src/browser/index.ts";
-import type { LspWorkspace } from "../../src/protocol/index.ts";
+import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
 import { HostActionsTools } from "../hosts/code-actions.ts";
 import { createLspActionClient } from "../editing/lsp-action-client.ts";
 import type { DemoFile } from "./project.ts";
@@ -21,6 +21,13 @@ export function mountDemoActions(workspace: Workspace, file: DemoFile, editor: E
     const idle = () => { const state = editor.snapshot(); return !disposed && valid() && !state.composing && !state.pendingInput && !state.pendingCommand; };
     const tools = new HostActionsTools(workspace, () => idle(), id => id === file.resource.documentId && valid() ? editor : undefined,
         () => createLspActionClient({ provider, beforeRequest: session => language.prepareActions(session, file) }));
+    // Host interaction policy only; all captures, permissions and history still pass through tools.
+    const direct = (action: LspCodeAction) => {
+        const changes = action.edit?.documents.filter(change => change.edits.length) ?? [];
+        return (action.kind === "quickfix" || action.kind?.startsWith("quickfix.") === true) && !action.command
+            && changes.length === 1 && changes[0]!.target.document.documentId === file.resource.documentId
+            && changes[0]!.edits.length <= 4 && changes[0]!.edits.reduce((units, edit) => units + edit.to - edit.from + edit.insert.length, 0) <= 256;
+    };
     const dismiss = () => { popup.hidden = true; tools.cancel(); };
     const position = () => {
         const point = editor.viewport.coordsAt(editor.view.getSnapshot().selection.head), box = editor.element.getBoundingClientRect();
@@ -36,11 +43,11 @@ export function mountDemoActions(workspace: Workspace, file: DemoFile, editor: E
         const state = tools.state.getSnapshot();
         if (!popup.hidden) position();
         status.textContent = state.pending ? "Finding quick fixes…" : state.status === "expired" ? "The code or selection changed. Request fixes again."
-            : state.status === "failed" ? "Quick fixes are unavailable. Try again with current code." : state.status === "ready" ? state.choices.length ? "Choose a fix, review its changes, then apply." : "No quick fix at this position." : "Request a fix for the current error.";
+            : state.status === "failed" ? "Quick fixes are unavailable. Try again with current code." : state.status === "ready" ? state.choices.length ? "Choose a small fix to apply it. Broader changes stay here for review before Apply." : "No quick fix at this position." : "Request a fix for the current error.";
         if (oldChoices !== state.choices || oldChoicePage !== state.choicePage) {
             oldChoices = state.choices; oldChoicePage = state.choicePage; choices.replaceChildren(...state.choices.slice(state.choicePage * 16, (state.choicePage + 1) * 16).map(choice => {
                 const button = document.createElement("button"); button.textContent = choice.title; button.disabled = choice.disabled !== null; button.title = choice.disabled ?? ""; button.dataset.choice = String(choice.index);
-                button.addEventListener("click", () => { if (tools.state.getSnapshot().token === state.token) tools.selectChoice(choice.index); }); return button;
+                button.addEventListener("click", () => tools.activateChoice(choice.index, state.token, direct)); return button;
             }));
         }
         choicePages.hidden = state.choices.length <= 16; previousChoices.disabled = state.pending || state.choicePage === 0; nextChoices.disabled = state.pending || (state.choicePage + 1) * 16 >= state.choices.length;

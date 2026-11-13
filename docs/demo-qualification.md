@@ -111,6 +111,14 @@ installation are rejected. Compiler/provider dependencies remain in the developm
 Owned provider projects, connections, processes and pending removals are zero after closure.
 Selected plain/React fixture journeys retain the broader workspace/host lifecycle coverage.
 
+The walkthrough selects a real spelling fix directly and preserves its shared history. The
+**Project actions** journey checks a selected two-file action remains in preview, rejects a
+later edit, refreshes its capture, commits both files and undoes from either source, then saves
+and reloads the complete result. A focused delayed-resolution check distinguishes explicit
+activation from response arrival and rejects queued application after later typing. Existing
+host checks retain their default reviewed behavior. Command-only and edit-plus-command demo
+integration remains separate work; this checkpoint does not claim it is delivered.
+
 The documentation journey also exercises **Diagnostic details**: real TypeScript related
 declarations, a labeled host warning's source/severity/deprecated tag, explicit permitted help,
 related-location selection, correction/undo and sample replacement. The same journey runs

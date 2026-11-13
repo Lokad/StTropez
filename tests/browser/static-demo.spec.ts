@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
-import { runDemoUnopenedNavigation } from "./demo-walkthrough.ts";
+import { runDemoUnopenedNavigation, runDemoActions } from "./demo-walkthrough.ts";
+
+test("broader project actions retain preview, stale recovery and atomic multi-file history", async ({ page, baseURL }) => { await runDemoActions(page, baseURL!); });
 
 test("unopened targets load for navigation and atomic rename with read-only declarations and return", async ({ page, baseURL }) => {
     await runDemoUnopenedNavigation(page, baseURL!);

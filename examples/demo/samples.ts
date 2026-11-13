@@ -1,4 +1,4 @@
-export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue" | "templates" | "results" | "outline" | "documentation" | "navigation" | "diagnostics";
+export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue" | "templates" | "results" | "outline" | "documentation" | "navigation" | "diagnostics" | "actions";
 export type DemoSample = Readonly<{ id: SampleId; title: string; description: string; files: Readonly<Record<string, string>>;
     initialFiles?: readonly string[]; declarations?: Readonly<Record<string, string>> }>;
 
@@ -39,10 +39,15 @@ export const sampleChoices: readonly Readonly<{ id: SampleId; title: string }>[]
     { id: "documentation", title: "Documentation & help links" },
     { id: "navigation", title: "Unopened files & navigation" },
     { id: "diagnostics", title: "Diagnostic details" },
+    { id: "actions", title: "Project actions" },
 ]);
 
 /** Large fixtures are built only on explicit selection. */
 export function demoSample(id: SampleId): DemoSample {
+    if (id === "actions") return { id, title: "Project actions",
+        description: "Demo provider fixture: use Ctrl+. or Code → Quick fix to preview renaming exampleRate across both files. Apply once, then undo from either file. Ordinary small TypeScript quick fixes apply when selected; broader changes keep this review step.",
+        files: { "main.ts": '// Demo project action fixture\nimport { exampleRate } from "./rate";\n\nconsole.log(100 * (1 - exampleRate));\n',
+            "rate.ts": '// Demo project action fixture\nexport const exampleRate = 0.1;\n' } };
     if (id === "diagnostics") return { id, title: "Diagnostic details",
         description: "Open Problems: the price mismatch is a real TypeScript error, with a related declaration. The labeled Demo host warning demonstrates a deprecated tag and a help link. Select a related location to inspect it; replace legacyPrice with currentPrice to clear the warning.",
         files: { "details.ts": '// Demo diagnostic metadata fixture\nimport type { Product } from "./types";\n\nconst currentPrice = 12;\nconst legacyPrice = currentPrice;\nconst product: Product = { price: "twelve" };\nconsole.log(product, legacyPrice);\n',

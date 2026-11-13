@@ -1,6 +1,39 @@
 import { expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
+export async function runDemoActions(page: Page, url = "/") {
+    await page.goto(url); await page.locator("#sample").selectOption("actions");
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    await expect(page.locator("#editor")).toContainText("Demo project action fixture");
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await source.press("Control+Home"); await source.press("Control+.");
+    const actions = page.getByRole("region", { name: "Quick fixes", exact: true });
+    const choice = actions.getByRole("button", { name: "Demo refactor: rename exampleRate across files", exact: true });
+    await choice.click(); await expect(actions.getByLabel("Quick-fix edits").locator("li")).toHaveCount(3);
+    await expect(actions.getByLabel("Quick-fix edits")).toContainText("rate.ts");
+    await expect(page.locator("#editor")).toContainText("import { exampleRate }");
+    await source.press("Control+End"); await page.keyboard.insertText("// Keep this later edit\n");
+    await expect(actions.getByRole("button", { name: "Apply fix", exact: true })).toBeDisabled();
+    await expect(actions).toContainText("The code or selection changed");
+    await source.press("Control+."); await choice.click();
+    await actions.getByRole("button", { name: "Apply fix", exact: true }).click(); await expect(actions).toBeHidden();
+    await expect(page.locator("#editor")).toContainText("import { discountRate }");
+    await expect(page.locator("#editor")).toContainText("// Keep this later edit");
+    await page.locator('#files [data-file="rate.ts"]').click();
+    const rate = page.getByRole("textbox", { name: "rate.ts", exact: true });
+    await expect(page.locator("#editor")).toContainText("export const discountRate"); await rate.press("Control+z");
+    await expect(page.locator("#editor")).toContainText("export const exampleRate");
+    await page.locator('#files [data-file="main.ts"]').click();
+    await expect(page.locator("#editor")).toContainText("import { exampleRate }"); await expect(page.locator("#editor")).toContainText("// Keep this later edit");
+    await source.press("Control+y"); await expect(page.locator("#editor")).toContainText("import { discountRate }");
+    await page.locator("#save").click(); await expect(page.locator("#status")).toContainText("Saved in this browser");
+    await page.reload(); await page.locator("#sample").selectOption("actions");
+    await expect(page.locator("#editor")).toContainText("import { discountRate }");
+    await page.locator('#files [data-file="rate.ts"]').click(); await expect(page.locator("#editor")).toContainText("export const discountRate");
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await rate.press("Control+."); await expect(choice).toBeDisabled(); await rate.press("Escape");
+}
+
 export async function runDemoUnopenedNavigation(page: Page, url = "/") {
     await page.goto(url); await page.locator("#sample").selectOption("navigation");
     const main = page.getByRole("textbox", { name: "main.ts", exact: true }), labels = page.getByRole("textbox", { name: "labels.ts", exact: true });
@@ -374,7 +407,7 @@ export async function runDemoWalkthrough(page: Page, url = "/") {
     await page.locator('[data-panel="problems"]').click(); await page.getByRole("button", { name: /main.ts · TS2552:/ }).click(); await main.press("Control+.");
     const fixes = page.getByRole("region", { name: "Quick fixes", exact: true });
     await expect(fixes.getByRole("button", { name: "Change spelling to 'basketTotal'", exact: true })).toBeVisible();
-    await fixes.getByRole("button", { name: "Apply fix", exact: true }).click(); await expect(fixes).toBeHidden();
+    await fixes.getByRole("button", { name: "Change spelling to 'basketTotal'", exact: true }).click(); await expect(fixes).toBeHidden();
     await expect(page.locator("#panel-content")).toHaveText("No problems in this project.");
     await page.getByRole("button", { name: "Compare", exact: true }).click();
     const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });

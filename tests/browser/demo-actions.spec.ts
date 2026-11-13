@@ -1,5 +1,8 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import { runDemoActions } from "./demo-walkthrough.ts";
+
+test("broader project actions retain preview, stale recovery and atomic multi-file history", async ({ page }) => { await runDemoActions(page); });
 
 async function ready(page: Page) {
     await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
@@ -14,7 +17,7 @@ async function typo(page: Page) {
 }
 test.beforeEach(({ page }) => { page.on("pageerror", error => { throw error; }); });
 
-test("real spelling fix previews exact edits, applies once and shares undo/redo with actual typing", async ({ page }) => {
+test("selecting a real spelling fix applies once and shares undo/redo with actual typing", async ({ page }) => {
     await ready(page); const source = await typo(page);
     await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Quick fix", exact: true }).click();
     const popup = page.getByRole("region", { name: "Quick fixes", exact: true });
@@ -24,7 +27,8 @@ test("real spelling fix previews exact edits, applies once and shares undo/redo 
         return selection && box ? Math.abs(box.y - selection.y) : Infinity;
     }).toBeLessThan(80);
     await expect(popup.locator("del")).toHaveText("calculateTotl"); await expect(popup.locator("ins")).toHaveText("calculateTotal");
-    await popup.getByRole("button", { name: "Apply fix", exact: true }).click(); await expect(popup).toBeHidden(); await expect(source).toBeFocused();
+    await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)");
+    await popup.getByRole("button", { name: "Change spelling to 'calculateTotal'", exact: true }).click(); await expect(popup).toBeHidden(); await expect(source).toBeFocused();
     await expect(page.locator("#editor")).toContainText("calculateTotal(cart, 0.1)");
     await expect(page.locator("#panel-content")).toHaveText("No problems in this project.");
     await source.press("Control+z"); await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)");
@@ -46,6 +50,39 @@ test("held real fixes cannot replace newer text or follow later file focus", asy
     await expect(page.locator("#editor")).toContainText("// Keep helper focus");
     await page.locator('[data-file="main.ts"]').click(); await expect(page.locator("#editor")).toContainText("// Keep current text");
     await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)");
+});
+
+test("explicit lazy fix activation applies once after resolution and expires with later typing", async ({ page }) => {
+    // A generic delayed LSP wrapper around a real compiler fix supplies the lazy shape.
+    let release: (() => void) | undefined, resolutions = 0;
+    await page.routeWebSocket("**/demo-provider/*", client => {
+        const server = client.connectToServer(), requests = new Map<number, string>(); let edit: unknown;
+        client.onMessage(message => {
+            const value = JSON.parse(message.toString()); requests.set(value.id, value.method);
+            if (value.method === "codeAction/resolve") { resolutions++; release = () => client.send(JSON.stringify({ jsonrpc: "2.0", id: value.id, result: { ...value.params, edit } })); }
+            else server.send(message);
+        });
+        server.onMessage(message => {
+            const value = JSON.parse(message.toString()), method = requests.get(value.id);
+            if (method === "initialize" && value.result) value.result.capabilities.codeActionProvider = { resolveProvider: true };
+            if (method === "textDocument/codeAction" && Array.isArray(value.result)) {
+                edit = value.result.find((action: { edit?: unknown }) => action.edit)?.edit;
+                value.result = [{ title: "Resolve spelling fix", kind: "quickfix", data: { fixture: "lazy-spelling" } }];
+            }
+            client.send(JSON.stringify(value));
+        });
+    });
+    await ready(page); const source = await typo(page); await source.press("Control+.");
+    const popup = page.getByRole("region", { name: "Quick fixes", exact: true }), choice = popup.getByRole("button", { name: "Resolve spelling fix", exact: true });
+    await expect(choice).toBeVisible(); expect(resolutions).toBe(0); await choice.click(); await expect.poll(() => resolutions).toBe(1);
+    await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)"); release!();
+    await expect(popup).toBeHidden(); await expect(page.locator("#editor")).toContainText("calculateTotal(cart, 0.1)");
+    await source.press("Control+z"); await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)");
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await page.getByRole("button", { name: /main.ts · TS2552:/ }).click(); await source.press("Control+."); await choice.click(); await expect.poll(() => resolutions).toBe(2);
+    await source.press("Control+End"); await page.keyboard.insertText("\n// Keep later input"); release!();
+    await expect(popup.getByRole("button", { name: "Apply fix", exact: true })).toBeDisabled();
+    await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)"); await expect(page.locator("#editor")).toContainText("// Keep later input");
 });
 
 test("provider restart expires pending fixes and a fresh request fixes current code", async ({ page }) => {
