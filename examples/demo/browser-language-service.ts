@@ -1,6 +1,7 @@
 import ts from "typescript-demo";
 import { TextDocument } from "vscode-languageserver-protocol/browser.js";
 import { RpcError } from "../../src/protocol/index.ts";
+import { demoTemplateCompletions, demoTemplateUri, resolveDemoTemplate } from "./completion-templates.ts";
 
 type ObjectValue = Record<string, unknown>;
 type Document = ReturnType<typeof TextDocument.create>;
@@ -116,6 +117,7 @@ export class BrowserLanguageService {
                 code: d.code, message: ts.flattenDiagnosticMessageText(d.messageText, "\n").slice(0, 4096) })) };
         }
         if (method === "completionItem/resolve") {
+            const uri = demoTemplateUri(params); if (uri) return resolveDemoTemplate(params, this.file(uri).document);
             const p = object(params), key = integer(object(p.data).key), stored = this.completions.get(key) ?? this.previousCompletions.get(key);
             if (!stored) throw new RpcError(-32801, "Completion is no longer available.");
             const file = this.file(stored.uri), entry = stored.entry;
@@ -134,11 +136,12 @@ export class BrowserLanguageService {
         }
         const { p, file, offset } = this.cursor(params);
         if (method === "textDocument/completion") {
+            const template = demoTemplateCompletions(file.document, position(p.position)); if (template) return template;
             const info = this.service.getCompletionsAtPosition(file.path, offset, { includeCompletionsForModuleExports: false, includeCompletionsWithInsertText: true });
             if (!info) return null;
             const before = file.document.getText().slice(Math.max(0, offset - 2048), offset), prefix = before.match(/[\p{L}\p{N}\p{Pc}\p{M}\u200c\u200d$]*$/u)?.[0] ?? "";
             const fallback = info.optionalReplacementSpan ?? { start: offset - prefix.length, length: prefix.length };
-            const entries = info.entries.filter(entry => !entry.isSnippet && !entry.hasAction && !entry.source);
+            const entries = info.entries.filter(entry => !entry.hasAction && !entry.source);
             // Retain the current and preceding response while a client refreshes a provisional
             // list. Bound lifetime by responses without silently dropping candidates within one.
             this.previousCompletions = this.completions; this.completions = new Map();
@@ -147,7 +150,7 @@ export class BrowserLanguageService {
                 if (span.start > offset || span.start + span.length < offset) return [];
                 const key = ++this.serial; this.completions.set(key, { uri: file.document.uri, offset, entry });
                 return [{ label: entry.name, sortText: entry.sortText, filterText: entry.filterText ?? (span.start < fallback.start ? entry.insertText ?? entry.name : entry.name),
-                    textEdit: { range: this.span(file, span), newText: entry.insertText ?? entry.name }, data: { key } }];
+                    insertTextFormat: entry.isSnippet ? 2 : 1, textEdit: { range: this.span(file, span), newText: entry.insertText ?? entry.name }, data: { key } }];
             });
             return { isIncomplete: !!info.isIncomplete, items };
         }

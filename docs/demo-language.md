@@ -94,6 +94,16 @@ shows the selected position/count, including an explicit partial-list label when
 The browser provider retains resolution references for the current and preceding response only;
 older keys expire. The library's configurable transport limit remains separate from presentation.
 
+The **Snippets & lazy completion** sample exercises a labeled demo-owned template provider,
+because the ordinary TypeScript provider does not supply this complete demonstration. In
+`templates.ts`, press Ctrl+End then Ctrl+Space. The first choice includes linked names, numbered
+fields, a visible choice and a final caret; Tab/Shift+Tab traverse fields, Alt+Up/Down changes a
+choice, and Escape keeps text while ending snippet mode. The lazy declaration supplies its body
+and import on resolve. Both use standard completion messages and the public controller's input,
+selection and history paths. An unsupported-variable example is individually omitted with a
+reason. TypeScript still checks, colors and compiles the editable result. Template resolution
+requires the captured URI and document version; it cannot insert after that source changes.
+
 The bridge fixes the project root/compiler settings, validates addressed document URIs and
 read-command file paths, and writes only known sample files in its allocated workspace.
 Compiler standard libraries come from the pinned toolchain. Automatic type acquisition is off;

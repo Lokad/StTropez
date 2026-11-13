@@ -1,4 +1,4 @@
-export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue";
+export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue" | "templates";
 export type DemoSample = Readonly<{ id: SampleId; title: string; description: string; files: Readonly<Record<string, string>> }>;
 
 const pricing = `export interface CartItem {
@@ -32,10 +32,15 @@ export const sampleChoices: readonly Readonly<{ id: SampleId; title: string }>[]
     { id: "pricing", title: "Shopping cart" }, { id: "errors", title: "Fix a type error" },
     { id: "unicode", title: "Languages & Unicode" }, { id: "large", title: "Large file · 100,000 lines" },
     { id: "catalogue", title: "Completion catalogue · 1,200 fields" },
+    { id: "templates", title: "Snippets & lazy completion" },
 ]);
 
 /** Large fixtures are built only on explicit selection. */
 export function demoSample(id: SampleId): DemoSample {
+    if (id === "templates") return { id, title: "Snippets & lazy completion",
+        description: "Demo template provider: go to the end (Ctrl+End), press Ctrl+Space and Tab. Edit linked names, Tab/Shift+Tab through fields, Alt+Up/Down for choices; Escape finishes.",
+        files: { "templates.ts": "// Demo-owned templates demonstrate the public completion protocol.\n// TypeScript still checks, colors and compiles these files.\n\ntemplate",
+            "types.ts": 'export interface TemplateRecord {\n    state: "draft" | "ready";\n}\n' } };
     if (id === "catalogue") return { id, title: "Completion catalogue",
         description: "Go to the end (Ctrl+End), type catalogue. and explore 1,200 fields. Filter by typing item119, then choose with arrows and Tab.",
         files: { "catalogue.ts": "// A real TypeScript object supplies every completion candidate.\nconst catalogue = {\n"

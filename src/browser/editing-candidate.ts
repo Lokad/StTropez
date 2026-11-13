@@ -23,7 +23,11 @@ import { mountTextViewport } from "./viewport.ts";
 import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
 
+export type CandidateEdit = Readonly<{ expectedRevision: number; edits: readonly TextEdit[]; selectionSet: SelectionSet; kind: EditKind }>;
+export type CandidateEditTransform = (edit: CandidateEdit) => Readonly<{ edits: readonly TextEdit[]; selectionSet: SelectionSet; complete?: (applied: boolean) => void }> | undefined;
 export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport;
+    /** One synchronous edit planner per view. Its result still passes Workspace validation/history. */
+    registerEditTransform: (transform: CandidateEditTransform) => () => void;
     focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
     snapshot: () => Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number; maxQueuedInputTurnMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; pendingCaret: boolean; pendingCommand: boolean; pendingDragScroll: boolean; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; composing: boolean; pendingInput: boolean; queuedInputUnits: number; pendingWord: boolean; wordScanSteps: number; maxWordScanStepMs: number; pendingGrapheme: boolean; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number; disposed: boolean }>;
     destroy: () => void }>;
@@ -54,6 +58,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     root.append(input);
     let revision = workspace.document(documentId).revision, context: InputContext = inputContext(workspace.document(documentId).buffer, view.getSnapshot().selection);
     let disposed = false, composing = false, selecting = false, committing = false, escaped = false;
+    let editTransform: CandidateEditTransform | undefined;
     const escapeState = (value: boolean) => {
         if (escaped === value) return;
         escaped = value; root.toggleAttribute("data-st-tab-escape", value);
@@ -154,6 +159,9 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (!workspace.resolveTab(target)) { conflict("expired-view", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
         let key: string | undefined;
         const now = replayTime ?? win.performance.now(), before = view.getSnapshot().selectionSet;
+        const transformed = editTransform?.(Object.freeze({ expectedRevision, edits,
+            selectionSet: "ranges" in selection ? selection : createSelectionSet(workspace.document(documentId).buffer.length + edits.reduce((n, edit) => n + edit.insert.length - (edit.to - edit.from), 0), [selection]), kind }));
+        if (transformed) { edits = transformed.edits; selection = transformed.selectionSet; }
         if (type) {
             const adjacent = group?.type === type && group.revision === expectedRevision && group.selectionSet === before && now - group.time < 1000;
             key = adjacent ? group!.key : `${view.id}:${scope}:${++serial}`;
@@ -167,7 +175,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             if (result.applied) { commits++; const after = view.getSnapshot(); viewport.revealOffset(after.selection.head);
                 if (type && key) group = { type, revision: result.revision, selectionSet: after.selectionSet, time: now, key }; }
             else conflict(result.reason, edits[0], expectedRevision, context.from, recoveryText);
-        } finally { committing = false; refresh(); }
+        } finally { committing = false; try { transformed?.complete?.(applied); } finally { refresh(); } }
         return applied;
     }
     function captureInput(type: string, data: string | null): InputCapture {
@@ -966,13 +974,17 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh), workspace.tabState.subscribe(refresh)];
     refresh();
     return Object.freeze({ element: root, input, view, viewport, focus,
+        registerEditTransform: transform => {
+            if (disposed || editTransform) throw new Error("Editor is disposed or already owns an edit planner.");
+            editTransform = transform; return () => { if (editTransform === transform) editTransform = undefined; };
+        },
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state: ViewState) => { viewport.restoreView(state); refresh(); },
         snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs, pendingCaret: caretLayer.pending(), pendingCommand: rangeCommand !== undefined || wordJob !== undefined || graphemeJob !== undefined,
             pendingDragScroll: dragFrame !== undefined, dragScrollFrames, maxDragScrollStepMs, commits, conflicts, composing, pendingInput: ordered !== undefined || executingInput !== undefined || rangeCommand?.capture.deleting === true,
             queuedInputUnits: ordered?.units ?? 0, pendingWord: rangeCommand?.purpose === "word" || wordJob !== undefined || graphemeJob?.purpose === "word" || graphemeJob?.purpose === "word-selection" || ordered?.purpose === "word", wordScanSteps, maxWordScanStepMs, pendingGrapheme: rangeCommand?.purpose === "grapheme" || graphemeJob !== undefined || ordered?.purpose === "grapheme", graphemeScanSteps, maxGraphemeScanStepMs, visualMoves, disposed }),
         destroy: () => {
-            if (disposed) return; disposed = true;
+            if (disposed) return; disposed = true; editTransform = undefined;
             if (executingInput) recoverInput(executingInput, "pending-input-detached");
             cancelWord();
             nativeOrder = undefined; wordInput = undefined;

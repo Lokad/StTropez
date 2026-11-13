@@ -54,16 +54,41 @@ or capability changes expire the list. Incomplete lists retrigger with context k
 compatible choices remain visible during refresh. One animation-frame scheduler and existing
 request generations/cancellation bound work; there is no completion cache or background queue.
 
-When advertised, the selected item resolves its literal detail/documentation and additional edits.
+When advertised, the selected item resolves its literal detail/documentation, primary content and additional edits.
 Opaque data and inherited defaults are captured immutably. A delayed response must match the
 current list, selected item, exact synchronized snapshot and provider generation. It cannot change
-the label, primary edit or opaque identity. Additional ranges are validated against the snapshot
-captured for that resolve request. Malformed/failed resolution dismisses the offer. Unresolved
-choices cannot apply; Enter/Tab or a commit character pressed before resolution completes dismiss
-the offer and follow ordinary input, preserving the keystroke. Ready advertised commit characters
+the label, filtering/sorting fields, format or opaque identity. The advertised resolve properties are
+`detail`, `documentation`, `additionalTextEdits`, `insertText` and `textEdit`. Primary content may
+change within the captured insertion/replacement ranges; it cannot retarget another range.
+Additional ranges are validated against the snapshot captured for that resolve request.
+Malformed/failed resolution dismisses the offer. Enter/Tab and `accept(mode, completionId)` retain
+the selected acceptance intent until resolution completes. Selection, typing, blur, cancellation
+or stale authority clears that intent; a delayed response cannot apply to another view. `accept`
+returns whether the intent was accepted; `apply` remains immediate and returns true only after
+an actual edit. A commit character while unresolved follows ordinary input and dismisses the
+offer. Ready advertised commit characters
 are applied with the completion in one transaction, suppressing duplicate native insertion.
 Each published list ID also changes after prefix filtering; retained controls can pass
-`completionId` to `chooseCompletion`/`apply` to reject an obsolete list or another view's choices.
+`completionId` to `chooseCompletion`/`accept`/`apply` to reject an obsolete list or another view's choices.
+
+Numbered snippet stops (`$1`, `${1}`), literal defaults (`${1:name}`), choices
+(`${2|draft,ready|}`), escapes, repeated occurrences and final `$0` are supported. Missing `$0`
+means the end of the expansion. Forward references use the same default; conflicting explicit
+defaults are refused. Variables, nested placeholders and transforms are outside this subset.
+Unsupported snippet choices are omitted individually with label/reason in `omittedCompletions`;
+ordinary and supported choices remain usable. The pure decoder returns `omitted`, and lazy
+decoding reports `UnsupportedLspSnippetError`. Every edit is validated before that disposition,
+so malformed or overlapping edits cannot hide behind an unsupported snippet.
+
+Acceptance selects every occurrence of the first numbered field. Typing, deletion, paste and
+composition commit mirror through the existing input, Workspace validation and history paths.
+Tab/Shift+Tab traverse fields; Alt+Up/Down cycles choices. Hosts render `snapshot.snippet` and use
+`moveSnippet`/`chooseSnippet` with its ID to reject retained controls. Escape keeps text and the
+primary selection, ending mode. Reaching `$0` ends mode at the final caret. Focus loss, selection
+outside the active field, authority changes and external/undo/redo edits end mode. Undo/redo
+restore text/selections without recreating a session. Composition remains on the existing adapter;
+its native device behavior is unverified. Ready commit-character acceptance inserts the expanded
+text plus character without entering a snippet session.
 
 Completion lists have no fixed candidate count or aggregate text/edit quota. Transport size is
 controlled by the host's `rpc.maxMessageUnits` (4,194,304 UTF-16 units by default); presentation
@@ -71,11 +96,12 @@ limits belong to the host. `completionIncomplete` preserves the provider's parti
 independently of client filtering. The demo keeps at most 16 candidate rows while every matching
 candidate remains reachable. Per-item bounds remain 32 additional edits and 16,384 units per
 insertion. Overlaps, conflicting insertions,
-out-of-document positions and malformed final items refuse the entire result. Snippets, indentation
-adjustment and follow-up commands are not advertised and are explicitly refused if supplied.
+out-of-document positions and malformed final items refuse the entire result. Snippet support is
+advertised for the subset above; expanded insertion length is checked before allocating repeated
+defaults. Indentation adjustment and follow-up commands are not advertised and are refused if supplied.
 Resolve payloads are bounded to 32,768 units/item and 8,192 opaque data units/item;
-commit-character lists allow at most 64 entries. Snippet expansion and rich
-Markdown rendering remain unsupported; documentation is literal text.
+commit-character lists allow at most 64 entries. Rich Markdown rendering remains unsupported;
+documentation is literal text.
 
 Pending typing/navigation/table conversion, composition, multiple carets, source revision, selection
 set, fold generation, tab/view ownership and resource authority are checked before capture and

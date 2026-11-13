@@ -5,7 +5,7 @@ import type { ApplyWorkspaceEditParams, CodeAction, Command, CompletionList, Pub
 import { TextBuffer } from "../src/core/text-buffer.ts";
 import type { LspDocumentCapture } from "../src/protocol/index.ts";
 
-const { LspLineIndex, decodeLspCompletions, decodeLspResolvedCompletion, rebaseLspCompletion, lspCompletionPlan, decodeLspDiagnostics, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, decodeLspApplyEdit, decodeLspCodeActions, decodeLspResolvedCodeAction, lspRangeOffsets, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
+const { LspLineIndex, UnsupportedLspSnippetError, decodeLspCompletions, decodeLspResolvedCompletion, rebaseLspCompletion, lspCompletionPlan, decodeLspDiagnostics, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, decodeLspApplyEdit, decodeLspCodeActions, decodeLspResolvedCodeAction, lspRangeOffsets, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 const { decodeLspSignatureHelp, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspColor, decodeLspDocumentColors, decodeLspColorPresentations } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 async function captured(text = "// header\r\nconst saMORE = 1; // TODO\rb\n") {
     const buffer = TextBuffer.from(text), index = await LspLineIndex.create(buffer, async () => {}); let active = true;
@@ -65,8 +65,8 @@ test("completion defaults, word fallback and whole-list validation refuse unsupp
     assert.equal(decodeLspCompletions([{ label: "sample" }], capture, 8, fallback).items[0]!.replace.edits[0]!.to, 12);
     assert.equal(decodeLspCompletions([{ label: "label", insertText: "insert", textEditText: "ignored" }], capture, 8, fallback).items[0]!.insert.edits[0]!.insert, "insert");
     assert.equal(decodeLspCompletions({ ...response, items: [{ label: "label", insertText: "ignored" }] }, capture, 8).items[0]!.insert.edits[0]!.insert, "label");
-    assert.deepEqual(decodeLspCompletions(null, capture, 8), { incomplete: false, items: [] });
-    for (const bad of [{ label: "snippet", insertTextFormat: 2 }, { label: "command", command: { title: "run", command: "host/run" } },
+    assert.deepEqual(decodeLspCompletions(null, capture, 8), { incomplete: false, items: [], omitted: [] });
+    for (const bad of [{ label: "invalid format", insertTextFormat: 3 }, { label: "command", command: { title: "run", command: "host/run" } },
         { label: "overlap", textEdit: { newText: "x", range: range(0, 6, 12) }, additionalTextEdits: [{ range: range(0, 7, 8), newText: "bad" }] },
         { label: "clamped", textEdit: { newText: "x", range: range(0, 6, 999) } }, { label: "reversed", textEdit: { newText: "x", insert: range(0, 6, 10), replace: range(0, 6, 8) } },
         { label: "duplicate insert", textEdit: { newText: "x", range: range(0, 8, 8) }, additionalTextEdits: [{ range: range(0, 8, 8), newText: "bad" }] }]) {
@@ -76,6 +76,41 @@ test("completion defaults, word fallback and whole-list validation refuse unsupp
     assert.throws(() => decodeLspCompletions({ ...response, itemDefaults: { ...response.itemDefaults, unknownBehavior: true } }, capture, 8));
     assert.throws(() => decodeLspCompletions({ isIncomplete: false, items: [], itemDefaults: { editRange: range(0, 0, 999) } }, capture, 8));
     assert.equal(decodeLspCompletions(response, capture, 8, () => { throw new Error("Unused word fallback must not reject explicit ranges"); }).items.length, 1);
+});
+
+test("mixed snippet lists retain supported choices, map stops past additional edits and validate omitted item ranges", async () => {
+    const { capture } = await captured("// Header\r\ntemplate"), offset = capture.document.buffer.length;
+    const item = { label: "linked", insertTextFormat: 2, textEdit: { range: range(1, 0, 8), newText: '${1:😀name} = "$2"; $1$0' },
+        additionalTextEdits: [{ range: range(0, 0, 0), newText: "// Added\r\n" }] };
+    const omitted = { label: "variable", insertTextFormat: 2, insertText: "$TM_FILENAME" };
+    const result = decodeLspCompletions([{ label: "plain" }, item, omitted], capture, offset);
+    assert.deepEqual(result.items.map(item => item.label), ["plain", "linked"]);
+    assert.deepEqual(result.omitted.map(item => item.label), ["variable"]);
+    const applied = capture.document.buffer.apply(result.items[1]!.replace.edits).buffer;
+    assert.equal(applied.text(), '// Added\r\n// Header\r\n😀name = ""; 😀name');
+    const stops = result.items[1]!.replace.snippet!;
+    assert.deepEqual(stops[0]!.ranges.map(range => applied.slice(range.from, range.to)), ["😀name", "😀name"]);
+    assert.equal(result.items[1]!.replace.head, applied.length);
+    assert.throws(() => decodeLspCompletions([item, { ...omitted, textEdit: { range: range(1, 0, 999), newText: "$TM_FILENAME" } }], capture, offset));
+});
+
+test("lazy completion supplies primary content within captured ranges and keeps identity and edits atomic", async () => {
+    const { capture } = await captured("// Header\r\ntemplate"), offset = capture.document.buffer.length;
+    const original = decodeLspCompletions([{ label: "lazy", filterText: "template", insertTextFormat: 2, data: { key: 1 } }], capture, offset,
+        { from: offset - 8, to: offset, replaceTo: offset }, { resolve: true }).items[0]!;
+    const reply = { ...original.resolve as object, textEdit: { range: range(1, 0, 8), newText: 'const ${1:value} = ${2|0,1|};\r\n$1;$0' },
+        additionalTextEdits: [{ range: range(0, 0, 0), newText: "// import\r\n" }] };
+    const resolved = decodeLspResolvedCompletion(reply, original, capture), text = capture.document.buffer.apply(resolved.replace.edits).buffer;
+    assert.equal(text.text(), "// import\r\n// Header\r\nconst value = 0;\r\nvalue;");
+    assert.deepEqual(resolved.replace.snippet![0]!.ranges.map(range => text.slice(range.from, range.to)), ["value", "value"]);
+    for (const value of [{ ...reply, label: "other" }, { ...reply, filterText: "other" }, { ...reply, data: { key: 2 } },
+        { ...reply, textEdit: { range: range(1, 1, 8), newText: "other" } }, { ...reply, additionalTextEdits: [{ range: range(1, 1, 3), newText: "overlap" }] }]) assert.throws(() => decodeLspResolvedCompletion(value, original, capture));
+    const direct = decodeLspCompletions([{ label: "lazy", insertText: "old" }], capture, offset, undefined, { resolve: true }).items[0]!;
+    assert.equal(decodeLspResolvedCompletion({ ...direct.resolve as object, insertText: "new body" }, direct, capture).primary.text, "new body");
+    const unsupported = { ...reply, textEdit: { ...reply.textEdit, newText: "$TM_FILENAME" } };
+    assert.throws(() => decodeLspResolvedCompletion(unsupported, original, capture), UnsupportedLspSnippetError);
+    assert.throws(() => decodeLspResolvedCompletion({ ...unsupported, additionalTextEdits: [{ range: range(1, 1, 3), newText: "overlap" }] }, original, capture),
+        error => error instanceof Error && !(error instanceof UnsupportedLspSnippetError));
 });
 
 test("completion catalogues retain every candidate and reject malformed later edits without truncation", async () => {

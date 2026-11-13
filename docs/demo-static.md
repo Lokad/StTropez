@@ -21,7 +21,7 @@ worker-protocol-v1 fixture or a general-purpose language server.
 
 Only the selected sample's known virtual files and the pinned compiler's standard libraries
 are available. Unknown files, file creation/renaming, external projects, automatic package
-acquisition, snippets, command-bearing fixes and edited-program execution are unsupported.
+acquisition, command-bearing fixes and edited-program execution are unsupported.
 Navigation returns known open resources. Compiler work runs in workers; provider failures
 leave editing and local saving usable, and Retry resynchronizes current document snapshots.
 
@@ -46,6 +46,11 @@ Caret/scroll snapshots belong to the actual document view, independently of work
 The completion catalogue sample offers 1,200 fields from a real TypeScript object. Every matching
 candidate remains reachable through typing or arrow keys, while the popup renders at most 16 rows.
 Its position/count and partial-list indicator distinguish the visible window from provider results.
+The **Snippets & lazy completion** sample uses a labeled demo-owned template provider over the
+same public protocol. Ctrl+End, Ctrl+Space then Tab inserts linked fields; Tab/Shift+Tab traverse
+them, Alt+Up/Down or the visible buttons select a choice, and Escape ends the session while
+keeping text. The lazy declaration supplies its body and import during resolution. TypeScript
+continues to color, check and compile the result. See the [supported snippet subset](lsp-editor.md).
 
 ## Build and qualify
 
@@ -67,7 +72,7 @@ and clears only its verified generated `artifacts/pages` directory before rebuil
 Run `npm run test:demo` for Chromium, Firefox and WebKit. The suite reuses the complete source
 demo walkthrough/conflict helpers, checks that every request stays below the repository path
 and no backend/WebSocket is used, and exercises worker failure/retry, large-file editing and the
-same completion catalogue journey used by the local provider and restored-assets demo.
+same completion catalogue and snippet journeys used by the local provider and restored-assets demo.
 The focused provider test covers raw UTF-16/CRLF incremental edits, versions and file confinement.
 Setting `STTROPEZ_DEMO_URL` runs the same browser tests against a deployed site without starting
 a local preview server. All unattended browsers run headless.

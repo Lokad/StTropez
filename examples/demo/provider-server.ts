@@ -12,6 +12,7 @@ import type { Message, DidOpenTextDocumentParams, DidChangeTextDocumentParams, D
 import { URI } from "vscode-uri";
 import { demoSample, sampleChoices } from "./samples.ts";
 import type { SampleId } from "./samples.ts";
+import { demoTemplateCompletions, demoTemplateUri, resolveDemoTemplate } from "./completion-templates.ts";
 
 const compiler = fileURLToPath(import.meta.resolve("typescript-demo/lib/tsserver.js"));
 const executable = fileURLToPath(new URL("lib/cli.mjs", import.meta.resolve("typescript-language-server/package.json")));
@@ -202,6 +203,17 @@ export function attachDemoProvider(server: Server) {
                     const uri = String(message.params.textDocument.uri); documents.delete(uri); problems.clear();
                 }
             } catch { socket.close(1003, "Invalid demo document synchronization"); return; }
+            if (typeof message.id === "number" || typeof message.id === "string") {
+                try {
+                    const params = message.params;
+                    const uri = message.method === "completionItem/resolve" ? demoTemplateUri(params)
+                        : message.method === "textDocument/completion" && object(params) && object(params.textDocument) ? params.textDocument.uri : undefined;
+                    const doc = typeof uri === "string" ? documents.get(uri) : undefined;
+                    const result = doc && message.method === "completionItem/resolve" ? resolveDemoTemplate(params, doc)
+                        : doc && object(params) && object(params.position) ? demoTemplateCompletions(doc, params.position as unknown as { line: number; character: number }) : undefined;
+                    if (result) { socket.send(JSON.stringify({ jsonrpc: "2.0", id: message.id, result })); return; }
+                } catch { reject(message.id, "Demo template source changed."); return; }
+            }
             if (message.method === "completionItem/resolve" && object(message.params) && (typeof message.id === "number" || typeof message.id === "string")) {
                 if (resolving.size >= 128) { reject(message.id, "Too many pending completion resolutions."); return; }
                 resolving.set(message.id, { data: message.params.data, present: Object.hasOwn(message.params, "data") });

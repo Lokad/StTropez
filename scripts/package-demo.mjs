@@ -10,7 +10,7 @@ import { chromium, firefox, webkit } from "@playwright/test";
 import { strFromU8, unzipSync } from "fflate";
 import ts from "typescript-demo";
 import { attachDemoProvider } from "../examples/demo/provider-server.ts";
-import { runDemoWalkthrough, runDemoConflict, runDemoCompletionCatalogue } from "../tests/browser/demo-walkthrough.ts";
+import { runDemoWalkthrough, runDemoConflict, runDemoCompletionCatalogue, runDemoSnippets } from "../tests/browser/demo-walkthrough.ts";
 import { sourceIdentity } from "./measurement.mjs";
 import { consumerCompilerRoots, within } from "./package-react-host.mjs";
 import { demoMeasurementHook, measureDemo } from "./measure-demo.mjs";
@@ -158,7 +158,7 @@ if (!prepareOnly) {
         } else browser = await ({ chromium, firefox, webkit })[browserName].launch({ headless: true });
         const url = `http://127.0.0.1:${server.address().port}/`, journeys = {};
         if (measureOnly) evidence.measurement = await measureDemo(browser, url, { sourceSha256: source.sha256, packageSha256 }, () => browserServer.kill());
-        for (const [name, run] of measureOnly ? [] : [["walkthrough", runDemoWalkthrough], ["conflict", runDemoConflict], ["completionCatalogue", runDemoCompletionCatalogue]]) {
+        for (const [name, run] of measureOnly ? [] : [["walkthrough", runDemoWalkthrough], ["conflict", runDemoConflict], ["completionCatalogue", runDemoCompletionCatalogue], ["snippets", runDemoSnippets]]) {
             const context = await browser.newContext({ viewport: { width: 1200, height: 760 } });
             try { journeys[name] = await run(await context.newPage(), url); console.log(`Restored demo ${name} passed (${browserName}).`); }
             finally { await context.close(); }

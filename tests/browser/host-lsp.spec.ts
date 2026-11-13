@@ -77,19 +77,31 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         await field(page, "Secondary source").press("Control+z"); expect(await source(page)).toBe(typed);
         await field(page, "Secondary source").press("Control+Shift+z"); expect(await source(page)).toBe(expected);
     });
-    test("late completion resolution cannot replace a newer selection or survive a document edit", async ({ page }) => {
+    test("pending acceptance applies once and expires on selection, focus or document changes", async ({ page }) => {
         const resolving: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "completionItem/resolve") resolving.push(value.params.label); }));
         await seed(page, "const sMORE = 1;", 7); await expect.poll(async () => (await provider(page)).connected).toBe(true);
         await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "interactive" }));
         await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionResolveConfig", { delay: 650, late: true }));
         await field(page).pressSequentially("a"); await expect.poll(() => resolving).toContain("sample");
-        await field(page).press("ArrowDown"); await expect(page.getByLabel("Completion detail", { exact: true })).toContainText("Resolved sampleWithImport");
+        await field(page).press("Tab"); await field(page).press("ArrowDown"); await expect(page.getByLabel("Completion detail", { exact: true })).toContainText("Resolved sampleWithImport");
         await page.waitForTimeout(700); await expect(page.getByLabel("Completion detail", { exact: true })).toContainText("Resolved sampleWithImport");
         await field(page).press("Tab"); await ready(page); expect(await source(page)).toBe("// resolved import\r\nconst sampleValueMORE = 1;");
         await seed(page, "const sMORE = 1;", 7);
         await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionResolveConfig", { delay: 650, late: true }));
+        const accepted = resolving.length; await field(page).pressSequentially("a"); await expect.poll(() => resolving.length).toBeGreaterThan(accepted);
+        const depth = (await snapshot(page)).history.undoDepth;
+        await field(page).press("Enter"); expect(await source(page)).toBe("const saMORE = 1;");
+        await expect.poll(() => source(page)).toBe("const sample = 1;"); expect((await snapshot(page)).history.undoDepth).toBe(depth + 1);
+        await field(page).press("Control+z"); expect(await source(page)).toBe("const saMORE = 1;");
+        await seed(page, "const sMORE = 1;", 7);
+        await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionResolveConfig", { delay: 650, late: true }));
+        const blurred = resolving.length; await field(page).pressSequentially("a"); await expect.poll(() => resolving.length).toBeGreaterThan(blurred);
+        await field(page).press("Tab"); await field(page, "Secondary source").focus(); await page.waitForTimeout(700);
+        expect(await source(page)).toBe("const saMORE = 1;");
+        await seed(page, "const sMORE = 1;", 7);
+        await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionResolveConfig", { delay: 650, late: true }));
         const count = resolving.length; await field(page).pressSequentially("a"); await expect.poll(() => resolving.length).toBeGreaterThan(count);
-        await field(page).pressSequentially(";"); await page.waitForTimeout(700); await ready(page);
+        await field(page).press("Tab"); await field(page).pressSequentially(";"); await page.waitForTimeout(700); await ready(page);
         expect(await source(page)).toBe("const sa;MORE = 1;"); await expect(page.getByRole("option")).toHaveCount(0);
     });
     test("synthetic composition suppresses premature requests and rapid typing cancels bounded automatic work", async ({ page }) => {

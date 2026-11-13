@@ -32,6 +32,8 @@ export type { ComparisonBaseline, ComparisonCapture, ComparisonController, Compa
 export type { EditKind, HistoryOptions, HistorySnapshot, Selection } from "./core/history.ts";
 export { createSelectionSet, mapSelectionSet, planSelectionEdits } from "./core/selections.ts";
 export type { SelectionSet, SelectionEditPlan } from "./core/selections.ts";
+export { parseSnippet, offsetSnippetStops, planSnippetEdit } from "./core/snippets.ts";
+export type { Snippet, SnippetStop, SnippetOccurrence, SnippetParseResult, SnippetEditPlan } from "./core/snippets.ts";
 export { Workspace } from "./core/workspace.ts";
 export type {
     BatchEditResult, Capabilities, ChangeResult, CloseIntent, CloseOperation, DocumentChange, DocumentId, DocumentSnapshot, DocumentView,

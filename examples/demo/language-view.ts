@@ -15,17 +15,29 @@ export function mountDemoLanguage(workspace: Workspace, files: readonly DemoFile
     popup.className = "demo-completion"; popup.hidden = true; popup.setAttribute("role", "listbox"); popup.setAttribute("aria-label", "Completions");
     count.className = "demo-completion-count";
     popup.append(count, choices, detail); document.body.append(popup);
+    const snippetPanel = document.createElement("div"); snippetPanel.className = "demo-snippet"; snippetPanel.hidden = true;
+    snippetPanel.setAttribute("role", "region"); snippetPanel.setAttribute("aria-label", "Snippet controls"); document.body.append(snippetPanel);
     let controller: LspEditorController | undefined, stop: (() => void) | undefined, disposed = false, rendered = "";
-    let accepting: Readonly<{ id: number; index: number }> | undefined;
+    let renderedSnippet = 0;
     let inspection: ReturnType<typeof mountDemoInspection> | undefined;
     let symbols: ReturnType<typeof mountDemoSymbols> | undefined;
     let actions: ReturnType<typeof mountDemoActions> | undefined;
     const valid = () => !disposed && editor.element.isConnected && !editor.snapshot().disposed && workspace.resolveTab(target)?.surface.kind === "text";
     const render = () => {
         const state = controller?.state.getSnapshot();
+        const snippet = state?.snippet; snippetPanel.hidden = !valid() || !snippet;
+        if (snippet && !snippetPanel.hidden && renderedSnippet !== snippet.id) {
+            renderedSnippet = snippet.id;
+            const label = document.createElement("span"); label.textContent = `Field ${snippet.position} of ${snippet.count} · Tab / Shift+Tab`;
+            const button = (label: string, action: () => void) => { const node = document.createElement("button"); node.type = "button"; node.textContent = label; node.addEventListener("click", action); return node; };
+            snippetPanel.replaceChildren(label, ...snippet.choices.map((value, index) => {
+                const node = button(value || "Empty value", () => controller?.chooseSnippet(index, snippet.id)); node.setAttribute("aria-pressed", String(index === snippet.choiceIndex)); return node;
+            }), button("Previous field", () => controller?.moveSnippet(-1, snippet.id)), button("Next field", () => controller?.moveSnippet(1, snippet.id)), button("Finish snippet", () => { if (controller?.state.getSnapshot().snippet?.id === snippet.id) controller.cancel(); }));
+        }
         popup.hidden = !valid() || !state?.choices.length || state.offerText === null;
         if (!state || popup.hidden) return;
-        count.textContent = `${state.choiceIndex + 1} of ${state.choices.length}${state.completionIncomplete ? " · partial list" : ""} · type to filter`;
+        count.textContent = `${state.choiceIndex + 1} of ${state.choices.length}${state.completionIncomplete ? " · partial list" : ""}${state.omittedCompletions.length ? ` · ${state.omittedCompletions.length} unsupported` : ""} · type to filter`;
+        count.title = state.omittedCompletions.map(item => `${item.label}: ${item.reason}`).join("\n");
         const key = `${state.completionId}:${state.choiceIndex}`;
         if (rendered !== key) {
             rendered = key;
@@ -40,20 +52,13 @@ export function mountDemoLanguage(workspace: Workspace, files: readonly DemoFile
         const selected = editor.view.getSnapshot().selection.head, point = editor.viewport.coordsAt(selected), box = editor.element.getBoundingClientRect();
         const left = point?.left ?? box.left + 16, top = point ? point.top + point.height + 4 : box.top + 32;
         popup.style.left = `${Math.max(8, Math.min(innerWidth - 350, left))}px`; popup.style.top = `${Math.max(8, Math.min(innerHeight - 320, top))}px`;
-        const pending = accepting;
-        if (pending && !state.resolving && !state.pending) {
-            accepting = undefined;
-            queueMicrotask(() => {
-                const current = controller?.state.getSnapshot();
-                if (valid() && current?.completionId === pending.id && current.choiceIndex === pending.index) controller?.apply("replace", pending.id);
-            });
-        }
     };
+    snippetPanel.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });
     popup.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });
     popup.addEventListener("click", event => {
         const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-index]"); if (!button || !controller) return;
         const index = Number(button.dataset.index), id = Number(button.dataset.completion);
-        if (controller.chooseCompletion(index, id)) { accepting = { id, index }; render(); }
+        if (controller.chooseCompletion(index, id)) controller.accept("replace", id);
     }, { signal: listeners.signal });
     editor.element.addEventListener("sttropez-render", render, { signal: listeners.signal });
     editor.input.addEventListener("keydown", event => {
@@ -71,5 +76,5 @@ export function mountDemoLanguage(workspace: Workspace, files: readonly DemoFile
     return Object.freeze({ complete: () => { actions?.dismiss(); symbols?.dismiss(); inspection?.dismiss(); editor.focus(); controller?.request(); }, inspect: () => inspection?.inspect(), signature: () => inspection?.signature(),
         definition: () => symbols?.definition(), references: () => symbols?.references(), rename: () => symbols?.rename(),
         quickfix: () => actions?.request(),
-        destroy: () => { disposed = true; accepting = undefined; listeners.abort(); stop?.(); actions?.destroy(); symbols?.destroy(); inspection?.destroy(); controller?.destroy(); popup.remove(); } });
+        destroy: () => { disposed = true; listeners.abort(); stop?.(); actions?.destroy(); symbols?.destroy(); inspection?.destroy(); controller?.destroy(); popup.remove(); snippetPanel.remove(); } });
 }

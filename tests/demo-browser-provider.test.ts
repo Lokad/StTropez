@@ -4,6 +4,23 @@ import { readFile, readdir } from "node:fs/promises";
 import { TextDocument } from "vscode-languageserver-protocol/browser.js";
 import { BrowserLanguageService } from "../examples/demo/browser-language-service.ts";
 import { demoSample } from "../examples/demo/samples.ts";
+import type { CompletionList, CompletionItem } from "vscode-languageserver-protocol/browser.js";
+
+test("demo templates resolve captured primary content and imports and expire after a source edit", () => {
+    const provider = new BrowserLanguageService({}, ["templates.ts", "types.ts"]), uri = "file:///sttropez/templates.ts";
+    const text = demoSample("templates").files["templates.ts"]!, doc = TextDocument.create(uri, "typescript", 1, text);
+    try {
+        provider.notify("textDocument/didOpen", { textDocument: { uri, languageId: "typescript", version: 1, text } });
+        const list = provider.request("textDocument/completion", { textDocument: { uri }, position: doc.positionAt(text.length) }) as CompletionList;
+        assert.equal(list.items.length, 4);
+        const lazy = list.items.find(item => item.label === "Template · lazy declaration")!;
+        assert.equal(lazy.textEdit, undefined);
+        const resolved = provider.request("completionItem/resolve", lazy) as CompletionItem;
+        assert.match(resolved.textEdit!.newText, /TemplateRecord/); assert.equal(resolved.additionalTextEdits?.length, 1);
+        provider.notify("textDocument/didChange", { textDocument: { uri, version: 2 }, contentChanges: [{ text: "changed" }] });
+        assert.throws(() => provider.request("completionItem/resolve", lazy), /source changed/);
+    } finally { provider.dispose(); }
+});
 
 test("the real TypeScript catalogue returns every field and bounds lazy keys by response lifetime", () => {
     const provider = new BrowserLanguageService({}, ["catalogue.ts"]), uri = "file:///sttropez/catalogue.ts";

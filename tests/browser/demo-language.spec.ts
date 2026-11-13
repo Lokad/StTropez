@@ -1,5 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { runDemoCompletionCatalogue } from "./demo-walkthrough.ts";
+import { runDemoCompletionCatalogue, runDemoSnippets } from "./demo-walkthrough.ts";
+
+test("demo snippet fields and lazy declarations share input, traversal and history", async ({ page }) => {
+    await runDemoSnippets(page);
+});
 
 test("real provider retains the 1200-field catalogue through filtering, acceptance and undo", async ({ page }) => {
     await runDemoCompletionCatalogue(page);

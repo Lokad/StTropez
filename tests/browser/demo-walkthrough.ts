@@ -1,6 +1,61 @@
 import { expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
+/** The labeled template provider shares the public completion/input/history paths. */
+export async function runDemoSnippets(page: Page, url = "/") {
+    page.on("dialog", dialog => dialog.accept());
+    await page.goto(url); await page.locator("#sample").selectOption("templates");
+    const source = page.getByRole("textbox", { name: "templates.ts", exact: true }), editor = page.locator("#editor");
+    const controls = page.getByRole("region", { name: "Snippet controls", exact: true });
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    const request = async () => { await source.press("Control+End"); await source.press("Control+Space");
+        await expect(page.getByRole("option", { name: "Template · linked placeholders", exact: true })).toBeVisible(); };
+    await request(); await expect(page.locator(".demo-completion-count")).toContainText("1 unsupported");
+    await source.press("Tab"); await expect(controls).toContainText("Field 1 of 3");
+    await expect(editor).toContainText("console.log(record)");
+    await source.press("Control+z"); await expect(controls).toBeHidden(); await expect(editor).not.toContainText("console.log");
+    await source.press("Control+y"); await expect(editor).toContainText("console.log(record)"); await expect(controls).toBeHidden();
+    await page.getByRole("button", { name: "Reset sample", exact: true }).click(); await request(); await source.press("Tab");
+    await expect(controls).toContainText("Field 1 of 3"); await source.pressSequentially("entry");
+    await expect(editor).toContainText("const entry"); await expect(editor).toContainText("console.log(entry)");
+    await source.press("Tab"); await expect(controls).toContainText("Field 2 of 3");
+    await source.press("Alt+ArrowDown"); await expect(controls.getByRole("button", { name: "ready", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await source.press("Shift+Tab"); await expect(controls).toContainText("Field 1 of 3");
+    await source.evaluate(node => {
+        const input = node as HTMLTextAreaElement;
+        input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+        input.setRangeText("項目", input.selectionStart, input.selectionEnd, "end");
+        input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", isComposing: true }));
+        input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "項目" }));
+    });
+    await expect(editor).toContainText("const 項目"); await expect(editor).toContainText("console.log(項目)");
+    await source.press("Tab"); await controls.getByRole("button", { name: "archived", exact: true }).click();
+    await expect(source).toBeFocused(); await expect(editor).toContainText('state: "archived"');
+    await source.press("Tab"); await expect(controls).toContainText("Field 3 of 3");
+    await source.evaluate(node => {
+        const event = new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: new DataTransfer() });
+        event.clipboardData!.setData("text/plain", "42");
+        if (event.clipboardData!.getData("text/plain") !== "42") throw new Error("Synthetic clipboard fixture lost its data.");
+        node.dispatchEvent(event);
+    });
+    await expect(editor).toContainText("value: 42"); await source.press("Tab"); await expect(controls).toBeHidden();
+    await source.pressSequentially("// Finished"); await expect(editor).toContainText("console.log(項目);// Finished");
+    await source.press("Control+z"); await expect(editor).not.toContainText("// Finished");
+    await page.getByRole("button", { name: "Reset sample", exact: true }).click(); await request(); await source.press("ArrowDown"); await source.press("Tab");
+    await expect(controls).toContainText("Field 1 of 2");
+    await expect(editor).toContainText('import type { TemplateRecord } from "./types";');
+    await expect(editor).toContainText("console.log(result)");
+    await source.press("Control+z"); await expect(editor).not.toContainText("TemplateRecord"); await expect(controls).toBeHidden();
+    await request(); await source.press("ArrowDown"); await source.press("Enter"); await expect(controls).toContainText("Field 1 of 2");
+    await source.press("Escape"); await expect(controls).toBeHidden(); await source.pressSequentially("other");
+    await expect(editor).toContainText("const other:"); await expect(editor).toContainText("console.log(result)");
+    await page.getByRole("button", { name: "Reset sample", exact: true }).click(); await request(); await source.press("Tab"); await expect(controls).toBeVisible();
+    await page.locator('[data-file="types.ts"]').click(); await expect(controls).toBeHidden();
+    await page.locator('[data-file="templates.ts"]').click(); await expect(editor).toContainText("console.log(record)"); await expect(controls).toBeHidden();
+    return Object.freeze({ linkedEdits: true, tabTraversal: true, choices: true, finalCaret: true, syntheticComposition: true, syntheticPaste: true,
+        lazyPrimaryAndAdditionalEdits: true, history: true, escapeAndViewLifetime: true, native: "IME and OS clipboard UNVERIFIED" });
+}
+
 /** Complete provider lists stay navigable while the host bounds rendered rows. */
 export async function runDemoCompletionCatalogue(page: Page, url = "/") {
     await page.goto(url); await page.locator("#sample").selectOption("catalogue");

@@ -9,6 +9,16 @@ The project had no bounded context/coordinate adapter to reuse. This small origi
 uses platform text ranges and segmentation; embedding an external editing runtime would conflict
 with the zero-dependency distribution requirement. No reference implementation is imported.
 
+`registerEditTransform` installs one synchronous edit planner for this view and returns its
+unregister function. It receives the captured revision, proposed edits, resulting selections
+and history kind. Its replacement plan still passes through Workspace authority, validation
+and history. The optional `complete(applied)` callback runs after commit notifications and
+before adapter refresh. It must not retarget another view. The LSP snippet session uses this
+hook to mirror ordinary input through flat placeholder occurrences, including empty occurrences
+that normalize to one caret. The pure `parseSnippet`/`planSnippetEdit` model reuses existing
+buffers, selections and edits; it adds no runtime dependency or alternative input engine.
+Undo/redo and externally submitted transactions do not pass through this input hook.
+
 Hosts can intercept clipboard events on the public input in the capture phase and cancel them
 with `preventDefault()`. The candidate then leaves clipboard data and source mutation to the
 host, cancels queued navigation/grouping work, and stops a delegated cut/paste drag. Empty or
