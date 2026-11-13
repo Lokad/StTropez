@@ -11,6 +11,28 @@ test.beforeEach(async ({ page }) => {
     await page.goto("/editing/"); await ready(page);
 });
 
+test("captured host insertion uses the input transform once and expires before later typing", async ({ page }) => {
+    await page.evaluate(() => { window.editingFixture.setText("abc"); window.editingFixture.select("primary", { anchor: 1, head: 2 }); }); await ready(page);
+    expect(await page.evaluate(() => {
+        const f = window.editingFixture, completions: boolean[] = [];
+        const stop = f.registerEditTransform(plan => ({ ...plan, edits: plan.edits.map(edit => ({ ...edit, insert: edit.insert.toUpperCase() })), complete: applied => completions.push(applied) }));
+        const capture = f.captureInsertion()!, pending = f.snapshot().primary.pendingInput;
+        const inserted = capture.insert("x"), again = capture.insert("late"); stop();
+        return { pending, inserted, again, completions, aborted: capture.signal.aborted, text: f.range(0, 3), pendingAfter: f.snapshot().primary.pendingInput };
+    })).toEqual({ pending: true, inserted: true, again: false, completions: [true], aborted: true, text: "aXc", pendingAfter: false });
+    await page.getByRole("textbox", { name: "Primary source", exact: true }).press("Control+z"); await ready(page);
+    const pending = await page.evaluateHandle(() => {
+        const f = window.editingFixture, old = f.captureInsertion()!, next = f.captureInsertion()!;
+        const superseded = old.signal.aborted && !old.insert("late");
+        return { superseded, next };
+    });
+    await page.getByRole("textbox", { name: "Primary source", exact: true }).press("q"); await ready(page);
+    expect(await pending.evaluate(({ superseded, next }) => ({ superseded, aborted: next.signal.aborted, late: next.insert("late"),
+        text: window.editingFixture.range(0, 3), pending: window.editingFixture.snapshot().primary.pendingInput })))
+        .toEqual({ superseded: true, aborted: true, late: false, text: "aqc", pending: false });
+    await pending.dispose();
+});
+
 test("real typing in 100k lines uses bounded native context and shared grouped undo", async ({ page }) => {
     await page.evaluate(() => { window.editingFixture.select("primary", { anchor: 1_200_000, head: 1_200_000 }); window.editingFixture.focus("primary"); }); await ready(page);
     await page.keyboard.type("xyz"); await ready(page);

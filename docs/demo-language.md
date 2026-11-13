@@ -31,6 +31,12 @@ The existing deterministic protocol fixture keeps its separate `/lsp-fixture` ro
 
 ## Current workflows
 
+- **Host integrations · paste & notes** is an on-demand, example-owned rule/CSV sample without
+  a language provider. It demonstrates host syntax colors, colon indentation, `#` comments,
+  CSV/literal insertion and source notes that track edits, scrolling, folds and view remounts.
+  Code exposes its custom commands and shortcuts; comparison colors both snapshots. The
+  [consumer recipe](host-integrations.md) uses only public exports and explains note lifetime.
+
 - Placing the caret on a symbol highlights occurrences in the active source or comparison
   working view through standard `textDocument/documentHighlight`. Reads are shaded and writes
   also outlined, without replacing syntax colors. The browser provider maps TypeScript compiler

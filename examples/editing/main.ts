@@ -1,7 +1,7 @@
 import { Workspace } from "../../src/index.ts";
 import type { EditingCommand, LanguageConfiguration, FoldRange, Selection, TextEdit } from "../../src/index.ts";
 import { mountEditingCandidate, createFoldingController } from "../../src/browser/index.ts";
-import type { FoldDiscovery, FoldCommand, FoldingController } from "../../src/browser/index.ts";
+import type { CandidateEditTransform, FoldDiscovery, FoldCommand, FoldingController } from "../../src/browser/index.ts";
 import { corpus, corpusIds } from "../../tests/fixtures/workloads.ts";
 import { EditingPresentation } from "./presentation.ts";
 import { mountFindUI } from "./find-ui.ts";
@@ -37,6 +37,8 @@ pane("undo").addEventListener("click", () => history("undo"), { signal: listener
 const status = () => { const current = workspace.document(source.documentId); pane("status").textContent = `${current.buffer.lineCount.toLocaleString()} lines · Revision ${current.revision}`; };
 const unsubscribe = workspace.observeDocument(source.documentId).subscribe(status); status();
 const fixture = { ready: true, setText, edit, select, history,
+    captureInsertion: () => editors.primary.captureInsertion(),
+    registerEditTransform: (transform: CandidateEditTransform) => editors.primary.registerEditTransform(transform),
     discoverFolds: (discover: FoldDiscovery) => { foldingController?.dispose(); foldingController = createFoldingController(workspace, primaryTab, editors.primary, discover, { delayMs: 0 }); },
     foldCommand: (command: FoldCommand) => foldingController?.runCommand(command),
     refreshFolds: () => foldingController?.refresh(), foldStatus: () => foldingController?.state.getSnapshot(),

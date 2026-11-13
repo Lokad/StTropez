@@ -23,10 +23,14 @@ import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
 import { planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
 import type { EditingCommand, LanguageConfiguration } from "../core/language-edits.ts";
+import { captureInsertion } from "./captured-insertion.ts";
+import type { CapturedInsertion } from "./captured-insertion.ts";
 
 export type CandidateEdit = Readonly<{ expectedRevision: number; edits: readonly TextEdit[]; selectionSet: SelectionSet; kind: EditKind }>;
 export type CandidateEditTransform = (edit: CandidateEdit) => Readonly<{ edits: readonly TextEdit[]; selectionSet: SelectionSet; complete?: (applied: boolean) => void }> | undefined;
 export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport;
+    /** One pending host insertion, invalidated by later editing/selection/authority/lifecycle changes. */
+    captureInsertion: (kind?: "paste" | "replace") => CapturedInsertion | undefined;
     /** One synchronous edit planner per view. Its result still passes Workspace validation/history. */
     registerEditTransform: (transform: CandidateEditTransform) => () => void;
     configureLanguage: (configuration: LanguageConfiguration) => boolean;
@@ -65,6 +69,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     let revision = workspace.document(documentId).revision, context: InputContext = inputContext(workspace.document(documentId).buffer, view.getSnapshot().selection);
     let disposed = false, composing = false, selecting = false, committing = false, escaped = false;
     let editTransform: CandidateEditTransform | undefined;
+    let hostInsertion: CapturedInsertion | undefined;
     const escapeState = (value: boolean) => {
         if (escaped === value) return;
         escaped = value; root.toggleAttribute("data-st-tab-escape", value);
@@ -160,6 +165,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     };
     function apply(edits: readonly TextEdit[], selection: Selection | SelectionSet, kind: EditKind, type?: string, expectedRevision = revision, recoveryText?: string): boolean {
         if (disposed) return false;
+        hostInsertion?.cancel();
         if (readOnly) { conflict("read-only", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
         cancelWord(); preferred = undefined;
         if (!workspace.resolveTab(target)) { conflict("expired-view", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
@@ -223,7 +229,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         apply([{ from, to, insert: edit.insert }], selection, kind, typing || deleting ? type : undefined, captured.revision);
     }
     function history(direction: "undo" | "redo"): void {
-        if (disposed) return; cancelWord(); group = undefined; syncSelection();
+        if (disposed) return; hostInsertion?.cancel(); cancelWord(); group = undefined; syncSelection();
         if (readOnly) { refresh(); return; }
         if (!workspace.resolveTab(target)) { conflict("expired-view"); refresh(); return; }
         const result = workspace[direction]({ documentId, expectedRevision: revision });
@@ -738,6 +744,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         refresh(); scheduleInput(); return true;
     }
     function beforeInput(event: InputEvent): void {
+        hostInsertion?.cancel();
         wordInput = undefined; insertion = undefined;
         if (nativeOrder) { if (!nativeOrder.invalid) cancelWord(); nativeOrder = undefined; }
         if (event.defaultPrevented) return;
@@ -780,6 +787,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         lastInputMs = win.performance.now() - start; inputEvents++;
     }, { signal: listeners.signal });
     function startComposition(): void {
+        hostInsertion?.cancel();
         cancelWord();
         cancelCommandTimers();
         wordInput = undefined;
@@ -813,6 +821,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     function keydown(event: KeyboardEvent): void {
         if (event.defaultPrevented || composing || event.isComposing) return;
         if (["Shift", "Control", "Meta", "Alt"].includes(event.key)) return;
+        if (hostInsertion) { hostInsertion.cancel(); if (event.key === "Escape") { event.preventDefault(); return; } }
         if (!drainingInput && (ordered || rangeCommand) && event.key !== "Escape") {
             const action = inputKey(event);
             if (action && (!action.edit || !input.readOnly)) { event.preventDefault(); appendInput(action); return; }
@@ -972,9 +981,22 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh), workspace.tabState.subscribe(refresh)];
     refresh();
     return Object.freeze({ element: root, input, view, viewport, focus,
+        captureInsertion: (kind = "paste") => {
+            if (kind !== "paste" && kind !== "replace") throw new TypeError("Unknown captured insertion kind.");
+            hostInsertion?.cancel();
+            const available = () => !disposed && root.isConnected && !readOnly && !input.disabled && !input.readOnly && !composing
+                && !ordered && !executingInput && !rangeCommand && !wordJob && !graphemeJob && !insertion && !drag;
+            if (!available()) return;
+            syncSelection(); view.folding.revealSelection(view.folding.getSnapshot());
+            let captured: CapturedInsertion | undefined;
+            captured = captureInsertion(workspace, target, view, available, (plan, expected) => apply(plan.edits, plan.selectionSet, kind, undefined, expected),
+                () => { if (hostInsertion === captured) hostInsertion = undefined; });
+            hostInsertion = captured; return captured;
+        },
         runCommand: languageCommand,
         configureLanguage: configuration => {
             if (disposed || composing) return false;
+            hostInsertion?.cancel();
             const next = resolveLanguageConfiguration(configuration);
             cancelWord(); group = undefined; preferred = undefined; language = next;
             root.style.tabSize = String(language.tabSize); viewport.invalidate(); refresh(); return true;
@@ -986,10 +1008,11 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state: ViewState) => { viewport.restoreView(state); refresh(); },
         snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs, pendingCaret: caretLayer.pending(), pendingCommand: rangeCommand !== undefined || wordJob !== undefined || graphemeJob !== undefined,
-            pendingDragScroll: dragFrame !== undefined, dragScrollFrames, maxDragScrollStepMs, commits, conflicts, composing, pendingInput: ordered !== undefined || executingInput !== undefined || rangeCommand?.capture.deleting === true,
+            pendingDragScroll: dragFrame !== undefined, dragScrollFrames, maxDragScrollStepMs, commits, conflicts, composing, pendingInput: hostInsertion !== undefined || ordered !== undefined || executingInput !== undefined || rangeCommand?.capture.deleting === true,
             queuedInputUnits: ordered?.units ?? 0, pendingWord: rangeCommand?.purpose === "word" || wordJob !== undefined || graphemeJob?.purpose === "word" || graphemeJob?.purpose === "word-selection" || ordered?.purpose === "word", wordScanSteps, maxWordScanStepMs, pendingGrapheme: rangeCommand?.purpose === "grapheme" || graphemeJob !== undefined || ordered?.purpose === "grapheme", graphemeScanSteps, maxGraphemeScanStepMs, visualMoves, disposed }),
         destroy: () => {
             if (disposed) return; disposed = true; editTransform = undefined;
+            hostInsertion?.cancel();
             if (executingInput) recoverInput(executingInput, "pending-input-detached");
             cancelWord();
             nativeOrder = undefined; wordInput = undefined;

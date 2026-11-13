@@ -1,6 +1,8 @@
 # Captured table paste
 
-The candidate evaluation hosts offer **Paste tables as CSV**. It starts off; ordinary paste
+The candidate evaluation hosts offer **Paste tables as CSV**. The main demo's **Host integrations**
+sample exposes the same converter through **Code → Paste format** and **Insert example table**.
+Conversion starts off; ordinary paste
 keeps its literal `text/plain` behavior. When enabled, the host converts one HTML table, or
 tab-separated plain text when HTML contains no table, and replaces every captured selection
 with the same quoted CSV. Copy/cut and the default literal route remain separate commands.
@@ -16,7 +18,9 @@ intent. Text/selection/fold changes, composition, detach, replaced tabs and loss
 expire that capture; temporary permission/lease loss cannot revive it after authority returns.
 Moving focus to the host form alone does not retarget the command or take focus back.
 
-Only a complete validated result reaches `planSelectionEdits` and one human `paste` transaction.
+The host uses the public `editor.captureInsertion()` hook rather than creating its own history
+transaction. Only a complete validated result reaches the selection planner, the editor's
+existing edit transform and one human `paste` transaction. See [host integrations](host-integrations.md).
 Shared undo/redo restores the complete selection set. No-op/empty clipboard input creates no
 history unit; unsupported empty/nontext literal payloads cannot delete selected source text.
 Save and Run still capture the working resource, while the review reference remains immutable.

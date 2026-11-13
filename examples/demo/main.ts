@@ -10,6 +10,7 @@ import { mountDemoLanguage } from "./language-view.ts";
 import { mountDemoOutput } from "./output.ts";
 import { mountDemoFolding, outlineFolds } from "./folding.ts";
 import { canOpenDemoHelp } from "./diagnostics.ts";
+import { hostConfiguration, hostDecorations, mountHostIntegrations } from "./host-integrations.ts";
 import "./style.css";
 
 const element = (id: string) => document.getElementById(id)!;
@@ -28,12 +29,15 @@ let stopReference: (() => void) | undefined;
 let folding: FoldingController | undefined, referenceFolding: FoldingController | undefined, stopFolding: (() => void) | undefined;
 let viewListeners: AbortController | undefined;
 let reviewLabel: HTMLSpanElement | undefined;
+let hostIntegrations: ReturnType<typeof mountHostIntegrations> | undefined;
+const hostLanguage = () => project?.sample.id === "outline" || project?.sample.id === "host";
 let referencePresentation: DemoPresentation | undefined;
 let problemPage = 0, problemBatch: unknown;
 const presentation = new DemoPresentation(() => { editor?.viewport.invalidate(); renderOutput(); renderMetadata(); });
 const indentation = element("indentation") as HTMLSelectElement;
 function editingConfiguration() {
     const config = presentation.editing.configuration(indentation.value === "2" ? 2 : 4, indentation.value !== "tabs");
+    if (project?.sample.id === "host") return hostConfiguration(config.tabSize!, config.insertSpaces!);
     return project?.sample.id === "outline" ? { tabSize: config.tabSize!, insertSpaces: config.insertSpaces!, lineComment: "#", pairs: [], enter: "keep" as const } : config;
 }
 function renderFolding(): void {
@@ -47,6 +51,10 @@ function renderFolding(): void {
 function renderOutput(): void {
     if (panel !== "javascript") return;
     const host = element("panel-content");
+    if (project?.sample.id === "host") {
+        if (!host.querySelector(".host-output-note")) { const note = document.createElement("p"); note.className = "panel-note host-output-note";
+            note.textContent = "This sample uses host-supplied colors and editing rules. No JavaScript is generated. Use Changes to compare your edits, or Code for paste formats and source notes."; host.replaceChildren(note); } return;
+    }
     if (presentation.status === "ready") {
         const text = presentation.javascript || "// This file emits no JavaScript.\n";
         if (output) output.update(text);
@@ -138,13 +146,14 @@ function renderProblems(): void {
 }
 function renderLanguage(): void {
     if (!project || disposed) return;
-    const plain = project.sample.id === "outline";
+    const plain = hostLanguage();
+    element("host-controls").hidden = element("host-status").hidden = project.sample.id !== "host";
     for (const id of ["complete", "inspect-type", "signature", "definition", "references", "rename", "quickfix"]) {
         button(id).disabled = plain; button(id).hidden = plain;
     }
     button("block-comment").hidden = plain;
     if (plain) {
-        element("language-status").textContent = "Host outline · no language server"; element("language-retry").hidden = true;
+        element("language-status").textContent = project.sample.id === "host" ? "Host language · no language server" : "Host outline · no language server"; element("language-retry").hidden = true;
         document.querySelector<HTMLButtonElement>('[data-panel="problems"]')!.textContent = "Problems";
         presentation.diagnostics = undefined; renderProblems(); return;
     }
@@ -169,7 +178,7 @@ function renderMetadata(): void {
     const line = current.buffer.lineAt(selection.head), column = selection.head - current.buffer.offsetAt(line);
     element("cursor").textContent = `Ln ${line + 1}, Col ${column + 1}`;
     element("status").textContent = project.message;
-    element("analysis-status").textContent = project.sample.id === "outline" ? "Host indentation rules" : referencePresentation?.status === "failed" ? "Saved-copy analysis unavailable" : presentation.status === "failed" ? "Analysis unavailable" : presentation.status === "ready"
+    element("analysis-status").textContent = hostLanguage() ? "Host colors & editing rules" : referencePresentation?.status === "failed" ? "Saved-copy analysis unavailable" : presentation.status === "failed" ? "Analysis unavailable" : presentation.status === "ready"
         ? "TypeScript 5.9.3 · syntax & emit" : "TypeScript · analyzing…";
     element("analysis-retry").hidden = presentation.status !== "failed" && referencePresentation?.status !== "failed";
     button("save").disabled = project.saving;
@@ -192,9 +201,10 @@ function renderMetadata(): void {
         tab.setAttribute("aria-pressed", String(file === active));
     }
     document.title = `${project.dirty() ? "● " : ""}${active.name} · StTropez`;
-    presentation.update(current, project.sample.id === "outline");
+    presentation.update(current, hostLanguage());
 }
 function detachView(): void {
+    hostIntegrations?.dispose(); hostIntegrations = undefined;
     stopFolding?.(); stopFolding = undefined; folding?.dispose(); folding = undefined; referenceFolding?.dispose(); referenceFolding = undefined;
     stopReference?.(); stopReference = undefined;
     referencePresentation?.dispose(); referencePresentation = undefined;
@@ -208,7 +218,7 @@ function detachView(): void {
     element("editor").replaceChildren(); element("panel-content").replaceChildren();
 }
 function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEditor: EditingCandidate) {
-    if (capturedProject.sample.id === "outline") return;
+    if (capturedProject.sample.id === "outline" || capturedProject.sample.id === "host") return;
     return mountDemoLanguage(capturedProject.workspace, () => capturedProject.files, file, capturedEditor, capturedProject.language, target => {
         if (disposed || project !== capturedProject || editor !== capturedEditor) return;
         const destination = capturedProject.files.find(file => file.resource.documentId === target.documentId);
@@ -229,8 +239,8 @@ function mountFile(file: DemoFile, focus = false): void {
     element("workspace").classList.toggle("reviewing", panel === "changes");
     if (panel === "changes") {
         comparison = mountTextComparison(element("panel-content"), project.workspace, file.tab, project.baseline(file),
-            { view: file.view, workingDecorate: line => [...presentation.decorate(line), ...(languageView?.decorate(line) ?? [])],
-                baselineDecorate: line => referencePresentation?.decorate(line) ?? [], scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
+            { view: file.view, workingDecorate: line => [...(project?.sample.id === "host" ? hostDecorations(line) : presentation.decorate(line)), ...(languageView?.decorate(line) ?? [])],
+                baselineDecorate: line => project?.sample.id === "host" ? hostDecorations(line) : referencePresentation?.decorate(line) ?? [], scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
         const labels = document.createElement("div"); labels.className = "demo-review-labels";
         const savedLabel = document.createElement("span"), workingLabel = document.createElement("span");
         reviewLabel = savedLabel;
@@ -244,7 +254,7 @@ function mountFile(file: DemoFile, focus = false): void {
             referencePresentation?.dispose(); referencePresentation = undefined;
             const reference = comparison?.reference.getSnapshot(); if (!reference) return;
             reference.editor.configureLanguage(editingConfiguration());
-            const plain = project!.sample.id === "outline";
+            const plain = hostLanguage();
             const syntax = plain ? undefined : new DemoPresentation(() => { reference.editor.viewport.invalidate(); renderMetadata(); }, { emit: false, folds: true });
             referencePresentation = syntax;
             syntax?.update(project!.workspace.document(reference.editor.view.documentId));
@@ -255,7 +265,7 @@ function mountFile(file: DemoFile, focus = false): void {
         stopReference = comparison.reference.subscribe(configureReference); configureReference();
     } else {
         editor = mountEditingCandidate(element("editor"), project.workspace, file.tab,
-            { view: file.view, ariaLabel: file.name, decorate: line => [...presentation.decorate(line), ...(languageView?.decorate(line) ?? [])] });
+            { view: file.view, ariaLabel: file.name, decorate: line => [...(project?.sample.id === "host" ? hostDecorations(line) : presentation.decorate(line)), ...(languageView?.decorate(line) ?? [])] });
         renderProblems();
     }
     editor.configureLanguage(editingConfiguration());
@@ -285,6 +295,8 @@ function mountFile(file: DemoFile, focus = false): void {
     stopFind = find.state.subscribe(renderFind); if (!element("find-bar").hidden) find.setQuery(field("find-query").value);
     stopView = file.view.subscribe(renderMetadata);
     languageView = attachLanguage(project, file, editor);
+    if (project.sample.id === "host") hostIntegrations = mountHostIntegrations(project, file, editor, {
+        mode: element("host-paste-mode") as HTMLSelectElement, insert: button("host-insert-table"), annotate: button("host-annotate"), status: element("host-status") });
     renderMetadata(); renderLanguage(); renderOutput(); if (focus) editor.focus();
 }
 // View IDs are local to a Workspace; each sample owns a separate workspace.

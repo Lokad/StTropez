@@ -1,4 +1,4 @@
-export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue" | "templates" | "results" | "outline" | "documentation" | "navigation" | "diagnostics" | "actions";
+export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue" | "templates" | "results" | "outline" | "documentation" | "navigation" | "diagnostics" | "actions" | "host";
 export type DemoSample = Readonly<{ id: SampleId; title: string; description: string; files: Readonly<Record<string, string>>;
     initialFiles?: readonly string[]; declarations?: Readonly<Record<string, string>> }>;
 
@@ -40,10 +40,15 @@ export const sampleChoices: readonly Readonly<{ id: SampleId; title: string }>[]
     { id: "navigation", title: "Unopened files & navigation" },
     { id: "diagnostics", title: "Diagnostic details" },
     { id: "actions", title: "Project actions" },
+    { id: "host", title: "Host integrations · paste & notes" },
 ]);
 
 /** Large fixtures are built only on explicit selection. */
 export function demoSample(id: SampleId): DemoSample {
+    if (id === "host") return { id, title: "Host integrations",
+        description: "This host-owned language demonstrates custom colors, # comments, indentation and source notes. Fold Inventory or edit above its note: the note follows the source. In inventory.csv, Code → Paste format selects literal text or table-to-CSV conversion. Insert example table tries the same path without using your clipboard. Ctrl+Alt+V changes paste mode; Ctrl+Alt+M adds a note at the selection.",
+        files: { "workflow.rules": '# Example-owned language; no compiler or execution.\ndataset Inventory:\n  columns sku, quantity\n  row "A-100", 12\n  row "B-200", 8\n\nrule Reorder:\n  when quantity < 10\n  emit "Review stock"\n',
+            "inventory.csv": '"sku","quantity"\r\n"C-300","5"\r\n' } };
     if (id === "actions") return { id, title: "Project actions",
         description: "Use Ctrl+. or Code → Quick fix for a two-file refactor, a host command that adds a review note, or a refactor followed by a project check. The deliberate failure demonstrates recovery: earlier edits remain undoable. These labeled demo fixtures never execute your program. Ordinary small TypeScript fixes apply when selected.",
         files: { "main.ts": '// Demo project action fixture\nimport { exampleRate } from "./rate";\n\nconsole.log(100 * (1 - exampleRate));\n',

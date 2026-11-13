@@ -6,6 +6,7 @@ import { demoSample } from "./samples.ts";
 import type { DemoSample, SampleId } from "./samples.ts";
 import { DemoRecovery } from "./recovery.ts";
 import { DemoLanguage } from "./language.ts";
+import { HostSourceNotes } from "../shared/source-notes.ts";
 
 export type DemoFile = Readonly<{ name: string; resource: TextResourceHandle; tab: TabId; view: DocumentView; readOnly?: boolean }>;
 type StoredProject = Readonly<{ version: 1; files: Readonly<Record<string, string>> }>;
@@ -40,6 +41,19 @@ export class DemoProject {
     saving = false;
     message = "Changes are kept in this page until you save locally.";
     private readonly inputIdle: () => boolean;
+    private readonly noteModels = new Map<DemoFile, HostSourceNotes>();
+    notesFor(file: DemoFile): HostSourceNotes {
+        let model = this.noteModels.get(file);
+        if (!model) { model = new HostSourceNotes(this.workspace, file.resource.documentId); this.noteModels.set(file, model); this.seedNotes(file, model); }
+        return model;
+    }
+    private seedNotes(file: DemoFile, model: HostSourceNotes): void {
+        if (file.name !== "workflow.rules") return;
+        const doc = this.workspace.document(file.resource.documentId), prefix = doc.buffer.slice(0, Math.min(doc.buffer.length, 16384));
+        for (const [token, text] of [["columns sku", "Inventory source"], ["when quantity", "Review policy"]]) {
+            const from = prefix.indexOf(token!); if (from >= 0) model.add(doc.revision, from, from + token!.length, text!);
+        }
+    }
     private constructor(id: SampleId, store: DraftStore, token: string | null, saved: StoredProject | null, inputIdle: () => boolean) {
         this.inputIdle = inputIdle;
         this.sample = demoSample(id); this.store = store; this.token = token;
@@ -161,11 +175,13 @@ export class DemoProject {
             return { documentId: document.id, expectedRevision: document.revision, origin: "host" as const,
                 edits: [{ from: 0, to: document.buffer.length, insert: this.sample.files[file.name]! }] };
         }));
+        for (const [file, model] of this.noteModels) { model.clear(); this.seedNotes(file, model); }
         this.message = "Sample restored. Undo restores your edits; Save locally replaces the saved copy.";
     }
     dispose(): void {
         if (this.disposed) return; this.disposed = true;
         this.recovery.dispose();
+        for (const model of this.noteModels.values()) model.dispose(); this.noteModels.clear();
         void this.language.dispose().then(() => { this.languageDisposed = true; if (!this.saving) this.release(); });
     }
     private release(): void {

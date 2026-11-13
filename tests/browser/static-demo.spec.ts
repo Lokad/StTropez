@@ -1,4 +1,9 @@
 import { expect, test } from "@playwright/test";
+import { runDemoHostIntegrations } from "./demo-host-integrations.ts";
+
+test("host language, structured/literal insertion and mapped notes share editing and review", async ({ page, baseURL }) => {
+    await runDemoHostIntegrations(page, baseURL!);
+});
 import { runDemoUnopenedNavigation, runDemoActions } from "./demo-walkthrough.ts";
 
 test("broader project actions retain preview, stale recovery and atomic multi-file history", async ({ page, baseURL }) => { await runDemoActions(page, baseURL!); });

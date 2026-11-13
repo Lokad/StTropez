@@ -5,6 +5,10 @@ over the shared document/history contract. It owns its viewport, bounded native 
 caret beneath the supplied host. The existing whole-value `mountTextEditor` remains a control.
 The candidate is exported explicitly; native-device IME qualification remains open.
 No production input strategy has been selected.
+`captureInsertion()` provides a one-use, cancelable target for asynchronous host text conversion.
+It retains the captured selections and uses the same edit-transform/history path as ordinary
+input. Pending conversions appear in `snapshot().pendingInput`; later editing invalidates them.
+See the [public host integration recipe](host-integrations.md) for lifecycle and usage.
 The project had no bounded context/coordinate adapter to reuse. This small original adapter
 uses platform text ranges and segmentation; embedding an external editing runtime would conflict
 with the zero-dependency distribution requirement. No reference implementation is imported.

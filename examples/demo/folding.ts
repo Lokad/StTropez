@@ -9,7 +9,7 @@ export const outlineFolds = (tabSize: number) => ({ tabSize, group: "blocks", ma
 export function mountDemoFolding(project: DemoProject, file: DemoFile, editor: EditingCandidate, tabSize: () => number) {
     let owner: LspWorkspace | undefined, client: ReturnType<typeof createLspFoldingClient> | undefined, disposed = false;
     const controller = createFoldingController(project.workspace, file.tab, editor, async (document, signal) => {
-        if (project.sample.id === "outline") return discoverIndentationFolds(document.buffer, outlineFolds(tabSize()));
+        if (project.sample.id === "outline" || project.sample.id === "host") return discoverIndentationFolds(document.buffer, outlineFolds(tabSize()));
         if (project.language.state.getSnapshot().status === "failed") throw new Error("Folding is unavailable until the language service is retried.");
         const next = await project.language.connect();
         if (disposed || signal.aborted) throw new Error("Folding discovery cancelled.");

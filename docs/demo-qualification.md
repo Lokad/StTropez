@@ -8,6 +8,22 @@ provider/compiler pair, supported subset and host adaptations.
 
 ## Delivered workflow
 
+The **Host integrations · paste & notes** workflow is shared by source, static and restored-assets
+tests. It exercises host language colors/rules, structured and literal paste with undo, pending
+conversion/save ownership, cancellation by later typing, mapped note deletion/scroll/folding,
+view remount, comparison and disposal. Exact CSV bytes and capture invalidation belong to the
+existing table model/controller tests; the browser journey owns visible behavior. Synthetic
+clipboard events and the example-table button do not qualify native OS clipboard or IME input.
+
+A bounded shared-Windows Chromium check of the captured-insertion change used one warmup and
+three recorded TSV conversions per ordinary/100,000-line source. The latter inserted 1,500 rows
+while source/review views and background host traffic remained active. Complete paste dispatch
+was 0.2–0.3 ms, conversion through commit 0.8–2.6 ms, all-view review readiness including two
+frames 76.6–79.1 ms, and the automation action 78.0–80.8 ms. Visible rows and native context
+remained bounded, exact text/history/disposal assertions passed, and no document export occurred.
+These are separate clocks and a small changed-path observation, not stable tails, provider
+latency or native/physical display qualification. Earlier unattributed outliers remain retained.
+
 The **Unopened files & navigation** sample demonstrates an editable module and a read-only
 declaration absent from the initial editor resources. The shared source/static/restored-assets
 journey covers F12 loading, return navigation, atomic rename/undo/redo across an unopened file,

@@ -24,6 +24,7 @@ export type { DocumentationContent, DocumentationPart } from "../core/documentat
 export type { LspHighlightSnapshot, LspHighlightController } from "./lsp-highlights.ts";
 export type { LspEditorController, LspEditorOptions, LspEditorSnapshot, LspEditorDiagnostic, LspEditorSnippet } from "./lsp-editor.ts";
 export type { EditingCandidate, CandidateEdit, CandidateEditTransform } from "./editing-candidate.ts";
+export type { CapturedInsertion } from "./captured-insertion.ts";
 export { createFindController } from "./find.ts";
 export type { FindController, FindSnapshot, FindOptions, FindBackend, FindQueryCapture, FindSearchCursor, FindPlanCursor, FindPlanStep, FindConfiguration } from "./find.ts";
 export { createRegexFindBackend } from "./regex-find.ts";

@@ -36,6 +36,13 @@ records an explicit deferral with user impact. No such host deferrals have been 
 
 ## Pinned synthetic workloads
 
+The main demo additionally exposes **Host integrations · paste & notes**. Its shared
+source/static/restored-assets journey covers host colors/configuration, CSV versus literal
+insertion, one-command undo, pending-save refusal, cancellation, mapped note edit/fold/scroll
+behavior and view disposal. The [integration recipe](host-integrations.md) uses public exports;
+conversion and annotation policy remain in the host. This adds automated host evidence without
+closing the separate native-input rows above.
+
 `tests/fixtures/workloads.ts` is the source of truth. Text is generated locally from fixed
 strings and a declared seed. No downloaded or host-specific corpus is needed.
 

@@ -29,6 +29,11 @@
                 <label>Fold group <select id="fold-group"><option value="">All groups</option></select></label>
                 <button id="fold-group-collapse">Collapse group</button><button id="fold-group-expand">Expand group</button>
                 <output id="folding-status" aria-live="polite"></output>
+                <div id="host-controls" hidden>
+                    <label>Paste format <select id="host-paste-mode" title="Ctrl+Alt+V switches format"><option value="literal">Literal text</option><option value="csv">Table as CSV</option></select></label>
+                    <button id="host-insert-table">Insert example table</button>
+                    <button id="host-annotate" title="Ctrl+Alt+M">Add source note</button>
+                </div>
             </div></details>
             <button id="compare">Compare</button><button id="reset" title="Restore the selected sample's original files; other samples and stored drafts are kept">Reset sample</button>
             <button id="save" class="primary" title="Save in this browser (Ctrl+S)">Save locally</button>
@@ -40,6 +45,7 @@
         Place the caret on a symbol to highlight its uses: reads are shaded; writes also have an outline.
         Use Problems to find type errors.</aside>
     <nav id="files" aria-label="Project files"></nav>
+    <p id="host-status" class="host-integration-status" hidden></p>
     <section id="recovery-offer" aria-label="Draft recovery" hidden>
         <span id="recovery-message"></span><button id="recovery-restore">Restore draft</button>
         <button id="recovery-download">Download draft</button><button id="recovery-keep">Keep current files</button>
