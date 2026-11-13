@@ -1,11 +1,13 @@
 import type { DocumentId, DocumentSnapshot, FoldIndex, ResourceLease, SelectionSet, TabId, TabTarget, TextBuffer, Workspace } from "../../src/index.ts";
 import type { LspSignatureContext } from "../../src/protocol/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { DocumentationContent, EditingCandidate } from "../../src/browser/index.ts";
 import { createNavigationClient, navigationMetrics } from "../editing/navigation-client.ts";
 import { signatureTriggerName, validateSignatureInput } from "../probes/signature.ts";
 import type { SignatureInput, SignatureResult } from "../probes/signature.ts";
 import { HostCell } from "../shared/observable.ts";
-type SignaturePresentation = Omit<SignatureResult, "signatures"> & Readonly<{ signatures: readonly (SignatureResult["signatures"][number] & Readonly<{ activeParameter?: number | null }>)[] }>;
+type SignaturePresentation = Omit<SignatureResult, "signatures"> & Readonly<{ signatures: readonly (Omit<SignatureResult["signatures"][number], "parameters"> & Readonly<{
+    activeParameter?: number | null; content?: DocumentationContent;
+    parameters: readonly (SignatureResult["signatures"][number]["parameters"][number] & Readonly<{ content?: DocumentationContent }>)[] }>)[] }>;
 export type SignatureBackend = Readonly<{ signature: (input: SignatureInput, buffer: TextBuffer, progress: (work: number) => void, context?: LspSignatureContext) => Promise<SignaturePresentation>;
     snapshot: () => Readonly<{ connected: boolean; busy: boolean; transport?: string }>; dispose: () => void; faultIdle?: () => boolean;
     trigger?: (document: DocumentSnapshot, character: string, retrigger: boolean) => boolean; isCurrent?: () => boolean }>;
@@ -15,7 +17,8 @@ type Job = { session: Session; input: SignatureInput; selections: SelectionSet; 
     timer: number; invalid: boolean; ready: boolean; result?: SignaturePresentation };
 export type SignatureSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; visible: boolean; pending: boolean;
     status: "idle" | "pending" | "ready" | "empty" | "expired" | "failed"; message: string; view: string | null; left: number; top: number;
-    before: string; parameter: string; after: string; documentation: string; parameterDocumentation: string; activeSignature: number; signatureCount: number; argument: number | null; work: number; total: number }>;
+    before: string; parameter: string; after: string; documentation: string; parameterDocumentation: string; content: DocumentationContent; parameterContent: DocumentationContent; activeSignature: number; signatureCount: number; argument: number | null; work: number; total: number }>;
+const emptyContent: DocumentationContent = Object.freeze([]);
 let sessionSerial = 0;
 /** One captured signature lane per host; automatic requests are debounced outside input handlers. */
 export class HostSignatureTools {
@@ -39,7 +42,7 @@ export class HostSignatureTools {
     private readonly worker = navigationMetrics();
     private readonly counts = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0, scheduled: 0 };
     private readonly cell = new HostCell<SignatureSnapshot>({ available: false, connected: false, disconnected: false, visible: false, pending: false,
-        status: "idle", message: "Use Ctrl/Cmd+Shift+Space for signature help.", view: null, left: 8, top: 8, before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", activeSignature: 0, signatureCount: 0, argument: null, work: 0, total: 0 });
+        status: "idle", message: "Use Ctrl/Cmd+Shift+Space for signature help.", view: null, left: 8, top: 8, before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", content: emptyContent, parameterContent: emptyContent, activeSignature: 0, signatureCount: 0, argument: null, work: 0, total: 0 });
     readonly state = this.cell.observable;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, beforeRequest: () => void, factory?: SignatureBackendFactory, completionOpen?: () => boolean) { this.workspace = workspace; this.canCapture = canCapture; this.beforeRequest = beforeRequest; this.factory = factory; this.completionOpen = completionOpen; }
     private available(s: Session): boolean {
@@ -78,7 +81,7 @@ export class HostSignatureTools {
     private stopAuto(): void { if (this.auto) this.auto.session.editor.element.ownerDocument.defaultView!.clearTimeout(this.auto.timer); this.auto = undefined; }
     private clear(status: SignatureSnapshot["status"], message: string): void {
         const job = this.job; this.job = undefined; if (job) { job.invalid = true; this.releasePending(job); if (!job.ready) this.drop(); }
-        this.stopLayout(); this.publish({ status, message, visible: false, before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", activeSignature: 0, signatureCount: 0, argument: null, work: 0, total: 0 });
+        this.stopLayout(); this.publish({ status, message, visible: false, before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", content: emptyContent, parameterContent: emptyContent, activeSignature: 0, signatureCount: 0, argument: null, work: 0, total: 0 });
     }
     readonly dismiss = (): void => { this.armed = false; this.stopAuto(); if (this.job && !this.job.ready) this.counts.cancelled++; this.clear("idle", "Signature help dismissed."); };
     readonly disconnect = (): void => { this.dismiss(); this.drop(); this.disconnected = true; this.publish({ message: "Signature provider disconnected; local editing remains available." }); };
@@ -110,7 +113,8 @@ export class HostSignatureTools {
         }
         this.publish({ status: "ready", visible: true, message: `Signature ${index + 1} of ${result.signatures.length}; argument ${(argument ?? 0) + 1}.`, activeSignature: index, signatureCount: result.signatures.length, argument,
             before: parameter ? signature.label.slice(0, parameter.from) : signature.label, parameter: parameter ? signature.label.slice(parameter.from, parameter.to) : "", after: parameter ? signature.label.slice(parameter.to) : "",
-            documentation: signature.documentation, parameterDocumentation: parameter?.documentation ?? "No declared parameter for this argument in this overload.", ...this.position() }); this.trackLayout();
+            documentation: signature.documentation, parameterDocumentation: parameter?.documentation ?? "No declared parameter for this argument in this overload.",
+            content: signature.content ?? emptyContent, parameterContent: parameter?.content ?? emptyContent, ...this.position() }); this.trackLayout();
     }
     readonly previous = (): void => this.cycle(-1);
     readonly next = (): void => this.cycle(1);

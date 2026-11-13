@@ -7,11 +7,12 @@ reuses the project's lexical fixture scanner behind the standard wire protocol. 
 protocol/host integration, not general semantic language analysis.
 
 `decodeLspHover` accepts a standard Hover or null. Plain strings, legacy MarkedString arrays/code
-blocks and MarkupContent are bounded and displayed literally. No HTML, Markdown links, images
-or commands execute. The client advertises plain text; Markdown received from a peer remains
-literal text. An optional range is validated against the captured source buffer. A useful hover
-without a range is still shown. Limits are 64 fragments, 8,192 units per value and 16,384 units of
-combined display text. Rich Markdown rendering remains outside this subset.
+blocks and MarkupContent retain their format in immutable `content`, alongside the literal
+`text` fallback. The client advertises plaintext by default; hosts can opt into the focused
+[documentation subset](documentation.md) and explicit host-controlled link opening. HTML,
+images and embedded content never execute. An optional range is validated against the captured
+source buffer. A useful hover without a range is still shown. Limits are 64 fragments, 8,192
+units per value and 16,384 units of combined display text.
 
 Hover keeps its existing independent service lifetime. Requests retain the source revision,
 complete selection set, fold generation and captured view. Pending input/composition prevents

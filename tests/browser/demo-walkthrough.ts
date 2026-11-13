@@ -2,6 +2,33 @@ import { expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
 /** Shared by source, static and restored-assets demos; all commands use visible controls. */
+export async function runDemoDocumentation(page: Page, url = "/") {
+    const guide = "https://www.typescriptlang.org/docs/handbook/2/functions.html";
+    await page.context().route(guide, route => route.fulfill({ contentType: "text/html", body: "<title>Permitted help destination</title>" }));
+    await page.goto(url); await page.locator("#sample").selectOption("documentation");
+    const source = page.getByRole("textbox", { name: "documentation.ts", exact: true });
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await select(page, source, "const discounted = applyDiscount"); await source.press("ArrowRight"); await source.press("ArrowLeft");
+    await source.press("Control+k"); await source.press("Control+i");
+    const hover = page.locator(".demo-language-popups .host-symbol-info:not(.host-signature)");
+    await expect(hover.locator("strong").first()).toHaveText("percentage discount");
+    await expect(hover.locator("em").first()).toHaveText("ten percent"); await expect(hover.locator("ul li")).toHaveCount(2);
+    await expect(hover.locator("pre code").last()).toContainText("applyDiscount(50, 0.1)");
+    expect(await hover.evaluate(node => { const box = node.getBoundingClientRect(); return box.top >= 0 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth; })).toBe(true);
+    const opened = page.context().waitForEvent("page"); await hover.getByRole("button", { name: "TypeScript function guide", exact: true }).click();
+    const help = await opened; await expect(help).toHaveURL(guide); expect(await help.evaluate(() => window.opener)).toBeNull(); await help.close();
+    await source.press("Escape");
+    await select(page, source, "const discounted = applyDiscount(50,"); await source.press("ArrowRight"); await source.press("Control+Shift+Space");
+    const signature = page.getByRole("tooltip", { name: "Signature help", exact: true });
+    await expect(signature.getByLabel("Active signature parameter")).toContainText("rate");
+    await expect(signature.locator("strong").first()).toHaveText("percentage discount"); await expect(signature.locator("ul li")).toHaveCount(2);
+    await expect(signature.locator(".st-documentation").last().locator("code")).toHaveText(["0", "1"]);
+    expect(await signature.evaluate(node => { const box = node.getBoundingClientRect(); return box.top >= 0 && box.bottom <= innerHeight; })).toBe(true);
+    await source.press("Escape"); await expect(signature).toBeHidden(); await expect(page.locator("#files")).not.toContainText("●");
+    await page.locator("#sample").selectOption("pricing"); await expect(hover).toBeHidden();
+    await page.context().unroute(guide);
+}
+
 export async function runDemoHighlights(page: Page, url = "/", distinctWrites = false) {
     await page.goto(url);
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });

@@ -59,6 +59,17 @@ test("reference peer receives ordered initialization and exact coalesced UTF-16 
     session.dispose(); replacement.close(); assert.deepEqual(session.snapshotOwnership(), { documents: 0, remoteDocuments: 0, registrations: 0, subscriptions: 0, scheduledTasks: 0, pendingDocumentRequests: 0, pendingRequests: 0, incomingRequests: 0 }); assert.equal(host.timers.size, 0);
 });
 
+test("documentation formats are opt-in and declare the supported parser without HTML tags", async t => {
+    for (const markdownDocumentation of [false, true]) {
+        const host = fixture(t), session = new LspSession({ ...host, features: ["textDocument/hover", "textDocument/signatureHelp"], markdownDocumentation });
+        t.after(() => session.dispose()); await session.connect();
+        const capabilities = host.peers[0]!.initialize()!.capabilities, formats = markdownDocumentation ? ["markdown", "plaintext"] : ["plaintext"];
+        assert.deepEqual(capabilities.textDocument?.hover?.contentFormat, formats);
+        assert.deepEqual(capabilities.textDocument?.signatureHelp?.signatureInformation?.documentationFormat, formats);
+        assert.deepEqual(capabilities.general?.markdown, markdownDocumentation ? { parser: "sttropez-documentation-subset", version: "1", allowedTags: [] } : undefined);
+    }
+});
+
 test("dynamic registrations validate atomically, select documents and withdraw capabilities", async t => {
     const host = fixture(t, {}), session = new LspSession({ ...host, features: ["textDocument/hover"] }); t.after(() => session.dispose());
     const documents = ["host+fixture:/src/sampleAa.ts", "host+fixture:/deep/test/sample_z.js", "host+fixture:/src/sample1a.ts", "other:/src/sampleAa.ts", "host+fixture:/other/sampleAa.ts"].map(uri => session.bindDocument(input("text", uri, uri)));

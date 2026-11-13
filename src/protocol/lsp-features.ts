@@ -3,6 +3,7 @@ import { PositionMap } from "../core/positions.ts";
 import { parseSnippet, offsetSnippetStops } from "../core/snippets.ts";
 import type { SnippetStop } from "../core/snippets.ts";
 import type { TextEdit } from "../core/changes.ts";
+import type { DocumentationContent, DocumentationPart } from "../core/documentation.ts";
 import type { DocumentChange } from "../core/workspace.ts";
 import { jsonEqual, jsonSnapshot, RpcError } from "./json-rpc.ts";
 import type { JsonValue } from "./json-rpc.ts";
@@ -20,7 +21,7 @@ export type LspCompletions = Readonly<{ incomplete: boolean; items: readonly Lsp
 /** A valid completion edit whose optional snippet syntax is outside the supported subset. */
 export class UnsupportedLspSnippetError extends Error {}
 export type LspCompletionFallback = Readonly<{ from: number; to: number; replaceTo: number }>;
-export type LspHover = Readonly<{ text: string; range: Readonly<{ from: number; to: number }> | null }>;
+export type LspHover = Readonly<{ text: string; content: DocumentationContent; range: Readonly<{ from: number; to: number }> | null }>;
 export type LspLocationTarget = Pick<LspDocumentCapture, "document" | "index" | "isCurrent">;
 export type LspLocation = Readonly<{ target: LspLocationTarget; from: number; to: number; targetRange: Readonly<{ from: number; to: number }>;
     originRange: Readonly<{ from: number; to: number }> | null }>;
@@ -29,8 +30,8 @@ export type LspDocumentEdits = Readonly<{ target: LspEditTarget; edits: readonly
 export type LspWorkspaceEdit = Readonly<{ documents: readonly LspDocumentEdits[]; isCurrent: () => boolean }>;
 export type LspApplyEdit = Readonly<{ label: string | null; edit: LspWorkspaceEdit }>;
 export type LspApplyEditResult = Readonly<{ applied: boolean; failureReason?: string }>;
-export type LspSignature = Readonly<{ label: string; documentation: string; activeParameter: number | null;
-    parameters: readonly Readonly<{ from: number; to: number; documentation: string }>[] }>;
+export type LspSignature = Readonly<{ label: string; documentation: string; content: DocumentationContent; activeParameter: number | null;
+    parameters: readonly Readonly<{ from: number; to: number; documentation: string; content: DocumentationContent }>[] }>;
 export type LspSignatureHelp = Readonly<{ signatures: readonly LspSignature[]; activeSignature: number; wire: JsonValue }>;
 export type LspDocumentLink = Readonly<{ from: number; to: number; target: string | null; tooltip: string; resolve: JsonValue | null }>;
 export type LspColor = Readonly<{ red: number; green: number; blue: number; alpha: number }>;
@@ -46,6 +47,10 @@ function text(value: unknown, maximum = Number.MAX_SAFE_INTEGER, budget?: { unit
 function documentation(value: unknown, budget?: { units: number }, maximum = Number.MAX_SAFE_INTEGER): string {
     if (value === undefined) return ""; if (typeof value === "string") return text(value, maximum, budget);
     if (!record(value) || value.kind !== "plaintext" && value.kind !== "markdown") invalid(); return text(value.value, maximum, budget);
+}
+function documentationContent(value: unknown, budget?: { units: number }, maximum = Number.MAX_SAFE_INTEGER): DocumentationContent {
+    const body = documentation(value, budget, maximum);
+    return Object.freeze(body ? [Object.freeze({ kind: record(value) && value.kind === "markdown" ? "markdown" as const : "plaintext" as const, value: body })] : []);
 }
 function commitCharacters(value: unknown, budget?: { units: number }): readonly string[] {
     if (value === undefined) return Object.freeze([]); if (!Array.isArray(value)) invalid();
@@ -83,24 +88,25 @@ export function decodeLspDiagnostics(value: unknown, capture: LspDocumentCapture
     current(capture); return Object.freeze({ uri: capture.document.uri, version, revision: version === null ? null : capture.document.revision,
         snapshotRevision: capture.document.revision, freshness: version === null ? "unversioned" : "versioned", items: Object.freeze(items) });
 }
-/** Markup and legacy marked strings are displayed literally; the client advertises plain text only. */
+/** Preserve legacy code/Markdown fragments and explicit plaintext alongside the literal fallback. */
 export function decodeLspHover(value: unknown, capture: LspDocumentCapture): LspHover | null {
     current(capture); if (value === null) return null; if (!record(value)) invalid(); const budget = { units: 16384 };
-    const fragment = (part: unknown): string => {
-        if (typeof part === "string") return text(part, 8192, budget);
+    const fragment = (part: unknown): DocumentationPart => {
+        if (typeof part === "string") return Object.freeze({ kind: "markdown", value: text(part, 8192, budget) });
         if (!record(part)) invalid();
-        if ("kind" in part) { if (part.kind !== "plaintext" && part.kind !== "markdown" || "language" in part) invalid(); return text(part.value, 8192, budget); }
-        const language = text(part.language, 128, budget), body = text(part.value, 8192, budget); return language ? `${language}\n${body}` : body;
+        if ("kind" in part) { if (part.kind !== "plaintext" && part.kind !== "markdown" || "language" in part) invalid(); return Object.freeze({ kind: part.kind, value: text(part.value, 8192, budget) }); }
+        return Object.freeze({ kind: "code", language: text(part.language, 128, budget), value: text(part.value, 8192, budget) });
     };
-    let contents: string;
-    if (Array.isArray(value.contents)) { if (value.contents.length > 64) invalid(); contents = value.contents.map(part => {
+    let parts: DocumentationPart[];
+    if (Array.isArray(value.contents)) { if (value.contents.length > 64) invalid(); parts = value.contents.map(part => {
             // Arrays contain MarkedString, not MarkupContent.
             if (record(part) && "kind" in part) invalid(); return fragment(part);
-        }).filter(Boolean).join("\n\n"); }
-    else contents = fragment(value.contents);
+        }); }
+    else parts = [fragment(value.contents)];
+    const content = Object.freeze(parts), contents = parts.map(part => part.kind === "code" && part.language ? `${part.language}\n${part.value}` : part.value).filter(Boolean).join("\n\n");
     if (contents.length > 16384) invalid();
     const range = value.range === undefined ? null : lspRangeOffsets(capture.index, value.range); current(capture);
-    return contents ? Object.freeze({ text: contents, range }) : null;
+    return contents ? Object.freeze({ text: contents, content, range }) : null;
 }
 /** Resolve opaque URIs through captured host buffers; never fetch or open a server-supplied URI. */
 export function decodeLspLocations(value: unknown, kind: "definition" | "references", origin: LspDocumentCapture,
@@ -305,15 +311,16 @@ export function decodeLspSignatureHelp(value: unknown, capture: LspDocumentCaptu
         || value.activeSignature !== undefined && !uint(value.activeSignature) || value.activeParameter !== undefined && !uint(value.activeParameter)) invalid();
     const budget = { units: 65536 }, signatures = value.signatures.map((item: unknown): LspSignature => {
         if (!record(item) || item.parameters !== undefined && (!Array.isArray(item.parameters) || item.parameters.length > 64) || item.activeParameter !== undefined && !uint(item.activeParameter)) invalid();
-        const label = text(item.label, 4096, budget), description = documentation(item.documentation, budget, 16384);
+        const label = text(item.label, 4096, budget), content = documentationContent(item.documentation, budget, 16384);
         const parameters = (item.parameters as unknown[] | undefined ?? []).map(parameter => {
             if (!record(parameter)) invalid(); const at = parameter.label; let from: number, to: number;
             if (typeof at === "string") { text(at, 4096, budget); from = label.indexOf(at); to = from + at.length; if (from < 0) invalid(); }
             else { if (!Array.isArray(at) || at.length !== 2 || !uint(at[0]) || !uint(at[1]) || at[0] > at[1] || at[1] > label.length) invalid(); from = at[0]; to = at[1]; }
-            return Object.freeze({ from, to, documentation: documentation(parameter.documentation, budget, 16384) });
+            const content = documentationContent(parameter.documentation, budget, 16384);
+            return Object.freeze({ from, to, documentation: content[0]?.value ?? "", content });
         });
         const active = item.activeParameter ?? value.activeParameter ?? 0;
-        return Object.freeze({ label, documentation: description, parameters: Object.freeze(parameters), activeParameter: parameters.length ? typeof active === "number" && active < parameters.length ? active : 0 : null });
+        return Object.freeze({ label, documentation: content[0]?.value ?? "", content, parameters: Object.freeze(parameters), activeParameter: parameters.length ? typeof active === "number" && active < parameters.length ? active : 0 : null });
     });
     const active = value.activeSignature as number | undefined ?? 0, wire = jsonSnapshot(value); text(JSON.stringify(wire), 131072, { units: 131072 }); current(capture);
     return Object.freeze({ signatures: Object.freeze(signatures), activeSignature: active < signatures.length ? active : 0, wire });

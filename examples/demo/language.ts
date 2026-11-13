@@ -72,7 +72,7 @@ export class DemoLanguage {
                 const mappings = new Map(this.files.map(file => [file.resource.documentId, config!.documents[file.name]!]));
                 owner = new LspWorkspace(this.workspace, {
                     connect: context => capturedProvider.connect(context),
-                    rootUri: config.rootUri, clientInfo: { name: "StTropez demo" },
+                    rootUri: config.rootUri, clientInfo: { name: "StTropez demo" }, markdownDocumentation: true,
                     schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
                     features: ["textDocument/completion", "textDocument/hover", "textDocument/signatureHelp", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction", "textDocument/foldingRange", "textDocument/documentHighlight"], diagnostics: false,
                     maxDocumentUnits: 8_000_000, maxTotalUnits: 16_000_000, rpc: { maxMessageUnits: 16 * 1024 * 1024 },

@@ -1,4 +1,4 @@
-export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue" | "templates" | "results" | "outline";
+export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue" | "templates" | "results" | "outline" | "documentation";
 export type DemoSample = Readonly<{ id: SampleId; title: string; description: string; files: Readonly<Record<string, string>> }>;
 
 const pricing = `export interface CartItem {
@@ -35,10 +35,20 @@ export const sampleChoices: readonly Readonly<{ id: SampleId; title: string }>[]
     { id: "templates", title: "Snippets & lazy completion" },
     { id: "results", title: "Project-wide results · 1,200 uses" },
     { id: "outline", title: "Host outline · indentation folding" },
+    { id: "documentation", title: "Documentation & help links" },
 ]);
 
 /** Large fixtures are built only on explicit selection. */
 export function demoSample(id: SampleId): DemoSample {
+    if (id === "documentation") return { id, title: "Documentation & help",
+        description: "Inspect applyDiscount with Hover or Code → Inspect type. Its documentation has formatting and a help link. Inside the call, use Code → Signature help. Help links open the TypeScript handbook; edited programs are never executed.",
+        files: { "documentation.ts": [
+            "/**", " * Apply a **percentage discount** to a price.", " *", " * Use a fraction such as `0.1` for *ten percent*.", " *",
+            " * - Keeps the original price unchanged.", " * - Returns a new discounted value.", " *", " * ```typescript", " * applyDiscount(50, 0.1); // 45", " * ```", " *",
+            " * [TypeScript function guide](https://www.typescriptlang.org/docs/handbook/2/functions.html)", " *",
+            " * @param price The **original price** before the discount.", " * @param rate A fraction between `0` and `1`.", " */",
+            "export function applyDiscount(price: number, rate: number): number {", "  return price * (1 - rate);", "}", "", "const discounted = applyDiscount(50, 0.1);", "",
+        ].join("\n") } };
     if (id === "outline") return { id, title: "Host outline",
         description: "A plain host-owned outline, with no language server or compiler. Indentation defines nested blocks; #region markers define the regions group. Use the gutter or Code → Collapse group, then Find to reveal hidden text.",
         files: { "workflow.txt": "#region workflow\npipeline\n  inputs\n    source\n    settings\n\n  steps\n    prepare\n      validate\n      normalize\n    publish\n      report\n#endregion\n\nnotes\n  Editable text; Tab changes indentation.\n  Each view keeps its own collapsed blocks.\n" } };

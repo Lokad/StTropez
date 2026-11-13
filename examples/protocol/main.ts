@@ -2,6 +2,7 @@ import { JsonRpcConnection, RpcError, LspSession } from "../../src/protocol/inde
 import type { JsonValue } from "../../src/protocol/index.ts";
 import { TextBuffer } from "../../src/core/text-buffer.ts";
 import { openWebSocketTransport } from "../../src/browser/lsp-websocket.ts";
+import { mountDocumentation } from "../../src/browser/index.ts";
 
 const url = new URL("/lsp-fixture", location.href); url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
 const timers = new Set<number>();
@@ -70,6 +71,6 @@ async function sessionJourney(large: boolean) {
             diagnostic: { openMs, enqueueMs, syncMs, scope: "single document-session action; enqueue is not an input handler or display latency" } };
     } finally { session.dispose(); }
 }
-const fixture = Object.freeze({ ready: true, exercise, binaryRejection, abortOpening, sessionJourney });
+const fixture = Object.freeze({ ready: true, exercise, binaryRejection, abortOpening, sessionJourney, mountDocumentation });
 window.protocolFixture = fixture; document.getElementById("state")!.textContent = "Ready";
 declare global { interface Window { protocolFixture: typeof fixture } }

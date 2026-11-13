@@ -42,11 +42,11 @@ commit an explicitly authorized phase and supply its new snapshots before comman
 
 | Client | Request/result |
 | --- | --- |
-| Hover | `run(documentSnapshot, offset, prepare?)` returns a cancellable call with literal text, optional range and a currentness guard. |
+| Hover | `run(documentSnapshot, offset, prepare?)` returns a cancellable call with format-preserving content, literal fallback text, optional range and a currentness guard. See [documentation presentation](documentation.md). |
 | Navigation | `run(snapshots, originId, offset, "definition" or "references", includeDeclaration?, prepare?)` returns exact validated targets and a batch guard. |
 | Rename | `run(snapshots, originId, offset, newName, prepare?)` returns a complete validated workspace text-edit preview. |
 | Actions | `run(snapshots, originId, from, to, prepare?)` returns choices, supported-command/currentness checks and captured `resolve`/`execute` methods. |
-| Signature | `run(document, offset, context?, prepare?)` returns a cancellable call with active signature/parameter models, literal documentation and a currentness guard. |
+| Signature | `run(document, offset, context?, prepare?)` returns a cancellable call with active signature/parameter models, format-preserving content plus literal documentation, and a currentness guard. |
 | Links | `run(document, prepare?)` returns validated items, currentness and explicit captured item `resolve`. Opening belongs to the host. |
 | Colors | `run(document, prepare?)` returns validated items, currentness and captured `presentations(item, rgba, prepare?)`. The host previews and applies the selected edits. |
 | Occurrences | `createLspHighlightClient(provider).run(document, offset, prepare?)` returns a cancellable call with text/read/write items, indexed `intersect(from, to)` and a currentness guard. The independent browser `createLspHighlightController` owns caret/focus/input lifetime; host decorations own colors. |

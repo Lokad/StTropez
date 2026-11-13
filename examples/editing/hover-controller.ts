@@ -1,5 +1,5 @@
 import type { FoldIndex, ResourceLease, SelectionSet, TabId, Workspace } from "../../src/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { DocumentationContent, EditingCandidate } from "../../src/browser/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import { validateHoverResult } from "../probes/hover.ts";
 import type { HoverInput } from "../probes/hover.ts";
@@ -7,7 +7,7 @@ import type { AbsoluteHover, HoverBackend } from "./hover-backend.ts";
 
 type Capture = Readonly<{ input: HoverInput; from: number; selectionSet: SelectionSet; folds: FoldIndex; startsInWord: boolean; endsInWord: boolean; lease: ResourceLease }>;
 export type HoverSnapshot = Readonly<{ status: "idle" | "pending" | "ready" | "empty" | "failed" | "disconnected" | "expired" | "disposed";
-    message: string; revision: number | null; range: Readonly<{ from: number; to: number }> | null; text: string }>;
+    message: string; revision: number | null; range: Readonly<{ from: number; to: number }> | null; text: string; content?: DocumentationContent }>;
 
 /** Host-owned read-only service. Its worker lane is independent of completion/diagnostics. */
 export function createHoverController(workspace: Workspace, tabId: TabId, editor: EditingCandidate, options: Readonly<{ createWorker?: () => Worker; backend?: HoverBackend; canCapture?: () => boolean }> = {}) {
@@ -29,7 +29,7 @@ export function createHoverController(workspace: Workspace, tabId: TabId, editor
         release(); backendCurrent = result?.isCurrent;
         if (!current(value)) { counts.stale++; clear("expired", "The captured symbol changed."); return; }
         if (!result?.text) { clear("empty", "No symbol information at this position."); return; }
-        capture = value; cell.set({ status: "ready", message: "Symbol information ready.", revision: result.revision, range: result.range, text: result.text });
+        capture = value; cell.set({ status: "ready", message: "Symbol information ready.", revision: result.revision, range: result.range, text: result.text, ...(result.content ? { content: result.content } : {}) });
     }
     function connect(): boolean {
         if (options.backend) return true;

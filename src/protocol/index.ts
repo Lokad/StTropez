@@ -15,6 +15,7 @@ export type { LspCommandScope, LspCommandReceipt } from "./lsp-command.ts";
 export { createLspHoverClient } from "./lsp-hover.ts";
 export { decodeLspFoldingRanges, createLspFoldingClient } from "./lsp-folding.ts";
 export { decodeLspDocumentHighlights, createLspHighlightClient } from "./lsp-highlights.ts";
+export type { DocumentationContent, DocumentationPart } from "../core/documentation.ts";
 export type { LspDocumentHighlight, LspDocumentHighlights } from "./lsp-highlights.ts";
 export { createLspRenameClient } from "./lsp-rename.ts";
 export { createLspNavigationClient } from "./lsp-navigation.ts";

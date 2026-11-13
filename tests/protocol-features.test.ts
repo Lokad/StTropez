@@ -18,6 +18,7 @@ test("signature help validates the complete literal result and normalizes active
         { label: "call(value: string)", activeParameter: 0, parameters: [{ label: [5, 18] }] }] };
     const result = decodeLspSignatureHelp(value, capture)!; assert.equal(result.activeSignature, 1); assert.equal(result.signatures[0]!.activeParameter, 1); assert.equal(result.signatures[1]!.activeParameter, 0);
     assert.equal(result.signatures[0]!.parameters[1]!.documentation, "<b>literal</b>"); assert.ok(Object.isFrozen(result.signatures[0]!.parameters)); assert.ok(Object.isFrozen(result.wire));
+    assert.deepEqual(result.signatures[0]!.parameters[1]!.content, [{ kind: "markdown", value: "<b>literal</b>" }]);
     assert.equal(decodeLspSignatureHelp({ ...value, activeSignature: 999, activeParameter: 999 }, capture)!.activeSignature, 0);
     assert.equal(decodeLspSignatureHelp({ signatures: [{ label: "empty()" }] }, capture)!.signatures[0]!.activeParameter, null); assert.equal(decodeLspSignatureHelp(null, capture), null);
     for (const invalid of [{ signatures: null }, { ...value, activeParameter: -1 }, { signatures: [{ label: "call(x)", parameters: [{ label: "missing" }] }] },
@@ -199,7 +200,11 @@ test("hover accepts standard content shapes and optional ranges as bounded liter
     for (const contents of ["plain", { kind: "plaintext", value: "plain" }, { kind: "markdown", value: "<img src=x> **plain**" }, [{ language: "fixture", value: "code" }, "detail"]]) {
         const decoded = decodeLspHover({ contents }, capture)!; assert.equal(decoded.range, null); assert.equal(typeof decoded.text, "string"); assert.equal(Object.isFrozen(decoded), true);
     }
-    assert.deepEqual(decodeLspHover({ contents: "info", range: range(0, 0, 5) }, capture), { text: "info", range: { from: 0, to: 5 } });
+    assert.deepEqual(decodeLspHover({ contents: "info", range: range(0, 0, 5) }, capture), { text: "info", content: [{ kind: "markdown", value: "info" }], range: { from: 0, to: 5 } });
+    assert.deepEqual(decodeLspHover({ contents: { kind: "plaintext", value: "**literal**" } }, capture)!.content, [{ kind: "plaintext", value: "**literal**" }]);
+    const mixed = decodeLspHover({ contents: [{ language: "ts", value: "const x = '<img>';" }, "**Details**"] }, capture)!.content;
+    assert.deepEqual(mixed, [{ kind: "code", language: "ts", value: "const x = '<img>';" }, { kind: "markdown", value: "**Details**" }]);
+    assert.ok(Object.isFrozen(mixed)); assert.ok(mixed.every(Object.isFrozen));
     assert.equal(decodeLspHover(null, capture), null); assert.equal(decodeLspHover({ contents: [] }, capture), null);
     for (const bad of [{}, { contents: ["valid", { value: "missing language" }] }, { contents: [{ kind: "plaintext", value: "not a MarkedString" }] }, { contents: "valid", range: range(0, 0, 999) }, { contents: "x".repeat(8193) }, { contents: Array(65).fill("x") }]) assert.throws(() => decodeLspHover(bad, capture));
     expire(); assert.throws(() => decodeLspHover({ contents: "late" }, capture), error => error instanceof RpcError && error.code === -32801);

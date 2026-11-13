@@ -33,6 +33,8 @@ export type LspSessionSnapshot = Readonly<{ phase: "disconnected" | "connecting"
     registrationGeneration: number; documents: number; error: string | null }>;
 export type LspSessionOptions = Readonly<{ connect: (context: LspConnectContext) => Promise<RpcTransport>; schedule: RpcScheduler;
     rootUri?: string | null; initializationOptions?: JsonValue; clientInfo?: Readonly<{ name: string; version?: string }>;
+    /** Opt in when the host presents the documented Markdown subset for hover/signature help. */
+    markdownDocumentation?: boolean;
     /** Declare only features whose results the consuming host validates and presents. */
     features?: readonly LspFeature[]; diagnostics?: boolean; workspaceEdits?: boolean; applyEdit?: boolean; pathForUri?: LspUriPath; maxDocuments?: number; maxDocumentUnits?: number; maxTotalUnits?: number;
     rpc?: Pick<RpcOptions, "timeoutMs" | "maxPending" | "maxMessageUnits">; onError?: (error: Error) => void }>;
@@ -103,9 +105,10 @@ export class LspSession {
                 commitCharactersSupport: true, preselectSupport: true, resolveSupport: { properties: ["detail", "documentation", "additionalTextEdits", "insertText", "textEdit"] } },
             insertTextMode: 1, completionList: { itemDefaults: ["editRange", "insertTextFormat", "insertTextMode", "data", "commitCharacters"] } };
         if (options.diagnostics) textDocument.publishDiagnostics = { versionSupport: true };
-        if (this.features.has("textDocument/hover")) textDocument.hover = { dynamicRegistration: true, contentFormat: ["plaintext"] };
+        const documentationFormats = options.markdownDocumentation ? ["markdown", "plaintext"] : ["plaintext"];
+        if (this.features.has("textDocument/hover")) textDocument.hover = { dynamicRegistration: true, contentFormat: documentationFormats };
         if (this.features.has("textDocument/signatureHelp")) textDocument.signatureHelp = { dynamicRegistration: true, contextSupport: true,
-            signatureInformation: { documentationFormat: ["plaintext"], parameterInformation: { labelOffsetSupport: true }, activeParameterSupport: true } };
+            signatureInformation: { documentationFormat: documentationFormats, parameterInformation: { labelOffsetSupport: true }, activeParameterSupport: true } };
         if (this.features.has("textDocument/documentLink")) textDocument.documentLink = { dynamicRegistration: true, tooltipSupport: true };
         if (this.features.has("textDocument/documentHighlight")) textDocument.documentHighlight = { dynamicRegistration: true };
         if (this.features.has("textDocument/foldingRange")) textDocument.foldingRange = { dynamicRegistration: true, lineFoldingOnly: true,
@@ -119,7 +122,7 @@ export class LspSession {
             disabledSupport: true, isPreferredSupport: true, dataSupport: true, resolveSupport: { properties: ["edit"] }, honorsChangeAnnotations: false };
         this.initializeParams = jsonSnapshot({ processId: null, rootUri: options.rootUri ?? null,
             ...(options.clientInfo ? { clientInfo: options.clientInfo } : {}), initializationOptions: options.initializationOptions ?? null,
-            capabilities: { general: { positionEncodings: ["utf-16"] }, textDocument,
+            capabilities: { general: { positionEncodings: ["utf-16"], ...(options.markdownDocumentation ? { markdown: { parser: "sttropez-documentation-subset", version: "1", allowedTags: [] } } : {}) }, textDocument,
                 ...(options.workspaceEdits || options.applyEdit || this.features.has("workspace/executeCommand") ? { workspace: {
                     ...(options.workspaceEdits || options.applyEdit ? { workspaceEdit: { documentChanges: true, resourceOperations: [], failureHandling: "transactional", normalizesLineEndings: false } } : {}),
                     ...(options.applyEdit ? { applyEdit: true } : {}), ...(this.features.has("workspace/executeCommand") ? { executeCommand: { dynamicRegistration: true } } : {}) } } : {}) } });

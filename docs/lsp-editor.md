@@ -118,8 +118,8 @@ that limit. Callers constructing their own capture for the pure decoder should s
 they need an expansion bound; these decoders do not constitute a transport or allocation policy.
 Opaque data still passes immutable JSON validation. Commit characters follow LSP's single-unit
 rule without silently truncating a provider list. Indentation adjustment and follow-up commands
-are not advertised and are refused if supplied. Rich Markdown rendering remains unsupported;
-documentation is literal text.
+are not advertised and are refused if supplied. Completion documentation remains literal text;
+hover and signature help separately support the focused [documentation subset](documentation.md).
 
 Pending typing/navigation/table conversion, composition, multiple carets, source revision, selection
 set, fold generation, tab/view ownership and resource authority are checked before capture and

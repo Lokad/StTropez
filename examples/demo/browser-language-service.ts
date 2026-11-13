@@ -170,7 +170,7 @@ export class BrowserLanguageService {
         }
         if (method === "textDocument/hover") {
             const info = this.service.getQuickInfoAtPosition(file.path, offset);
-            return info ? { contents: { kind: "plaintext", value: [display(info.displayParts), display(info.documentation)].filter(Boolean).join("\n\n") }, range: this.span(file, info.textSpan) } : null;
+            return info ? { contents: [{ language: "typescript", value: display(info.displayParts) }, display(info.documentation)], range: this.span(file, info.textSpan) } : null;
         }
         if (method === "textDocument/signatureHelp") {
             const info = this.service.getSignatureHelpItems(file.path, offset, undefined); if (!info) return null;
@@ -178,9 +178,9 @@ export class BrowserLanguageService {
                 let label = display(item.prefixDisplayParts); const separator = display(item.separatorDisplayParts);
                 const parameters = item.parameters.map((parameter, i) => {
                     if (i) label += separator; const from = label.length; label += display(parameter.displayParts);
-                    return { label: [from, label.length], documentation: display(parameter.documentation) };
+                    return { label: [from, label.length], documentation: { kind: "markdown", value: display(parameter.documentation) } };
                 });
-                label += display(item.suffixDisplayParts); return { label, parameters, documentation: display(item.documentation) };
+                label += display(item.suffixDisplayParts); return { label, parameters, documentation: { kind: "markdown", value: display(item.documentation) } };
             }) };
         }
         if (method === "textDocument/definition" || method === "textDocument/references") {

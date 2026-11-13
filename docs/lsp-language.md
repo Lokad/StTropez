@@ -15,7 +15,8 @@ Missing or withdrawn capabilities produce an explicit unavailable/expired result
 Reconnect invalidates old results; no presentation edit or opening action replays.
 
 Signature `run(document, offset, context?, prepare?)` returns a cancellable call.
-Its result contains literal labels/documentation, validated parameter offsets,
+Its result contains literal labels, documentation strings plus format-preserving `content`
+on signatures and parameters, validated parameter offsets,
 active indices, immutable wire context and an `isCurrent` guard. String parameter
 labels must occur within their signature; tuple offsets address UTF-16 units.
 Per-signature active parameters override the batch value. Missing or out-of-range
@@ -24,6 +25,11 @@ means no highlighted parameter. This differs from the local fixture's explicit
 out-of-arity presentation. The bounds are 32 signatures, 64 parameters/signature,
 4,096 label units and 65,536 aggregate display units. Raw advisory context is
 bounded separately to 131,072 units and grants no edit authority.
+
+Hosts can opt into Markdown negotiation and use the public [documentation view](documentation.md)
+for paragraphs, emphasis, flat lists, code and explicitly authorized links. The main demo uses
+that subset; the default negotiation and React fixture remain plaintext. Request lifetime and
+parameter selection are independent of documentation formatting.
 
 The host uses advertised trigger/retrigger characters after input settles, including
 the editor's ordered key path and native beforeinput path. Requests carry the

@@ -1,5 +1,8 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import { runDemoDocumentation } from "./demo-walkthrough.ts";
+
+test("documentation renders provider formatting and opens permitted help through the host", async ({ page }) => { await runDemoDocumentation(page); });
 
 async function select(page: Page, query: string) {
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
@@ -21,10 +24,13 @@ test("real type inspection works from Code, keyboard and pointer without changin
     await source.press("Escape");
     const point = await page.locator("#editor .st-viewport-row").evaluateAll(rows => {
         for (const row of rows) {
+            let offset = row.textContent?.indexOf("calculateTotal(cart") ?? -1;
+            if (offset < 0) continue; offset += 2;
             const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
             for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-                const from = node.textContent?.indexOf("calculateTotal(cart") ?? -1;
-                if (from >= 0) { const range = document.createRange(); range.setStart(node, from + 2); range.setEnd(node, from + 3); const box = range.getBoundingClientRect(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 }; }
+                const length = node.textContent?.length ?? 0;
+                if (offset < length) { const range = document.createRange(); range.setStart(node, offset); range.setEnd(node, offset + 1); const box = range.getBoundingClientRect(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 }; }
+                offset -= length;
             }
         }
         throw new Error("Function text is not rendered.");
@@ -32,6 +38,14 @@ test("real type inspection works from Code, keyboard and pointer without changin
     await page.locator("#walkthrough-toggle").focus(); await page.mouse.move(point.x, point.y);
     await expect(hover(page)).toContainText("calculateTotal(items: readonly CartItem[]"); await expect(page.locator("#walkthrough-toggle")).toBeFocused();
     await page.mouse.move(2, 2); await expect(hover(page)).toBeHidden();
+    // Blur clears occurrence decorations and schedules paint. Exercise a pointer arriving in
+    // that same task, before the next frame, rather than relying on engine timing to hit it.
+    await source.focus(); await expect(page.locator("#editor .demo-occurrence-read")).toHaveCount(2);
+    await page.evaluate(point => {
+        document.getElementById("walkthrough-toggle")!.focus();
+        document.querySelector("#editor .st-editing-candidate")!.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: point.x, clientY: point.y }));
+    }, point);
+    await expect(hover(page)).toContainText("calculateTotal(items: readonly CartItem[]"); await expect(page.locator("#walkthrough-toggle")).toBeFocused();
     await expect(page.locator("#files")).not.toContainText("●"); expect(errors).toEqual([]);
 });
 

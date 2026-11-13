@@ -8,6 +8,29 @@ provider/compiler pair, supported subset and host adaptations.
 
 ## Delivered workflow
 
+The **Documentation & help links** sample has a shared source/static/restored-assets journey
+for formatted hover/signature content, active-parameter documentation, explicit permitted help
+opening and popup placement. The public renderer preserves plaintext, creates no provider HTML
+and retires links on replacement/disposal. Its contract is the focused
+[documentation subset](documentation.md), not a general Markdown engine.
+
+The documentation milestone passes strict types and 442 model/provider tests. The affected
+source campaign initially passed 68/69 checks: a pointer helper assumed one DOM text node.
+Correcting that helper exposed a reproducible pending-paint hover defect: clearing occurrence
+decorations on blur discarded pointer movement before the next frame. The host now keeps the
+existing dwell delay and rechecks settled geometry/document revision without synchronous paint
+or an unbounded retry. The corrected three-engine interaction checks and all 12 plain/React
+hover checks pass, including 100k documents, stale replies and disposal. The static documentation
+journey passes in Chromium, Firefox and WebKit. Longer popups also fit their rendered size inside
+the viewport, keeping their help link reachable.
+
+Three complete static-demo inspection observations measured 36.7–47.0 ms from keydown capture
+through two correctly formatted frames, and 41.2–52.9 ms through automation. The former includes
+request/synchronization/provider/rendering; it is not input-handler or provider-only time. A
+separate 120,000-unit unmatched-punctuation renderer probe retained exact text in two elements:
+8.5 ms for the synchronous render call and 24.9 ms through two frames. These small-sample shared
+Windows/headless observations do not establish stable tails or physical-display latency.
+
 Caret occurrence highlighting has a shared source/static/restored-assets journey for text
 placement, provider read/write kinds, composition, caret movement, edit/undo, file switches and
 scrolling through 10,001 occurrences. The source milestone passes 18 affected checks across

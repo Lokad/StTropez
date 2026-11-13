@@ -48,11 +48,14 @@ The existing deterministic protocol fixture keeps its separate `/lsp-fixture` ro
   one guarded transaction, including any validated additional edits.
 - Hover over a symbol to inspect its real type without changing focus. Code → Inspect type or
   Ctrl+K, Ctrl+I inspects the caret instead. Escape dismisses the popup. Provider documentation
-  is displayed as literal text; markup is never inserted as HTML.
+  preserves plaintext/Markdown/code identity and uses the focused public
+  [documentation view](documentation.md). Choose **Documentation & help links** to see
+  formatted JSDoc, lists, code and a permitted handbook link. HTML is never inserted.
 - Signature help opens while typing advertised trigger characters and follows the active
   argument. Code → Signature help or Ctrl+Shift+Space requests it explicitly. Completion gets
   the first Escape when both are open. Overload controls appear when the provider offers choices.
   Edits, navigation, composition, file switches and disposal invalidate captured popup work.
+  Signature and active-parameter documentation use the same renderer and host link policy.
 - F12 or Code → Go to definition opens the validated sample file and selects its symbol.
   Shift+F12 or Find references offers captured locations; arrows/Enter or a click choose one,
   and Escape closes the list. Definitions outside the sample, including standard library files,

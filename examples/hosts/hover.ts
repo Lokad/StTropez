@@ -1,11 +1,11 @@
 import type { Affinity, TabId, Workspace } from "../../src/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { DocumentationContent, EditingCandidate } from "../../src/browser/index.ts";
 import { createHoverController } from "../editing/hover-controller.ts";
 import type { HoverSnapshot } from "../editing/hover-controller.ts";
 import { HostCell } from "../shared/observable.ts";
 type Session = { id: string; editor: EditingCandidate; controller: ReturnType<typeof createHoverController>;
     affinity: Affinity; offset: number; overTarget: boolean; scheduled: boolean; cancelTimers: () => void };
-export type HoverPresentation = Readonly<{ visible: boolean; view: string | null; left: number; top: number; status: HoverSnapshot["status"]; text: string; message: string }>;
+export type HoverPresentation = Readonly<{ visible: boolean; view: string | null; left: number; top: number; status: HoverSnapshot["status"]; text: string; message: string; content?: DocumentationContent }>;
 export type HoverControllerFactory = (workspace: Workspace, tab: TabId, editor: EditingCandidate, canCapture: () => boolean) => ReturnType<typeof createHoverController>;
 
 /** Host-owned presentation follows an explicit view; pointer inspection never changes focus. */
@@ -57,7 +57,7 @@ export class HostHoverTools {
         const state = session.controller.state.getSnapshot();
         if (["expired", "empty", "disconnected", "disposed"].includes(state.status)) { this.current = undefined; this.overPopup = false; this.clearDismiss(); this.stopLayout(); this.cell.set({ ...this.cell.get(), visible: false, view: null, status: state.status, text: "", message: state.message }); return; }
         const visible = ["pending", "ready", "failed"].includes(state.status);
-        this.cell.set({ visible, view: session.id, status: state.status, text: state.text, message: state.message, ...this.position(session) });
+        this.cell.set({ visible, view: session.id, status: state.status, text: state.text, message: state.message, ...(state.content ? { content: state.content } : {}), ...this.position(session) });
         if (visible) this.trackLayout(session); else this.stopLayout();
     }
     readonly dismiss = (): void => {
@@ -93,17 +93,27 @@ export class HostHoverTools {
         session.cancelTimers = () => { cancelPointer(); cancelChord(); };
         this.sessions.set(id, session);
         const stop = controller.state.subscribe(() => { if (this.current === session) this.publish(); });
+        const pointerAt = (x: number, y: number) => {
+            const viewport = editor.viewport.snapshot(); if (viewport.pending) return undefined;
+            const point = editor.viewport.hitTest(x, y);
+            return point && Math.abs(point.left - x) <= viewport.columnWidth * 1.5 && Math.abs(point.top + point.height / 2 - y) <= point.height ? point : undefined;
+        };
         editor.element.addEventListener("pointerenter", () => { session.overTarget = true; if (this.current === session) this.clearDismiss(); }, { signal: listeners.signal });
         editor.element.addEventListener("pointermove", event => {
             if (!this.allowInspect("pointer")) { cancelPointer(); return; }
             if (event.buttons || editor.snapshot().composing) { cancelPointer(); if (this.current === session) this.dismiss(); return; }
-            const point = editor.viewport.hitTest(event.clientX, event.clientY), viewport = editor.viewport.snapshot();
-            if (!point || viewport.pending || Math.abs(point.left - event.clientX) > viewport.columnWidth * 1.5 || Math.abs(point.top + point.height / 2 - event.clientY) > point.height) {
+            const x = event.clientX, y = event.clientY, pending = editor.viewport.snapshot().pending, point = pointerAt(x, y);
+            if (!pending && !point) {
                 cancelPointer(); if (this.current === session) this.dismiss(); return;
             }
-            session.overTarget = true; if (this.current === session) this.clearDismiss(); const next = `${point.revision}:${point.offset}`;
+            const revision = this.workspace.document(editor.view.documentId).revision;
+            session.overTarget = true; if (this.current === session) this.clearDismiss(); const next = `${revision}:${point?.offset ?? `${x},${y}`}`;
             if (key === next) return; cancelPointer(); key = next; session.scheduled = true;
-            pointerTimer = win.setTimeout(() => { pointerTimer = undefined; session.scheduled = false; this.inspect(session, point.revision, point.offset, point.affinity, "pointer"); }, 300);
+            // Decoration/focus changes can leave a frame pending when the pointer arrives.
+            // Keep the existing dwell, then capture settled geometry once; never force a paint
+            // from pointermove or retry indefinitely, and never follow a changed document.
+            pointerTimer = win.setTimeout(() => { cancelPointer(); const settled = pointerAt(x, y);
+                if (settled?.revision === revision) this.inspect(session, revision, settled.offset, settled.affinity, "pointer"); }, 300);
         }, { signal: listeners.signal });
         editor.element.addEventListener("pointerleave", () => { cancelPointer(); session.overTarget = false; if (this.current === session) this.queueDismiss(session); }, { signal: listeners.signal });
         editor.element.addEventListener("pointerdown", () => { cancelPointer(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });

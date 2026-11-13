@@ -1,4 +1,7 @@
 import type { HostSignatureTools } from "./signature.ts";
+import { mountDocumentation } from "../../src/browser/index.ts";
+import type { DocumentationOptions } from "../../src/browser/index.ts";
+import { positionPopup } from "./popup-position.ts";
 export function signatureActions(tools: HostSignatureTools) {
     const s = tools.state.getSnapshot();
     return [
@@ -22,16 +25,20 @@ export function mountSignaturePanel(host: HTMLElement, tools: HostSignatureTools
 }
 
 /** Contextual presentation shared by hosts that provide their own commands. */
-export function mountSignaturePopup(host: HTMLElement, tools: HostSignatureTools, withControls = false): () => void {
-    const owner = host.ownerDocument, popup = owner.createElement("div"), label = owner.createElement("pre"), before = owner.createTextNode(""), parameter = owner.createElement("mark"), after = owner.createTextNode(""), documentation = owner.createElement("p"), detail = owner.createElement("p"), controls = owner.createElement("div");
+export function mountSignaturePopup(host: HTMLElement, tools: HostSignatureTools, withControls = false, options: DocumentationOptions = {}): () => void {
+    const owner = host.ownerDocument, popup = owner.createElement("div"), label = owner.createElement("pre"), before = owner.createTextNode(""), parameter = owner.createElement("mark"), after = owner.createTextNode(""), controls = owner.createElement("div");
     popup.className = "host-symbol-info host-signature"; popup.setAttribute("role", "tooltip"); popup.setAttribute("aria-label", "Signature help"); popup.onpointerdown = event => event.preventDefault();
-    parameter.setAttribute("aria-label", "Active signature parameter"); label.append(before, parameter, after); popup.append(label, documentation, detail);
+    parameter.setAttribute("aria-label", "Active signature parameter"); label.append(before, parameter, after); popup.append(label);
+    const documentation = mountDocumentation(popup, options), detail = mountDocumentation(popup, options);
     const buttons = ["Previous signature", "Next signature"].map((text, index) => { const button = owner.createElement("button"); button.textContent = text; button.type = "button"; button.onclick = index ? tools.next : tools.previous; controls.append(button); return button; });
     if (withControls) popup.append(controls); host.append(popup);
-    const render = () => { const s = tools.state.getSnapshot(); popup.hidden = !s.visible; popup.style.left = `${s.left}px`; popup.style.top = `${s.top}px`;
-        before.textContent = s.before || (s.status === "pending" ? s.message : ""); parameter.textContent = s.parameter; parameter.hidden = !s.parameter; after.textContent = s.after; documentation.textContent = s.documentation; detail.textContent = s.parameterDocumentation;
+    const render = () => { const s = tools.state.getSnapshot(); popup.hidden = !s.visible;
+        before.textContent = s.before || (s.status === "pending" ? s.message : ""); parameter.textContent = s.parameter; parameter.hidden = !s.parameter; after.textContent = s.after;
+        documentation.setContent(s.visible ? s.content.length ? s.content : [{ kind: "plaintext", value: s.documentation }] : []);
+        detail.setContent(s.visible ? s.parameterContent.length ? s.parameterContent : [{ kind: "plaintext", value: s.parameterDocumentation }] : []);
         controls.hidden = s.signatureCount < 2; buttons.forEach(button => { button.disabled = s.status !== "ready"; });
+        if (s.visible) positionPopup(popup, s.left, s.top);
     };
     const stop = tools.state.subscribe(render); render();
-    return () => { stop(); popup.onpointerdown = null; buttons.forEach(button => { button.onclick = null; }); popup.remove(); };
+    return () => { stop(); documentation.dispose(); detail.dispose(); popup.onpointerdown = null; buttons.forEach(button => { button.onclick = null; }); popup.remove(); };
 }
