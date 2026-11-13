@@ -83,6 +83,16 @@ no edit authority. A local edit, close/URI reuse or reconnect expires associatio
 stale pushes preserve the previous valid batch. An unrelated capability registration does not
 manufacture a new analysis revision or erase still-current diagnostic placement.
 
+Diagnostics retain immutable `code` (integer or string), `codeDescription`, `tags`,
+`relatedInformation` and opaque JSON `data`. Unknown integer tags survive forwarding;
+the advertised presentation tags are unnecessary and deprecated. Related URIs and ranges
+are preserved without loading resources. Help opening and related-location navigation belong
+to the host. Malformed metadata rejects the complete batch, including an invalid final item.
+The action client forwards this metadata for overlapping, placed diagnostics from a matching
+current provider version. Unversioned diagnostics remain available for uncertain presentation
+but are excluded from that version-verified context. Action results also retain attached
+diagnostics, including after edit resolution. No metadata supplies edit or command authority.
+
 `createLspCommandRunner(scope)` reuses the captured shared command lane and takes host callbacks
 for live project snapshots, intent currentness, optional preparation and explicit edit review.
 Only the active confirmed command scope receives incoming edits; unclaimed requests are declined.

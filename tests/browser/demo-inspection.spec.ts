@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { runDemoDocumentation } from "./demo-walkthrough.ts";
 
-test("documentation renders provider formatting and opens permitted help through the host", async ({ page }) => { await runDemoDocumentation(page); });
+test("documentation and diagnostic details preserve metadata and open permitted help through the host", async ({ page }) => { await runDemoDocumentation(page); });
 
 async function select(page: Page, query: string) {
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });

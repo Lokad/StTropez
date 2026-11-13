@@ -42,7 +42,7 @@ export function clientFixture(t: TestContext, connect?: () => Promise<void>, res
         ...(resolveTarget ? { resolveTarget } : {}),
         documentInfo: document => ({ uri: `generic:${document.resourceId}`, languageId: "generic" }),
         features: ["textDocument/hover", "textDocument/foldingRange", "textDocument/documentHighlight", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction", "textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor", "textDocument/colorPresentation", "workspace/executeCommand"],
-        applyEdit: true,
+        applyEdit: true, diagnostics: true,
         connect: async () => { await connect?.(); return ports[0]!; },
         schedule: (ms, callback) => { const timer = setTimeout(() => { timers.delete(timer); callback(); }, ms); timers.add(timer); return () => { clearTimeout(timer); timers.delete(timer); }; },
         onError: error => errors.push(error.message)

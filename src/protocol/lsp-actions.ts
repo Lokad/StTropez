@@ -24,9 +24,10 @@ export function createLspActionClient(provider: LspWorkspace) {
                 const known = diagnostics.isCurrent() && batch?.version === capture.version && batch.snapshotRevision === capture.document.revision ? batch.items : [];
                 const overlapping = known.filter(item => item.from !== null && item.to !== null && (from === to ? item.from <= from && item.to >= to
                     : item.from === item.to ? from <= item.from && item.from <= to : item.from < to && item.to > from));
-                return { range: { start: index.at(from), end: index.at(to) }, context: { triggerKind: 1, diagnostics: overlapping.map(item => ({
-                    range: { start: index.at(item.from!), end: index.at(item.to!) }, message: item.message,
-                    ...(item.severity === null ? {} : { severity: item.severity }), ...(item.source === null ? {} : { source: item.source }) })) } };
+                return { range: { start: index.at(from), end: index.at(to) }, context: { triggerKind: 1, diagnostics: overlapping.map(item => {
+                    const { placement: _placement, from: _from, to: _to, severity, source, ...wire } = item;
+                    return { ...wire, ...(severity === null ? {} : { severity }), ...(source === null ? {} : { source }) };
+                }) } };
             }, prepare).result;
             const canResolve = session.featureOptions("textDocument/codeAction", value.target).some(options => options.resolveProvider === true);
             const uris = value.decode(() => lspCodeActionUris(value.response)); await value.resolveTargets(uris, "edit");

@@ -6,7 +6,7 @@ test("unopened targets load for navigation and atomic rename with read-only decl
 });
 import { runDemoCompletionCatalogue, runDemoConflict, runDemoSnippets, runDemoWalkthrough, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoHighlights, runDemoDocumentation } from "./demo-walkthrough.ts";
 
-test("documentation renders provider formatting and opens permitted help through the host", async ({ page, baseURL }) => { await runDemoDocumentation(page, baseURL!); });
+test("documentation and diagnostic details preserve metadata and open permitted help through the host", async ({ page, baseURL }) => { await runDemoDocumentation(page, baseURL!); });
 
 test("occurrences follow the caret, edits and large virtualized documents", async ({ page, baseURL }) => { await runDemoHighlights(page, baseURL!, true); });
 

@@ -66,6 +66,30 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     await source.press("Escape"); await expect(signature).toBeHidden(); await expect(page.locator("#files")).not.toContainText("●");
     await page.locator("#sample").selectOption("pricing"); await expect(hover).toBeHidden();
     await page.context().unroute(guide);
+    // The same public metadata decoder feeds Problems. Real compiler errors and an explicit
+    // host fixture cover related declarations, tags and help without inventing TS capabilities.
+    const diagnosticGuide = "https://www.typescriptlang.org/docs/handbook/2/everyday-types.html";
+    await page.context().route(diagnosticGuide, route => route.fulfill({ contentType: "text/html", body: "<title>Diagnostic help</title>" }));
+    await page.locator("#sample").selectOption("diagnostics");
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await page.locator('[data-panel="problems"]').click();
+    const problems = page.locator(".demo-problems"), error = problems.locator(".demo-problem").filter({ hasText: "TS2322:" });
+    const warning = problems.locator(".demo-problem").filter({ hasText: "legacy-price:" });
+    await expect(error).toContainText("Error · typescript"); await expect(warning).toContainText("Warning · Demo host · Deprecated");
+    await error.locator("summary").click(); await error.getByRole("button", { name: /types.ts:2:3/ }).click();
+    const types = page.getByRole("textbox", { name: "types.ts", exact: true }); await expect(types).toBeFocused();
+    await expect(page.locator("#cursor")).toHaveText("Ln 2, Col 8");
+    await warning.locator("summary").click(); await warning.getByRole("button", { name: /Replacement declared here/ }).click();
+    const details = page.getByRole("textbox", { name: "details.ts", exact: true }); await expect(details).toBeFocused();
+    await expect(page.locator("#cursor")).toHaveText("Ln 4, Col 19");
+    const helpOpening = page.context().waitForEvent("page"); await warning.getByRole("button", { name: "Diagnostic help", exact: true }).click();
+    const diagnosticHelp = await helpOpening; await expect(diagnosticHelp).toHaveURL(diagnosticGuide);
+    expect(await diagnosticHelp.evaluate(() => window.opener)).toBeNull(); await diagnosticHelp.close();
+    await warning.getByRole("button", { name: /^details.ts · legacy-price:/ }).click(); await page.keyboard.insertText("currentPrice");
+    await expect(warning).toHaveCount(0); await expect(error).toBeVisible();
+    await details.press("Control+z"); await expect(warning).toBeVisible();
+    await page.locator("#sample").selectOption("pricing"); await expect(problems).toContainText("No problems in this project.");
+    await page.context().unroute(diagnosticGuide);
 }
 
 export async function runDemoHighlights(page: Page, url = "/", distinctWrites = false) {

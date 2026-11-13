@@ -104,7 +104,8 @@ export class LspSession {
             completionItem: { snippetSupport: true, insertReplaceSupport: true, documentationFormat: ["plaintext"], insertTextModeSupport: { valueSet: [1] },
                 commitCharactersSupport: true, preselectSupport: true, resolveSupport: { properties: ["detail", "documentation", "additionalTextEdits", "insertText", "textEdit"] } },
             insertTextMode: 1, completionList: { itemDefaults: ["editRange", "insertTextFormat", "insertTextMode", "data", "commitCharacters"] } };
-        if (options.diagnostics) textDocument.publishDiagnostics = { versionSupport: true };
+        if (options.diagnostics) textDocument.publishDiagnostics = { versionSupport: true, relatedInformation: true,
+            tagSupport: { valueSet: [1, 2] }, codeDescriptionSupport: true, dataSupport: true };
         const documentationFormats = options.markdownDocumentation ? ["markdown", "plaintext"] : ["plaintext"];
         if (this.features.has("textDocument/hover")) textDocument.hover = { dynamicRegistration: true, contentFormat: documentationFormats };
         if (this.features.has("textDocument/signatureHelp")) textDocument.signatureHelp = { dynamicRegistration: true, contextSupport: true,

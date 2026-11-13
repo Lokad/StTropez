@@ -107,6 +107,11 @@ all document captures and the request generation before publication. Edits, susp
 or changed provider participation reject a late result. This is a documented host extension,
 not qualification of standard LSP diagnostic pull. Each syntactic or semantic response is
 validated completely, with no silent diagnostic truncation. Existing transport limits remain.
+Both demo providers return standard diagnostic shapes inside this custom response. The host
+uses the public diagnostic decoder without inventing a provider version; request correlation
+still owns the project association. Compiler severity, codes, tags and related locations within
+the sample inventory survive the adapter. Related messages are retained when a target is not
+loaded; navigation is offered only for a captured, placed target in the current project.
 
 Quick fixes need the pinned server's diagnostic codes. Before requesting standard code actions,
 the host obtains fresh syntactic/semantic results over the same captured public request scope.
@@ -114,7 +119,17 @@ The bridge correlates each response with every open mirrored file/version; any f
 clears its cache. Only a current complete diagnostic context is forwarded, narrowed to the
 requested range and quick-fix kind. A refresh for unchanged files retains valid context while
 pending; malformed replacement results invalidate that kind. This is a provider host adaptation,
-not qualification of standard diagnostic pull or generic diagnostic metadata passthrough.
+not qualification of standard diagnostic pull. Generic metadata passthrough is qualified
+separately through the public push observer and action client against the protocol fixture.
+
+**Diagnostic details** demonstrates a real TypeScript property error with its related
+declaration and a clearly labeled Demo host warning with a deprecated tag, help URI and opaque
+data. Problems shows severity/source, pages related locations in groups of 16 on demand, and
+opens captured loaded locations without applying edits. Help shares the hover/signature policy:
+an explicit click may open an HTTPS TypeScript documentation URL without an opener. Provider
+data is never rendered or executed. Correcting the warning and undoing refresh its association.
+The small host fixture exercises metadata the demo's TypeScript query does not emit; it is
+not a claim about TypeScript's diagnostic capabilities or another language implementation.
 
 The pinned provider attaches an empty-title `_typescript.applyCodeActionCommand` even to some
 pure edits. The bridge removes only that demonstrated no-op form when its nested command list

@@ -85,11 +85,11 @@ test("browser TypeScript provider preserves raw UTF-16/CRLF changes and confines
         for (const [name, source] of Object.entries(sample.files)) provider.notify("textDocument/didOpen", {
             textDocument: { uri: `file:///sttropez/${name}`, languageId: "typescript", version: 1, text: name === "main.ts" ? text : source },
         });
-        const diagnostics = provider.request("sttropez/diagnostics", { uri, kind: "semantic" }) as { success: boolean; body: { code: number; start: number; length: number }[] };
+        const diagnostics = provider.request("sttropez/diagnostics", { uri, kind: "semantic" }) as { success: boolean; body: { code: number; range: { start: { line: number; character: number }; end: { line: number; character: number } } }[] };
         assert.equal(diagnostics.success, true);
         const error = diagnostics.body.find(error => error.code === 2345); assert.ok(error);
-        assert.equal(text.slice(error.start, error.start + error.length), '"10%"');
         const doc = TextDocument.create(uri, "typescript", 1, text), from = text.indexOf('"10%"');
+        assert.equal(text.slice(doc.offsetAt(error.range.start), doc.offsetAt(error.range.end)), '"10%"');
         provider.notify("textDocument/didChange", { textDocument: { uri, version: 2 }, contentChanges: [
             { range: { start: doc.positionAt(from), end: doc.positionAt(from + 5) }, text: "0.2" },
         ] });

@@ -1,12 +1,12 @@
 import { jsonEqual, jsonSnapshot, RpcError } from "./json-rpc.ts";
 import type { JsonValue } from "./json-rpc.ts";
 import { decodeLspDiagnostics, decodeLspWorkspaceEdit, lspWorkspaceEditUris } from "./lsp-features.ts";
-import type { LspEditTarget, LspWorkspaceEdit } from "./lsp-features.ts";
+import type { LspDiagnostic, LspEditTarget, LspWorkspaceEdit } from "./lsp-features.ts";
 import type { LspDocumentCapture } from "./lsp-session.ts";
 
 export type LspCommand = Readonly<{ title: string; command: string; arguments: readonly JsonValue[] }>;
 export type LspCodeAction = Readonly<{ title: string; kind: string | null; preferred: boolean; disabled: string | null;
-    edit: LspWorkspaceEdit | null; command: LspCommand | null; resolve: JsonValue | null }>;
+    edit: LspWorkspaceEdit | null; command: LspCommand | null; resolve: JsonValue | null; diagnostics?: readonly LspDiagnostic[] }>;
 export type LspCodeActions = readonly LspCodeAction[];
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 function invalid(): never { throw new TypeError("Malformed or unsupported LSP code action."); }
@@ -34,14 +34,14 @@ export function decodeLspCodeActions(value: unknown, origin: LspDocumentCapture,
         if (item.isPreferred !== undefined && typeof item.isPreferred !== "boolean") invalid();
         let disabled: string | null = null;
         if (item.disabled !== undefined) { if (!record(item.disabled)) invalid(); disabled = text(item.disabled.reason); }
-        if (item.diagnostics !== undefined) {
-            const diagnostics = decodeLspDiagnostics({ uri: origin.document.uri, version: origin.version, diagnostics: item.diagnostics }, origin);
-            if (diagnostics.items.some(item => item.placement !== "placed")) invalid(); jsonSnapshot(item.diagnostics);
-        }
+        const diagnostics = item.diagnostics === undefined ? undefined
+            : decodeLspDiagnostics({ uri: origin.document.uri, version: origin.version, diagnostics: item.diagnostics }, origin).items;
+        if (diagnostics?.some(item => item.placement !== "placed")) invalid();
         if (item.data !== undefined) jsonSnapshot(item.data);
         const edit = item.edit === undefined ? null : decodeLspWorkspaceEdit(item.edit, resolve), cmd = item.command === undefined ? null : command(item.command);
         const deferred = canResolve && !edit && !cmd && disabled === null ? jsonSnapshot(item) : null;
-        return Object.freeze({ title, kind, preferred: item.isPreferred === true, disabled, edit, command: cmd, resolve: deferred });
+        return Object.freeze({ title, kind, preferred: item.isPreferred === true, disabled, edit, command: cmd, resolve: deferred,
+            ...(diagnostics === undefined ? {} : { diagnostics }) });
     });
     current(origin); for (const action of actions) if (action.edit && !action.edit.isCurrent()) throw new RpcError(-32801, "LSP action target capture expired.");
     return Object.freeze(actions);

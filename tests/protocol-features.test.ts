@@ -175,9 +175,25 @@ test("compatible prefix rebasing uses exact commit metadata and resolves additio
 
 test("diagnostics separate provider freshness from validated snapshot placement and retain unplaceable wire ranges", async () => {
     const { capture, expire } = await captured(), response: PublishDiagnosticsParams = { uri: capture.document.uri, version: 3,
-        diagnostics: [{ range: range(1, 21, 25), message: "<img src=x onerror=unsafe()> TODO", severity: 2, source: "fixture" }] };
+        diagnostics: [{ range: range(1, 21, 25), message: "<img src=x onerror=unsafe()> TODO", severity: 2, source: "fixture",
+            code: "fixture/check", codeDescription: { href: "host-help:diagnostic/check" }, tags: [1, 2],
+            relatedInformation: [{ location: { uri: "host+fixture:unopened", range: range(42, 1, 3) }, message: "Related definition" }], data: { token: [1, null, "opaque"] } }] };
     const decoded = decodeLspDiagnostics(response, capture); assert.equal(decoded.revision, 70); assert.equal(decoded.items[0]!.from, capture.index.offsetAt({ line: 1, character: 21 }));
     assert.equal(Object.isFrozen(decoded.items[0]), true); assert.deepEqual(decodeLspDiagnostics({ ...response, diagnostics: [] }, capture).items, []);
+    const item = decoded.items[0]!;
+    assert.equal(item.code, "fixture/check"); assert.deepEqual(item.codeDescription, response.diagnostics[0]!.codeDescription);
+    assert.deepEqual(item.relatedInformation, response.diagnostics[0]!.relatedInformation); assert.deepEqual(item.data, { token: [1, null, "opaque"] });
+    for (const nested of [item.codeDescription, item.tags, item.relatedInformation, item.relatedInformation![0], item.relatedInformation![0]!.location,
+        item.relatedInformation![0]!.location.range.start, item.data, (item.data as { token: unknown }).token]) assert.equal(Object.isFrozen(nested), true);
+    response.diagnostics[0]!.relatedInformation![0]!.message = "mutated"; (response.diagnostics[0]!.data as { token: unknown[] }).token.push(2);
+    assert.equal(item.relatedInformation![0]!.message, "Related definition"); assert.deepEqual(item.data, { token: [1, null, "opaque"] });
+    for (const code of [-2147483648, 2147483647, "", "TS2345"]) {
+        const metadata = decodeLspDiagnostics({ ...response, diagnostics: [{ range: range(0, 0, 1), message: "metadata", code, tags: [1, 99, -1], data: null }] }, capture).items[0]!;
+        assert.equal(metadata.code, code); assert.deepEqual(metadata.tags, [1, 99, -1]); assert.equal(metadata.data, null);
+    }
+    for (const bad of [{ code: null }, { code: 2147483648 }, { code: 1.5 }, { codeDescription: null }, { codeDescription: { href: 1 } },
+        { tags: [1, "2"] }, { relatedInformation: {} }, { relatedInformation: [{ location: { uri: "host:target", range: range(0, 2, 1) }, message: "bad" }] },
+        { data: { nested: Infinity } }]) assert.throws(() => decodeLspDiagnostics({ ...response, diagnostics: [...response.diagnostics, { range: range(0, 0, 1), message: "bad tail", ...bad }] }, capture));
     const { version: _version, ...unversioned } = response; const uncertain = decodeLspDiagnostics(unversioned, capture);
     assert.equal(uncertain.revision, null); assert.equal(uncertain.version, null); assert.equal(uncertain.freshness, "unversioned"); assert.equal(uncertain.snapshotRevision, 70);
     assert.equal(uncertain.items[0]!.from, decoded.items[0]!.from); assert.equal(uncertain.items[0]!.placement, "placed"); assert.deepEqual(uncertain.items[0]!.range, response.diagnostics[0]!.range);
@@ -255,11 +271,13 @@ test("code actions preserve disabled/preferred/command choices and resolve only 
     const { capture, expire } = await captured("abc\r\n// TODO\n"), resolve = (uri: string) => uri === capture.document.uri ? capture : undefined;
     const edit: WorkspaceEdit = { documentChanges: [{ textDocument: { uri: capture.document.uri, version: 3 }, edits: [{ range: range(0, 0, 1), newText: "😀\r" }] }] };
     const values: (CodeAction | Command)[] = [{ title: "<img> literal", kind: "refactor.custom", isPreferred: true, edit }, { title: "disabled", disabled: { reason: "Not in this context" } },
-        { title: "command", command: "host/command", arguments: [{ opaque: "never executed" }] }, { title: "lazy", kind: "quickfix", data: { token: 1, nested: { a: 1, b: "😀" } } }];
+        { title: "command", command: "host/command", arguments: [{ opaque: "never executed" }] }, { title: "lazy", kind: "quickfix", data: { token: 1, nested: { a: 1, b: "😀" } },
+            diagnostics: [{ range: range(0, 0, 1), message: "Fix this", code: "fixture/fix", data: { token: "diagnostic" } }] }];
     const actions = decodeLspCodeActions(values, capture, resolve, true); assert.equal(actions[0]!.title, "<img> literal"); assert.equal(actions[0]!.preferred, true); assert.equal(actions[1]!.disabled, "Not in this context"); assert.equal(actions[2]!.command!.command, "host/command");
     assert.equal(Object.isFrozen(actions[3]!.resolve), true); assert.equal(Object.isFrozen(actions), true); assert.equal(decodeLspCodeActions(values, capture, resolve)[3]!.resolve, null);
     const resolved = decodeLspResolvedCodeAction({ ...values[3], data: { nested: { b: "😀", a: 1 }, token: 1 }, edit }, actions[3]!, capture, resolve); const result = capture.document.buffer.apply(resolved.edit!.documents[0]!.edits).buffer;
     assert.equal(result.slice(0, result.length), "😀\rbc\r\n// TODO\n"); assert.equal(resolved.resolve, null); assert.equal(capture.document.buffer.slice(0, 3), "abc");
+    assert.equal(resolved.diagnostics![0]!.code, "fixture/fix"); assert.deepEqual(resolved.diagnostics![0]!.data, { token: "diagnostic" });
     assert.deepEqual(decodeLspCodeActions(null, capture, resolve), []);
     for (const changed of [{ ...values[3], title: "retargeted", edit }, { ...values[3], edit, command: { title: "injected", command: "host/run" } }, { ...values[3], data: { token: 2 }, edit }, values[3]]) assert.throws(() => decodeLspResolvedCodeAction(changed, actions[3]!, capture, resolve));
     expire(); assert.equal(resolved.edit!.isCurrent(), false); assert.throws(() => decodeLspResolvedCodeAction({ ...values[3], edit }, actions[3]!, capture, resolve), error => error instanceof RpcError && error.code === -32801);

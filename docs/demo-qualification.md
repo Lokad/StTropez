@@ -111,6 +111,12 @@ installation are rejected. Compiler/provider dependencies remain in the developm
 Owned provider projects, connections, processes and pending removals are zero after closure.
 Selected plain/React fixture journeys retain the broader workspace/host lifecycle coverage.
 
+The documentation journey also exercises **Diagnostic details**: real TypeScript related
+declarations, a labeled host warning's source/severity/deprecated tag, explicit permitted help,
+related-location selection, correction/undo and sample replacement. The same journey runs
+against source, static and restored-package demos. Protocol checks own nested immutability,
+malformed metadata, unknown tags, opaque data forwarding and stale/unversioned exclusions.
+
 The project-result journey reaches diagnostic 300 and reference 1,201 through visible controls,
 previews all 1,201 rename edits with bounded rows, applies the complete rename, then checks one
 undo/redo and save. It is shared by the source, static and restored-package demos. Protocol tests

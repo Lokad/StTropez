@@ -1,4 +1,4 @@
-export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue" | "templates" | "results" | "outline" | "documentation" | "navigation";
+export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue" | "templates" | "results" | "outline" | "documentation" | "navigation" | "diagnostics";
 export type DemoSample = Readonly<{ id: SampleId; title: string; description: string; files: Readonly<Record<string, string>>;
     initialFiles?: readonly string[]; declarations?: Readonly<Record<string, string>> }>;
 
@@ -38,10 +38,15 @@ export const sampleChoices: readonly Readonly<{ id: SampleId; title: string }>[]
     { id: "outline", title: "Host outline · indentation folding" },
     { id: "documentation", title: "Documentation & help links" },
     { id: "navigation", title: "Unopened files & navigation" },
+    { id: "diagnostics", title: "Diagnostic details" },
 ]);
 
 /** Large fixtures are built only on explicit selection. */
 export function demoSample(id: SampleId): DemoSample {
+    if (id === "diagnostics") return { id, title: "Diagnostic details",
+        description: "Open Problems: the price mismatch is a real TypeScript error, with a related declaration. The labeled Demo host warning demonstrates a deprecated tag and a help link. Select a related location to inspect it; replace legacyPrice with currentPrice to clear the warning.",
+        files: { "details.ts": '// Demo diagnostic metadata fixture\nimport type { Product } from "./types";\n\nconst currentPrice = 12;\nconst legacyPrice = currentPrice;\nconst product: Product = { price: "twelve" };\nconsole.log(product, legacyPrice);\n',
+            "types.ts": 'export interface Product {\n  price: number;\n}\n' } };
     if (id === "navigation") return { id, title: "Unopened files & navigation",
         description: "Go to definition (F12) on formatLabel to load labels.ts, or on RecordId to read contracts.d.ts. Only main.ts starts in the editor. Alt+Left returns to the original location; labels.ts remains editable and saves with the project.",
         initialFiles: ["main.ts"],

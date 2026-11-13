@@ -7,6 +7,28 @@ const { createLspHoverClient, createLspNavigationClient, createLspRenameClient, 
 const stale = (error: unknown) => error instanceof RpcError && error.code === -32801;
 const cancelled = (error: unknown) => error instanceof RpcError && error.code === -32800;
 
+test("actions forward immutable diagnostic metadata only for matching current versions and placed overlapping ranges", async t => {
+    const f = clientFixture(t), client = createLspActionClient(f.provider), control = f.provider.createScope(); t.after(() => { client.dispose(); control.dispose(); });
+    const binding = control.attachDocument(f.source.documentId); await control.connect();
+    assert.deepEqual((f.sent("initialize")[0]!.params as { capabilities: { textDocument: { publishDiagnostics: unknown } } }).capabilities.textDocument.publishDiagnostics,
+        { versionSupport: true, relatedInformation: true, tagSupport: { valueSet: [1, 2] }, codeDescriptionSupport: true, dataSupport: true });
+    const capture = control.synchronized(binding)!, range = { start: { line: 0, character: 6 }, end: { line: 0, character: 10 } };
+    const diagnostic = { range, message: "Check beta", code: "generic/check", source: "fixture", severity: 2,
+        codeDescription: { href: "host-help:check" }, tags: [1, 99], data: { key: [null, 42] },
+        relatedInformation: [{ location: { uri: "host:unopened", range }, message: "Related" }] };
+    const send = async (version: number | undefined) => {
+        await f.peer.sendNotification("textDocument/publishDiagnostics", { uri: capture.document.uri, ...(version === undefined ? {} : { version }), diagnostics: [diagnostic,
+            { range: { start: { line: 50, character: 0 }, end: { line: 50, character: 1 } }, message: "Unplaced" }] }); await settled();
+    };
+    const run = async (from = 6, to = 10) => {
+        await client.run([f.document()], f.source.documentId, from, to);
+        return (f.sent("textDocument/codeAction").at(-1)!.params as { context: { diagnostics: unknown[] } }).context.diagnostics;
+    };
+    await send(capture.version); assert.deepEqual(await run(), [diagnostic]); assert.deepEqual(await run(0, 1), []);
+    await send(undefined); assert.deepEqual(await run(), []); // Fresh placement is not a known provider version.
+    await send(capture.version); f.edit(); assert.deepEqual(await run(), []);
+});
+
 test("a new hover invalidates a completed result on the same unchanged document", async t => {
     const f = clientFixture(t), client = createLspHoverClient(f.provider); t.after(client.dispose);
     const first = client.run(f.document(), 0), a = await first.result;

@@ -9,6 +9,7 @@ import { mountHoverPanel } from "../hosts/hover-panel.ts";
 import { HostSignatureTools } from "../hosts/signature.ts";
 import { mountSignaturePopup } from "../hosts/signature-panel.ts";
 import type { DemoFile } from "./project.ts";
+import { canOpenDemoHelp } from "./diagnostics.ts";
 
 /** Reuses captured popup controllers; the host owns explicit external-help opening. */
 export function mountDemoInspection(workspace: Workspace, file: DemoFile, editor: EditingCandidate, provider: LspWorkspace,
@@ -23,10 +24,7 @@ export function mountDemoInspection(workspace: Workspace, file: DemoFile, editor
         { canCapture, backend: createLspHoverClient({ provider }) }) });
     const signature = new HostSignatureTools(workspace, canCapture, () => { hover.dismiss(); beforeInspect(); },
         (_clock, changed) => lspSignatureBackend(workspace, provider, changed), completionOpen);
-    const canOpenLink = (target: string) => {
-        try { const url = new URL(target); return valid() && url.protocol === "https:" && url.hostname === "www.typescriptlang.org"
-            && !url.port && !url.username && !url.password && url.pathname.startsWith("/docs/"); } catch { return false; }
-    };
+    const canOpenLink = (target: string) => valid() && canOpenDemoHelp(target);
     const links = { canOpenLink, openLink: (target: string) => { if (canOpenLink(target)) window.open(target, "_blank", "noopener,noreferrer"); } };
     const stopHover = mountHoverPanel(host, hover, links);
     const stopSignature = mountSignaturePopup(host, signature, true, links);

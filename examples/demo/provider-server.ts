@@ -13,6 +13,7 @@ import { URI } from "vscode-uri";
 import { demoSample, sampleChoices } from "./samples.ts";
 import type { SampleId } from "./samples.ts";
 import { demoTemplateCompletions, demoTemplateUri, resolveDemoTemplate } from "./completion-templates.ts";
+import { demoDiagnosticFixture } from "./diagnostics.ts";
 
 const compiler = fileURLToPath(import.meta.resolve("typescript-demo/lib/tsserver.js"));
 const executable = fileURLToPath(new URL("lib/cli.mjs", import.meta.resolve("typescript-language-server/package.json")));
@@ -40,10 +41,11 @@ function confined(value: unknown, project: Project, depth = 0): boolean {
         return confined(item, project, depth + 1);
     });
 }
-function knownPath(value: unknown, project: Project): boolean {
+function knownDocument(value: unknown, project: Project): Document | undefined {
     const key = (path: string) => process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path);
-    return typeof value === "string" && isAbsolute(value) && Object.values(project.documents).some(doc => key(doc.path) === key(value));
+    return typeof value === "string" && isAbsolute(value) ? Object.values(project.documents).find(doc => key(doc.path) === key(value)) : undefined;
 }
+const knownPath = (value: unknown, project: Project) => !!knownDocument(value, project);
 
 /** Demo-only process/transport host. Production modules never import Node, a server or a compiler. */
 export function attachDemoProvider(server: Server) {
@@ -119,10 +121,22 @@ export function attachDemoProvider(server: Server) {
                             const from = item.start as number, to = from + (item.length as number);
                             if (from < 0 || to < from || to > doc.getText().length) break;
                             batch.push({ from, to, wire: { range: { start: doc.positionAt(from), end: doc.positionAt(to) }, message: item.message, code: item.code as number,
-                                severity: item.category === "warning" ? 2 : 1, source: "typescript" } });
+                                severity: item.category === "warning" ? 2 : item.category === "suggestion" || item.category === "message" ? 3 : 1, source: "typescript",
+                                tags: [...(item.reportsUnnecessary ? [1 as const] : []), ...(item.reportsDeprecated ? [2 as const] : [])],
+                                relatedInformation: (Array.isArray(item.relatedInformation) ? item.relatedInformation : []).flatMap(related => {
+                                    if (!object(related) || typeof related.message !== "string" || !object(related.span)) return [];
+                                    const span = related.span, target = knownDocument(span.file, project);
+                                    if (!target || !object(span.start) || !object(span.end)) return [];
+                                    const start = span.start, end = span.end;
+                                    if (![start.line, start.offset, end.line, end.offset].every(n => Number.isSafeInteger(n) && (n as number) > 0)) return [];
+                                    return [{ location: { uri: target.uri, range: { start: { line: (start.line as number) - 1, character: (start.offset as number) - 1 },
+                                        end: { line: (end.line as number) - 1, character: (end.offset as number) - 1 } } }, message: related.message }];
+                                }) } });
                         }
                         if (batch.length === value.result.body.length) {
                             const cached = problems.get(doc.uri) ?? { document: doc }; cached[diagnostic.kind] = batch; problems.set(doc.uri, cached);
+                            value.result = { success: true, body: [...batch.map(item => item.wire), ...(diagnostic.kind === "semantic"
+                                ? demoDiagnosticFixture(doc.getText(), offset => doc.positionAt(offset), doc.uri) : [])] };
                         }
                     }
                 }

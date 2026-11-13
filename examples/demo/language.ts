@@ -1,12 +1,13 @@
 import type { DocumentId, Observable, Workspace } from "../../src/index.ts";
-import { LspWorkspace, LspLineIndex } from "../../src/protocol/index.ts";
-import type { LspWorkspaceScope, RpcCall, LspSessionAccess, LspTargetResolver } from "../../src/protocol/index.ts";
+import { LspWorkspace, LspLineIndex, decodeLspDiagnostics, lspRangeOffsets } from "../../src/protocol/index.ts";
+import type { LspWorkspaceScope, RpcCall, LspSessionAccess, LspTargetResolver, LspDiagnostic } from "../../src/protocol/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { DemoFile } from "./project.ts";
 import { openDemoProvider } from "./provider.ts";
 import type { DemoProvider } from "./provider.ts";
 
-export type DemoDiagnostic = Readonly<{ documentId: DocumentId; name: string; revision: number; from: number; to: number; message: string; code: number }>;
+export type DemoDiagnostic = LspDiagnostic & Readonly<{ documentId: DocumentId; name: string; revision: number; from: number; to: number;
+    related: readonly Readonly<{ name: string; message: string; line: number; character: number; target: Readonly<{ documentId: DocumentId; revision: number; from: number; to: number }> | null }>[] }>;
 type State = Readonly<{ status: "suspended" | "starting" | "ready" | "failed"; checking: boolean; message: string; diagnostics: readonly DemoDiagnostic[] }>;
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 type Inventory = Readonly<{ names: readonly string[]; backing: () => Readonly<Record<string, string>>; load: (name: string, text: string) => DemoFile }>;
@@ -162,15 +163,23 @@ export class DemoLanguage {
                     let response: unknown; try { response = await call.result; } finally { this.calls.delete(call); }
                     if (!capturesCurrent()) return;
                     if (!object(response) || response.success !== true || !Array.isArray(response.body)) throw new Error("Invalid TypeScript diagnostics.");
-                    for (const value of response.body) {
-                        if (!object(value) || !Number.isSafeInteger(value.start) || !Number.isSafeInteger(value.length) || typeof value.message !== "string" || !Number.isSafeInteger(value.code)) throw new Error("Invalid TypeScript diagnostic range.");
-                        const from = value.start as number, to = from + (value.length as number);
-                        if (from < 0 || to < from || to > capture.document.buffer.length) throw new Error("TypeScript diagnostic is outside its captured file.");
-                        results.push({ documentId: file.resource.documentId, name: file.name, revision: capture.document.revision, from, to, message: value.message, code: value.code as number });
+                    // This custom response is correlated to our request/project, but has no provider version.
+                    const batch = decodeLspDiagnostics({ uri, diagnostics: response.body }, capture);
+                    for (const value of batch.items) {
+                        if (value.from === null || value.to === null) throw new Error("TypeScript diagnostic is outside its captured file.");
+                        const related = (value.relatedInformation ?? []).map(info => {
+                            const target = project.get(info.location.uri), file = this.files.find(file => file.resource.documentId === target?.document.documentId);
+                            let placed: DemoDiagnostic["related"][number]["target"] = null;
+                            if (target && file) { try { placed = Object.freeze({ documentId: file.resource.documentId, revision: target.document.revision, ...lspRangeOffsets(target.index, info.location.range) }); } catch { /* Retain the message without offering an invalid location. */ } }
+                            const name = Object.keys(this.config!.documents).find(name => this.config!.documents[name]!.uri === info.location.uri) ?? info.location.uri;
+                            return Object.freeze({ name, message: info.message, line: info.location.range.start.line, character: info.location.range.start.character, target: placed });
+                        });
+                        results.push(Object.freeze({ ...value, documentId: file.resource.documentId, name: file.name, revision: capture.document.revision,
+                            from: value.from, to: value.to, related: Object.freeze(related) }));
                     }
                 }
             }
-            if (capturesCurrent()) this.publish({ checking: false, status: "ready", message: "Language service ready.", diagnostics: results });
+            if (capturesCurrent()) this.publish({ checking: false, status: "ready", message: "Language service ready.", diagnostics: Object.freeze(results) });
         } catch (error) {
             if (current()) this.publish({ checking: false, status: "failed", message: error instanceof Error ? error.message : "Type checking is unavailable." });
         }

@@ -3,6 +3,7 @@ import { typeScriptFoldingRanges } from "./typescript-folds.ts";
 import { TextDocument } from "vscode-languageserver-protocol/browser.js";
 import { RpcError } from "../../src/protocol/index.ts";
 import { demoTemplateCompletions, demoTemplateUri, resolveDemoTemplate } from "./completion-templates.ts";
+import { demoDiagnosticFixture } from "./diagnostics.ts";
 
 type ObjectValue = Record<string, unknown>;
 type Document = ReturnType<typeof TextDocument.create>;
@@ -124,8 +125,15 @@ export class BrowserLanguageService {
             const p = object(params), file = this.file(p.uri);
             if (p.kind !== "syntactic" && p.kind !== "semantic") throw new RpcError(-32602, "Unknown diagnostic kind.");
             const diagnostics = p.kind === "syntactic" ? this.service.getSyntacticDiagnostics(file.path) : this.service.getSemanticDiagnostics(file.path);
-            return { success: true, body: diagnostics.map(d => ({ start: d.start ?? 0, length: d.length ?? 0,
-                code: d.code, message: ts.flattenDiagnosticMessageText(d.messageText, "\n") })) };
+            const body = diagnostics.map(d => ({ range: this.span(file, { start: d.start ?? 0, length: d.length ?? 0 }),
+                code: d.code, message: ts.flattenDiagnosticMessageText(d.messageText, "\n"), source: "typescript",
+                severity: d.category === ts.DiagnosticCategory.Error ? 1 : d.category === ts.DiagnosticCategory.Warning ? 2 : 3,
+                tags: [...(d.reportsUnnecessary ? [1] : []), ...(d.reportsDeprecated ? [2] : [])],
+                relatedInformation: (d.relatedInformation ?? []).flatMap(related => {
+                    const target = related.file && this.fileAt(related.file.fileName); if (!target || related.start === undefined || related.length === undefined) return [];
+                    return [{ location: { uri: target.document.uri, range: this.span(target, { start: related.start, length: related.length }) }, message: ts.flattenDiagnosticMessageText(related.messageText, "\n") }];
+                }) }));
+            return { success: true, body: [...body, ...(p.kind === "semantic" ? demoDiagnosticFixture(file.document.getText(), offset => file.document.positionAt(offset), file.document.uri) : [])] };
         }
         if (method === "completionItem/resolve") {
             const uri = demoTemplateUri(params); if (uri) return resolveDemoTemplate(params, this.file(uri).document);

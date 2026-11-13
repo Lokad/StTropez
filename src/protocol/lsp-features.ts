@@ -10,7 +10,9 @@ import type { JsonValue } from "./json-rpc.ts";
 import type { LspDocumentCapture, LspDocumentSnapshot } from "./lsp-session.ts";
 import type { LspLineIndex, LspPosition, LspRange } from "./lsp-positions.ts";
 
-export type LspDiagnostic = Readonly<{ range: LspRange; placement: "placed" | "out-of-bounds"; from: number | null; to: number | null; message: string; severity: number | null; source: string | null }>;
+export type LspDiagnostic = Readonly<{ range: LspRange; placement: "placed" | "out-of-bounds"; from: number | null; to: number | null; message: string; severity: number | null; source: string | null;
+    code?: number | string; codeDescription?: Readonly<{ href: string }>; tags?: readonly number[];
+    relatedInformation?: readonly Readonly<{ location: Readonly<{ uri: string; range: LspRange }>; message: string }>[]; data?: JsonValue }>;
 export type LspDiagnostics = Readonly<{ uri: string; version: number | null; revision: number | null; snapshotRevision: number; freshness: "versioned" | "unversioned"; items: readonly LspDiagnostic[] }>;
 export type LspCompletionPlan = Readonly<{ edits: readonly TextEdit[]; head: number; snippet: readonly SnippetStop[] | null }>;
 export type LspCompletion = Readonly<{ label: string; detail: string; documentation: string; filterText: string; sortText: string; preselect: boolean;
@@ -39,6 +41,7 @@ export type LspDocumentColor = Readonly<{ from: number; to: number; color: LspCo
 export type LspColorPresentation = Readonly<{ label: string; edits: readonly TextEdit[] }>;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const uint = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 0x7fffffff;
+const integer = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= -0x80000000 && value <= 0x7fffffff;
 function invalid(): never { throw new TypeError("Malformed or unsupported LSP feature result."); }
 function current(capture: Pick<LspDocumentCapture, "isCurrent">): void { if (!capture.isCurrent()) throw new RpcError(-32801, "LSP feature capture expired."); }
 function text(value: unknown, maximum = Number.MAX_SAFE_INTEGER, budget?: { units: number }): string {
@@ -83,7 +86,21 @@ export function decodeLspDiagnostics(value: unknown, capture: LspDocumentCapture
         try { offsets = lspRangeOffsets(capture.index, wire); } catch (error) { if (!(error instanceof TypeError || error instanceof RangeError)) throw error; }
         const message = text(item.message), source = item.source === undefined ? null : text(item.source);
         if (item.severity !== undefined && (!uint(item.severity) || item.severity < 1 || item.severity > 4)) invalid();
-        return Object.freeze({ range: wire, placement: offsets ? "placed" : "out-of-bounds", from: offsets?.from ?? null, to: offsets?.to ?? null, message, severity: item.severity as number | undefined ?? null, source });
+        if (item.code !== undefined && typeof item.code !== "string" && !integer(item.code)) invalid();
+        if (item.codeDescription !== undefined && !record(item.codeDescription)) invalid();
+        if (item.tags !== undefined && (!Array.isArray(item.tags) || !item.tags.every(integer))) invalid();
+        if (item.relatedInformation !== undefined && !Array.isArray(item.relatedInformation)) invalid();
+        const relatedInformation = (item.relatedInformation as unknown[] | undefined)?.map(related => {
+            if (!record(related) || !record(related.location)) invalid();
+            return Object.freeze({ location: Object.freeze({ uri: text(related.location.uri), range: range(related.location.range) }), message: text(related.message) });
+        });
+        return Object.freeze({ range: wire, placement: offsets ? "placed" : "out-of-bounds", from: offsets?.from ?? null, to: offsets?.to ?? null, message, severity: item.severity as number | undefined ?? null, source,
+            ...(item.code === undefined ? {} : { code: item.code as number | string }),
+            ...(item.codeDescription === undefined ? {} : { codeDescription: Object.freeze({ href: text((item.codeDescription as Record<string, unknown>).href) }) }),
+            // Preserve unknown integer tags for forwarding; hosts need only interpret the advertised set.
+            ...(item.tags === undefined ? {} : { tags: Object.freeze([...(item.tags as number[])]) }),
+            ...(relatedInformation === undefined ? {} : { relatedInformation: Object.freeze(relatedInformation) }),
+            ...(item.data === undefined ? {} : { data: jsonSnapshot(item.data) }) });
     });
     current(capture); return Object.freeze({ uri: capture.document.uri, version, revision: version === null ? null : capture.document.revision,
         snapshotRevision: capture.document.revision, freshness: version === null ? "unversioned" : "versioned", items: Object.freeze(items) });
