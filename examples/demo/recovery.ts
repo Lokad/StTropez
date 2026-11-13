@@ -21,6 +21,19 @@ function decode(envelope: StoredDraft, sample: string, files: readonly DemoFile[
     return value as Draft;
 }
 
+function matches(capture: Capture, draft: Draft): boolean {
+    return capture.every(item => {
+        const buffer = item.document.buffer, text = draft.files[item.file.name]!;
+        if (buffer.length !== text.length) return false;
+        let offset = 0;
+        for (const chunk of buffer.chunks()) {
+            if (chunk !== text.slice(offset, offset + chunk.length)) return false;
+            offset += chunk.length;
+        }
+        return true;
+    });
+}
+
 /** Multi-file demo policy. Reuses the fixture's CAS store; no alternate document/history engine. */
 export class DemoRecovery {
     private readonly workspace: Workspace;
@@ -71,6 +84,9 @@ export class DemoRecovery {
     private publish(status: RecoveryState["status"], message: string): void {
         if (!this.disposed) this.cell.set({ status, busy: this.running !== undefined, present: this.offer !== undefined, message });
     }
+    private offerMessage(): string {
+        return `This browser has an unsaved draft for ${this.files.map(file => file.name).join(", ")}. Restore it, download it, or keep your current files.`;
+    }
     private cancelTimer(): void { if (this.timer !== undefined) clearTimeout(this.timer); this.timer = undefined; }
     private schedule(): void {
         this.cancelTimer();
@@ -106,17 +122,34 @@ export class DemoRecovery {
             this.publish("checking", "Checking recovery…");
             const envelope = await this.store.read(); if (this.disposed) return;
             this.loaded = true;
-            if (envelope?.token === this.token) {
-                this.publish(this.offer ? "offer" : this.token ? "protected" : "idle", this.offer ? "A recovery draft is available."
-                    : this.token ? "Recovery draft captured in this browser." : "Recovery is ready.");
+            if (envelope?.token === this.token && !this.offer) {
+                if (envelope && !this.dirty() && this.targetsCurrent(capture)) {
+                    await this.store.remove(envelope.token);
+                    if (!this.disposed) { this.token = null; this.checkpointed = undefined; this.publish("idle", "All changes are saved."); }
+                    return;
+                }
+                this.publish(this.token ? "protected" : "idle", this.token ? "Recovery draft captured in this browser." : "Recovery is ready.");
                 return;
             }
             this.offer = undefined;
             this.checkpointed = undefined;
             if (envelope) {
                 const draft = decode(envelope, this.sample, this.files);
+                // A save may finish just before the page closes, ahead of deferred draft cleanup.
+                // Compare content during this asynchronous read, never on an edit notification.
+                // Only the exact redundant token can be removed; distinct peer work stays offered.
+                if (this.targetsCurrent(capture) && matches(capture, draft)) {
+                    if (capture.some(item => item.metadata.dirty)) {
+                        this.token = envelope.token; this.checkpointed = capture;
+                        this.publish("protected", "Recovery draft captured in this browser.");
+                    } else {
+                        await this.store.remove(envelope.token);
+                        if (!this.disposed) { this.token = null; this.publish("idle", "All changes are saved."); }
+                    }
+                    return;
+                }
                 this.offer = { envelope, draft, capture }; this.token = envelope.token;
-                this.publish("offer", "A recovery draft is available. Restore it, download it, or keep your current files.");
+                this.publish("offer", this.offerMessage());
             } else { this.token = null; this.publish("idle", "Recovery is ready."); }
         }).then(() => { if (!this.offer && this.dirty() && !this.running) this.schedule(); });
     }

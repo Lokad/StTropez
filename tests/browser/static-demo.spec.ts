@@ -24,6 +24,33 @@ test("browser-only providers retain two-page save/conflict and recovery ownershi
     await runDemoConflict(page, baseURL!);
 });
 
+test("reset names its sample and recovery follows the stored draft across sample switches and reload", async ({ page, baseURL }) => {
+    const prompts: string[] = []; page.on("dialog", dialog => { prompts.push(dialog.message()); void dialog.accept(); });
+    await page.goto(baseURL!);
+    await page.getByRole("button", { name: "Reset sample", exact: true }).click();
+    expect(prompts.at(-1)).toContain("Shopping cart");
+    await page.locator("#sample").selectOption("large");
+    const source = page.getByRole("textbox", { name: "large.ts", exact: true }); await expect(source).toBeVisible();
+    await expect(page.locator("#recovery-status")).toHaveText("Recovery is ready.");
+    await expect(page.locator("#recovery-offer")).toBeHidden();
+    await source.press("Control+Home"); await source.pressSequentially("// My previous large-file edits\n");
+    await expect(page.locator("#recovery-status")).toHaveText("Recovery draft captured in this browser.");
+    await page.reload(); await page.getByRole("button", { name: "Reset sample", exact: true }).click();
+    await expect(page.locator("#recovery-offer")).toBeHidden();
+    await page.locator("#sample").selectOption("large");
+    await expect(page.locator("#recovery-offer")).toBeVisible();
+    await expect(page.locator("#recovery-message")).toContainText("unsaved draft for large.ts");
+    await page.getByRole("button", { name: "Restore draft", exact: true }).click();
+    await expect(page.locator("#editor")).toContainText("// My previous large-file edits");
+    await page.getByRole("button", { name: "Reset sample", exact: true }).click();
+    expect(prompts.at(-1)).toContain("Large file");
+    await expect(page.locator("#recovery-status")).toHaveText("All changes are saved.");
+    await page.reload(); await page.locator("#sample").selectOption("large");
+    await expect(page.locator("#recovery-status")).toHaveText("Recovery is ready.");
+    await expect(page.locator("#recovery-offer")).toBeHidden();
+    await expect(page.locator("#editor")).not.toContainText("My previous large-file edits");
+});
+
 test("browser global completion refreshes its bounded page after a typed prefix", async ({ page, baseURL }) => {
     await page.goto(baseURL!); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });

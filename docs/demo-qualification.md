@@ -59,20 +59,40 @@ lines, and 100k comment lines. Cold readiness, start/middle/end edits, navigatio
 comparison and save use the complete host with services active. This replaces neither the native
 device matrix nor constrained-hardware qualification, and does not establish stable tail latency.
 
-That wider campaign exposed an open bulk-input gap: a single synthetic insertion of 285,560
+That wider campaign exposed a bulk-input gap: a single synthetic insertion of 285,560
 UTF-16 units took about 160 seconds on Chromium, including one main-thread long task of the same
 duration. Subsequent local-frame observations were about 43–83 ms. Good warm typing therefore
-does not qualify document replacement. Smaller controlled probes found substantial browser/native
-work; disabling textarea wrapping reduced it but did not remove it. Attribution of the full stall
-remains open. The next focused comparison is captured bulk insertion versus the existing paste/host
-transaction paths, with the input context and browser work observed separately. This is not proof
-about actual OS clipboard or IME behavior. No speculative production input change follows.
+does not qualify document replacement. A bounded comparison isolated native textarea expansion:
+48 KB took about 345 ms through native insertion (about 330 ms between beforeinput and input,
+followed by roughly 1,200 input events), versus 5–12 ms through captured host/paste transactions.
+Cancelling native expansion and applying the same existing transaction also took about 6 ms.
+
+The bounded adapter now handles known, cancellable non-composition insertions before they exceed
+its native context limit. The original 285,560-unit replacement then completed through the rebuilt,
+restored package in about 66 ms of automation time, 52 ms from beforeinput to local-frame observation,
+and 6 ms in its beforeinput handler: one model commit, no native input events, and a 390-unit maximum
+native context observed at dispatch. The semantic workload subsequently passed completion,
+navigation, comparison and save; warm local-frame p95 observations at the three positions were
+about 45–78 ms (eight samples each). This closes
+the reproduced cancellable bulk-input stall, not every native input path. Composition, missing-data
+and noncancellable events retain their native fallback. OS clipboard/IME remain unverified.
 
 The existing five-second local-readiness deadline is also enforced from Node around measured
 typing and semantic fixture insertion. An in-page timer cannot fire while that page's main thread
 is blocked. The external watchdog closes only the campaign-owned headless browser and preserves
-partial failure evidence. `--corpora=pricing,large` selects independent cases; it does not close the
-semantic bulk-input gap or turn the full campaign into a pass.
+partial failure evidence. `--corpora=semantic` qualifies that workload independently; selected-case
+runs never imply a new pass for every corpus. Historical failures and raw measurements are retained.
+The shared Windows machine and small sample counts do not establish stable latency tails.
+
+## Sample and recovery lifecycle
+
+Reset is scoped to the selected sample and remains undoable. A genuine draft for another sample
+is retained and its notice names its files. Checks cover a fresh reset, a prior large-file draft,
+sample switches, restore/reset, reload, late claims, storage failures and concurrent token changes.
+Already-saved identical drafts are removed on reopen without changing documents. A recovery read
+cannot cancel cleanup of the page's own saved draft. Cleanup always compares the exact stored
+token, so another page's newer work survives. View state is keyed by the actual view handle;
+workspace-local view IDs must not transfer carets or scrolling between samples.
 
 The milestone typecheck, all 403 model tests and dependency-free build passed. The broad
 Chromium campaign passed 729/731 cases. One existing isolated headless-clipboard case missed

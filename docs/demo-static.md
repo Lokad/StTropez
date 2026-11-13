@@ -35,6 +35,14 @@ Edits retain provisionally mapped syntax colors and the last completed output wh
 runs; the footer reports pending or unavailable analysis. Only current worker results replace
 them. File changes clear presentation ownership. See the [visible-continuity checks](demo-qualification.md#visible-continuity-and-complete-host-coverage).
 
+Reset sample restores only the selected sample's original files as an undoable edit. Saved
+copies and drafts for other samples are retained. Recovery notices name the draft's files:
+visiting Large file can therefore offer unsaved edits from an earlier visit even after resetting
+Shopping cart. Restore applies them, Download preserves a copy, and Keep current files discards
+that exact offered draft. A draft already identical to the current saved files is cleared on
+reopen; token checks prevent cleanup from deleting a newer draft written by another page.
+Caret/scroll snapshots belong to the actual document view, independently of workspace-local IDs.
+
 ## Build and qualify
 
 ```sh

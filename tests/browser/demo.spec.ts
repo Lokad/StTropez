@@ -47,10 +47,11 @@ test("demo retains independent samples and resets both project files through sha
     await helper.press("Control+Home"); await helper.pressSequentially("/* Helper edit */");
     await page.locator("#sample").selectOption("unicode");
     const unicode = page.getByRole("textbox", { name: "greetings.ts", exact: true });
+    await expect(unicode).toBeVisible(); await expect(page.locator("#cursor")).toHaveText("Ln 1, Col 1");
     await unicode.press("Control+Home"); await unicode.pressSequentially("/* Unicode edit */");
     await page.locator("#sample").selectOption("pricing");
     await expect(helper).toBeVisible(); await expect(page.locator("#editor")).toContainText("/* Helper edit */");
-    await page.getByRole("button", { name: "Reset", exact: true }).click();
+    await page.getByRole("button", { name: "Reset sample", exact: true }).click();
     await expect(helper).toBeFocused(); await expect(page.locator("#files")).not.toContainText("●");
     await expect(page.locator("#editor")).not.toContainText("/* Helper edit */");
     await helper.press("Control+z");

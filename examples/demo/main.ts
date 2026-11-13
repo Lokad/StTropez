@@ -136,7 +136,7 @@ function mountFile(file: DemoFile, focus = false): void {
     if (!project || disposed || editor?.snapshot().composing) return;
     const viewState = editor?.captureView();
     const previous = active;
-    if (previous && viewState) savedViews.set(previous.view.id, viewState);
+    if (previous && viewState) savedViews.set(previous.view, viewState);
     detachView(); active = file; activeFiles.set(project.sample.id, file.name);
     element("workspace").classList.toggle("reviewing", panel === "changes");
     if (panel === "changes") {
@@ -153,7 +153,7 @@ function mountFile(file: DemoFile, focus = false): void {
             { view: file.view, ariaLabel: file.name, decorate: presentation.decorate });
         renderProblems();
     }
-    if (savedViews.has(file.view.id)) editor.restoreView(savedViews.get(file.view.id)!);
+    if (savedViews.has(file.view)) editor.restoreView(savedViews.get(file.view)!);
     viewListeners = new AbortController();
     editor.element.addEventListener("sttropez-render", renderGutter, { signal: viewListeners.signal });
     editor.input.addEventListener("compositionstart", renderMetadata, { signal: viewListeners.signal });
@@ -177,7 +177,8 @@ function mountFile(file: DemoFile, focus = false): void {
     languageView = attachLanguage(project, file, editor);
     renderMetadata(); renderLanguage(); renderOutput(); if (focus) editor.focus();
 }
-const savedViews = new Map<string, ReturnType<EditingCandidate["captureView"]>>();
+// View IDs are local to a Workspace; each sample owns a separate workspace.
+const savedViews = new Map<DemoFile["view"], ReturnType<EditingCandidate["captureView"]>>();
 async function openSample(id: SampleId): Promise<void> {
     if (editor?.snapshot().composing) { sample.value = project!.sample.id; return; }
     const generation = ++opening; sample.disabled = true;
@@ -187,7 +188,7 @@ async function openSample(id: SampleId): Promise<void> {
     stopWorkspace?.(); stopWorkspace = undefined;
     stopRecovery?.(); stopRecovery = undefined;
     stopLanguage?.(); stopLanguage = undefined;
-    if (active && editor) savedViews.set(active.view.id, editor.captureView());
+    if (active && editor) savedViews.set(active.view, editor.captureView());
     detachView(); project?.language.suspend(); active = undefined; project = next;
     sample.value = id; sample.disabled = false;
     element("description").textContent = next.sample.description;
@@ -242,7 +243,7 @@ on("panel-collapse", () => {
 });
 on("walkthrough-toggle", () => { element("walkthrough").hidden = !element("walkthrough").hidden; });
 on("reset", () => {
-    if (!project || editor?.snapshot().composing || !window.confirm("Restore the original sample in all its files? You can undo this change. The saved copy changes only when you save locally.")) return;
+    if (!project || editor?.snapshot().composing || !window.confirm(`Restore the original files in “${project.sample.title}”? You can undo this change. Other samples and recovery drafts are kept. The saved copy changes only when you save locally.`)) return;
     project.reset(); renderMetadata(); editor?.focus();
 });
 async function save(reviewed = false): Promise<void> {
