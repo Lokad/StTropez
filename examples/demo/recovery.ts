@@ -154,6 +154,16 @@ export class DemoRecovery {
         }).then(() => { if (!this.offer && this.dirty() && !this.running) this.schedule(); });
     }
     private dirty(): boolean { return this.files.some(file => file.resource.metadata.getSnapshot().dirty); }
+    /** Save completion must not leave this page's older draft behind a deferred cleanup timer. */
+    async settleSavedDraft(): Promise<void> {
+        if (this.disposed || this.dirty()) return;
+        this.cancelTimer();
+        while (!this.disposed && this.running) await this.running;
+        if (this.disposed) return;
+        if (this.dirty()) { this.schedule(); return; }
+        // An offered draft belongs to another page/session until explicitly claimed or discarded.
+        if (this.loaded && !this.offer) await this.checkpoint();
+    }
     private checkpoint(): Promise<void> {
         if (this.disposed || this.offer || !this.loaded) return Promise.resolve();
         const capture = this.capture(), dirty = this.dirty(), expected = this.token, baseVersion = this.baseVersion();

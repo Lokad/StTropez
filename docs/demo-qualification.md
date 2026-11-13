@@ -100,6 +100,13 @@ Already-saved identical drafts are removed on reopen without changing documents.
 cannot cancel cleanup of the page's own saved draft. Cleanup always compares the exact stored
 token, so another page's newer work survives. View state is keyed by the actual view handle;
 workspace-local view IDs must not transfer carets or scrolling between samples.
+Save and recovery restoration also require settled input, including deferred commands and queued
+typing. A save clicked during a pending command reports that editing must finish before retrying;
+it does not capture an older revision as if that already-accepted command had completed. The shared
+editing journey verifies the refusal, subsequent save and reload without a redundant recovery offer.
+Successful save feedback waits for cleanup of this page's own draft token, even when that draft
+contains older text. Cleanup failure remains visible through recovery status; offered or newer peer
+drafts are preserved. This closes the reload window between a saved revision and deferred cleanup.
 
 The milestone typecheck, all 403 model tests and dependency-free build passed. The broad
 Chromium campaign passed 729/731 cases. One existing isolated headless-clipboard case missed

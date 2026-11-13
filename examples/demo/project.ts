@@ -36,7 +36,9 @@ export class DemoProject {
     private reviewedRevisions: readonly number[] | undefined;
     saving = false;
     message = "Changes are kept in this page until you save locally.";
+    private readonly inputIdle: () => boolean;
     private constructor(id: SampleId, store: DraftStore, token: string | null, saved: StoredProject | null, inputIdle: () => boolean) {
+        this.inputIdle = inputIdle;
         this.sample = demoSample(id); this.store = store; this.token = token;
         this.files = Object.entries(this.sample.files).map(([name, initial]) => {
             const resource = this.workspace.createTextResource({ scope: `demo:${id}`, resource: name, variant: "working" }, name,
@@ -89,6 +91,7 @@ export class DemoProject {
     }
     async save(changed: () => void, reviewed = false): Promise<void> {
         if (this.disposed || this.saving) return;
+        if (!this.inputIdle()) { this.message = "An edit is still in progress. Save again when it finishes."; changed(); return; }
         if (reviewed && !this.canSaveReviewed()) return;
         this.saving = true;
         const expected = reviewed ? this.conflict!.token : this.token;
@@ -107,6 +110,8 @@ export class DemoProject {
             for (const { file, ticket, buffer } of tickets) {
                 ticket.accept({ serverVersion: token }); this.baselines.set(file.name, { buffer, version: token });
             }
+            await this.recovery.settleSavedDraft();
+            if (this.disposed) return;
             this.message = "Saved in this browser. Later edits remain unsaved.";
         } catch (error) {
             // The store checks the captured token in one read/write transaction across every file.

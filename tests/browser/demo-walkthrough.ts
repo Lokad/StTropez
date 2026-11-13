@@ -32,6 +32,23 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     expect(await page.locator(".st-comparison .st-editing-candidate").evaluateAll(nodes => nodes.map(node => getComputedStyle(node).tabSize))).toEqual(["4", "4"]);
     await page.getByRole("textbox", { name: "Comparison working source", exact: true }).press("Control+z");
     await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toHaveValue("a\nb\n");
+    await page.getByRole("button", { name: "JavaScript", exact: true }).click();
+    await replace("// pending\n".repeat(4096));
+    await expect(page.locator("#recovery-status")).toHaveText("Recovery draft captured in this browser.");
+    await source.press("Control+a");
+    await source.evaluate(input => {
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+        document.querySelector<HTMLButtonElement>("#save")!.click();
+    });
+    await expect(page.locator("#status")).toHaveText("An edit is still in progress. Save again when it finishes.");
+    await source.press("Control+Home"); await expect(page.locator("#cursor")).toHaveText("Ln 1, Col 1");
+    await expect.poll(async () => (await source.inputValue()).startsWith("\t// pending")).toBe(true);
+    await page.getByRole("button", { name: "Save locally", exact: true }).click();
+    await expect(page.locator("#status")).toContainText("Saved in this browser");
+    await expect(page.locator("#files")).not.toContainText("●");
+    await page.reload(); await expect.poll(async () => (await source.inputValue()).startsWith("\t// pending")).toBe(true);
+    await expect(page.locator("#recovery-status")).not.toHaveText("Checking recovery…");
+    await expect(page.locator("#recovery-offer")).toBeHidden();
 }
 
 /** The labeled template provider shares the public completion/input/history paths. */

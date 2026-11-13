@@ -203,7 +203,10 @@ async function openSample(id: SampleId): Promise<void> {
     if (editor?.snapshot().composing) { sample.value = project!.sample.id; return; }
     const generation = ++opening; sample.disabled = true;
     let next = projects.get(id);
-    if (!next) { next = await DemoProject.open(id, () => project?.sample.id !== id || !editor?.snapshot().composing); if (disposed) { next.dispose(); return; } projects.set(id, next); }
+    if (!next) { next = await DemoProject.open(id, () => {
+        const state = project?.sample.id === id ? editor?.snapshot() : undefined;
+        return !state || !state.composing && !state.pendingInput && !state.pendingCommand;
+    }); if (disposed) { next.dispose(); return; } projects.set(id, next); }
     if (disposed || generation !== opening) return;
     stopWorkspace?.(); stopWorkspace = undefined;
     stopRecovery?.(); stopRecovery = undefined;

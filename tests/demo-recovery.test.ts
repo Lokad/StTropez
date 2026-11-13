@@ -156,3 +156,26 @@ test("automatic recovery exports text after the edit notification and clears its
     assert.equal(f.recovery.state.getSnapshot().message, "All changes are saved.");
     assert.equal(store.row, null);
 });
+
+test("save completion awaits exact-token cleanup of an older owned draft and preserves peer replacements", { timeout: 5000 }, async t => {
+    for (const peer of [false, true]) {
+        const store = new MemoryDraftStore(); store.row = null;
+        const f = fixture(store); t.after(() => f.recovery.dispose()); await ready(f.recovery); f.edit();
+        await new Promise<void>(resolve => {
+            const stop = f.recovery.state.subscribe(() => { if (f.recovery.state.getSnapshot().status === "protected") { stop(); resolve(); } });
+        });
+        const owned = store.row; f.edit(); // Saved text differs from the owned draft, before its next checkpoint.
+        const tickets = f.files.map(file => f.workspace.captureSave(file.resource));
+        for (const ticket of tickets) { ticket.start(); ticket.accept({ serverVersion: "saved" }); ticket.finish(); }
+        let release!: () => void, began!: () => void, settled = false;
+        const removing = new Promise<void>(resolve => { began = resolve; });
+        store.beforeRemove = () => new Promise(resolve => { release = resolve; began(); });
+        const save = f.recovery.settleSavedDraft().then(() => { settled = true; });
+        await removing; assert.equal(settled, false); assert.equal(store.row, owned);
+        const newer: StoredDraft = { token: "peer", value: { version: 1, sample: "sample", baseVersion: "saved", files: { "a.ts": "peer A", "b.ts": "peer B" } } };
+        if (peer) store.row = newer;
+        release(); await save;
+        assert.equal(store.row, peer ? newer : null);
+        assert.equal(f.recovery.state.getSnapshot().status, peer ? "failed" : "idle");
+    }
+});
