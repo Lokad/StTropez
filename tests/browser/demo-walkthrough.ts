@@ -55,7 +55,10 @@ export async function runDemoWalkthrough(page: Page, url = "/") {
     await main.press("Control+Home"); await main.pressSequentially("// Recover this cart\n");
     await page.locator('[data-file="pricing.ts"]').click(); await pricing.press("Control+Home"); await pricing.pressSequentially("// Recover this helper\n");
     await expect(page.locator("#recovery-status")).toHaveText("Recovery draft captured in this browser.", { timeout: 30000 });
-    await page.reload(); await expect(page.locator("#recovery-offer")).toBeVisible();
+    await page.reload();
+    // Module load does not await the example's asynchronous saved-project initialization.
+    await expect(main).toBeVisible({ timeout: 30000 });
+    await expect(page.locator("#recovery-offer")).toBeVisible();
     await expect(page.locator("#editor")).not.toContainText("// Recover this cart");
     await page.getByRole("button", { name: "Restore draft", exact: true }).click(); await expect(page.locator("#editor")).toContainText("// Recover this cart");
     await page.locator('[data-file="pricing.ts"]').click(); await expect(page.locator("#editor")).toContainText("// Recover this helper");
