@@ -13,7 +13,7 @@ import type { TextBuffer } from "../core/text-buffer.ts";
 import type { TextEdit } from "../core/changes.ts";
 import type { GraphemeCursor, GraphemeIndex } from "../core/graphemes.ts";
 import type { ViewState } from "./index.ts";
-import { inputContext } from "./input-context.ts";
+import { inputContext, inputContextUnits } from "./input-context.ts";
 import { localAsciiGraphemePoint } from "../core/grapheme-point.ts";
 import type { GraphemePoint } from "../core/grapheme-point.ts";
 import { captureNativeInsertion, resolveNativeInsertion } from "./input-target.ts";
@@ -748,6 +748,16 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         } else if (!composing && event.cancelable && (event.inputType === "historyUndo" || event.inputType === "historyRedo")) { event.preventDefault(); history(event.inputType === "historyUndo" ? "undo" : "redo"); }
         else syncSelection();
         if (!composing && !event.isComposing && !input.disabled && !input.readOnly && input.value === context.text) {
+            // Keep the native projection bounded during insertion, not just after input. Browsers
+            // may expand a multiline insertText into thousands of native edits before notifying us.
+            // Composition and incomplete/noncancelable events retain the captured native path.
+            if (event.cancelable && event.inputType === "insertText" && event.data !== null
+                && input.value.length - (input.selectionEnd - input.selectionStart) + event.data.length > inputContextUnits) {
+                event.preventDefault();
+                const text = event.data.replace(/\r\n?/g, "\n"), typing = !text.includes("\n");
+                replaceSelection(text, typing ? "typing" : "replace", typing ? "insertText" : undefined);
+                return;
+            }
             insertion = captureInput(event.inputType, event.data);
         }
     }

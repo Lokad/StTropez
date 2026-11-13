@@ -162,7 +162,26 @@ export async function measureDemo(browser, url, identity, abortBrowser) {
             if (corpus === "semantic") {
                 const source = page.getByRole("textbox", { name: "main.ts", exact: true }); await source.press("Control+a");
                 const text = Array.from({ length: 2000 }, (_, i) => `/** Format item ${i}. */\nexport function item${i}(value: number): string {\n    const result = value + ${i};\n    return "Item ${i}: " + result;\n}\n`).join("");
+                const before = await snapshot(page); activeCase.phase = "bulk-insertion";
+                await source.evaluate(input => {
+                    const listeners = new AbortController(), observation = { beforeInputAt: undefined, events: 0, peakNativeUnits: input.value.length };
+                    globalThis.demoBulkObservation = { observation, finish: () => listeners.abort() };
+                    for (const type of ["beforeinput", "input"]) input.addEventListener(type, () => {
+                        observation.beforeInputAt ??= performance.now(); observation.events++;
+                        observation.peakNativeUnits = Math.max(observation.peakNativeUnits, input.value.length);
+                    }, { capture: true, signal: listeners.signal });
+                });
                 sampleAt = performance.now(); await localInteraction(async () => { await page.keyboard.insertText(text); await ready(page); }, abortBrowser);
+                const state = await snapshot(page), observations = await page.evaluate(() => {
+                    const { observation, finish } = globalThis.demoBulkObservation; finish();
+                    return { ...observation, beforeInputToFrameProxyMs: performance.now() - observation.beforeInputAt };
+                });
+                activeCase.bulkInput = { units: text.length, completeActionProxyMs: performance.now() - sampleAt,
+                    ...observations, beforeInputHandlerMs: state.editor.lastBeforeInputMs,
+                    nativeInputEvents: state.editor.inputEvents - before.editor.inputEvents, commits: state.editor.commits - before.editor.commits };
+                assert.equal(state.length, text.length); assert.equal(state.revision, before.revision + 1);
+                assert.equal(state.selection.anchor, text.length); assert.equal(state.selection.head, text.length);
+                assert.equal(activeCase.bulkInput.commits, 1); assert.ok(observations.peakNativeUnits <= 2560); bounded(state);
             }
             await ready(page); const firstEditorProxyMs = performance.now() - sampleAt, initial = await snapshot(page);
             if (corpus === "large") assert.equal(initial.lines, 100000);
@@ -214,7 +233,7 @@ export async function measureDemo(browser, url, identity, abortBrowser) {
             Object.assign(activeCase, { phase: "complete", saveAckProxyMs, saveAndReviewProxyMs,
                 wholeHost: await page.evaluate(() => globalThis.demoHostPerformance),
                 resources: await page.evaluate(() => performance.getEntriesByType("resource").map(e => ({ name: new URL(e.name).pathname, duration: e.duration, encodedBodySize: e.encodedBodySize }))) });
-            console.log(JSON.stringify({ corpus, firstEditorProxyMs, firstEditFrameMs: firstEdit.beforeInputToFrameProxyMs, feedbackMs: firstEdit.feedback.beforeInputToFeedbackProxyMs,
+            console.log(JSON.stringify({ corpus, firstEditorProxyMs, bulkInput: activeCase.bulkInput, firstEditFrameMs: firstEdit.beforeInputToFrameProxyMs, feedbackMs: firstEdit.feedback.beforeInputToFeedbackProxyMs,
                 typing: typing.map(t => ({ position: t.position, handlerP95: t.inputHandlerMs.p95, frameP95: t.beforeInputToFrameProxyMs.p95, automationP95: t.completeActionProxyMs.p95 })),
                 completionVisibleProxyMs, completionAppliedProxyMs, compareReadyProxyMs, saveAckProxyMs, saveAndReviewProxyMs }));
         } catch (error) { phaseError = error; throw error; }

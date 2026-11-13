@@ -19,8 +19,13 @@ The native context contains up to 256 UTF-16 units around either side of a selec
 2,048 selected units. Larger selections become one selected placeholder, with reversible maps
 to the real range. The adapter normalizes only that context to native LF coordinates and maps
 edits back to raw model offsets. It diffs bounded context values and submits one revision-checked
-transaction with the resulting model selection. Inserted text can exceed the context limit
-during a native event; context is rebuilt after the commit. Ordinary typing, navigation,
+transaction with the resulting model selection. A cancellable, non-composing `insertText` with
+known data that would exceed the 2,560-unit native context is applied through the existing
+selection transaction before native mutation. This prevents transient textarea expansion and
+multiline native event storms. It preserves captured multiple selections, native LF insertion
+semantics and shared undo; it emits no synthetic `input` event. Composition, missing-data and
+noncancellable events retain native capture and can exceed the context limit until commit.
+Ordinary typing, navigation,
 scrolling and metadata changes never export the full buffer. Explicit copying may read a large
 selected range; paste and indentation still have costs proportional to their changed content.
 

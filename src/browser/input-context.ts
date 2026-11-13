@@ -6,8 +6,10 @@ import type { TextBuffer } from "../core/text-buffer.ts";
 
 export type InputContext = Readonly<{ text: string; from: number; to: number; nativeAnchor: number; nativeHead: number;
     toModel: (offset: number, affinity?: Affinity) => number; toNative: (offset: number, affinity?: Affinity) => number }>;
+const defaultContextUnits = 256, defaultSelectedUnits = 2048;
+export const inputContextUnits = defaultContextUnits * 2 + defaultSelectedUnits;
 /** A large selection is represented by one selected placeholder, never by exporting its contents. */
-export function inputContext(buffer: TextBuffer, selection: Selection, contextUnits = 256, selectedUnits = 2048): InputContext {
+export function inputContext(buffer: TextBuffer, selection: Selection, contextUnits = defaultContextUnits, selectedUnits = defaultSelectedUnits): InputContext {
     const low = Math.min(selection.anchor, selection.head), high = Math.max(selection.anchor, selection.head);
     if (![low, high, contextUnits, selectedUnits].every(Number.isSafeInteger) || low < 0 || high > buffer.length || contextUnits < 0 || selectedUnits < 0) throw new RangeError("Invalid input context.");
     const from = Math.max(0, low - contextUnits), to = Math.min(buffer.length, high + contextUnits), compressed = high - low > selectedUnits;
