@@ -5,7 +5,9 @@ export function actionsControls(tools: HostActionsTools) {
         { label: "Preview module action", invoke: tools.request, disabled: !s.available || s.disconnected || s.pending },
         { label: s.command ? "Execute captured action" : "Apply captured action", invoke: () => tools.apply(s.token), disabled: !s.canApply },
         { label: "Dismiss action preview", invoke: tools.cancel, disabled: s.token === null },
-        ...(tools.usesLsp ? [{ label: "Previous action edits", invoke: () => tools.previousPage(), disabled: s.pending || s.page === 0 },
+        ...(tools.usesLsp ? [{ label: "Previous action choices", invoke: () => tools.moveChoicePage(-1), disabled: s.pending || s.choicePage === 0 },
+            { label: "Next action choices", invoke: () => tools.moveChoicePage(1), disabled: s.pending || (s.choicePage + 1) * 16 >= s.choices.length },
+            { label: "Previous action edits", invoke: () => tools.previousPage(), disabled: s.pending || s.page === 0 },
             { label: "Next action edits", invoke: () => tools.nextPage(), disabled: s.pending || (s.page + 1) * 64 >= s.editCount }] : []),
         { label: "Disconnect action provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
         { label: "Reconnect action provider", invoke: tools.reconnect, disabled: !s.disconnected && !s.reconnectRequired && s.status !== "failed" }
@@ -23,11 +25,11 @@ export function mountActionsPanel(host: HTMLElement, tools: HostActionsTools): (
     title.setAttribute("aria-label", "Captured action title"); edits.setAttribute("aria-label", "Proposed action edits"); changed.onclick = tools.openChanged;
     const buttons = actionsControls(tools).map(action => { const button = owner.createElement("button"); button.textContent = action.label; controls.append(button); return button; });
     host.replaceChildren(heading, description, status, label, controls, ...(tools.usesLsp ? [choices] : []), title, edits, ...(tools.usesLsp ? [changes] : [changed])); let previous: unknown, previousChoices: unknown, previousChanges: unknown;
-    let choiceButtons: HTMLButtonElement[] = [];
+    let choiceButtons: HTMLButtonElement[] = [], previousChoicePage = -1;
     const render = () => { const s = tools.state.getSnapshot(); status.textContent = s.message; if (module.value !== s.module) module.value = s.module; title.textContent = s.title;
         for (const [i, action] of actionsControls(tools).entries()) { buttons[i]!.textContent = action.label; buttons[i]!.disabled = action.disabled; buttons[i]!.onclick = action.invoke; }
-        if (previousChoices !== s.choices) { previousChoices = s.choices; choiceButtons = []; choices.replaceChildren(...s.choices.map(choice => { const li = owner.createElement("li"), button = owner.createElement("button"); button.textContent = actionChoiceLabel(choice); button.onclick = () => tools.selectChoice(choice.index); choiceButtons.push(button); li.append(button); return li; })); }
-        for (const [index, button] of choiceButtons.entries()) { button.disabled = s.pending; button.setAttribute("aria-pressed", String(s.choice === index)); }
+        if (previousChoices !== s.choices || previousChoicePage !== s.choicePage) { previousChoices = s.choices; previousChoicePage = s.choicePage; choiceButtons = []; choices.start = s.choicePage * 16 + 1; choices.replaceChildren(...s.choices.slice(s.choicePage * 16, (s.choicePage + 1) * 16).map(choice => { const li = owner.createElement("li"), button = owner.createElement("button"); button.textContent = actionChoiceLabel(choice); button.onclick = () => { if (tools.state.getSnapshot().token === s.token) tools.selectChoice(choice.index); }; choiceButtons.push(button); li.append(button); return li; })); }
+        for (const [index, button] of choiceButtons.entries()) { button.disabled = s.pending; button.setAttribute("aria-pressed", String(s.choice === s.choicePage * 16 + index)); }
         if (previous !== s.edits) { previous = s.edits; edits.start = s.page * 64 + 1; edits.replaceChildren(...s.edits.map(at => { const li = owner.createElement("li"), pre = owner.createElement("pre"); pre.textContent = actionTarget(at); li.append(pre); return li; })); }
         if (previousChanges !== s.changes) { previousChanges = s.changes; changes.replaceChildren(...s.changes.map(change => { const button = owner.createElement("button"); button.textContent = `Open action changes in ${change.title}`; button.onclick = () => tools.openChangedDocument(change.document); return button; })); }
         for (const button of changes.querySelectorAll("button")) button.disabled = s.token !== null;

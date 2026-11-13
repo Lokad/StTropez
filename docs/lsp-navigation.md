@@ -27,7 +27,9 @@ editor view. No server URI is fetched, normalized, launched as a URL or silently
 targets refuse the entire batch. LocationLink selection ranges must lie inside their target ranges;
 optional origin ranges use the captured source. All ranges use strict raw UTF-16 positions, with no
 silent source-range clamping. Mixed location/link arrays and malformed final entries are refused
-before publishing any result. The bound is 1,024 locations; exceeding it fails explicitly.
+before publishing any result. All locations within the configured transport limits are retained;
+the decoder imposes no additional result-count quota. The demo and evaluation hosts page results
+in groups of 64, retaining access to later locations by keyboard and controls.
 
 The host navigation backend binds the captured working project, synchronizes it and then sends
 the actual source position. A local word heuristic may label the request, but does not suppress

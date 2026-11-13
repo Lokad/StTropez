@@ -22,7 +22,8 @@ The existing deterministic protocol fixture keeps its separate `/lsp-fixture` ro
 ## Current workflows
 
 - Problems lists syntactic/type errors across the sample's files. Clicking an error selects
-  its captured range in its named file. Typing expires the published project diagnostics.
+  its captured range in its named file. All errors are retained, with 64 rows per page.
+  Typing expires the published project diagnostics.
 - Member access and ordinary identifier typing can offer completion automatically. Ctrl+Space
   or Code → Complete requests suggestions explicitly. Arrow keys select a candidate; Enter or a click
   accepts it after resolution. Escape dismisses the offer. The public editor controller applies
@@ -63,8 +64,8 @@ read-only synchronous syntactic/semantic diagnostic commands over the same conne
 The client flushes and captures every project document before requesting them, then validates
 all document captures and the request generation before publication. Edits, suspend/dispose
 or changed provider participation reject a late result. This is a documented host extension,
-not qualification of standard LSP diagnostic pull. Each syntactic or semantic response
-contributes at most 256 diagnostics per file/check; wider presentation remains a support limit.
+not qualification of standard LSP diagnostic pull. Each syntactic or semantic response is
+validated completely, with no silent diagnostic truncation. Existing transport limits remain.
 
 Quick fixes need the pinned server's diagnostic codes. Before requesting standard code actions,
 the host obtains fresh syntactic/semantic results over the same captured public request scope.
@@ -103,6 +104,12 @@ and import on resolve. Both use standard completion messages and the public cont
 selection and history paths. An unsupported-variable example is individually omitted with a
 reason. TypeScript still checks, colors and compiles the editable result. Template resolution
 requires the captured URI and document version; it cannot insert after that source changes.
+
+The **Project-wide results · 1,200 uses** sample supplies real TypeScript results: 300 type
+errors in `problems.ts` and 1,201 references/rename edits for `sharedValue` in `uses.ts`.
+Problems and locations page 64 entries; arrow navigation crosses reference pages. Rename
+previews page 64 edits and apply the complete batch as one undo command. Switching samples
+cannot retain another sample's problem page or retarget a captured result.
 
 The bridge fixes the project root/compiler settings, validates addressed document URIs and
 read-command file paths, and writes only known sample files in its allocated workspace.

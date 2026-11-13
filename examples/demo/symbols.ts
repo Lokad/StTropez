@@ -17,7 +17,7 @@ export function mountDemoSymbols(workspace: Workspace, files: readonly DemoFile[
     renamePopup.setAttribute("role", "dialog"); renamePopup.setAttribute("aria-label", "Rename symbol");
     document.body.append(popup, renamePopup);
     let disposed = false;
-    type Query = { choice: number; current: () => boolean; result?: Awaited<ReturnType<typeof navigation.run>> };
+    type Query = { choice: number; message: string; current: () => boolean; result?: Awaited<ReturnType<typeof navigation.run>> };
     let query: Query | undefined;
     const idle = () => { const s = editor.snapshot(); return !disposed && valid() && !s.composing && !s.pendingInput && !s.pendingCommand; };
     const position = (element: HTMLElement) => {
@@ -37,24 +37,34 @@ export function mountDemoSymbols(workspace: Workspace, files: readonly DemoFile[
         cancelNavigation(); open(target);
     };
     const showNavigation = (captured: Query, message: string) => {
+        captured.message = message;
         const focused = popup.contains(document.activeElement);
         const note = document.createElement("p"); note.textContent = message;
-        const buttons = captured.result?.locations.flatMap((location, index) => {
+        const first = Math.floor(captured.choice / 64) * 64, total = captured.result?.locations.length ?? 0;
+        const buttons = captured.result?.locations.slice(first, first + 64).flatMap((location, index) => {
             const file = files.find(file => file.resource.documentId === location.target.document.documentId); if (!file) return [];
             const button = document.createElement("button"), doc = workspace.document(file.resource.documentId), line = doc.buffer.lineAt(location.from);
             button.textContent = `${doc.title} · ${line + 1}:${location.from - doc.buffer.offsetAt(line) + 1}`;
-            button.dataset.location = String(index);
+            button.dataset.location = String(first + index);
             button.addEventListener("click", () => choose(captured, location)); return button;
         }) ?? [];
+        const pages = document.createElement("div"), previous = document.createElement("button"), next = document.createElement("button"), count = document.createElement("span");
+        previous.textContent = "Previous locations"; next.textContent = "Next locations"; pages.hidden = total <= 64;
+        previous.disabled = first === 0; next.disabled = first + 64 >= total; count.textContent = `${first + 1}–${Math.min(first + 64, total)} of ${total}`;
+        const move = (direction: number) => {
+            if (query !== captured || !captured.current() || !captured.result?.isCurrent()) return;
+            captured.choice = first + direction * 64; showNavigation(captured, message);
+        };
+        previous.onclick = () => move(-1); next.onclick = () => move(1); pages.append(previous, count, next);
         const close = document.createElement("button"); close.textContent = "Close locations"; close.addEventListener("click", () => { cancelNavigation(); editor.focus(); });
-        popup.replaceChildren(note, ...buttons, close); popup.hidden = false; position(popup); markChoice(captured);
+        popup.replaceChildren(note, pages, ...buttons, close); popup.hidden = false; position(popup); markChoice(captured);
         if (focused) editor.focus();
     };
     const request = (kind: "definition" | "references") => {
         if (!idle()) return; dismissOther(); closeRename(false); cancelNavigation(); editor.focus();
         const snapshots = files.map(file => workspace.document(file.resource.documentId)), selected = editor.view.getSnapshot().selectionSet;
         const folds = editor.view.folding.getSnapshot().generation, metadata = snapshots.map(doc => workspace.resourceForDocument(doc.id).metadata.getSnapshot());
-        const captured: Query = { choice: 0, current: () => idle() && editor.view.getSnapshot().selectionSet === selected
+        const captured: Query = { choice: 0, message: "", current: () => idle() && editor.view.getSnapshot().selectionSet === selected
             && editor.view.folding.getSnapshot().generation === folds && (document.activeElement === editor.input || popup.contains(document.activeElement))
             && snapshots.every((doc, i) => { const current = workspace.document(doc.id), access = workspace.resourceForDocument(doc.id).metadata.getSnapshot();
                 return current.revision === doc.revision && current.buffer === doc.buffer && access.editLock === metadata[i]!.editLock && access.capabilities === metadata[i]!.capabilities; }) };
@@ -100,7 +110,9 @@ export function mountDemoSymbols(workspace: Workspace, files: readonly DemoFile[
         else if (query?.result?.locations.length && !event.shiftKey) {
             if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                 event.preventDefault(); event.stopImmediatePropagation();
-                query.choice = (query.choice + (event.key === "ArrowDown" ? 1 : query.result.locations.length - 1)) % query.result.locations.length; markChoice(query);
+                const previousPage = Math.floor(query.choice / 64);
+                query.choice = (query.choice + (event.key === "ArrowDown" ? 1 : query.result.locations.length - 1)) % query.result.locations.length;
+                if (Math.floor(query.choice / 64) !== previousPage) showNavigation(query, query.message); else markChoice(query);
             } else if (event.key === "Enter") { event.preventDefault(); event.stopImmediatePropagation(); choose(query, query.result.locations[query.choice]!); }
         }
     }, { capture: true, signal: events.signal });

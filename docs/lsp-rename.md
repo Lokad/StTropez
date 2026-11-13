@@ -20,8 +20,9 @@ Every opaque URI resolves through a host callback. Unknown URIs, repeated docume
 out-of-bounds UTF-16 ranges, overlapping edits and malformed final entries refuse the entire batch.
 The decoder sorts original-coordinate edits stably and retains equal-position insertion order.
 Raw surrogate units and CRLF/LF/bare-CR text are preserved; positions are never silently clamped.
-Bounds are 100 unique documents, 1,024 edits, 16,384 inserted units per edit and 65,536 aggregate
-inserted units. File creation/rename/deletion and change annotations are explicitly unsupported.
+There are no extra decoder quotas on document/edit counts or inserted text. The existing session
+document limits and transport message/JSON limits remain host-configurable. Direct decoder
+callers own input-size policy. File creation/rename/deletion and change annotations are explicitly unsupported.
 No server URI is fetched, launched or retargeted to another resource.
 
 The host uses a feature scope on the shared provider connection and keeps its captured source revision, complete selection

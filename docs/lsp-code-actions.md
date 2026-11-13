@@ -61,10 +61,11 @@ and locks. Complete-set undo/redo spans all participants, including unmounted wo
 Independent views map normally. Comparison baselines remain immutable, and Save/Run keep their
 primary captured resource even when an action reveals another target or later typing follows Save.
 
-Bounds are 64 choices, a 65,536-unit metadata validation budget, 8,192 units per opaque data/argument
-payload and 16,384 per diagnostic list/lazy action. Across immediate choices the limits are 1,024
-edits and 65,536 inserted units; each edit also uses the workspace validator's limits. A selected
-resolved batch has that validator's own bounds. Previews show 64 edits per page, abbreviate inserted
+Complete lists and lazy actions use the existing transport message/JSON limits without separate
+choice-count, metadata-string or aggregate edit quotas. Immutable JSON and full captured edit
+validation still apply. Command execution retains its separately documented argument/authority
+policy; decoding a command does not authorize its execution. The demo and evaluation hosts show
+16 action choices per page. Edit previews show 64 edits per page, abbreviate inserted
 text after 256 units with its full size, and keep deletion context bounded independently of range
 length. Confirming applies every validated edit, not only the visible page.
 

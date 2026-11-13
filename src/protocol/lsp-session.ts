@@ -20,6 +20,8 @@ export type LspDocument = Readonly<{ getSnapshot: () => LspDocumentSnapshot;
 export type LspCall<T> = Readonly<{ result: Promise<T>; cancel: () => void }>;
 export type LspDocumentCapture = Readonly<{ document: LspDocumentSnapshot; index: LspLineIndex; version: number;
     epoch: number; registrationGeneration: number; isCurrent: () => boolean;
+    /** Existing session size policy, also used to bound expanded snippet text. */
+    maxDocumentUnits?: number;
     /** Same binding/connection/capabilities; permits local revisions and proves no range freshness. */
     isBindingCurrent?: () => boolean }>;
 export type LspConnectContext = Readonly<{ epoch: number; cancelled: boolean; onCancel: (listener: () => void) => () => void }>;
@@ -336,7 +338,7 @@ export class LspSession {
         const entry = this.handles.get(document); if (this.store.get().phase !== "ready" || !entry || this.documents.get(entry.snapshot.uri) !== entry) return undefined;
         const remote = this.remote.get(entry.snapshot.uri); if (!remote || remote.snapshot !== entry.snapshot) return undefined;
         const epoch = this.epoch, generation = this.generation;
-        return Object.freeze({ document: remote.snapshot, index: remote.index, version: remote.version, epoch, registrationGeneration: generation,
+        return Object.freeze({ document: remote.snapshot, index: remote.index, version: remote.version, epoch, registrationGeneration: generation, maxDocumentUnits: this.maxDocumentUnits,
             isBindingCurrent: () => this.store.get().phase === "ready" && this.epoch === epoch && this.generation === generation && this.documents.get(remote.snapshot.uri) === entry,
             isCurrent: () => this.store.get().phase === "ready" && this.epoch === epoch && this.generation === generation && this.documents.get(remote.snapshot.uri) === entry
                 && entry.snapshot === remote.snapshot && this.remote.get(remote.snapshot.uri) === remote });

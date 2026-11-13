@@ -137,7 +137,7 @@ test("completion metadata and item defaults retain immutable resolve data with b
     assert.deepEqual(decoded.items[1]!.commitCharacters, [";"]); assert.deepEqual((decoded.items[1]!.resolve as { data: unknown }).data, { token: 8 });
     response.itemDefaults!.data.token = 99; assert.equal(opaque.data.token, 7);
     assert.deepEqual(decodeLspCompletions([{ label: "sample" }], capture, 8, undefined, { commitCharacters: [";"] }).items[0]!.commitCharacters, [";"]);
-    for (const bad of [{ label: "bad", filterText: 1 }, { label: "bad", sortText: false }, { label: "bad", preselect: 1 }, { label: "bad", commitCharacters: null }, { label: "bad", data: "x".repeat(8193) }]) assert.throws(() => decodeLspCompletions([response.items[0], bad], capture, 8, undefined, { resolve: true }));
+    for (const bad of [{ label: "bad", filterText: 1 }, { label: "bad", sortText: false }, { label: "bad", preselect: 1 }, { label: "bad", commitCharacters: null }, { label: "bad", data: { n: NaN } }]) assert.throws(() => decodeLspCompletions([response.items[0], bad], capture, 8, undefined, { resolve: true }));
 });
 
 test("completion resolution permits captured display/additional edits but refuses retargeting, overlap and stale documents", async () => {
@@ -213,7 +213,7 @@ test("definition links/references resolve exact host URI captures and reject who
     assert.equal(decodeLspLocations(location, "definition", origin.capture, resolve)[0]!.target, target);
     const linked = decodeLspLocations([link], "definition", origin.capture, resolve)[0]!; assert.equal(target.index.buffer.slice(linked.from, linked.to), "target"); assert.deepEqual(linked.originRange, { from: 0, to: 3 }); assert.equal(Object.isFrozen(linked), true);
     assert.equal(decodeLspLocations([location], "references", origin.capture, resolve).length, 1); assert.deepEqual(decodeLspLocations(null, "definition", origin.capture, resolve), []);
-    for (const bad of [[location, { ...location, uri: "custom+host:unknown" }], [location, { ...location, range: range(1, 0, 999) }], [link, location], [{ ...link, targetSelectionRange: range(1, 0, 18) }], [{ ...link, originSelectionRange: range(0, 0, 999) }], link, Array(1025).fill(location)]) assert.throws(() => decodeLspLocations(bad, "definition", origin.capture, resolve));
+    for (const bad of [[location, { ...location, uri: "custom+host:unknown" }], [location, { ...location, range: range(1, 0, 999) }], [link, location], [{ ...link, targetSelectionRange: range(1, 0, 18) }], [{ ...link, originSelectionRange: range(0, 0, 999) }], link]) assert.throws(() => decodeLspLocations(bad, "definition", origin.capture, resolve));
     assert.throws(() => decodeLspLocations([link], "references", origin.capture, resolve)); assert.throws(() => decodeLspLocations(location, "references", origin.capture, resolve));
     destination.expire(); assert.throws(() => decodeLspLocations([location], "definition", origin.capture, resolve), error => error instanceof RpcError && error.code === -32801);
     origin.expire(); assert.throws(() => decodeLspLocations([], "references", origin.capture, resolve), error => error instanceof RpcError && error.code === -32801);
@@ -235,15 +235,14 @@ test("workspace edits normalize versioned or unversioned batches without changin
     b.expire(); assert.equal(plan.isCurrent(), false); assert.throws(() => decodeLspWorkspaceEdit(response, resolve), error => error instanceof RpcError && error.code === -32801);
 });
 
-test("workspace edits reject the complete malformed, stale, aliased, annotated or oversized batch", async () => {
+test("workspace edits reject the complete malformed, stale, aliased or annotated batch", async () => {
     const { capture } = await captured("abc\r\ndef"), uri = capture.document.uri, valid = { range: range(0, 0, 1), newText: "x" }, entry = { textDocument: { uri, version: 3 }, edits: [valid] };
     const resolve = (value: string) => value === uri || value === "alias" ? { ...capture, document: { ...capture.document, uri: value } } : undefined;
     for (const value of [null, { changes: null }, { documentChanges: [entry, { ...entry, textDocument: { uri: "unknown", version: 3 } }] },
         { documentChanges: [entry, { ...entry, textDocument: { uri: "alias", version: 3 } }] }, { documentChanges: [{ ...entry, textDocument: { uri, version: 70 } }] },
         { documentChanges: [{ ...entry, textDocument: { uri } }] }, { documentChanges: [entry, { kind: "create", uri: "new" }] }, { changeAnnotations: {}, documentChanges: [entry] },
         { changes: { [uri]: [valid, { ...valid, annotationId: "confirmation" }] } }, { changes: { [uri]: [valid, { range: range(0, 0, 2), newText: "overlap" }] } },
-        { changes: { [uri]: [valid, { range: range(1, 0, 999), newText: "invalid final" }] } }, { changes: { [uri]: Array(1025).fill({ range: range(0, 0, 0), newText: "" }) } },
-        { changes: { [uri]: [{ ...valid, newText: "x".repeat(16385) }] } }, { changes: { [uri]: Array(5).fill({ range: range(0, 0, 0), newText: "x".repeat(16384) }) } }]) assert.throws(() => decodeLspWorkspaceEdit(value, resolve));
+        { changes: { [uri]: [valid, { range: range(1, 0, 999), newText: "invalid final" }] } }]) assert.throws(() => decodeLspWorkspaceEdit(value, resolve));
     assert.equal(capture.document.buffer.slice(0, capture.document.buffer.length), "abc\r\ndef");
 });
 
@@ -261,14 +260,12 @@ test("code actions preserve disabled/preferred/command choices and resolve only 
     expire(); assert.equal(resolved.edit!.isCurrent(), false); assert.throws(() => decodeLspResolvedCodeAction({ ...values[3], edit }, actions[3]!, capture, resolve), error => error instanceof RpcError && error.code === -32801);
 });
 
-test("code actions refuse malformed final metadata/targets, incomplete lists and aggregate limits before publication", async () => {
+test("code actions refuse malformed final metadata/targets and incomplete lists before publication", async () => {
     const { capture } = await captured("abc"), resolve = (uri: string) => uri === capture.document.uri ? capture : undefined, edit = { changes: { [capture.document.uri]: [{ range: range(0, 0, 0), newText: "x" }] } };
     for (const bad of [{ title: 1 }, { title: "bad", isPreferred: 1 }, { title: "bad", disabled: {} }, { title: "bad", command: { title: "run", command: "c", arguments: {} } },
-        { title: "bad", data: { n: Infinity } }, { title: "bad", data: "x".repeat(8193) }, { title: "bad", edit: { changes: { unknown: [] } } },
+        { title: "bad", data: { n: Infinity } }, { title: "bad", edit: { changes: { unknown: [] } } },
         { title: "disabled", disabled: { reason: "Still validate its edits" }, edit: { changes: { unknown: [] } } }, { title: "bad", diagnostics: [{ range: range(0, 0, 99), message: "invalid" }] }]) assert.throws(() => decodeLspCodeActions([{ title: "valid", edit }, bad], capture, resolve, true));
-    assert.throws(() => decodeLspCodeActions({ partial: [] }, capture, resolve)); assert.throws(() => decodeLspCodeActions(Array(65).fill({ title: "many", edit }), capture, resolve));
-    const large = { title: "budget", edit: { changes: { [capture.document.uri]: [{ range: range(0, 0, 0), newText: "x".repeat(16384) }] } } };
-    assert.throws(() => decodeLspCodeActions(Array(5).fill(large), capture, resolve));
+    assert.throws(() => decodeLspCodeActions({ partial: [] }, capture, resolve));
 });
 
 test("workspace applyEdit requests retain a literal label and validate every captured target before review", async () => {
@@ -276,6 +273,40 @@ test("workspace applyEdit requests retain a literal label and validate every cap
     const value: ApplyWorkspaceEditParams = { label: "<img> review", edit: { documentChanges: [{ textDocument: { uri: capture.document.uri, version: 3 }, edits: [{ range: range(0, 0, 1), newText: "x" }] }] } };
     const request = decodeLspApplyEdit(value, resolve); assert.equal(request.label, "<img> review"); assert.equal(Object.isFrozen(request), true); assert.equal(request.edit.documents[0]!.target.document.revision, 70);
     assert.equal(decodeLspApplyEdit({ edit: {} }, resolve).label, null);
-    for (const bad of [{ label: 1, edit: {} }, { label: "x".repeat(257), edit: {} }, {}, { ...value, edit: { changes: { unknown: [] } } }]) assert.throws(() => decodeLspApplyEdit(bad, resolve));
+    for (const bad of [{ label: 1, edit: {} }, {}, { ...value, edit: { changes: { unknown: [] } } }]) assert.throws(() => decodeLspApplyEdit(bad, resolve));
     expire(); assert.equal(request.edit.isCurrent(), false); assert.throws(() => decodeLspApplyEdit(value, resolve));
+});
+
+test("practical diagnostic, reference, action and edit batches retain every result and validate their tails", async () => {
+    const { capture } = await captured("x\n".repeat(1200)), uri = capture.document.uri, resolve = (value: string) => value === uri ? capture : undefined;
+    const diagnostics = Array.from({ length: 300 }, (_, line) => ({ range: range(line, 0, 1), message: `${line}: ${"detail ".repeat(800)}` }));
+    const decoded = decodeLspDiagnostics({ uri, diagnostics }, capture);
+    assert.equal(decoded.items.length, 300); assert.equal(decoded.items[299]!.message, diagnostics[299]!.message); assert.equal(decoded.freshness, "unversioned");
+    assert.throws(() => decodeLspDiagnostics({ uri, diagnostics: [...diagnostics, { range: range(0, 1, 0), message: "invalid tail" }] }, capture));
+    const locations = Array.from({ length: 1200 }, (_, line) => ({ uri, range: range(line, 0, 1) }));
+    const references = decodeLspLocations(locations, "references", capture, resolve); assert.equal(references.length, 1200); assert.equal(references.at(-1)!.from, 2398);
+    assert.throws(() => decodeLspLocations([...locations, { uri, range: range(1201, 0, 1) }], "references", capture, resolve));
+    const edits = locations.map(item => ({ range: item.range, newText: "y" }));
+    const edit = { changes: { [uri]: edits } }, plan = decodeLspWorkspaceEdit(edit, resolve);
+    assert.equal(capture.document.buffer.apply(plan.documents[0]!.edits).buffer.text(), "y\n".repeat(1200));
+    assert.throws(() => decodeLspWorkspaceEdit({ changes: { [uri]: [...edits, { range: range(0, 0, 1), newText: "overlap" }] } }, resolve));
+    const actions = Array.from({ length: 65 }, (_, n) => ({ title: `Action ${n}`, edit: n === 64 ? edit : { changes: { [uri]: edits.slice(0, 20) } } }));
+    assert.equal(decodeLspCodeActions(actions, capture, resolve).at(-1)!.edit!.documents[0]!.edits.length, 1200);
+    assert.throws(() => decodeLspCodeActions([...actions, { title: "invalid tail", edit: { changes: { unknown: [] } } }], capture, resolve));
+    assert.equal(capture.document.buffer.text(), "x\n".repeat(1200));
+});
+
+test("large completion content and lazy metadata stay complete while snippet expansion follows session size policy", async () => {
+    const { capture } = await captured("x\n".repeat(70)), body = "a".repeat(20000), additionalTextEdits = Array.from({ length: 40 }, (_, n) => ({ range: range(n + 1, 0, 1), newText: "b" }));
+    const item = { label: "Generated declaration", detail: body, documentation: body, data: { context: body }, insertText: body, additionalTextEdits };
+    const decoded = decodeLspCompletions([item], capture, 1, { from: 0, to: 1, replaceTo: 1 }, { resolve: true }).items[0]!;
+    assert.equal(decoded.primary.text, body); assert.equal(decoded.additional.length, 40); assert.equal(decoded.documentation, body);
+    const resolved = decodeLspResolvedCompletion({ ...decoded.resolve as object, insertText: body + "z" }, decoded, capture);
+    assert.equal(capture.document.buffer.apply(resolved.replace.edits).buffer.text(), body + "z\n" + "b\n".repeat(40) + "x\n".repeat(29));
+    const snippet = { label: "Repeated declaration", insertTextFormat: 2, insertText: "${1:" + body + "}$1$0" };
+    assert.equal(decodeLspCompletions([snippet], { ...capture, maxDocumentUnits: 50000 }, 1).items[0]!.primary.text.length, 40000);
+    assert.equal(decodeLspCompletions([snippet], { ...capture, maxDocumentUnits: 30000 }, 1).omitted.length, 1);
+    assert.throws(() => decodeLspCompletions([item, { ...item, additionalTextEdits: [...additionalTextEdits, { range: range(69, 0, 999), newText: "invalid" }] }], capture, 1));
+    const lazy = decodeLspCompletions([{ label: "Lazy", insertTextFormat: 2 }], capture, 1, undefined, { resolve: true }).items[0]!;
+    assert.throws(() => decodeLspResolvedCompletion({ ...lazy.resolve as object, insertText: snippet.insertText }, lazy, { ...capture, maxDocumentUnits: 30000 }), UnsupportedLspSnippetError);
 });

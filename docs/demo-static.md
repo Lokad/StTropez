@@ -51,6 +51,9 @@ same public protocol. Ctrl+End, Ctrl+Space then Tab inserts linked fields; Tab/S
 them, Alt+Up/Down or the visible buttons select a choice, and Escape ends the session while
 keeping text. The lazy declaration supplies its body and import during resolution. TypeScript
 continues to color, check and compile the result. See the [supported snippet subset](lsp-editor.md).
+The **Project-wide results** sample exposes 300 diagnostics and 1,201 references/rename edits
+from real TypeScript analysis. Problems, reference navigation and edit previews retain the whole
+result while rendering 64 entries per page; applying a rename creates one shared undo command.
 
 ## Build and qualify
 
@@ -72,7 +75,7 @@ and clears only its verified generated `artifacts/pages` directory before rebuil
 Run `npm run test:demo` for Chromium, Firefox and WebKit. The suite reuses the complete source
 demo walkthrough/conflict helpers, checks that every request stays below the repository path
 and no backend/WebSocket is used, and exercises worker failure/retry, large-file editing and the
-same completion catalogue and snippet journeys used by the local provider and restored-assets demo.
+same completion catalogue, snippet and project-result journeys used by the local provider and restored-assets demo.
 The focused provider test covers raw UTF-16/CRLF incremental edits, versions and file confinement.
 Setting `STTROPEZ_DEMO_URL` runs the same browser tests against a deployed site without starting
 a local preview server. All unattended browsers run headless.

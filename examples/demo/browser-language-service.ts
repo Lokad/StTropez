@@ -15,7 +15,7 @@ const string = (value: unknown): string => { if (typeof value !== "string") thro
 const integer = (value: unknown): number => { if (!Number.isSafeInteger(value) || (value as number) < 0) throw new RpcError(-32602, "Expected a nonnegative integer."); return value as number; };
 const position = (value: unknown) => { const p = object(value); return { line: integer(p.line), character: integer(p.character) }; };
 const range = (value: unknown) => { const r = object(value); return { start: position(r.start), end: position(r.end) }; };
-const display = (parts: readonly ts.SymbolDisplayPart[] | undefined) => ts.displayPartsToString(parts ? [...parts] : undefined).slice(0, 4096);
+const display = (parts: readonly ts.SymbolDisplayPart[] | undefined, maximum = 4096) => ts.displayPartsToString(parts ? [...parts] : undefined).slice(0, maximum);
 
 /** Example-only, in-memory TypeScript provider. The compiler supplies all language intelligence.
  * This adapter exposes the demo's bounded LSP subset through existing public editor clients.
@@ -87,7 +87,7 @@ export class BrowserLanguageService {
             this.files.set(uri, { path, document: TextDocument.create(uri, "typescript", integer(doc.version), text) }); this.version++;
         } else if (method === "textDocument/didChange") {
             const p = object(params), identity = object(p.textDocument), file = this.file(identity.uri), version = integer(identity.version);
-            if (!Array.isArray(p.contentChanges) || p.contentChanges.length > 1024 || version <= file.document.version) throw new RpcError(-32602, "Invalid incremental synchronization.");
+            if (!Array.isArray(p.contentChanges) || version <= file.document.version) throw new RpcError(-32602, "Invalid incremental synchronization.");
             let text = file.document.getText();
             for (const value of p.contentChanges) {
                 const change = object(value), next = string(change.text);
@@ -113,8 +113,8 @@ export class BrowserLanguageService {
             const p = object(params), file = this.file(p.uri);
             if (p.kind !== "syntactic" && p.kind !== "semantic") throw new RpcError(-32602, "Unknown diagnostic kind.");
             const diagnostics = p.kind === "syntactic" ? this.service.getSyntacticDiagnostics(file.path) : this.service.getSemanticDiagnostics(file.path);
-            return { success: true, body: diagnostics.slice(0, 256).map(d => ({ start: d.start ?? 0, length: d.length ?? 0,
-                code: d.code, message: ts.flattenDiagnosticMessageText(d.messageText, "\n").slice(0, 4096) })) };
+            return { success: true, body: diagnostics.map(d => ({ start: d.start ?? 0, length: d.length ?? 0,
+                code: d.code, message: ts.flattenDiagnosticMessageText(d.messageText, "\n") })) };
         }
         if (method === "completionItem/resolve") {
             const uri = demoTemplateUri(params); if (uri) return resolveDemoTemplate(params, this.file(uri).document);
@@ -122,7 +122,7 @@ export class BrowserLanguageService {
             if (!stored) throw new RpcError(-32801, "Completion is no longer available.");
             const file = this.file(stored.uri), entry = stored.entry;
             const details = this.service.getCompletionEntryDetails(file.path, stored.offset, entry.name, {}, entry.source, {}, entry.data);
-            return { ...p, detail: display(details?.displayParts), documentation: display(details?.documentation) };
+            return { ...p, detail: display(details?.displayParts, Infinity), documentation: display(details?.documentation, Infinity) };
         }
         if (method === "textDocument/codeAction") {
             const p = object(params), file = this.file(object(p.textDocument).uri), at = range(p.range);
@@ -131,7 +131,7 @@ export class BrowserLanguageService {
                 .filter(d => (d.start ?? 0) <= to && (d.start ?? 0) + (d.length ?? 0) >= from).map(d => d.code);
             if (!codes.length) return [];
             return this.service.getCodeFixesAtPosition(file.path, from, to, codes, {}, {}).filter(fix => !fix.commands?.length
-                && fix.changes.every(change => !change.isNewFile && this.fileAt(change.fileName))).slice(0, 64)
+                && fix.changes.every(change => !change.isNewFile && this.fileAt(change.fileName)))
                 .map(fix => ({ title: fix.description, kind: "quickfix", edit: this.edits(fix.changes) }));
         }
         const { p, file, offset } = this.cursor(params);
@@ -172,7 +172,6 @@ export class BrowserLanguageService {
         if (method === "textDocument/definition" || method === "textDocument/references") {
             const entries = method === "textDocument/definition" ? this.service.getDefinitionAtPosition(file.path, offset) : this.service.getReferencesAtPosition(file.path, offset);
             const known = (entries ?? []).filter(entry => this.fileAt(entry.fileName));
-            if (known.length > 1024) throw new RpcError(-32000, "Too many demo navigation results.");
             return known.map(entry => { const target = this.fileAt(entry.fileName)!; return { uri: target.document.uri, range: this.span(target, entry.textSpan) }; });
         }
         if (method === "textDocument/prepareRename" || method === "textDocument/rename") {
@@ -182,7 +181,7 @@ export class BrowserLanguageService {
             const name = string(p.newName), scanner = ts.createScanner(ts.ScriptTarget.ES2022, false, ts.LanguageVariant.Standard, name);
             if (scanner.scan() !== ts.SyntaxKind.Identifier || scanner.scan() !== ts.SyntaxKind.EndOfFileToken) throw new RpcError(-32602, "Enter an identifier.");
             const locations = this.service.findRenameLocations(file.path, offset, false, false, { providePrefixAndSuffixTextForRename: true }) ?? [];
-            if (locations.length > 1024 || locations.some(location => !this.fileAt(location.fileName))) throw new RpcError(-32602, "Rename exceeds the open demo project.");
+            if (locations.some(location => !this.fileAt(location.fileName))) throw new RpcError(-32602, "Rename exceeds the open demo project.");
             const changes = new Map<string, ts.TextChange[]>();
             for (const location of locations) {
                 let edits = changes.get(location.fileName); if (!edits) { edits = []; changes.set(location.fileName, edits); }

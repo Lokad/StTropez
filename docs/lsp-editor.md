@@ -26,8 +26,9 @@ their provider version/origin revision remain unknown. The controls label that u
 An out-of-bounds range retains its wire range and message with an explicit unplaceable status and
 no marker. A local edit, reconnect or URI reuse expires the prior associations rather than relocating
 an uncertain analysis. These presentation anchors grant no edit authority. Messages are plain
-text; markup, links and commands are never executed. The bound is 256 items/65,536 text units per
-batch, with 4,096 units per message. Related-information/data presentation is not advertised.
+text; markup, links and commands are never executed. Complete batches use the host's existing
+transport limits, without an additional item/message-length quota. Related-information/data
+presentation is not advertised. Hosts should page large lists, as the demo Problems panel does.
 
 Completion follows ordinary prefix typing and advertised trigger characters after input settles.
 Ctrl/Cmd+Space and the existing button retain explicit invocation. A single captured caret is
@@ -94,13 +95,16 @@ Completion lists have no fixed candidate count or aggregate text/edit quota. Tra
 controlled by the host's `rpc.maxMessageUnits` (4,194,304 UTF-16 units by default); presentation
 limits belong to the host. `completionIncomplete` preserves the provider's partial-list status,
 independently of client filtering. The demo keeps at most 16 candidate rows while every matching
-candidate remains reachable. Per-item bounds remain 32 additional edits and 16,384 units per
-insertion. Overlaps, conflicting insertions,
+candidate remains reachable. Additional edits, insertion text, detail, documentation and opaque
+resolve data have no separate count/string-length quota. Overlaps, conflicting insertions,
 out-of-document positions and malformed final items refuse the entire result. Snippet support is
 advertised for the subset above; expanded insertion length is checked before allocating repeated
-defaults. Indentation adjustment and follow-up commands are not advertised and are refused if supplied.
-Resolve payloads are bounded to 32,768 units/item and 8,192 opaque data units/item;
-commit-character lists allow at most 64 entries. Rich Markdown rendering remains unsupported;
+defaults against the session's configured `maxDocumentUnits`. Captures from `LspSession` carry
+that limit. Callers constructing their own capture for the pure decoder should supply it when
+they need an expansion bound; these decoders do not constitute a transport or allocation policy.
+Opaque data still passes immutable JSON validation. Commit characters follow LSP's single-unit
+rule without silently truncating a provider list. Indentation adjustment and follow-up commands
+are not advertised and are refused if supplied. Rich Markdown rendering remains unsupported;
 documentation is literal text.
 
 Pending typing/navigation/table conversion, composition, multiple carets, source revision, selection

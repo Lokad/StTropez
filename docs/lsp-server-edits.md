@@ -20,7 +20,7 @@ host preparation edit or synchronization. Competing commands are refused before 
 
 `applyEdit` is an explicit session option. A `workspace/applyEdit` handler must be registered before
 connecting when that capability is advertised. `decodeLspApplyEdit` validates the optional literal
-label (256 units) and the entire [captured workspace text-edit batch](lsp-rename.md). URI identity,
+label and the entire [captured workspace text-edit batch](lsp-rename.md). URI identity,
 raw UTF-16 ranges and separate local/wire versions retain the same rules. Resource operations and
 change annotations remain unsupported. The reference peer is a development dependency; the
 runtime session and validation code use no third-party packages.

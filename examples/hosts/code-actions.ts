@@ -12,13 +12,13 @@ type Session = { token: number; id: string; target: TabTarget; editor: EditingCa
 type Job = { origin: Session; input: ActionInput; document: DocumentSnapshot; selections: SelectionSet; folds: number;
     sources: Map<DocumentId, Readonly<{ document: DocumentSnapshot; authority: string }>>; leases: ResourceLease[];
     stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; result: ActionResult | undefined;
-    batch?: LspActionBatch; selected?: LspCodeAction; choice: number | null; resolving: boolean; page: number };
+    batch?: LspActionBatch; selected?: LspCodeAction; choice: number | null; choicePage: number; resolving: boolean; page: number };
 export type ActionNote = Readonly<{ document: string; resource: string; title: string; revision: number; from: number; to: number; insert: string; context: string; before?: string; insertUnits?: number }>;
 export type ActionChoice = Readonly<{ index: number; title: string; kind: string | null; preferred: boolean; disabled: string | null; needsResolve: boolean }>;
 type ActionChange = Readonly<{ document: DocumentId; title: string }>;
 export type ActionsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; pending: boolean; canApply: boolean; token: number | null; module: string;
     status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied" | "executed"; message: string; title: string; disabled: string | null; work: number; total: number; command: string | null;
-    edits: readonly ActionNote[]; changed: ActionChange | null; changes: readonly ActionChange[]; choices: readonly ActionChoice[]; choice: number | null; resolving: boolean; page: number; editCount: number }>;
+    edits: readonly ActionNote[]; changed: ActionChange | null; changes: readonly ActionChange[]; choices: readonly ActionChoice[]; choice: number | null; choicePage: number; resolving: boolean; page: number; editCount: number }>;
 let serial = 0;
 /** Host-owned edit-bearing action. No provider command can execute without explicit confirmation. */
 export class HostActionsTools {
@@ -46,7 +46,7 @@ export class HostActionsTools {
     private fault: ActionInput["fault"];
     private readonly worker = navigationMetrics();
     private readonly metrics = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0 };
-    private readonly cell = new HostCell<ActionsSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, pending: false, canApply: false, token: null, module: "sample-utils", status: "idle", message: "Focus a candidate source to preview a module-import action.", title: "", disabled: null, work: 0, total: 0, command: null, edits: [], changed: null, changes: [], choices: [], choice: null, resolving: false, page: 0, editCount: 0 });
+    private readonly cell = new HostCell<ActionsSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, pending: false, canApply: false, token: null, module: "sample-utils", status: "idle", message: "Focus a candidate source to preview a module-import action.", title: "", disabled: null, work: 0, total: 0, command: null, edits: [], changed: null, changes: [], choices: [], choice: null, choicePage: 0, resolving: false, page: 0, editCount: 0 });
     readonly state = this.cell.observable;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, backendFactory?: LspActionFactory, reviewOwner?: HostProjectTools, provider?: LspWorkspace) {
         this.provider = provider;
@@ -82,7 +82,7 @@ export class HostActionsTools {
     }
     private disabled(action: LspCodeAction): string | null { return action.disabled ?? (action.command ? !this.reviewOwner || !this.job?.batch?.supports(action.command.command) ? "This command is not advertised by the captured provider." : null : !action.resolve && !action.edit?.documents.some(change => change.edits.length) ? "The provider returned no text changes." : null); }
     private publish(patch: Partial<ActionsSnapshot> = {}): void {
-        const job = this.job; this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active), connected: this.backend?.snapshot().connected ?? this.client?.snapshot().connected ?? false,
+        const job = this.job; this.cell.set({ ...this.cell.get(), ...patch, choicePage: job?.choicePage ?? 0, available: !!this.active && this.available(this.active), connected: this.backend?.snapshot().connected ?? this.client?.snapshot().connected ?? false,
             disconnected: this.disconnected, reconnectRequired: this.provider?.state.getSnapshot().commandRequiresReconnect ?? false, token: this.execution?.token ?? job?.input.id ?? null, pending: !!this.execution || !!job && (!job.ready || job.resolving), choice: job?.choice ?? null, resolving: job?.resolving ?? false, command: job?.selected?.command?.command ?? null,
             canApply: !this.execution && !!job?.ready && !job.resolving && this.current(job) && (job.batch ? !!job.selected && !!(job.selected.edit || job.selected.command) && !this.disabled(job.selected)
                 && (!job.selected.command || !!this.reviewOwner?.canRunAction(job.origin.editor)) && (job.selected.edit?.documents ?? []).filter(change => change.edits.length).every(change => this.editable(change.target.document.documentId as DocumentId)) : !!job.result && !job.result.action.disabled && this.editable(job.document.id)) });
@@ -135,7 +135,7 @@ export class HostActionsTools {
         try { input = validateActionInput({ operation: "action-start", id: ++this.sequence, document: doc.id, revision: doc.revision, length: doc.buffer.length, from: Math.min(selected.selection.anchor, selected.selection.head), to: Math.max(selected.selection.anchor, selected.selection.head), module, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid action capture." }); return; }
         this.fault = undefined; const win = origin.editor.element.ownerDocument.defaultView!, job: Job = { origin, input, document: doc, selections: selected.selectionSet, folds: origin.editor.view.folding.getSnapshot().generation,
-            sources: new Map(documents.map(doc => [doc.id, { document: doc, authority: this.authority(doc.id) }])), leases: [], stops: [], timer: 0, invalid: false, ready: false, result: undefined, choice: null, resolving: false, page: 0 };
+            sources: new Map(documents.map(doc => [doc.id, { document: doc, authority: this.authority(doc.id) }])), leases: [], stops: [], timer: 0, invalid: false, ready: false, result: undefined, choice: null, choicePage: 0, resolving: false, page: 0 };
         this.job = job; this.metrics.requested++;
         const changed = () => {
             if (this.publishing || this.job !== job) return;
@@ -174,7 +174,7 @@ export class HostActionsTools {
     }
     selectChoice(index: number): void {
         const job = this.job, action = job?.batch?.actions[index]; if (!job?.ready || job.resolving || !action || !this.current(job)) return;
-        job.choice = index; job.selected = action; job.page = 0;
+        job.choice = index; job.selected = action; job.page = 0; job.choicePage = Math.floor(index / 16);
         if (!action.resolve || this.disabled(action)) { this.showChoice(job); return; }
         const win = job.origin.editor.element.ownerDocument.defaultView!, configuration = { module: job.input.module, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }; this.fault = undefined;
         job.resolving = true; this.publish({ status: "pending", title: action.title, edits: [], editCount: 0, page: 0, disabled: null, message: "Resolving the captured action's edit preview." });
@@ -208,6 +208,10 @@ export class HostActionsTools {
     }
     nextPage(): void { const job = this.job; if (job?.selected?.edit && this.current(job) && !job.resolving && (job.page + 1) * 64 < this.cell.get().editCount) { job.page++; this.showChoice(job); } }
     previousPage(): void { const job = this.job; if (job?.selected && this.current(job) && !job.resolving && job.page > 0) { job.page--; this.showChoice(job); } }
+    moveChoicePage(direction: -1 | 1): void {
+        const job = this.job, state = this.cell.get(), page = state.choicePage + direction;
+        if (job?.ready && !job.resolving && this.current(job) && page >= 0 && page * 16 < state.choices.length) { job.choicePage = page; this.publish(); }
+    }
     apply(token: number | null): void {
         const job = this.job; if (this.execution || !job?.ready || job.resolving || token !== job.input.id || !this.current(job)
             || (job.batch ? !job.selected || !(job.selected.edit || job.selected.command) || !!this.disabled(job.selected) || (job.selected.edit?.documents ?? []).some(change => change.edits.length && !this.editable(change.target.document.documentId as DocumentId)) : !job.result || !!job.result.action.disabled || !this.editable(job.document.id))) { this.publish({ message: "Use a fresh applicable preview with edit permission." }); return; }

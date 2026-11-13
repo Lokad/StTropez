@@ -40,17 +40,17 @@ const record = (value: unknown): value is Record<string, unknown> => !!value && 
 const uint = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 0x7fffffff;
 function invalid(): never { throw new TypeError("Malformed or unsupported LSP feature result."); }
 function current(capture: Pick<LspDocumentCapture, "isCurrent">): void { if (!capture.isCurrent()) throw new RpcError(-32801, "LSP feature capture expired."); }
-function text(value: unknown, maximum: number, budget?: { units: number }): string {
+function text(value: unknown, maximum = Number.MAX_SAFE_INTEGER, budget?: { units: number }): string {
     if (typeof value !== "string" || value.length > maximum || budget && (budget.units -= value.length) < 0) invalid(); return value;
 }
-function documentation(value: unknown, budget?: { units: number }): string {
-    if (value === undefined) return ""; if (typeof value === "string") return text(value, 16384, budget);
-    if (!record(value) || value.kind !== "plaintext" && value.kind !== "markdown") invalid(); return text(value.value, 16384, budget);
+function documentation(value: unknown, budget?: { units: number }, maximum = Number.MAX_SAFE_INTEGER): string {
+    if (value === undefined) return ""; if (typeof value === "string") return text(value, maximum, budget);
+    if (!record(value) || value.kind !== "plaintext" && value.kind !== "markdown") invalid(); return text(value.value, maximum, budget);
 }
 function commitCharacters(value: unknown, budget?: { units: number }): readonly string[] {
-    if (value === undefined) return Object.freeze([]); if (!Array.isArray(value) || value.length > 64) invalid();
+    if (value === undefined) return Object.freeze([]); if (!Array.isArray(value)) invalid();
     // LSP specifies length=1; superfluous characters are ignored.
-    return Object.freeze([...new Set(value.map(value => text(value, 64, budget)).filter(value => value.length === 1))]);
+    return Object.freeze([...new Set(value.map(value => text(value, undefined, budget)).filter(value => value.length === 1))]);
 }
 function position(value: unknown): LspPosition {
     if (!record(value) || !uint(value.line) || !uint(value.character)) invalid(); return Object.freeze({ line: value.line, character: value.character });
@@ -69,14 +69,14 @@ export function lspRangeOffsets(index: LspLineIndex, value: unknown): Readonly<{
  * Unplaceable ranges retain their message and wire range; malformed structures reject the batch.
  */
 export function decodeLspDiagnostics(value: unknown, capture: LspDocumentCapture): LspDiagnostics {
-    current(capture); if (!record(value) || value.uri !== capture.document.uri || !Array.isArray(value.diagnostics) || value.diagnostics.length > 256) invalid();
+    current(capture); if (!record(value) || value.uri !== capture.document.uri || !Array.isArray(value.diagnostics)) invalid();
     const version = value.version === undefined ? null : value.version;
     if (version !== null && !uint(version) || value.version === null) invalid();
     if (version !== null && version !== capture.version) throw new RpcError(-32801, "Diagnostics refer to another document version.");
-    const budget = { units: 65536 }, items = value.diagnostics.map((item: unknown): LspDiagnostic => {
+    const items = value.diagnostics.map((item: unknown): LspDiagnostic => {
         if (!record(item)) invalid(); const wire = range(item.range); let offsets: Readonly<{ from: number; to: number }> | undefined;
         try { offsets = lspRangeOffsets(capture.index, wire); } catch (error) { if (!(error instanceof TypeError || error instanceof RangeError)) throw error; }
-        const message = text(item.message, 4096, budget), source = item.source === undefined ? null : text(item.source, 1024, budget);
+        const message = text(item.message), source = item.source === undefined ? null : text(item.source);
         if (item.severity !== undefined && (!uint(item.severity) || item.severity < 1 || item.severity > 4)) invalid();
         return Object.freeze({ range: wire, placement: offsets ? "placed" : "out-of-bounds", from: offsets?.from ?? null, to: offsets?.to ?? null, message, severity: item.severity as number | undefined ?? null, source });
     });
@@ -106,12 +106,12 @@ export function decodeLspHover(value: unknown, capture: LspDocumentCapture): Lsp
 export function decodeLspLocations(value: unknown, kind: "definition" | "references", origin: LspDocumentCapture,
     resolve: (uri: string) => LspLocationTarget | undefined): readonly LspLocation[] {
     current(origin); const values = value === null ? [] : Array.isArray(value) ? value : kind === "definition" && record(value) ? [value] : invalid();
-    if (values.length > 1024) invalid(); let links: boolean | undefined;
+    let links: boolean | undefined;
     const items = values.map((item: unknown): LspLocation => {
         if (!record(item)) invalid(); const link = "targetUri" in item;
         if (link && (kind !== "definition" || !Array.isArray(value)) || links !== undefined && links !== link) invalid(); links = link;
         const uri = link ? item.targetUri : item.uri;
-        if (typeof uri !== "string" || !uri || uri.length > 4096 || link && ("uri" in item || "range" in item)) invalid();
+        if (typeof uri !== "string" || !uri || link && ("uri" in item || "range" in item)) invalid();
         const target = resolve(uri); if (!target || target.document.uri !== uri || target.index.buffer !== target.document.buffer) throw new TypeError("LSP location URI is outside the captured host project.");
         current(target);
         const targetRange = lspRangeOffsets(target.index, link ? item.targetRange : item.range), selected = link ? lspRangeOffsets(target.index, item.targetSelectionRange) : targetRange;
@@ -124,11 +124,11 @@ export function decodeLspLocations(value: unknown, kind: "definition" | "referen
 /** Normalize a complete text-only batch; the host checks edit authority again at application. */
 export function decodeLspWorkspaceEdit(value: unknown, resolve: (uri: string) => LspEditTarget | undefined): LspWorkspaceEdit {
     if (!record(value) || value.changeAnnotations !== undefined) invalid();
-    const budget = { units: 65536 }, identities = new Set<string>(); let count = 0;
+    const identities = new Set<string>();
     const entries: Readonly<{ uri: unknown; version?: unknown; edits: unknown }>[] = [];
     // LSP prefers versioned documentChanges when both representations are supplied.
     if (value.documentChanges !== undefined) {
-        if (!Array.isArray(value.documentChanges) || value.documentChanges.length > 100) invalid();
+        if (!Array.isArray(value.documentChanges)) invalid();
         for (const item of value.documentChanges) {
             if (!record(item) || "kind" in item || !record(item.textDocument) || !("version" in item.textDocument)) invalid();
             const version = item.textDocument.version;
@@ -136,16 +136,16 @@ export function decodeLspWorkspaceEdit(value: unknown, resolve: (uri: string) =>
             entries.push({ uri: item.textDocument.uri, version, edits: item.edits });
         }
     } else if (value.changes !== undefined) {
-        if (!record(value.changes) || Object.keys(value.changes).length > 100) invalid();
+        if (!record(value.changes)) invalid();
         for (const [uri, edits] of Object.entries(value.changes)) entries.push({ uri, edits });
     }
     const documents = entries.map(({ uri, version, edits: values }): LspDocumentEdits => {
-        if (typeof uri !== "string" || !uri || uri.length > 4096 || !Array.isArray(values) || (count += values.length) > 1024) invalid();
+        if (typeof uri !== "string" || !uri || !Array.isArray(values)) invalid();
         const target = resolve(uri);
         if (!target || target.document.uri !== uri || target.index.buffer !== target.document.buffer) throw new TypeError("LSP edit URI is outside the captured host project.");
         current(target); if (identities.has(target.document.documentId)) throw new TypeError("LSP edits must name each captured document once."); identities.add(target.document.documentId);
         if (version !== undefined && version !== null && version !== target.version) throw new RpcError(-32801, "LSP edit refers to another wire document version.");
-        const edits = values.map((item: unknown) => { if (!record(item) || "annotationId" in item) invalid(); return edit(target.index, item, budget); })
+        const edits = values.map((item: unknown) => { if (!record(item) || "annotationId" in item) invalid(); return edit(target.index, item); })
             .sort((a, b) => a.from - b.from || a.to - b.to);
         // Stable sorting preserves the server's order for insertions at the same position.
         validateTextEdits(target.document.buffer.length, edits); return Object.freeze({ target, edits: Object.freeze(edits) });
@@ -155,11 +155,11 @@ export function decodeLspWorkspaceEdit(value: unknown, resolve: (uri: string) =>
     return Object.freeze({ documents: Object.freeze(documents), isCurrent });
 }
 export function decodeLspApplyEdit(value: unknown, resolve: (uri: string) => LspEditTarget | undefined): LspApplyEdit {
-    if (!record(value) || value.label !== undefined && (typeof value.label !== "string" || value.label.length > 256)) invalid();
+    if (!record(value) || value.label !== undefined && typeof value.label !== "string") invalid();
     return Object.freeze({ label: value.label as string | undefined ?? null, edit: decodeLspWorkspaceEdit(value.edit, resolve) });
 }
-function edit(index: LspLineIndex, value: unknown, budget?: { units: number }): TextEdit {
-    if (!record(value)) invalid(); return Object.freeze({ ...lspRangeOffsets(index, value.range), insert: text(value.newText, 16384, budget) });
+function edit(index: LspLineIndex, value: unknown, budget?: { units: number }, maximum = Number.MAX_SAFE_INTEGER): TextEdit {
+    if (!record(value)) invalid(); return Object.freeze({ ...lspRangeOffsets(index, value.range), insert: text(value.newText, maximum, budget) });
 }
 function plan(length: number, primary: TextEdit, additional: readonly TextEdit[], stops: readonly SnippetStop[] | null = null): LspCompletionPlan {
     const edits = [...additional, primary].sort((a, b) => a.from - b.from || a.to - b.to); validateTextEdits(length, edits);
@@ -180,7 +180,7 @@ export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture
         if (value.itemDefaults !== undefined) { if (!record(value.itemDefaults) || Object.keys(value.itemDefaults).some(key => !["editRange", "insertTextFormat", "insertTextMode", "commitCharacters", "data"].includes(key))) invalid(); defaults = value.itemDefaults;
             if (defaults.insertTextFormat !== undefined && defaults.insertTextFormat !== 1 && defaults.insertTextFormat !== 2 || defaults.insertTextMode !== undefined && defaults.insertTextMode !== 1) invalid();
             commitCharacters(defaults.commitCharacters);
-            if (defaults.data !== undefined) text(JSON.stringify(jsonSnapshot(defaults.data)), 8192);
+            if (defaults.data !== undefined) jsonSnapshot(defaults.data);
             if (defaults.editRange !== undefined) {
                 const value = defaults.editRange; if (!record(value)) invalid();
                 const insert = lspRangeOffsets(index, "start" in value ? value : value.insert), replace = lspRangeOffsets(index, "start" in value ? value : value.replace);
@@ -190,18 +190,18 @@ export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture
     let fallbackRange: LspCompletionFallback | undefined; const omitted: { label: string; reason: string }[] = [];
     const items = values.map((item: unknown): LspCompletion | undefined => {
         if (!record(item) || item.command !== undefined || ![1, 2].includes((item.insertTextFormat ?? defaults.insertTextFormat ?? 1) as number) || (item.insertTextMode ?? defaults.insertTextMode ?? 1) !== 1) invalid();
-        const label = text(item.label, 1024); if (!label) invalid(); const detail = item.detail === undefined ? "" : text(item.detail, 4096);
-        const description = documentation(item.documentation), filterText = item.filterText === undefined ? label : text(item.filterText, 1024), sortText = item.sortText === undefined ? label : text(item.sortText, 1024);
+        const label = text(item.label); if (!label) invalid(); const detail = item.detail === undefined ? "" : text(item.detail);
+        const description = documentation(item.documentation), filterText = item.filterText === undefined ? label : text(item.filterText), sortText = item.sortText === undefined ? label : text(item.sortText);
         if (item.preselect !== undefined && typeof item.preselect !== "boolean") invalid();
         const commits = commitCharacters(item.commitCharacters !== undefined ? item.commitCharacters : defaults.commitCharacters !== undefined ? defaults.commitCharacters : options.commitCharacters);
-        if (item.data !== undefined) text(JSON.stringify(jsonSnapshot(item.data)), 8192);
+        if (item.data !== undefined) jsonSnapshot(item.data);
         let insert: TextEdit, replace: TextEdit;
         if (item.textEdit !== undefined) {
-            if (!record(item.textEdit)) invalid(); const inserted = text(item.textEdit.newText, 16384);
+            if (!record(item.textEdit)) invalid(); const inserted = text(item.textEdit.newText);
             if ("range" in item.textEdit) { if ("insert" in item.textEdit || "replace" in item.textEdit) invalid(); insert = replace = Object.freeze({ ...lspRangeOffsets(index, item.textEdit.range), insert: inserted }); }
             else { insert = Object.freeze({ ...lspRangeOffsets(index, item.textEdit.insert), insert: inserted }); replace = Object.freeze({ ...lspRangeOffsets(index, item.textEdit.replace), insert: inserted }); }
         } else {
-            const editRange = defaults.editRange, inserted = text(editRange === undefined ? item.insertText ?? label : item.textEditText ?? label, 16384);
+            const editRange = defaults.editRange, inserted = text(editRange === undefined ? item.insertText ?? label : item.textEditText ?? label);
             if (editRange !== undefined) {
                 if (!record(editRange)) invalid();
                 if ("start" in editRange) insert = replace = Object.freeze({ ...lspRangeOffsets(index, editRange), insert: inserted });
@@ -212,19 +212,19 @@ export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture
         if (insert.from !== replace.from || insert.to > replace.to || insert.from > offset || insert.to < offset) invalid();
         for (const at of [insert.from, insert.to, replace.to]) if (index.at(at).line !== point.line) invalid();
         let additional: TextEdit[] = [];
-        if (item.additionalTextEdits !== undefined) { if (!Array.isArray(item.additionalTextEdits) || item.additionalTextEdits.length > 32) invalid(); additional = item.additionalTextEdits.map(value => edit(index, value)).sort((a, b) => a.from - b.from || a.to - b.to); }
+        if (item.additionalTextEdits !== undefined) { if (!Array.isArray(item.additionalTextEdits)) invalid(); additional = item.additionalTextEdits.map(value => edit(index, value)).sort((a, b) => a.from - b.from || a.to - b.to); }
         let resolution: JsonValue | null = null;
         if (options.resolve) {
             const wire = { ...item };
             for (const key of ["data", "commitCharacters", "insertTextFormat", "insertTextMode"]) if (wire[key] === undefined && defaults[key] !== undefined) wire[key] = defaults[key];
             if (item.textEdit === undefined && defaults.editRange !== undefined) wire.textEdit = { newText: insert.insert, insert: { start: index.at(insert.from), end: index.at(insert.to) }, replace: { start: index.at(replace.from), end: index.at(replace.to) } };
-            resolution = jsonSnapshot(wire); text(JSON.stringify(resolution), 32768);
+            resolution = jsonSnapshot(wire);
         }
         let snippet: readonly SnippetStop[] | null = null;
         if ((item.insertTextFormat ?? defaults.insertTextFormat) === 2) {
             // Invalid edits cannot hide behind an unsupported optional snippet construct.
             plan(index.buffer.length, insert, additional); plan(index.buffer.length, replace, additional);
-            const parsed = parseSnippet(insert.insert, 16384);
+            const parsed = parseSnippet(insert.insert, capture.maxDocumentUnits);
             if (!parsed.snippet) { omitted.push(Object.freeze({ label, reason: parsed.reason })); return; }
             snippet = parsed.snippet.stops; insert = Object.freeze({ ...insert, insert: parsed.snippet.text }); replace = Object.freeze({ ...replace, insert: parsed.snippet.text });
         }
@@ -245,14 +245,14 @@ export function decodeLspResolvedCompletion(value: unknown, original: LspComplet
     const before = { ...original.resolve }, after = { ...value };
     for (const key of ["detail", "documentation", "additionalTextEdits", "insertText", "textEdit"]) { delete before[key]; delete after[key]; }
     if (!jsonEqual(before, after)) throw new TypeError("Resolved LSP completion changed an immutable item property.");
-    const budget = { units: 65536 }, detail = value.detail === undefined ? original.detail : text(value.detail, 4096, budget), description = value.documentation === undefined ? original.documentation : documentation(value.documentation, budget);
+    const detail = value.detail === undefined ? original.detail : text(value.detail), description = value.documentation === undefined ? original.documentation : documentation(value.documentation);
     let additional = original.additional;
-    if (value.additionalTextEdits !== undefined) { if (!Array.isArray(value.additionalTextEdits) || value.additionalTextEdits.length > 32) invalid(); additional = Object.freeze(value.additionalTextEdits.map(value => edit(capture.index, value, budget)).sort((a, b) => a.from - b.from || a.to - b.to)); }
+    if (value.additionalTextEdits !== undefined) { if (!Array.isArray(value.additionalTextEdits)) invalid(); additional = Object.freeze(value.additionalTextEdits.map(value => edit(capture.index, value)).sort((a, b) => a.from - b.from || a.to - b.to)); }
     const primary = original.primary; let inserted: string | undefined;
     if (original.resolve.textEdit !== undefined && value.textEdit === undefined) invalid();
     if (value.textEdit !== undefined) {
         if (!record(value.textEdit)) invalid();
-        inserted = text(value.textEdit.newText, 16384);
+        inserted = text(value.textEdit.newText);
         const { newText: _text, ...range } = value.textEdit;
         const { newText: _beforeText, ...priorRange } = record(original.resolve.textEdit) ? original.resolve.textEdit : {};
         if (!jsonEqual(range, priorRange)) {
@@ -261,13 +261,13 @@ export function decodeLspResolvedCompletion(value: unknown, original: LspComplet
             if (Object.keys(range).some(key => !["range", "insert", "replace"].includes(key)) || "range" in range && ("insert" in range || "replace" in range)
                 || insert.from !== primary.from || replace.from !== primary.from || insert.to !== primary.insertTo || replace.to !== primary.replaceTo) throw new TypeError("Resolved completion retargeted its captured primary range.");
         }
-    } else if (value.insertText !== undefined) inserted = text(value.insertText, 16384);
+    } else if (value.insertText !== undefined) inserted = text(value.insertText);
     let snippet = original.snippet;
     if (inserted !== undefined && original.resolve.insertTextFormat === 2) {
         // An unsupported snippet must not hide invalid or overlapping additional edits.
         plan(capture.document.buffer.length, { from: primary.from, to: primary.insertTo, insert: inserted }, additional);
         plan(capture.document.buffer.length, { from: primary.from, to: primary.replaceTo, insert: inserted }, additional);
-        const parsed = parseSnippet(inserted, 16384); if (!parsed.snippet) throw new UnsupportedLspSnippetError(parsed.reason);
+        const parsed = parseSnippet(inserted, capture.maxDocumentUnits); if (!parsed.snippet) throw new UnsupportedLspSnippetError(parsed.reason);
         inserted = parsed.snippet.text; snippet = parsed.snippet.stops;
     }
     const nextPrimary = inserted === undefined ? primary : Object.freeze({ ...primary, text: inserted });
@@ -305,12 +305,12 @@ export function decodeLspSignatureHelp(value: unknown, capture: LspDocumentCaptu
         || value.activeSignature !== undefined && !uint(value.activeSignature) || value.activeParameter !== undefined && !uint(value.activeParameter)) invalid();
     const budget = { units: 65536 }, signatures = value.signatures.map((item: unknown): LspSignature => {
         if (!record(item) || item.parameters !== undefined && (!Array.isArray(item.parameters) || item.parameters.length > 64) || item.activeParameter !== undefined && !uint(item.activeParameter)) invalid();
-        const label = text(item.label, 4096, budget), description = documentation(item.documentation, budget);
+        const label = text(item.label, 4096, budget), description = documentation(item.documentation, budget, 16384);
         const parameters = (item.parameters as unknown[] | undefined ?? []).map(parameter => {
             if (!record(parameter)) invalid(); const at = parameter.label; let from: number, to: number;
             if (typeof at === "string") { text(at, 4096, budget); from = label.indexOf(at); to = from + at.length; if (from < 0) invalid(); }
             else { if (!Array.isArray(at) || at.length !== 2 || !uint(at[0]) || !uint(at[1]) || at[0] > at[1] || at[1] > label.length) invalid(); from = at[0]; to = at[1]; }
-            return Object.freeze({ from, to, documentation: documentation(parameter.documentation, budget) });
+            return Object.freeze({ from, to, documentation: documentation(parameter.documentation, budget, 16384) });
         });
         const active = item.activeParameter ?? value.activeParameter ?? 0;
         return Object.freeze({ label, documentation: description, parameters: Object.freeze(parameters), activeParameter: parameters.length ? typeof active === "number" && active < parameters.length ? active : 0 : null });
@@ -348,9 +348,9 @@ export function decodeLspColorPresentations(value: unknown, reference: LspDocume
     current(capture); if (!Array.isArray(value) || value.length > 64) invalid(); capture.index.at(reference.from); capture.index.at(reference.to);
     const budget = { units: 65536 }; let count = 0;
     const presentations = value.map((item: unknown) => {
-        if (!record(item)) invalid(); const label = text(item.label, 4096, budget), primary = item.textEdit === undefined ? Object.freeze({ from: reference.from, to: reference.to, insert: label }) : edit(capture.index, item.textEdit, budget);
+        if (!record(item)) invalid(); const label = text(item.label, 4096, budget), primary = item.textEdit === undefined ? Object.freeze({ from: reference.from, to: reference.to, insert: label }) : edit(capture.index, item.textEdit, budget, 16384);
         if (item.additionalTextEdits !== undefined && (!Array.isArray(item.additionalTextEdits) || item.additionalTextEdits.length > 32)) invalid();
-        const additional = (item.additionalTextEdits as unknown[] | undefined ?? []).map(value => edit(capture.index, value, budget));
+        const additional = (item.additionalTextEdits as unknown[] | undefined ?? []).map(value => edit(capture.index, value, budget, 16384));
         if ((count += 1 + additional.length) > 1024) invalid();
         return Object.freeze({ label, edits: plan(capture.document.buffer.length, primary, additional).edits });
     }); current(capture); return Object.freeze(presentations);

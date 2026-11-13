@@ -136,7 +136,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
             const result = await captured.call.result; counters.received++;
             if (captured.requestGeneration !== 0) return;
             if (!current(captured) || !captured.capture?.isCurrent()) throw new RpcError(-32801, "Completion capture changed.");
-            const configuration = session.featureOptions("textDocument/completion", binding), commits = configuration.flatMap(option => Array.isArray(option.allCommitCharacters) ? option.allCommitCharacters.filter((value): value is string => typeof value === "string").slice(0, 64) : []);
+            const configuration = session.featureOptions("textDocument/completion", binding), commits = configuration.flatMap(option => Array.isArray(option.allCommitCharacters) ? option.allCommitCharacters.filter((value): value is string => typeof value === "string") : []);
             const choices = decodeLspCompletions(result, captured.capture, selected.head, () => wordRange(captured.capture!.document.buffer, selected.head), { resolve: configuration.some(option => option.resolveProvider === true), commitCharacters: commits });
             captured.choices = Object.freeze({ ...choices, items: Object.freeze(choices.items.map((item, order) => ({ item, order })).sort((a, b) => a.item.sortText < b.item.sortText ? -1 : a.item.sortText > b.item.sortText ? 1 : a.order - b.order).map(value => value.item)) });
             captured.pendingList = false; filter(captured, invocation.automatic === true || options.filterManualCompletions === true);

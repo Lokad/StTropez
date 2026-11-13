@@ -190,3 +190,55 @@ export async function runDemoConflict(page: Page, url = "/") {
         return Object.freeze({ concurrentProviderPages: true, projectConflict: true, preservedLocalEdits: true, staleReviewRejected: true, reviewedSave: true, reloadBothFiles: true, pageErrors: errors });
     } finally { await peer.close(); }
 }
+/** One real-provider journey shared by source, static and restored-package demos. */
+export async function runDemoProjectResults(page: Page, url = "/") {
+    await page.goto(url); await page.locator("#sample").selectOption("results");
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await expect(page.locator('[data-panel="problems"]')).toHaveText("Problems (300)");
+    await page.locator('[data-panel="problems"]').click();
+    const problems = page.locator(".demo-problems"), rows = problems.getByRole("button", { name: /^problems.ts · TS2322:/ });
+    await expect(rows).toHaveCount(64);
+    for (let i = 0; i < 4; i++) await problems.getByRole("button", { name: "Next problems", exact: true }).click();
+    await expect(rows).toHaveCount(44); await expect(problems).toContainText("257–300 of 300"); await rows.last().click();
+    const problemSource = page.getByRole("textbox", { name: "problems.ts", exact: true });
+    await expect(problemSource).toBeFocused(); await expect(page.locator("#cursor")).toContainText("Ln 300,");
+    await expect(page.locator("#editor")).toContainText("problem299");
+    await expect(page.locator("#editor .demo-diagnostic").last()).toBeVisible();
+
+    await page.locator('[data-file="uses.ts"]').click();
+    const source = page.getByRole("textbox", { name: "uses.ts", exact: true });
+    await source.press("Control+Home"); await source.press("Control+ArrowRight"); await source.press("ArrowRight");
+    await source.press("Shift+F12");
+    const locations = page.getByRole("region", { name: "Symbol locations", exact: true });
+    await expect(locations).toContainText("1–64 of 1201"); await expect(locations.locator("[data-location]")).toHaveCount(64);
+    // Up wraps to the last result and must reveal its page without creating 1,201 buttons.
+    await source.press("ArrowUp"); await expect(locations).toContainText("1153–1201 of 1201");
+    await expect(locations.locator("[data-location]")).toHaveCount(49); await source.press("Enter");
+    await expect(locations).toBeHidden(); await expect(page.locator("#cursor")).toContainText("Ln 1201,");
+    await expect(page.locator("#editor")).toContainText("const use1199 = sharedValue;");
+    await source.press("F2");
+    const rename = page.getByRole("dialog", { name: "Rename symbol", exact: true });
+    await rename.getByRole("textbox", { name: "New name", exact: true }).fill("renamedValue");
+    await rename.getByRole("button", { name: "Preview rename", exact: true }).click();
+    await expect(rename.getByLabel("Rename status", { exact: true })).toHaveText("Review 1201 changes before applying.");
+    const edits = rename.getByLabel("Rename edits", { exact: true }).locator("li"); await expect(edits).toHaveCount(64);
+    for (let i = 0; i < 18; i++) await rename.getByRole("button", { name: "Next edits", exact: true }).click();
+    await expect(edits).toHaveCount(49); await expect(edits.last()).toContainText("uses.ts · 1201:");
+    await rename.getByRole("button", { name: "Apply rename", exact: true }).click(); await expect(rename).toBeHidden();
+    await expect(page.locator("#editor")).toContainText("const use1199 = renamedValue;");
+    await source.press("Control+Home"); await expect(page.locator("#editor")).toContainText("const renamedValue = 1;");
+    await source.press("Control+ArrowRight"); await source.press("ArrowRight");
+    await source.press("Control+k"); await source.press("Control+i");
+    const info = page.locator(".demo-language-popups .host-symbol-info:not(.host-signature)");
+    await expect(info).toContainText("renamedValue"); await source.press("Escape");
+    await source.press("Control+z"); await expect(page.locator("#files")).not.toContainText("●");
+    await expect(page.locator("#editor")).toContainText("sharedValue");
+    await source.press("Control+y"); await source.press("Control+End");
+    await expect(page.locator("#editor")).toContainText("const use1199 = renamedValue;");
+    await source.press("Control+s"); await expect(page.locator("#status")).toContainText("Saved in this browser");
+    await page.locator("#sample").selectOption("pricing"); await page.locator('[data-panel="problems"]').click();
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await expect(page.locator("#panel-content")).toHaveText("No problems in this project.");
+    return Object.freeze({ diagnostics: 300, references: 1201, renameEdits: 1201, visibleRows: 64,
+        lateProblemNavigation: true, referenceKeyboardPaging: true, synchronizedRename: true, atomicHistory: true, save: true, sampleSwitch: true });
+}

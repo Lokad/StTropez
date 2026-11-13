@@ -1,4 +1,4 @@
-export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue" | "templates";
+export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue" | "templates" | "results";
 export type DemoSample = Readonly<{ id: SampleId; title: string; description: string; files: Readonly<Record<string, string>> }>;
 
 const pricing = `export interface CartItem {
@@ -33,10 +33,15 @@ export const sampleChoices: readonly Readonly<{ id: SampleId; title: string }>[]
     { id: "unicode", title: "Languages & Unicode" }, { id: "large", title: "Large file · 100,000 lines" },
     { id: "catalogue", title: "Completion catalogue · 1,200 fields" },
     { id: "templates", title: "Snippets & lazy completion" },
+    { id: "results", title: "Project-wide results · 1,200 uses" },
 ]);
 
 /** Large fixtures are built only on explicit selection. */
 export function demoSample(id: SampleId): DemoSample {
+    if (id === "results") return { id, title: "Project-wide results",
+        description: "Open Problems to browse 300 type errors. In uses.ts, select sharedValue, then use Code → Find references or Rename to review all 1,201 occurrences. Results are paged; one undo restores a rename.",
+        files: { "uses.ts": "const sharedValue = 1;\n" + Array.from({ length: 1200 }, (_, i) => `const use${i} = sharedValue;`).join("\n") + "\n",
+            "problems.ts": Array.from({ length: 300 }, (_, i) => `const problem${i}: number = "needs a number";`).join("\n") + "\n" } };
     if (id === "templates") return { id, title: "Snippets & lazy completion",
         description: "Demo template provider: go to the end (Ctrl+End), press Ctrl+Space and Tab. Edit linked names, Tab/Shift+Tab through fields, Alt+Up/Down for choices; Escape finishes.",
         files: { "templates.ts": "// Demo-owned templates demonstrate the public completion protocol.\n// TypeScript still checks, colors and compiles these files.\n\ntemplate",

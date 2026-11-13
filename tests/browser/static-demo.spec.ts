@@ -1,9 +1,13 @@
 import { expect, test } from "@playwright/test";
-import { runDemoCompletionCatalogue, runDemoConflict, runDemoSnippets, runDemoWalkthrough } from "./demo-walkthrough.ts";
+import { runDemoCompletionCatalogue, runDemoConflict, runDemoSnippets, runDemoWalkthrough, runDemoProjectResults } from "./demo-walkthrough.ts";
 import { runDemoPresentationContinuity } from "./demo-presentation.ts";
 
 // Native scrollbar drags are part of the demo's user journey, including headless Chromium.
 test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
+
+test("project-wide results retain late problems, references and rename edits with bounded pages", async ({ page, baseURL }) => {
+    await runDemoProjectResults(page, baseURL!);
+});
 
 test("static demo snippet fields and lazy declarations share input, traversal and history", async ({ page, baseURL }) => {
     await runDemoSnippets(page, baseURL!);

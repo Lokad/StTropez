@@ -47,6 +47,25 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP code actions`,
         await input(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, raw); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet.ranges.map(r => ({ anchor: r.anchor, head: r.head }))).toEqual(ranges);
         await input(page, "Secondary source").press("Control+Shift+z"); await ready(page); await exact(page, raw.replace("TODO", "DONE")); expect((await snapshot(page)).source.exports).toBe(0); await dispose(page); await expect.poll(() => closed).toBe(opened);
     });
+    test("a complete 65-action list pages to the last captured choice and applies one undoable edit", async ({ page }) => {
+        await page.routeWebSocket("**/lsp-fixture", client => {
+            const server = client.connectToServer(), ids = new Set<number>();
+            client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/codeAction") ids.add(value.id); server.send(message); });
+            server.onMessage(message => {
+                const value = JSON.parse(message.toString());
+                if (ids.delete(value.id) && Array.isArray(value.result)) {
+                    value.result = Array.from({ length: 65 }, (_, index) => ({ ...value.result[1], title: `Review option ${index + 1}` })); client.send(JSON.stringify(value));
+                } else client.send(message);
+            });
+        });
+        await page.reload(); await ready(page); await seed(page); await preview(page);
+        await expect(choices(page)).toHaveCount(16);
+        for (let i = 0; i < 4; i++) await button(page, "Next action choices").click();
+        await expect(choices(page)).toHaveCount(1); await expect(choices(page)).toContainText("Review option 65");
+        await choices(page).click(); await expect(choices(page)).toHaveAttribute("aria-pressed", "true");
+        await button(page, "Apply captured action").click(); await ready(page); await exact(page, marker + raw);
+        await input(page).press("Control+z"); await ready(page); await exact(page, raw); await dispose(page);
+    });
     test("multi-resource action confirmation preserves comparison baselines, unmounted targets and captured Save/Run", async ({ page }) => {
         await seed(page); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await ready(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline;
         await working.focus(); await page.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: at + 1, head: at }, { anchor: rawLength(f), head: rawLength(f) }]); function rawLength(f: typeof window.hostFixture) { return f.snapshot().source.length; } }, raw.indexOf("TODO") + 1);

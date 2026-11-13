@@ -1,5 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { runDemoCompletionCatalogue, runDemoSnippets } from "./demo-walkthrough.ts";
+import { runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults } from "./demo-walkthrough.ts";
+
+test("project-wide results retain late problems, references and rename edits with bounded pages", async ({ page }) => {
+    await runDemoProjectResults(page);
+});
 
 test("demo snippet fields and lazy declarations share input, traversal and history", async ({ page }) => {
     await runDemoSnippets(page);

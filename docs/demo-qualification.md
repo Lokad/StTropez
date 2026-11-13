@@ -24,6 +24,13 @@ installation are rejected. Compiler/provider dependencies remain in the developm
 Owned provider projects, connections, processes and pending removals are zero after closure.
 Selected plain/React fixture journeys retain the broader workspace/host lifecycle coverage.
 
+The project-result journey reaches diagnostic 300 and reference 1,201 through visible controls,
+previews all 1,201 rename edits with bounded rows, applies the complete rename, then checks one
+undo/redo and save. It is shared by the source, static and restored-package demos. Protocol tests
+own malformed-tail rejection and larger completion/opaque content; a 65-choice fixture checks
+action paging and captured application in both hosts. Result counts are correctness workloads,
+not response-time or arbitrary-project scalability guarantees.
+
 ## Visible continuity and complete-host coverage
 
 Local input-handler time and an eventually correct snapshot are insufficient acceptance criteria.

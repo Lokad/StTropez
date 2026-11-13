@@ -45,6 +45,7 @@ const input = (text = "a😀\r\nb\rc\n", uri = "host+fixture://project/scope/doc
 test("reference peer receives ordered initialization and exact coalesced UTF-16 incremental versions", async t => {
     const host = fixture(t), session = new LspSession({ ...host, features: ["textDocument/hover"] }); t.after(() => session.dispose());
     const initial = input(), document = session.bindDocument(initial); assert.equal(session.synchronized(document), undefined); await session.connect(); await settled(); const peer = host.peers[0]!, firstCapture = session.synchronized(document)!;
+    assert.equal(firstCapture.maxDocumentUnits, 3 * 1024 * 1024);
     assert.equal(firstCapture.document, document.getSnapshot()); assert.equal(firstCapture.version, 1); assert.equal(firstCapture.isCurrent(), true);
     assert.deepEqual(peer.initialize()?.capabilities.general?.positionEncodings, ["utf-16"]); assert.equal(peer.initialize()?.capabilities.textDocument?.synchronization?.dynamicRegistration, true);
     assert.deepEqual(peer.events, ["initialize", "initialized", "open"]); assert.equal(peer.documents.get(initial.uri)?.getText(), "a😀\r\nb\rc\n");
@@ -183,6 +184,7 @@ test("large opening plans cancel at a cooperative boundary and limits refuse cha
     const syncing = session.flush(), rejected = assert.rejects(syncing, error => error instanceof RpcError && error.code === -32097); await paused; session.disconnect(); await rejected;
     assert.equal(host.peers[0]!.events.includes("open"), false); assert.equal(session.snapshotOwnership().scheduledTasks, 0);
     watching = false; document.update(40, 42, initial.buffer.replace(0, 1, "current")); await session.connect(); await settled();
+    assert.equal(session.synchronized(document)!.maxDocumentUnits, 200_000);
     assert.equal(host.peers[1]!.documents.get(initial.uri)?.getText().startsWith("current\r\n"), true); assert.equal(session.snapshotOwnership().remoteDocuments, 2);
 });
 

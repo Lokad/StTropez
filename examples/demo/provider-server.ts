@@ -113,14 +113,14 @@ export function attachDemoProvider(server: Server) {
                     const doc = diagnostic.document, previous = problems.get(doc.uri); if (previous) delete previous[diagnostic.kind];
                     if (object(value.result) && value.result.success === true && Array.isArray(value.result.body)) {
                         const batch: Problem[] = [];
-                        for (const item of value.result.body.slice(0, 256)) {
+                        for (const item of value.result.body) {
                             if (!object(item) || !Number.isSafeInteger(item.start) || !Number.isSafeInteger(item.length) || !Number.isSafeInteger(item.code) || typeof item.message !== "string") break;
                             const from = item.start as number, to = from + (item.length as number);
-                            if (from < 0 || to < from || to > doc.getText().length || item.message.length > 4096) break;
+                            if (from < 0 || to < from || to > doc.getText().length) break;
                             batch.push({ from, to, wire: { range: { start: doc.positionAt(from), end: doc.positionAt(to) }, message: item.message, code: item.code as number,
                                 severity: item.category === "warning" ? 2 : 1, source: "typescript" } });
                         }
-                        if (batch.length === Math.min(256, value.result.body.length)) {
+                        if (batch.length === value.result.body.length) {
                             const cached = problems.get(doc.uri) ?? { document: doc }; cached[diagnostic.kind] = batch; problems.set(doc.uri, cached);
                         }
                     }
@@ -228,7 +228,7 @@ export function attachDemoProvider(server: Server) {
                 const from = doc.offsetAt(range.start), to = doc.offsetAt(range.end);
                 if (to < from) { reject(message.id, "Expected an ordered diagnostic range."); return; }
                 const overlapping = [...cached.syntactic, ...cached.semantic].filter(item => from === to ? item.from <= from && item.to >= to
-                    : item.from === item.to ? from <= item.from && item.from <= to : item.from < to && item.to > from).slice(0, 256);
+                    : item.from === item.to ? from <= item.from && item.from <= to : item.from < to && item.to > from);
                 params.context = { triggerKind: 1, only: ["quickfix"], diagnostics: overlapping.map(item => item.wire) }; acting.add(message.id);
             }
             if (message.method === "textDocument/completion" && object(message.params) && object(message.params.position)

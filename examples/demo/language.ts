@@ -128,7 +128,7 @@ export class DemoLanguage {
                     let response: unknown; try { response = await call.result; } finally { this.calls.delete(call); }
                     if (!capturesCurrent()) return;
                     if (!object(response) || response.success !== true || !Array.isArray(response.body)) throw new Error("Invalid TypeScript diagnostics.");
-                    for (const value of response.body.slice(0, 256)) {
+                    for (const value of response.body) {
                         if (!object(value) || !Number.isSafeInteger(value.start) || !Number.isSafeInteger(value.length) || typeof value.message !== "string" || !Number.isSafeInteger(value.code)) throw new Error("Invalid TypeScript diagnostic range.");
                         const from = value.start as number, to = from + (value.length as number);
                         if (from < 0 || to < from || to > capture.document.buffer.length) throw new Error("TypeScript diagnostic is outside its captured file.");

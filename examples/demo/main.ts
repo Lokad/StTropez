@@ -23,6 +23,7 @@ let stopWorkspace: (() => void) | undefined, stopRecovery: (() => void) | undefi
 let stopLanguage: (() => void) | undefined, languageView: ReturnType<typeof mountDemoLanguage> | undefined;
 let viewListeners: AbortController | undefined;
 let reviewLabel: HTMLSpanElement | undefined;
+let problemPage = 0, problemBatch: unknown;
 const presentation = new DemoPresentation(() => { editor?.viewport.invalidate(); renderOutput(); renderMetadata(); });
 
 function renderOutput(): void {
@@ -52,13 +53,25 @@ function renderGutter(): void {
 function renderProblems(): void {
     if (!project || panel !== "problems") return;
     const captured = project, state = captured.language.state.getSnapshot(), host = element("panel-content");
+    if (problemBatch !== state.diagnostics) { problemBatch = state.diagnostics; problemPage = 0; }
     const list = document.createElement("div"); list.className = "demo-problems";
     if (!state.diagnostics.length) {
         const note = document.createElement("p"); note.className = "panel-note";
         note.textContent = state.status === "failed" ? state.message : state.checking || state.status === "starting" ? "Checking types…" : "No problems in this project.";
         list.append(note);
     }
-    for (const problem of state.diagnostics) {
+    if (state.diagnostics.length > 64) {
+        const pages = document.createElement("div"), previous = document.createElement("button"), next = document.createElement("button"), count = document.createElement("span");
+        pages.className = "problem-pages"; previous.textContent = "Previous problems"; next.textContent = "Next problems";
+        previous.disabled = problemPage === 0; next.disabled = (problemPage + 1) * 64 >= state.diagnostics.length;
+        count.textContent = `${problemPage * 64 + 1}–${Math.min((problemPage + 1) * 64, state.diagnostics.length)} of ${state.diagnostics.length}`;
+        const move = (direction: number) => {
+            if (project !== captured || captured.language.state.getSnapshot().diagnostics !== state.diagnostics) return;
+            problemPage += direction; renderProblems();
+        };
+        previous.onclick = () => move(-1); next.onclick = () => move(1); pages.append(previous, count, next); list.append(pages);
+    }
+    for (const problem of state.diagnostics.slice(problemPage * 64, (problemPage + 1) * 64)) {
         const item = document.createElement("button"); item.textContent = `${problem.name} · TS${problem.code}: ${problem.message}`;
         item.addEventListener("click", () => {
             const file = captured.files.find(file => file.resource.documentId === problem.documentId);
