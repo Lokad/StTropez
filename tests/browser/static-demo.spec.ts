@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { runDemoConflict, runDemoWalkthrough } from "./demo-walkthrough.ts";
 
+// Native scrollbar drags are part of the demo's user journey, including headless Chromium.
+test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
+
 test("browser-only demo completes the real editing and review walkthrough below a repository path", async ({ page, baseURL }) => {
     const requests: string[] = [], sockets: string[] = [];
     page.on("request", request => requests.push(request.url())); page.on("websocket", socket => sockets.push(socket.url()));
@@ -40,10 +43,41 @@ test("browser worker failure leaves typing/save usable and Retry synchronizes th
     await page.getByRole("option", { name: "max", exact: true }).click(); await expect(page.locator("#editor")).toContainText("Math.max");
 });
 
-test("large browser-only sample keeps editing/navigation/history and current language feedback", async ({ page, baseURL }) => {
+test("large browser-only sample keeps scroll content, editing/history and language feedback with bounded output", async ({ page, baseURL }, info) => {
     await page.goto(baseURL!); await page.locator("#sample").selectOption("large");
     const source = page.getByRole("textbox", { name: "large.ts", exact: true });
-    await expect(source).toBeVisible(); await source.press("Control+End"); await source.pressSequentially("\nMath.ma");
+    await expect(source).toBeVisible();
+    const viewport = page.locator("#editor .st-viewport");
+    if (info.project.name === "chromium") {
+        // Exercise the reported native thumb drag during analysis, rather than wheel scrolling.
+        const track = await viewport.evaluate(element => {
+            const root = element as HTMLElement;
+            const box = root.getBoundingClientRect();
+            return { x: box.left + root.clientLeft + root.clientWidth + (root.offsetWidth - root.clientWidth) / 2,
+                y: box.top + 25, middle: box.top + root.clientHeight / 2, width: root.offsetWidth - root.clientWidth };
+        });
+        expect(track.width).toBeGreaterThan(0);
+        await page.mouse.move(track.x, track.y); await page.mouse.down();
+        await page.mouse.move(track.x, track.middle, { steps: 20 }); await page.mouse.up();
+    } else await viewport.evaluate(root => { root.scrollTop = root.scrollHeight / 2; });
+    await expect.poll(() => viewport.evaluate(root => {
+        const box = root.getBoundingClientRect();
+        const row = [...root.querySelectorAll<HTMLElement>(".st-viewport-row")].find(row => {
+            const at = row.getBoundingClientRect(); return at.top >= box.top && at.bottom <= box.bottom;
+        });
+        const line = Number(row?.dataset.line), gutter = [...document.querySelectorAll("#gutter span")];
+        return line > 40000 && line < 60000 && row?.textContent === `// Row ${line + 1}: try editing or searching here.`
+            && gutter.some(number => number.textContent === String(line + 1) && Math.abs(number.getBoundingClientRect().top - row!.getBoundingClientRect().top) < 1);
+    })).toBe(true);
+    await expect(page.locator("#analysis-status")).toContainText("syntax & emit", { timeout: 30000 });
+    const output = page.getByRole("region", { name: "JavaScript output", exact: true });
+    expect(await output.locator(".st-viewport-row").count()).toBeLessThan(60);
+    expect((await output.textContent())!.length).toBeLessThan(5000);
+    const sourceTop = await viewport.evaluate(root => root.scrollTop);
+    await output.evaluate(root => { root.scrollTop = root.scrollHeight; });
+    await expect(output).toContainText("// Row 100000: try editing or searching here.");
+    expect(await viewport.evaluate(root => root.scrollTop)).toBe(sourceTop);
+    await source.press("Control+End"); await source.pressSequentially("\nMath.ma");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await source.press("Escape"); await source.press("Control+Space"); await expect(page.getByRole("option", { name: "max", exact: true })).toBeVisible();
     await page.getByRole("option", { name: "max", exact: true }).click(); await expect(page.locator("#editor")).toContainText("Math.max");

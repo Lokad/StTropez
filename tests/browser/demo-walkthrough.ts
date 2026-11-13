@@ -16,7 +16,7 @@ export async function runDemoWalkthrough(page: Page, url = "/") {
     await expect(page.locator("#editor .demo-token-keyword").first()).toHaveText("import");
     const main = page.getByRole("textbox", { name: "main.ts", exact: true }), pricing = page.getByRole("textbox", { name: "pricing.ts", exact: true });
     await select(page, main, "0.1"); await main.pressSequentially("0.2");
-    await expect(page.locator("#panel-content pre")).toContainText("calculateTotal(cart, 0.2)", { timeout: 30000 });
+    await expect(page.getByRole("region", { name: "JavaScript output", exact: true })).toContainText("calculateTotal(cart, 0.2)", { timeout: 30000 });
     await select(page, main, "calculateTotal(cart"); await main.press("ArrowLeft"); await main.press("ArrowRight");
     await main.press("Control+k"); await main.press("Control+i");
     await expect(page.locator(".demo-language-popups .host-symbol-info:not(.host-signature)")).toContainText("calculateTotal(items: readonly CartItem[]");
@@ -34,7 +34,7 @@ export async function runDemoWalkthrough(page: Page, url = "/") {
     await pricing.press("Control+z"); await expect(page.locator("#editor")).toContainText("export function calculateTotal(");
     await pricing.press("Control+y"); await expect(page.locator("#editor")).toContainText("export function basketTotal(");
     await page.locator('[data-file="main.ts"]').click(); await expect(page.locator("#editor")).toContainText("basketTotal(cart, 0.2)");
-    await expect(page.locator("#panel-content pre")).toContainText("basketTotal(cart, 0.2)", { timeout: 30000 });
+    await expect(page.getByRole("region", { name: "JavaScript output", exact: true })).toContainText("basketTotal(cart, 0.2)", { timeout: 30000 });
     await select(page, main, "basketTotal(cart"); await main.pressSequentially("basketTotl(cart");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await page.locator('[data-panel="problems"]').click(); await page.getByRole("button", { name: /main.ts · TS2552:/ }).click(); await main.press("Control+.");

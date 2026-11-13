@@ -6,6 +6,7 @@ import { DemoPresentation } from "./presentation.ts";
 import { sampleChoices } from "./samples.ts";
 import type { SampleId } from "./samples.ts";
 import { mountDemoLanguage } from "./language-view.ts";
+import { mountDemoOutput } from "./output.ts";
 import "./style.css";
 
 const element = (id: string) => document.getElementById(id)!;
@@ -16,6 +17,7 @@ const listeners = new AbortController(), sample = element("sample") as HTMLSelec
 for (const choice of sampleChoices) { const option = document.createElement("option"); option.value = choice.id; option.textContent = choice.title; sample.append(option); }
 let project: DemoProject | undefined, active: DemoFile | undefined, editor: EditingCandidate | undefined;
 let comparison: TextComparison | undefined, find: FindController | undefined;
+let output: ReturnType<typeof mountDemoOutput> | undefined;
 let panel: "javascript" | "problems" | "changes" = "javascript", disposed = false, opening = 0;
 let stopWorkspace: (() => void) | undefined, stopRecovery: (() => void) | undefined, stopView: (() => void) | undefined, stopFind: (() => void) | undefined;
 let stopLanguage: (() => void) | undefined, languageView: ReturnType<typeof mountDemoLanguage> | undefined;
@@ -27,9 +29,9 @@ function renderOutput(): void {
     if (panel !== "javascript") return;
     const host = element("panel-content");
     if (presentation.status === "ready") {
-        let pre = host.querySelector("pre"); if (!pre) { pre = document.createElement("pre"); host.replaceChildren(pre); }
-        pre.textContent = presentation.javascript || "// This file emits no JavaScript.\n";
+        if (!output) { host.replaceChildren(); output = mountDemoOutput(host, presentation.javascript || "// This file emits no JavaScript.\n"); }
     } else {
+        output?.destroy(); output = undefined;
         const note = document.createElement("p"); note.className = "panel-note";
         note.textContent = presentation.status === "failed" ? "JavaScript output is unavailable. Use Retry to restart analysis. Your source is still editable."
             : "Updating JavaScript…"; host.replaceChildren(note);
@@ -110,6 +112,7 @@ function renderMetadata(): void {
     presentation.update(current);
 }
 function detachView(): void {
+    output?.destroy(); output = undefined;
     languageView?.destroy(); languageView = undefined;
     stopView?.(); stopView = undefined; stopFind?.(); stopFind = undefined;
     viewListeners?.abort(); viewListeners = undefined;

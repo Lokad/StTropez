@@ -7,7 +7,7 @@ test("demo edits real files, preserves selection/history, finds text and reviews
     await expect(source).toBeVisible();
     await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
     await expect(page.locator("#editor .demo-token-keyword").first()).toHaveText("import");
-    await expect(page.locator("#panel-content pre")).not.toContainText("CartItem");
+    await expect(page.getByRole("region", { name: "JavaScript output", exact: true })).not.toContainText("CartItem");
     await source.press("Control+Home"); await source.pressSequentially("/* Mine */");
     await expect(page.locator("#files")).toContainText("main.ts ●");
     await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
@@ -202,8 +202,8 @@ test("demo rejects obsolete analysis, supports multiline colors and keeps editin
     await expect(page.locator("#editor .demo-token-string").filter({ hasText: "Welcome!" })).toBeVisible();
     await page.locator("#sample").selectOption("pricing");
     await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
-    await expect(page.locator("#panel-content pre")).toContainText("export function calculateTotal");
-    await expect(page.locator("#panel-content pre")).not.toContainText("const cart");
+    await expect(page.getByRole("region", { name: "JavaScript output", exact: true })).toContainText("export function calculateTotal");
+    await expect(page.getByRole("region", { name: "JavaScript output", exact: true })).not.toContainText("const cart");
     await page.route("**/demo-syntax-worker.js", route => route.abort());
     await page.reload();
     await expect(page.locator("#analysis-status")).toHaveText("Analysis unavailable");
@@ -213,5 +213,5 @@ test("demo rejects obsolete analysis, supports multiline colors and keeps editin
     await page.unroute("**/demo-syntax-worker.js");
     await page.getByRole("button", { name: "Retry", exact: true }).click();
     await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
-    await expect(page.locator("#panel-content pre")).toContainText("// Still editable");
+    await expect(page.getByRole("region", { name: "JavaScript output", exact: true })).toContainText("// Still editable");
 });

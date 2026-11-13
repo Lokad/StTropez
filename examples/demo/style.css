@@ -58,7 +58,7 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 3
 #panels button { background: transparent; border-color: transparent; color: #a4b4ca; }
 #panels button[aria-pressed="true"] { color: #8ce0ca; background: #1e2d41; }
 #panel-collapse { margin-left: auto; } #panel-content { flex: 1; min-height: 0; overflow: auto; }
-#panel-content pre { margin: 0; padding: 18px 20px; font: 13px/1.8 ui-monospace, Consolas, monospace; tab-size: 4; color: #bacce1; }
+.demo-output { --st-background: #101826; --st-foreground: #bacce1; --st-font: ui-monospace, Consolas, monospace; --st-font-size: 13px; --st-line-height: 1.8; }
 .panel-note { padding: 24px; max-width: 560px; color: #9caec7; font-size: 13px; line-height: 1.7; }
 main.reviewing { grid-template-columns: minmax(0, 1fr); } main.reviewing #source-column { display: none; }
 main.collapsed { grid-template-columns: minmax(0, 1fr) auto; } main.collapsed #panel-content, main.collapsed [data-panel] { display: none; }

@@ -29,6 +29,8 @@ Compiler and protocol-reference packages are demo dependencies. Their bundles, s
 data and license notices go into the static site and never into the editor's NuGet assets.
 Source code stays in this browser and its workers; saving/recovery uses browser-local IndexedDB.
 The site needs no language backend, WebSocket endpoint, credentials or code-upload service.
+Generated JavaScript uses the existing read-only virtualized text viewport, so large samples
+keep bounded DOM content in both panes instead of laying out the complete output in one element.
 
 ## Build and qualify
 
