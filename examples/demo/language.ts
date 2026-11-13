@@ -1,10 +1,10 @@
 import type { DocumentId, Observable, Workspace } from "../../src/index.ts";
 import { LspWorkspace } from "../../src/protocol/index.ts";
 import type { LspWorkspaceScope, RpcCall, LspSessionAccess } from "../../src/protocol/index.ts";
-import { openWebSocketTransport } from "../../src/browser/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { DemoFile } from "./project.ts";
-import type { DemoProviderBootstrap } from "./provider-contract.ts";
+import { openDemoProvider } from "./provider.ts";
+import type { DemoProvider } from "./provider.ts";
 
 export type DemoDiagnostic = Readonly<{ documentId: DocumentId; name: string; revision: number; from: number; to: number; message: string; code: number }>;
 type State = Readonly<{ status: "suspended" | "starting" | "ready" | "failed"; checking: boolean; message: string; diagnostics: readonly DemoDiagnostic[] }>;
@@ -19,7 +19,7 @@ export class DemoLanguage {
     readonly state: Observable<State> = this.cell.observable;
     private owner: LspWorkspace | undefined;
     private scope: LspWorkspaceScope | undefined;
-    private config: DemoProviderBootstrap | undefined;
+    private config: DemoProvider | undefined;
     private opening: Promise<LspWorkspace> | undefined;
     private abort: AbortController | undefined;
     private stopProvider: (() => void) | undefined;
@@ -64,21 +64,14 @@ export class DemoLanguage {
         const lifecycle = ++this.lifecycle, abort = new AbortController(); this.abort = abort;
         this.publish({ status: "starting", message: "Starting TypeScript…", checking: true });
         const work = (async () => {
-            let config: DemoProviderBootstrap | undefined, owner: LspWorkspace | undefined;
+            let config: DemoProvider | undefined, owner: LspWorkspace | undefined;
             try {
-                const response = await fetch(`/demo-provider?sample=${encodeURIComponent(this.sample)}`, { method: "POST", signal: abort.signal });
-                if (!response.ok) throw new Error("The TypeScript service could not start.");
-                config = await response.json() as DemoProviderBootstrap;
+                config = await openDemoProvider(this.sample, abort.signal, this.files.map(file => file.name));
                 if (!this.valid(lifecycle)) throw new Error("Language startup was cancelled.");
-                if (typeof config?.endpoint !== "string" || !/^\/demo-provider\/[a-f0-9-]+$/.test(config.endpoint) || typeof config.rootUri !== "string"
-                    || !config.documents || !this.files.every(file => typeof config!.documents[file.name]?.uri === "string")) throw new Error("Invalid language workspace.");
-                const endpoint = new URL(config.endpoint, location.href); endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+                const capturedProvider = config;
                 const mappings = new Map(this.files.map(file => [file.resource.documentId, config!.documents[file.name]!]));
                 owner = new LspWorkspace(this.workspace, {
-                    connect: context => {
-                        const signal = new AbortController(), stop = context.onCancel(() => signal.abort());
-                        return openWebSocketTransport(endpoint.href, { signal: signal.signal, maxMessageUnits: 16 * 1024 * 1024, maxBufferedBytes: 64 * 1024 * 1024 }).finally(stop);
-                    },
+                    connect: context => capturedProvider.connect(context),
                     rootUri: config.rootUri, clientInfo: { name: "StTropez demo" },
                     schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
                     features: ["textDocument/completion", "textDocument/hover", "textDocument/signatureHelp", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction"], diagnostics: false,
@@ -156,9 +149,7 @@ export class DemoLanguage {
         this.stopProvider?.(); this.stopProvider = undefined; this.scope?.dispose(); this.scope = undefined; this.owner?.dispose(); this.owner = undefined;
         if (this.config) void this.remove(this.config); this.config = undefined; this.suspend(); return this.connect();
     }
-    private async remove(config: DemoProviderBootstrap): Promise<void> {
-        try { await fetch(config.endpoint, { method: "DELETE", keepalive: true }); } catch { /* Server idle cleanup also owns abandoned workspaces. */ }
-    }
+    private remove(config: DemoProvider): Promise<void> { return config.close(); }
     dispose(): Promise<void> {
         if (this.disposal) return this.disposal;
         const opening = this.opening, config = this.config;

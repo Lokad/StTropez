@@ -22,7 +22,7 @@ export class DemoPresentation {
     private readonly changed: () => void;
     constructor(changed: () => void) { this.changed = changed; this.start(); }
     private start(): void {
-        this.worker = new Worker("/demo-syntax-worker.js", { type: "module" });
+        this.worker = new Worker(new URL("demo-syntax-worker.js", document.baseURI), { type: "module" });
         this.worker.addEventListener("message", (event: MessageEvent<Analysis>) => {
             const message = event.data;
             if (this.disposed || message.job !== this.job) return;

@@ -5,6 +5,10 @@ structured configuration, review and data operations. Production code has **zero
 third-party dependencies**. React, editor libraries and compiler runtimes are not
 required by the package.
 
+Try the [browser-only TypeScript demo](https://lokad.github.io/StTropez/). Editing, language
+tools, comparison and browser-local saving run without a backend. The [static demo build](docs/demo-static.md)
+uses the normal compiled library assets and keeps compiler/provider code in the example.
+
 The M3 editor/review pilot supports actual typing, selection/navigation, shared undo/redo,
 comparison and hunk reversion, captured saves/conflicts, recovery and explicit host lifecycle.
 The plain and React development hosts combine these with typed configuration, synthetic

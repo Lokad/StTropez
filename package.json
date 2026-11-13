@@ -29,6 +29,9 @@
   "scripts": {
     "demo": "node scripts/serve.mjs",
     "dev": "node scripts/serve.mjs",
+    "build:demo": "npm run build && node scripts/build-demo.mjs",
+    "preview:demo": "node scripts/serve-demo.mjs",
+    "test:demo": "playwright test --config playwright.demo.config.ts",
     "build": "node scripts/build.mjs && tsc -p tsconfig.build.json && node scripts/finalize-assets.mjs",
     "pack:nuget": "npm run build && dotnet restore packaging/StTropez.Assets.csproj && dotnet pack packaging/StTropez.Assets.csproj --no-build",
     "test:package": "node scripts/qualify-package.mjs",

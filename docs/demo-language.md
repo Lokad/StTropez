@@ -1,11 +1,15 @@
 # Demo language integration
 
-The root demo uses TypeScript 5.9.3 for syntax/JavaScript emission in a worker and
+The local demo uses TypeScript 5.9.3 for syntax/JavaScript emission in a worker and
 typescript-language-server 5.1.3 with the same compiler for type checking, completion,
 hover, signature help, definition/reference navigation, rename and edit-only quick fixes.
 The Node host uses vscode-uri 3.1.0 to provide the server's canonical file URIs, including
 Windows drive spelling/escaping. These are pinned development dependencies. Shipped modules
 and NuGet assets retain zero third-party runtime dependencies and exclude the provider/compiler.
+
+The [GitHub Pages build](demo-static.md) substitutes an example-owned browser worker provider
+using the same compiler and public LSP clients. It needs no Node service; the local route below
+retains its WebSocket/stdio integration and qualification.
 
 `npm run demo` binds to loopback. The host allocates a temporary project for each selected
 sample and bridges text JSON-RPC 2.0 messages between WebSocket and the provider's stdio.

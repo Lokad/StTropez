@@ -3,6 +3,7 @@ import { availableParallelism } from "node:os";
 
 export default defineConfig({
     testDir: "tests/browser",
+    testIgnore: "static-demo.spec.ts",
     timeout: 30_000,
     // The expanded inventory includes long integrated journeys; individual deadlines stay separate.
     globalTimeout: 1_800_000,
