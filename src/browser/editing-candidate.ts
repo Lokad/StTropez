@@ -1,6 +1,5 @@
 import { mountInputCaret } from "./input-caret.ts";
 import { clientBox, cssZoom } from "./dom-coordinates.ts";
-import { PositionMap } from "../core/positions.ts";
 import { textDifference } from "../core/changes.ts";
 import { WordCursor } from "../core/words.ts";
 import { createGraphemeCursor } from "../core/graphemes.ts";
@@ -22,12 +21,17 @@ import type { InputContext } from "./input-context.ts";
 import { mountTextViewport } from "./viewport.ts";
 import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
+import { planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
+import type { EditingCommand, LanguageConfiguration } from "../core/language-edits.ts";
 
 export type CandidateEdit = Readonly<{ expectedRevision: number; edits: readonly TextEdit[]; selectionSet: SelectionSet; kind: EditKind }>;
 export type CandidateEditTransform = (edit: CandidateEdit) => Readonly<{ edits: readonly TextEdit[]; selectionSet: SelectionSet; complete?: (applied: boolean) => void }> | undefined;
 export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport;
     /** One synchronous edit planner per view. Its result still passes Workspace validation/history. */
     registerEditTransform: (transform: CandidateEditTransform) => () => void;
+    configureLanguage: (configuration: LanguageConfiguration) => boolean;
+    /** Returns whether the command was accepted; long selections finish asynchronously. */
+    runCommand: (command: EditingCommand) => boolean;
     focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
     snapshot: () => Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number; maxQueuedInputTurnMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; pendingCaret: boolean; pendingCommand: boolean; pendingDragScroll: boolean; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; composing: boolean; pendingInput: boolean; queuedInputUnits: number; pendingWord: boolean; wordScanSteps: number; maxWordScanStepMs: number; pendingGrapheme: boolean; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number; disposed: boolean }>;
     destroy: () => void }>;
@@ -35,7 +39,8 @@ let nextMount = 0;
 
 /** Experimental bounded-input adapter. Long contextual lines and native IME remain qualification gates. */
 export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, tabId: TabId,
-    options: Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; decorate?: LineDecorator; lineClass?: LineClass }> = {}): EditingCandidate {
+    options: Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; decorate?: LineDecorator; lineClass?: LineClass; language?: LanguageConfiguration }> = {}): EditingCandidate {
+    let language = resolveLanguageConfiguration(options.language);
     const readOnly = options.readOnly === true;
     const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
     if (!tab || tab.surface.kind !== "text") throw new Error("Expected a text surface.");
@@ -46,6 +51,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     try { viewport = mountTextViewport(host, workspace, tabId, { ...options, view }); }
     catch (error) { if (!options.view) view.dispose(); throw error; }
     const root = viewport.element;
+    root.style.tabSize = String(language.tabSize);
     const owner = host.ownerDocument, win = owner.defaultView!, input = owner.createElement("textarea");
     const scope = ++nextMount, listeners = new AbortController();
     root.classList.add("st-editing-candidate"); root.tabIndex = -1;
@@ -87,7 +93,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     let projectedSet = view.getSnapshot().selectionSet;
     let rangeCommand: Readonly<{ capture: CommandCapture; purpose: "word" | "grapheme"; release: () => void }> | undefined, rangeTimer: number | undefined;
     type InputKey = { kind: "key"; key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; text: string; edit: boolean };
-    type InputIntent = (InputKey | { kind: "text"; text: string; type: string }) & { at?: number };
+    type InputIntent = (InputKey | { kind: "text"; text: string; type: string; literal?: true }) & { at?: number };
     type OrderedInput = { capture: CommandCapture; purpose: "word" | "grapheme"; actions: InputIntent[]; units: number; edit: boolean; native: boolean; running?: InputIntent; cancelled?: boolean };
     let ordered: OrderedInput | undefined, executingInput: OrderedInput | undefined, orderedTimer: number | undefined, drainingInput = false, replayTime: number | undefined;
     let nativeOrder: { order: OrderedInput; capture: InputCapture; type: string; data: string | null; action?: InputKey; invalid: boolean; reported: boolean } | undefined;
@@ -564,58 +570,43 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             }))]) } : {}) });
         }, capture => shortVertical(capture, direction, page));
     }
-    function indent(outdent: boolean): void {
-        if (disposed || composing || input.disabled || input.readOnly) return;
-        cancelWord();
-        const capture = commandCapture(true), buffer = capture.buffer;
-        if (!outdent && capture.selectionSet.ranges.every(range => range.anchor === range.head)) { replaceSelection("    ", "replace"); return; }
-        const intervals: { first: number; last: number }[] = [];
-        for (const range of capture.selectionSet.ranges) {
-            const low = Math.min(range.anchor, range.head), high = Math.max(range.anchor, range.head);
-            const first = buffer.lineAt(low), last = buffer.lineAt(high > low && buffer.offsetAt(buffer.lineAt(high)) === high ? high - 1 : high), previous = intervals.at(-1);
-            if (previous && first <= previous.last + 1) previous.last = Math.max(previous.last, last); else intervals.push({ first, last });
-        }
-        const edits: TextEdit[] = []; let interval = 0, line = intervals[0]!.first;
-        const job = { capture, purpose: "grapheme" as const, release: () => {} }; rangeCommand = job;
-        // Plan large selections in yielding chunks against the captured immutable buffer/revision.
+    function languageCommand(command: EditingCommand | Readonly<{ character: string }>): boolean {
+        if (disposed || composing || input.disabled || input.readOnly) return false;
+        if (command === "line-comment" && !language.lineComment || command === "block-comment" && !language.blockComment) return false;
+        cancelWord(); syncSelection();
+        const capture = commandCapture(true), planner = planLanguageEdit(capture.buffer, capture.selectionSet, command, language);
+        let planning = false;
+        const job = { capture, purpose: "grapheme" as const, release: () => { if (!planning) planner.return({ edits: [], selectionSet: capture.selectionSet }); } }; rangeCommand = job;
         const step = () => {
-            if (disposed || rangeCommand !== job) return;
+            if (rangeCommand !== job) return;
             if (!validCommand(capture)) { cancelWord(); return; }
-            let countLines = 0;
-            for (; interval < intervals.length && countLines < 256; countLines++) {
-                const from = buffer.offsetAt(line), prefix = buffer.slice(from, Math.min(buffer.length, from + 4));
-                const count = prefix.startsWith("\t") ? 1 : /^ {0,4}/.exec(prefix)![0].length;
-                if (!outdent || count) edits.push({ from, to: from + (outdent ? count : 0), insert: outdent ? "" : "    " });
-                if (++line > intervals[interval]!.last && ++interval < intervals.length) line = intervals[interval]!.first;
+            let result;
+            try {
+                planning = true; const began = win.performance.now(); let batches = 0;
+                do { result = planner.next(); }
+                while (!result.done && rangeCommand === job && ++batches < 8 && win.performance.now() - began < 4);
             }
-            if (interval < intervals.length) {
-                const timer = win.setTimeout(() => { commandTimers.delete(timer); if (rangeCommand === job) rangeTimer = undefined; step(); }, 0); rangeTimer = timer; commandTimers.add(timer);
-            } else { rangeCommand = undefined; completeCaptured(capture, () => {
-                if (!edits.length) return true;
-                const mapping = new PositionMap(buffer.length, edits);
-                const result = createSelectionSet(mapping.newLength, capture.selectionSet.ranges.map(range => ({ anchor: mapping.map(range.anchor, "after").offset,
-                    head: mapping.map(range.head, "after").offset })), capture.selectionSet.primary);
-                return apply(edits, result, "replace", undefined, capture.revision);
-            }); }
-        }; group = undefined; step();
+            catch { cancelWord(); conflict("language-command-failed", undefined, capture.revision, 0, typeof command === "object" ? command.character : ""); return; }
+            finally { planning = false; }
+            if (rangeCommand !== job) { planner.return({ edits: [], selectionSet: capture.selectionSet }); return; }
+            if (!result.done) {
+                const timer = win.setTimeout(() => { commandTimers.delete(timer); if (rangeCommand === job) rangeTimer = undefined; step(); }, 0);
+                rangeTimer = timer; commandTimers.add(timer); return;
+            }
+            rangeCommand = undefined;
+            completeCaptured(capture, () => {
+                const plan = result.value;
+                if (plan.edits.length) return apply(plan.edits, plan.selectionSet, typeof command === "object" ? "typing" : "replace", undefined, capture.revision);
+                group = undefined; view.setSelections(capture.revision, plan.selectionSet.ranges, plan.selectionSet.primary);
+                viewport.revealOffset(view.getSnapshot().selection.head); refresh(); return true;
+            });
+        };
+        group = undefined; step(); return true;
     }
-    function bracket(key: string): boolean {
-        if (input.readOnly) return false;
-        const { selectionSet } = view.getSnapshot(); if (selectionSet.ranges.some(range => range.anchor !== range.head)) return false;
-        const buffer = workspace.document(documentId).buffer, closing = { "(": ")", "[": "]", "{": "}" }[key];
-        if (!closing && ![")", "]", "}"].includes(key)) return false;
-        let delta = 0, handled = false; const carets: Selection[] = [];
-        const edits = selectionSet.ranges.map(range => {
-            const next = buffer.slice(range.head, Math.min(buffer.length, range.head + 1));
-            const pair = closing && (!next || /[\s)\]}]/.test(next)), skip = !closing && next === key;
-            const insert = pair ? key + closing : skip ? "" : key;
-            const head = range.head + delta + (pair || skip ? 1 : insert.length); delta += insert.length;
-            carets.push({ anchor: head, head }); handled ||= !!pair || skip;
-            return { from: range.head, to: range.head, insert };
-        });
-        if (!handled) return false;
-        if (edits.every(edit => edit.insert === "")) finishRanges(commandCapture(false), carets);
-        else apply(edits, createSelectionSet(buffer.length + delta, carets, selectionSet.primary), "typing"); return true;
+    const pairKey = (key: string) => key.length === 1 && language.pairs.some(pair => pair.open === key || pair.close === key);
+    function configuredInput(type: string, text: string | null): boolean {
+        if (type === "insertLineBreak" && language.enter) return languageCommand("newline");
+        return type === "insertText" && text !== null && pairKey(text) && languageCommand({ character: text });
     }
     function takeInput(): OrderedInput | undefined {
         if (orderedTimer !== undefined) { win.clearTimeout(orderedTimer); commandTimers.delete(orderedTimer); orderedTimer = undefined; }
@@ -646,7 +637,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             if (action.text.length) conflict("pending-input-limit-or-expiry", undefined, capture.revision, 0, action.text); return;
         }
         const last = pending.actions.at(-1);
-        if (last?.kind === "text" && action.kind === "text" && last.type === "insertText" && action.type === "insertText" && action.at - (last.at ?? action.at) < 1000) { last.text += action.text; last.at = action.at; }
+        if (last?.kind === "text" && action.kind === "text" && last.type === "insertText" && action.type === "insertText" && last.literal === action.literal && !pairKey(last.text) && !pairKey(action.text) && action.at - (last.at ?? action.at) < 1000) { last.text += action.text; last.at = action.at; }
         else pending.actions.push(action);
         pending.units += action.text.length; pending.edit ||= action.kind === "text" || action.edit;
         scheduleInput();
@@ -666,18 +657,21 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         try {
             while (pending.actions.length && count++ < 8 && win.performance.now() - began < 4) {
                 const action = pending.actions.shift()!; pending.running = action;
+                const beforeConflicts = conflicts;
                 replayTime = action.at;
-                if (action.kind === "text") {
+                if (action.kind === "text" && !action.literal && configuredInput(action.type, action.text)) {
+                    // The same captured command path serves keyboard and cancellable native input.
+                } else if (action.kind === "text") {
                     const document = workspace.document(documentId), plan = planSelectionEdits(document.buffer.length, view.getSnapshot().selectionSet, action.text);
                     const typing = action.type === "insertText" && !action.text.includes("\n");
                     if (!apply(plan.edits, plan.selectionSet, typing ? "typing" : action.type === "insertFromPaste" ? "paste" : "replace", typing ? "insertText" : undefined, document.revision, action.text)) {
                         delete pending.running; recoverInput(pending, "pending-input-rejected"); return;
                     }
                 } else {
-                    const before = conflicts, event = new win.KeyboardEvent("keydown", { ...action, cancelable: true }); keydown(event);
+                    const event = new win.KeyboardEvent("keydown", { ...action, cancelable: true }); keydown(event);
                     if (action.text && action.key !== "Tab" && !event.defaultPrevented) replaceSelection(action.text, "typing", "insertText");
-                    if (conflicts !== before) { recoverInput(pending, "pending-input-rejected"); return; }
                 }
+                if (conflicts !== beforeConflicts) { recoverInput(pending, "pending-input-rejected"); return; }
                 replayTime = undefined; delete pending.running; pending.units -= action.text.length;
                 if (pending.cancelled || disposed) return;
                 if (rangeCommand) {
@@ -698,10 +692,11 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const navigation = command && ["a", "home", "end"].includes(key) || word && ["ArrowLeft", "ArrowRight"].includes(event.key)
             || !command && !event.altKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key);
         const historyKey = command && (key === "z" || event.ctrlKey && key === "y"), deletion = (!command && !event.altKey || word) && ["Backspace", "Delete"].includes(event.key);
-        const tab = event.key === "Tab" && !escaped && !command && !event.altKey, bracketKey = !command && !event.altKey && "()[]{}".includes(event.key) && event.key.length === 1;
-        if (!navigation && !historyKey && !deletion && !tab && !bracketKey) return;
+        const tab = event.key === "Tab" && !escaped && !command && !event.altKey, bracketKey = !command && !event.altKey && pairKey(event.key);
+        const enter = event.key === "Enter" && !!language.enter && !command && !event.altKey, comment = command && (key === "/" || key === "?" && event.shiftKey);
+        if (!navigation && !historyKey && !deletion && !tab && !bracketKey && !enter && !comment) return;
         return { kind: "key", key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, shiftKey: event.shiftKey,
-            text: tab ? "\t" : bracketKey ? event.key : "", edit: !navigation };
+            text: tab ? "\t" : enter ? "\n" : bracketKey ? event.key : "", edit: !navigation };
     }
     function nativeIntent(type: string): InputKey | undefined {
         const word = type.startsWith("deleteWord"), backward = type.endsWith("Backward");
@@ -738,7 +733,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const projection = native.capture.context, edit = native.capture.target && resolveNativeInsertion(native.capture.target, input, event.inputType);
         if (native.action) appendInput(native.action);
         else if (edit && edit.from === Math.min(projection.nativeAnchor, projection.nativeHead) && edit.to === Math.max(projection.nativeAnchor, projection.nativeHead))
-            appendInput({ kind: "text", text: edit.insert, type: event.inputType });
+            appendInput({ kind: "text", text: edit.insert, type: event.inputType, literal: true });
         else { cancelWord(); conflict("pending-native-input-target", undefined, native.capture.revision, 0, event.data ?? native.data ?? input.value); }
         refresh(); scheduleInput(); return true;
     }
@@ -756,6 +751,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         } else if (!composing && event.cancelable && (event.inputType === "historyUndo" || event.inputType === "historyRedo")) { event.preventDefault(); history(event.inputType === "historyUndo" ? "undo" : "redo"); }
         else syncSelection();
         if (!composing && !event.isComposing && !input.disabled && !input.readOnly && input.value === context.text) {
+            if (event.cancelable && configuredInput(event.inputType, event.data)) { event.preventDefault(); return; }
             // Keep the native projection bounded during insertion, not just after input. Browsers
             // may expand a multiline insertText into thousands of native edits before notifying us.
             // Composition and incomplete/noncancelable events retain the captured native path.
@@ -851,8 +847,10 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         preferred = undefined;
         if (!command && !event.altKey && (event.key === "Backspace" || event.key === "Delete")) {
             event.preventDefault(); grapheme(event.key === "Backspace" ? -1 : 1, true);
-        } else if (event.key === "Tab" && !command && !event.altKey) { event.preventDefault(); indent(event.shiftKey); }
-        else if (!command && !event.altKey && bracket(event.key)) event.preventDefault();
+        } else if (event.key === "Tab" && !command && !event.altKey) { event.preventDefault(); languageCommand(event.shiftKey ? "outdent" : "indent"); }
+        else if (command && (key === "/" || key === "?" && event.shiftKey) && languageCommand(event.shiftKey ? "block-comment" : "line-comment")) event.preventDefault();
+        else if (!command && !event.altKey && event.key === "Enter" && language.enter && languageCommand("newline")) event.preventDefault();
+        else if (!command && !event.altKey && pairKey(event.key) && languageCommand({ character: event.key })) event.preventDefault();
     }
     input.addEventListener("keydown", event => {
         const started = win.performance.now(); keydownEvents++;
@@ -974,6 +972,13 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh), workspace.tabState.subscribe(refresh)];
     refresh();
     return Object.freeze({ element: root, input, view, viewport, focus,
+        runCommand: languageCommand,
+        configureLanguage: configuration => {
+            if (disposed || composing) return false;
+            const next = resolveLanguageConfiguration(configuration);
+            cancelWord(); group = undefined; preferred = undefined; language = next;
+            root.style.tabSize = String(language.tabSize); viewport.invalidate(); refresh(); return true;
+        },
         registerEditTransform: transform => {
             if (disposed || editTransform) throw new Error("Editor is disposed or already owns an edit planner.");
             editTransform = transform; return () => { if (editTransform === transform) editTransform = undefined; };

@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults } from "./demo-walkthrough.ts";
+import { runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults, runDemoEditingRules } from "./demo-walkthrough.ts";
+
+test("configured editing commands, quotes and comments share review and undo", async ({ page }) => { await runDemoEditingRules(page); });
 
 test("project-wide results retain late problems, references and rename edits with bounded pages", async ({ page }) => {
     await runDemoProjectResults(page);

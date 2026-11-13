@@ -1,6 +1,6 @@
 # Bounded editing candidate
 
-`mountEditingCandidate(host, workspace, tabId, { view?, ariaLabel?, readOnly? })` is an experimental view
+`mountEditingCandidate(host, workspace, tabId, { view?, ariaLabel?, readOnly?, language? })` is an experimental view
 over the shared document/history contract. It owns its viewport, bounded native textarea and
 caret beneath the supplied host. The existing whole-value `mountTextEditor` remains a control.
 The candidate is exported explicitly; native-device IME qualification remains open.
@@ -18,6 +18,34 @@ hook to mirror ordinary input through flat placeholder occurrences, including em
 that normalize to one caret. The pure `parseSnippet`/`planSnippetEdit` model reuses existing
 buffers, selections and edits; it adds no runtime dependency or alternative input engine.
 Undo/redo and externally submitted transactions do not pass through this input hook.
+
+`language` is a host-owned `LanguageConfiguration`: `tabSize` (1–256, default 4),
+`insertSpaces` (default true), `lineComment`, `blockComment: { open, close }`, single-character
+`pairs`, `allowPair(context)` and `enter`. `configureLanguage(configuration)` replaces the
+configuration explicitly, updates tab geometry and cancels pending commands; it returns false
+during composition or after disposal. Arrays/delimiters are copied and frozen. Callbacks see
+the exact immutable buffer and selection endpoints; hosts own syntax analysis and its cost.
+`allowPair` can separately accept opening, skipping a closing delimiter and surrounding a
+selection. An empty pair list disables pairing. Defaults retain basic brackets without quotes.
+`enter: "keep"` copies indentation; a callback returns `{ indent: -1 | 0 | 1, split?: boolean }`
+to remove/keep/add one indentation unit and optionally put the closing text on another line.
+Without `enter`, native line-break behavior is retained.
+
+`runCommand("indent" | "outdent" | "line-comment" | "block-comment" | "newline")` accepts a
+command against this view, returning false when unavailable, read-only, composing or disposed.
+Acceptance does not imply an asynchronous plan has committed. Tab/Shift+Tab, Ctrl/Cmd+/
+and Ctrl/Cmd+Shift+/ use these same commands. Comments preserve directed selections; line
+comments toggle the selected nonblank lines and block comments surround/unwrap the selection.
+Pairing, Enter and comments pass through `apply`, including snippet transforms and shared undo.
+They do not take over the registered edit-transform slot. Cancellable non-composing native input
+uses the configured commands too; composition and noncancellable input retain literal capture.
+
+The public headless `resolveLanguageConfiguration` and `planLanguageEdit` expose the same
+planning without DOM or a language parser. The iterator yields during large line selections,
+multiple ranges and whitespace scans. The browser reuses its existing captured-command queue;
+planning publishes no partial text and commits one transaction. Validation, mapping and the final
+transaction still scale with the changed content. This small planner reuses StTropez's buffer,
+position map and selections rather than adding an external editing runtime.
 
 Hosts can intercept clipboard events on the public input in the capture phase and cancel them
 with `preventDefault()`. The candidate then leaves clipboard data and source mutation to the

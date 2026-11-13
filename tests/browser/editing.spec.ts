@@ -196,6 +196,35 @@ test("yielding multiline indentation publishes one reversible transaction", asyn
     expect((await state(page)).document!.length).toBe(2048); expect((await state(page)).primary.selection).toMatchObject({ anchor: 0, head: 2048 });
 });
 
+test("configured commands retain native ordering and expire on configuration changes", async ({ page }) => {
+    await page.evaluate(() => {
+        window.editingFixture.configureLanguage({ tabSize: 2, lineComment: "//", enter: "keep" });
+        window.editingFixture.setText("x\n".repeat(1024)); window.editingFixture.select("primary", { anchor: 0, head: 2048 });
+        window.editingFixture.focus("primary");
+        window.editingFixture.command("line-comment");
+        const input = document.querySelector<HTMLTextAreaElement>("#primary textarea")!;
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+        input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "(", bubbles: true }));
+        input.setRangeText("(", input.selectionStart, input.selectionEnd, "end");
+        input.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "(", bubbles: true }));
+        const enter = new InputEvent("beforeinput", { inputType: "insertLineBreak", bubbles: true, cancelable: true });
+        input.dispatchEvent(enter); if (!enter.defaultPrevented) throw new Error("Expected configured Enter capture");
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+        const event = new InputEvent("beforeinput", { inputType: "insertText", data: "z", bubbles: true, cancelable: true });
+        input.dispatchEvent(event); if (!event.defaultPrevented) throw new Error("Expected captured input");
+    });
+    await expect.poll(async () => (await state(page)).primary.pendingInput).toBe(false);
+    expect((await state(page)).conflicts).toEqual([]);
+    expect(await page.evaluate(() => window.editingFixture.range(5115, 5125))).toBe("// x\n(\n  z");
+    await page.evaluate(() => {
+        window.editingFixture.setText("x\n".repeat(1024)); window.editingFixture.select("primary", { anchor: 0, head: 2048 });
+        window.editingFixture.command("line-comment"); window.editingFixture.configureLanguage({ tabSize: 4 });
+    });
+    await expect.poll(async () => (await state(page)).primary.pendingCommand).toBe(false);
+    expect((await state(page)).document!.length).toBe(2048);
+    expect(await page.locator("#primary .st-viewport").evaluate(node => getComputedStyle(node).tabSize)).toBe("4");
+});
+
 test("short shaped rows grow horizontal extent and a later revision discards obsolete measurements", async ({ page }) => {
     await page.evaluate(() => window.editingFixture.setText("界".repeat(512))); await ready(page);
     const large = (await state(page)).primary.viewport;

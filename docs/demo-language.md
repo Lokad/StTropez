@@ -11,6 +11,16 @@ The [GitHub Pages build](demo-static.md) substitutes an example-owned browser wo
 using the same compiler and public LSP clients. It needs no Node service; the local route below
 retains its WebSocket/stdio integration and qualification.
 
+The Code menu exposes line/block comments, indentation and two/four-space or tab settings.
+The same public configuration serves the source and comparison views. TypeScript Enter adds
+indentation after opening brackets and separates a matching closer. Quotes/brackets can surround
+selections and skip a matching closing character. These are demo-host rules, independent of LSP.
+They use unchanged compiler-classified line starts plus a bounded local quote scan. Multiline
+comments/strings, regexes, templates, escaped quotes and unproved long prefixes conservatively
+disable automatic pairing; ordinary literal typing continues. This is not a second TypeScript
+parser, and provisional display colors never establish lexical authority. Compiler work remains
+in the existing worker; no parser/compiler dependency enters the library or native input handler.
+
 `npm run demo` binds to loopback. The host allocates a temporary project for each selected
 sample and bridges text JSON-RPC 2.0 messages between WebSocket and the provider's stdio.
 StTropez's public `LspWorkspace`, WebSocket transport and editor completion controller own

@@ -1,6 +1,39 @@
 import { expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
+export async function runDemoEditingRules(page: Page, url = "/") {
+    await page.goto(url);
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    await expect(source).toBeVisible();
+    const replace = async (text: string) => { await source.press("Control+Home"); await source.press("Control+a"); await page.keyboard.insertText(text); };
+    const menu = async (name: string) => { await page.locator("#code-menu summary").click(); await page.getByRole("button", { name, exact: true }).click(); };
+    await replace("function demo() {}"); await source.press("ArrowLeft"); await source.press("Enter");
+    await expect(source).toHaveValue("function demo() {\n  \n}");
+    await source.pressSequentially('"'); await expect(source).toHaveValue('function demo() {\n  ""\n}');
+    await source.pressSequentially('value";'); await source.press("Escape");
+    await expect(source).toHaveValue('function demo() {\n  "value";\n}');
+    await source.press("Control+Home"); await source.press("Shift+End");
+    await menu("Toggle block comment"); await expect(source).toHaveValue('/*function demo() {*/\n  "value";\n}');
+    await menu("Toggle block comment"); await expect(source).toHaveValue('function demo() {\n  "value";\n}');
+    await source.press("Control+a"); await source.press("Control+/");
+    await expect(source).toHaveValue('// function demo() {\n  // "value";\n// }');
+    await source.press("Control+z"); await expect(source).toHaveValue('function demo() {\n  "value";\n}');
+    await replace("/*\ncomment\n*/\n"); await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
+    await source.press("Control+Home"); await source.press("ArrowDown"); await source.press("End"); await source.pressSequentially('"');
+    await expect(source).toHaveValue('/*\ncomment"\n*/\n');
+    await replace("a\nb\n"); await source.press("Control+a"); await menu("Indent selection");
+    await expect(source).toHaveValue("  a\n  b\n"); await source.press("Control+z");
+    await page.locator("#code-menu summary").click(); await page.locator("#indentation").selectOption("4"); await page.locator("#code-menu summary").click();
+    await source.press("Tab"); await expect(source).toHaveValue("    a\n    b\n"); await source.press("Control+z");
+    await page.locator("#code-menu summary").click(); await page.locator("#indentation").selectOption("tabs"); await page.locator("#code-menu summary").click();
+    await source.press("Tab"); await expect(source).toHaveValue("\ta\n\tb\n");
+    await page.getByRole("button", { name: "Compare", exact: true }).click();
+    await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
+    expect(await page.locator(".st-comparison .st-editing-candidate").evaluateAll(nodes => nodes.map(node => getComputedStyle(node).tabSize))).toEqual(["4", "4"]);
+    await page.getByRole("textbox", { name: "Comparison working source", exact: true }).press("Control+z");
+    await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toHaveValue("a\nb\n");
+}
+
 /** The labeled template provider shares the public completion/input/history paths. */
 export async function runDemoSnippets(page: Page, url = "/") {
     page.on("dialog", dialog => dialog.accept());

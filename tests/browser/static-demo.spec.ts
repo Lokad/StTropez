@@ -1,9 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { runDemoCompletionCatalogue, runDemoConflict, runDemoSnippets, runDemoWalkthrough, runDemoProjectResults } from "./demo-walkthrough.ts";
+import { runDemoCompletionCatalogue, runDemoConflict, runDemoSnippets, runDemoWalkthrough, runDemoProjectResults, runDemoEditingRules } from "./demo-walkthrough.ts";
 import { runDemoPresentationContinuity } from "./demo-presentation.ts";
 
 // Native scrollbar drags are part of the demo's user journey, including headless Chromium.
 test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
+
+test("configured editing commands, quotes and comments share review and undo", async ({ page, baseURL }) => { await runDemoEditingRules(page, baseURL!); });
 
 test("project-wide results retain late problems, references and rename edits with bounded pages", async ({ page, baseURL }) => {
     await runDemoProjectResults(page, baseURL!);

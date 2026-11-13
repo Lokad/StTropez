@@ -1,6 +1,7 @@
 import type { DocumentSnapshot, TextBuffer } from "../../src/index.ts";
 import type { InlineDecoration, PresentedLine } from "../../src/browser/index.ts";
 import { DemoSyntaxColors } from "./syntax-colors.ts";
+import { DemoEditingRules } from "./editing-rules.ts";
 
 type Analysis = Readonly<{ job: number; kind: "result" | "failed"; spans?: Uint32Array; javascript?: string }>;
 
@@ -11,6 +12,7 @@ export class DemoPresentation {
     private job = 0;
     private capture: DocumentSnapshot | undefined;
     private readonly colors = new DemoSyntaxColors();
+    readonly editing = new DemoEditingRules();
     private disposed = false;
     search: Readonly<{ revision: number; ranges: readonly Readonly<{ from: number; to: number }>[] }> | undefined;
     diagnostics: Readonly<{ documentId: string; revision: number; ranges: readonly Readonly<{ from: number; to: number }>[] }> | undefined;
@@ -27,12 +29,14 @@ export class DemoPresentation {
                 this.status = "failed"; this.changed(); return;
             }
             this.colors.accept(this.capture!, message.spans); this.javascript = message.javascript;
+            this.editing.accept(this.capture!.buffer, message.spans);
             this.status = "ready"; this.changed();
         });
         this.worker.addEventListener("error", event => { event.preventDefault(); if (!this.disposed) { this.status = "failed"; this.changed(); } });
     }
     update(capture: DocumentSnapshot): void {
         if (this.disposed || this.capture?.buffer === capture.buffer && this.capture.id === capture.id) return;
+        if (this.capture?.key !== capture.key) this.editing.clear();
         this.colors.update(capture); this.capture = capture; this.javascript = "";
         const job = ++this.job;
         if (this.timer !== undefined) window.clearTimeout(this.timer);
@@ -67,6 +71,6 @@ export class DemoPresentation {
     }
     dispose(): void {
         this.disposed = true; this.job++; if (this.timer !== undefined) window.clearTimeout(this.timer);
-        this.worker?.terminate(); this.worker = undefined; this.capture = undefined; this.colors.clear(); this.search = undefined; this.diagnostics = undefined;
+        this.worker?.terminate(); this.worker = undefined; this.capture = undefined; this.colors.clear(); this.editing.clear(); this.search = undefined; this.diagnostics = undefined;
     }
 }

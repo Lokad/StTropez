@@ -21,10 +21,13 @@ let output: ReturnType<typeof mountDemoOutput> | undefined;
 let panel: "javascript" | "problems" | "changes" = "javascript", disposed = false, opening = 0;
 let stopWorkspace: (() => void) | undefined, stopRecovery: (() => void) | undefined, stopView: (() => void) | undefined, stopFind: (() => void) | undefined;
 let stopLanguage: (() => void) | undefined, languageView: ReturnType<typeof mountDemoLanguage> | undefined;
+let stopReference: (() => void) | undefined;
 let viewListeners: AbortController | undefined;
 let reviewLabel: HTMLSpanElement | undefined;
 let problemPage = 0, problemBatch: unknown;
 const presentation = new DemoPresentation(() => { editor?.viewport.invalidate(); renderOutput(); renderMetadata(); });
+const indentation = element("indentation") as HTMLSelectElement;
+function editingConfiguration() { return presentation.editing.configuration(indentation.value === "2" ? 2 : 4, indentation.value !== "tabs"); }
 
 function renderOutput(): void {
     if (panel !== "javascript") return;
@@ -127,6 +130,7 @@ function renderMetadata(): void {
     presentation.update(current);
 }
 function detachView(): void {
+    stopReference?.(); stopReference = undefined;
     output?.destroy(); output = undefined;
     languageView?.destroy(); languageView = undefined;
     stopView?.(); stopView = undefined; stopFind?.(); stopFind = undefined;
@@ -161,11 +165,14 @@ function mountFile(file: DemoFile, focus = false): void {
         savedLabel.textContent = project.isReviewingConflict() ? "Other page's saved copy" : "Saved copy"; workingLabel.textContent = "Your changes";
         labels.append(savedLabel, workingLabel); element("panel-content").prepend(labels);
         editor = comparison.working;
+        const configureReference = () => comparison?.referenceEditor()?.configureLanguage(editingConfiguration());
+        stopReference = comparison.reference.subscribe(configureReference); configureReference();
     } else {
         editor = mountEditingCandidate(element("editor"), project.workspace, file.tab,
             { view: file.view, ariaLabel: file.name, decorate: presentation.decorate });
         renderProblems();
     }
+    editor.configureLanguage(editingConfiguration());
     if (savedViews.has(file.view)) editor.restoreView(savedViews.get(file.view)!);
     viewListeners = new AbortController();
     editor.element.addEventListener("sttropez-render", renderGutter, { signal: viewListeners.signal });
@@ -237,6 +244,13 @@ on("complete", () => languageView?.complete());
 on("inspect-type", () => languageView?.inspect()); on("signature", () => languageView?.signature());
 on("definition", () => languageView?.definition()); on("references", () => languageView?.references()); on("rename", () => languageView?.rename());
 on("quickfix", () => languageView?.quickfix());
+for (const command of ["line-comment", "block-comment", "indent", "outdent"] as const) on(command, () => {
+    if (editor?.runCommand(command)) editor.focus();
+});
+indentation.addEventListener("change", () => {
+    editor?.configureLanguage(editingConfiguration());
+    comparison?.referenceEditor()?.configureLanguage(editingConfiguration()); editor?.focus();
+}, { signal: listeners.signal });
 const codeMenu = element("code-menu") as HTMLDetailsElement;
 codeMenu.addEventListener("click", event => { if ((event.target as HTMLElement).closest("button")) codeMenu.open = false; }, { signal: listeners.signal });
 document.addEventListener("pointerdown", event => { if (!codeMenu.contains(event.target as Node)) codeMenu.open = false; }, { signal: listeners.signal });
