@@ -24,6 +24,56 @@ installation are rejected. Compiler/provider dependencies remain in the developm
 Owned provider projects, connections, processes and pending removals are zero after closure.
 Selected plain/React fixture journeys retain the broader workspace/host lifecycle coverage.
 
+## Visible continuity and complete-host coverage
+
+Local input-handler time and an eventually correct snapshot are insufficient acceptance criteria.
+The first visible response must also retain the surviving source text, its existing syntax colors,
+selection/caret and the last completed output while deferred services run. Fresh compiler output
+and diagnostics have separate readiness clocks. The syntax host provisionally maps completed
+classification ranges through the public document transactions, querying only visible spans.
+Changed lexical context can retain provisional colors until the current compiler result arrives;
+these colors never supply diagnostics, edits or provider authority. File changes and unmapped
+resource reloads clear the old classification. Undo to the analyzed immutable buffer restores it.
+
+The generated output view stays mounted while analysis is pending or unavailable. The footer
+reports that state; the last completed output is a preview, not a claim about the current source.
+Fresh output updates that read-only resource and preserves its approximate scroll position.
+Changing files/panels or disposing the page releases the view and its resource.
+
+The shared presentation journey holds actual compiler replies and observes every animation frame
+and completed viewport render during deletion, undo/redo and scrolling. It runs on mixed code and
+the 100k-line sample, checks colors on surviving rows and continuous bounded output, then releases
+replies and requires current analysis. Existing long-line/multiline, file-change, worker-failure,
+save/review and native-scrollbar journeys cover the adjacent behavior without a new test matrix.
+DOM/style observations and screenshots are evidence of browser state, not physical-display proof.
+
+The integrated measurement checks every mounted text pane, not only source/comparison. It records
+whole-host long tasks, animation-frame gaps and supported Event Timing entries, alongside existing
+handler, local-frame and fresh-service clocks. Event Timing durations are quantized and only
+entries reported at the 16 ms threshold are collected; these are not a complete latency
+distribution or a page INP score. Input delay, event processing and presentation delay are distinct
+parts of browser responsiveness. [Browser measurement guidance](https://web.dev/codelabs/measuring-inp).
+
+The bounded campaign now includes ordinary code, 2,000 unique functions/10,000 semantic TypeScript
+lines, and 100k comment lines. Cold readiness, start/middle/end edits, navigation, completion,
+comparison and save use the complete host with services active. This replaces neither the native
+device matrix nor constrained-hardware qualification, and does not establish stable tail latency.
+
+That wider campaign exposed an open bulk-input gap: a single synthetic insertion of 285,560
+UTF-16 units took about 160 seconds on Chromium, including one main-thread long task of the same
+duration. Subsequent local-frame observations were about 43–83 ms. Good warm typing therefore
+does not qualify document replacement. Smaller controlled probes found substantial browser/native
+work; disabling textarea wrapping reduced it but did not remove it. Attribution of the full stall
+remains open. The next focused comparison is captured bulk insertion versus the existing paste/host
+transaction paths, with the input context and browser work observed separately. This is not proof
+about actual OS clipboard or IME behavior. No speculative production input change follows.
+
+The existing five-second local-readiness deadline is also enforced from Node around measured
+typing and semantic fixture insertion. An in-page timer cannot fire while that page's main thread
+is blocked. The external watchdog closes only the campaign-owned headless browser and preserves
+partial failure evidence. `--corpora=pricing,large` selects independent cases; it does not close the
+semantic bulk-input gap or turn the full campaign into a pass.
+
 The milestone typecheck, all 403 model tests and dependency-free build passed. The broad
 Chromium campaign passed 729/731 cases. One existing isolated headless-clipboard case missed
 its 30-second test deadline; the fractional-zoom scrollbar case stopped at the five-second
@@ -78,8 +128,12 @@ its handler/frame maxima were 2.9/48 ms ordinary and 5.4/48 ms large.
 
 These are small diagnostic samples on a busy machine, not stable latency tails or provider
 service guarantees. Language feedback can take seconds on the large sample while local editing
-remains available. The development syntax worker analyzes deferred full-file snapshots; compiler,
-provider and full read-only JavaScript output costs grow with document size. Accepted Linux
+remains available. These historical measurements did not check intermediate syntax-color loss
+or bound the full JavaScript pane, and must not be read as proof of visual continuity. The current
+host retains provisional colors/output and virtualizes both panes. The development syntax worker
+still analyzes deferred full-file snapshots; compiler/provider and output-buffer construction costs
+grow with document size. Pending color queries depend on visible spans and the transactions since
+the last completed analysis, not a full token-array remap on each keystroke. Accepted Linux
 editor baselines remain separate and do not qualify this new compiler/provider composition.
 
 CDP observations cover the main target only, without forced collection. Large-file used V8 heap

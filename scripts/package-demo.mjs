@@ -148,12 +148,16 @@ if (!prepareOnly) {
         response.setHeader("Content-Type", file.endsWith(".js") ? "text/javascript" : file.endsWith(".css") ? "text/css" : file.endsWith(".txt") ? "text/plain" : "text/html");
         response.end(await readFile(join(site, file)));
     })().catch(error => { console.error(error); if (!response.headersSent) response.writeHead(500); response.end(); }); });
-    const provider = attachDemoProvider(server); let browser;
+    const provider = attachDemoProvider(server); let browser, browserServer;
     try {
         await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
-        browser = await ({ chromium, firefox, webkit })[browserName].launch({ headless: true });
+        if (measureOnly) {
+            // Keep a public process owner so a blocked renderer cannot delay campaign cancellation.
+            browserServer = await chromium.launchServer({ headless: true, host: "127.0.0.1" });
+            browser = await chromium.connect(browserServer.wsEndpoint());
+        } else browser = await ({ chromium, firefox, webkit })[browserName].launch({ headless: true });
         const url = `http://127.0.0.1:${server.address().port}/`, journeys = {};
-        if (measureOnly) evidence.measurement = await measureDemo(browser, url, { sourceSha256: source.sha256, packageSha256 });
+        if (measureOnly) evidence.measurement = await measureDemo(browser, url, { sourceSha256: source.sha256, packageSha256 }, () => browserServer.kill());
         for (const [name, run] of measureOnly ? [] : [["walkthrough", runDemoWalkthrough], ["conflict", runDemoConflict]]) {
             const context = await browser.newContext({ viewport: { width: 1200, height: 760 } });
             try { journeys[name] = await run(await context.newPage(), url); console.log(`Restored demo ${name} passed (${browserName}).`); }
@@ -161,7 +165,7 @@ if (!prepareOnly) {
         }
         evidence.journeys = journeys;
     } finally {
-        await browser?.close(); await provider.close();
+        await browser?.close(); await browserServer?.close(); await provider.close();
         await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
         evidence.providerAfterClose = provider.snapshot();
         assert.deepEqual(evidence.providerAfterClose, { projects: 0, connections: 0, processes: 0, removals: 0 });
