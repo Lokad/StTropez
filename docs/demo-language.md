@@ -85,6 +85,12 @@ The existing deterministic protocol fixture keeps its separate `/lsp-fixture` ro
   every edit, rejects stale captures and applies atomically. Undo from either participating
   file restores both files. Both demo providers share this fixture; TypeScript continues to
   check and color the editable code. This is not a general-purpose rename implementation.
+- The same sample offers **Demo host: add review note**, a command-only action, and a refactor
+  followed by a host project check. Select a command, then **Run action**. A deliberately failed
+  check leaves the earlier rename applied and undoable, with a recovery message. Undo and request
+  a fresh action without reconnecting. The host authorizes the exact sample URI/mode, and only
+  permits the fixed end-of-file note through its selected-operation edit policy. These handlers
+  use the public command client and captured workspace transactions; they never execute source code.
 - A failed provider leaves typing, history, comparison and local saves usable. Retry creates
   a fresh provider connection with current document snapshots. Switching samples suspends
   the inactive provider; file switches retain the same project synchronization stream. Retry
@@ -143,8 +149,8 @@ not a claim about TypeScript's diagnostic capabilities or another language imple
 The pinned provider attaches an empty-title `_typescript.applyCodeActionCommand` even to some
 pure edits. The bridge removes only that demonstrated no-op form when its nested command list
 is absent or empty. Edits, metadata and target ranges still reach the unchanged strict decoder.
-No action command executes. Fixes requiring other commands, package installation, file creation
-or targets outside the known sample remain unsupported.
+Only the explicitly registered Project actions host handlers execute. Arbitrary TypeScript server
+commands, package installation, file creation and targets outside the known sample remain unsupported.
 
 Pinned-provider completion behaviors are adapted by the development bridge. It preserves
 the input item's opaque data when resolution replaces the server's cache key, and excludes

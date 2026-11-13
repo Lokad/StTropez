@@ -16,6 +16,7 @@ type Review = { token: number; request: LspApplyEdit; context: LspRequestContext
 export type ProjectReview = Readonly<{ token: number; label: string; count: number; page: number; notes: readonly ActionNote[]; canApply: boolean }>;
 export type ProjectActionReceipt = Readonly<{ success: boolean; applied: boolean; reason: string; changes: ProjectSnapshot["changes"] }>;
 export type ProjectActionHandle = Readonly<{ cancel: () => void; applied: () => boolean; result: Promise<ProjectActionReceipt> }>;
+export type ProjectActionEditPolicy = (request: LspApplyEdit) => "apply" | "review" | "decline";
 export type ProjectActionIntent = Readonly<{ editor: EditingCandidate; sources: readonly Readonly<{ document: DocumentSnapshot; authority: string }>[];
     edit: LspWorkspaceEdit | null; isCurrent: () => boolean; subscribe: (listener: () => void) => () => void; cancel: () => void;
     execute: (scope: LspCommandScope) => Promise<LspCommandReceipt> }>;
@@ -36,6 +37,7 @@ export class HostProjectTools {
     private stopBackend: (() => void) | undefined;
     private readonly backendFactory: LspProjectFactory | undefined;
     private readonly provider: LspWorkspace | undefined;
+    private readonly actionEditPolicy: ProjectActionEditPolicy | undefined;
     readonly usesLsp: boolean;
     private reviewSerial = 0;
     private registered = false;
@@ -49,8 +51,8 @@ export class HostProjectTools {
     private readonly metrics = { requested: 0, serverRequests: 0, applied: 0, rejected: 0, cancelled: 0, failed: 0 };
     private readonly cell = new HostCell<ProjectSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, registered: false, pending: false, status: "idle", message: "Focus a candidate source to use workspace provider commands.", view: null, changes: [], review: null });
     readonly state = this.cell.observable;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, backendFactory?: LspProjectFactory, provider?: LspWorkspace) {
-        this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory; this.provider = provider; this.usesLsp = backendFactory !== undefined;
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, backendFactory?: LspProjectFactory, provider?: LspWorkspace, actionEditPolicy?: ProjectActionEditPolicy) {
+        this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory; this.provider = provider; this.usesLsp = backendFactory !== undefined || provider !== undefined; this.actionEditPolicy = actionEditPolicy;
     }
     private available(s: Session): boolean {
         const tab = this.workspace.resolveTab(s.target);
@@ -139,7 +141,7 @@ export class HostProjectTools {
     private finishReview(job: Job, review: Review, result: LspApplyEditResult): boolean {
         if (job.review !== review) return false; delete job.review; review.stop(); job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(review.timer); review.finish(Object.freeze(result)); this.publish(); return true;
     }
-    private review(job: Job, request: LspApplyEdit, context: LspRequestContext): Promise<LspApplyEditResult> {
+    private review(job: Job, request: LspApplyEdit, context: LspRequestContext, policy?: ProjectActionEditPolicy): Promise<LspApplyEditResult> {
         this.metrics.serverRequests++;
         if (!this.current(job) || !context.isCurrent() || !request.edit.isCurrent() || job.review) { this.metrics.rejected++; return Promise.resolve({ applied: false, failureReason: "Captured edit intent is unavailable or changed." }); }
         if (!request.edit.documents.some(change => change.edits.length)) return Promise.resolve({ applied: true });
@@ -154,6 +156,13 @@ export class HostProjectTools {
             job.revisions.set(document.id, document.revision); job.authority.set(document.id, this.authority(document.id));
             const changed = () => { if (!this.publishing && this.job === job && !this.current(job)) { job.invalid = true; queueMicrotask(() => { if (this.job === job) this.cancel(); }); } };
             job.stops.push(this.workspace.observeDocument(document.id).subscribe(changed), this.workspace.resourceForDocument(document.id).metadata.subscribe(changed));
+        }
+        if (policy) {
+            try {
+                const decision = policy(request);
+                if (decision === "apply") { if (!context.isCurrent()) throw new Error("Captured edit request changed."); this.applyCaptured(job, request.edit); return Promise.resolve({ applied: true }); }
+                if (decision === "decline") return Promise.resolve({ applied: false, failureReason: "The host declined this command edit." });
+            } catch (error) { return Promise.resolve({ applied: false, failureReason: error instanceof Error ? error.message : "Host edit policy failed." }); }
         }
         return new Promise(resolve => {
             const review: Review = { token: ++this.reviewSerial, request, context, finish: resolve, stop: () => {}, timer: 0, page: 0 }; job.review = review;
@@ -215,16 +224,18 @@ export class HostProjectTools {
             job.stops.push(origin.editor.view.subscribe(changed), origin.editor.view.folding.subscribe(changed), this.workspace.tabState.subscribe(changed), intent.subscribe(changed));
             job.timer = win.setTimeout(() => { if (this.job === job) this.cancel(); }, 120000);
             if (!this.current(job)) throw new Error("Captured action intent changed before handoff.");
-            this.publish({ status: "pending", message: "Executing the confirmed action; provider edits require a captured decision here." });
+            this.publish({ status: "pending", message: "Executing the confirmed action under the host's captured edit policy." });
         } catch (error) { this.release(job); throw error; }
         const result = Promise.resolve().then(() => intent.execute({ snapshots: () => [...job.documents.values()], isCurrent: () => this.current(job),
-            prepare: () => { if (!this.current(job)) throw new Error("Captured action intent changed."); if (intent.edit) this.applyCaptured(job, intent.edit); }, review: (request, context) => this.review(job, request, context) })).then(receipt => {
+            prepare: () => { if (!this.current(job)) throw new Error("Captured action intent changed."); if (intent.edit) this.applyCaptured(job, intent.edit); }, review: (request, context) => this.review(job, request, context, this.actionEditPolicy) })).then(receipt => {
             if (!this.current(job)) throw new Error("Captured command intent changed.");
-            const success = receipt.decision?.applied !== false, reason = success ? "Confirmed action command completed." : receipt.decision!.failureReason ?? "Provider edits declined.";
-            this.release(job); this.publish({ status: success ? "ready" : "rejected", message: !success && job.applied ? `Earlier edits remain applied and undoable. ${reason}` : reason });
-            return Object.freeze({ success, applied: job.applied, reason, changes: Object.freeze([...job.changes]) });
+            const success = receipt.decision?.applied !== false, reason = success ? typeof receipt.value === "string" ? receipt.value.slice(0, 1024) : "Confirmed action command completed." : receipt.decision!.failureReason ?? "Provider edits declined.";
+            const message = !success && job.applied ? `Earlier edits remain applied and undoable. ${reason}` : reason;
+            this.release(job); this.publish({ status: success ? "ready" : "rejected", message });
+            return Object.freeze({ success, applied: job.applied, reason: message, changes: Object.freeze([...job.changes]) });
         }).catch(error => {
-            intent.cancel(); const reason = job.applied ? "Action command ended after application; the edits remain applied and undoable." : error instanceof Error ? error.message : "Action command failed without application.";
+            intent.cancel(); const failure = error instanceof Error ? error.message.slice(0, 1024) : "Action command failed.";
+            const reason = job.applied ? `${failure} Earlier edits remain applied and undoable.` : failure;
             if (this.job === job) { this.release(job); this.publish({ status: "failed", message: reason }); }
             return Object.freeze({ success: false, applied: job.applied, reason, changes: Object.freeze([...job.changes]) });
         });

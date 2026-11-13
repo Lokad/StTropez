@@ -80,7 +80,7 @@ export class HostActionsTools {
                 edits: [], title: "", choices: [], page: 0, editCount: 0 });
         });
     }
-    private disabled(action: LspCodeAction): string | null { return action.disabled ?? (action.command ? !this.reviewOwner || !this.job?.batch?.supports(action.command.command) ? "This command is not advertised by the captured provider." : null : !action.resolve && !action.edit?.documents.some(change => change.edits.length) ? "The provider returned no text changes." : null); }
+    private disabled(action: LspCodeAction): string | null { return action.disabled ?? (action.command ? !this.reviewOwner || !this.job?.batch?.supports(action.command) ? "This captured command is not permitted by the host." : null : !action.resolve && !action.edit?.documents.some(change => change.edits.length) ? "The provider returned no text changes." : null); }
     private publish(patch: Partial<ActionsSnapshot> = {}): void {
         const job = this.job; this.cell.set({ ...this.cell.get(), ...patch, choicePage: job?.choicePage ?? 0, available: !!this.active && this.available(this.active), connected: this.backend?.snapshot().connected ?? this.client?.snapshot().connected ?? false,
             disconnected: this.disconnected, reconnectRequired: this.provider?.state.getSnapshot().commandRequiresReconnect ?? false, token: this.execution?.token ?? job?.input.id ?? null, pending: !!this.execution || !!job && (!job.ready || job.resolving), choice: job?.choice ?? null, resolving: job?.resolving ?? false, command: job?.selected?.command?.command ?? null,
@@ -222,7 +222,7 @@ export class HostActionsTools {
             before: doc.buffer.slice(edit.from, Math.min(edit.to, edit.from + 256)) + (edit.to - edit.from > 256 ? "…" : ""), insert: edit.insert.slice(0, 256), insertUnits: edit.insert.length,
             context: doc.buffer.slice(Math.max(0, edit.from - 32), Math.min(edit.to, edit.from + 128)) + (edit.to - edit.from > 128 ? "…" : "") + doc.buffer.slice(edit.to, Math.min(doc.buffer.length, edit.to + 32)) })));
         this.publish({ status: "ready", title: action.title, disabled, edits, editCount: changes.length, page: job.page,
-            message: disabled ?? (action.command ? `Confirm execution of ${action.command.title} (${action.command.command}) with ${action.command.arguments.length} captured arguments after ${changes.length} edits. Any further provider edits require a decision in Workspace provider.` : `Review ${changes.length} captured provider edits before confirming. Every target must permit application.`) });
+            message: disabled ?? (action.command ? `Confirm execution of ${action.command.title} (${action.command.command}) with ${action.command.arguments.length} captured arguments after ${changes.length} edits. Further edits follow the host's captured action policy.` : `Review ${changes.length} captured provider edits before confirming. Every target must permit application.`) });
     }
     nextPage(): void { const job = this.job; if (job?.selected?.edit && this.current(job) && !job.resolving && (job.page + 1) * 64 < this.cell.get().editCount) { job.page++; this.showChoice(job); } }
     previousPage(): void { const job = this.job; if (job?.selected && this.current(job) && !job.resolving && job.page > 0) { job.page--; this.showChoice(job); } }
@@ -240,10 +240,10 @@ export class HostActionsTools {
                     isCurrent: batch.commandCurrent, subscribe: backend.subscribe, execute: scope => batch.execute(action, scope), cancel: () => { if (this.backend === backend) this.drop(); else backend.dispose(); } });
                 if (!handle) { this.publish({ message: "Finish the current workspace-provider review before executing this action." }); return; }
                 const execution = { token: job.input.id, handle }; this.execution = execution; this.release();
-                this.publish({ status: "pending", message: "Executing the confirmed action. Review any further edits in Workspace provider.", edits: [], choices: [], editCount: 0, title: action.title });
+                this.publish({ status: "pending", message: "Executing the confirmed action under the host's captured edit policy.", edits: [], choices: [], editCount: 0, title: action.title });
                 void handle.result.then(receipt => { if (this.execution !== execution) return; this.execution = undefined; if (receipt.applied) this.metrics.applied++;
-                    if (!this.backend?.snapshot().connected) this.disconnected = true;
-                    this.publish({ status: receipt.success ? receipt.applied ? "applied" : "executed" : "failed", message: !receipt.success && receipt.applied ? `Earlier edits remain applied and undoable. ${receipt.reason}` : receipt.reason,
+                    if (this.provider ? this.provider.state.getSnapshot().phase !== "ready" : this.backend && !this.backend.snapshot().connected) this.disconnected = true;
+                    this.publish({ status: receipt.success ? receipt.applied ? "applied" : "executed" : "failed", message: receipt.reason,
                         title: "", changes: receipt.changes, changed: receipt.changes.find(change => change.document === job.document.id) ?? receipt.changes[0] ?? null }); });
             } catch (error) { this.publish({ message: error instanceof Error ? error.message : "Captured command cannot start." }); }
             return;

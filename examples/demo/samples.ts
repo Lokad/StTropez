@@ -45,7 +45,7 @@ export const sampleChoices: readonly Readonly<{ id: SampleId; title: string }>[]
 /** Large fixtures are built only on explicit selection. */
 export function demoSample(id: SampleId): DemoSample {
     if (id === "actions") return { id, title: "Project actions",
-        description: "Demo provider fixture: use Ctrl+. or Code → Quick fix to preview renaming exampleRate across both files. Apply once, then undo from either file. Ordinary small TypeScript quick fixes apply when selected; broader changes keep this review step.",
+        description: "Use Ctrl+. or Code → Quick fix for a two-file refactor, a host command that adds a review note, or a refactor followed by a project check. The deliberate failure demonstrates recovery: earlier edits remain undoable. These labeled demo fixtures never execute your program. Ordinary small TypeScript fixes apply when selected.",
         files: { "main.ts": '// Demo project action fixture\nimport { exampleRate } from "./rate";\n\nconsole.log(100 * (1 - exampleRate));\n',
             "rate.ts": '// Demo project action fixture\nexport const exampleRate = 0.1;\n' } };
     if (id === "diagnostics") return { id, title: "Diagnostic details",

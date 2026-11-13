@@ -50,6 +50,7 @@ export class DemoLanguage {
         this.scope?.setDocuments(this.files.map(file => this.workspace.document(file.resource.documentId)));
         this.invalidate(); if (this.active) this.schedule();
     }
+    documentUri(file: DemoFile): string | undefined { return !this.disposed && this.files.includes(file) ? this.config?.documents[file.name]?.uri : undefined; }
     private publish(patch: Partial<State>): void { if (!this.disposed) this.cell.set({ ...this.cell.get(), ...patch }); }
     private invalidate(): void {
         this.diagnosticGeneration++; if (this.timer) clearTimeout(this.timer); this.timer = undefined;
@@ -108,7 +109,7 @@ export class DemoLanguage {
                     connect: context => capturedProvider.connect(context),
                     rootUri: config.rootUri, clientInfo: { name: "StTropez demo" }, markdownDocumentation: true,
                     schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
-                    features: ["textDocument/completion", "textDocument/hover", "textDocument/signatureHelp", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction", "textDocument/foldingRange", "textDocument/documentHighlight"], diagnostics: false,
+                    features: ["textDocument/completion", "textDocument/hover", "textDocument/signatureHelp", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction", "textDocument/foldingRange", "textDocument/documentHighlight"], diagnostics: false, workspaceEdits: true, applyEdit: true,
                     maxDocumentUnits: 8_000_000, maxTotalUnits: 16_000_000, rpc: { maxMessageUnits: 16 * 1024 * 1024 },
                     documentInfo: document => { const file = this.files.find(file => file.resource.documentId === document.id), info = file && capturedProvider.documents[file.name];
                         return info && { uri: info.uri, languageId: "typescript" }; }, resolveTarget,

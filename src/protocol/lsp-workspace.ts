@@ -298,12 +298,12 @@ export class LspWorkspace {
                 return listen(() => { if (scope.applyEdit === handler) scope.applyEdit = undefined; });
             },
             onNotification: (method, handler) => { writable(); return listen(this.session.onNotification(method, (value, epoch) => { if (scope.active) return handler(value, epoch); })); },
-            requestCommand: <T = JsonValue>(command: string, args: readonly JsonValue[] = [], timeoutMs?: number) => {
+            requestCommand: <T = JsonValue>(command: string, args: readonly JsonValue[] = [], timeoutMs?: number, authorization?: Parameters<LspSession["requestCommand"]>[3]) => {
                 writable(); const reserved = this.command;
                 if (reserved && (reserved.scope !== scope || reserved.sent || !this.commandCurrent(reserved))) throw new RpcError(-32801, "Provider command lane is unavailable.");
                 const intent = reserved ?? reserve(); intent.sent = true; let waiting = true;
                 try {
-                    const raw = this.session.requestCommand<T>(command, args, timeoutMs), call = track({ ...raw, cancel: () => { if (waiting) this.endCommand(intent, true); raw.cancel(); } });
+                    const raw = this.session.requestCommand<T>(command, args, timeoutMs, authorization), call = track({ ...raw, cancel: () => { if (waiting) this.endCommand(intent, true); raw.cancel(); } });
                     const result = call.result.then(value => { waiting = false; return value; }, error => { waiting = false; if (error instanceof RpcError && error.code === -32098) this.endCommand(intent, true); throw error; })
                         .finally(() => this.endCommand(intent, false, false));
                     return Object.freeze({ ...call, result, isCurrent: () => scope.active && scope.generation === intent.generation && !intent.cancelled && raw.isCurrent() });

@@ -115,7 +115,7 @@ test("workspace commands require advertised bounded options, reject stale regist
     let finish: ((value: unknown) => void) | undefined, executed = 0;
     peer.rpc.onRequest("workspace/executeCommand", (params: { command: string }) => { executed++; return params.command === "status" ? { ok: true } : new Promise(resolve => { finish = resolve; }); });
     assert.deepEqual(session.commandNames(), ["status"]); assert.equal(Object.isFrozen(session.commandNames()), true); assert.equal(peer.initialize()!.capabilities.workspace!.executeCommand!.dynamicRegistration, true);
-    assert.deepEqual(await session.requestCommand("status", [{ opaque: "😀" }]).result, { ok: true }); assert.throws(() => session.requestCommand("unknown"), /not advertised/); assert.throws(() => session.requestCommand("status", ["x".repeat(8193)]), /limit/); assert.equal(executed, 1);
+    assert.deepEqual(await session.requestCommand("status", [{ opaque: "😀" }]).result, { ok: true }); assert.throws(() => session.requestCommand("unknown"), error => error instanceof RpcError && error.code === -32601); assert.throws(() => session.requestCommand("status", ["x".repeat(8193)]), /limit/); assert.equal(executed, 1);
     await peer.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "commands", method: "workspace/executeCommand", registerOptions: { commands: ["review"] } }] });
     const call = session.requestCommand("review"); const rejected = assert.rejects(call.result, error => error instanceof RpcError && error.code === -32801); await settled();
     await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "commands", method: "workspace/executeCommand" }] }); assert.equal(call.isCurrent(), false); finish!({ late: true }); await rejected;

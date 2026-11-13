@@ -11,12 +11,16 @@ particular decision. Receiving a request never grants edit authority by itself.
 
 `LspSession.commandNames()` returns the union of advertised static and dynamic commands.
 Command registration is global, with no document selector. `requestCommand` refuses unadvertised
-names, snapshots bounded opaque arguments, and captures session/registration generations. It does
+names unless the host supplies an exact invocation grant, snapshots bounded opaque arguments,
+and captures session/registration generations. It does
 not impose a user interface policy or replay commands after reconnect. Each provider accepts at
 most 128 names of 256 units; the combined union is limited to 256 names and each argument array to
 8,192 JSON units. Invalid registration batches leave the previous registry unchanged.
 The public command runner snapshots those arguments and reserves the shared lane before any
 host preparation edit or synchronization. Competing commands are refused before preparation.
+The [action command policy](lsp-code-actions.md) distinguishes authorized server routes from local
+host handlers. Both use the same lane and edit validation. A local handler's known failure or
+cancellation releases that lane without quarantining a server command that was never sent.
 
 `applyEdit` is an explicit session option. A `workspace/applyEdit` handler must be registered before
 connecting when that capability is advertised. `decodeLspApplyEdit` validates the optional literal

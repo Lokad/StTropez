@@ -1,7 +1,7 @@
 import type { TextBuffer } from "../core/text-buffer.ts";
 import { NotificationScope, Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
-import { JsonRpcConnection, RpcError, jsonSnapshot } from "./json-rpc.ts";
+import { JsonRpcConnection, RpcError, jsonEqual, jsonSnapshot } from "./json-rpc.ts";
 import type { JsonValue, RpcCall, RpcOptions, RpcRequestContext, RpcScheduler, RpcTransport } from "./json-rpc.ts";
 import { LspLineIndex } from "./lsp-positions.ts";
 import { compileLspSelector } from "./lsp-selector.ts";
@@ -15,6 +15,8 @@ const providers = { "textDocument/completion": "completionProvider", "textDocume
 export type LspFeature = keyof typeof providers;
 export type LspDocumentFeature = Exclude<LspFeature, "workspace/executeCommand">;
 export type LspCommandCall<T> = RpcCall<T> & Readonly<{ isCurrent: () => boolean }>;
+/** Host grant for one invocation, including opaque arguments; never inferred from a server response. */
+export type LspCommandAuthorization = Readonly<{ command: string; arguments: readonly JsonValue[]; isCurrent: () => boolean }>;
 export type LspDocumentSnapshot = Readonly<{ uri: string; languageId: string; resourceId: string; documentId: string; revision: number; buffer: TextBuffer }>;
 export type LspDocument = Readonly<{ getSnapshot: () => LspDocumentSnapshot;
     update: (expectedRevision: number, revision: number, buffer: TextBuffer) => void; close: () => void }>;
@@ -271,10 +273,13 @@ export class LspSession {
     }
     commandNames(): readonly string[] { return this.store.get().phase === "ready" && this.features.has("workspace/executeCommand") ? this.collectCommands() : Object.freeze([]); }
     /** Explicit caller policy/confirmation is required; commands are never replayed across a session. */
-    requestCommand<T = JsonValue>(command: string, args: readonly JsonValue[] = [], timeoutMs = this.options.rpc?.timeoutMs ?? 15000): LspCommandCall<T> {
-        this.writable(); if (!this.commandNames().includes(command)) throw new RpcError(-32601, "LSP command is not advertised for this session.");
+    requestCommand<T = JsonValue>(command: string, args: readonly JsonValue[] = [], timeoutMs = this.options.rpc?.timeoutMs ?? 15000, authorization?: LspCommandAuthorization): LspCommandCall<T> {
+        this.writable();
         const argumentsValue = jsonSnapshot(args); if (!Array.isArray(argumentsValue) || JSON.stringify(argumentsValue).length > 8192) throw new RangeError("LSP command arguments exceed their limit.");
-        const epoch = this.epoch, generation = this.generation, isCurrent = () => this.current(epoch) && this.store.get().phase === "ready" && this.generation === generation && this.commandNames().includes(command);
+        if (authorization && (authorization.command !== command || !jsonEqual(authorization.arguments, argumentsValue))) throw new RpcError(-32601, "Host command authorization does not match this invocation.");
+        const permitted = authorization?.isCurrent ?? (() => this.commandNames().includes(command));
+        if (!this.features.has("workspace/executeCommand") || !permitted()) throw new RpcError(-32601, "LSP command is neither advertised nor authorized by the host.");
+        const epoch = this.epoch, generation = this.generation, isCurrent = () => this.current(epoch) && this.store.get().phase === "ready" && this.generation === generation && permitted();
         const call = this.ready(epoch).request<T>("workspace/executeCommand", { command, arguments: argumentsValue }, timeoutMs);
         return Object.freeze({ id: call.id, cancel: call.cancel, isCurrent, result: call.result.then(result => { if (!isCurrent()) throw stale(); return result; }) });
     }

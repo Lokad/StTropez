@@ -116,8 +116,22 @@ The walkthrough selects a real spelling fix directly and preserves its shared hi
 later edit, refreshes its capture, commits both files and undoes from either source, then saves
 and reloads the complete result. A focused delayed-resolution check distinguishes explicit
 activation from response arrival and rejects queued application after later typing. Existing
-host checks retain their default reviewed behavior. Command-only and edit-plus-command demo
-integration remains separate work; this checkpoint does not claim it is delivered.
+host checks retain their default reviewed behavior. The shared Project actions journey also runs
+a host command that inserts one undoable review note, an edit-plus-command project check, and a
+deliberately failed later phase. It checks the failure message, retained edits, undo and a fresh
+action without reconnect. Protocol checks separately cover exact unadvertised server authority,
+immutable arguments, revocation, unsolicited edits, hanging-handler cancellation, late edits and
+retention of a rejected phase in the receipt. Host handlers share target validation and edit policy
+with server commands but send no `workspace/executeCommand` request.
+
+A bounded command-note observation on shared Windows/headless Chromium starts after the action
+response is ready. Across three ordinary and three 100k-comment-line runs, synchronous button
+dispatch was 0.5–1.0 ms. The command receipt took 6–11 ms ordinarily and 33–42 ms on the large
+input; its inserted text was visible in the first two sampled frames (25–41 ms), with existing
+comment spans still colored and 33 large-input rows mounted. The measurement's complete automation
+call, including additional frame observation and IPC, took 58–77 ms. This is neither a provider
+analysis measurement nor physical-display/tail qualification; unchanged typing/model benchmarks
+retain their earlier evidence.
 
 The documentation journey also exercises **Diagnostic details**: real TypeScript related
 declarations, a labeled host warning's source/severity/deprecated tag, explicit permitted help,

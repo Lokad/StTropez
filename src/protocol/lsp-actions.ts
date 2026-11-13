@@ -2,18 +2,20 @@ import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
 import { RpcError } from "./json-rpc.ts";
 import { createLspClient } from "./lsp-client.ts";
 import { decodeLspCodeActions, decodeLspResolvedCodeAction, lspCodeActionUris } from "./lsp-code-actions.ts";
-import type { LspCodeAction } from "./lsp-code-actions.ts";
+import type { LspCodeAction, LspCommand } from "./lsp-code-actions.ts";
 import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
 import { createLspCommandRunner } from "./lsp-command.ts";
-import type { LspCommandScope } from "./lsp-command.ts";
+import type { LspCommandPolicy, LspCommandRoute, LspCommandScope } from "./lsp-command.ts";
+
+export type LspActionOptions = Readonly<{ commandPolicy?: LspCommandPolicy }>;
 
 /** Reads share capture policy; confirmed commands retain their distinct mutation policy. */
-export function createLspActionClient(provider: LspWorkspace) {
+export function createLspActionClient(provider: LspWorkspace, options: LspActionOptions = {}) {
     const client = createLspClient(provider), session = client.scope;
     let executing = false, runner: ReturnType<typeof createLspCommandRunner> | undefined;
     const commands = () => runner ??= createLspCommandRunner(session, client.notify);
     const busy = () => executing || client.isBusy();
-    return Object.freeze({ state: client.state, subscribe: client.subscribe, cancel: client.cancel,
+    return Object.freeze({ state: client.state, subscribe: client.subscribe, cancel: () => { runner?.cancel(); client.cancel(); },
         run: async (snapshots: readonly DocumentSnapshot[], origin: DocumentId, from: number, to: number, prepare?: LspPrepare) => {
             if (executing) throw new Error("A confirmed action command is still running.");
             const value = await client.request(snapshots, origin, "textDocument/codeAction", capture => {
@@ -33,13 +35,20 @@ export function createLspActionClient(provider: LspWorkspace) {
             const uris = value.decode(() => lspCodeActionUris(value.response)); await value.resolveTargets(uris, "edit");
             const actions = value.decode(() => decodeLspCodeActions(value.response, value.capture, value.targetForUri, canResolve));
             const commandCurrent = value.isGenerationCurrent;
+            const routes = new Map<LspCommand, LspCommandRoute>();
+            for (const action of actions) if (action.command && !action.disabled) {
+                const route = options.commandPolicy ? options.commandPolicy(action.command)
+                    : session.commandNames().includes(action.command.command) ? { kind: "server" as const, isCurrent: () => session.commandNames().includes(action.command!.command) } : null;
+                if (route) routes.set(action.command, Object.freeze({ ...route }));
+            }
             return Object.freeze({ actions, isCurrent: value.isCurrent, commandCurrent,
-                supports: (command: string) => commandCurrent() && session.commandNames().includes(command),
+                supports: (command: LspCommand) => commandCurrent() && routes.has(command) && (routes.get(command)!.isCurrent?.() ?? true),
                 execute: async (action: LspCodeAction, scope: LspCommandScope) => {
+                    const route = action.command && routes.get(action.command);
                     if (!value.isCurrent() || busy() || !actions.includes(action) || !action.command || action.disabled
-                        || !session.commandNames().includes(action.command.command) || !provider.state.getSnapshot().commandAvailable) throw new RpcError(-32801, "Captured action command is unavailable or changed.");
+                        || !route || !(route.isCurrent?.() ?? true) || !provider.state.getSnapshot().commandAvailable) throw new RpcError(-32801, "Captured action command is unavailable or changed.");
                     executing = true;
-                    try { return await commands().run(action.command.command, action.command.arguments, scope); }
+                    try { return await commands().runAuthorized(action.command, scope, route); }
                     finally { executing = false; client.notify(); }
                 },
                 resolve: async (action: LspCodeAction, prepareResolve?: LspPrepare) => {
