@@ -6,6 +6,18 @@ import { BrowserLanguageService } from "../examples/demo/browser-language-servic
 import { demoSample } from "../examples/demo/samples.ts";
 import type { CompletionList, CompletionItem } from "vscode-languageserver-protocol/browser.js";
 
+test("browser TypeScript occurrences distinguish writes and reads in raw UTF-16 source", () => {
+    const provider = new BrowserLanguageService({}, ["main.ts"]), uri = "file:///sttropez/main.ts";
+    const text = "// 😀\r\nlet value = 1;\r\nvalue = value + 1;\r\n", document = TextDocument.create(uri, "typescript", 1, text);
+    try {
+        provider.notify("textDocument/didOpen", { textDocument: { uri, languageId: "typescript", version: 1, text } });
+        const initialized = provider.request("initialize", {}) as { capabilities: { documentHighlightProvider: boolean } };
+        assert.equal(initialized.capabilities.documentHighlightProvider, true);
+        const result = provider.request("textDocument/documentHighlight", { textDocument: { uri }, position: document.positionAt(text.indexOf("value")) }) as { range: { start: { line: number; character: number }; end: { line: number; character: number } }; kind: number }[];
+        assert.deepEqual(result.map(item => ({ text: document.getText(item.range), kind: item.kind })), [{ text: "value", kind: 3 }, { text: "value", kind: 3 }, { text: "value", kind: 2 }]);
+    } finally { provider.dispose(); }
+});
+
 test("browser TypeScript folding uses outlining spans without requiring a cursor", () => {
     const provider = new BrowserLanguageService({}, ["main.ts"]), uri = "file:///sttropez/main.ts";
     try {

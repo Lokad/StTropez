@@ -49,6 +49,7 @@ commit an explicitly authorized phase and supply its new snapshots before comman
 | Signature | `run(document, offset, context?, prepare?)` returns a cancellable call with active signature/parameter models, literal documentation and a currentness guard. |
 | Links | `run(document, prepare?)` returns validated items, currentness and explicit captured item `resolve`. Opening belongs to the host. |
 | Colors | `run(document, prepare?)` returns validated items, currentness and captured `presentations(item, rgba, prepare?)`. The host previews and applies the selected edits. |
+| Occurrences | `createLspHighlightClient(provider).run(document, offset, prepare?)` returns a cancellable call with text/read/write items, indexed `intersect(from, to)` and a currentness guard. The independent browser `createLspHighlightController` owns caret/focus/input lifetime; host decorations own colors. |
 
 Project snapshots must still match their Workspace resource, document, revision and
 buffer. URI resolution uses those explicitly participating host resources, including

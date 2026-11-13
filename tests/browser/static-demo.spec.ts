@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
-import { runDemoCompletionCatalogue, runDemoConflict, runDemoSnippets, runDemoWalkthrough, runDemoProjectResults, runDemoEditingRules, runDemoFolding } from "./demo-walkthrough.ts";
+import { runDemoCompletionCatalogue, runDemoConflict, runDemoSnippets, runDemoWalkthrough, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoHighlights } from "./demo-walkthrough.ts";
+
+test("occurrences follow the caret, edits and large virtualized documents", async ({ page, baseURL }) => { await runDemoHighlights(page, baseURL!, true); });
 
 test("automatic folding survives edits, find and independent review views", async ({ page, baseURL }) => { await runDemoFolding(page, baseURL!); });
 import { runDemoPresentationContinuity } from "./demo-presentation.ts";

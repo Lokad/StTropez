@@ -6,9 +6,24 @@ import type { DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTe
 import { referencePeer } from "../examples/protocol/reference-peer.ts";
 import { Workspace } from "../src/core/workspace.ts";
 import type { LspFeature, LspRequestContext, RpcScheduler, RpcTransport } from "../src/protocol/index.ts";
-const { LspWorkspace, createLspCommandRunner, createLspSignatureClient, createLspLinkClient, createLspColorClient, createLspFoldingClient, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
+const { LspWorkspace, createLspCommandRunner, createLspSignatureClient, createLspLinkClient, createLspColorClient, createLspFoldingClient, createLspHighlightClient, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 const settled = async () => { await setImmediate(); await setImmediate(); };
 const latch = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; };
+test("occurrences require current dynamic authority through withdrawal and reconnect", async t => {
+    const f = fixture(t, { features: ["textDocument/documentHighlight"] }), client = createLspHighlightClient(f.provider); t.after(client.dispose);
+    await f.provider.connect();
+    const register = async () => {
+        const peer = f.peers.at(-1)!; peer.rpc.onRequest("textDocument/documentHighlight", () => [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, kind: 3 }]);
+        await peer.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "occurrences", method: "textDocument/documentHighlight", registerOptions: { documentSelector: [{ language: "generic-language" }] } }] });
+    };
+    const run = () => client.run(f.workspace.document(f.source.documentId), 0).result;
+    await assert.rejects(run(), error => error instanceof RpcError && error.code === -32601);
+    await register(); const first = await run(); assert.equal(first.items.length, 1);
+    await f.peers[0]!.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "occurrences", method: "textDocument/documentHighlight" }] });
+    assert.equal(first.isCurrent(), false); await assert.rejects(run(), error => error instanceof RpcError && error.code === -32601);
+    await register(); const second = await run(); await f.provider.reconnect(); assert.equal(second.isCurrent(), false);
+    await assert.rejects(run(), error => error instanceof RpcError && error.code === -32601); await register(); assert.equal((await run()).isCurrent(), true);
+});
 test("folding honors dynamic capability withdrawal and requires fresh authority after reconnect", async t => {
     const f = fixture(t, { features: ["textDocument/foldingRange"] }), client = createLspFoldingClient(f.provider); t.after(client.dispose);
     await f.provider.connect();

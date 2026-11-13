@@ -31,6 +31,14 @@ The existing deterministic protocol fixture keeps its separate `/lsp-fixture` ro
 
 ## Current workflows
 
+- Placing the caret on a symbol highlights occurrences in the active source or comparison
+  working view through standard `textDocument/documentHighlight`. Reads are shaded and writes
+  also outlined, without replacing syntax colors. The browser provider maps TypeScript compiler
+  reference/write/definition spans to LSP kinds; plain text occurrences retain a neutral shade.
+  The pinned Node language server reports reads for these variable declarations and assignments,
+  so its local demo cannot distinguish those writes; the static compiler provider can.
+  Changed caret, edits, blur, file switches and provider authority expire prior results. The host
+  queries the public occurrence index only for visible rows, including large result sets.
 - Problems lists syntactic/type errors across the sample's files. Clicking an error selects
   its captured range in its named file. All errors are retained, with 64 rows per page.
   Typing expires the published project diagnostics.

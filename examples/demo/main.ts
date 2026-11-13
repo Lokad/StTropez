@@ -185,7 +185,7 @@ function mountFile(file: DemoFile, focus = false): void {
     element("workspace").classList.toggle("reviewing", panel === "changes");
     if (panel === "changes") {
         comparison = mountTextComparison(element("panel-content"), project.workspace, file.tab, project.baseline(file),
-            { view: file.view, workingDecorate: presentation.decorate, scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
+            { view: file.view, workingDecorate: line => [...presentation.decorate(line), ...(languageView?.decorate(line) ?? [])], scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
         const labels = document.createElement("div"); labels.className = "demo-review-labels";
         const savedLabel = document.createElement("span"), workingLabel = document.createElement("span");
         reviewLabel = savedLabel;
@@ -202,7 +202,7 @@ function mountFile(file: DemoFile, focus = false): void {
         stopReference = comparison.reference.subscribe(configureReference); configureReference();
     } else {
         editor = mountEditingCandidate(element("editor"), project.workspace, file.tab,
-            { view: file.view, ariaLabel: file.name, decorate: presentation.decorate });
+            { view: file.view, ariaLabel: file.name, decorate: line => [...presentation.decorate(line), ...(languageView?.decorate(line) ?? [])] });
         renderProblems();
     }
     editor.configureLanguage(editingConfiguration());

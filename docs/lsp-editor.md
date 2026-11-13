@@ -12,6 +12,20 @@ also use LSP in this route. Local tokenization and domain tools retain their ind
 The fixture recognizes simple words and TODO markers; it establishes protocol/host behavior, not
 general language semantics. There is no production service or provider prerequisite.
 
+Caret occurrences use the independent public `createLspHighlightController(workspace, tab, editor,
+{ provider, delayMs? })`. Enable `textDocument/documentHighlight` on the shared provider. The
+controller requests after a quiet caret interval (150 ms by default), waits for queued input and
+composition, and publishes immutable text/read/write ranges. Document, selection, focus and
+provider-authority changes clear obsolete results; disposal releases its scope and listeners.
+It neither edits text nor changes selection, and leaves initial connection/retry policy to the host.
+Hosts subscribe to `state` to invalidate their viewport, then use `intersect(line.from, line.to)`
+inside their line decorator. The result uses an interval index, including overlapping ranges,
+so visible-row queries skip unrelated occurrences. Host CSS supplies the visual distinction.
+`createLspHighlightClient` and `decodeLspDocumentHighlights` expose the same captured protocol
+path independently of a browser view. Every response item is validated against raw UTF-16
+source; an omitted kind means text, and no occurrence-count cap silently truncates results.
+Static and dynamic capability selection, cancellation and reconnect use the shared client rules.
+
 The optional `sttropez/protocol` entry supplies `LspDocumentCapture`, `lspRangeOffsets`,
 `decodeLspDiagnostics` and `decodeLspCompletions`. A capture identifies the exact URI/resource/
 document/revision, sent buffer/index, wire version, session and capability generation. It is never

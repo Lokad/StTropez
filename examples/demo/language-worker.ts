@@ -22,7 +22,7 @@ scope.addEventListener("message", (event: MessageEvent<unknown>) => {
         rpc = new JsonRpcConnection(transport, { schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
             maxMessageUnits: 16 * 1024 * 1024, maxPending: 128, onError: fail });
         for (const method of ["initialize", "shutdown", "sttropez/diagnostics", "textDocument/completion", "completionItem/resolve", "textDocument/hover",
-            "textDocument/signatureHelp", "textDocument/definition", "textDocument/references", "textDocument/prepareRename", "textDocument/rename", "textDocument/codeAction", "textDocument/foldingRange"]) {
+            "textDocument/signatureHelp", "textDocument/definition", "textDocument/references", "textDocument/prepareRename", "textDocument/rename", "textDocument/codeAction", "textDocument/foldingRange", "textDocument/documentHighlight"]) {
             rpc.onRequest(method, params => provider!.request(method, params));
         }
         for (const method of ["initialized", "exit", "textDocument/didOpen", "textDocument/didChange", "textDocument/didClose"]) rpc.onNotification(method, params => provider!.notify(method, params));

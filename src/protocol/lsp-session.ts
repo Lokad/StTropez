@@ -11,7 +11,7 @@ const providers = { "textDocument/completion": "completionProvider", "textDocume
     "textDocument/definition": "definitionProvider", "textDocument/references": "referencesProvider",
     "textDocument/rename": "renameProvider", "textDocument/codeAction": "codeActionProvider", "workspace/executeCommand": "executeCommandProvider",
     "textDocument/signatureHelp": "signatureHelpProvider", "textDocument/documentLink": "documentLinkProvider", "textDocument/documentColor": "colorProvider", "textDocument/colorPresentation": "colorProvider",
-    "textDocument/foldingRange": "foldingRangeProvider" } as const;
+    "textDocument/foldingRange": "foldingRangeProvider", "textDocument/documentHighlight": "documentHighlightProvider" } as const;
 export type LspFeature = keyof typeof providers;
 export type LspDocumentFeature = Exclude<LspFeature, "workspace/executeCommand">;
 export type LspCommandCall<T> = RpcCall<T> & Readonly<{ isCurrent: () => boolean }>;
@@ -107,6 +107,7 @@ export class LspSession {
         if (this.features.has("textDocument/signatureHelp")) textDocument.signatureHelp = { dynamicRegistration: true, contextSupport: true,
             signatureInformation: { documentationFormat: ["plaintext"], parameterInformation: { labelOffsetSupport: true }, activeParameterSupport: true } };
         if (this.features.has("textDocument/documentLink")) textDocument.documentLink = { dynamicRegistration: true, tooltipSupport: true };
+        if (this.features.has("textDocument/documentHighlight")) textDocument.documentHighlight = { dynamicRegistration: true };
         if (this.features.has("textDocument/foldingRange")) textDocument.foldingRange = { dynamicRegistration: true, lineFoldingOnly: true,
             foldingRangeKind: { valueSet: ["comment", "imports", "region"] } };
         if (this.features.has("textDocument/documentColor") || this.features.has("textDocument/colorPresentation")) {

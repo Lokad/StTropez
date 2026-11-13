@@ -17,6 +17,8 @@ export type { FoldDiscovery, FoldDiscoveryBatch, FoldDiscoveryResult, FoldComman
 export { openWebSocketTransport } from "./lsp-websocket.ts";
 export type { WebSocketTransportOptions } from "./lsp-websocket.ts";
 export { createLspEditor } from "./lsp-editor.ts";
+export { createLspHighlightController } from "./lsp-highlights.ts";
+export type { LspHighlightSnapshot, LspHighlightController } from "./lsp-highlights.ts";
 export type { LspEditorController, LspEditorOptions, LspEditorSnapshot, LspEditorDiagnostic, LspEditorSnippet } from "./lsp-editor.ts";
 export type { EditingCandidate, CandidateEdit, CandidateEditTransform } from "./editing-candidate.ts";
 export { createFindController } from "./find.ts";

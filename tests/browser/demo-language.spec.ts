@@ -1,6 +1,40 @@
 import { test, expect } from "@playwright/test";
-import { runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults, runDemoEditingRules, runDemoFolding } from "./demo-walkthrough.ts";
+import { runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoHighlights } from "./demo-walkthrough.ts";
 import { holdDemoFolds } from "./demo-folding-gate.ts";
+
+test("occurrences follow the caret, edits and large virtualized documents", async ({ page }) => { await runDemoHighlights(page); });
+
+test("late occurrences cannot follow a changed caret or disposed file view", async ({ page }) => {
+    const replies: (() => void)[] = []; let cancellations = 0;
+    await page.routeWebSocket("**/demo-provider/*", client => {
+        const server = client.connectToServer(), requests = new Set<number>();
+        client.onMessage(message => {
+            const value = JSON.parse(message.toString());
+            if (value.method === "textDocument/documentHighlight") requests.add(value.id);
+            if (value.method === "$/cancelRequest" && requests.has(value.params.id)) cancellations++;
+            server.send(message);
+        });
+        server.onMessage(message => {
+            const value = JSON.parse(message.toString());
+            if (requests.has(value.id)) replies.push(() => client.send(message)); else client.send(message);
+        });
+    });
+    await page.goto("/"); const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    await source.press("Control+a"); await page.keyboard.insertText("let value = 1;\nvalue += 1;\n");
+    await source.press("Control+Home"); await source.press("Control+ArrowRight");
+    await expect.poll(() => replies.length).toBeGreaterThan(0);
+    await source.press("Control+End"); await expect.poll(() => cancellations).toBeGreaterThan(0);
+    for (const reply of replies.splice(0)) reply();
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(page.locator('#editor [class*="demo-occurrence-"]')).toHaveCount(0);
+    await source.press("Control+Home"); await source.press("Control+ArrowRight");
+    await expect.poll(() => replies.length).toBeGreaterThan(0);
+    await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
+    for (const reply of replies.splice(0)) reply();
+    await expect(page.getByRole("textbox", { name: "pricing.ts", exact: true })).toBeVisible();
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(page.locator('#editor [class*="demo-occurrence-"]')).toHaveCount(0);
+});
 
 test("automatic folding survives edits, find and independent review views", async ({ page }) => { await runDemoFolding(page); });
 

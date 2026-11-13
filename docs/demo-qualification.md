@@ -8,6 +8,22 @@ provider/compiler pair, supported subset and host adaptations.
 
 ## Delivered workflow
 
+Caret occurrence highlighting has a shared source/static/restored-assets journey for text
+placement, provider read/write kinds, composition, caret movement, edit/undo, file switches and
+scrolling through 10,001 occurrences. The source milestone passes 18 affected checks across
+Chromium/Firefox/WebKit, including deliberately late replies, completion, folding, save/reload
+and explicit provider retry; the static occurrence journey passes in all three engines. Strict
+types, the dependency-free build and all 441 model/provider tests pass. The Node server reports
+the tested variable writes as reads; the static compiler provider supplies distinct write kinds.
+
+Three static-demo scroll observations with 10,001 occurrences kept 37–38 source rows mounted.
+Scroll-event handlers measured 0–0.1 ms, two frames with matching code/gutter/highlights took
+25.1–47.7 ms, and complete automation took 28.3–50.0 ms. Initial insertion through first visible
+occurrences took 852 ms including synchronization, debounce, provider work and rendering. These
+shared-Windows/headless measurements are separate clocks, not provider-only, stable-tail or
+physical-display guarantees. The initial local run timed out during provider startup; a bounded
+restart using the qualification temp directory succeeded, without establishing exact attribution.
+
 Automatic TypeScript and off-side folding share one source/static/restored-assets journey:
 keyboard and group commands, edit/undo, Find revealing hidden text, gutter agreement and
 independent comparison views. Expanded discovery metadata preserves language results and

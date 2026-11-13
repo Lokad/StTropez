@@ -106,7 +106,7 @@ export class BrowserLanguageService {
             positionEncoding: "utf-16", textDocumentSync: { openClose: true, change: 2 },
             completionProvider: { triggerCharacters: ["."], resolveProvider: true }, hoverProvider: true,
             signatureHelpProvider: { triggerCharacters: ["(", ","], retriggerCharacters: [","] },
-            definitionProvider: true, referencesProvider: true, renameProvider: { prepareProvider: true }, codeActionProvider: { codeActionKinds: ["quickfix"] }, foldingRangeProvider: true,
+            definitionProvider: true, referencesProvider: true, renameProvider: { prepareProvider: true }, codeActionProvider: { codeActionKinds: ["quickfix"] }, foldingRangeProvider: true, documentHighlightProvider: true,
         } };
         if (method === "shutdown") return null;
         if (method === "sttropez/diagnostics") {
@@ -143,6 +143,12 @@ export class BrowserLanguageService {
             });
         }
         const { p, file, offset } = this.cursor(params);
+        if (method === "textDocument/documentHighlight") {
+            return (this.service.getDocumentHighlights(file.path, offset, [file.path]) ?? []).filter(group => group.fileName === file.path)
+                .flatMap(group => group.highlightSpans.map(span => ({ range: this.span(file, span.textSpan),
+                    kind: span.kind === ts.HighlightSpanKind.writtenReference || span.kind === ts.HighlightSpanKind.definition ? 3
+                        : span.kind === ts.HighlightSpanKind.reference ? 2 : 1 })));
+        }
         if (method === "textDocument/completion") {
             const template = demoTemplateCompletions(file.document, position(p.position)); if (template) return template;
             const info = this.service.getCompletionsAtPosition(file.path, offset, { includeCompletionsForModuleExports: false, includeCompletionsWithInsertText: true });

@@ -2,6 +2,37 @@ import { expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
 /** Shared by source, static and restored-assets demos; all commands use visible controls. */
+export async function runDemoHighlights(page: Page, url = "/", distinctWrites = false) {
+    await page.goto(url);
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    const replace = async (text: string) => { await source.press("Control+a"); await page.keyboard.insertText(text); };
+    await replace("let value = 1;\nvalue = value + 1;\n");
+    await source.press("Control+Home"); await source.press("Control+ArrowRight");
+    const writes = page.locator("#editor .demo-occurrence-write"), reads = page.locator("#editor .demo-occurrence-read");
+    const occurrences = page.locator("#editor .demo-occurrence-write, #editor .demo-occurrence-read");
+    await expect(occurrences).toHaveText(["value", "value", "value"], { timeout: 30000 });
+    // The pinned Node server reports all these spans as reads; the compiler-backed static
+    // provider distinguishes writes. Preserve provider semantics instead of inventing kinds.
+    await expect(writes).toHaveCount(distinctWrites ? 2 : 0); await expect(reads).toHaveCount(distinctWrites ? 1 : 3);
+    await source.dispatchEvent("compositionstart", { data: "" }); await expect(occurrences).toHaveCount(0);
+    await source.dispatchEvent("compositionend", { data: "" }); await expect(occurrences).toHaveCount(3);
+    await source.press("Control+End"); await expect(occurrences).toHaveCount(0);
+    await source.press("ArrowUp"); await source.press("Home");
+    await expect(occurrences).toHaveCount(3);
+    await source.press("Shift+End"); await source.press("Backspace"); await expect(occurrences).toHaveCount(0);
+    await source.press("Control+z"); await source.press("Home"); await expect(occurrences).toHaveCount(3);
+    await page.getByRole("button", { name: "pricing.ts", exact: true }).click(); await expect(occurrences).toHaveCount(0);
+    await page.locator("#files").getByRole("button", { name: /^main\.ts/ }).click();
+    await replace("let value = 1;\n" + "value += 1;\n".repeat(10000));
+    await source.press("Control+Home"); await source.press("Control+ArrowRight"); await expect(occurrences.first()).toHaveText("value", { timeout: 30000 });
+    const viewport = page.locator("#editor .st-viewport");
+    await viewport.evaluate(node => { node.scrollTop = node.scrollHeight / 2; });
+    await expect.poll(async () => Number(await page.locator("#editor .st-viewport-row").first().getAttribute("data-line"))).toBeGreaterThan(4000);
+    await expect(occurrences.first()).toHaveText("value");
+    expect(await page.locator("#editor .st-viewport-row").count()).toBeLessThan(100);
+    expect(await occurrences.count()).toBeLessThan(100);
+}
+
 export async function runDemoFolding(page: Page, url = "/") {
     page.on("dialog", dialog => dialog.accept());
     await page.goto(url);

@@ -1,5 +1,5 @@
-import { createLspEditor } from "../../src/browser/index.ts";
-import type { EditingCandidate, LspEditorController } from "../../src/browser/index.ts";
+import { createLspEditor, createLspHighlightController } from "../../src/browser/index.ts";
+import type { EditingCandidate, InlineDecoration, PresentedLine, LspEditorController, LspHighlightController } from "../../src/browser/index.ts";
 import type { Workspace } from "../../src/index.ts";
 import type { DemoFile } from "./project.ts";
 import type { DemoLanguage } from "./language.ts";
@@ -22,6 +22,7 @@ export function mountDemoLanguage(workspace: Workspace, files: readonly DemoFile
     let inspection: ReturnType<typeof mountDemoInspection> | undefined;
     let symbols: ReturnType<typeof mountDemoSymbols> | undefined;
     let actions: ReturnType<typeof mountDemoActions> | undefined;
+    let highlights: LspHighlightController | undefined, stopHighlights: (() => void) | undefined;
     const valid = () => !disposed && editor.element.isConnected && !editor.snapshot().disposed && workspace.resolveTab(target)?.surface.kind === "text";
     const render = () => {
         const state = controller?.state.getSnapshot();
@@ -67,6 +68,8 @@ export function mountDemoLanguage(workspace: Workspace, files: readonly DemoFile
     void language.connect().then(provider => {
         if (!valid()) return;
         controller = createLspEditor(workspace, file.tab, editor, { provider, autoConnect: false, filterManualCompletions: true, canCapture: valid });
+        highlights = createLspHighlightController(workspace, file.tab, editor, { provider });
+        stopHighlights = highlights.state.subscribe(() => editor.viewport.invalidate());
         inspection = mountDemoInspection(workspace, file, editor, provider, valid, () => !!controller?.state.getSnapshot().choices.length || !!symbols?.isOpen() || !!actions?.isOpen(),
             () => controller?.cancel(), () => { symbols?.dismiss(); actions?.dismiss(); });
         symbols = mountDemoSymbols(workspace, files, file, editor, provider, valid, () => { controller?.cancel(); inspection?.dismiss(); actions?.dismiss(); }, open);
@@ -76,5 +79,10 @@ export function mountDemoLanguage(workspace: Workspace, files: readonly DemoFile
     return Object.freeze({ complete: () => { actions?.dismiss(); symbols?.dismiss(); inspection?.dismiss(); editor.focus(); controller?.request(); }, inspect: () => inspection?.inspect(), signature: () => inspection?.signature(),
         definition: () => symbols?.definition(), references: () => symbols?.references(), rename: () => symbols?.rename(),
         quickfix: () => actions?.request(),
-        destroy: () => { disposed = true; listeners.abort(); stop?.(); actions?.destroy(); symbols?.destroy(); inspection?.destroy(); controller?.destroy(); popup.remove(); snippetPanel.remove(); } });
+        decorate: (line: PresentedLine): readonly InlineDecoration[] => {
+            const state = highlights?.state.getSnapshot();
+            if (!valid() || state?.documentId !== line.documentId || state.revision !== line.revision) return [];
+            return highlights!.intersect(line.from, line.to).map(item => ({ from: item.from, to: item.to, className: `demo-occurrence-${item.kind}` }));
+        },
+        destroy: () => { disposed = true; listeners.abort(); stop?.(); stopHighlights?.(); highlights?.dispose(); actions?.destroy(); symbols?.destroy(); inspection?.destroy(); controller?.destroy(); popup.remove(); snippetPanel.remove(); } });
 }
