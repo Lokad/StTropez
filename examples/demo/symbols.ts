@@ -63,9 +63,9 @@ export function mountDemoSymbols(workspace: Workspace, files: readonly DemoFile[
     const request = (kind: "definition" | "references") => {
         if (!idle()) return; dismissOther(); closeRename(false); cancelNavigation(); editor.focus();
         const snapshots = files.map(file => workspace.document(file.resource.documentId)), selected = editor.view.getSnapshot().selectionSet;
-        const folds = editor.view.folding.getSnapshot().generation, metadata = snapshots.map(doc => workspace.resourceForDocument(doc.id).metadata.getSnapshot());
+        const folds = editor.view.folding.getSnapshot().index, metadata = snapshots.map(doc => workspace.resourceForDocument(doc.id).metadata.getSnapshot());
         const captured: Query = { choice: 0, message: "", current: () => idle() && editor.view.getSnapshot().selectionSet === selected
-            && editor.view.folding.getSnapshot().generation === folds && (document.activeElement === editor.input || popup.contains(document.activeElement))
+            && folds.sameProjection(editor.view.folding.getSnapshot().index) && (document.activeElement === editor.input || popup.contains(document.activeElement))
             && snapshots.every((doc, i) => { const current = workspace.document(doc.id), access = workspace.resourceForDocument(doc.id).metadata.getSnapshot();
                 return current.revision === doc.revision && current.buffer === doc.buffer && access.editLock === metadata[i]!.editLock && access.capabilities === metadata[i]!.capabilities; }) };
         query = captured; showNavigation(captured, kind === "definition" ? "Finding definition…" : "Finding references…");
@@ -120,6 +120,7 @@ export function mountDemoSymbols(workspace: Workspace, files: readonly DemoFile[
     const changed = () => { const captured = query; if (captured && (!captured.current() || captured.result && !captured.result.isCurrent())) {
         query = undefined; popup.hidden = true; queueMicrotask(() => { if (!disposed && !query) navigation.cancel(); });
     } };
+    // Expanded discovery metadata does not change the captured source projection.
     const stops = [editor.view.subscribe(changed), editor.view.folding.subscribe(changed), workspace.tabState.subscribe(changed), provider.state.subscribe(changed),
         ...files.flatMap(file => [workspace.observeDocument(file.resource.documentId).subscribe(changed), file.resource.metadata.subscribe(changed)])];
     editor.input.addEventListener("blur", () => queueMicrotask(() => { if (!disposed) changed(); }), { signal: events.signal });

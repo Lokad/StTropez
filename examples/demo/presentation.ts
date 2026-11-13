@@ -11,6 +11,7 @@ export class DemoPresentation {
     private timer: number | undefined;
     private job = 0;
     private capture: DocumentSnapshot | undefined;
+    private plain = false;
     private readonly colors = new DemoSyntaxColors();
     readonly editing = new DemoEditingRules();
     private disposed = false;
@@ -34,8 +35,14 @@ export class DemoPresentation {
         });
         this.worker.addEventListener("error", event => { event.preventDefault(); if (!this.disposed) { this.status = "failed"; this.changed(); } });
     }
-    update(capture: DocumentSnapshot): void {
-        if (this.disposed || this.capture?.buffer === capture.buffer && this.capture.id === capture.id) return;
+    update(capture: DocumentSnapshot, plain = false): void {
+        if (this.disposed || this.capture?.buffer === capture.buffer && this.capture.id === capture.id && this.plain === plain) return;
+        this.plain = plain;
+        if (plain) {
+            this.job++; if (this.timer !== undefined) window.clearTimeout(this.timer); this.timer = undefined;
+            this.capture = capture; this.colors.clear(); this.editing.clear(); this.javascript = "// This host outline has no JavaScript output.\n";
+            this.status = "ready"; this.changed(); return;
+        }
         if (this.capture?.key !== capture.key) this.editing.clear();
         this.colors.update(capture); this.capture = capture; this.javascript = "";
         const job = ++this.job;
@@ -67,7 +74,7 @@ export class DemoPresentation {
     retry(): void {
         if (this.disposed) return;
         this.worker?.terminate(); this.status = "starting"; this.start();
-        const capture = this.capture; this.capture = undefined; if (capture) this.update(capture);
+        const capture = this.capture; this.capture = undefined; if (capture) this.update(capture, this.plain);
     }
     dispose(): void {
         this.disposed = true; this.job++; if (this.timer !== undefined) window.clearTimeout(this.timer);

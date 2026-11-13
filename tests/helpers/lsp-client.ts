@@ -31,7 +31,7 @@ export function clientFixture(t: TestContext, connect?: () => Promise<void>) {
     }));
     const peer = referencePeer(ports[1]!);
     peer.onRequest("initialize", () => ({ capabilities: { positionEncoding: "utf-16", textDocumentSync: 2, hoverProvider: true, definitionProvider: true, referencesProvider: true, renameProvider: true,
-        codeActionProvider: { resolveProvider: true }, signatureHelpProvider: {}, documentLinkProvider: { resolveProvider: true }, colorProvider: true, executeCommandProvider: { commands: ["fixture.command"] } } }));
+        codeActionProvider: { resolveProvider: true }, foldingRangeProvider: true, signatureHelpProvider: {}, documentLinkProvider: { resolveProvider: true }, colorProvider: true, executeCommandProvider: { commands: ["fixture.command"] } } }));
     peer.onRequest("textDocument/hover", () => ({ contents: "captured hover" }));
     peer.onRequest("textDocument/definition", () => []);
     peer.onRequest("textDocument/rename", () => ({}));
@@ -40,7 +40,7 @@ export function clientFixture(t: TestContext, connect?: () => Promise<void>) {
     peer.listen();
     const provider = new protocol.LspWorkspace(workspace, {
         documentInfo: document => ({ uri: `generic:${document.resourceId}`, languageId: "generic" }),
-        features: ["textDocument/hover", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction", "textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor", "textDocument/colorPresentation", "workspace/executeCommand"],
+        features: ["textDocument/hover", "textDocument/foldingRange", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction", "textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor", "textDocument/colorPresentation", "workspace/executeCommand"],
         applyEdit: true,
         connect: async () => { await connect?.(); return ports[0]!; },
         schedule: (ms, callback) => { const timer = setTimeout(() => { timers.delete(timer); callback(); }, ms); timers.add(timer); return () => { clearTimeout(timer); timers.delete(timer); }; },

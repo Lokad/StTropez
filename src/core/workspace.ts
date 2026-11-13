@@ -241,8 +241,10 @@ export class Workspace {
             && record.state.get().revision === expected.revision && folds.get().generation === expected.generation;
         const setFoldRegions = (regions: FoldingSnapshot["regions"]): boolean => {
             const previous = folds.get(); if (regions === previous.regions) return true;
-            this.scope.assertWritable(); this.history.seal(id); const changed = new Set<Store<unknown>>();
-            folds.set(foldingSnapshot(record.buffer!, previous.revision, previous.generation + 1, regions, previous), changed); this.scope.deliver([...changed]); return true;
+            this.scope.assertWritable();
+            const next = foldingSnapshot(record.buffer!, previous.revision, previous.generation + 1, regions, previous);
+            if (!previous.index.sameProjection(next.index)) this.history.seal(id);
+            const changed = new Set<Store<unknown>>(); folds.set(next, changed); this.scope.deliver([...changed]); return true;
         };
         const folding: DocumentFolding = Object.freeze({ ...folds.observable,
             setRanges: (expected, ranges) => foldTarget(expected) && setFoldRegions(createFoldRegions(record.buffer!, ranges, folds.get().regions)),

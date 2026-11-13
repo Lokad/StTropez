@@ -1,4 +1,4 @@
-import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, TextEdit, Workspace } from "../../src/index.ts";
+import type { DocumentId, DocumentSnapshot, FoldIndex, ResourceLease, SelectionSet, TabId, TabTarget, TextEdit, Workspace } from "../../src/index.ts";
 import type { LspWorkspaceEdit } from "../../src/protocol/index.ts";
 import type { EditingCandidate } from "../../src/browser/index.ts";
 import { createNavigationClient, navigationMetrics } from "../editing/navigation-client.ts";
@@ -10,7 +10,7 @@ import type { LspRenameClient, LspRenameFactory } from "../editing/lsp-rename-cl
 import { HostCell } from "../shared/observable.ts";
 
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
-type Job = { origin: Session; capture: RenameCapture; selections: SelectionSet; folds: number; documents: Map<string, DocumentSnapshot>; authority: Map<string, string>;
+type Job = { origin: Session; capture: RenameCapture; selections: SelectionSet; folds: FoldIndex; documents: Map<string, DocumentSnapshot>; authority: Map<string, string>;
     leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; locations: readonly (NavigationLocation & Readonly<{ editIndex?: number }>)[]; workspaceEdit?: LspWorkspaceEdit; name?: string };
 export type RenameNote = Readonly<{ ordinal: number; document: string; resource: string; title: string; revision: number; from: number; to: number; line: number; column: number; context: string; before?: string; after?: string }>;
 export type RenameSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied";
@@ -53,7 +53,7 @@ export class HostRenameTools {
     private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
     private current(job: Job): boolean {
         if (this.job !== job || job.invalid || !this.available(job.origin) || job.origin.editor.view.getSnapshot().selectionSet !== job.selections
-            || job.origin.editor.view.folding.getSnapshot().generation !== job.folds || job.workspaceEdit && !job.workspaceEdit.isCurrent()
+            || !job.folds.sameProjection(job.origin.editor.view.folding.getSnapshot().index) || job.workspaceEdit && !job.workspaceEdit.isCurrent()
             || job.name !== undefined && job.name !== this.cell.get().name) return false;
         try { for (const doc of job.documents.values()) if (this.workspace.observeDocument(doc.id).getSnapshot()?.revision !== doc.revision || this.authority(doc.id) !== job.authority.get(doc.id) || !this.canCapture(doc.id)) return false; } catch { return false; }
         return true;
@@ -121,7 +121,7 @@ export class HostRenameTools {
         try { input = validateNavigationInput({ operation: "navigation-start", id: ++this.serial, kind: "references", includeDeclaration: true, symbol: this.usesLsp ? "position" : symbol, documents: documents.map(d => ({ document: d.id, revision: d.revision, length: d.buffer.length })), delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid rename capture." }); return; }
         this.fault = undefined;
-        const job: Job = { origin, capture: { input, document: doc.id, offset: selected.selection.head }, selections: selected.selectionSet, folds: origin.editor.view.folding.getSnapshot().generation,
+        const job: Job = { origin, capture: { input, document: doc.id, offset: selected.selection.head }, selections: selected.selectionSet, folds: origin.editor.view.folding.getSnapshot().index,
             documents: new Map(documents.map(d => [d.id, d])), authority: new Map(documents.map(d => [d.id, this.authority(d.id)])), leases: [], stops: [], timer: 0, invalid: false, ready: false, locations: [], ...(this.usesLsp ? { name: this.cell.get().name } : {}) };
         this.job = job; this.metrics.requested++; const win = origin.editor.element.ownerDocument.defaultView!, total = input.documents.reduce((n, d) => n + d.length, 0);
         try {

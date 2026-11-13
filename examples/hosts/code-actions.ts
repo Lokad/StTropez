@@ -1,4 +1,4 @@
-import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, Workspace } from "../../src/index.ts";
+import type { DocumentId, DocumentSnapshot, FoldIndex, ResourceLease, SelectionSet, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import type { EditingCandidate } from "../../src/browser/index.ts";
 import { createNavigationClient, navigationMetrics } from "../editing/navigation-client.ts";
 import { validateActionInput } from "../probes/actions.ts";
@@ -9,7 +9,7 @@ import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
 import type { LspActionBatch, LspActionClient, LspActionFactory } from "../editing/lsp-action-client.ts";
 import type { HostProjectTools, ProjectActionHandle } from "./project.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
-type Job = { origin: Session; input: ActionInput; document: DocumentSnapshot; selections: SelectionSet; folds: number;
+type Job = { origin: Session; input: ActionInput; document: DocumentSnapshot; selections: SelectionSet; folds: FoldIndex;
     sources: Map<DocumentId, Readonly<{ document: DocumentSnapshot; authority: string }>>; leases: ResourceLease[];
     stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; result: ActionResult | undefined;
     batch?: LspActionBatch; selected?: LspCodeAction; choice: number | null; choicePage: number; resolving: boolean; page: number };
@@ -62,7 +62,7 @@ export class HostActionsTools {
     private editable(id: DocumentId): boolean { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return m.capabilities.edit.includes("human") && m.capabilities.edit.includes("host") && m.editLock === null; }
     private currentCapture(job: Job): boolean {
         if (this.job !== job || job.invalid || !this.available(job.origin) || job.input.module !== this.cell.get().module
-            || job.origin.editor.view.getSnapshot().selectionSet !== job.selections || job.origin.editor.view.folding.getSnapshot().generation !== job.folds) return false;
+            || job.origin.editor.view.getSnapshot().selectionSet !== job.selections || !job.folds.sameProjection(job.origin.editor.view.folding.getSnapshot().index)) return false;
         try { for (const source of job.sources.values()) if (!this.canCapture(source.document.id) || this.workspace.observeDocument(source.document.id).getSnapshot()?.revision !== source.document.revision || this.authority(source.document.id) !== source.authority) return false; } catch { return false; }
         return true;
     }
@@ -134,7 +134,7 @@ export class HostActionsTools {
         let input: ActionInput;
         try { input = validateActionInput({ operation: "action-start", id: ++this.sequence, document: doc.id, revision: doc.revision, length: doc.buffer.length, from: Math.min(selected.selection.anchor, selected.selection.head), to: Math.max(selected.selection.anchor, selected.selection.head), module, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid action capture." }); return; }
-        this.fault = undefined; const win = origin.editor.element.ownerDocument.defaultView!, job: Job = { origin, input, document: doc, selections: selected.selectionSet, folds: origin.editor.view.folding.getSnapshot().generation,
+        this.fault = undefined; const win = origin.editor.element.ownerDocument.defaultView!, job: Job = { origin, input, document: doc, selections: selected.selectionSet, folds: origin.editor.view.folding.getSnapshot().index,
             sources: new Map(documents.map(doc => [doc.id, { document: doc, authority: this.authority(doc.id) }])), leases: [], stops: [], timer: 0, invalid: false, ready: false, result: undefined, choice: null, choicePage: 0, resolving: false, page: 0 };
         this.job = job; this.metrics.requested++;
         const changed = () => {

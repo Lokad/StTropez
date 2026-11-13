@@ -1,6 +1,7 @@
 import { Workspace } from "../../src/index.ts";
 import type { EditingCommand, LanguageConfiguration, FoldRange, Selection, TextEdit } from "../../src/index.ts";
-import { mountEditingCandidate } from "../../src/browser/index.ts";
+import { mountEditingCandidate, createFoldingController } from "../../src/browser/index.ts";
+import type { FoldDiscovery, FoldCommand, FoldingController } from "../../src/browser/index.ts";
 import { corpus, corpusIds } from "../../tests/fixtures/workloads.ts";
 import { EditingPresentation } from "./presentation.ts";
 import { mountFindUI } from "./find-ui.ts";
@@ -18,6 +19,7 @@ const editors = { primary: mountEditingCandidate(pane("primary"), workspace, pri
 const findUI = mountFindUI(workspace, primaryTab, editors.primary, presentation.primary), provider = mountProviderUI(workspace, primaryTab, editors.primary, presentation.primary);
 const paragraph = mountParagraphUI(workspace, primaryTab, editors.primary);
 const listeners = new AbortController(); let disposed = false;
+let foldingController: FoldingController | undefined;
 const conflicts: Readonly<{ reason: string; expectedRevision: number; attemptedText: string }>[] = [];
 pane("primary").addEventListener("sttropez-conflict", event => { conflicts.push((event as CustomEvent).detail); }, { signal: listeners.signal });
 function edit(edits: readonly TextEdit[]) { return workspace.edit({ documentId: source.documentId, expectedRevision: workspace.document(source.documentId).revision, edits, origin: "host", history: { kind: "live" } }); }
@@ -35,6 +37,9 @@ pane("undo").addEventListener("click", () => history("undo"), { signal: listener
 const status = () => { const current = workspace.document(source.documentId); pane("status").textContent = `${current.buffer.lineCount.toLocaleString()} lines · Revision ${current.revision}`; };
 const unsubscribe = workspace.observeDocument(source.documentId).subscribe(status); status();
 const fixture = { ready: true, setText, edit, select, history,
+    discoverFolds: (discover: FoldDiscovery) => { foldingController?.dispose(); foldingController = createFoldingController(workspace, primaryTab, editors.primary, discover, { delayMs: 0 }); },
+    foldCommand: (command: FoldCommand) => foldingController?.runCommand(command),
+    refreshFolds: () => foldingController?.refresh(), foldStatus: () => foldingController?.state.getSnapshot(),
     configureLanguage: (value: LanguageConfiguration) => editors.primary.configureLanguage(value),
     command: (command: EditingCommand) => editors.primary.runCommand(command),
     selections: (ranges: readonly Selection[]) => editors.primary.view.setSelections(workspace.document(source.documentId).revision, ranges),
@@ -63,7 +68,7 @@ const fixture = { ready: true, setText, edit, select, history,
             conflicts: conflicts.map(item => ({ reason: item.reason, expectedRevision: item.expectedRevision, attemptedUnits: item.attemptedText.length })), diagnostics: workspace.diagnostics(), disposed };
     },
     dispose: () => {
-        if (disposed) return; disposed = true; listeners.abort(); unsubscribe(); findUI.destroy(); provider.destroy(); paragraph.destroy();
+        if (disposed) return; disposed = true; foldingController?.dispose(); listeners.abort(); unsubscribe(); findUI.destroy(); provider.destroy(); paragraph.destroy();
         Object.values(editors).forEach(editor => editor.destroy()); Object.values(presentation).forEach(value => value.clear());
         for (const tab of workspace.tabState.getSnapshot()) workspace.close(tab.id); workspace.releaseResource(source.id, true);
     } };

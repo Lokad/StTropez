@@ -68,6 +68,14 @@ The existing deterministic protocol fixture keeps its separate `/lsp-fixture` ro
 
 ## Provider adaptation and limits
 
+The Code menu exposes automatic fold commands and groups, with Ctrl/Cmd+Shift+[ / ] at the
+caret. Source TypeScript ranges use standard `textDocument/foldingRange`; the browser provider
+converts its compiler's outlining spans to whole-line ranges. Saved comparison text uses host
+indentation discovery and keeps independent fold choices. The **Host outline · indentation
+folding** sample uses a plain editable outline with nested blocks and `#region` markers,
+without connecting a language service. Find reveals collapsed matches, and edits/undo retain
+corresponding mapped regions. See the public [folding contract](folding.md).
+
 The provider's pushed diagnostics omit document versions. The demo does not treat them as
 current annotations. Its host extension `sttropez/diagnostics` invokes the pinned provider's
 read-only synchronous syntactic/semantic diagnostic commands over the same connection.

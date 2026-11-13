@@ -1,4 +1,4 @@
-export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue" | "templates" | "results";
+export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue" | "templates" | "results" | "outline";
 export type DemoSample = Readonly<{ id: SampleId; title: string; description: string; files: Readonly<Record<string, string>> }>;
 
 const pricing = `export interface CartItem {
@@ -34,10 +34,14 @@ export const sampleChoices: readonly Readonly<{ id: SampleId; title: string }>[]
     { id: "catalogue", title: "Completion catalogue · 1,200 fields" },
     { id: "templates", title: "Snippets & lazy completion" },
     { id: "results", title: "Project-wide results · 1,200 uses" },
+    { id: "outline", title: "Host outline · indentation folding" },
 ]);
 
 /** Large fixtures are built only on explicit selection. */
 export function demoSample(id: SampleId): DemoSample {
+    if (id === "outline") return { id, title: "Host outline",
+        description: "A plain host-owned outline, with no language server or compiler. Indentation defines nested blocks; #region markers define the regions group. Use the gutter or Code → Collapse group, then Find to reveal hidden text.",
+        files: { "workflow.txt": "#region workflow\npipeline\n  inputs\n    source\n    settings\n\n  steps\n    prepare\n      validate\n      normalize\n    publish\n      report\n#endregion\n\nnotes\n  Editable text; Tab changes indentation.\n  Each view keeps its own collapsed blocks.\n" } };
     if (id === "results") return { id, title: "Project-wide results",
         description: "Open Problems to browse 300 type errors. In uses.ts, select sharedValue, then use Code → Find references or Rename to review all 1,201 occurrences. Results are paged; one undo restores a rename.",
         files: { "uses.ts": "const sharedValue = 1;\n" + Array.from({ length: 1200 }, (_, i) => `const use${i} = sharedValue;`).join("\n") + "\n",

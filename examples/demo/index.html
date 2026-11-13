@@ -23,6 +23,11 @@
                 <button id="indent" title="Tab">Indent selection</button>
                 <button id="outdent" title="Shift+Tab">Outdent selection</button>
                 <label>Indentation <select id="indentation"><option value="2">2 spaces</option><option value="4">4 spaces</option><option value="tabs">Tabs (4 columns)</option></select></label>
+                <button id="fold" title="Ctrl+Shift+[">Collapse block</button>
+                <button id="unfold" title="Ctrl+Shift+]">Expand block</button>
+                <label>Fold group <select id="fold-group"><option value="">All groups</option></select></label>
+                <button id="fold-group-collapse">Collapse group</button><button id="fold-group-expand">Expand group</button>
+                <output id="folding-status" aria-live="polite"></output>
             </div></details>
             <button id="compare">Compare</button><button id="reset" title="Restore the selected sample's original files; other samples and stored drafts are kept">Reset sample</button>
             <button id="save" class="primary" title="Save in this browser (Ctrl+S)">Save locally</button>

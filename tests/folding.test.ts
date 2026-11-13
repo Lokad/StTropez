@@ -13,6 +13,9 @@ test("nested collapsed rows keep independent child state and index visible rows 
     const expanded = new FoldIndex(buffer.lineCount, ranges.map(r => ({ ...r, collapsed: r.id === "inner" })));
     assert.deepEqual(Array.from({ length: expanded.visibleLineCount }, (_, row) => expanded.lineAt(row)), [0, 1, 3, 4, 5]);
     assert.equal(expanded.hiddenBy(2)?.id, "inner"); assert.ok(Object.isFrozen(index)); assert.ok(Object.isFrozen(index.regions[0]));
+    assert.equal(index.sameProjection(expanded), false);
+    assert.equal(new FoldIndex(buffer.lineCount, []).sameProjection(new FoldIndex(buffer.lineCount, ranges.map(r => ({ ...r, collapsed: false })))), true);
+    assert.equal(index.sameProjection(new FoldIndex(buffer.lineCount, ranges.map(r => ({ ...r, group: "new metadata", collapsed: r.id === "outer" })))), true);
     assert.equal(buffer.readMetrics().textExports, 0); assert.throws(() => index.lineAt(3), RangeError);
     const huge = new FoldIndex(100001, [{ id: "many", from: 1, to: 100000, lineFrom: 1, lineTo: 100000, collapsed: true }]);
     assert.equal(huge.visibleLineCount, 3); assert.equal(huge.lineAt(2), 100000); assert.equal(huge.rowAt(99999), 1);

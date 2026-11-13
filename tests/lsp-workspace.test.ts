@@ -6,9 +6,24 @@ import type { DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTe
 import { referencePeer } from "../examples/protocol/reference-peer.ts";
 import { Workspace } from "../src/core/workspace.ts";
 import type { LspFeature, LspRequestContext, RpcScheduler, RpcTransport } from "../src/protocol/index.ts";
-const { LspWorkspace, createLspCommandRunner, createLspSignatureClient, createLspLinkClient, createLspColorClient, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
+const { LspWorkspace, createLspCommandRunner, createLspSignatureClient, createLspLinkClient, createLspColorClient, createLspFoldingClient, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 const settled = async () => { await setImmediate(); await setImmediate(); };
 const latch = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; };
+test("folding honors dynamic capability withdrawal and requires fresh authority after reconnect", async t => {
+    const f = fixture(t, { features: ["textDocument/foldingRange"] }), client = createLspFoldingClient(f.provider); t.after(client.dispose);
+    await f.provider.connect();
+    const register = async () => {
+        const peer = f.peers.at(-1)!; peer.rpc.onRequest("textDocument/foldingRange", () => [{ startLine: 0, endLine: 1 }]);
+        await peer.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "folds", method: "textDocument/foldingRange", registerOptions: { documentSelector: [{ language: "generic-language" }] } }] });
+    };
+    const run = () => client.run(f.workspace.document(f.source.documentId)).result;
+    await assert.rejects(run(), error => error instanceof RpcError && error.code === -32601);
+    await register(); const first = await run(); assert.equal(first.ranges.length, 1);
+    await f.peers[0]!.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "folds", method: "textDocument/foldingRange" }] });
+    assert.equal(first.isCurrent(), false); await assert.rejects(run(), error => error instanceof RpcError && error.code === -32601);
+    await register(); const second = await run(); await f.provider.reconnect(); assert.equal(second.isCurrent(), false);
+    await assert.rejects(run(), error => error instanceof RpcError && error.code === -32601); await register(); assert.equal((await run()).isCurrent(), true);
+});
 test("selected language clients share one binding and decode their independent results", async t => {
     const { f, signature, links, colors, rgba, doc } = await languageFixture(t);
     const [help, linkBatch, colorBatch] = await Promise.all([signature.run(doc, 1).result, links.run(doc), colors.run(doc)]);

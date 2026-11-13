@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import { holdDemoFolds } from "./demo-folding-gate.ts";
 
 async function symbol(page: Page) {
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
@@ -15,12 +16,16 @@ async function ready(page: Page) {
 test.beforeEach(({ page }) => { page.on("pageerror", error => { throw error; }); });
 
 test("real definition and reference navigation open the captured file and range without changing text", async ({ page }) => {
+    const releaseFolds = await holdDemoFolds(page, "pricing.ts");
     await ready(page); const source = await symbol(page); await source.press("F12");
     const pricing = page.getByRole("textbox", { name: "pricing.ts", exact: true }); await expect(pricing).toBeFocused();
     expect(await pricing.evaluate(node => { const input = node as HTMLTextAreaElement; return input.value.slice(input.selectionStart, input.selectionEnd); })).toBe("calculateTotal");
     await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Find references", exact: true }).click();
     const locations = page.getByRole("region", { name: "Symbol locations", exact: true });
     await expect(locations.getByRole("button", { name: /^main.ts ·/ }).first()).toBeVisible();
+    await releaseFolds();
+    await expect(page.locator("#editor .st-fold-button").first()).toBeVisible();
+    await expect(locations).toBeVisible();
     await locations.getByRole("button", { name: /^main.ts ·/ }).last().click();
     await expect(page.getByRole("textbox", { name: "main.ts", exact: true })).toBeFocused();
     await expect(page.locator("#files")).not.toContainText("●");
@@ -37,6 +42,7 @@ test("real definition and reference navigation open the captured file and range 
 });
 
 test("real rename previews a captured name, rejects an old name and shares one undo across files", async ({ page }) => {
+    const releaseFolds = await holdDemoFolds(page, "pricing.ts");
     await ready(page); const source = await symbol(page); await source.press("F12");
     const pricing = page.getByRole("textbox", { name: "pricing.ts", exact: true }); await expect(pricing).toBeFocused();
     await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Rename symbol", exact: true }).click();
@@ -44,6 +50,7 @@ test("real rename previews a captured name, rejects an old name and shares one u
     await expect(name).toHaveValue("calculateTotal"); await expect(name).toBeFocused(); await name.fill("cartTotal");
     await dialog.getByRole("button", { name: "Preview rename", exact: true }).click();
     const apply = dialog.getByRole("button", { name: "Apply rename", exact: true }); await expect(apply).toBeEnabled();
+    await releaseFolds(); await expect(page.locator("#editor .st-fold-button").first()).toBeVisible(); await expect(apply).toBeEnabled();
     await expect(dialog.getByLabel("Rename edits")).toContainText("main.ts"); await expect(dialog.getByLabel("Rename edits")).toContainText("pricing.ts");
     await name.fill("basketTotal"); await expect(apply).toBeDisabled();
     await name.press("Enter"); await expect(apply).toBeEnabled(); await expect(dialog.getByLabel("Rename edits")).toContainText("basketTotal");

@@ -10,7 +10,8 @@ import type { LspSelector, LspUriPath } from "./lsp-selector.ts";
 const providers = { "textDocument/completion": "completionProvider", "textDocument/hover": "hoverProvider",
     "textDocument/definition": "definitionProvider", "textDocument/references": "referencesProvider",
     "textDocument/rename": "renameProvider", "textDocument/codeAction": "codeActionProvider", "workspace/executeCommand": "executeCommandProvider",
-    "textDocument/signatureHelp": "signatureHelpProvider", "textDocument/documentLink": "documentLinkProvider", "textDocument/documentColor": "colorProvider", "textDocument/colorPresentation": "colorProvider" } as const;
+    "textDocument/signatureHelp": "signatureHelpProvider", "textDocument/documentLink": "documentLinkProvider", "textDocument/documentColor": "colorProvider", "textDocument/colorPresentation": "colorProvider",
+    "textDocument/foldingRange": "foldingRangeProvider" } as const;
 export type LspFeature = keyof typeof providers;
 export type LspDocumentFeature = Exclude<LspFeature, "workspace/executeCommand">;
 export type LspCommandCall<T> = RpcCall<T> & Readonly<{ isCurrent: () => boolean }>;
@@ -106,6 +107,8 @@ export class LspSession {
         if (this.features.has("textDocument/signatureHelp")) textDocument.signatureHelp = { dynamicRegistration: true, contextSupport: true,
             signatureInformation: { documentationFormat: ["plaintext"], parameterInformation: { labelOffsetSupport: true }, activeParameterSupport: true } };
         if (this.features.has("textDocument/documentLink")) textDocument.documentLink = { dynamicRegistration: true, tooltipSupport: true };
+        if (this.features.has("textDocument/foldingRange")) textDocument.foldingRange = { dynamicRegistration: true, lineFoldingOnly: true,
+            foldingRangeKind: { valueSet: ["comment", "imports", "region"] } };
         if (this.features.has("textDocument/documentColor") || this.features.has("textDocument/colorPresentation")) {
             delete textDocument.documentColor; delete textDocument.colorPresentation; textDocument.colorProvider = { dynamicRegistration: true };
         }

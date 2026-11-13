@@ -13,6 +13,7 @@ export type { LspWorkspaceOptions, LspWorkspaceScope, LspSessionAccess, LspPrepa
 export { createLspCommandRunner } from "./lsp-command.ts";
 export type { LspCommandScope, LspCommandReceipt } from "./lsp-command.ts";
 export { createLspHoverClient } from "./lsp-hover.ts";
+export { decodeLspFoldingRanges, createLspFoldingClient } from "./lsp-folding.ts";
 export { createLspRenameClient } from "./lsp-rename.ts";
 export { createLspNavigationClient } from "./lsp-navigation.ts";
 export { createLspActionClient } from "./lsp-actions.ts";

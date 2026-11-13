@@ -1,5 +1,8 @@
 import { test, expect } from "@playwright/test";
-import { runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults, runDemoEditingRules } from "./demo-walkthrough.ts";
+import { runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults, runDemoEditingRules, runDemoFolding } from "./demo-walkthrough.ts";
+import { holdDemoFolds } from "./demo-folding-gate.ts";
+
+test("automatic folding survives edits, find and independent review views", async ({ page }) => { await runDemoFolding(page); });
 
 test("configured editing commands, quotes and comments share review and undo", async ({ page }) => { await runDemoEditingRules(page); });
 
@@ -31,6 +34,7 @@ test("real TypeScript diagnostics select the captured error and clear after corr
 });
 
 test("real member completion preserves provider punctuation, resolves, applies once and undoes", async ({ page }) => {
+    const releaseFolds = await holdDemoFolds(page, "main.ts");
     let requests = 0;
     page.on("websocket", socket => socket.on("framesent", frame => { if (JSON.parse(frame.payload.toString()).method === "textDocument/completion") requests++; }));
     await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready");
@@ -49,6 +53,8 @@ test("real member completion preserves provider punctuation, resolves, applies o
     await source.press("Control+Space"); await expect(page.getByRole("option", { name: "map", exact: true })).toBeVisible();
     await expect(page.getByRole("option", { name: "at", exact: true })).toHaveCount(0);
     await expect(page.locator(".demo-completion pre")).toContainText("map");
+    await releaseFolds(); await expect(page.locator("#editor .st-fold-button").first()).toBeVisible();
+    await expect(page.getByRole("option", { name: "map", exact: true })).toBeVisible();
     await source.press("Enter"); await expect(page.locator("#editor")).toContainText("cart.map");
     await source.press("Control+z"); await expect(page.locator("#editor")).toContainText("cart.ma");
     await source.press("Control+Space"); await expect(page.getByRole("option", { name: "map", exact: true })).toBeVisible();
@@ -90,11 +96,13 @@ test("late real diagnostic responses cannot annotate a newer project or follow l
 });
 
 test("provider startup failure leaves typing and saving usable and retries current documents", async ({ page }) => {
-    await page.route("**/demo-provider?sample=pricing", route => route.fulfill({ status: 503, body: "Unavailable" }));
+    let attempts = 0;
+    await page.route("**/demo-provider?sample=pricing", route => { attempts++; return route.fulfill({ status: 503, body: "Unavailable" }); });
     await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language service unavailable");
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+Home"); await source.pressSequentially("// Offline edit\n"); await source.press("Control+s");
     await expect(page.locator("#status")).toContainText("Saved in this browser");
+    await expect(page.locator("#folding-status")).toContainText("retried"); expect(attempts).toBe(1);
     await page.unroute("**/demo-provider?sample=pricing"); await page.getByRole("button", { name: "Retry language service", exact: true }).click();
     await expect(page.locator("#language-status")).toHaveText("Language ready");
     await expect(page.locator("#editor")).toContainText("// Offline edit");

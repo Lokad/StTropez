@@ -8,6 +8,23 @@ provider/compiler pair, supported subset and host adaptations.
 
 ## Delivered workflow
 
+Automatic TypeScript and off-side folding share one source/static/restored-assets journey:
+keyboard and group commands, edit/undo, Find revealing hidden text, gutter agreement and
+independent comparison views. Expanded discovery metadata preserves language results and
+typing undo groups; failed providers await explicit Retry. The folding/lifecycle suite passes
+30 checks across three engines. The restored consumer also passes the new folding journey.
+
+The associated static campaign passed 35/36 checks. One WebKit project-results check lost a
+hover popup; two bounded instrumented runs did not reproduce it or establish scroll-related
+attribution. This remains an explicit unresolved qualification observation, not a folding failure
+or a reason to rerun unrelated campaigns. Native input/display qualifications remain separate.
+
+In a 100,002-line host outline with one fold, three collapse observations measured 0.9–1.1 ms
+through the click handler, 46.4–47.6 ms to two frames with matching code/gutter rows, and
+74.5–80.6 ms through complete automation. Initial text insertion plus discovery took 844 ms.
+These are small-sample shared-Windows/headless observations, not provider, physical-display or
+stable-tail claims. Model transactions and the standard 18 two-view typing cases also passed.
+
 The public-DOM walkthrough edits the discount and checks real emitted JavaScript, inspects a
 type/signature, follows a definition, renames across both files with shared undo/redo, applies
 a real spelling fix, compares/reverts/undoes, saves and reloads, then explicitly restores and

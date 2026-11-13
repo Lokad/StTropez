@@ -1,5 +1,6 @@
-import { mountEditingCandidate, mountTextComparison, createFindController } from "../../src/browser/index.ts";
-import type { EditingCandidate, FindController, TextComparison } from "../../src/browser/index.ts";
+import { mountEditingCandidate, mountTextComparison, createFindController, createFoldingController } from "../../src/browser/index.ts";
+import type { EditingCandidate, FindController, TextComparison, FoldingController } from "../../src/browser/index.ts";
+import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
 import type { DemoFile } from "./project.ts";
 import { DemoPresentation } from "./presentation.ts";
@@ -7,6 +8,7 @@ import { sampleChoices } from "./samples.ts";
 import type { SampleId } from "./samples.ts";
 import { mountDemoLanguage } from "./language-view.ts";
 import { mountDemoOutput } from "./output.ts";
+import { mountDemoFolding, outlineFolds } from "./folding.ts";
 import "./style.css";
 
 const element = (id: string) => document.getElementById(id)!;
@@ -22,12 +24,23 @@ let panel: "javascript" | "problems" | "changes" = "javascript", disposed = fals
 let stopWorkspace: (() => void) | undefined, stopRecovery: (() => void) | undefined, stopView: (() => void) | undefined, stopFind: (() => void) | undefined;
 let stopLanguage: (() => void) | undefined, languageView: ReturnType<typeof mountDemoLanguage> | undefined;
 let stopReference: (() => void) | undefined;
+let folding: FoldingController | undefined, referenceFolding: FoldingController | undefined, stopFolding: (() => void) | undefined;
 let viewListeners: AbortController | undefined;
 let reviewLabel: HTMLSpanElement | undefined;
 let problemPage = 0, problemBatch: unknown;
 const presentation = new DemoPresentation(() => { editor?.viewport.invalidate(); renderOutput(); renderMetadata(); });
 const indentation = element("indentation") as HTMLSelectElement;
-function editingConfiguration() { return presentation.editing.configuration(indentation.value === "2" ? 2 : 4, indentation.value !== "tabs"); }
+function editingConfiguration() {
+    const config = presentation.editing.configuration(indentation.value === "2" ? 2 : 4, indentation.value !== "tabs");
+    return project?.sample.id === "outline" ? { tabSize: config.tabSize!, insertSpaces: config.insertSpaces!, lineComment: "#", pairs: [], enter: "keep" as const } : config;
+}
+function renderFolding(): void {
+    const state = folding?.state.getSnapshot(), select = element("fold-group") as HTMLSelectElement, chosen = select.value;
+    const groups = state?.groups ?? [], all = document.createElement("option"); all.value = ""; all.textContent = "All groups";
+    select.replaceChildren(all, ...groups.map(group => { const option = document.createElement("option"); option.value = group; option.textContent = group; return option; }));
+    if (groups.includes(chosen)) select.value = chosen;
+    element("folding-status").textContent = !state ? "" : state.message || `${state.regions} folds · ${state.collapsed} collapsed`;
+}
 
 function renderOutput(): void {
     if (panel !== "javascript") return;
@@ -46,10 +59,12 @@ function renderOutput(): void {
 function renderGutter(): void {
     if (!editor || panel === "changes") return;
     const viewport = editor.viewport.snapshot(), gutter = element("gutter");
-    const spans: HTMLSpanElement[] = [];
-    for (let line = viewport.firstLine; line <= viewport.lastLine; line++) {
+    const spans: HTMLSpanElement[] = [], index = editor.view.folding.getSnapshot().index;
+    if (viewport.firstLine < 0 || viewport.lastLine > index.lineCount || viewport.lastLine <= viewport.firstLine) { gutter.replaceChildren(); return; }
+    for (let row = index.rowAt(viewport.firstLine), last = index.rowAt(viewport.lastLine - 1); row <= last; row++) {
+        const line = index.lineAt(row);
         const number = document.createElement("span"); number.textContent = String(line + 1);
-        number.style.top = `${12 + line * viewport.lineHeight - viewport.scrollTop}px`; spans.push(number);
+        number.style.top = `${12 + row * viewport.lineHeight - viewport.scrollTop}px`; spans.push(number);
     }
     gutter.replaceChildren(...spans);
 }
@@ -87,6 +102,16 @@ function renderProblems(): void {
 }
 function renderLanguage(): void {
     if (!project || disposed) return;
+    const plain = project.sample.id === "outline";
+    for (const id of ["complete", "inspect-type", "signature", "definition", "references", "rename", "quickfix"]) {
+        button(id).disabled = plain; button(id).hidden = plain;
+    }
+    button("block-comment").hidden = plain;
+    if (plain) {
+        element("language-status").textContent = "Host outline · no language server"; element("language-retry").hidden = true;
+        document.querySelector<HTMLButtonElement>('[data-panel="problems"]')!.textContent = "Problems";
+        presentation.diagnostics = undefined; renderProblems(); return;
+    }
     const state = project.language.state.getSnapshot();
     element("language-status").textContent = state.status === "failed" ? "Language service unavailable" : state.status === "starting" ? "Starting language service…"
         : state.checking ? "Checking types…" : state.status === "ready" ? "Language ready" : "Language service idle";
@@ -108,7 +133,7 @@ function renderMetadata(): void {
     const line = current.buffer.lineAt(selection.head), column = selection.head - current.buffer.offsetAt(line);
     element("cursor").textContent = `Ln ${line + 1}, Col ${column + 1}`;
     element("status").textContent = project.message;
-    element("analysis-status").textContent = presentation.status === "failed" ? "Analysis unavailable" : presentation.status === "ready"
+    element("analysis-status").textContent = project.sample.id === "outline" ? "Host indentation rules" : presentation.status === "failed" ? "Analysis unavailable" : presentation.status === "ready"
         ? "TypeScript 5.9.3 · syntax & emit" : "TypeScript · analyzing…";
     element("analysis-retry").hidden = presentation.status !== "failed";
     button("save").disabled = project.saving;
@@ -127,9 +152,10 @@ function renderMetadata(): void {
         if (tab) { tab.textContent = `${file.name}${file.resource.metadata.getSnapshot().dirty ? " ●" : ""}`; tab.setAttribute("aria-pressed", String(file === active)); }
     }
     document.title = `${project.dirty() ? "● " : ""}${active.name} · StTropez`;
-    presentation.update(current);
+    presentation.update(current, project.sample.id === "outline");
 }
 function detachView(): void {
+    stopFolding?.(); stopFolding = undefined; folding?.dispose(); folding = undefined; referenceFolding?.dispose(); referenceFolding = undefined;
     stopReference?.(); stopReference = undefined;
     output?.destroy(); output = undefined;
     languageView?.destroy(); languageView = undefined;
@@ -141,6 +167,7 @@ function detachView(): void {
     element("editor").replaceChildren(); element("panel-content").replaceChildren();
 }
 function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEditor: EditingCandidate) {
+    if (capturedProject.sample.id === "outline") return;
     return mountDemoLanguage(capturedProject.workspace, capturedProject.files, file, capturedEditor, capturedProject.language, target => {
         if (disposed || project !== capturedProject || editor !== capturedEditor) return;
         const destination = capturedProject.files.find(file => file.resource.documentId === target.documentId);
@@ -165,7 +192,13 @@ function mountFile(file: DemoFile, focus = false): void {
         savedLabel.textContent = project.isReviewingConflict() ? "Other page's saved copy" : "Saved copy"; workingLabel.textContent = "Your changes";
         labels.append(savedLabel, workingLabel); element("panel-content").prepend(labels);
         editor = comparison.working;
-        const configureReference = () => comparison?.referenceEditor()?.configureLanguage(editingConfiguration());
+        const configureReference = () => {
+            referenceFolding?.dispose(); referenceFolding = undefined;
+            const reference = comparison?.reference.getSnapshot(); if (!reference) return;
+            reference.editor.configureLanguage(editingConfiguration());
+            referenceFolding = createFoldingController(project!.workspace, reference.target.id, reference.editor,
+                capture => discoverIndentationFolds(capture.buffer, outlineFolds(editingConfiguration().tabSize!)));
+        };
         stopReference = comparison.reference.subscribe(configureReference); configureReference();
     } else {
         editor = mountEditingCandidate(element("editor"), project.workspace, file.tab,
@@ -174,6 +207,8 @@ function mountFile(file: DemoFile, focus = false): void {
     }
     editor.configureLanguage(editingConfiguration());
     if (savedViews.has(file.view)) editor.restoreView(savedViews.get(file.view)!);
+    folding = mountDemoFolding(project, file, editor, () => editingConfiguration().tabSize!);
+    stopFolding = folding.state.subscribe(renderFolding); renderFolding();
     viewListeners = new AbortController();
     editor.element.addEventListener("sttropez-render", renderGutter, { signal: viewListeners.signal });
     editor.input.addEventListener("compositionstart", renderMetadata, { signal: viewListeners.signal });
@@ -252,8 +287,11 @@ for (const command of ["line-comment", "block-comment", "indent", "outdent"] as 
 });
 indentation.addEventListener("change", () => {
     editor?.configureLanguage(editingConfiguration());
-    comparison?.referenceEditor()?.configureLanguage(editingConfiguration()); editor?.focus();
+    comparison?.referenceEditor()?.configureLanguage(editingConfiguration()); folding?.refresh(); referenceFolding?.refresh(); editor?.focus();
 }, { signal: listeners.signal });
+on("fold", () => { folding?.runCommand("collapse"); }); on("unfold", () => { folding?.runCommand("expand"); });
+on("fold-group-collapse", () => { folding?.runCommand("collapse-all", (element("fold-group") as HTMLSelectElement).value || undefined); });
+on("fold-group-expand", () => { folding?.runCommand("expand-all", (element("fold-group") as HTMLSelectElement).value || undefined); });
 const codeMenu = element("code-menu") as HTMLDetailsElement;
 codeMenu.addEventListener("click", event => { if ((event.target as HTMLElement).closest("button")) codeMenu.open = false; }, { signal: listeners.signal });
 document.addEventListener("pointerdown", event => { if (!codeMenu.contains(event.target as Node)) codeMenu.open = false; }, { signal: listeners.signal });
@@ -264,7 +302,7 @@ on("language-retry", () => {
     const captured = project, file = active, view = editor; if (!captured || !file || !view) return;
     languageView?.destroy(); languageView = undefined;
     void captured.language.retry().then(() => {
-        if (!disposed && project === captured && editor === view) languageView = attachLanguage(captured, file, view);
+        if (!disposed && project === captured && editor === view) { languageView = attachLanguage(captured, file, view); folding?.refresh(); }
     }).catch(() => {});
 });
 on("panel-collapse", () => {

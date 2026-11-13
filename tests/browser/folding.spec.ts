@@ -1,6 +1,50 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
+test("automatic discovery preserves newer view choices, cancels changed targets and waits for composition", async ({ page }) => {
+    await page.goto("/editing/");
+    await page.evaluate(() => {
+        const f = window.editingFixture; f.setText("head\n  child\nend");
+        const pending: { signal: AbortSignal; resolve: (value: readonly { from: number; to: number }[]) => void }[] = [];
+        Object.assign(window, { pendingFolds: pending });
+        f.discoverFolds((_, signal) => new Promise(resolve => pending.push({ signal, resolve })));
+    });
+    const count = () => page.evaluate(() => (window as unknown as { pendingFolds: unknown[] }).pendingFolds.length);
+    const resolve = () => page.evaluate(() => (window as unknown as { pendingFolds: { resolve: (value: readonly { from: number; to: number }[]) => void }[] }).pendingFolds.at(-1)!.resolve([{ from: 0, to: 13 }]));
+    await expect.poll(count).toBe(1); await resolve();
+    await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
+    await page.evaluate(() => window.editingFixture.refreshFolds()); await expect.poll(count).toBe(2);
+    await page.evaluate(() => window.editingFixture.foldCommand("collapse-all")); await resolve();
+    await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
+    expect((await page.evaluate(() => window.editingFixture.folding())).regions[0]!.collapsed).toBe(true);
+    await page.evaluate(() => window.editingFixture.refreshFolds()); await expect.poll(count).toBe(3);
+    await input(page).dispatchEvent("compositionstart", { data: "" });
+    await resolve();
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    expect((await page.evaluate(() => window.editingFixture.foldStatus()))?.status).toBe("pending");
+    await input(page).dispatchEvent("compositionend", { data: "" });
+    await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
+    await page.evaluate(() => window.editingFixture.refreshFolds()); await expect.poll(count).toBe(4);
+    await page.evaluate(() => window.editingFixture.setText("new\n  body\nlast"));
+    expect(await page.evaluate(() => (window as unknown as { pendingFolds: { signal: AbortSignal }[] }).pendingFolds[3]!.signal.aborted)).toBe(true);
+    await expect.poll(count).toBe(5); await page.evaluate(() => window.editingFixture.replacePrimary()); await resolve();
+    expect(await page.evaluate(() => (window as unknown as { pendingFolds: { signal: AbortSignal }[] }).pendingFolds[4]!.signal.aborted)).toBe(true);
+    await page.evaluate(() => window.editingFixture.dispose());
+    expect((await page.evaluate(() => window.editingFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+});
+test("a host generator may invalidate itself without reentrant cancellation or leaking its iterator", async ({ page }) => {
+    const errors: string[] = []; page.on("pageerror", error => errors.push(error.message)); await page.goto("/editing/");
+    await page.evaluate(() => {
+        const f = window.editingFixture; f.setText("head\n  child\nend"); let first = true;
+        Object.assign(window, { foldIteratorClosed: false });
+        f.discoverFolds(function* () {
+            if (first) { first = false; try { f.edit([{ from: 0, to: 0, insert: "prefix\n" }]); yield; } finally { Object.assign(window, { foldIteratorClosed: true }); } }
+            return [];
+        });
+    });
+    await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
+    expect(await page.evaluate(() => (window as unknown as { foldIteratorClosed: boolean }).foldIteratorClosed)).toBe(true); expect(errors).toEqual([]);
+});
 async function ready(page: Page): Promise<void> {
     await expect.poll(() => page.evaluate(() => { const f = window.editingFixture, s = f.snapshot();
         return !s.primary.pendingCaret && !s.primary.viewport.pending && !s.secondary.pendingCaret && !s.secondary.viewport.pending

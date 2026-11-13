@@ -12,6 +12,8 @@ import type { NativeInsertionTarget } from "./input-target.ts";
 export { mountTextViewport } from "./viewport.ts";
 export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealOptions, TextViewport, ViewportSnapshot, ViewportComparisonRows } from "./viewport.ts";
 export { mountEditingCandidate } from "./editing-candidate.ts";
+export { createFoldingController } from "./folding-controller.ts";
+export type { FoldDiscovery, FoldDiscoveryBatch, FoldDiscoveryResult, FoldCommand, FoldingStatus, FoldingController } from "./folding-controller.ts";
 export { openWebSocketTransport } from "./lsp-websocket.ts";
 export type { WebSocketTransportOptions } from "./lsp-websocket.ts";
 export { createLspEditor } from "./lsp-editor.ts";

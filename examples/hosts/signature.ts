@@ -1,4 +1,4 @@
-import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, TextBuffer, Workspace } from "../../src/index.ts";
+import type { DocumentId, DocumentSnapshot, FoldIndex, ResourceLease, SelectionSet, TabId, TabTarget, TextBuffer, Workspace } from "../../src/index.ts";
 import type { LspSignatureContext } from "../../src/protocol/index.ts";
 import type { EditingCandidate } from "../../src/browser/index.ts";
 import { createNavigationClient, navigationMetrics } from "../editing/navigation-client.ts";
@@ -11,7 +11,7 @@ export type SignatureBackend = Readonly<{ signature: (input: SignatureInput, buf
     trigger?: (document: DocumentSnapshot, character: string, retrigger: boolean) => boolean; isCurrent?: () => boolean }>;
 export type SignatureBackendFactory = (clock: Window, changed: () => void) => SignatureBackend;
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate; stop: () => void };
-type Job = { session: Session; input: SignatureInput; selections: SelectionSet; folds: number; authority: string; lease: ResourceLease | undefined;
+type Job = { session: Session; input: SignatureInput; selections: SelectionSet; folds: FoldIndex; authority: string; lease: ResourceLease | undefined;
     timer: number; invalid: boolean; ready: boolean; result?: SignaturePresentation };
 export type SignatureSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; visible: boolean; pending: boolean;
     status: "idle" | "pending" | "ready" | "empty" | "expired" | "failed"; message: string; view: string | null; left: number; top: number;
@@ -51,7 +51,7 @@ export class HostSignatureTools {
     private current(job: Job): boolean {
         try { return this.job === job && !job.invalid && this.available(job.session) && this.canCapture(job.session.editor.view.documentId)
             && this.workspace.document(job.session.editor.view.documentId).revision === job.input.revision && this.authority(job.session.editor.view.documentId) === job.authority
-            && job.session.editor.view.getSnapshot().selectionSet === job.selections && job.session.editor.view.folding.getSnapshot().generation === job.folds && (this.client?.isCurrent?.() ?? true); } catch { return false; }
+            && job.session.editor.view.getSnapshot().selectionSet === job.selections && job.folds.sameProjection(job.session.editor.view.folding.getSnapshot().index) && (this.client?.isCurrent?.() ?? true); } catch { return false; }
     }
     private publish(patch: Partial<SignatureSnapshot> = {}): void {
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active), connected: this.client?.snapshot().connected ?? false,
@@ -134,7 +134,7 @@ export class HostSignatureTools {
         const doc = this.workspace.document(s.editor.view.documentId), selected = s.editor.view.getSnapshot();
         let input: SignatureInput; try { input = validateSignatureInput({ id: ++this.sequence, document: doc.id, revision: doc.revision, length: doc.buffer.length, offset: selected.selection.head, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
         catch (error) { this.armed = false; this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid signature context." }); return; } this.fault = undefined;
-        const win = s.editor.element.ownerDocument.defaultView!, job: Job = { session: s, input, selections: selected.selectionSet, folds: s.editor.view.folding.getSnapshot().generation, authority: this.authority(doc.id),
+        const win = s.editor.element.ownerDocument.defaultView!, job: Job = { session: s, input, selections: selected.selectionSet, folds: s.editor.view.folding.getSnapshot().index, authority: this.authority(doc.id),
             lease: this.workspace.acquire(doc.resourceId), timer: 0, invalid: false, ready: false }; this.job = job; this.counts.requested++;
         this.publish({ status: "pending", visible: true, message: "Reading captured signature context.", total: input.offset, work: 0, ...this.position() }); this.trackLayout();
         try {

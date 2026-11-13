@@ -13,6 +13,8 @@ export { LiteralSearch } from "./core/search.ts";
 export type { SearchMatch, SearchStep, LiteralSearchOptions } from "./core/search.ts";
 export { FoldIndex, createFoldRegions } from "./core/folding.ts";
 export type { FoldRange, FoldRegion, FoldVersion, FoldingSnapshot, DocumentFolding } from "./core/folding.ts";
+export { discoverIndentationFolds, reconcileFoldRanges } from "./core/fold-discovery.ts";
+export type { DiscoveredFold, IndentationFoldingOptions } from "./core/fold-discovery.ts";
 export { WordCursor, codeWordConstituentPattern } from "./core/words.ts";
 export type { WordStep, WordOptions } from "./core/words.ts";
 export { GraphemeIndex, GraphemeLimitError, createGraphemeCursor, graphemeBoundaries } from "./core/graphemes.ts";

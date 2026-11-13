@@ -3,11 +3,55 @@
 `DocumentView.folding` is a stable observable handle. The host supplies raw UTF-16 ranges;
 StTropez owns their view state, mapping, visible-row index and disclosure controls. This small
 TypeScript implementation reuses the text buffer, position maps and viewport rather than adding
-a runtime dependency. It does not parse a language or discover domain folds.
+a runtime dependency. Language parsing stays in a provider. The optional indentation/marker
+discovery below is a generic host policy over immutable text, with no parser dependency.
 The [host-domain fixture](domain.md) demonstrates captured asynchronous discovery
 and annotations outside the runtime. Hosts can call public `createFoldRegions`
 to validate a complete response and preserve prior identity/collapse state before
 publishing it through the view's fold handle.
+
+`discoverIndentationFolds(buffer, options)` is a yielding headless planner. Hosts choose tab
+width, indentation group, and paired line-prefix region markers. Nested indentation includes
+interior blank lines and excludes trailing blank lines. Unclosed markers remain expanded.
+`reconcileFoldRanges` chooses one outer range per header, discards crossing discoveries, and
+matches mapped header/group pairs to previous identities. It returns the complete range set;
+a host combining several sources must combine them before reconciliation.
+
+`createFoldingController(workspace, tabId, editor, discover, { delayMs })` owns discovery for
+one retained view. The callback receives the captured document and an AbortSignal. It may
+return ranges, a yielding generator, or `{ ranges, isCurrent }`, synchronously or asynchronously.
+Old results cannot publish after editing, target replacement or disposal. Publication waits
+for composition and queued editing to settle, and reconciles the latest view choices rather
+than the choices at request time. Failures retain mapped folds and expose an explicit status.
+Hosts should make synchronous discovery steps bounded; scheduling does not preempt a callback.
+
+```ts
+const controller = createFoldingController(workspace, tab, editor, document =>
+    discoverIndentationFolds(document.buffer, {
+        tabSize: 2, group: "blocks",
+        markers: [{ start: "#region", end: "#endregion", group: "regions" }],
+    }));
+controller.runCommand("collapse-all", "regions");
+// On host policy/provider changes: controller.refresh(); on unmount: controller.dispose().
+```
+
+Commands are `collapse`, `expand`, `collapse-all` and `expand-all`, optionally restricted to a
+group. Ctrl/Cmd+Shift+[ / ] collapses/expands at the caret. Collapse commands move hidden
+selection endpoints to their visible header before publication. Explicit disclosure buttons
+retain the existing raw-selection behavior below. Groups are optional, nonempty host strings.
+
+`createLspFoldingClient(provider).run(document, prepare?)` supplies a cancellable captured
+`textDocument/foldingRange` result with revision, ranges and an `isCurrent` guard. Enable that
+feature on the provider. Static/dynamic capability authority and reconnect use the shared
+session. The client advertises complete-line folds, converts inclusive LSP end lines to raw
+exclusive offsets, ignores out-of-document/degenerate line ranges and rejects malformed
+response shapes atomically. Optional character positions and collapsed text are not used.
+Provider kinds become groups, including custom kinds; discovery policy remains separate.
+
+The main demo uses TypeScript outlining for source files and indentation for its immutable
+comparison reference. **Host outline · indentation folding** demonstrates nested blocks,
+blank lines and region groups without requesting a language provider. The Code menu exposes
+individual and grouped commands. Find, editing and shared undo use the same fold projection.
 
 ```ts
 const folds = view.folding;
@@ -63,3 +107,12 @@ requires exact complete selections, current fold generations, all working views,
 reference/comparison settlement and two animation frames. Later language replies are outside
 that gate; a real worker reply is required before each pair of points. No physical-display,
 CPU-time, OS input or blanket responsiveness qualification follows from this experiment.
+
+`FoldIndex.sameProjection(other)` compares hidden row intervals, independently of expanded
+range metadata. Captured completion, navigation, rename, quick-fix, hover and signature UI use
+this distinction: discovery of expanded folds must not dismiss a valid result. Changes to
+visible folded rows still expire display captures; document, selection and provider guards
+remain separate. Consumers that key display intent to every metadata generation should use
+projection equality when adding automatic discovery.
+Expanded discovery metadata also preserves continuous typing undo groups; a changed visible
+fold projection still seals the current group.

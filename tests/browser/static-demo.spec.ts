@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
-import { runDemoCompletionCatalogue, runDemoConflict, runDemoSnippets, runDemoWalkthrough, runDemoProjectResults, runDemoEditingRules } from "./demo-walkthrough.ts";
+import { runDemoCompletionCatalogue, runDemoConflict, runDemoSnippets, runDemoWalkthrough, runDemoProjectResults, runDemoEditingRules, runDemoFolding } from "./demo-walkthrough.ts";
+
+test("automatic folding survives edits, find and independent review views", async ({ page, baseURL }) => { await runDemoFolding(page, baseURL!); });
 import { runDemoPresentationContinuity } from "./demo-presentation.ts";
 
 // Native scrollbar drags are part of the demo's user journey, including headless Chromium.

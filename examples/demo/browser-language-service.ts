@@ -106,7 +106,7 @@ export class BrowserLanguageService {
             positionEncoding: "utf-16", textDocumentSync: { openClose: true, change: 2 },
             completionProvider: { triggerCharacters: ["."], resolveProvider: true }, hoverProvider: true,
             signatureHelpProvider: { triggerCharacters: ["(", ","], retriggerCharacters: [","] },
-            definitionProvider: true, referencesProvider: true, renameProvider: { prepareProvider: true }, codeActionProvider: { codeActionKinds: ["quickfix"] },
+            definitionProvider: true, referencesProvider: true, renameProvider: { prepareProvider: true }, codeActionProvider: { codeActionKinds: ["quickfix"] }, foldingRangeProvider: true,
         } };
         if (method === "shutdown") return null;
         if (method === "sttropez/diagnostics") {
@@ -133,6 +133,14 @@ export class BrowserLanguageService {
             return this.service.getCodeFixesAtPosition(file.path, from, to, codes, {}, {}).filter(fix => !fix.commands?.length
                 && fix.changes.every(change => !change.isNewFile && this.fileAt(change.fileName)))
                 .map(fix => ({ title: fix.description, kind: "quickfix", edit: this.edits(fix.changes) }));
+        }
+        if (method === "textDocument/foldingRange") {
+            const file = this.file(object(object(params).textDocument).uri);
+            return this.service.getOutliningSpans(file.path).flatMap(span => {
+                const start = file.document.positionAt(span.textSpan.start), end = file.document.positionAt(span.textSpan.start + span.textSpan.length);
+                const endLine = end.character === 0 ? end.line - 1 : end.line;
+                return endLine > start.line ? [{ startLine: start.line, endLine, kind: span.kind }] : [];
+            });
         }
         const { p, file, offset } = this.cursor(params);
         if (method === "textDocument/completion") {

@@ -1,11 +1,11 @@
-import type { ResourceLease, SelectionSet, TabId, Workspace } from "../../src/index.ts";
+import type { FoldIndex, ResourceLease, SelectionSet, TabId, Workspace } from "../../src/index.ts";
 import type { EditingCandidate } from "../../src/browser/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import { validateHoverResult } from "../probes/hover.ts";
 import type { HoverInput } from "../probes/hover.ts";
 import type { AbsoluteHover, HoverBackend } from "./hover-backend.ts";
 
-type Capture = Readonly<{ input: HoverInput; from: number; selectionSet: SelectionSet; foldGeneration: number; startsInWord: boolean; endsInWord: boolean; lease: ResourceLease }>;
+type Capture = Readonly<{ input: HoverInput; from: number; selectionSet: SelectionSet; folds: FoldIndex; startsInWord: boolean; endsInWord: boolean; lease: ResourceLease }>;
 export type HoverSnapshot = Readonly<{ status: "idle" | "pending" | "ready" | "empty" | "failed" | "disconnected" | "expired" | "disposed";
     message: string; revision: number | null; range: Readonly<{ from: number; to: number }> | null; text: string }>;
 
@@ -20,7 +20,7 @@ export function createHoverController(workspace: Workspace, tabId: TabId, editor
     let backendCall: ReturnType<HoverBackend["run"]> | undefined, backendCurrent: (() => boolean) | undefined;
     const valid = () => !disposed && workspace.resolveTab(target) !== undefined && workspace.ownsDocumentView(editor.view) && !editor.snapshot().disposed && resource.getSnapshot().state === "ready";
     const current = (value: Capture) => valid() && workspace.document(documentId).revision === value.input.revision && editor.view.getSnapshot().selectionSet === value.selectionSet
-        && editor.view.folding.getSnapshot().generation === value.foldGeneration && (options.canCapture?.() ?? true) && (backendCurrent?.() ?? true);
+        && value.folds.sameProjection(editor.view.folding.getSnapshot().index) && (options.canCapture?.() ?? true) && (backendCurrent?.() ?? true);
     const release = () => { const value = pending, call = backendCall; pending = undefined; backendCall = undefined; value?.lease.release(); call?.cancel(); if (timer !== undefined) win.clearTimeout(timer); timer = undefined; };
     const clear = (status: HoverSnapshot["status"], message: string) => { intent++; capture = undefined; backendCurrent = undefined; release();
         for (const stop of subscriptions.splice(0)) stop(); cell.set({ status, message, revision: null, range: null, text: "" }); };
@@ -70,7 +70,7 @@ export function createHoverController(workspace: Workspace, tabId: TabId, editor
         if (to < buffer.length && high(buffer.slice(to - 1, to)) && low(buffer.slice(to, to + 1))) to++;
         const input: HoverInput = Object.freeze({ operation: "hover", id: ++sequence, revision: document.revision, text: buffer.slice(from, to), offset: offset - from, delay, ...(fault ? { fault } : {}) }); fault = undefined;
         const word = /^[\p{L}\p{N}\p{Pc}\p{M}\u200c\u200d]$/u, points = Array.from(input.text), before = Array.from(buffer.slice(Math.max(0, from - 2), from)).at(-1) ?? "", after = Array.from(buffer.slice(to, Math.min(buffer.length, to + 2)))[0] ?? "";
-        pending = Object.freeze({ input, from, selectionSet: editor.view.getSnapshot().selectionSet, foldGeneration: editor.view.folding.getSnapshot().generation, lease: workspace.acquire(resource.id),
+        pending = Object.freeze({ input, from, selectionSet: editor.view.getSnapshot().selectionSet, folds: editor.view.folding.getSnapshot().index, lease: workspace.acquire(resource.id),
             startsInWord: from > 0 && word.test(before) && word.test(points[0] ?? ""), endsInWord: to < buffer.length && word.test(after) && word.test(points.at(-1) ?? "") });
         subscriptions = [workspace.observeDocument(documentId).subscribe(invalidate), editor.view.subscribe(invalidate), editor.view.folding.subscribe(invalidate), workspace.tabState.subscribe(invalidate)];
         counts.posted++; counts.postedUnits += input.text.length;
