@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve, relative, isAbsolute, sep } from "node:path";
+import { join, resolve, relative } from "node:path";
 import { createServer } from "node:http";
 import { build } from "esbuild";
 import { unzipSync, strFromU8 } from "fflate";
@@ -11,6 +11,7 @@ import { chromium, firefox, webkit } from "@playwright/test";
 import { runPackagedPilot } from "./package-pilot.mjs";
 import { runPackagedHunkPilot } from "./package-hunk-pilot.mjs";
 import { runPackageTransitions } from "./package-transitions.mjs";
+import { within } from "./package-react-host.mjs";
 
 const hunkOnly = process.argv.includes("--hunk-only");
 const transitionsOnly = process.argv.includes("--transitions-only");
@@ -61,8 +62,7 @@ assert.ok(!/<dependency\b/.test(nuspec), "Package must not depend on managed or 
 
 // Separate directory, local feed and isolated restore cache; no checkout/source fallback.
 const consumer = await realpath(reused?.consumer ?? await mkdtemp(join(tmpdir(), "sttropez-consumer-")));
-const consumerLocation = relative(project, consumer);
-assert.ok(consumerLocation === ".." || consumerLocation.startsWith(`..${sep}`) || isAbsolute(consumerLocation), "Consumer must remain outside the checkout.");
+assert.ok(!within(project, consumer), "Consumer must remain outside the checkout.");
 if (!reused) {
 await cp("tests/fixtures/consumer", consumer, { recursive: true });
 await mkdir(join(consumer, "feed"));
@@ -119,7 +119,7 @@ const bundle = await build({ absWorkingDir: consumer, entryPoints: lspOnly ? { l
     plugins: [{ name: "consumer-isolation", setup(builder) { builder.onEnd(result => {
         for (const path of Object.keys(result.metafile.inputs)) {
             const input = resolve(consumer, path);
-            assert.ok(reactHost ? reactHost.allowInput(input) : !input.startsWith(project), reactHost
+            assert.ok(reactHost ? reactHost.allowInput(input) : !within(project, input), reactHost
                 ? `Unexpected host input leaked into consumer: ${path}` : `Checkout input leaked into consumer: ${path}`);
         }
     }); } }] });
