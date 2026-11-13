@@ -48,8 +48,12 @@ exclusive offsets, ignores out-of-document/degenerate line ranges and rejects ma
 response shapes atomically. Optional character positions and collapsed text are not used.
 Provider kinds become groups, including custom kinds; discovery policy remains separate.
 
-The main demo uses TypeScript outlining for source files and indentation for its immutable
-comparison reference. **Host outline · indentation folding** demonstrates nested blocks,
+The main demo uses TypeScript outlining for both working files and immutable saved snapshots.
+The saved snapshot shares the host's syntax-color worker; it never borrows live-document ranges
+or a provider version. Each pane keeps independent fold choices, and the working pane retains
+the source view's choices when entering/leaving review. Both panes offer the same language-based
+controls; alignment gaps reflect hidden rows without implying a source deletion.
+**Host outline · indentation folding** demonstrates nested blocks,
 blank lines and region groups without requesting a language provider. The Code menu exposes
 individual and grouped commands. Find, editing and shared undo use the same fold projection.
 
@@ -86,6 +90,9 @@ independent state; hunk navigation expands the entire target hunk, including a h
 first changed line is the visible header. Raw diff and Save/Run inputs remain unchanged.
 
 Visible headers expose native disclosure buttons with `aria-expanded` and line-range labels.
+Collapsed headers also show an inline hidden-line count at the visible end of the header.
+This generated presentation is outside source text nodes, clipboard data and caret offsets;
+partially rendered long headers show it only when their actual line ending is in the fragment.
 Enter/Space toggles; Escape returns to the source. Source Escape followed by Tab or Shift+Tab
 leaves the editor for host controls. Buttons capture tab, revision and fold generation, so delayed
 clicks cannot act on a new target. Folding is guarded during composition; synthetic checks do

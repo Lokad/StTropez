@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { controlDemoAnalysis, holdDemoAnalysis, releaseDemoAnalysis } from "./demo-presentation.ts";
 
 test("demo edits real files, preserves selection/history, finds text and reviews undoable changes", async ({ page }) => {
     const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
@@ -155,7 +156,7 @@ test("demo local save persists both files and prevents a stale page from replaci
     expect((await download).suggestedFilename()).toBe("pricing-changes.json");
     await peer.getByRole("button", { name: "Review saved copy", exact: true }).click();
     await expect(peer.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
-    await expect(peer.locator(".demo-review-labels")).toHaveText("Other page's saved copyYour changes");
+    await expect(peer.locator(".demo-review-labels > span:not(.demo-review-hint)")).toHaveText(["Other page's saved copy", "Your changes"]);
     await expect(peer.locator(".st-comparison-panes > section").first()).toContainText("// First page");
     await expect(peer.locator(".st-comparison-panes > section").last()).toContainText("// Peer changes");
     const saveReviewed = peer.getByRole("button", { name: "Save my reviewed version", exact: true });
@@ -167,7 +168,7 @@ test("demo local save persists both files and prevents a stale page from replaci
     await saveReviewed.click();
     await expect(peer.locator("#status")).toContainText("Saved in this browser");
     await expect(peer.locator("#save-conflict")).toBeHidden();
-    await expect(peer.locator(".demo-review-labels")).toHaveText("Saved copyYour changes");
+    await expect(peer.locator(".demo-review-labels > span:not(.demo-review-hint)")).toHaveText(["Saved copy", "Your changes"]);
     await page.reload();
     await expect(page.locator("#editor")).toContainText("// Peer changes");
     await expect(page.locator("#editor")).toContainText("// Revised locally");
@@ -197,12 +198,18 @@ test("demo storage failure preserves edits and a retry saves the captured projec
 });
 
 test("demo rejects obsolete analysis, supports multiline colors and keeps editing after worker failure", async ({ page }) => {
+    await controlDemoAnalysis(page);
     await page.goto("/");
     await page.locator("#sample").selectOption("unicode");
     await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
     await expect(page.locator("#editor .demo-token-string").filter({ hasText: "Welcome!" })).toBeVisible();
     await page.locator("#sample").selectOption("pricing");
-    await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
+    await holdDemoAnalysis(page);
+    await page.getByRole("textbox", { name: "main.ts", exact: true }).press("Control+Home"); await page.keyboard.insertText("// pending analysis\n");
+    await expect.poll(() => page.evaluate(() => (window as unknown as { demoAnalysisControl: { held: number } }).demoAnalysisControl.held)).toBeGreaterThan(0);
+    await page.getByRole("button", { name: "pricing.ts", exact: true }).hover(); await page.mouse.down();
+    await releaseDemoAnalysis(page); await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
+    await page.mouse.up(); await expect(page.getByRole("textbox", { name: "pricing.ts", exact: true })).toBeVisible();
     await expect(page.getByRole("region", { name: "JavaScript output", exact: true })).toContainText("export function calculateTotal");
     await expect(page.getByRole("region", { name: "JavaScript output", exact: true })).not.toContainText("const cart");
     await page.route("**/demo-syntax-worker.js", route => route.abort());
@@ -215,4 +222,19 @@ test("demo rejects obsolete analysis, supports multiline colors and keeps editin
     await page.getByRole("button", { name: "Retry", exact: true }).click();
     await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
     await expect(page.getByRole("region", { name: "JavaScript output", exact: true })).toContainText("// Still editable");
+    // A new saved-copy worker can fail independently; retry and replacement keep exact snapshot ownership.
+    await page.route("**/demo-syntax-worker.js", route => route.abort());
+    await page.getByRole("button", { name: "Compare", exact: true }).click();
+    await expect(page.locator("#analysis-status")).toHaveText("Saved-copy analysis unavailable");
+    const left = page.locator(".st-comparison-panes > section").first(), right = page.locator(".st-comparison-panes > section").last();
+    await expect(right.locator(".demo-token-comment").first()).toHaveText("// Still editable");
+    await page.unroute("**/demo-syntax-worker.js"); await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(left.locator(".demo-token-keyword").first()).toHaveText("import");
+    await expect(left.locator(".st-fold-button").first()).toBeVisible();
+    await holdDemoAnalysis(page); await page.getByRole("button", { name: "Save locally", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { demoAnalysisControl: { held: number } }).demoAnalysisControl.held)).toBeGreaterThan(0);
+    await page.locator("#sample").selectOption("unicode"); await releaseDemoAnalysis(page);
+    await expect(left.locator(".demo-token-string").filter({ hasText: "Welcome!" })).toBeVisible();
+    await expect(left).not.toContainText("Still editable"); await expect(left).not.toContainText("calculateTotal");
+    await page.locator('[data-panel="javascript"]').click(); await expect(page.locator(".st-comparison")).toHaveCount(0);
 });

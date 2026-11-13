@@ -140,6 +140,43 @@ export async function runDemoFolding(page: Page, url = "/") {
     await menu("fold-group-expand");
     await expect(left.locator('.st-fold-button[aria-expanded="false"]')).toHaveCount(1);
     await expect(right.locator('.st-fold-button[aria-expanded="false"]')).toHaveCount(0);
+
+    // Both TypeScript snapshots use syntax colors/outlining; review fold choices stay independent.
+    await page.locator('[data-panel="javascript"]').click(); await page.locator("#sample").selectOption("navigation");
+    const imports = page.getByRole("textbox", { name: "main.ts", exact: true });
+    const original = await imports.inputValue(), header = page.locator('#editor .st-viewport-row[data-line="0"]');
+    await expect(page.locator("#editor .st-fold-button").first()).toBeVisible({ timeout: 30000 });
+    await page.locator("#editor .st-fold-button").first().click();
+    await expect(header).toHaveAttribute("data-folded-summary", "… 1 line hidden");
+    await expect(imports).toHaveValue(original); await expect(page.locator('#editor .st-viewport-row[data-line="1"]')).toHaveCount(0);
+    await page.getByRole("button", { name: "Compare", exact: true }).click();
+    await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
+    const coloredImport = (pane: typeof left) => pane.locator('.st-viewport-row[data-line="0"] .demo-token-keyword').first();
+    await expect(coloredImport(left)).toHaveText("import"); await expect(coloredImport(right)).toHaveText("import");
+    await expect(left.locator(".st-fold-button")).toHaveAttribute("aria-expanded", "true");
+    await expect(right.locator(".st-fold-button")).toHaveAttribute("aria-expanded", "false");
+    await expect(right.locator('[data-folded-summary]')).toHaveAttribute("data-folded-summary", "… 1 line hidden");
+    await right.locator(".st-fold-button").click();
+    await expect(right.locator('[data-folded-summary]')).toHaveCount(0);
+    await expect.poll(() => right.locator(".st-viewport-row").allTextContents()).toEqual(await left.locator(".st-viewport-row").allTextContents());
+    await left.locator(".st-fold-button").click(); await expect(right.locator(".st-fold-button")).toHaveAttribute("aria-expanded", "true");
+    await left.locator(".st-fold-button").click();
+    const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });
+    await working.press("Control+Home"); await working.press("ArrowDown"); await working.press("Home"); await working.press("Shift+End"); await working.press("Delete");
+    await expect(right.locator(".st-fold-button")).toHaveCount(0); await expect(left.locator(".st-fold-button")).toHaveCount(1);
+    await expect(coloredImport(left)).toHaveText("import"); await expect(left).toContainText('import type { RecordId }');
+    await page.getByRole("button", { name: "Next change", exact: true }).click();
+    await expect(page.locator(".st-comparison-preview")).toContainText('import·type');
+    await working.press("Control+z"); await expect(right.locator(".st-fold-button")).toHaveCount(1);
+    await working.press("Control+Home"); await page.keyboard.insertText("// working only\n");
+    await expect(right.locator(".demo-token-comment")).toHaveText("// working only"); await expect(left).not.toContainText("// working only");
+    await page.getByRole("button", { name: "Save locally", exact: true }).click();
+    await expect(left.locator(".demo-token-comment")).toHaveText("// working only");
+    await expect(page.locator(".st-comparison-controls output")).toHaveText("No changes");
+    await expect(left.locator(".st-fold-button")).toHaveCount(1);
+    await right.locator(".st-fold-button").click(); await page.locator('[data-panel="javascript"]').click();
+    await expect(page.locator('#editor [data-folded-summary]')).toHaveAttribute("data-folded-summary", "… 1 line hidden");
+    await expect(imports).toHaveValue("// working only\n" + original);
 }
 
 export async function runDemoEditingRules(page: Page, url = "/") {

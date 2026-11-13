@@ -62,6 +62,28 @@ independent comparison views. Expanded discovery metadata preserves language res
 typing undo groups; failed providers await explicit Retry. The folding/lifecycle suite passes
 30 checks across three engines. The restored consumer also passes the new folding journey.
 
+The shared journey now also checks TypeScript saved/working colors and import-fold controls,
+an explicit hidden-line label, independent collapse/expand, differing ranges after an edit,
+hunk navigation, undo, save/refresh and return to the source. The saved snapshot uses its own
+captured syntax analysis; a focused failure/held-reply check covers Retry, replacement and
+disposal. Generated fold labels remain outside raw source/copy text and caret geometry.
+
+Three headless Chromium comparison openings on shared Windows measured 3.9–6.0 ms through
+click dispatch and 212.7–230.5 ms to two colored frames for the small navigation sample.
+For the 100k-line sample, dispatch was 4.3–6.4 ms and two colored frames took 596.0–659.9 ms,
+including saved-worker startup, upload and analysis. Full opening automation took 253.9–256.3 ms
+and 626.4–687.1 ms respectively. Subsequent middle scrolling kept 27 rows in each pane;
+scroll handlers took 0–0.2 ms and two matching colored frames took 33.1–33.9 ms. Other
+qualification was running on the shared machine. These are distinct clocks and small-sample
+observations, not provider-only latency, stable-tail or physical-display guarantees.
+
+The affected source campaign retained a Firefox provider-startup timeout; one isolated retry
+passed and attribution remains unresolved. A WebKit lost expansion click and file-tab switch
+were reduced to replacing identical button text during a pointer press. Fold controls and file
+tabs now preserve unchanged text nodes; regressions hold a press across viewport painting and
+compiler-result delivery. This finding does not attribute older unexplained misses or establish
+native input qualification. No deadlines were increased.
+
 The associated static campaign passed 35/36 checks. One WebKit project-results check lost a
 hover popup; two bounded instrumented runs did not reproduce it or establish scroll-related
 attribution. This remains an explicit unresolved qualification observation, not a folding failure

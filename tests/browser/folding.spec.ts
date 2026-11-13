@@ -56,6 +56,14 @@ test("folded rows keep independent views, disclosure keys and visible-line navig
     await page.evaluate(text => { const f = window.editingFixture; f.setText(text); f.folds([{ id: "body", from: 0, to: text.indexOf("last"), collapsed: true }]); }, text); await ready(page);
     const primary = page.locator("#primary .st-viewport-row"), secondary = page.locator("#secondary .st-viewport-row");
     expect(await primary.allTextContents()).toEqual(["head", "last", ""]); expect(await secondary.allTextContents()).toEqual(["head", "one", "two", "last", ""]);
+    await expect(primary.first()).toHaveAttribute("data-folded-summary", "… 2 lines hidden");
+    expect(await primary.first().evaluate(node => getComputedStyle(node, "::after").content)).toContain("2 lines hidden");
+    // The marker is presentation only: full raw copy and text-node geometry still address source.
+    const copied = await input(page).evaluate(node => {
+        const f = window.editingFixture; f.select("primary", { anchor: 0, head: f.snapshot().document!.length });
+        const event = new ClipboardEvent("copy", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }); node.dispatchEvent(event);
+        f.select("primary", { anchor: 0, head: 0 }); return event.clipboardData!.getData("text/plain");
+    }); expect(copied).toBe(text);
     await input(page).press("Escape"); await input(page).press("Shift+Tab");
     expect(await page.evaluate(() => document.getElementById("primary")!.contains(document.activeElement))).toBe(false);
     await input(page).focus(); await input(page).press("Escape"); await input(page).press("Tab");
@@ -65,8 +73,18 @@ test("folded rows keep independent views, disclosure keys and visible-line navig
     await input(page).press("End"); await input(page).press("ArrowRight"); await ready(page); expect((await page.evaluate(() => window.editingFixture.snapshot())).primary.selection.head).toBe(16);
     const disclosure = page.getByRole("button", { name: "Expand lines 2–3", exact: true }); await disclosure.focus(); await disclosure.press("Space"); await ready(page);
     await expect(page.getByRole("button", { name: "Collapse lines 2–3", exact: true })).toHaveAttribute("aria-expanded", "true"); expect(await primary.allTextContents()).toEqual(["head", "one", "two", "last", ""]);
+    await expect(primary.first()).not.toHaveAttribute("data-folded-summary");
     await page.getByRole("button", { name: "Collapse lines 2–3", exact: true }).press("Enter"); await ready(page);
     expect(await primary.allTextContents()).toEqual(["head", "last", ""]);
+    // A queued viewport paint between pointerdown/up must preserve the pressed disclosure.
+    await disclosure.hover(); await page.mouse.down();
+    const painted = await disclosure.evaluate(() => new Promise<boolean>(resolve => {
+        const f = window.editingFixture, before = f.snapshot().primary.viewport.renders;
+        f.select("primary", { anchor: 1, head: 1 });
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve(f.snapshot().primary.viewport.renders > before)));
+    })); expect(painted).toBe(true);
+    await page.mouse.up(); await expect(page.getByRole("button", { name: "Collapse lines 2–3", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Collapse lines 2–3", exact: true }).press("Enter"); await ready(page);
     await page.getByRole("textbox", { name: "Find", exact: true }).fill("two"); await expect(page.locator("#find-status")).toContainText("1 matches · ready");
     await page.getByRole("button", { name: "Next match", exact: true }).click(); await ready(page);
     expect((await page.evaluate(() => window.editingFixture.snapshot())).primary.selection).toMatchObject({ anchor: 11, head: 14 });
@@ -81,6 +99,7 @@ test("a 100k-line fold keeps row work bounded, maps edits and undo, and reveals 
     await page.evaluate(({ text, end }) => { const f = window.editingFixture; f.setText(text); f.folds([{ id: "many", from: 0, to: end, collapsed: true }]); }, { text, end }); await ready(page);
     let state = await page.evaluate(() => window.editingFixture.snapshot()); expect(state.primary.viewport.visibleLines).toBe(2); expect(state.primary.viewport.rows).toBe(2); expect(state.primary.inputUnits).toBeLessThanOrEqual(2600);
     expect(await page.locator("#primary .st-viewport-row").allTextContents()).toEqual(["start", "end"]);
+    await expect(page.locator("#primary .st-viewport-row").first()).toHaveAttribute("data-folded-summary", "… 100000 lines hidden");
     await input(page).press("PageDown"); await ready(page); expect((await page.evaluate(() => window.editingFixture.snapshot())).primary.selection.head).toBe(end);
     await input(page).press("PageUp"); await ready(page); expect((await page.evaluate(() => window.editingFixture.snapshot())).primary.selection.head).toBe(0);
     const middle = Math.floor(text.length / 2); await page.evaluate(at => window.editingFixture.edit([{ from: at, to: at, insert: "new\r\n" }]), middle); await ready(page);

@@ -1,4 +1,5 @@
 import ts from "typescript-demo";
+import { typeScriptFoldingRanges } from "./typescript-folds.ts";
 import { TextDocument } from "vscode-languageserver-protocol/browser.js";
 import { RpcError } from "../../src/protocol/index.ts";
 import { demoTemplateCompletions, demoTemplateUri, resolveDemoTemplate } from "./completion-templates.ts";
@@ -146,11 +147,7 @@ export class BrowserLanguageService {
         }
         if (method === "textDocument/foldingRange") {
             const file = this.file(object(object(params).textDocument).uri);
-            return this.service.getOutliningSpans(file.path).flatMap(span => {
-                const start = file.document.positionAt(span.textSpan.start), end = file.document.positionAt(span.textSpan.start + span.textSpan.length);
-                const endLine = end.character === 0 ? end.line - 1 : end.line;
-                return endLine > start.line ? [{ startLine: start.line, endLine, kind: span.kind }] : [];
-            });
+            return typeScriptFoldingRanges(offset => file.document.positionAt(offset), this.service.getOutliningSpans(file.path));
         }
         const { p, file, offset } = this.cursor(params);
         if (method === "textDocument/documentHighlight") {

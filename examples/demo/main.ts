@@ -27,6 +27,7 @@ let stopReference: (() => void) | undefined;
 let folding: FoldingController | undefined, referenceFolding: FoldingController | undefined, stopFolding: (() => void) | undefined;
 let viewListeners: AbortController | undefined;
 let reviewLabel: HTMLSpanElement | undefined;
+let referencePresentation: DemoPresentation | undefined;
 let problemPage = 0, problemBatch: unknown;
 const presentation = new DemoPresentation(() => { editor?.viewport.invalidate(); renderOutput(); renderMetadata(); });
 const indentation = element("indentation") as HTMLSelectElement;
@@ -133,9 +134,9 @@ function renderMetadata(): void {
     const line = current.buffer.lineAt(selection.head), column = selection.head - current.buffer.offsetAt(line);
     element("cursor").textContent = `Ln ${line + 1}, Col ${column + 1}`;
     element("status").textContent = project.message;
-    element("analysis-status").textContent = project.sample.id === "outline" ? "Host indentation rules" : presentation.status === "failed" ? "Analysis unavailable" : presentation.status === "ready"
+    element("analysis-status").textContent = project.sample.id === "outline" ? "Host indentation rules" : referencePresentation?.status === "failed" ? "Saved-copy analysis unavailable" : presentation.status === "failed" ? "Analysis unavailable" : presentation.status === "ready"
         ? "TypeScript 5.9.3 · syntax & emit" : "TypeScript · analyzing…";
-    element("analysis-retry").hidden = presentation.status !== "failed";
+    element("analysis-retry").hidden = presentation.status !== "failed" && referencePresentation?.status !== "failed";
     button("save").disabled = project.saving;
     button("navigate-back").disabled = !locations.some(location => location.project === project);
     element("save-conflict").hidden = !project.hasConflict();
@@ -151,7 +152,9 @@ function renderMetadata(): void {
     for (const file of project.files) {
         let tab = element("files").querySelector<HTMLButtonElement>(`[data-file="${file.name}"]`);
         if (!tab) { tab = document.createElement("button"); tab.dataset.file = file.name; element("files").append(tab); }
-        tab.textContent = `${file.name}${file.readOnly ? " (read-only)" : file.resource.metadata.getSnapshot().dirty ? " ●" : ""}`; tab.setAttribute("aria-pressed", String(file === active));
+        const label = `${file.name}${file.readOnly ? " (read-only)" : file.resource.metadata.getSnapshot().dirty ? " ●" : ""}`;
+        if (tab.textContent !== label) tab.textContent = label; // Preserve native presses through background analysis updates.
+        tab.setAttribute("aria-pressed", String(file === active));
     }
     document.title = `${project.dirty() ? "● " : ""}${active.name} · StTropez`;
     presentation.update(current, project.sample.id === "outline");
@@ -159,6 +162,7 @@ function renderMetadata(): void {
 function detachView(): void {
     stopFolding?.(); stopFolding = undefined; folding?.dispose(); folding = undefined; referenceFolding?.dispose(); referenceFolding = undefined;
     stopReference?.(); stopReference = undefined;
+    referencePresentation?.dispose(); referencePresentation = undefined;
     output?.destroy(); output = undefined;
     languageView?.destroy(); languageView = undefined;
     stopView?.(); stopView = undefined; stopFind?.(); stopFind = undefined;
@@ -190,19 +194,28 @@ function mountFile(file: DemoFile, focus = false): void {
     element("workspace").classList.toggle("reviewing", panel === "changes");
     if (panel === "changes") {
         comparison = mountTextComparison(element("panel-content"), project.workspace, file.tab, project.baseline(file),
-            { view: file.view, workingDecorate: line => [...presentation.decorate(line), ...(languageView?.decorate(line) ?? [])], scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
+            { view: file.view, workingDecorate: line => [...presentation.decorate(line), ...(languageView?.decorate(line) ?? [])],
+                baselineDecorate: line => referencePresentation?.decorate(line) ?? [], scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
         const labels = document.createElement("div"); labels.className = "demo-review-labels";
         const savedLabel = document.createElement("span"), workingLabel = document.createElement("span");
         reviewLabel = savedLabel;
         savedLabel.textContent = project.isReviewingConflict() ? "Other page's saved copy" : "Saved copy"; workingLabel.textContent = "Your changes";
-        labels.append(savedLabel, workingLabel); element("panel-content").prepend(labels);
+        const hint = document.createElement("span"); hint.className = "demo-review-hint";
+        hint.textContent = "Fold each pane independently. Shaded gaps keep matching lines aligned.";
+        labels.append(savedLabel, workingLabel, hint); element("panel-content").prepend(labels);
         editor = comparison.working;
         const configureReference = () => {
             referenceFolding?.dispose(); referenceFolding = undefined;
+            referencePresentation?.dispose(); referencePresentation = undefined;
             const reference = comparison?.reference.getSnapshot(); if (!reference) return;
             reference.editor.configureLanguage(editingConfiguration());
+            const plain = project!.sample.id === "outline";
+            const syntax = plain ? undefined : new DemoPresentation(() => { reference.editor.viewport.invalidate(); renderMetadata(); }, { emit: false, folds: true });
+            referencePresentation = syntax;
+            syntax?.update(project!.workspace.document(reference.editor.view.documentId));
             referenceFolding = createFoldingController(project!.workspace, reference.target.id, reference.editor,
-                capture => discoverIndentationFolds(capture.buffer, outlineFolds(editingConfiguration().tabSize!)));
+                (capture, signal) => plain
+                    ? discoverIndentationFolds(capture.buffer, outlineFolds(editingConfiguration().tabSize!)) : syntax!.discoverFolds(capture, signal));
         };
         stopReference = comparison.reference.subscribe(configureReference); configureReference();
     } else {
@@ -296,7 +309,7 @@ on("replace-toggle", () => { element("replace-controls").hidden = !element("repl
 on("find-next", () => { find?.next(); }); on("find-previous", () => { find?.next(-1); });
 on("replace-current", () => { find?.replaceCurrent(field("replacement").value); });
 on("replace-all", () => { find?.replaceAll(field("replacement").value); });
-on("compare", () => setPanel("changes")); on("analysis-retry", () => presentation.retry());
+on("compare", () => setPanel("changes")); on("analysis-retry", () => { presentation.retry(); referencePresentation?.retry(); referenceFolding?.refresh(); });
 on("complete", () => languageView?.complete());
 on("inspect-type", () => languageView?.inspect()); on("signature", () => languageView?.signature());
 on("definition", () => languageView?.definition()); on("references", () => languageView?.references()); on("rename", () => languageView?.rename());

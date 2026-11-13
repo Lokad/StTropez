@@ -41,7 +41,7 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     flush: () => void;
     invalidate: () => void;
     revealOffset: (offset: number, options?: RevealOptions) => void; snapshot: () => ViewportSnapshot; destroy: () => void }>;
-type Row = Readonly<{ line: number; from: number; to: number; text: string; left: number; complete: boolean }>;
+type Row = Readonly<{ line: number; from: number; to: number; text: string; left: number; complete: boolean; endsLine: boolean }>;
 type RowPart = Readonly<{ text: string; className: string }>;
 /** CRLF has two raw positions at one painted line edge. Keep the requested model offset. */
 function rowCaretOffset(buffer: TextBuffer, end: number, offset: number): number | undefined {
@@ -206,7 +206,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         // Do not split a surrogate pair at the edges of the bounded text window.
         if (from > start && from < displayEnd) { const pair = readRow(buffer, from - 1, from + 1); if (/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(pair)) from--; }
         if (to > from && to < displayEnd) { const pair = readRow(buffer, to - 1, to + 1); if (/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(pair)) to++; }
-        return { line, from, to, text: readRow(buffer, from, to).replaceAll("\r", "␍"), left: padding + (from - start) * columnWidth - scrollLeft, complete: from === start && to === displayEnd };
+        return { line, from, to, text: readRow(buffer, from, to).replaceAll("\r", "␍"), left: padding + (from - start) * columnWidth - scrollLeft, complete: from === start && to === displayEnd, endsLine: to === displayEnd };
     };
     const paintRow = (element: HTMLDivElement, item: Row, document: DocumentSnapshot, selectionSet: SelectionSet): boolean => {
         element.dataset.line = String(item.line); element.dataset.from = String(item.from); element.dataset.to = String(item.to); element.dataset.complete = String(item.complete);
@@ -379,6 +379,10 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             element.style.height = `${lineHeight}px`;
             element.style.lineHeight = comparisonRows ? `${lineHeight}px` : "";
             paintRow(element, item, document, selectionSet);
+            const fold = index.headerAt(item.line), hidden = fold?.collapsed && item.endsLine ? fold.lineTo - fold.lineFrom - 1 : 0;
+            // Generated content stays outside text nodes, native text geometry and clipboard data.
+            if (hidden) element.dataset.foldedSummary = `… ${hidden} ${hidden === 1 ? "line" : "lines"} hidden`;
+            else delete element.dataset.foldedSummary;
             textUnits += item.text.length;
         }
         const visibleLines = new Set(next.map(item => item.line));
@@ -403,7 +407,9 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             orderedButtons.push(button);
             button.dataset.fold = region.id; button.dataset.revision = String(document.revision); button.dataset.generation = String(folds.generation);
             const label = `${region.collapsed ? "Expand" : "Collapse"} lines ${region.lineFrom + 2}–${region.lineTo}`;
-            button.setAttribute("aria-label", label); button.title = label; button.setAttribute("aria-expanded", String(!region.collapsed)); button.textContent = region.collapsed ? "▸" : "▾";
+            button.setAttribute("aria-label", label); button.title = label; button.setAttribute("aria-expanded", String(!region.collapsed));
+            // Replacing even identical text during a pointer press cancels WebKit's native click.
+            const arrow = region.collapsed ? "▸" : "▾"; if (button.textContent !== arrow) button.textContent = arrow;
             button.disabled = root.classList.contains("st-composing");
             button.tabIndex = root.hasAttribute("data-st-tab-escape") ? -1 : 0;
             button.style.left = `${physicalLeft + 1}px`; button.style.top = `${physicalTop + padding + index.rowAt(item.line) * lineHeight - top}px`; button.style.height = `${lineHeight}px`;

@@ -88,8 +88,13 @@ The existing deterministic protocol fixture keeps its separate `/lsp-fixture` ro
 
 The Code menu exposes automatic fold commands and groups, with Ctrl/Cmd+Shift+[ / ] at the
 caret. Source TypeScript ranges use standard `textDocument/foldingRange`; the browser provider
-converts its compiler's outlining spans to whole-line ranges. Saved comparison text uses host
-indentation discovery and keeps independent fold choices. The **Host outline · indentation
+converts its compiler's outlining spans to whole-line ranges. Saved comparison text uses the
+same compiler outlining semantics in its snapshot-bound syntax-color worker, without emission
+or attachment to the live language session. Both panes are colored and keep independent fold
+choices; the working pane preserves source-view preferences. Hidden-line labels and the review
+hint distinguish folded rows/alignment gaps from deleted text. Snapshot replacement/disposal
+cancels pending discovery and rejects obsolete colors; analysis failure exposes Retry.
+The **Host outline · indentation
 folding** sample uses a plain editable outline with nested blocks and `#region` markers,
 without connecting a language service. Find reveals collapsed matches, and edits/undo retain
 corresponding mapped regions. See the public [folding contract](folding.md).
