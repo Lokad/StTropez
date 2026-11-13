@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createServer } from "node:http";
-import { access } from "node:fs/promises";
+import { access, rmdir } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { attachDemoProvider } from "../examples/demo/provider-server.ts";
 import type { DemoProviderBootstrap } from "../examples/demo/provider-contract.ts";
@@ -10,6 +12,31 @@ import { Workspace } from "../src/index.ts";
 import { LspWorkspace, createLspActionClient } from "../src/protocol/index.ts";
 import type { LspSessionAccess } from "../src/protocol/index.ts";
 import { openWebSocketTransport } from "../src/browser/index.ts";
+
+test("Windows demo cleanup awaits a briefly locked workspace directory", { skip: process.platform !== "win32", timeout: 10000 }, async () => {
+    const server = createServer((request, response) => { void provider.handle(request, response).then(handled => { if (!handled) response.writeHead(404).end(); }); });
+    const provider = attachDemoProvider(server);
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address(); assert.ok(address && typeof address === "object");
+    const url = `http://127.0.0.1:${address.port}`;
+    const config = await (await fetch(url + "/demo-provider?sample=pricing", { method: "POST" })).json() as DemoProviderBootstrap;
+    const directory = fileURLToPath(config.rootUri);
+    const holder = spawn(process.execPath, ["-e", "process.send('ready'); process.on('message', () => process.exit(0));"],
+        { cwd: directory, windowsHide: true, stdio: ["ignore", "ignore", "ignore", "ipc"] });
+    const stopped = once(holder, "close"); let release: ReturnType<typeof setTimeout> | undefined;
+    try {
+        await once(holder, "message");
+        await assert.rejects(rmdir(directory), { code: "EBUSY" });
+        const removing = fetch(url + config.endpoint, { method: "DELETE" });
+        release = setTimeout(() => { if (holder.connected) holder.send("release"); }, 250);
+        assert.equal((await removing).status, 204); await stopped;
+        await assert.rejects(access(directory));
+        assert.deepEqual(provider.snapshot(), { projects: 0, connections: 0, processes: 0, removals: 0 });
+    } finally {
+        clearTimeout(release); if (holder.exitCode === null) holder.kill(); await stopped;
+        await provider.close(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+});
 
 test("real demo provider uses public workspace capture/sync over WebSocket and releases its process and files", { timeout: 30000 }, async () => {
     const server = createServer((request, response) => { void provider.handle(request, response).then(handled => { if (!handled) response.writeHead(404).end(); }); });

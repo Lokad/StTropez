@@ -57,7 +57,8 @@ export function attachDemoProvider(server: Server) {
         // Only an allocated direct child of the OS temp directory may be recursively removed.
         const target = resolve(project.directory);
         if (dirname(target) !== resolve(tmpdir()) || !basename(target).startsWith("sttropez-demo-")) throw new Error("Unexpected demo workspace cleanup target.");
-        await rm(target, { recursive: true, force: true });
+        // Windows can retain a working-directory handle briefly after provider shutdown.
+        await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }
     function retire(project: Project): Promise<void> {
         const work = remove(project); removals.add(work); void work.finally(() => removals.delete(work)).catch(() => {}); return work;
