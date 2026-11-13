@@ -31,6 +31,9 @@ Source code stays in this browser and its workers; saving/recovery uses browser-
 The site needs no language backend, WebSocket endpoint, credentials or code-upload service.
 Generated JavaScript uses the existing read-only virtualized text viewport, so large samples
 keep bounded DOM content in both panes instead of laying out the complete output in one element.
+Edits retain provisionally mapped syntax colors and the last completed output while analysis
+runs; the footer reports pending or unavailable analysis. Only current worker results replace
+them. File changes clear presentation ownership. See the [visible-continuity checks](demo-qualification.md#visible-continuity-and-complete-host-coverage).
 
 ## Build and qualify
 

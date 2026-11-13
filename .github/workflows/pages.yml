@@ -24,7 +24,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      - run: node --test tests/demo-browser-provider.test.ts
+      - run: node --test tests/demo-browser-provider.test.ts tests/demo-syntax-colors.test.ts tests/demo-syntax.test.ts
       - run: npm run build:demo
       - run: npx playwright install --with-deps chromium
       - run: npm run test:demo -- --project=chromium

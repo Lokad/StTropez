@@ -29,9 +29,11 @@ function renderOutput(): void {
     if (panel !== "javascript") return;
     const host = element("panel-content");
     if (presentation.status === "ready") {
-        if (!output) { host.replaceChildren(); output = mountDemoOutput(host, presentation.javascript || "// This file emits no JavaScript.\n"); }
-    } else {
-        output?.destroy(); output = undefined;
+        const text = presentation.javascript || "// This file emits no JavaScript.\n";
+        if (output) output.update(text);
+        else { host.replaceChildren(); output = mountDemoOutput(host, text); }
+    } else if (!output) {
+        // Keep the last completed output for this view while the footer reports pending/failed analysis.
         const note = document.createElement("p"); note.className = "panel-note";
         note.textContent = presentation.status === "failed" ? "JavaScript output is unavailable. Use Retry to restart analysis. Your source is still editable."
             : "Updating JavaScript…"; host.replaceChildren(note);

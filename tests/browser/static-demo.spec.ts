@@ -1,8 +1,14 @@
 import { expect, test } from "@playwright/test";
 import { runDemoConflict, runDemoWalkthrough } from "./demo-walkthrough.ts";
+import { runDemoPresentationContinuity } from "./demo-presentation.ts";
 
 // Native scrollbar drags are part of the demo's user journey, including headless Chromium.
 test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
+
+test("visible presentation survives edits, history and scrolling while compiler replies wait", async ({ page, baseURL }, info) => {
+    const observations = await runDemoPresentationContinuity(page, baseURL!);
+    await info.attach("presentation-continuity", { body: JSON.stringify(observations, null, 2), contentType: "application/json" });
+});
 
 test("browser-only demo completes the real editing and review walkthrough below a repository path", async ({ page, baseURL }) => {
     const requests: string[] = [], sockets: string[] = [];
