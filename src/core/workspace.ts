@@ -8,7 +8,7 @@ import { createSelectionSet, mapSelectionSet, sameSelectionSet } from "./selecti
 import type { SelectionSet } from "./selections.ts";
 import { NotificationScope, Store } from "./observable.ts";
 import type { Observable } from "./observable.ts";
-import { createFoldRegions, foldingSnapshot, mapFoldRegions, revealFoldRange, revealSelectionFolds } from "./folding.ts";
+import { collapseFoldRegion, createFoldRegions, foldingSnapshot, mapFoldRegions, revealFoldRange, revealSelectionFolds } from "./folding.ts";
 import type { DocumentFolding, FoldingSnapshot, FoldVersion } from "./folding.ts";
 import { equalValue, snapshotValue } from "./values.ts";
 import type { Immutable, SnapshotValue } from "./values.ts";
@@ -268,7 +268,7 @@ export class Workspace {
                 if (!foldTarget(expected)) return false;
                 if (typeof id !== "string" || typeof collapsed !== "boolean") throw new TypeError("Expected a fold identity and boolean state.");
                 const previous = folds.get().regions, region = previous.find(r => r.id === id); if (!region) return false; if (region.collapsed === collapsed) return true;
-                return setFoldRegions(Object.freeze(previous.map(r => r === region ? Object.freeze({ ...r, collapsed }) : r)));
+                return setFoldRegions(collapseFoldRegion(previous, id, collapsed));
             },
             reveal: (expected, from, to) => foldTarget(expected) && setFoldRegions(revealFoldRange(record.buffer!, folds.get().regions, from, to, folds.get().index)),
             revealSelection: expected => foldTarget(expected) && setFoldRegions(revealSelectionFolds(record.buffer!, folds.get().regions, state.get().selectionSet, folds.get().index)) });
@@ -383,13 +383,14 @@ export class Workspace {
     }
     private commitText(record: ResourceRecord, buffer: TextBuffer, mapping: PositionMapping, origin: EditOrigin, kind: DocumentChange["kind"], transactionId: number, changed: Set<Store<unknown>>,
         override?: Readonly<{ viewId: ViewId; selectionSet: SelectionSet }>): void {
-        const current = record.state.get(), revision = current.revision + 1;
+        const current = record.state.get(), revision = current.revision + 1, before = record.buffer!;
         record.buffer = buffer;
         record.change = Object.freeze({ previousRevision: current.revision, mapping, transactionId, origin, kind });
         this.setRecord(record, readySnapshot({ ...current.metadata, dirty: record.savedBuffer === null || !buffer.equals(record.savedBuffer) }, revision, buffer), changed);
         for (const view of record.views.values()) {
             const selections = override?.viewId === view.handle.id ? override.selectionSet : mapSelectionSet(mapping, view.state.get().selectionSet);
-            const priorFolds = view.folds.get(), regions = revealSelectionFolds(buffer, mapFoldRegions(buffer, mapping, priorFolds.regions), selections);
+            const priorFolds = view.folds.get(), mapped = mapFoldRegions(buffer, mapping, priorFolds.regions, before);
+            const regions = revealSelectionFolds(buffer, mapped, selections, mapped === priorFolds.regions && buffer.lineCount === priorFolds.index.lineCount ? priorFolds.index : undefined);
             view.folds.set(foldingSnapshot(buffer, revision, priorFolds.generation + 1, regions, priorFolds), changed);
             view.state.set(viewSnapshot(record.documentId!, revision, selections), changed);
         }

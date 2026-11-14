@@ -13,7 +13,10 @@ test("automatic discovery preserves newer view choices, cancels changed targets 
     const resolve = () => page.evaluate(() => (window as unknown as { pendingFolds: { resolve: (value: readonly { from: number; to: number }[]) => void }[] }).pendingFolds.at(-1)!.resolve([{ from: 0, to: 13 }]));
     await expect.poll(count).toBe(1); await resolve();
     await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
-    await page.evaluate(() => window.editingFixture.refreshFolds()); await expect.poll(count).toBe(2);
+    expect(await page.evaluate(() => {
+        const f = window.editingFixture, groups = f.foldStatus()!.groups;
+        f.refreshFolds(); return groups === f.foldStatus()!.groups;
+    })).toBe(true); await expect.poll(count).toBe(2);
     await page.evaluate(() => window.editingFixture.foldCommand("collapse-all")); await resolve();
     await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
     expect((await page.evaluate(() => window.editingFixture.folding())).regions[0]!.collapsed).toBe(true);

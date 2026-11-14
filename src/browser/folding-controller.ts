@@ -4,6 +4,7 @@ import { reconcileFoldRanges } from "../core/fold-discovery.ts";
 import type { DiscoveredFold } from "../core/fold-discovery.ts";
 import type { DocumentSnapshot, TabId, Workspace } from "../core/workspace.ts";
 import type { EditingCandidate } from "./editing-candidate.ts";
+import type { FoldRegion } from "../core/folding.ts";
 
 export type FoldDiscoveryBatch = Readonly<{ ranges: readonly DiscoveredFold[]; isCurrent?: () => boolean }>;
 export type FoldDiscoveryResult = readonly DiscoveredFold[] | Generator<void, readonly DiscoveredFold[]> | FoldDiscoveryBatch;
@@ -27,8 +28,12 @@ export function createFoldingController(workspace: Workspace, tabId: TabId, edit
     let job: { generation: number; document: DocumentSnapshot; abort: AbortController; pumping?: boolean; iterator?: Generator<void, readonly DiscoveredFold[]> } | undefined;
     const available = () => !disposed && !editor.snapshot().disposed && workspace.ownsDocumentView(view) && !!workspace.resolveTab(target);
     const busy = () => { const state = editor.snapshot(); return state.composing || state.pendingInput || state.pendingCommand; };
+    let groupRegions: readonly FoldRegion[] | undefined, groups: readonly string[] = Object.freeze([]);
     const publish = (status: FoldingStatus["status"], message = "") => {
-        const folds = view.folding.getSnapshot(), groups = Object.freeze([...new Set(folds.regions.flatMap(range => range.group ? [range.group] : []))].sort());
+        const folds = view.folding.getSnapshot();
+        if (folds.regions !== groupRegions) {
+            groupRegions = folds.regions; groups = Object.freeze([...new Set(groupRegions.flatMap(range => range.group ? [range.group] : []))].sort());
+        }
         const changed = new Set<Store<unknown>>(); cell.set(Object.freeze({ status, revision: folds.revision, regions: folds.regions.length,
             collapsed: folds.index.collapsedCount, groups, message }), changed); notifications.deliver([...changed]);
     };

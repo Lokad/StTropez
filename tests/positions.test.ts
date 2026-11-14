@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { unchangedPositionEdges } from "../src/core/positions.ts";
 import assert from "node:assert/strict";
 import { PositionMap, anchoredRange, applyTextEdits, composePositionMaps, importText, exportText } from "../src/index.ts";
 import type { Affinity, AnchoredRange, PositionMapping, TextEdit } from "../src/index.ts";
@@ -89,6 +90,15 @@ function mappingOracle(text: string, edits: readonly TextEdit[]) {
 
 test("seeded batches, inverse edits and compositions map every UTF-16 boundary and range against a splice oracle", () => {
     const initialSeed = 0x417c29, coverage = new Set<string>(); let seed = initialSeed;
+    const edges = (map: PositionMapping, before: string, after: string) => {
+        const value = unchangedPositionEdges(map)!; assert.ok(value);
+        assert.ok(value.prefix >= 0 && value.prefix <= Math.min(before.length, after.length));
+        assert.ok(value.suffix >= 0 && value.suffix <= Math.min(before.length, after.length));
+        assert.equal(before.slice(0, value.prefix), after.slice(0, value.prefix));
+        assert.equal(before.slice(before.length - value.suffix), after.slice(after.length - value.suffix));
+        assert.deepEqual(map.map(value.prefix, "before"), { offset: value.prefix, deleted: false });
+        assert.deepEqual(map.map(before.length - value.suffix, "after"), { offset: after.length - value.suffix, deleted: false });
+    };
     const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
     const inserts = ["", "a", "xyz", "\r\n", "😀", "é", "\ud800", "\udc00"];
     const batch = (length: number) => {
@@ -137,6 +147,7 @@ test("seeded batches, inverse edits and compositions map every UTF-16 boundary a
             const context = `seed=${initialSeed}; trial=${trial}; step=${step}; text=${JSON.stringify(text)}; edits=${JSON.stringify(edits)}`;
             assert.equal(applyTextEdits(text, edits), expected.text, context); assert.equal(actual.newLength, expected.text.length, context);
             check(actual, expected, ranges(text.length, edits), context);
+            edges(actual, text, expected.text); edges(actual.invert(), expected.text, text);
             assert.equal(inverse.text, text, context); assert.equal(actual.invert().oldLength, expected.text.length, context); assert.equal(actual.invert().newLength, text.length, context);
             check(actual.invert(), inverse, ranges(expected.text.length, expected.reverse), context + "; inverse");
             check(actual.invert().invert(), expected, ranges(text.length, edits), context + "; double inverse");
@@ -152,6 +163,7 @@ test("seeded batches, inverse edits and compositions map every UTF-16 boundary a
         check(composed, sequence(oracles), ranges(original.length, batches[0]!), context + "; composition");
         check(composed.invert(), sequence(inverses), ranges(text.length, oracles.at(-1)!.reverse), context + "; inverse composition");
         const incremental = maps.slice(1).reduce((prior, next) => composePositionMaps(prior, next), maps[0]!);
+        edges(composed, original, text); edges(composed.invert(), text, original); edges(incremental, original, text);
         check(incremental, sequence(oracles), ranges(original.length, batches[0]!), context + "; incremental composition");
     }
     assert.deepEqual([...coverage].sort(), ["adjacent", "crlf", "delete", "empty", "insert", "interior", "noop", "replace", "stacked", "surrogate"]);
@@ -172,6 +184,7 @@ test("composed mappings propagate deletion, reject stale dimensions and retain i
         override map(offset: number, side: Affinity = "after") { return Object.freeze({ ...super.map(offset, side), deleted: true }); }
     }
     const custom = composePositionMaps(new CustomMap(4, []), first);
+    assert.equal(unchangedPositionEdges(custom), undefined); assert.equal(unchangedPositionEdges(new CustomMap(4, [])), undefined);
     assert.deepEqual(custom.map(0), { offset: 0, deleted: true });
 });
 

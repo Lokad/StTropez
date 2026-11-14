@@ -19,6 +19,8 @@ type IndexedChange = Change & Readonly<{ deltaBefore: number; coveredTo: number 
 type GeometryPair = Readonly<{ forward: MappingGeometry; reverse: MappingGeometry }>;
 const compiledGeometry = Symbol("compiled position geometry");
 const compactUnitChanges = Symbol("compact unit changes");
+const unchangedEdges = Symbol("unchanged text edges");
+type UnchangedEdges = Readonly<{ prefix: number; suffix: number }>;
 
 function position(length: number, offset: number): void {
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > length) throw new RangeError("Position is outside the original document.");
@@ -64,6 +66,9 @@ class ChangePositionMap implements PositionMapping {
     /** Exact change metadata, unlike endpoint probes which cannot exclude other edits. */
     isSingleInsertion(offset: number, units: number): boolean {
         const change = this.changes[0]; return this.changes.length === 1 && change!.from === offset && change!.to === offset && change!.insertedLength === units;
+    }
+    [unchangedEdges](): UnchangedEdges {
+        return { prefix: this.changes[0]?.from ?? this.oldLength, suffix: this.oldLength - (this.changes.at(-1)?.to ?? 0) };
     }
     map(offset: number, side: Affinity = "after"): MappedPosition {
         position(this.oldLength, offset); affinity(side);
@@ -170,10 +175,12 @@ class ComposedPositionMap implements PositionMapping {
     readonly oldLength: number;
     readonly newLength: number;
     readonly #geometry: GeometryPair;
-    constructor(forward: MappingGeometry, reverse: MappingGeometry) {
+    readonly #edges: UnchangedEdges;
+    constructor(forward: MappingGeometry, reverse: MappingGeometry, edges: UnchangedEdges) {
         this.oldLength = forward.oldLength; this.newLength = forward.newLength;
-        this.#geometry = Object.freeze({ forward, reverse }); Object.freeze(this);
+        this.#geometry = Object.freeze({ forward, reverse }); this.#edges = Object.freeze(edges); Object.freeze(this);
     }
+    [unchangedEdges](): UnchangedEdges { return this.#edges; }
     [compiledGeometry](): GeometryPair { return this.#geometry; }
     map(offset: number, side: Affinity = "after"): MappedPosition {
         position(this.oldLength, offset); affinity(side);
@@ -189,7 +196,17 @@ class ComposedPositionMap implements PositionMapping {
         // collapsed one stays collapsed. Taking max therefore commutes with composition.
         return Object.freeze({ ...range, from: from.offset, to: Math.max(from.offset, to.offset) });
     }
-    invert(): PositionMapping { return new ComposedPositionMap(this.#geometry.reverse, this.#geometry.forward); }
+    invert(): PositionMapping { return new ComposedPositionMap(this.#geometry.reverse, this.#geometry.forward, this.#edges); }
+}
+
+function knownMapping(map: PositionMapping): map is ChangePositionMap | ComposedPositionMap {
+    return map instanceof ComposedPositionMap || map instanceof ChangePositionMap
+        && map.map === ChangePositionMap.prototype.map && map.mapRange === ChangePositionMap.prototype.mapRange && map.invert === ChangePositionMap.prototype.invert;
+}
+/** Internal conservative proof from edit metadata, never inferred from equal endpoint offsets.
+ * An opaque host map has no such proof. Inversion preserves equal edge lengths. */
+export function unchangedPositionEdges(mapping: PositionMapping): UnchangedEdges | undefined {
+    return knownMapping(mapping) ? mapping[unchangedEdges]() : undefined;
 }
 
 /** An immutable indexed map for one batch. Offsets are UTF-16; a replacement consumes its interior. */
@@ -207,8 +224,7 @@ export function composePositionMaps(...input: readonly PositionMapping[]): Posit
     if (!input.length) throw new Error("At least one position map is required.");
     const maps = Object.freeze([...input]);
     for (let index = 1; index < maps.length; index++) if (maps[index - 1]!.newLength !== maps[index]!.oldLength) throw new RangeError("Position map dimensions do not join.");
-    if (maps.every((map): map is ChangePositionMap | ComposedPositionMap => map instanceof ComposedPositionMap || map instanceof ChangePositionMap
-        && map.map === ChangePositionMap.prototype.map && map.mapRange === ChangePositionMap.prototype.mapRange && map.invert === ChangePositionMap.prototype.invert)) {
+    if (maps.every(knownMapping)) {
         const join = (from: number, to: number): ChangePositionMap | ComposedPositionMap => {
             if (to - from === 1) return maps[from]!;
             const middle = from + Math.floor((to - from) / 2), a = join(from, middle), b = join(middle, to);
@@ -216,7 +232,9 @@ export function composePositionMaps(...input: readonly PositionMapping[]): Posit
             const left = a[compiledGeometry]();
             if (!left) return b;
             const right = b[compiledGeometry](); if (!right) return a;
-            return new ComposedPositionMap(composeGeometry(left.forward, right.forward), composeGeometry(right.reverse, left.reverse));
+            const ae = a[unchangedEdges](), be = b[unchangedEdges]();
+            return new ComposedPositionMap(composeGeometry(left.forward, right.forward), composeGeometry(right.reverse, left.reverse),
+                { prefix: Math.min(ae.prefix, be.prefix), suffix: Math.min(ae.suffix, be.suffix) });
         };
         return join(0, maps.length);
     }

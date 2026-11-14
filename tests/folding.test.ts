@@ -1,12 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { FoldIndex, TextBuffer, Workspace, createFoldRegions } from "../src/index.ts";
+import { mapFoldRegions, revealSelectionFolds } from "../src/core/folding.ts";
 
 test("nested collapsed rows keep independent child state and index visible rows without losing raw lines", () => {
     const buffer = TextBuffer.from("header\r\nchild\nbody\nend\nnext\nlast"), ranges = createFoldRegions(buffer, [
         { id: "outer", from: 0, to: buffer.offsetAt(4), collapsed: true }, { id: "inner", from: buffer.offsetAt(1), to: buffer.offsetAt(3), collapsed: true },
     ]);
     const index = new FoldIndex(buffer.lineCount, ranges);
+    assert.equal(index.regions, ranges); assert.equal(index.headerAt(1), ranges[1]);
+    assert.throws(() => new FoldIndex(2, ranges), /row interval/);
+    const foreign = ranges.map(r => ({ ...r })), copied = new FoldIndex(buffer.lineCount, foreign);
+    foreign[0]!.collapsed = false; assert.equal(copied.regions[0]!.collapsed, true);
+    assert.throws(() => new FoldIndex(buffer.lineCount, Object.freeze([Object.freeze({ ...ranges[0]!, lineTo: 999 })])), /row interval/);
     assert.equal(index.visibleLineCount, 3); assert.deepEqual([0, 1, 2].map(row => index.lineAt(row)), [0, 4, 5]);
     assert.deepEqual([0, 1, 2, 3, 4, 5].map(line => index.rowAt(line)), [0, 0, 0, 0, 1, 2]);
     assert.equal(index.hiddenBy(2)?.id, "outer"); assert.equal(index.headerAt(1)?.id, "inner");
@@ -77,6 +83,9 @@ test("mapped sparse folds agree with a naive row oracle across bounded structura
     const verify = () => {
         const document = model.document(source.documentId), snapshot = view.folding.getSnapshot(), index = snapshot.index;
         assert.equal(snapshot.revision, document.revision);
+        for (const r of snapshot.regions) {
+            assert.equal(r.lineFrom, document.buffer.lineAt(r.from)); assert.equal(r.lineTo, document.buffer.lineAt(r.to - 1) + 1);
+        }
         const visible: number[] = [];
         for (let line = 0; line < document.buffer.lineCount; line++) {
             const owner = snapshot.regions.find(r => r.collapsed && r.lineFrom < line && r.lineTo > line);
@@ -100,11 +109,50 @@ test("mapped sparse folds agree with a naive row oracle across bounded structura
                 view.folding.setRanges(view.folding.getSnapshot(), ranges);
             }
             const from = next(b.length + 1), to = Math.min(b.length, from + next(21)), insert = ["", "x", "\r\n", "a\nb\r\nc"][next(4)]!;
+            const prior = view.folding.getSnapshot().regions;
             model.edit({ documentId: source.documentId, expectedRevision: before.revision, origin: "host", edits: [{ from, to, insert }] }); verify();
+            if (model.document(source.documentId).revision !== before.revision) {
+                const after = model.document(source.documentId);
+                const expected = revealSelectionFolds(after.buffer, mapFoldRegions(after.buffer, after.change!.mapping, prior), view.getSnapshot().selectionSet);
+                assert.deepEqual(view.folding.getSnapshot().regions, expected, `full row-resolution oracle at step ${step}`);
+            }
             if (step % 7 === 0 && model.document(source.documentId).revision !== before.revision) {
                 model.undo({ documentId: source.documentId, expectedRevision: model.document(source.documentId).revision }); verify();
                 const current = model.document(source.documentId).buffer; assert.equal(current.length, b.length); assert.equal(current.slice(0, current.length), b.slice(0, b.length));
             }
         }
     } finally { view.dispose(); model.releaseResource(source.id, true); }
+});
+
+test("fold updates reuse unchanged metadata and bound line lookups to changed endpoints", () => {
+    const model = new Workspace(), source = model.createTextResource({ scope: "fold", resource: "reuse", variant: "working" }, "Source", { value: "header\nbody\n".repeat(2000) + "tail" });
+    const view = model.createDocumentView(source.documentId), peer = model.createDocumentView(source.documentId);
+    const lineAt = TextBuffer.prototype.lineAt; let reads = 0;
+    const edit = (from: number, to: number, insert: string, grouped = false) => {
+        const before = model.document(source.documentId); reads = 0;
+        model.edit({ documentId: source.documentId, expectedRevision: before.revision, origin: "human", view,
+            edits: [{ from, to, insert }], selection: { anchor: from + insert.length, head: from + insert.length },
+            ...(grouped ? { history: { kind: "typing" as const, group: "fold-edges" } } : {}) });
+        assert.ok(reads < 20, `line lookups must not scale with 2000 untouched regions: ${reads}`);
+    };
+    try {
+        const original = model.document(source.documentId).buffer;
+        const ranges = Array.from({ length: 2000 }, (_, i) => ({ id: `fold-${i}`, from: original.offsetAt(i * 2), to: original.offsetAt(i * 2 + 2), collapsed: true }));
+        view.folding.setRanges(view.folding.getSnapshot(), ranges); peer.folding.setRanges(peer.folding.getSnapshot(), ranges);
+        const first = view.folding.getSnapshot();
+        TextBuffer.prototype.lineAt = function(offset) { reads++; return lineAt.call(this, offset); };
+        edit(original.length, original.length, "x", true); edit(original.length + 1, original.length + 1, "y", true);
+        assert.equal(view.folding.getSnapshot().regions, first.regions); assert.equal(view.folding.getSnapshot().index, first.index);
+        reads = 0; model.undo({ documentId: source.documentId, expectedRevision: 2 }); assert.ok(reads < 20);
+        assert.equal(view.folding.getSnapshot().regions, first.regions); assert.equal(model.document(source.documentId).buffer, original);
+        edit(original.length, original.length, "\n"); assert.equal(view.folding.getSnapshot().regions, first.regions);
+        assert.equal(view.folding.getSnapshot().index.regions, first.regions); assert.equal(view.folding.getSnapshot().index.lineCount, original.lineCount + 1);
+        // Same-length replacements change row metadata even when every suffix offset stays fixed.
+        edit(0, 1, "\n"); const shifted = view.folding.getSnapshot().regions;
+        assert.equal(shifted[1]!.from, first.regions[1]!.from); assert.equal(shifted[1]!.lineFrom, first.regions[1]!.lineFrom + 1);
+        assert.equal(peer.folding.getSnapshot().regions[1]!.collapsed, true);
+        edit(0, 1, "h"); assert.equal(view.folding.getSnapshot().regions[1]!.lineFrom, first.regions[1]!.lineFrom);
+        edit(0, 0, "prefix\n"); assert.equal(view.folding.getSnapshot().regions[1]!.lineFrom, first.regions[1]!.lineFrom + 1);
+        assert.equal(view.folding.getSnapshot().index.regions, view.folding.getSnapshot().regions);
+    } finally { TextBuffer.prototype.lineAt = lineAt; view.dispose(); peer.dispose(); model.releaseResource(source.id, true); }
 });

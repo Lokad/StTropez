@@ -16,6 +16,9 @@ interior blank lines and excludes trailing blank lines. Unclosed markers remain 
 `reconcileFoldRanges` chooses one outer range per header, discards crossing discoveries, and
 matches mapped header/group pairs to previous identities. It returns the complete range set;
 a host combining several sources must combine them before reconciliation.
+Indentation discovery carries its known row coordinates through reconciliation and installation.
+Validated immutable ranges can be reused on the same buffer; foreign input is still validated,
+and installation preserves the latest view collapse choices when state is omitted.
 
 `createFoldingController(workspace, tabId, editor, discover, { delayMs })` owns discovery for
 one retained view. The callback receives the captured document and an AbortSignal. It may
@@ -81,9 +84,14 @@ their region; degenerate, merged or crossing definitions are invalidated. Undo r
 exactly, but does not recreate invalidated view metadata: the host must supply fresh definitions.
 
 The sparse `FoldIndex` stores outer collapsed intervals. Source-line/visible-row queries use
-binary search; it allocates no array proportional to document line count. Mapping and rebuilding
-metadata scale with supplied fold count. DOM and native text contexts stay limited to visible
-rows and existing input bounds. This is not a claim of constant-time arbitrary fold updates.
+binary search; it allocates no array proportional to document line count. It shares validated
+immutable regions, and unchanged region sets retain their projection index. Native position
+maps prove unchanged text edges: edits after every fold reuse the region set, while regions
+after the changed span shift by offset and line deltas without resolving each line again.
+Same-length newline replacements still update row metadata. Edits affecting folds can still
+allocate and visit the supplied region array; arbitrary updates are not constant time. Opaque
+custom maps use full endpoint resolution. DOM and native text contexts stay limited to visible
+rows and existing input bounds.
 
 Arrow/Page commands and visual-line edge traversal skip hidden rows. An intentionally collapsed
 existing raw caret projects onto the visible header without changing its raw offset. Explicit

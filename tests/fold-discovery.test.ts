@@ -11,6 +11,31 @@ test("off-side discovery handles nested indentation, tab stops, interior blanks 
     assert.equal(b.readMetrics().textExports, 0);
     assert.deepEqual(finish(discoverIndentationFolds(b, { ...policy, indentation: false })).map(r => r.group), ["regions"]);
     assert.throws(() => finish(discoverIndentationFolds(b, { tabSize: 0 })), /tab size/);
+    const discovered = finish(discoverIndentationFolds(b, policy));
+    const invalidPrior = [{ ...ranges[0]!, id: "x".repeat(257) }];
+    assert.throws(() => createFoldRegions(b, reconcileFoldRanges(b, discovered, invalidPrior)), /identit/);
+    assert.throws(() => createFoldRegions(b, reconcileFoldRanges(b, discovered, ranges.map(r => ({ ...r, id: "duplicate" })))), /identit/);
+    const invalidState = ranges.map(r => ({ ...r, collapsed: "invalid" })) as unknown as typeof ranges;
+    assert.throws(() => createFoldRegions(b, reconcileFoldRanges(b, discovered, ranges), invalidState), /boolean/);
+    assert.throws(() => createFoldRegions(b, ranges.map(({ collapsed: _collapsed, ...r }) => r), invalidState), /boolean/);
+    const lineAt = TextBuffer.prototype.lineAt; let reads = 0;
+    try {
+        TextBuffer.prototype.lineAt = function(offset) { reads++; return lineAt.call(this, offset); };
+        const discovered = finish(discoverIndentationFolds(b, policy)), planned = reconcileFoldRanges(b, discovered, ranges);
+        // Planning cannot capture stale collapse state: the latest view choice wins at installation.
+        const previous = createFoldRegions(b, ranges.map(r => ({ ...r, collapsed: true })));
+        reads = 0; const installed = createFoldRegions(b, planned, previous);
+        assert.equal(reads, 0); assert.equal(installed, previous);
+        assert.equal(createFoldRegions(b, installed, previous), previous); assert.equal(reads, 0);
+        reads = 0; const fresh = finish(discoverIndentationFolds(b, policy));
+        createFoldRegions(b, reconcileFoldRanges(b, fresh, [])); assert.equal(reads, 0, "discovery carries known rows through installation");
+        // Public records, including frozen copies, cannot assert trusted line coordinates.
+        const foreign = discovered.map(r => Object.freeze({ ...r, lineFrom: 999, lineTo: 1000 })); reads = 0;
+        assert.deepEqual(createFoldRegions(b, reconcileFoldRanges(b, foreign, [])), createFoldRegions(b, reconcileFoldRanges(b, fresh, [])));
+        assert.equal(reads, foreign.length * 2);
+        const other = TextBuffer.from("\n" + b.slice(0, b.length)); reads = 0;
+        createFoldRegions(other, planned); assert.equal(reads, planned.length * 2, "row proofs belong to one immutable buffer");
+    } finally { TextBuffer.prototype.lineAt = lineAt; }
 });
 test("rediscovery follows mapped headers, keeps view choices through edit/undo and rejects crossing discoveries", () => {
     const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "fold", resource: "discover", variant: "working" }, "Outline", { value: "root\n  child\n    leaf\n  sibling\nend" });
