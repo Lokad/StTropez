@@ -90,6 +90,11 @@ After a failed connection, feature requests fail until the host calls `connect()
 `reconnect()` on the shared provider. Wire reconnect UI to that owner and handle its
 rejected promise; recreating a feature client does not authorize another connection.
 
+`session.flush()` and `scope.flush()` wait for all pending synchronization. Pass an array
+of owned document handles to wait only for those exact captures; a revision, binding or
+capability change rejects that wait. Feature clients use this selective form for their
+captured project, so an unrelated large document cannot hold up a synchronized source.
+
 `npm run test:package:lsp` restores the assets-only NuGet package into an isolated
 consumer, checks its public declarations and bundles a minimal plain TypeScript host.
 That host imports no example controller, React package or library source. It mounts an

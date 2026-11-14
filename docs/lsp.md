@@ -109,8 +109,14 @@ Documents synchronize when both open/close and incremental changes are enabled b
 matching dynamic capabilities. Losing that coverage closes the managed remote document; regaining
 it opens the current capture. The client sends incremental replacements and never silently falls
 back to exporting the full document on each edit. Initial opening is an explicit bulk payload.
-The line index cooperates during initial scanning, shared-edge planning and bare-CR index updates;
-an ordinary LF/CRLF point edit reads only the replacement boundary. A dense bare-CR index still
+The line index cooperates during initial scanning, shared-edge planning and bare-CR index updates.
+The session batches work until 4 ms or 32 checkpoints, then schedules another turn. Its optional
+`now` clock defaults to `Date.now`; the chunk cap also bounds a stopped or backward clock.
+Completed indexes remain on their binding across revisions, capability changes and reconnect.
+Edits during indexing reuse that work and only the current snapshot is sent. Replacing or closing
+the binding cancels its work. Encoding/allocation and provider analysis are separate costs, so the
+cooperative slice budget is not a complete interaction-latency guarantee.
+An ordinary LF/CRLF point edit reads only the replacement boundary. A dense bare-CR index still
 requires cooperative linear copying. CRLF interiors have no unambiguous protocol position and are
 refused; generated change boundaries expand across a pair rather than normalizing source text.
 

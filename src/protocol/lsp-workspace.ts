@@ -279,7 +279,13 @@ export class LspWorkspace {
             },
             connect: async () => { writable(); const generation = scope.generation; await this.connect(); if (!current(generation)) throw cancelled(); },
             disconnect, dispose: () => { if (!scope.active) return; this.notifications.assertWritable(); scope.close(); },
-            flush: async () => { writable(); const generation = scope.generation; await this.flush(); if (!current(generation)) throw cancelled(); },
+            flush: async selected => { writable(); const generation = scope.generation, captured = selected && [...selected];
+                if (captured) {
+                    const bindings = captured.map(document => { const entry = handles.get(document); if (!entry) throw stale(); this.synchronize(entry); return unwrap(document); });
+                    await this.session.flush(bindings);
+                } else await this.flush();
+                if (!current(generation)) throw cancelled();
+                for (const document of captured ?? []) unwrap(document); },
             synchronized: capture,
             canRequest: (method, document) => scope.active && handles.get(document)?.active === true && this.session.canRequest(method, unwrap(document)),
             featureOptions: (method, document) => scope.active && handles.get(document)?.active ? this.session.featureOptions(method, unwrap(document)) : Object.freeze([]),

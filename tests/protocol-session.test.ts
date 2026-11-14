@@ -42,6 +42,50 @@ function fixture(t: test.TestContext, capabilities: InitializeResult["capabiliti
 const input = (text = "a😀\r\nb\rc\n", uri = "host+fixture://project/scope/doc%20one.ts", resourceId = "resource:one", revision = 40) =>
     ({ uri, resourceId, documentId: resourceId + ":working", revision, languageId: "typescript", buffer: TextBuffer.from(text) });
 
+test("document synchronization waits exclude unrelated work and expire changed captures", async t => {
+    const host = fixture(t), queued = new Set<() => void>(); let blocked = false;
+    const session = new LspSession({ ...host, features: ["textDocument/hover"], schedule: (ms, callback) => {
+        if (blocked && ms === 0) { queued.add(callback); return () => { queued.delete(callback); }; } return host.schedule(ms, callback);
+    } }); t.after(() => session.dispose());
+    const small = session.bindDocument(input("small")); await session.connect(); const peer = host.peers[0]!;
+    peer.rpc.onRequest("textDocument/hover", () => null); peer.rpc.onRequest("fixture/barrier", () => null);
+    blocked = true; session.bindDocument(input("large\n".repeat(10_000), "fixture:large", "large"));
+    let read = false, flushed = false;
+    const request = session.requestDocument("textDocument/hover", small, () => ({})); void request.result.then(() => { read = true; }, () => {});
+    void session.flush().then(() => { flushed = true; }, () => {});
+    await settled(); await session.request("fixture/barrier").result;
+    assert.equal(read, true, "A synchronized document must not wait for an unrelated queued open."); assert.equal(flushed, false);
+    small.update(40, 41, TextBuffer.from("changed"));
+    const waiting = session.requestDocument("textDocument/hover", small, () => ({}));
+    const expired = assert.rejects(waiting.result, error => error instanceof RpcError && error.code === -32801);
+    small.update(41, 42, TextBuffer.from("newer")); await expired;
+    blocked = false; for (const callback of queued) callback(); queued.clear(); await session.flush();
+    assert.equal(flushed, true); assert.equal(session.snapshotOwnership().pendingDocumentRequests, 0);
+});
+
+test("indexing batches checkpoints, makes progress during edits and reuses its index on reconnect", async t => {
+    const host = fixture(t), buffers = [TextBuffer.from("line\r\n".repeat(20_000))]; let time = 0, clockStep = 4, turns = 0, edits = 0, hops = 0;
+    let document: ReturnType<InstanceType<typeof LspSession>["bindDocument"]> | undefined;
+    const session = new LspSession({ ...host, now: () => time += clockStep,
+        schedule: (ms, callback) => { if (ms === 0) hops++; return host.schedule(ms, () => {
+            if (document && ms === 0 && ++turns > 1 && edits < 20) {
+                const previous = buffers.at(-1)!, next = previous.replace(previous.length, previous.length, "x"); buffers.push(next);
+                document.update(40 + edits, 41 + edits, next); edits++;
+            }
+            callback();
+        }); } }); t.after(() => session.dispose());
+    document = session.bindDocument({ ...input(), buffer: buffers[0]! }); await session.connect(); await settled();
+    assert.ok(edits > 0 && edits < 20, "Indexing must finish while new edits are still arriving.");
+    assert.equal(host.peers[0]!.documents.get(document.getSnapshot().uri)!.getText(), buffers.at(-1)!.slice(0, buffers.at(-1)!.length));
+    assert.ok(buffers.reduce((units, buffer) => units + buffer.readMetrics().sliceUnits, 0) < buffers[0]!.length * 4, "Retain indexed text instead of restarting its scan.");
+    const current = buffers.at(-1)!, before = current.readMetrics().sliceUnits; document = undefined;
+    session.disconnect(); await session.connect(); await settled();
+    assert.ok(current.readMetrics().sliceUnits - before <= current.length + 64, "Reconnect exports text once without rescanning its line index.");
+    clockStep = 0; const beforeHops = hops;
+    session.bindDocument(input("abcdefghij\n".repeat(272_000), "fixture:batched", "batched")); await session.flush();
+    assert.ok(hops - beforeHops >= 2 && hops - beforeHops <= 8, "A stopped clock still bounds work, without one timer hop per 16K units.");
+});
+
 test("an encoded document failure is isolated, reported once and retried after a new revision", async t => {
     const host = fixture(t), errors: Error[] = [], session = new LspSession({ ...host, features: ["textDocument/hover"], rpc: { maxMessageUnits: 4096 }, onError: error => { errors.push(error); } });
     t.after(() => session.dispose());
@@ -223,9 +267,9 @@ test("shutdown ordering, listener isolation and explicit disposal release all se
 });
 
 test("large opening plans cancel at a cooperative boundary and limits refuse changes before retaining them", async t => {
-    const host = fixture(t); let watching = false, zeros = 0, planned!: () => void;
+    const host = fixture(t); let watching = false, zeros = 0, time = 0, planned!: () => void;
     const paused = new Promise<void>(resolve => { planned = resolve; });
-    const session = new LspSession({ ...host, maxDocuments: 2, maxDocumentUnits: 200_000, maxTotalUnits: 200_010,
+    const session = new LspSession({ ...host, now: () => time += 4, maxDocuments: 2, maxDocumentUnits: 200_000, maxTotalUnits: 200_010,
         schedule: (ms, callback) => { if (watching && ms === 0 && ++zeros === 2) planned(); return host.schedule(ms, callback); } }); t.after(() => session.dispose());
     await session.connect(); const initial = input("x\r\n".repeat(50_000)), document = session.bindDocument(initial); watching = true;
     session.bindDocument(input("tiny", "fixture:small", "small")); assert.throws(() => session.bindDocument(input("third", "fixture:extra", "extra")), /limit/);
@@ -237,16 +281,17 @@ test("large opening plans cancel at a cooperative boundary and limits refuse cha
     assert.equal(host.peers[1]!.documents.get(initial.uri)?.getText().startsWith("current\r\n"), true); assert.equal(session.snapshotOwnership().remoteDocuments, 2);
 });
 
-test("local edits and URI replacement stop obsolete index plans at the next cooperative boundary", async t => {
+test("local edits retain useful indexing while URI replacement cancels obsolete ownership", async t => {
     for (const replacement of [false, true]) {
-        const host = fixture(t); let change: (() => void) | undefined, turns = 0;
-        const session = new LspSession({ ...host, schedule: (ms, callback) => host.schedule(ms, () => { if (change && ms === 0 && ++turns === 2) { const apply = change; change = undefined; apply(); } callback(); }) }); t.after(() => session.dispose());
+        const host = fixture(t); let change: (() => void) | undefined, turns = 0, time = 0;
+        const session = new LspSession({ ...host, now: () => time += 4, schedule: (ms, callback) => host.schedule(ms, () => { if (change && ms === 0 && ++turns === 2) { const apply = change; change = undefined; apply(); } callback(); }) }); t.after(() => session.dispose());
         const initial = input("small"), original = session.bindDocument(initial); await session.connect(); await settled();
         const large = TextBuffer.from("line\r\n".repeat(40_000)), latest = large.replace(0, 4, "current"); let current = original;
         change = () => { if (replacement) { original.close(); current = session.bindDocument(input("replacement", initial.uri, "other-resource", 0)); }
             else original.update(41, 42, latest); };
         original.update(40, 41, large); await session.flush(); await settled(); const peer = host.peers[0]!;
-        assert.ok(large.readMetrics().sliceUnits < 16500, "An obsolete snapshot must stop after its first bounded chunk, not scan the full document.");
+        if (replacement) assert.ok(large.readMetrics().sliceUnits < 16500, "A replaced binding stops after its first bounded chunk.");
+        else assert.ok(latest.readMetrics().sliceUnits < latest.length + 128, "A newer revision reuses completed indexing and exports only its final wire delta.");
         assert.equal(session.synchronized(current)?.document, current.getSnapshot());
         if (replacement) { assert.deepEqual(peer.events.slice(-2), ["close", "open"]); assert.equal(peer.documents.get(initial.uri)?.getText(), "replacement"); assert.equal(peer.documents.get(initial.uri)?.version, 1); }
         else { assert.equal(peer.documents.get(initial.uri)?.getText(), latest.slice(0, latest.length)); assert.equal(peer.documents.get(initial.uri)?.version, 2); }

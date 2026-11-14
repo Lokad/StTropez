@@ -94,7 +94,7 @@ async function languageFixture(t: test.TestContext) {
     return { f, peer, signature, links, colors, rgba, doc: f.workspace.document(f.source.documentId) };
 }
 
-function fixture(t: test.TestContext, extra: Readonly<{ maxDocumentUnits?: number; features?: readonly LspFeature[] }> = {}) {
+function fixture(t: test.TestContext, extra: Readonly<{ maxDocumentUnits?: number; features?: readonly LspFeature[]; schedule?: RpcScheduler }> = {}) {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "generic", resource: "source", variant: "working" }, "Source", { value: "a😀\r\nsource" }),
         companion = workspace.createTextResource({ scope: "generic", resource: "companion", variant: "working" }, "Companion", { value: "companion" });
     const timers = new Set<ReturnType<typeof setTimeout>>(), errors: string[] = [], peers: ReturnType<typeof peer>[] = [];
@@ -114,13 +114,33 @@ function fixture(t: test.TestContext, extra: Readonly<{ maxDocumentUnits?: numbe
         rpc.onRequest("test/barrier", () => null); rpc.onRequest("textDocument/definition", () => []); rpc.onRequest("textDocument/hover", () => ({ contents: "shared provider" }));
         rpc.listen(); return { rpc, documents, events, transport: ports[0]! };
     }
-    const provider = new LspWorkspace(workspace, { ...extra, features: extra.features ?? ["textDocument/hover", "textDocument/definition", "workspace/executeCommand"], applyEdit: true, diagnostics: true, schedule,
+    const provider = new LspWorkspace(workspace, { ...extra, features: extra.features ?? ["textDocument/hover", "textDocument/definition", "workspace/executeCommand"], applyEdit: true, diagnostics: true, schedule: extra.schedule ?? schedule,
         connect: async () => { const next = peer(); peers.push(next); return next.transport; },
         documentInfo: doc => ({ uri: `host+opaque:workspace/${encodeURIComponent(doc.resourceId)}`, languageId: "generic-language" }), onError: error => errors.push(error.message) });
     t.after(async () => { provider.dispose(); await settled(); for (const peer of peers) peer.rpc.dispose(); for (const timer of timers) clearTimeout(timer); });
     const edit = (id = source.documentId, insert = "!") => { const doc = workspace.document(id); assert.equal(workspace.edit({ documentId: id, expectedRevision: doc.revision, edits: [{ from: doc.buffer.length, to: doc.buffer.length, insert }], origin: "human" }).applied, true); };
     return { workspace, provider, source, companion, peers, errors, timers, edit };
 }
+
+test("feature scopes wait for their captured project without flushing unrelated bindings", async t => {
+    const queued = new Set<() => void>(); let blocked = false;
+    const f = fixture(t, { schedule: (ms, callback) => {
+        if (blocked && ms === 0) { queued.add(callback); return () => { queued.delete(callback); }; }
+        const timer = setTimeout(callback, ms); return () => clearTimeout(timer);
+    } }), client = createLspHoverClient(f.provider), other = f.provider.createScope(); t.after(client.dispose);
+    const run = () => client.run(f.workspace.document(f.source.documentId), 0).result;
+    await run(); blocked = true; f.edit(f.companion.documentId, "large\n".repeat(10_000)); other.attachDocument(f.companion.documentId);
+    let completed = false, flushed = false;
+    void run().then(() => { completed = true; }, () => {}); void other.flush().then(() => { flushed = true; }, () => {});
+    await settled(); await other.request("test/barrier").result;
+    assert.equal(completed, true, "The feature's preparation barrier must cover only its captured documents."); assert.equal(flushed, false);
+    blocked = false; for (const callback of queued) callback(); queued.clear(); await other.flush();
+    assert.equal(flushed, true); assert.deepEqual(f.errors, []);
+    blocked = true; const released = other.attachDocument(f.source.documentId); f.edit();
+    const waiting = other.flush([released]), expired = assert.rejects(waiting, error => error instanceof RpcError && error.code === -32801);
+    released.close(); // The hover client still retains the shared binding.
+    blocked = false; for (const callback of queued) callback(); queued.clear(); await expired;
+});
 
 test("provider scopes share one initialize, binding and incremental stream while retaining independent participation", async t => {
     const f = fixture(t), a = f.provider.createScope(), b = f.provider.createScope(), c = f.provider.createScope();

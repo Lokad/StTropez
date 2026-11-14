@@ -22,6 +22,23 @@ async function scan(buffer: TextBuffer, from: number, to: number, cooperate: Lsp
     }
     return Uint32Array.from(bare);
 }
+async function replacement(before: TextBuffer, after: TextBuffer, cooperate: LspCooperate) {
+    const cursor = new ProjectChangeCursor(before, after); let from = 0, to = 0, end = 0;
+    try { for (;;) { const step = cursor.next(); if (step.done) {
+                const span = step.result!; from = Math.max(0, span.from - 1); to = Math.min(before.length, span.to + 1); end = span.insertTo + to - span.to; break;
+            } await cooperate(); } } finally { cursor.dispose(); }
+    if (interior(before, from) || interior(after, from)) from--;
+    if (interior(before, to) || interior(after, end)) { to++; end++; }
+    return { from, to, end };
+}
+function textChange(before: LspLineIndex, after: TextBuffer, span: { from: number; to: number; end: number }): LspTextChange {
+    return Object.freeze({ range: Object.freeze({ start: before.at(span.from), end: before.at(span.to) }), text: after.slice(span.from, span.end) });
+}
+/** Build the wire delta from its actual sent base without rebuilding an already prepared index. */
+export async function lspTextChanges(before: LspLineIndex, after: TextBuffer, cooperate: LspCooperate): Promise<readonly LspTextChange[]> {
+    if (after === before.buffer) return Object.freeze([]);
+    return Object.freeze([textChange(before, after, await replacement(before.buffer, after, cooperate))]);
+}
 
 /** Reuses the buffer's LF index and retains only additional bare-CR positions. Source text is unchanged. */
 export class LspLineIndex {
@@ -62,19 +79,14 @@ export class LspLineIndex {
     async change(after: TextBuffer, cooperate: LspCooperate): Promise<Readonly<{ index: LspLineIndex; changes: readonly LspTextChange[] }>> {
         if (!uint(after.length)) throw new RangeError("Document exceeds LSP position limits.");
         if (after === this.buffer) return Object.freeze({ index: this, changes: Object.freeze([]) });
-        const cursor = new ProjectChangeCursor(this.buffer, after); let from = 0, to = 0, end = 0;
-        try { for (;;) { const step = cursor.next(); if (step.done) {
-                    const span = step.result!; from = Math.max(0, span.from - 1); to = Math.min(this.buffer.length, span.to + 1); end = span.insertTo + to - span.to; break;
-                } await cooperate(); } } finally { cursor.dispose(); }
-        if (interior(this.buffer, from) || interior(after, from)) from--;
-        if (interior(this.buffer, to) || interior(after, end)) { to++; end++; }
-        const start = lowerBound(this.bare, from), stop = lowerBound(this.bare, to), replacement = await scan(after, from, end, cooperate);
-        const bare = new Uint32Array(start + replacement.length + this.bare.length - stop);
+        const { from, to, end } = await replacement(this.buffer, after, cooperate);
+        const start = lowerBound(this.bare, from), stop = lowerBound(this.bare, to), added = await scan(after, from, end, cooperate);
+        const bare = new Uint32Array(start + added.length + this.bare.length - stop);
         for (let at = 0; at < start; at += chunkUnits) { bare.set(this.bare.subarray(at, Math.min(start, at + chunkUnits)), at); if (at + chunkUnits < start) await cooperate(); }
-        bare.set(replacement, start);
+        bare.set(added, start);
         const shift = after.length - this.buffer.length;
-        for (let i = stop; i < this.bare.length; i++) { bare[start + replacement.length + i - stop] = this.bare[i]! + shift; if ((i - stop + 1) % chunkUnits === 0) await cooperate(); }
-        const change = Object.freeze({ range: Object.freeze({ start: this.at(from), end: this.at(to) }), text: after.slice(from, end) });
+        for (let i = stop; i < this.bare.length; i++) { bare[start + added.length + i - stop] = this.bare[i]! + shift; if ((i - stop + 1) % chunkUnits === 0) await cooperate(); }
+        const change = textChange(this, after, { from, to, end });
         return Object.freeze({ index: new LspLineIndex(after, bare), changes: Object.freeze([change]) });
     }
 }

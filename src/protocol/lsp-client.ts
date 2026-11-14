@@ -78,7 +78,7 @@ export function createLspClient(provider: LspWorkspace) {
             if (connection.phase === "disconnected" && connection.epoch !== 0) throw new RpcError(-32097, "LSP connection requires an explicit host connect or reconnect.");
             await scope.connect();
             validate(op);
-            await scope.flush();
+            await scope.flush([...documents.values()]);
             validate(op);
             if (prepare) await prepare(scope);
             validate(op);
