@@ -53,6 +53,39 @@ test("host pairing and Enter rules see exact buffers and can reject string/comme
     assert.equal(enter.text, "  {\n    \n  }"); assert.deepEqual(enter.ranges, [[8, 8]]);
 });
 
+test("newline commands inherit the current or preceding LF/CRLF terminator without normalizing source", () => {
+    for (const [text, at, expected, head] of [
+        ["a\r\nb\r\n", 1, "a\r\n\r\nb\r\n", 3],
+        ["a\r\nb", 4, "a\r\nb\r\n", 6],
+        ["a\r\n", 3, "a\r\n\r\n", 5],
+        ["a\nb\r\nc", 3, "a\nb\r\n\r\nc", 5],
+        ["a\r\nb\nc", 4, "a\r\nb\n\nc", 5],
+        ["a\rb", 3, "a\rb\n", 4],
+        ["", 0, "\n", 1],
+    ] as const) {
+        const result = plan(text, selection(at), "newline");
+        assert.equal(result.text, expected); assert.deepEqual(result.ranges, [[head, head]]);
+    }
+    const config: LanguageConfiguration = { tabSize: 4, enter: () => ({ indent: 1, split: true }) };
+    const split = plan("  {}\r\nnext", selection(3), "newline", config);
+    assert.equal(split.text, "  {\r\n      \r\n  }\r\nnext"); assert.deepEqual(split.ranges, [[11, 11]]);
+    const selected = plan("one\r\ntwo\nlast", selection(8, 1), "newline", {});
+    assert.equal(selected.text, "o\r\n\nlast"); assert.deepEqual(selected.ranges, [[3, 3]]);
+    const multiple = plan("a\r\nb\nc", [{ anchor: 1, head: 1 }, { anchor: 4, head: 4 }, { anchor: 6, head: 6 }], "newline");
+    assert.equal(multiple.text, "a\r\n\r\nb\n\nc\n"); assert.deepEqual(multiple.ranges, [[3, 3], [7, 7], [10, 10]]);
+});
+
+test("outdent removes one visual indentation unit even when spaces precede tabs", () => {
+    for (const insertSpaces of [true, false]) for (const [prefix, expected] of [
+        ["  \t", ""], [" \t\t", "\t"], ["\t  \t", "  \t"], ["     \t", " \t"], ["  ", ""], ["      ", "  "], ["", ""],
+    ]) {
+        const config: LanguageConfiguration = { tabSize: 4, insertSpaces, enter: () => ({ indent: -1 }) };
+        const source = prefix + "foo", result = plan(source, selection(source.length, 0), "outdent", config);
+        assert.equal(result.text, expected + "foo"); assert.deepEqual(result.ranges, [[expected!.length + 3, 0]]);
+        assert.equal(plan(prefix + "x\r\n", selection(prefix!.length), "newline", config).text, prefix + "\r\n" + expected + "x\r\n");
+    }
+});
+
 test("large comments and whitespace yield without partial edits and form one shared undo transaction", () => {
     const text = "x\n".repeat(2048), result = plan(text, selection(0, text.length), "line-comment");
     assert.ok(result.turns > 8); assert.equal(result.text, "// x\n".repeat(2048));

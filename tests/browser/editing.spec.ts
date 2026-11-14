@@ -283,7 +283,7 @@ test("two views share text while selection, focus escape and disposal stay indep
     expect(await page.locator("textarea, .st-viewport").count()).toBe(0);
 });
 
-test("line indentation/outdent, paired brackets and vertical navigation use model selections", async ({ page }) => {
+test("line indentation/outdent, CRLF Enter, paired brackets and vertical navigation use model selections", async ({ page }) => {
     await page.evaluate(() => { window.editingFixture.setText("one\n\ttwo\nthree"); window.editingFixture.select("primary", { anchor: 0, head: 9 }); window.editingFixture.focus("primary"); }); await ready(page);
     await page.keyboard.press("Tab"); expect(await page.evaluate(() => window.editingFixture.range(0, 22))).toBe("    one\n    \ttwo\nthree");
     await page.keyboard.press("Shift+Tab"); expect(await page.evaluate(() => window.editingFixture.range(0, 14))).toBe("one\n\ttwo\nthree");
@@ -293,6 +293,23 @@ test("line indentation/outdent, paired brackets and vertical navigation use mode
     await page.keyboard.press("ControlOrMeta+Home"); await ready(page); await page.keyboard.press("ArrowDown");
     expect((await state(page)).primary.selection.head).toBe(4);
     await page.keyboard.press("ArrowUp"); expect((await state(page)).primary.selection.head).toBe(0);
+    await page.evaluate(() => {
+        window.editingFixture.configureLanguage({ tabSize: 4 });
+        window.editingFixture.setText("  \tone\r\nnext");
+        window.editingFixture.select("primary", { anchor: 6, head: 6 }); window.editingFixture.focus("primary");
+    }); await ready(page);
+    await page.keyboard.press("Shift+Tab"); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 9))).toBe("one\r\nnext");
+    expect((await state(page)).primary.selection.head).toBe(3);
+    await page.keyboard.press("Enter"); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 11))).toBe("one\r\n\r\nnext");
+    expect((await state(page)).primary.selection.head).toBe(5);
+    await page.keyboard.press("ControlOrMeta+z"); await page.keyboard.press("ControlOrMeta+z"); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 12))).toBe("  \tone\r\nnext");
+    expect((await state(page)).primary.selection.head).toBe(6);
+    await page.keyboard.press("ControlOrMeta+Shift+z"); await page.keyboard.press("ControlOrMeta+Shift+z"); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 11))).toBe("one\r\n\r\nnext");
+    expect((await state(page)).primary.selection.head).toBe(5);
 });
 
 test("very long graphemes delete whole and stale yielding indentation cannot retarget later input", async ({ page }) => {
@@ -322,7 +339,7 @@ test("yielding multiline indentation publishes one reversible transaction", asyn
 
 test("configured commands retain native ordering and expire on configuration changes", async ({ page }) => {
     await page.evaluate(() => {
-        window.editingFixture.configureLanguage({ tabSize: 2, lineComment: "//", enter: "keep" });
+        window.editingFixture.configureLanguage({ tabSize: 2, lineComment: "//" });
         window.editingFixture.setText("x\n".repeat(1024)); window.editingFixture.select("primary", { anchor: 0, head: 2048 });
         window.editingFixture.focus("primary");
         window.editingFixture.command("line-comment");

@@ -44,6 +44,22 @@ function* whitespace(buffer: TextBuffer, from: number, to: number): Generator<vo
     }
     return from;
 }
+/** At most tabSize characters; removing a complete tab stop preserves later tab alignment. */
+function outdentLength(prefix: string, tabSize: number): number {
+    let units = 0, column = 0;
+    while (units < prefix.length && column < tabSize) {
+        const unit = prefix[units];
+        if (unit === " ") column++;
+        else if (unit === "\t") column += tabSize - column % tabSize;
+        else break;
+        units++;
+    }
+    return units;
+}
+function lineEnding(buffer: TextBuffer, line: number): string {
+    const end = buffer.offsetAt(line + 1 < buffer.lineCount ? line + 1 : line);
+    return end >= 2 && buffer.slice(end - 2, end) === "\r\n" ? "\r\n" : "\n";
+}
 function mapped(buffer: TextBuffer, selections: SelectionSet, edits: readonly TextEdit[]): SelectionEditPlan {
     const mapping = new PositionMap(buffer.length, edits);
     return result(edits, createSelectionSet(mapping.newLength, selections.ranges.map(range => ({ ...range,
@@ -83,7 +99,7 @@ export function* planLanguageEdit(buffer: TextBuffer, selections: SelectionSet, 
                     comments.push({ from: at, commented, blank });
                 } else {
                     const prefix = buffer.slice(from, Math.min(buffer.length, from + config.tabSize));
-                    const removed = prefix.startsWith("\t") ? 1 : /^ */.exec(prefix)![0].length;
+                    const removed = outdentLength(prefix, config.tabSize);
                     if (command === "indent" || removed) edits.push({ from, to: from + (command === "outdent" ? removed : 0), insert: command === "outdent" ? "" : unit });
                 }
                 if (++count % 256 === 0) yield;
@@ -132,11 +148,11 @@ export function* planLanguageEdit(buffer: TextBuffer, selections: SelectionSet, 
             }
         } else if (command === "newline") {
             const rule = typeof config.enter === "function" ? config.enter(context) : { indent: 0 as const };
-            const start = buffer.offsetAt(buffer.lineAt(from)), end = config.enter ? yield* whitespace(buffer, start, from) : start;
+            const line = buffer.lineAt(from), start = buffer.offsetAt(line), end = config.enter ? yield* whitespace(buffer, start, from) : start;
             let indent = buffer.slice(start, end);
-            if (rule.indent === -1) indent = indent.endsWith("\t") ? indent.slice(0, -1) : indent.slice(0, Math.max(0, indent.length - config.tabSize));
-            const inner = indent + (rule.indent === 1 ? unit : ""), first = "\n" + inner;
-            const insert = first + (rule.split ? "\n" + indent : "");
+            if (rule.indent === -1) indent = indent.slice(outdentLength(indent, config.tabSize));
+            const ending = lineEnding(buffer, line), inner = indent + (rule.indent === 1 ? unit : ""), first = ending + inner;
+            const insert = first + (rule.split ? ending + indent : "");
             edits.push({ from, to, insert }); anchor = head = from + delta + first.length; delta += insert.length - (to - from);
         } else if (command === "indent") {
             edits.push({ from, to, insert: unit }); anchor = head = from + delta + unit.length; delta += unit.length - (to - from);

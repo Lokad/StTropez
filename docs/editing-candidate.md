@@ -33,7 +33,11 @@ the exact immutable buffer and selection endpoints; hosts own syntax analysis an
 selection. An empty pair list disables pairing. Defaults retain basic brackets without quotes.
 `enter: "keep"` copies indentation; a callback returns `{ indent: -1 | 0 | 1, split?: boolean }`
 to remove/keep/add one indentation unit and optionally put the closing text on another line.
-Without `enter`, native line-break behavior is retained.
+Without `enter`, a newline does not copy indentation. Ordinary Enter and cancellable native
+line-break input use the same planner: the current row's terminator selects LF or CRLF, falling
+back to the preceding terminator on the last row and LF when neither exists. Mixed endings and
+unrelated source text remain unchanged. Outdent removes up to one tab-size unit in visual columns,
+including mixed spaces/tabs; the Enter rule's `indent: -1` uses the same column policy.
 
 `runCommand("indent" | "outdent" | "line-comment" | "block-comment" | "newline")` accepts a
 command against this view, returning false when unavailable, read-only, composing or disposed.

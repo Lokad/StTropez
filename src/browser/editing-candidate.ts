@@ -634,7 +634,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     }
     const pairKey = (key: string) => key.length === 1 && language.pairs.some(pair => pair.open === key || pair.close === key);
     function configuredInput(type: string, text: string | null): boolean {
-        if (type === "insertLineBreak" && language.enter) return languageCommand("newline");
+        if (type === "insertLineBreak") return languageCommand("newline");
         return type === "insertText" && text !== null && pairKey(text) && languageCommand({ character: text });
     }
     function takeInput(): OrderedInput | undefined {
@@ -728,7 +728,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             || !command && !event.altKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key);
         const historyKey = command && (key === "z" || event.ctrlKey && key === "y"), deletion = (!command && !event.altKey || word) && ["Backspace", "Delete"].includes(event.key);
         const tab = event.key === "Tab" && !escaped && !command && !event.altKey, bracketKey = !command && !event.altKey && pairKey(event.key);
-        const enter = event.key === "Enter" && !!language.enter && !command && !event.altKey, comment = command && (key === "/" || key === "?" && event.shiftKey);
+        const enter = event.key === "Enter" && !command && !event.altKey, comment = command && (key === "/" || key === "?" && event.shiftKey);
         if (!navigation && !historyKey && !deletion && !tab && !bracketKey && !enter && !comment) return;
         return { kind: "key", key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, shiftKey: event.shiftKey,
             text: tab ? "\t" : enter ? "\n" : bracketKey ? event.key : "", edit: !navigation };
@@ -889,7 +889,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             event.preventDefault(); grapheme(event.key === "Backspace" ? -1 : 1, true);
         } else if (event.key === "Tab" && !command && !event.altKey) { if (languageCommand(event.shiftKey ? "outdent" : "indent")) event.preventDefault(); }
         else if (command && (key === "/" || key === "?" && event.shiftKey) && languageCommand(event.shiftKey ? "block-comment" : "line-comment")) event.preventDefault();
-        else if (!command && !event.altKey && event.key === "Enter" && language.enter && languageCommand("newline")) event.preventDefault();
+        else if (!command && !event.altKey && event.key === "Enter" && languageCommand("newline")) event.preventDefault();
         else if (!command && !event.altKey && pairKey(event.key) && languageCommand({ character: event.key })) event.preventDefault();
         // Unhandled command-navigation must not move inside the bounded textarea context.
         else if (command && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown"].includes(event.key)) event.preventDefault();
