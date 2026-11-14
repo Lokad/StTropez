@@ -95,6 +95,11 @@ the same error policy. An injected network failure may permit one exact console 
 for its URL; other errors fail. [Qualification ownership](docs/qualification.md) separates focused changes,
 broad boundaries and performance runs. Input-handler time, frame readiness and complete
 scripted action latency are different clocks; none establishes physical input/display latency.
+The editing, viewport, comparison and host fixtures expose one `settled` flag, polled by the
+shared `ready` helper. It covers queued editing/navigation, caret work, each view's rendered
+revision/selection/folds, and comparison alignment/scrolling. Service replies, native controls
+and required mounts remain assertions in the owning specs. Active composition is not pending
+editor work; an ongoing drag can keep scrolling pending until the test releases it.
 See [runtime ownership](docs/editor-ownership.md) for composition, caret and delayed work.
 
 Pushes to the main branches and pull requests run all model tests, strict type checking,

@@ -4,6 +4,7 @@ import { mountEditingCandidate, createFoldingController } from "../../src/browse
 import type { CandidateEditTransform, FoldDiscovery, FoldCommand, FoldingController } from "../../src/browser/index.ts";
 import { corpus, corpusIds } from "../../tests/fixtures/workloads.ts";
 import { EditingPresentation } from "./presentation.ts";
+import { editorSettled } from "../shared/readiness.ts";
 import { mountFindUI } from "./find-ui.ts";
 import { mountProviderUI } from "./provider-ui.ts";
 import { mountParagraphUI } from "./paragraph-ui.ts";
@@ -41,6 +42,7 @@ pane("undo").addEventListener("click", () => history("undo"), { signal: listener
 const status = () => { const current = workspace.document(source.documentId); pane("status").textContent = `${current.buffer.lineCount.toLocaleString()} lines · Revision ${current.revision}`; };
 const unsubscribe = workspace.observeDocument(source.documentId).subscribe(status); status();
 const fixture = { ready: true, setText, edit, select, history,
+    get settled() { return !disposed && editorSettled(editors.primary) && editorSettled(editors.secondary); },
     failNextDecoration: () => { failDecoration = true; },
     captureInsertion: () => editors.primary.captureInsertion(),
     registerEditTransform: (transform: CandidateEditTransform) => editors.primary.registerEditTransform(transform),

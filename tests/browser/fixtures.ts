@@ -1,7 +1,15 @@
 import { test as base } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { captureBrowserErrors } from "../helpers/browser-errors.ts";
 
 export { expect } from "@playwright/test";
+
+/** Scheduled editor work only. Specs separately await services, mount counts and native controls. */
+export async function ready(page: Page, timeout = 30_000): Promise<void> {
+    await page.waitForFunction(() => (window.hostFixture ?? window.editingFixture ?? window.viewportFixture ?? window.comparisonFixture)?.settled === true,
+        undefined, { timeout });
+}
+
 export const test = base.extend<{ browserErrors: ReturnType<typeof captureBrowserErrors> }>({
     browserErrors: [async ({ context }, use) => {
         const errors = captureBrowserErrors(context);

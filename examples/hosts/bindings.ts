@@ -3,6 +3,7 @@ import type { EditingCandidate, MountedEditor, TextComparison, ViewportSnapshot,
 import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId, TabTarget } from "../../src/index.ts";
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../editing/presentation.ts";
+import { comparisonSettled, editorSettled } from "../shared/readiness.ts";
 import { HostLanguageTools } from "./language.ts";
 import { hostLspFactories } from "../protocol/editor-provider.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
@@ -343,6 +344,10 @@ export class ViewBindings {
         this.selections.clear(); this.states.clear(); this.referenceState = undefined; this.language.clearRetainedView();
         this.lspOwner?.dispose();
         this.controller.collectLoadedDocument();
+    }
+    settled(): boolean {
+        for (const { candidate } of this.mounted.values()) if (candidate && !editorSettled(candidate)) return false;
+        return !this.review || comparisonSettled(this.review);
     }
     debug() {
         const comparison = this.review?.controller.getSnapshot();

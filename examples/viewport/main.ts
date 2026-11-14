@@ -4,6 +4,7 @@ import { mountTextViewport, mountTextEditor } from "../../src/browser/index.ts";
 import type { MountedEditor, ViewState } from "../../src/browser/index.ts";
 import { corpus, corpusIds } from "../../tests/fixtures/workloads.ts";
 import type { CorpusId } from "../../tests/fixtures/workloads.ts";
+import { viewportSettled } from "../shared/readiness.ts";
 import "./style.css";
 
 const workspace = new Workspace(), source = workspace.createTextResource({ scope: "viewport", resource: "source", variant: "working" }, "Source", { value: corpus("lines-100000") });
@@ -42,6 +43,7 @@ pane("workload").addEventListener("change", event => load((event.currentTarget a
 const status = () => { const current = workspace.document(source.documentId); pane("status").textContent = `${current.buffer.lineCount.toLocaleString()} lines · Revision ${current.revision}`; };
 const unsubscribe = workspace.observeDocument(source.documentId).subscribe(status); status();
 const fixture = { ready: true, load, edit, background,
+    get settled() { return !disposed && viewportSettled(views.primary) && viewportSettled(views.secondary); },
     reload: (value: string) => workspace.beginLoad(source).accept({ value }),
     select: (which: "primary" | "secondary", ranges: readonly Selection[], primary = 0) => views[which].view.setSelections(workspace.document(source.documentId).revision, ranges, primary),
     capture: (which: "primary" | "secondary") => views[which].captureView(),

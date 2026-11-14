@@ -1,9 +1,6 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
-async function ready(page: Page): Promise<void> {
-    await expect.poll(() => page.evaluate(() => { const s = window.viewportFixture?.snapshot(); return s && s.primary.revision === s.document?.revision && !s.primary.pending; })).toBe(true);
-}
 async function checkRows(page: Page): Promise<void> {
     expect(await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("#primary .st-viewport-row")].every(row => {
         const from = Number(row.dataset.from), to = Number(row.dataset.to);
@@ -11,7 +8,6 @@ async function checkRows(page: Page): Promise<void> {
     }))).toBe(true);
 }
 test.beforeEach(async ({ page }) => {
-
 
     await page.goto("/viewport/"); await ready(page);
 });
@@ -94,8 +90,9 @@ test("full selection sets paint bounded ranges and round-trip while legacy state
             && s.selectionSet === state.selectionSet && s.selection === s.selectionSet!.ranges[s.selectionSet!.primary]; })).toBe(true);
     await page.evaluate(state => { const f = window.viewportFixture; f.select("primary", [{ anchor: 12, head: 12 }]); f.restore("primary", state); }, captured); await ready(page);
     expect((await page.evaluate(() => window.viewportFixture.snapshot())).primary.selectionSet).toEqual(captured.selectionSet);
-    await page.evaluate(state => window.viewportFixture.restore("secondary", { ...state, anchor: 0, head: 0 }), captured); await ready(page);
-    await expect.poll(() => page.evaluate(() => window.viewportFixture.snapshot().secondary.selectionSet)).toEqual(captured.selectionSet);
+    expect(await page.evaluate(state => { const f = window.viewportFixture; f.restore("secondary", { ...state, anchor: 0, head: 0 }); return f.settled; }, captured)).toBe(false);
+    await ready(page);
+    expect(await page.evaluate(() => window.viewportFixture.snapshot().secondary.selectionSet)).toEqual(captured.selectionSet);
     expect((await page.evaluate(() => window.viewportFixture.snapshot())).secondary.selection).toEqual(captured.selectionSet!.ranges[1]);
     const invalid = await page.evaluate(state => { const f = window.viewportFixture, before = f.capture("primary");
         try { f.restore("primary", { ...state, selectionSet: { ranges: [{ anchor: -1, head: 0 }], primary: 0 } }); return false; }

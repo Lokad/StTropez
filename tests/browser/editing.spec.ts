@@ -1,12 +1,8 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
-async function ready(page: Page): Promise<void> {
-    await expect.poll(() => page.evaluate(() => { const s = window.editingFixture?.snapshot(); return s && s.primary.viewport.revision === s.document?.revision && !s.primary.viewport.pending; })).toBe(true);
-}
 const state = (page: Page) => page.evaluate(() => window.editingFixture.snapshot());
 test.beforeEach(async ({ page }) => {
-
 
     await page.goto("/editing/"); await ready(page);
 });
@@ -95,7 +91,7 @@ test("typing, newline, paste and history keep a visible caret in place on both s
         root.dispatchEvent(new Event("scroll"));
     });
     const settled = async () => {
-        await page.waitForFunction(() => { const s = window.editingFixture.snapshot(); return !s.primary.pendingInput && !s.primary.pendingCommand && !s.primary.pendingCaret && !s.primary.viewport.pending && s.primary.viewport.revision === s.document?.revision; });
+        await ready(page);
         return page.evaluate(() => { const s = window.editingFixture.snapshot().primary; return { top: s.viewport.scrollTop, left: s.viewport.scrollLeft }; });
     };
     const before = await settled(); expect(before.top).toBeGreaterThan(1000); expect(before.left).toBe(250);
@@ -118,10 +114,10 @@ test("captured host insertion uses the input transform once and expires before l
     expect(await page.evaluate(() => {
         const f = window.editingFixture, completions: boolean[] = [];
         const stop = f.registerEditTransform(plan => ({ ...plan, edits: plan.edits.map(edit => ({ ...edit, insert: edit.insert.toUpperCase() })), complete: applied => completions.push(applied) }));
-        const capture = f.captureInsertion()!, pending = f.snapshot().primary.pendingInput;
+        const capture = f.captureInsertion()!, pending = f.snapshot().primary.pendingInput, settledDuringCapture = f.settled;
         const inserted = capture.insert("x"), again = capture.insert("late"); stop();
-        return { pending, inserted, again, completions, aborted: capture.signal.aborted, text: f.range(0, 3), pendingAfter: f.snapshot().primary.pendingInput };
-    })).toEqual({ pending: true, inserted: true, again: false, completions: [true], aborted: true, text: "aXc", pendingAfter: false });
+        return { pending, settledDuringCapture, inserted, again, completions, aborted: capture.signal.aborted, text: f.range(0, 3), pendingAfter: f.snapshot().primary.pendingInput };
+    })).toEqual({ pending: true, settledDuringCapture: false, inserted: true, again: false, completions: [true], aborted: true, text: "aXc", pendingAfter: false });
     await page.getByRole("textbox", { name: "Primary source", exact: true }).press("Control+z"); await ready(page);
     const pending = await page.evaluateHandle(() => {
         const f = window.editingFixture, old = f.captureInsertion()!, next = f.captureInsertion()!;

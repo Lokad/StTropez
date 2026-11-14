@@ -1,6 +1,7 @@
 import { TextBuffer, Workspace } from "../../src/index.ts";
 import type { ComparisonTicket, Selection } from "../../src/index.ts";
 import { mountTextComparison } from "../../src/browser/index.ts";
+import { comparisonSettled } from "../shared/readiness.ts";
 import "../../src/browser/editor.css";
 import "./style.css";
 
@@ -41,6 +42,7 @@ function snapshot() {
         pending: { refreshes: refreshes.length, acceptances: acceptances.length }, comparison: comparison.snapshot(), diagnostics: workspace.diagnostics(), result, disposed };
 }
 const fixture = Object.freeze({ snapshot, setText, begin, finish, dispose, focus: () => comparison.working.focus(),
+    get settled() { return !disposed && comparisonSettled(comparison); },
     select: (selection: Selection) => comparison.controller.view.setSelection(workspace.document(resource.documentId).revision, selection),
     selectHunk: (generation: number, index: number) => comparison.selectHunk(generation, index), revert: (generation: number, index: number) => comparison.controller.revert(generation, index),
     range: (from: number, to: number) => workspace.document(resource.documentId).buffer.slice(from, to),
