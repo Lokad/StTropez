@@ -1,16 +1,15 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 
 const snapshot = (page: import("@playwright/test").Page) => page.evaluate(() => window.hostFixture.snapshot());
 const source = (page: import("@playwright/test").Page) => page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); });
-const ready = async (page: import("@playwright/test").Page) => {
-    await expect(page.getByRole("group", { name: "Source review", exact: true })).toHaveAttribute("data-status", "ready");
-    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-};
+async function waitForReview(page: import("@playwright/test").Page): Promise<void> {
+    await ready(page);
+    await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.comparison !== null); });
+}
 const selection = (state: Awaited<ReturnType<typeof snapshot>>, id: string) => state.bindings.views.find(v => v.id === id)!.selection;
 
 for (const host of ["plain", "react"] as const) for (const reply of ["unchanged", "canonical"] as const)
     test(`${host} ${reply} save reply preserves staged input or captured recovery`, async ({ page }) => {
-
 
         const button = (name: string) => page.getByRole("button", { name, exact: true });
         const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
@@ -19,7 +18,7 @@ for (const host of ["plain", "react"] as const) for (const reply of ["unchanged"
         await page.goto(`/hosts/${host}/?editor=candidate`);
         await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
         for (const name of ["Open source review", "Capture review acceptance", "Finish review acceptance"]) await button(name).click();
-        await ready(page); await button("Save source").click();
+        await waitForReview(page); await button("Save source").click();
         await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
         await primary.focus();
         expect(await page.evaluate(() => { const f = window.hostFixture, r = f.snapshot().source.revision;
@@ -46,7 +45,7 @@ for (const host of ["plain", "react"] as const) for (const reply of ["unchanged"
         expect(during.inputRecovery).toEqual([]);
         expect(await page.evaluate(n => window.hostFixture.referenceRange(0, n), original.length)).toBe(original);
         await primary.evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "東京" })));
-        await ready(page); const after = await snapshot(page);
+        await waitForReview(page); const after = await snapshot(page);
         if (reply === "canonical") {
             expect(await source(page)).toBe(canonical); expect(after.source.dirty).toBe(false);
             expect(after.source.revision).toBe(before.source.revision + 1);
@@ -59,11 +58,11 @@ for (const host of ["plain", "react"] as const) for (const reply of ["unchanged"
         } else {
             expect(await source(page)).toBe(attempted); expect(after.source.dirty).toBe(true); expect(after.inputRecovery).toEqual([]);
             expect(after.history.undoDepth).toBe(before.history.undoDepth + 1);
-            await primary.press("Control+z"); await ready(page); expect(await source(page)).toBe(canonical); expect((await snapshot(page)).source.dirty).toBe(false);
-            await primary.press("Control+Shift+z"); await ready(page); expect(await source(page)).toBe(attempted);
+            await primary.press("Control+z"); await waitForReview(page); expect(await source(page)).toBe(canonical); expect((await snapshot(page)).source.dirty).toBe(false);
+            await primary.press("Control+Shift+z"); await waitForReview(page); expect(await source(page)).toBe(attempted);
         }
         const retained = await snapshot(page);
-        await page.evaluate(() => window.hostFixture.unmount()); await page.evaluate(() => window.hostFixture.mount()); await ready(page);
+        await page.evaluate(() => window.hostFixture.unmount()); await page.evaluate(() => window.hostFixture.mount()); await waitForReview(page);
         const remounted = await snapshot(page);
         expect(await source(page)).toBe(reply === "canonical" ? canonical : attempted);
         expect(remounted.inputRecovery).toEqual(retained.inputRecovery);
@@ -74,10 +73,10 @@ for (const host of ["plain", "react"] as const) for (const reply of ["unchanged"
         expect(await page.evaluate(n => window.hostFixture.referenceRange(0, n), original.length)).toBe(original);
         if (reply === "canonical") {
             expect(await page.evaluate(() => window.hostFixture.recoveryText())).toBe(nativeAttempt);
-            await primary.focus(); await primary.press("Control+End"); await primary.pressSequentially(" later"); await ready(page);
+            await primary.focus(); await primary.press("Control+End"); await primary.pressSequentially(" later"); await waitForReview(page);
             expect(await source(page)).toBe(canonical + " later");
-            await primary.press("Control+z"); await ready(page); expect(await source(page)).toBe(canonical); expect((await snapshot(page)).source.dirty).toBe(false);
-            await primary.press("Control+Shift+z"); await ready(page); expect(await source(page)).toBe(canonical + " later");
+            await primary.press("Control+z"); await waitForReview(page); expect(await source(page)).toBe(canonical); expect((await snapshot(page)).source.dirty).toBe(false);
+            await primary.press("Control+Shift+z"); await waitForReview(page); expect(await source(page)).toBe(canonical + " later");
         }
         await page.evaluate(() => window.hostFixture.dispose()); const disposed = await snapshot(page);
         expect(disposed.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(disposed.hostSubscriptions).toBe(0);

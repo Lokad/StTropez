@@ -1,8 +1,5 @@
-import { test, expect } from "./fixtures.ts";
-import type { Page } from "@playwright/test";
-async function ready(page: Page) {
-    await expect.poll(() => page.evaluate(() => { const s = window.comparisonFixture?.snapshot(); return s && s.status === "ready" && !s.editor.viewport.pending && s.editor.viewport.revision === s.working.revision && s.reference && !s.reference.pending; })).toBe(true);
-}
+import { ready, test, expect } from "./fixtures.ts";
+
 test.beforeEach(async ({ page }) => {  await page.goto("/comparison/"); await ready(page); });
 
 test("paired navigation exposes exact whitespace and reverts one hunk through shared undo", async ({ page }) => {

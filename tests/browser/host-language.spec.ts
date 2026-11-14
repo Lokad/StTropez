@@ -1,13 +1,10 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const text = (page: Page) => page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length));
 const primary = (page: Page) => page.getByRole("textbox", { name: "Primary source", exact: true });
 const secondary = (page: Page) => page.getByRole("textbox", { name: "Secondary source", exact: true });
-async function ready(page: Page) {
-    await expect.poll(async () => { const s = await snapshot(page); return s.bindings.views.every(v => !v.metrics?.pendingCaret && !v.metrics?.viewport.pending)
-        && (!s.bindings.comparison || s.bindings.comparison.status === "ready" && !s.bindings.comparison.workingViewport.pending && !s.bindings.comparison.referenceViewport?.pending); }).toBe(true);
-}
+
 async function offer(page: Page) { await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible(); }
 async function completionCaret(page: Page) {
     await primary(page).press("Control+Home"); for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowRight");

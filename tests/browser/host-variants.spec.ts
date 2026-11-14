@@ -1,16 +1,10 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const click = (page: Page, name: string) => page.getByRole("button", { name, exact: true }).click();
 const version = (page: Page, id: string) => page.getByRole("combobox", { name: "Review version", exact: true }).selectOption(id);
-async function ready(page: Page): Promise<void> {
-    await expect.poll(() => page.evaluate(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
-        return s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.viewport.pending
-            && v.metrics.viewport.revision === s.source.revision && v.metrics.viewport.selectionSet === v.selectionSet)
-            && (!c || c.status === "ready" && !c.input.pendingCaret && !c.input.pendingWord && !c.input.pendingGrapheme && !c.workingViewport.pending && !c.referenceViewport?.pending);
-    })).toBe(true);
-}
+
 async function exact(page: Page, value: string, reference = false): Promise<void> {
     expect(await page.evaluate(({ value, reference }) => { const f = window.hostFixture;
         const length = reference ? f.snapshot().bindings.comparison?.baseline?.length : f.snapshot().source.length;

@@ -1,18 +1,13 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const primary = (s: Awaited<ReturnType<typeof snapshot>>) => s.bindings.views.find(v => v.id === "primary")!;
 const root = (page: Page) => page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"])');
 const input = (page: Page) => page.getByRole("textbox", { name: "Primary source", exact: true });
-async function ready(page: Page): Promise<void> {
-    await expect.poll(() => page.evaluate(() => {
-        const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
-        return s.bindings.activeViews === 2 && s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingDragScroll && !v.metrics.pendingWord && !v.metrics.pendingGrapheme
-            && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision)
-            && c?.status === "ready" && c.workingRevision === s.source.revision && !c.input.pendingCaret && !c.input.pendingDragScroll && !c.input.pendingWord && !c.input.pendingGrapheme
-            && !c.workingViewport.pending && !c.referenceViewport?.pending;
-    })).toBe(true);
+async function waitForReview(page: Page): Promise<void> {
+    await ready(page);
+    await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.activeViews === 2 && s.bindings.comparison !== null); });
 }
 async function exact(page: Page, text: string): Promise<void> {
     expect(await page.evaluate(value => { const f = window.hostFixture; return f.snapshot().source.length === value.length && f.range(0, value.length) === value; }, text)).toBe(true);
@@ -25,16 +20,16 @@ async function begin(page: Page, host: string, axis: Axis, sign: -1 | 1) {
     await page.goto(`/hosts/${host}/?editor=candidate`); await expect(input(page)).toBeVisible();
     const line = "const sample = '😀 é';", original = axis === "x" ? "x".repeat(2400000) : Array(100000).fill(line).join("\r\n");
     await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); f.selectSource("secondary", f.snapshot().source.revision, { anchor: 4, head: 1 }); }, original);
-    await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);
+    await page.getByRole("button", { name: "Open source review", exact: true }).click(); await waitForReview(page);
     await page.getByRole("button", { name: "Save source", exact: true }).click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
     await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1");
-    await page.getByRole("button", { name: "Capture reference refresh", exact: true }).click(); await page.getByRole("button", { name: "Finish reference refresh", exact: true }).click(); await ready(page);
+    await page.getByRole("button", { name: "Capture reference refresh", exact: true }).click(); await page.getByRole("button", { name: "Finish reference refresh", exact: true }).click(); await waitForReview(page);
     await input(page).press("Control+Home");
     if (axis === "x" || sign < 0) {
         await page.evaluate(offset => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: offset, head: offset }); }, axis === "x" ? 1200000 : 50000 * (line.length + 2));
         await input(page).press("ArrowRight"); await input(page).press("ArrowLeft");
     }
-    await ready(page); await root(page).scrollIntoViewIfNeeded();
+    await waitForReview(page); await root(page).scrollIntoViewIfNeeded();
     const point = await root(page).evaluate(element => {
         const box = element.getBoundingClientRect(), rows = [...element.querySelectorAll<HTMLElement>(".st-viewport-row")].filter(row => { const r = row.getBoundingClientRect(); return r.top >= box.top + element.clientTop && r.bottom <= box.top + element.clientTop + element.clientHeight; });
         const row = rows[Math.min(2, rows.length - 1)]; if (!row) throw new Error("Missing visible source row.");
@@ -61,15 +56,15 @@ for (const host of ["plain", "react"]) for (const axis of ["y", "x"] as const) f
     expect(held.history).toEqual(before.history); expect(held.source.exports).toBe(before.source.exports);
     expect(held.bindings.views.find(v => v.id === "secondary")!.selection).toEqual(before.bindings.views.find(v => v.id === "secondary")!.selection);
     expect(held.bindings.comparison!.selection).toEqual(before.bindings.comparison!.selection);
-    await page.mouse.up(); await ready(page); const released = await snapshot(page); await frames(page); await page.mouse.move(point.x, point.y); await frames(page);
+    await page.mouse.up(); await waitForReview(page); const released = await snapshot(page); await frames(page); await page.mouse.move(point.x, point.y); await frames(page);
     const stopped = await snapshot(page); expect(primary(stopped).selection).toEqual(primary(released).selection); expect(primary(stopped).metrics!.viewport[key]).toBe(primary(released).metrics!.viewport[key]);
     await expect(input(page)).toBeFocused(); const selected = primary(stopped).selection, from = Math.min(selected.anchor, selected.head), to = Math.max(selected.anchor, selected.head);
-    await input(page).pressSequentially("q"); await ready(page); const expected = original.slice(0, from) + "q" + original.slice(to), edited = await snapshot(page); await exact(page, expected);
+    await input(page).pressSequentially("q"); await waitForReview(page); const expected = original.slice(0, from) + "q" + original.slice(to), edited = await snapshot(page); await exact(page, expected);
     expect(primary(edited).selection).toMatchObject({ anchor: from + 1, head: from + 1 }); expect(edited.history.undoDepth).toBe(before.history.undoDepth + 1); expect(edited.source.exports).toBe(0);
     expect(edited.bindings.views.every(v => v.metrics!.inputUnits <= 2600 && v.metrics!.viewport.rows < 100 && v.metrics!.viewport.readUnits < 20000)).toBe(true);
     expect(edited.bindings.comparison!.baseline!.version).toBe("reference:saved-v1"); expect(await page.evaluate(value => window.hostFixture.referenceRange(0, value.length) === value, original)).toBe(true);
-    await input(page).press("Control+z"); await ready(page); await exact(page, original); expect((await snapshot(page)).source.dirty).toBe(false);
-    await input(page).press("Control+Shift+z"); await ready(page); await exact(page, expected); expect((await snapshot(page)).source.dirty).toBe(true);
+    await input(page).press("Control+z"); await waitForReview(page); await exact(page, original); expect((await snapshot(page)).source.dirty).toBe(false);
+    await input(page).press("Control+Shift+z"); await waitForReview(page); await exact(page, expected); expect((await snapshot(page)).source.dirty).toBe(true);
     await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect((await snapshot(page)).hostSubscriptions).toBe(0);
 });
 
@@ -88,7 +83,7 @@ for (const host of ["plain", "react"]) for (const cancellation of ["capture-loss
         await page.evaluate(() => window.hostFixture.dispose()); await frames(page, 12); await page.mouse.up();
         expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect((await snapshot(page)).hostSubscriptions).toBe(0); return;
     }
-    await ready(page); const stopped = await snapshot(page), stoppedView = primary(stopped); expect(stoppedView.metrics!.pendingDragScroll).toBe(false);
+    await waitForReview(page); const stopped = await snapshot(page), stoppedView = primary(stopped); expect(stoppedView.metrics!.pendingDragScroll).toBe(false);
     if (cancellation === "selection") expect(stoppedView.selection).toMatchObject({ anchor: 700, head: 700 });
     await frames(page, 12); await page.mouse.up(); await page.mouse.move(point.x, point.y); await frames(page); const later = await snapshot(page);
     expect(primary(later).selection).toEqual(stoppedView.selection); expect(primary(later).metrics!.viewport.scrollTop).toBe(stoppedView.metrics!.viewport.scrollTop);

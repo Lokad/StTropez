@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import { chromium } from "@playwright/test";
 import { captureBrowserErrors } from "../helpers/browser-errors.ts";
 import type { Page, TestInfo } from "@playwright/test";
@@ -14,14 +14,9 @@ const button = (page: Page, name: string) => page.getByRole("button", { name, ex
 const normalized = (text: string) => text.replace(/\r\n?|\n/g, "\n");
 const selections = (state: Awaited<ReturnType<typeof snapshot>>) => state.bindings.views.map(view => ({ id: view.id, selection: view.selection }));
 const sourceSelection = (state: Awaited<ReturnType<typeof snapshot>>, id: "primary" | "secondary") => state.bindings.views.find(view => view.id === id)!.selection;
-async function ready(page: Page): Promise<void> {
-    await expect.poll(async () => {
-        const state = await snapshot(page), comparison = state.bindings.comparison;
-        return state.bindings.activeViews === 2 && state.bindings.views.every(view => !view.metrics || !view.metrics.pendingCaret
-            && !view.metrics.pendingWord && !view.metrics.pendingGrapheme && !view.metrics.viewport.pending
-            && view.metrics.viewport.revision === state.source.revision)
-            && comparison?.status === "ready" && !comparison.workingViewport.pending && !comparison.referenceViewport?.pending;
-    }).toBe(true);
+async function waitForReview(page: Page): Promise<void> {
+    await ready(page);
+    await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.activeViews === 2 && s.bindings.comparison !== null); });
 }
 async function exact(page: Page, text: string): Promise<void> {
     expect(await page.evaluate(text => {
@@ -35,15 +30,15 @@ async function exact(page: Page, text: string): Promise<void> {
 async function select(page: Page, from: number, to = from, id: "primary" | "secondary" = "primary"): Promise<void> {
     expect(await page.evaluate(({ from, to, id }) => { const fixture = window.hostFixture;
         return fixture.selectSource(id, fixture.snapshot().source.revision, { anchor: to, head: from });
-    }, { from, to, id })).toBe(true); await ready(page);
+    }, { from, to, id })).toBe(true); await waitForReview(page);
 }
 async function mount(page: Page, host: "plain" | "react", editor: "native" | "candidate", text: string): Promise<void> {
     await page.goto(`/hosts/${host}/?editor=${editor}`);
     await page.evaluate(text => { const fixture = window.hostFixture, state = fixture.snapshot();
         fixture.editSource(state.source.revision, [{ from: 0, to: state.source.length, insert: text }]);
     }, text);
-    await button(page, "Open source review").click(); await ready(page);
-    await button(page, "Capture review acceptance").click(); await button(page, "Finish review acceptance").click(); await ready(page);
+    await button(page, "Open source review").click(); await waitForReview(page);
+    await button(page, "Capture review acceptance").click(); await button(page, "Finish review acceptance").click(); await waitForReview(page);
     await button(page, "Save source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
     await page.evaluate(() => {
         const listeners = new AbortController(), records: ClipboardRecord[] = [];
@@ -57,7 +52,7 @@ async function mount(page: Page, host: "plain" | "react", editor: "native" | "ca
     });
 }
 async function copyToKnownControl(page: Page, selected: string): Promise<string> {
-    const before = await snapshot(page); await primary(page).press("Control+c"); await ready(page); const after = await snapshot(page);
+    const before = await snapshot(page); await primary(page).press("Control+c"); await waitForReview(page); const after = await snapshot(page);
     expect(after.source.revision).toBe(before.source.revision); expect(after.history).toEqual(before.history);
     expect(after.pendingSaves).toEqual(before.pendingSaves); expect(selections(after)).toEqual(selections(before));
     const sink = page.getByRole("textbox", { name: "Known clipboard probe", exact: true }); await sink.focus(); await sink.press("Control+v");
@@ -65,7 +60,7 @@ async function copyToKnownControl(page: Page, selected: string): Promise<string>
     expect(copied).toMatchObject({ type: "copy", trusted: true, label: "Primary source" });
     expect(pasted).toMatchObject({ type: "paste", trusted: true, label: "Known clipboard probe" });
     expect(normalized(pasted.text)).toBe(normalized(selected)); expect(await sink.inputValue()).toBe(normalized(pasted.text));
-    await primary(page).focus(); await ready(page); expect(selections(await snapshot(page))).toEqual(selections(before)); return pasted.text;
+    await primary(page).focus(); await waitForReview(page); expect(selections(await snapshot(page))).toEqual(selections(before)); return pasted.text;
 }
 async function dispose(page: Page, info: TestInfo): Promise<void> {
     const events = await page.evaluate(() => window.hostKeyboardClipboardAudit.read()); expect(events.every(event => event.trusted)).toBe(true);
@@ -115,13 +110,13 @@ for (const host of ["plain", "react"] as const) test(`${host} trusted HTML table
         await page.keyboard.press("Control+c"); await primary(page).focus(); await select(page, 0, 6);
         await primary(page).evaluate(node => node.addEventListener("paste", event => Object.assign(globalThis, { tableNativePaste: { htmlUnits: (event as ClipboardEvent).clipboardData?.getData("text/html").length ?? 0, trusted: event.isTrusted } }), { capture: true, once: true }));
         const before = await snapshot(page); await primary(page).press("Control+v");
-        await expect.poll(async () => (await snapshot(page)).bindings.tablePaste.status).toBe("applied"); await ready(page);
+        await expect.poll(async () => (await snapshot(page)).bindings.tablePaste.status).toBe("applied"); await waitForReview(page);
         await exact(page, '"city","value"\r\n"東京","A,""B"""');
         const audit = await page.evaluate(() => (globalThis as unknown as { tableNativePaste: { htmlUnits: number; trusted: boolean } }).tableNativePaste);
         expect(audit.trusted).toBe(true); expect(audit.htmlUnits).toBeGreaterThan(0);
         expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
-        await page.evaluate(() => window.hostFixture.finishSave()); await ready(page); expect((await snapshot(page)).source.dirty).toBe(true);
-        await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await ready(page); await exact(page, "source"); expect((await snapshot(page)).source.dirty).toBe(false);
+        await page.evaluate(() => window.hostFixture.finishSave()); await waitForReview(page); expect((await snapshot(page)).source.dirty).toBe(true);
+        await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await waitForReview(page); await exact(page, "source"); expect((await snapshot(page)).source.dirty).toBe(false);
         await dispose(page, info);
     });
 });
@@ -135,15 +130,15 @@ for (const host of ["plain", "react"] as const) for (const editor of ["native", 
                 await mount(page, host, editor, original); await primary(page).focus(); await select(page, from, to); await select(page, 3, 3, "secondary");
                 const captured = await snapshot(page); expect(sourceSelection(captured, "primary")).toMatchObject({ anchor: to, head: from });
                 await copyToKnownControl(page, original.slice(from, to));
-                await primary(page).press("Control+x"); await ready(page); const cut = original.slice(0, from) + original.slice(to), cutState = await snapshot(page);
+                await primary(page).press("Control+x"); await waitForReview(page); const cut = original.slice(0, from) + original.slice(to), cutState = await snapshot(page);
                 await exact(page, cut); expect(cutState.source.revision).toBe(captured.source.revision + 1); expect(cutState.history.undoDepth).toBe(captured.history.undoDepth + 1);
                 expect(sourceSelection(cutState, "primary")).toMatchObject({ anchor: from, head: from });
                 expect(sourceSelection(cutState, "secondary")).toEqual(sourceSelection(captured, "secondary")); expect(cutState.pendingSaves).toEqual(captured.pendingSaves);
                 const peer = page.getByRole("textbox", { name: "Secondary source", exact: true });
-                await peer.focus(); await peer.press("Control+z"); await ready(page); await exact(page, original);
-                await peer.press("Control+Shift+z"); await ready(page); await exact(page, cut);
+                await peer.focus(); await peer.press("Control+z"); await waitForReview(page); await exact(page, original);
+                await peer.press("Control+Shift+z"); await waitForReview(page); await exact(page, cut);
                 await primary(page).focus(); await select(page, from); await select(page, 3, 3, "secondary"); const beforePaste = await snapshot(page);
-                await primary(page).press("Control+v"); await ready(page);
+                await primary(page).press("Control+v"); await waitForReview(page);
                 const events = await page.evaluate(() => window.hostKeyboardClipboardAudit.read()), paste = events.at(-1)!;
                 expect(events.map(event => event.type)).toEqual(["copy", "paste", "cut", "paste"]);
                 expect(paste).toMatchObject({ trusted: true, label: "Primary source", prevented: editor === "candidate" });
@@ -155,14 +150,14 @@ for (const host of ["plain", "react"] as const) for (const editor of ["native", 
                 expect(sourceSelection(afterPaste, "primary")).toMatchObject({ anchor: from + inserted.length, head: from + inserted.length });
                 expect(sourceSelection(afterPaste, "secondary")).toEqual(sourceSelection(beforePaste, "secondary")); expect(afterPaste.pendingSaves).toEqual(captured.pendingSaves);
                 if (editor === "candidate") { expect(afterPaste.source.exports).toBe(0); expect(afterPaste.bindings.views.every(view => view.metrics && view.metrics.inputUnits <= 2600)).toBe(true); }
-                await select(page, pasted.length); await primary(page).pressSequentially("q"); await ready(page); await exact(page, pasted + "q");
+                await select(page, pasted.length); await primary(page).pressSequentially("q"); await waitForReview(page); await exact(page, pasted + "q");
                 expect((await snapshot(page)).pendingSaves).toEqual(captured.pendingSaves);
-                await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1"); await ready(page);
+                await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1"); await waitForReview(page);
                 await exact(page, pasted + "q"); expect((await snapshot(page)).source.dirty).toBe(true);
                 for (const [expected, clean] of [[pasted, pasted === original], [cut, false], [original, true]] as const) {
-                    await primary(page).press("Control+z"); await ready(page); await exact(page, expected); expect((await snapshot(page)).source.dirty).toBe(!clean);
+                    await primary(page).press("Control+z"); await waitForReview(page); await exact(page, expected); expect((await snapshot(page)).source.dirty).toBe(!clean);
                 }
-                for (const expected of [cut, pasted, pasted + "q"]) { await primary(page).press("Control+Shift+z"); await ready(page); await exact(page, expected); }
+                for (const expected of [cut, pasted, pasted + "q"]) { await primary(page).press("Control+Shift+z"); await waitForReview(page); await exact(page, expected); }
                 await dispose(page, info);
             });
         });
@@ -172,26 +167,26 @@ for (const host of ["plain", "react"] as const) for (const editor of ["native", 
         await isolatedClipboard(baseURL, info, async page => {
             await mount(page, host, editor, normal);
             // Agent requests require settled saves; test the lock before capturing the next save.
-            await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1"); await ready(page);
+            await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1"); await waitForReview(page);
             await button(page, "Associate agent").click(); await button(page, "Request proposal").click();
             await expect(primary(page)).toHaveAttribute("readonly", ""); await primary(page).focus();
             const from = 6, to = normal.indexOf("const end"); await select(page, from, to); await select(page, 3, 3, "secondary");
             await copyToKnownControl(page, normal.slice(from, to)); const before = await snapshot(page);
-            await primary(page).press("Control+x"); await primary(page).press("Control+v"); await primary(page).pressSequentially("q"); await ready(page);
+            await primary(page).press("Control+x"); await primary(page).press("Control+v"); await primary(page).pressSequentially("q"); await waitForReview(page);
             const after = await snapshot(page); await exact(page, normal);
             expect(after.source.revision).toBe(before.source.revision); expect(after.source.exports).toBe(before.source.exports);
             expect(after.history).toEqual(before.history); expect(after.pendingSaves).toEqual(before.pendingSaves); expect(selections(after)).toEqual(selections(before));
-            await button(page, "Interrupt agent").click(); await expect(primary(page)).not.toHaveAttribute("readonly", ""); await primary(page).focus(); await ready(page);
+            await button(page, "Interrupt agent").click(); await expect(primary(page)).not.toHaveAttribute("readonly", ""); await primary(page).focus(); await waitForReview(page);
             expect(sourceSelection(await snapshot(page), "primary")).toEqual(sourceSelection(before, "primary"));
             await button(page, "Save source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
             const pending = (await snapshot(page)).pendingSaves; await primary(page).focus();
-            await primary(page).pressSequentially("q"); await ready(page); const expected = normal.slice(0, from) + "q" + normal.slice(to);
+            await primary(page).pressSequentially("q"); await waitForReview(page); const expected = normal.slice(0, from) + "q" + normal.slice(to);
             await exact(page, expected); const typed = await snapshot(page); expect(typed.source.revision).toBe(before.source.revision + 1);
             expect(sourceSelection(typed, "primary")).toMatchObject({ anchor: from + 1, head: from + 1 }); expect(typed.pendingSaves).toEqual(pending);
-            await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v2"); await ready(page);
+            await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v2"); await waitForReview(page);
             await exact(page, expected); expect((await snapshot(page)).source.dirty).toBe(true);
-            await primary(page).press("Control+z"); await ready(page); await exact(page, normal); expect((await snapshot(page)).source.dirty).toBe(false);
-            await primary(page).press("Control+Shift+z"); await ready(page); await exact(page, expected); expect((await snapshot(page)).source.dirty).toBe(true);
+            await primary(page).press("Control+z"); await waitForReview(page); await exact(page, normal); expect((await snapshot(page)).source.dirty).toBe(false);
+            await primary(page).press("Control+Shift+z"); await waitForReview(page); await exact(page, expected); expect((await snapshot(page)).source.dirty).toBe(true);
             await dispose(page, info);
         });
     });

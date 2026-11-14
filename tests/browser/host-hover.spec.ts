@@ -1,15 +1,9 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const primary = (page: Page) => page.getByRole("textbox", { name: "Primary source", exact: true });
 const tooltip = (page: Page) => page.getByRole("tooltip");
-async function ready(page: Page): Promise<void> {
-    await expect.poll(() => page.evaluate(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
-        return s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision && v.metrics.viewport.selectionSet === v.selectionSet)
-            && (!c || c.status === "ready" && !c.input.pendingCaret && !c.workingViewport.pending && !c.referenceViewport?.pending && c.workingViewport.selectionSet === c.selectionSet);
-    })).toBe(true);
-    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-}
+
 async function point(page: Page): Promise<{ x: number; y: number }> {
     return page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"]) .st-viewport-row').first().evaluate(row => {
         const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT), node = walker.nextNode(); if (!node) throw new Error("No rendered source word.");

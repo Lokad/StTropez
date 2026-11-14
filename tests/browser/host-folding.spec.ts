@@ -1,14 +1,9 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
-async function ready(page: Page): Promise<void> {
-    await expect.poll(() => page.evaluate(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
-        return s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision && v.metrics.viewport.foldGeneration === v.foldGeneration)
-            && (!c || c.status === "ready" && !c.input.pendingCaret && !c.workingViewport.pending && !c.referenceViewport?.pending && c.workingViewport.foldGeneration === c.foldGeneration);
-    })).toBe(true);
-}
+
 async function exact(page: Page, text: string): Promise<void> {
     expect(await page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false;
         for (let from = 0; from < text.length; from += 32768) if (f.range(from, Math.min(text.length, from + 32768)) !== text.slice(from, from + 32768)) return false; return true;

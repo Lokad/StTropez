@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import type { Selection } from "../../src/index.ts";
 
@@ -6,13 +6,7 @@ const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const root = (page: Page) => page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"])');
 const coords = (ranges: readonly Selection[]) => ranges.map(({ anchor, head }) => ({ anchor, head }));
-async function ready(page: Page): Promise<void> {
-    await expect.poll(() => page.evaluate(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
-        return s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme
-            && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision && v.metrics.viewport.selectionSet === v.selectionSet)
-            && (!c || c.status === "ready" && !c.input.pendingCaret && !c.workingViewport.pending && !c.referenceViewport?.pending);
-    })).toBe(true);
-}
+
 async function select(page: Page, ranges: readonly Selection[], primary = 0): Promise<void> {
     expect(await page.evaluate(({ ranges, primary }) => { const f = window.hostFixture; return f.selectSourceSet("primary", f.snapshot().source.revision, ranges, primary); }, { ranges, primary })).toBe(true); await ready(page);
 }

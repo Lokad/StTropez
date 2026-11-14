@@ -1,13 +1,14 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const button = (p: Page, name: string) => p.getByRole("button", { name, exact: true });
 const sets = (s: Awaited<ReturnType<typeof snapshot>>) => ({ views: s.bindings.views.map(v => ({ id: v.id, set: v.selectionSet })),
     working: s.bindings.comparison?.selectionSet, reference: s.bindings.comparison?.referenceViewport?.selectionSet });
-async function ready(p: Page) { await p.waitForFunction(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
-    return s.bindings.activeViews === 2 && s.bindings.views.every(v => v.metrics && !v.metrics.pendingInput && !v.metrics.pendingCommand && !v.metrics.pendingCaret && !v.metrics.viewport.pending)
-        && c?.status === "ready" && c.workingRevision === s.source.revision && !c.input.pendingInput && !c.input.pendingCaret && !c.workingViewport.pending && !c.referenceViewport?.pending; }); }
+async function waitForReview(page: Page): Promise<void> {
+    await ready(page);
+    await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.activeViews === 2 && s.bindings.comparison !== null); });
+}
 async function exact(p: Page, text: string) { expect(await p.evaluate(text => { const f = window.hostFixture;
     if (f.snapshot().source.length !== text.length) return false;
     for (let i = 0; i < text.length; i += 32768) if (f.range(i, Math.min(text.length, i + 32768)) !== text.slice(i, i + 32768)) return false; return true;
@@ -18,9 +19,9 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await p.goto(`/hosts/${host}/?editor=candidate`);
     const input = p.getByRole("textbox", { name: "Primary source", exact: true }), field = p.getByRole("textbox", { name: "Configuration path", exact: true });
     await expect(input).toBeVisible(); const original = large ? Array(100000).fill("const café = 1234567;😀").join("\r\n") : "café😀\r\nrow two";
-    await button(p, "Associate agent").click(); await button(p, "Request proposal").click(); await p.evaluate(value => window.hostFixture.deliverProposal(value), original); await ready(p);
+    await button(p, "Associate agent").click(); await button(p, "Request proposal").click(); await p.evaluate(value => window.hostFixture.deliverProposal(value), original); await waitForReview(p);
     await p.evaluate(() => { const f = window.hostFixture, revision = f.snapshot().source.revision;
-        for (const id of ["primary", "secondary", "comparison"] as const) if (!f.selectSourceSet(id, revision, [{ anchor: 4, head: 0 }, { anchor: 6, head: 6 }], 1)) throw new Error("Complete selection rejected"); }); await ready(p);
+        for (const id of ["primary", "secondary", "comparison"] as const) if (!f.selectSourceSet(id, revision, [{ anchor: 4, head: 0 }, { anchor: 6, head: 6 }], 1)) throw new Error("Complete selection rejected"); }); await waitForReview(p);
     const prior = await snapshot(p), reference = await p.evaluate(() => { const f = window.hostFixture; return f.referenceRange(0, f.snapshot().bindings.comparison!.baseline!.length); }); await field.fill(" captured.csv ");
     // Composition/repeat shortcuts consume the browser Save key without starting a resource write.
     await field.dispatchEvent("keydown", { key: "s", ctrlKey: true, isComposing: true }); await field.dispatchEvent("keydown", { key: "s", ctrlKey: true, repeat: true });
@@ -28,20 +29,20 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await expect(button(p, "Finish configuration save")).toBeEnabled(); const captured = await p.evaluate(() => window.hostFixture.configurationCapture());
     expect(captured).toMatchObject({ resourceId: prior.configuration.id, value: { path: " captured.csv ", format: "csv" }, expectedServerVersion: null });
     expect(sets(await snapshot(p))).toEqual(sets(prior)); expect((await snapshot(p)).history).toEqual(prior.history);
-    await field.fill("later.csv"); await input.press("Control+End"); await input.pressSequentially("!"); await ready(p); await exact(p, original + "!");
+    await field.fill("later.csv"); await input.press("Control+End"); await input.pressSequentially("!"); await waitForReview(p); await exact(p, original + "!");
     await button(p, "Save source").click(); await expect.poll(async () => (await snapshot(p)).pendingSaves.length).toBe(1);
     await button(p, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(p)).activity.pendingRuns).toBe(1);
     expect((await p.evaluate(() => window.hostFixture.runCapture(0)))?.configuration.path).toBe("later.csv");
     const edited = await snapshot(p); await button(p, "Finish configuration save").click();
     await expect.poll(async () => (await snapshot(p)).configuration.serverVersion).toBe("configuration-v1");
     expect((await snapshot(p)).configuration.dirty).toBe(true); await expect(field).toHaveValue("later.csv"); expect(sets(await snapshot(p))).toEqual(sets(edited)); expect((await snapshot(p)).history).toEqual(edited.history);
-    await input.press("Control+z"); await ready(p); await exact(p, original); await input.press("Control+y"); await ready(p); await exact(p, original + "!");
+    await input.press("Control+z"); await waitForReview(p); await exact(p, original); await input.press("Control+y"); await waitForReview(p); await exact(p, original + "!");
     await button(p, "Save configuration").click(); await expect(button(p, "Fail configuration save")).toBeEnabled();
     await button(p, "Fail configuration save").click(); await expect(p.getByLabel("Configuration save status", { exact: true })).toContainText("failed");
     await button(p, "Dismiss message").click(); await button(p, "Save configuration").click(); await expect(button(p, "Finish configuration save")).toBeEnabled();
     // Service work outlives views; remount keeps the captured resource and later form value.
     await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expect(dormant.diagnostics.subscriptions).toBe(4); expect(dormant.hostSubscriptions).toBe(2);
-    await p.evaluate(() => window.hostFixture.mount()); await ready(p); await expect(field).toHaveValue("later.csv");
+    await p.evaluate(() => window.hostFixture.mount()); await waitForReview(p); await expect(field).toHaveValue("later.csv");
     await button(p, "Finish configuration save").click(); await expect.poll(async () => (await snapshot(p)).configuration.dirty).toBe(false);
     await field.fill("local.csv"); await button(p, "Simulate external configuration change").click(); await button(p, "Save configuration").click();
     await expect(button(p, "Finish configuration save")).toBeEnabled(); await button(p, "Finish configuration save").click();

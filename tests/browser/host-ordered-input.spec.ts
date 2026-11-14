@@ -1,8 +1,8 @@
-import {test,expect} from "./fixtures.ts";
+import { ready,test,expect} from "./fixtures.ts";
 import type {Page} from "@playwright/test";
 
 const snapshot=(page:Page)=>page.evaluate(()=>window.hostFixture.snapshot());
-async function ready(page:Page,timeout=5000):Promise<void>{await expect.poll(()=>page.evaluate(()=>{const s=window.hostFixture.snapshot(),c=s.bindings.comparison;return s.bindings.views.every(v=>!v.metrics!.pendingCaret&&!v.metrics!.pendingWord&&!v.metrics!.pendingGrapheme&&!v.metrics!.pendingInput&&!v.metrics!.viewport.pending)&&(!c||c.status==="ready"&&!c.input.pendingCaret&&!c.input.pendingWord&&!c.input.pendingGrapheme&&!c.input.pendingInput&&!c.workingViewport.pending&&!c.referenceViewport?.pending);}),{timeout}).toBe(true);}
+
 async function exact(page:Page,text:string):Promise<void>{expect(await page.evaluate(text=>{const f=window.hostFixture,length=f.snapshot().source.length;if(length!==text.length)return {length,expectedLength:text.length,start:f.range(0,Math.min(length,80))};for(let from=0;from<text.length;from+=32768)if(f.range(from,Math.min(text.length,from+32768))!==text.slice(from,from+32768))return {from};return null;},text)).toBeNull();}
 const insert=(text:string,heads:readonly number[],data:string):string=>{const parts:string[]=[];let from=0;for(const head of heads){parts.push(text.slice(from,head),data);from=head;}parts.push(text.slice(from));return parts.join("");};
 
@@ -24,9 +24,9 @@ for(const host of ["plain","react"])for(const kind of ["many-carets","long-word"
                 const event=new InputEvent("beforeinput",{inputType:"insertText",data:fragment,bubbles:true,cancelable:mode==="cancelled"});
                 if(mode==="input-only"||input.dispatchEvent(event)){input.setRangeText(fragment,input.selectionStart,input.selectionEnd,"end");input.dispatchEvent(new InputEvent("input",{inputType:"insertText",data:fragment,bubbles:true}));}prevented=event.defaultPrevented;
             }
-            const s=f.snapshot(),v=input.getAttribute("aria-label")==="Primary source"?s.bindings.views.find(v=>v.id==="primary")!.metrics!:s.bindings.comparison!.input;return{prevented,pending:v.pendingInput,revision:s.source.revision};
+            const s=f.snapshot(),v=input.getAttribute("aria-label")==="Primary source"?s.bindings.views.find(v=>v.id==="primary")!.metrics!:s.bindings.comparison!.input;return{prevented,pending:v.pendingInput,settled:f.settled,revision:s.source.revision};
         },{kind,data,mode});
-        expect(captured.pending).toBe(true);expect(captured.revision).toBe(before.source.revision);expect(captured.prevented).toBe(mode==="cancelled"||paste);
+        expect(captured.pending).toBe(true);expect(captured.settled).toBe(false);expect(captured.revision).toBe(before.source.revision);expect(captured.prevented).toBe(mode==="cancelled"||paste);
         await ready(page,inputReady);await exact(page,expected);const after=await snapshot(page);expect(after.source.revision).toBe(before.source.revision+(paste?2:1));expect(after.history.undoDepth).toBe(before.history.undoDepth+(paste?2:1));expect(after.source.exports).toBe(0);expect(after.inputRecovery).toHaveLength(0);expect(after.bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
         if(paste){await page.getByRole("textbox",{name:"Secondary source",exact:true}).press("Control+z");await ready(page,inputReady);await exact(page,insert(original,destinations,data.slice(0,2)));}
         await page.getByRole("textbox",{name:"Secondary source",exact:true}).press("Control+z");await ready(page,inputReady);await exact(page,original);

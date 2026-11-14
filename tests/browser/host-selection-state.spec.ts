@@ -1,15 +1,10 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
-async function ready(page: Page): Promise<void> {
-    await expect.poll(() => page.evaluate(() => {
-        const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
-        return s.bindings.activeViews === 2 && s.bindings.views.every(v => !v.metrics || !v.metrics.pendingCaret && !v.metrics.viewport.pending
-            && v.metrics.viewport.revision === s.source.revision && JSON.stringify(v.metrics.viewport.selectionSet) === JSON.stringify(v.selectionSet))
-            && c?.status === "ready" && c.workingRevision === s.source.revision && !c.input.pendingCaret && !c.workingViewport.pending && !c.referenceViewport?.pending
-            && JSON.stringify(c.workingViewport.selectionSet) === JSON.stringify(c.selectionSet);
-    })).toBe(true);
+async function waitForReview(page: Page): Promise<void> {
+    await ready(page);
+    await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.activeViews === 2 && s.bindings.comparison !== null); });
 }
 
 for (const host of ["plain", "react"]) for (const editor of ["native", "candidate"]) test(`${host} ${editor} full view selections survive detached edits and comparison remount`, async ({ page }) => {
@@ -17,7 +12,7 @@ for (const host of ["plain", "react"]) for (const editor of ["native", "candidat
     await page.goto(`/hosts/${host}/?editor=${editor}`);
     const line = "const sample = 123;\r\n";
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, line.repeat(100000));
-    await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);
+    await page.getByRole("button", { name: "Open source review", exact: true }).click(); await waitForReview(page);
     const input = page.getByRole("textbox", { name: "Primary source", exact: true }); await input.evaluate(node => node.focus({ preventScroll: true }));
     await page.evaluate(size => {
         const f = window.hostFixture, revision = f.snapshot().source.revision;
@@ -26,7 +21,7 @@ for (const host of ["plain", "react"]) for (const editor of ["native", "candidat
         f.selectSourceSet("primary", revision, ranges, 1);
         f.selectSourceSet("secondary", revision, [{ anchor: 12, head: 12 }, { anchor: size + 9, head: size + 6 }], 1);
         f.selectSourceSet("comparison", revision, [{ anchor: 0, head: 5 }, { anchor: size * 3 + 2, head: size * 3 + 2 }], 1);
-    }, line.length); await ready(page);
+    }, line.length); await waitForReview(page);
     const before = await snapshot(page), primary = before.bindings.views.find(v => v.id === "primary")!;
     expect(primary.selectionSet.ranges).toHaveLength(1028); expect(primary.selectionSet.primary).toBe(1);
     const region = page.getByRole("region", { name: "Primary source", exact: true });
@@ -39,8 +34,8 @@ for (const host of ["plain", "react"]) for (const editor of ["native", "candidat
     await page.evaluate(() => { const f = window.hostFixture;
         f.editSource(f.snapshot().source.revision, [{ from: 0, to: 0, insert: "q\n" }]);
         f.editSource(f.snapshot().source.revision, [{ from: 0, to: 0, insert: "r" }]); });
-    const detached = await snapshot(page); await page.evaluate(() => window.hostFixture.mount()); await ready(page);
-    await input.evaluate(node => node.focus({ preventScroll: true })); await ready(page);
+    const detached = await snapshot(page); await page.evaluate(() => window.hostFixture.mount()); await waitForReview(page);
+    await input.evaluate(node => node.focus({ preventScroll: true })); await waitForReview(page);
     const after = await snapshot(page);
     const shifted = (set: typeof primary.selectionSet) => ({ ...set, ranges: set.ranges.map(range => ({ ...range, anchor: range.anchor + 3, head: range.head + 3 })) });
     for (const old of before.bindings.views) {
@@ -56,7 +51,7 @@ for (const host of ["plain", "react"]) for (const editor of ["native", "candidat
         await expect(region.locator(".st-input-secondary-caret")).toHaveCount(2);
         expect(after.source.exports).toBe(0);
         await page.getByRole("textbox", { name: "Secondary source", exact: true }).evaluate(node => node.focus({ preventScroll: true }));
-        await ready(page); await expect(region.locator(".st-input-secondary-caret")).toHaveCount(0);
+        await waitForReview(page); await expect(region.locator(".st-input-secondary-caret")).toHaveCount(0);
         await expect(page.getByRole("region", { name: "Secondary source", exact: true }).locator(".st-input-secondary-caret")).toHaveCount(1);
     }
     await page.evaluate(() => window.hostFixture.dispose()); const stopped = await snapshot(page);

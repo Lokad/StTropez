@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
@@ -6,30 +6,26 @@ const text = (page: Page) => page.evaluate(() => { const f = window.hostFixture;
 const selections = (state: Awaited<ReturnType<typeof snapshot>>) => ({
     source: state.bindings.views.map(v => ({ id: v.id, selection: v.selection })), comparison: state.bindings.comparison?.selection,
 });
-async function ready(page: Page): Promise<void> {
-    await expect.poll(() => page.evaluate(() => { const f = window.hostFixture, s = f.snapshot(), c = s.bindings.comparison;
+async function waitForSavedViews(page: Page): Promise<void> {
+    await ready(page);
+    await page.waitForFunction(() => {
+        const f = window.hostFixture, s = f.snapshot(), c = s.bindings.comparison;
         const raw = s.bindings.views.some(v => v.metrics === null) ? f.range(0, s.source.length) : "";
         const domText = (value: string) => value.replace(/\r\n?/g, "\n");
-        const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
-        return s.bindings.activeViews === 2 && s.bindings.views.every(v => {
-            if (v.metrics) return !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme
-                && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision && same(v.metrics.viewport.selection, v.selection);
+        return window.hostFixture.settled && (s.bindings.activeViews === 2 && s.bindings.views.every(v => {
+            if (v.metrics) return true;
             const label = v.id === "primary" ? "Primary source" : "Secondary source";
             const node = document.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${label}"]`);
             const anchor = domText(raw.slice(0, v.selection.anchor)).length, head = domText(raw.slice(0, v.selection.head)).length;
             return node?.value === domText(raw) && node.selectionStart === Math.min(anchor, head) && node.selectionEnd === Math.max(anchor, head)
                 && (node.selectionDirection === "backward") === (anchor > head);
-        })
-            && c?.status === "ready" && c.workingRevision === s.source.revision && !c.input.pendingCaret && !c.input.pendingWord && !c.input.pendingGrapheme
-            && !c.workingViewport.pending && c.workingViewport.revision === s.source.revision && same(c.workingViewport.selection, c.selection)
-            && c.referenceViewport && !c.referenceViewport.pending && [...document.querySelectorAll(".st-comparison h3")].some(h => h.textContent === `Baseline · ${c.baseline?.version}`);
-    })).toBe(true);
+        }) && c !== null && [...document.querySelectorAll(".st-comparison h3")].some(h => h.textContent === `Baseline · ${c.baseline?.version}`));
+    });
 }
 
 for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const) {
     test.describe(`${mode} ${editor} save failure pilot`, () => {
         test.beforeEach(async ({ page }, testInfo) => {
-
 
             if (editor === "native" && testInfo.title.startsWith("normal typing,")) {
                 testInfo.annotations.push({ type: "native-projection-cache", description: "Optional whole-value projection cache evicted between tasks; native exports are diagnostic and candidate zero-export gates remain strict." });
@@ -54,13 +50,13 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
                 const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });
                 const original = corpus === "normal" ? "proposal é 😀\r\nrow two" : Array(100000).fill("const sample = 1234567;").join("\r\n");
                 await button("Associate agent").click(); await button("Request proposal").click();
-                await page.evaluate(value => window.hostFixture.deliverProposal(value), original); await ready(page);
+                await page.evaluate(value => window.hostFixture.deliverProposal(value), original); await waitForSavedViews(page);
                 await working.press("Control+Home"); await working.press("Shift+ArrowRight"); await working.press("Shift+ArrowRight");
                 await primary.press("Control+End"); await primary.pressSequentially(" corrected");
                 const corrected = original + " corrected";
                 expect(await page.evaluate(() => { const f = window.hostFixture; return f.selectSource("secondary", f.snapshot().source.revision, { anchor: 4, head: 1 }); })).toBe(true);
                 await button("Save source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
-                await primary.press("Control+End"); await primary.pressSequentially(" later"); await ready(page);
+                await primary.press("Control+End"); await primary.pressSequentially(" later"); await waitForSavedViews(page);
                 await primary.evaluate(node => { node.dataset.failureRetained = "yes"; });
                 const later = corrected + " later", before = await snapshot(page);
                 expect(await text(page)).toBe(later); if (editor === "candidate") expect(before.source.exports).toBe(0);
@@ -83,9 +79,9 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
                 await expect.poll(async () => (await snapshot(page)).pendingSaves).toEqual([
                     { revision: failed.source.revision, length: later.length, expectedServerVersion: "v0" },
                 ]);
-                await primary.press("Control+End"); await primary.pressSequentially(" newest"); await ready(page);
+                await primary.press("Control+End"); await primary.pressSequentially(" newest"); await waitForSavedViews(page);
                 const newest = later + " newest", retained = selections(await snapshot(page));
-                await page.evaluate(() => window.hostFixture.unmount()); await page.evaluate(() => window.hostFixture.mount()); await ready(page);
+                await page.evaluate(() => window.hostFixture.unmount()); await page.evaluate(() => window.hostFixture.mount()); await waitForSavedViews(page);
                 expect(selections(await snapshot(page))).toEqual(retained); await primary.focus();
                 await page.evaluate(() => window.hostFixture.finishSave());
                 await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1");
@@ -94,9 +90,9 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
                 const saved = await snapshot(page); expect(saved.source.dirty).toBe(true);
                 expect(saved.activity).toMatchObject({ writes: 1, lastSavedRevision: failed.source.revision });
                 expect(saved.review.acknowledgements).toHaveLength(1);
-                await primary.press("Control+z"); await ready(page); expect(await text(page)).toBe(later); expect((await snapshot(page)).source.dirty).toBe(false);
-                await primary.press("Control+Shift+z"); await ready(page); expect(await text(page)).toBe(newest); expect((await snapshot(page)).source.dirty).toBe(true);
-                await button("Capture reference refresh").click(); await button("Finish reference refresh").click(); await ready(page);
+                await primary.press("Control+z"); await waitForSavedViews(page); expect(await text(page)).toBe(later); expect((await snapshot(page)).source.dirty).toBe(false);
+                await primary.press("Control+Shift+z"); await waitForSavedViews(page); expect(await text(page)).toBe(newest); expect((await snapshot(page)).source.dirty).toBe(true);
+                await button("Capture reference refresh").click(); await button("Finish reference refresh").click(); await waitForSavedViews(page);
                 await expect(page.getByRole("heading", { name: "Baseline · reference:saved-v1", exact: true })).toBeVisible();
                 expect(await page.evaluate(length => window.hostFixture.referenceRange(0, length), later.length)).toBe(later);
                 expect((await snapshot(page)).bindings.comparison!.baseline!.length).toBe(later.length);
@@ -123,12 +119,12 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
         test("queued captures retain corrections through failure, tab replacement and disposal of a late rejection", async ({ page }) => {
             const button = (name: string) => page.getByRole("button", { name, exact: true });
             const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
-            await button("Open source review").click(); await ready(page);
+            await button("Open source review").click(); await waitForSavedViews(page);
             await primary.press("Control+End"); await primary.pressSequentially(" first");
             await button("Save source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
             await primary.press("Control+End"); await primary.pressSequentially(" second");
             const second = await snapshot(page); await button("Save source").click();
-            await primary.press("Control+End"); await primary.pressSequentially(" retained"); await ready(page);
+            await primary.press("Control+End"); await primary.pressSequentially(" retained"); await waitForSavedViews(page);
             const retained = await snapshot(page); await button("Fail save").click();
             await expect.poll(async () => (await snapshot(page)).pendingSaves).toEqual([
                 { revision: second.source.revision, length: second.source.length, expectedServerVersion: "v0" },

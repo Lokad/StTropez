@@ -1,7 +1,7 @@
-import { expect, test } from "./fixtures.ts";
+import { ready, expect, test } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.editingFixture.snapshot());
-const ready = (page: Page) => expect.poll(() => page.evaluate(() => { const s = window.editingFixture?.snapshot(); return s && !s.primary.pendingGrapheme && !s.primary.viewport.pending && s.primary.viewport.revision === s.document?.revision; })).toBe(true);
+
 const analysisReady = (page: Page) => expect.poll(() => page.evaluate(() => window.editingFixture.snapshot().paragraph.status), { timeout: 30000 }).toBe("ready");
 test.beforeEach(async ({ page }) => {  await page.goto("/editing/"); await ready(page); });
 

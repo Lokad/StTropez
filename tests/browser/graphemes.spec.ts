@@ -1,13 +1,11 @@
-import { expect, test } from "./fixtures.ts";
+import { ready, expect, test } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 
 const state = (page: Page) => page.evaluate(() => window.editingFixture.snapshot());
-async function ready(page: Page) {
-    await expect.poll(async () => { const s = await state(page); return !s.primary.pendingGrapheme && !s.primary.pendingWord && !s.primary.viewport.pending; }, { timeout: 15000 }).toBe(true);
-}
+
 async function setup(page: Page, text: string, head: number) {
     await page.evaluate(({ text, head }) => { window.editingFixture.setText(text); window.editingFixture.select("primary", { anchor: head, head }); window.editingFixture.focus("primary"); }, { text, head }); await ready(page);
 }

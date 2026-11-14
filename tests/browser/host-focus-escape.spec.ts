@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page, Locator } from "@playwright/test";
 
 type FocusKey = Readonly<{ key: string; shift: boolean; trusted: boolean; prevented: boolean; tag: string | null; label: string | null }>;
@@ -10,14 +10,9 @@ const secondary = (page: Page) => page.getByRole("textbox", { name: "Secondary s
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 const selections = (state: Awaited<ReturnType<typeof snapshot>>) => state.bindings.views.map(view => ({ id: view.id, selection: view.selection }));
 
-async function ready(page: Page): Promise<void> {
-    await expect.poll(async () => {
-        const state = await snapshot(page), comparison = state.bindings.comparison;
-        return state.bindings.activeViews === 2 && state.bindings.views.every(view => !view.metrics
-            || !view.metrics.pendingCaret && !view.metrics.pendingWord && !view.metrics.pendingGrapheme
-            && !view.metrics.viewport.pending && view.metrics.viewport.revision === state.source.revision)
-            && (!comparison || comparison.status === "ready" && !comparison.workingViewport.pending && !comparison.referenceViewport?.pending);
-    }).toBe(true);
+async function waitForViews(page: Page): Promise<void> {
+    await ready(page);
+    await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.activeViews === 2); });
 }
 async function exact(page: Page, text: string): Promise<void> {
     expect(await page.evaluate(text => {
@@ -45,12 +40,11 @@ async function activate(page: Page, name: string): Promise<void> {
 }
 async function mount(page: Page, host: "plain" | "react", editor: "native" | "candidate", original: string): Promise<void> {
 
-
     await page.goto(`/hosts/${host}/?editor=${editor}`); await expect(primary(page)).toBeVisible();
     // Fixture preparation is separate from the keyboard-only user workflow below.
     await page.evaluate(text => { const fixture = window.hostFixture, state = fixture.snapshot();
         fixture.editSource(state.source.revision, [{ from: 0, to: state.source.length, insert: text }]);
-    }, original); await ready(page);
+    }, original); await waitForViews(page);
     await page.evaluate(() => {
         const records: FocusKey[] = []; window.hostFocusEscapeKeys = records;
         document.addEventListener("keydown", event => {
@@ -89,9 +83,9 @@ for (const host of ["plain", "react"] as const) {
                 await mount(page, host, editor, original);
                 await activate(page, "Save source"); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
                 const captured = (await snapshot(page)).pendingSaves;
-                await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+End"); await page.keyboard.type("!"); await ready(page);
+                await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+End"); await page.keyboard.type("!"); await waitForViews(page);
                 const edited = original + "!"; await exact(page, edited); await page.keyboard.press("Control+Home");
-                const before = await snapshot(page); await exit(page, backward); await ready(page); const after = await snapshot(page);
+                const before = await snapshot(page); await exit(page, backward); await waitForViews(page); const after = await snapshot(page);
                 await exact(page, edited); expect(after.source.revision).toBe(before.source.revision); expect(after.history).toEqual(before.history);
                 expect(selections(after)).toEqual(selections(before)); expect(after.pendingSaves).toEqual(captured); expect(after.source.exports).toBe(before.source.exports);
 
@@ -117,15 +111,15 @@ for (const host of ["plain", "react"] as const) {
                 expect((await snapshot(page)).source.dirty).toBe(false);
                 await page.keyboard.press("Control+Shift+z"); await exact(page, edited); expect((await snapshot(page)).source.dirty).toBe(true);
 
-                await activate(page, "Open source review"); await ready(page);
-                await activate(page, "Capture review acceptance"); await activate(page, "Finish review acceptance"); await ready(page);
+                await activate(page, "Open source review"); await waitForViews(page);
+                await activate(page, "Capture review acceptance"); await activate(page, "Finish review acceptance"); await waitForViews(page);
                 const accepted = await snapshot(page); expect(accepted.bindings.comparison?.referenceIsWorkingBuffer).toBe(true);
                 expect(accepted.bindings.comparison?.hunks).toBe(0); const baseline = accepted.bindings.comparison!.baseline!.version;
-                await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+End"); await page.keyboard.type("q"); await ready(page);
+                await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+End"); await page.keyboard.type("q"); await waitForViews(page);
                 await exact(page, edited + "q"); expect((await snapshot(page)).bindings.comparison?.hunks).toBe(1);
-                await activate(page, "Next change"); await ready(page);
+                await activate(page, "Next change"); await waitForViews(page);
                 expect((await snapshot(page)).bindings.comparison?.baseline?.version).toBe(baseline);
-                await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+z"); await exact(page, edited); await ready(page);
+                await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+z"); await exact(page, edited); await waitForViews(page);
                 expect((await snapshot(page)).bindings.comparison?.hunks).toBe(0);
                 // The native baseline projects whole values; only the bounded candidate promises zero ordinary exports.
                 if (editor === "candidate") expect((await snapshot(page)).source.exports).toBe(accepted.source.exports);
@@ -138,7 +132,7 @@ for (const host of ["plain", "react"] as const) {
         await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1");
         await activate(page, "Associate agent"); await activate(page, "Request proposal"); await expect(primary(page)).toHaveAttribute("readonly", "");
         await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+Home"); await page.keyboard.type("!");
-        const before = await snapshot(page); await exit(page, backward); await ready(page); const after = await snapshot(page);
+        const before = await snapshot(page); await exit(page, backward); await waitForViews(page); const after = await snapshot(page);
         await exact(page, original); expect(after.source.revision).toBe(before.source.revision); expect(after.history).toEqual(before.history);
         expect(selections(after)).toEqual(selections(before)); expect(after.source.exports).toBe(before.source.exports);
         await activate(page, "Interrupt agent"); await keyboardFocus(page, primary(page)); await expect(primary(page)).not.toHaveAttribute("readonly", "");

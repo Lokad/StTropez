@@ -1,17 +1,11 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import type { Locator } from "@playwright/test";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const source = (page: Page) => page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length));
 const primary = (page: Page) => page.getByRole("textbox", { name: "Primary source", exact: true });
-async function ready(page: Page): Promise<void> {
-    await expect.poll(async () => { const s = await snapshot(page), c = s.bindings.comparison;
-        return s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.viewport.pending
-            && v.metrics.viewport.revision === s.source.revision)
-            && (!c || c.status === "ready" && !c.workingViewport.pending && !c.referenceViewport?.pending);
-    }).toBe(true);
-}
+
 async function setSource(page: Page, text: string): Promise<void> {
     await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, text); await ready(page);
 }
@@ -146,7 +140,6 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
 
 for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const) {
     test(`${mode} ${editor} keyboard re-entry preserves backward and collapsed model selections`, async ({ page }) => {
-
 
         await page.goto(`/hosts/${mode}/?editor=${editor}`); await expect(primary(page)).toBeVisible();
         const original = "first\r\nsecond😀\r\nthird";

@@ -2,7 +2,10 @@ import { expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
 export async function runDemoActions(page: Page, url = "/") {
-    await page.goto(url); await page.locator("#sample").selectOption("actions");
+    await page.goto(url);
+    // This journey qualifies project actions; finish provider setup before switching samples.
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await page.locator("#sample").selectOption("actions");
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await expect(page.locator("#editor")).toContainText("Demo project action fixture");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
@@ -47,7 +50,8 @@ export async function runDemoActions(page: Page, url = "/") {
     await expect(page.locator("#editor")).toContainText("import { exampleRate }"); await expect(page.locator("#editor")).toContainText("// Keep this later edit");
     await source.press("Control+y"); await expect(page.locator("#editor")).toContainText("import { discountRate }");
     await page.locator("#save").click(); await expect(page.locator("#status")).toContainText("Saved in this browser");
-    await page.reload(); await page.locator("#sample").selectOption("actions");
+    await page.reload(); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await page.locator("#sample").selectOption("actions");
     await expect(page.locator("#editor")).toContainText("import { discountRate }");
     await page.locator('#files [data-file="rate.ts"]').click(); await expect(page.locator("#editor")).toContainText("export const discountRate");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });

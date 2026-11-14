@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 type FocusEventRecord = Readonly<{ type: string; key: string | null; trusted: boolean; label: string | null; revision: number }>;
@@ -15,14 +15,7 @@ async function exact(page: Page, text: string): Promise<void> {
         return true;
     }, text)).toBe(true);
 }
-async function ready(page: Page): Promise<void> {
-    await expect.poll(async () => {
-        const s = await snapshot(page), c = s.bindings.comparison;
-        return s.bindings.views.every(v => !v.metrics || !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme
-            && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision)
-            && (!c || c.status === "ready" && !c.workingViewport.pending && !c.referenceViewport?.pending);
-    }).toBe(true);
-}
+
 test.afterEach(async ({ page }, info) => {
     if (page.isClosed()) return;
     await info.attach("replace-focus-events", { contentType: "application/json", body: JSON.stringify(await page.evaluate(() => window.replaceFocusEvents), null, 2) });
@@ -36,7 +29,6 @@ test.afterEach(async ({ page }, info) => {
 
 for (const host of ["plain", "react"] as const) for (const arm of ["stay", "form", "interrupt"] as const)
     test(`${host} 100000 replace all ${arm} preserves focus intent and captured work`, async ({ page }) => {
-
 
         const original = Array(100000).fill("const sample = 1234567;").join("\r\n"), changed = original.replaceAll("sample", "changed");
         await page.goto(`/hosts/${host}/?editor=candidate`); await expect(primary(page)).toBeVisible();

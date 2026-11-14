@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 type State = ReturnType<Window["hostFixture"]["snapshot"]>;
@@ -9,14 +9,7 @@ const primary = (page: Page) => page.getByRole("textbox", { name: "Primary sourc
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 const selection = (s: State) => s.bindings.views.find(v => v.id === "primary")!.selection;
 const source = (page: Page) => page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); });
-async function ready(page: Page): Promise<void> {
-    await expect.poll(async () => {
-        const s = await snapshot(page), c = s.bindings.comparison;
-        return s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme
-            && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision)
-            && (!c || c.status === "ready" && !c.workingViewport.pending && !c.referenceViewport?.pending);
-    }).toBe(true);
-}
+
 test.afterEach(async ({ page }, info) => {
     if (page.isClosed()) return;
     await info.attach("find-staging-events", { contentType: "application/json", body: JSON.stringify(await page.evaluate(() => window.findStagingTrace ?? {})) });
@@ -28,7 +21,6 @@ test.afterEach(async ({ page }, info) => {
 
 for (const host of ["plain", "react"] as const) for (const action of ["Find next", "Find previous", "Replace current"] as const)
     for (const composing of [false, true]) test(`${host} ${action} ${composing ? "composition" : "ordinary"} preserves staged selection and captured work`, async ({ page }) => {
-
 
         // The save fixture trims trailing whitespace; internal CRLF and Unicode remain exact.
         const original = "const sample = 123;\r\n// café 😀\r\nconst sample = 456;", first = original.indexOf("sample"), second = original.lastIndexOf("sample");

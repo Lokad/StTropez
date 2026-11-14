@@ -1,4 +1,4 @@
-import { isolatedTest as test, expect } from "./fixtures.ts";
+import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 // Explicit background process ownership also avoids the known Firefox context-deletion issue.
 
@@ -7,10 +7,7 @@ const source = (page: Page) => page.evaluate(() => window.hostFixture.range(0, w
 const field = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 const provider = async (page: Page, id = "primary") => (await snapshot(page)).bindings.language.sessions.find(session => session.id === id)!.provider;
-async function ready(page: Page) {
-    await expect.poll(async () => { const s = await snapshot(page); return s.bindings.views.every(view => !view.metrics?.pendingInput && !view.metrics?.pendingCommand && !view.metrics?.pendingCaret && !view.metrics?.viewport.pending)
-        && (!s.bindings.comparison || s.bindings.comparison.status === "ready" && !s.bindings.comparison.workingViewport.pending && !s.bindings.comparison.referenceViewport?.pending); }).toBe(true);
-}
+
 async function seed(page: Page, text: string, offset = text.indexOf("saMORE") + 2) {
     await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, text);
     await field(page).focus(); await page.evaluate(offset => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: offset, head: offset }); }, offset); await ready(page);
@@ -84,7 +81,11 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
                 if (held.delete(value.id)) release = () => client.send(message); else client.send(message); });
         });
         await page.reload(); await expect(field(page)).toBeVisible(); await ready(page);
-        const pending = async () => { await field(page).pressSequentially("a"); await expect.poll(() => !!release).toBe(true); };
+        const pending = async () => {
+            await field(page).pressSequentially("a"); await expect.poll(() => !!release).toBe(true);
+            // Editor completion must not wait for this deliberately withheld provider reply.
+            await ready(page); expect(release).toBeDefined();
+        };
         const complete = async () => { const send = release!; release = undefined; send();
             // The subsequent reply proves the held response reached the client before assertions.
             await page.evaluate(() => window.hostFixture.providerCustom("fixture/state", {})); };

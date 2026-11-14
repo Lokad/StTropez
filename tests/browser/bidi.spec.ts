@@ -1,7 +1,7 @@
-import { expect, test } from "./fixtures.ts";
+import { ready, expect, test } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.editingFixture.snapshot());
-const ready = (page: Page) => expect.poll(() => page.evaluate(() => { const s = window.editingFixture?.snapshot(); return s && !s.primary.viewport.pending && s.primary.viewport.revision === s.document?.revision; })).toBe(true);
+
 async function setup(page: Page, text: string, direction: "ltr" | "rtl" = "ltr") {
     await page.evaluate(({ text, direction }) => { (document.querySelector("#primary .st-viewport") as HTMLElement).style.setProperty("--st-text-direction", direction); window.editingFixture.setText(text); window.editingFixture.select("primary", { anchor: 0, head: 0 }); window.editingFixture.focus("primary"); }, { text, direction }); await ready(page);
 }

@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 test("automatic discovery preserves newer view choices, cancels changed targets and waits for composition", async ({ page }) => {
@@ -45,12 +45,7 @@ test("a host generator may invalidate itself without reentrant cancellation or l
     await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
     expect(await page.evaluate(() => (window as unknown as { foldIteratorClosed: boolean }).foldIteratorClosed)).toBe(true);
 });
-async function ready(page: Page): Promise<void> {
-    await expect.poll(() => page.evaluate(() => { const f = window.editingFixture, s = f.snapshot();
-        return !s.primary.pendingCaret && !s.primary.viewport.pending && !s.secondary.pendingCaret && !s.secondary.viewport.pending
-            && s.primary.viewport.revision === s.document!.revision && s.primary.viewport.foldGeneration === f.folding().generation;
-    })).toBe(true);
-}
+
 test("folded rows keep independent views, disclosure keys and visible-line navigation while Find reveals raw matches", async ({ page }) => {
     await page.goto("/editing/"); const text = "head\r\none\r\ntwo\r\nlast\r\n";
     await page.evaluate(text => { const f = window.editingFixture; f.setText(text); f.folds([{ id: "body", from: 0, to: text.indexOf("last"), collapsed: true }]); }, text); await ready(page);

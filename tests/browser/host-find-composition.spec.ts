@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 type HostState = ReturnType<Window["hostFixture"]["snapshot"]>;
@@ -17,16 +17,7 @@ async function exact(page: Page, text: string): Promise<void> {
         return true;
     }, text)).toBe(true);
 }
-async function ready(page: Page): Promise<void> {
-    await expect.poll(async () => {
-        const s = await snapshot(page), c = s.bindings.comparison, same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-        return s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme
-            && !v.metrics.pendingDragScroll && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision && same(v.selection, v.metrics.viewport.selection))
-            && (!c || c.status === "ready" && c.workingRevision === s.source.revision && !c.input.pendingCaret && !c.input.pendingWord
-                && !c.input.pendingGrapheme && !c.input.pendingDragScroll && !c.workingViewport.pending && !c.referenceViewport?.pending
-                && c.workingViewport.revision === s.source.revision && same(c.selection, c.workingViewport.selection));
-    }).toBe(true);
-}
+
 async function drainPlan(page: Page): Promise<void> {
     // Give the original 1024-match batches enough independent turns, even after immediate composition cancellation.
     // These imposed turns and whole-test durations are not interaction-latency measurements.
@@ -47,7 +38,6 @@ test.afterEach(async ({ page }, info) => {
 
 for (const host of ["plain", "react"] as const) for (const arm of ["ordinary", "commit", "cancel", "active"] as const)
     test(`${host} 100000 replace all composition ${arm} preserves staged input and captured work`, async ({ page }) => {
-
 
         const original = Array(100000).fill("const sample = 1234567;").join("\r\n"), changed = original.replaceAll("sample", "changed");
         await page.goto(`/hosts/${host}/?editor=candidate`); await expect(primary(page)).toBeVisible();

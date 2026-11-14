@@ -1,14 +1,9 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const source = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const click = (page: Page, name: string) => page.getByRole("button", { name, exact: true }).click();
-async function ready(page: Page): Promise<void> {
-    await expect.poll(() => page.evaluate(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
-        return s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision)
-            && (!c || c.status === "ready" && !c.input.pendingCaret && !c.workingViewport.pending && !c.referenceViewport?.pending);
-    })).toBe(true);
-}
+
 async function exact(page: Page, value: string, reference = false): Promise<void> {
     expect(await page.evaluate(({ value, reference }) => { const f = window.hostFixture, s = f.snapshot();
         if ((reference ? s.bindings.comparison?.baseline?.length : s.source.length) !== value.length) return false;

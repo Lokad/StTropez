@@ -1,15 +1,9 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Locator, Page } from "@playwright/test";
 
 const source = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
-async function ready(page: Page): Promise<void> {
-    await expect.poll(() => page.evaluate(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
-        return s.bindings.views.every(v => v.metrics && !v.metrics.pendingInput && !v.metrics.pendingCaret && !v.metrics.viewport.pending)
-            && (!c || c.status === "ready" && !c.input.pendingInput && !c.input.pendingCaret && !c.referenceInput?.pendingInput
-                && !c.referenceInput?.pendingCaret && !c.workingViewport.pending && !c.referenceViewport?.pending);
-    })).toBe(true);
-}
+
 async function rectangle(input: Locator, offset: number) {
     return input.evaluate((input, offset) => {
         const root = input.closest(".st-editing-candidate")!, row = [...root.querySelectorAll<HTMLElement>(".st-viewport-row")]

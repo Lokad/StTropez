@@ -1,12 +1,10 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
-async function ready(page: Page): Promise<void> {
-    await expect.poll(() => page.evaluate(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
-        return s.bindings.views.every(v => !v.metrics!.pendingCaret && !v.metrics!.pendingGrapheme && !v.metrics!.pendingWord && !v.metrics!.viewport.pending)
-            && c?.status === "ready" && !c.input.pendingCaret && !c.input.pendingGrapheme && !c.input.pendingWord && !c.workingViewport.pending && !c.referenceViewport?.pending;
-    })).toBe(true);
+async function waitForReview(page: Page): Promise<void> {
+    await ready(page);
+    await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.comparison !== null); });
 }
 async function exact(page: Page, text: string): Promise<void> {
     expect(await page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false;
@@ -21,7 +19,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     const original = "first é😀\r\n" + "const unchanged = 123;\r\n".repeat(bodyRows) + "last\r", bodyStart = original.indexOf("\n") + 1;
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
     for (const name of ["Open source review", "Capture review acceptance", "Finish review acceptance"]) await page.getByRole("button", { name, exact: true }).click();
-    await ready(page);
+    await waitForReview(page);
     for (const view of ["primary", "comparison"] as const) for (const mode of ["document", "line", "arrow", "vertical", "page"]) for (const key of ["Home", "End"] as const) for (const extend of [false, true]) {
         const documentBoundary = mode === "document", arrow = mode === "arrow", vertical = mode === "vertical" || mode === "page";
         const commandKey = arrow ? key === "Home" ? "ArrowLeft" : "ArrowRight" : vertical ? mode === "page" ? key === "Home" ? "PageUp" : "PageDown" : key === "Home" ? "ArrowUp" : "ArrowDown" : key;
@@ -29,7 +27,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
         const starts = [bodyStart + 31 * rowUnits, bodyStart + (bodyRows - 33) * rowUnits];
         const ranges = vertical ? starts.map((start, i) => ({ anchor: start + (i ? 4 : 9), head: start + 6 }))
             : [{ anchor: 3, head: 2 }, arrow ? { anchor: original.length - 4, head: original.length - 3 } : { anchor: original.length - 3, head: original.length - 1 }];
-        expect(await page.evaluate(({ view, ranges }) => { const f = window.hostFixture; return f.selectSourceSet(view, f.snapshot().source.revision, ranges, 1); }, { view, ranges })).toBe(true); await ready(page);
+        expect(await page.evaluate(({ view, ranges }) => { const f = window.hostFixture; return f.selectSourceSet(view, f.snapshot().source.revision, ranges, 1); }, { view, ranges })).toBe(true); await waitForReview(page);
         const before = await snapshot(page), endpoint = key === "Home" ? 0 : original.length;
         // One browser task, with no timer/automation round trip between navigation and input.
         // The synthetic edit sequence is deliberate; later keyboard typing uses the trusted path.
@@ -56,19 +54,19 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
         expect(result.selectionSet.ranges.map(({ anchor, head }) => ({ anchor, head }))).toEqual(destinations);
         let expected = original;
         for (const range of destinations.slice().reverse()) { const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head); expected = expected.slice(0, from) + "!" + expected.slice(to); }
-        await ready(page); await exact(page, expected);
+        await waitForReview(page); await exact(page, expected);
         const after = await snapshot(page); expect(after.source.revision).toBe(before.source.revision + 1); expect(after.history.undoDepth).toBe(before.history.undoDepth + 1);
         expect(after.source.exports).toBe(0); expect(after.bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
         expect(after.bindings.views.every(v => v.metrics!.inputUnits <= 2600 && v.metrics!.viewport.rows < 100)).toBe(true);
-        await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await ready(page); await exact(page, original);
+        await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await waitForReview(page); await exact(page, original);
         const undone = await snapshot(page), set = view === "primary" ? undone.bindings.views.find(v => v.id === view)!.selectionSet : undone.bindings.comparison!.selectionSet!;
         expect(set).toEqual(result.selectionSet);
-        await input.press("Control+Shift+z"); await ready(page); await exact(page, expected); await input.press("Control+z"); await ready(page);
+        await input.press("Control+Shift+z"); await waitForReview(page); await exact(page, expected); await input.press("Control+z"); await waitForReview(page);
     }
     // Resize and PageDown occur in one task, before ResizeObserver/RAF can refresh metrics.
     const sourceInput = page.getByRole("textbox", { name: "Primary source", exact: true }), resizeHeads = [31, bodyRows - 33].map(line => bodyStart + line * rowUnits + 6);
     await sourceInput.focus();
-    await page.evaluate(heads => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, heads.map(head => ({ anchor: head, head })), 1); }, resizeHeads); await ready(page);
+    await page.evaluate(heads => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, heads.map(head => ({ anchor: head, head })), 1); }, resizeHeads); await waitForReview(page);
     const resized = await sourceInput.evaluate(node => {
         const input = node as HTMLTextAreaElement, root = input.parentElement!; root.style.height = "180px";
         const pageLines = Math.max(1, Math.floor(root.clientHeight / parseFloat(getComputedStyle(root).lineHeight)) - 1);
@@ -80,12 +78,12 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     });
     expect(resized.pending).toBe(false); expect(resized.heads).toEqual(resizeHeads.map(head => head + resized.pageLines * rowUnits));
     let resizedText = original; for (const head of resizeHeads.slice().reverse()) { const at = head + resized.pageLines * rowUnits; resizedText = resizedText.slice(0, at) + "!" + resizedText.slice(at); }
-    await ready(page); await exact(page, resizedText); await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await ready(page); await exact(page, original);
+    await waitForReview(page); await exact(page, resizedText); await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await waitForReview(page); await exact(page, original);
     // The bounded fast path also handles 32 independent anchors in read-only sources.
     await page.getByRole("textbox", { name: "Primary source", exact: true }).focus();
     await page.evaluate(() => { const f = window.hostFixture, n = f.snapshot().source.length;
         f.selectSourceSet("primary", f.snapshot().source.revision, Array.from({ length: 32 }, (_, i) => ({ anchor: Math.floor(i * (n - 1) / 32), head: Math.floor(i * (n - 1) / 32) })), 17); f.setSourceReadOnly(true);
-    }); await ready(page); const readonly = await snapshot(page);
+    }); await waitForReview(page); const readonly = await snapshot(page);
     for (const documentBoundary of [false, true]) {
         const movement = await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate((node, ctrlKey) => {
             node.dispatchEvent(new KeyboardEvent("keydown", { key: "End", ctrlKey, bubbles: true, cancelable: true }));
@@ -102,7 +100,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     // Cooperative vertical/page commands preserve immediate typing for thirty-two carets.
     const heads = Array.from({ length: 32 }, (_, i) => bodyStart + (31 + i * (large ? 3000 : 2)) * rowUnits + 6);
     for (const key of ["ArrowRight", "ArrowDown", "PageDown"]) {
-    await page.evaluate(heads => { const f = window.hostFixture; f.setSourceReadOnly(false); f.selectSourceSet("primary", f.snapshot().source.revision, heads.map(head => ({ anchor: head, head })), 17); }, heads); await ready(page);
+    await page.evaluate(heads => { const f = window.hostFixture; f.setSourceReadOnly(false); f.selectSourceSet("primary", f.snapshot().source.revision, heads.map(head => ({ anchor: head, head })), 17); }, heads); await waitForReview(page);
     const viewport = (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport;
     const delta = key === "ArrowRight" ? 1 : rowUnits * (key === "PageDown" ? Math.max(1, Math.floor(viewport.height / viewport.lineHeight) - 1) : 1);
     const moved = await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate((node, key) => {
@@ -116,8 +114,8 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     if (moved.pending) expect(moved.accepted).toBe(false);
     else expect(moved.heads).toEqual(heads.map(head => head + delta));
     let expected = original; for (const head of heads.slice().reverse()) expected = expected.slice(0, head + delta) + "!" + expected.slice(head + delta);
-    await ready(page); await exact(page, expected); await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await ready(page); await exact(page, original);
+    await waitForReview(page); await exact(page, expected); await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await waitForReview(page); await exact(page, original);
     }
-    const primary = page.getByRole("textbox", { name: "Primary source", exact: true }); await primary.press("Control+End"); await primary.pressSequentially("x"); await ready(page); await exact(page, original + "x");
+    const primary = page.getByRole("textbox", { name: "Primary source", exact: true }); await primary.press("Control+End"); await primary.pressSequentially("x"); await waitForReview(page); await exact(page, original + "x");
     await page.evaluate(() => window.hostFixture.dispose()); const end = await snapshot(page); expect(end.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(end.hostSubscriptions).toBe(0);
 });

@@ -4,7 +4,7 @@ import { runDemoActions } from "./demo-walkthrough.ts";
 
 test("broader project actions retain preview, stale recovery and atomic multi-file history", async ({ page }) => { await runDemoActions(page); });
 
-async function ready(page: Page) {
+async function openDemo(page: Page) {
     await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
 }
 async function typo(page: Page) {
@@ -17,7 +17,7 @@ async function typo(page: Page) {
 }
 
 test("selecting a real spelling fix applies once and shares undo/redo with actual typing", async ({ page }) => {
-    await ready(page); const source = await typo(page);
+    await openDemo(page); const source = await typo(page);
     await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Quick fix", exact: true }).click();
     const popup = page.getByRole("region", { name: "Quick fixes", exact: true });
     await expect(popup.getByRole("button", { name: "Change spelling to 'calculateTotal'", exact: true })).toBeVisible();
@@ -41,7 +41,7 @@ test("held real fixes cannot replace newer text or follow later file focus", asy
         client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/codeAction") ids.add(value.id); server.send(message); });
         server.onMessage(message => { const value = JSON.parse(message.toString()); if (!held && ids.has(value.id)) { held = true; release = () => client.send(message); } else client.send(message); });
     });
-    await ready(page); const source = await typo(page); await source.press("Control+."); await expect.poll(() => held).toBe(true);
+    await openDemo(page); const source = await typo(page); await source.press("Control+."); await expect.poll(() => held).toBe(true);
     await source.press("Control+Home"); await source.pressSequentially("// Keep current text\n");
     await page.locator('[data-file="pricing.ts"]').click(); const pricing = page.getByRole("textbox", { name: "pricing.ts", exact: true });
     await pricing.press("Control+Home"); await pricing.pressSequentially("// Keep helper focus\n"); release!();
@@ -71,7 +71,7 @@ test("explicit lazy fix activation applies once after resolution and expires wit
             client.send(JSON.stringify(value));
         });
     });
-    await ready(page); const source = await typo(page); await source.press("Control+.");
+    await openDemo(page); const source = await typo(page); await source.press("Control+.");
     const popup = page.getByRole("region", { name: "Quick fixes", exact: true }), choice = popup.getByRole("button", { name: "Resolve spelling fix", exact: true });
     await expect(choice).toBeVisible(); expect(resolutions).toBe(0); await choice.click(); await expect.poll(() => resolutions).toBe(1);
     await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)"); release!();
@@ -91,7 +91,7 @@ test("provider restart expires pending fixes and a fresh request fixes current c
         client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/codeAction") ids.add(value.id); server.send(message); });
         server.onMessage(message => { const value = JSON.parse(message.toString()); if (!held && ids.has(value.id)) { held = true; disconnect = () => client.close({ code: 1011, reason: "Provider restart" }); } else client.send(message); });
     });
-    await ready(page); const source = await typo(page); await source.press("Control+."); await expect.poll(() => held).toBe(true);
+    await openDemo(page); const source = await typo(page); await source.press("Control+."); await expect.poll(() => held).toBe(true);
     disconnect!(); await expect(page.locator("#language-status")).toHaveText("Language service unavailable");
     await page.getByRole("button", { name: "Retry language service", exact: true }).click();
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
@@ -102,7 +102,7 @@ test("provider restart expires pending fixes and a fresh request fixes current c
 });
 
 test("a clean position offers no fabricated fix and Escape preserves source and focus", async ({ page }) => {
-    await ready(page); const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    await openDemo(page); const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+Home"); await source.press("Control+.");
     const popup = page.getByRole("region", { name: "Quick fixes", exact: true });
     await expect(popup).toContainText("No quick fix at this position."); await expect(popup.getByRole("button", { name: "Apply fix", exact: true })).toBeDisabled();

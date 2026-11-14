@@ -1,12 +1,7 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page, Locator } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
-async function ready(page: Page): Promise<void> {
-    await expect.poll(() => page.evaluate(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
-        return s.bindings.views.every(v => !v.metrics!.pendingCaret && !v.metrics!.viewport.pending && v.metrics!.viewport.selectionSet === v.selectionSet)
-            && (!c || c.status === "ready" && !c.input.pendingCaret && !c.workingViewport.pending && c.workingViewport.selectionSet === c.selectionSet);
-    })).toBe(true);
-}
+
 const painted = (input: Locator) => input.evaluate(node => !(node.parentElement!.querySelector(".st-input-caret") as HTMLElement).hidden);
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} raw CRLF caret remains painted and moves vertically in source and comparison`, async ({ page }, testInfo) => {
     test.setTimeout(120000);

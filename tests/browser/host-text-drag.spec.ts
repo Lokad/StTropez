@@ -1,24 +1,11 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import type { Selection } from "../../src/index.ts";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const root = (page: Page, name = "Primary source") => page.locator(`.st-editing-candidate:has(> textarea[aria-label="${name}"])`);
-async function ready(page: Page): Promise<void> {
-    await expect.poll(() => page.evaluate(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
-        return s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme
-            && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision && v.metrics.viewport.selectionSet === v.selectionSet)
-            && (!c || c.status === "ready" && !c.input.pendingCaret && !c.workingViewport.pending && !c.referenceViewport?.pending);
-    })).toBe(true);
-}
-async function readyTransfer(page: Page): Promise<void> {
-    await expect.poll(() => page.evaluate(() => { const f = window.hostFixture, s = f.snapshot(), target = f.transferSnapshot(), c = s.bindings.comparison;
-        return s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme
-            && !v.metrics.viewport.pending && v.metrics.viewport.revision === (v.documentId === target.documentId ? target.revision : s.source.revision)
-            && v.metrics.viewport.selectionSet === v.selectionSet) && (!c || c.status === "ready" && !c.input.pendingCaret && !c.workingViewport.pending && !c.referenceViewport?.pending);
-    })).toBe(true);
-}
+
 async function select(page: Page, ranges: readonly Selection[], primary = 0): Promise<void> {
     expect(await page.evaluate(({ ranges, primary }) => { const f = window.hostFixture; return f.selectSourceSet("primary", f.snapshot().source.revision, ranges, primary); }, { ranges, primary })).toBe(true); await ready(page);
 }
@@ -141,10 +128,10 @@ async function drop(page: Page, name = "Primary source"): Promise<void> {
 for (const host of ["plain", "react"]) {
     test(`${host} cross-document native move, copy and expired target preserve linked history`, async ({ page }, info) => {
         test.setTimeout(60000); const original = "alpha bravo\r\ncharlie delta\r\nsource tail", target = "target here";
-        await mount(page, host, original); await page.evaluate(text => window.hostFixture.openTransferTarget(text), target); await readyTransfer(page);
+        await mount(page, host, original); await page.evaluate(text => window.hostFixture.openTransferTarget(text), target); await ready(page);
         const second = original.indexOf("charlie"), ranges = [{ anchor: 5, head: 0 }, { anchor: second, head: second + 7 }];
         await page.evaluate(ranges => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, ranges, 1);
-            f.selectSourceSet("secondary", f.transferSnapshot().revision, [{ anchor: 1, head: 0 }, { anchor: 5, head: 5 }], 1); }, ranges); await readyTransfer(page);
+            f.selectSourceSet("secondary", f.transferSnapshot().revision, [{ anchor: 1, head: 0 }, { anchor: 5, head: 5 }], 1); }, ranges); await ready(page);
         const before = await snapshot(page), targetBefore = await page.evaluate(() => window.hostFixture.transferSnapshot()), sets = before.bindings.views.map(v => v.selectionSet);
         const drag = async (copy = false, release = true) => {
             const a = await point(page, 1), b = await point(page, 2, "Secondary source");
@@ -152,7 +139,7 @@ for (const host of ["plain", "react"]) {
             await page.mouse.move(a.x + 8, a.y, { steps: 3 }); await page.mouse.move(b.x, b.y, { steps: 10 });
             // Entering the last point can produce only dragenter; a second move delivers dragover.
             await page.mouse.move(b.x, b.y);
-            if (release) { await page.mouse.up(); if (copy) await page.keyboard.up("Control"); await readyTransfer(page); }
+            if (release) { await page.mouse.up(); if (copy) await page.keyboard.up("Control"); await ready(page); }
         };
         await drag();
         if (info.project.name === "webkit") {
@@ -163,16 +150,16 @@ for (const host of ["plain", "react"]) {
         const removed = original.slice(5, second) + original.slice(second + 7), inserted = "taalpha\ncharlierget here";
         await exact(page, removed); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(inserted);
         expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).history.undoDepth).toBe(targetBefore.history.undoDepth + 1);
-        await input(page, "Secondary source").press("Control+z"); await readyTransfer(page); await exact(page, original);
+        await input(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, original);
         expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(target); expect((await snapshot(page)).bindings.views.map(v => v.selectionSet)).toEqual(sets);
-        await input(page).press("Control+Shift+z"); await readyTransfer(page); await exact(page, removed); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(inserted);
-        await input(page).press("Control+z"); await readyTransfer(page); await exact(page, original);
+        await input(page).press("Control+Shift+z"); await ready(page); await exact(page, removed); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(inserted);
+        await input(page).press("Control+z"); await ready(page); await exact(page, original);
         await drag(true); await exact(page, original); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(inserted);
         expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth);
-        await input(page, "Secondary source").press("Control+z"); await readyTransfer(page); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(target);
+        await input(page, "Secondary source").press("Control+z"); await ready(page); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe(target);
         await drag(false, false); await expect(root(page, "Secondary source").locator(".st-text-drop-caret")).toHaveCount(1);
         await page.evaluate(() => { const f = window.hostFixture; f.editTransferTarget(f.transferSnapshot().revision, [{ from: 0, to: 0, insert: "x" }]); });
-        await page.mouse.up(); await readyTransfer(page); await exact(page, original); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe("x" + target);
+        await page.mouse.up(); await ready(page); await exact(page, original); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe("x" + target);
         await page.evaluate(() => window.hostFixture.setTransferReadOnly(true)); await drag(); await exact(page, original);
         expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).text).toBe("x" + target);
         expect((await snapshot(page)).source.exports).toBe(0); expect((await page.evaluate(() => window.hostFixture.transferSnapshot())).exports).toBe(0);

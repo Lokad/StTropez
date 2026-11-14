@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 type HostState = ReturnType<Window["hostFixture"]["snapshot"]>;
@@ -17,14 +17,7 @@ async function exact(page: Page, text: string): Promise<void> {
         return true;
     }, text)).toBe(true);
 }
-async function ready(page: Page): Promise<void> {
-    await expect.poll(async () => {
-        const s = await snapshot(page), c = s.bindings.comparison;
-        return s.bindings.views.every(v => !v.metrics || !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme
-            && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision)
-            && (!c || c.status === "ready" && !c.workingViewport.pending && !c.referenceViewport?.pending);
-    }).toBe(true);
-}
+
 async function drainPlanningTurns(page: Page, lines: number): Promise<void> {
     // Exercise enough independent turns for the original 256-line plan, including after a cancelled composition.
     await page.evaluate(turns => new Promise<void>(resolve => {
@@ -47,7 +40,6 @@ test.afterEach(async ({ page }, info) => {
 for (const host of ["plain", "react"] as const) for (const lines of [2048, 100000])
     for (const key of ["Tab", "Shift+Tab"]) for (const outcome of ["ordinary", "commit", "cancel"] as const)
         test(`${host} ${lines} ${key} ${outcome} preserves staged composition and captured save`, async ({ page }) => {
-
 
             const original = Array(lines).fill("    const café = 1;").join("\r\n");
             const changed = key === "Tab" ? "    " + original.replaceAll("\r\n", "\r\n    ") : original.replace(/^ {4}/gm, "");

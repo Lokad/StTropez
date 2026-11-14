@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.ts";
+import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 type State = ReturnType<Window["hostFixture"]["snapshot"]>;
@@ -10,14 +10,7 @@ const primary = (page: Page) => page.getByRole("textbox", { name: "Primary sourc
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 const diagnostic = (page: Page) => page.getByLabel("Source diagnostics", { exact: true }).getByRole("button").first();
 const selection = (state: State) => state.bindings.views.find(v => v.id === "primary")!.selection;
-async function ready(page: Page): Promise<void> {
-    await expect.poll(async () => {
-        const s = await snapshot(page), c = s.bindings.comparison;
-        return s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme
-            && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision)
-            && (!c || c.status === "ready" && !c.workingViewport.pending && !c.referenceViewport?.pending);
-    }).toBe(true);
-}
+
 async function request(page: Page): Promise<void> {
     await primary(page).focus(); await page.keyboard.press("Control+Home"); await page.keyboard.press("Control+Space");
     await expect(diagnostic(page)).toBeVisible(); await ready(page);
@@ -33,7 +26,6 @@ test.afterEach(async ({ page }, info) => {
 
 for (const host of ["plain", "react"] as const) for (const phase of ["ordinary", "commit", "cancel"] as const)
     test(`${host} diagnostic selection ${phase} preserves composition and captured work`, async ({ page }) => {
-
 
         // The save fixture trims trailing whitespace; internal CRLF and Unicode remain exact.
         const original = "const sample = 123;\r\n// TODO verify café 😀\r\nconst end = 1;", todo = original.indexOf("TODO");

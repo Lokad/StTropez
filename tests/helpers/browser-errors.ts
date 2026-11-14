@@ -10,7 +10,7 @@ export function captureBrowserErrors(context: BrowserContext) {
         if (message.type() !== "error") return;
         const expected = expectedConsole.findIndex(value => value.text === message.text() && value.url === message.location().url);
         if (expected >= 0) { expectedConsole.splice(expected, 1); return; }
-        errors.push(`console.error at ${message.page()?.url() ?? "unknown page"}: ${message.text()}`);
+        errors.push(`console.error at ${message.page()?.url() ?? "unknown page"} from ${message.location().url || "unknown source"}: ${message.text()}`);
     };
     context.on("weberror", pageError); context.on("console", consoleError);
     return {

@@ -8,7 +8,7 @@ async function symbol(page: Page) {
     await expect(page.locator("#find-status")).toHaveText("1 matches"); await page.locator("#find-next").click();
     await page.getByRole("button", { name: "Close", exact: true }).click(); await source.press("ArrowLeft"); await source.press("ArrowRight"); return source;
 }
-async function ready(page: Page) {
+async function openDemo(page: Page) {
     await page.goto("/");
     // Provider setup is a correctness prerequisite; its latency is measured separately.
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
@@ -16,7 +16,7 @@ async function ready(page: Page) {
 
 test("real definition and reference navigation open the captured file and range without changing text", async ({ page }) => {
     const releaseFolds = await holdDemoFolds(page, "pricing.ts");
-    await ready(page); const source = await symbol(page); await source.press("F12");
+    await openDemo(page); const source = await symbol(page); await source.press("F12");
     const pricing = page.getByRole("textbox", { name: "pricing.ts", exact: true }); await expect(pricing).toBeFocused();
     expect(await pricing.evaluate(node => { const input = node as HTMLTextAreaElement; return input.value.slice(input.selectionStart, input.selectionEnd); })).toBe("calculateTotal");
     await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Find references", exact: true }).click();
@@ -42,7 +42,7 @@ test("real definition and reference navigation open the captured file and range 
 
 test("real rename previews a captured name, rejects an old name and shares one undo across files", async ({ page }) => {
     const releaseFolds = await holdDemoFolds(page, "pricing.ts");
-    await ready(page); const source = await symbol(page); await source.press("F12");
+    await openDemo(page); const source = await symbol(page); await source.press("F12");
     const pricing = page.getByRole("textbox", { name: "pricing.ts", exact: true }); await expect(pricing).toBeFocused();
     await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Rename symbol", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Rename symbol", exact: true }), name = dialog.getByRole("textbox", { name: "New name", exact: true });
@@ -69,7 +69,7 @@ test("held real definition replies cannot follow a later file and typing target"
         client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/definition") ids.add(value.id); server.send(message); });
         server.onMessage(message => { const value = JSON.parse(message.toString()); if (!held && ids.has(value.id)) { held = true; release = () => client.send(message); } else client.send(message); });
     });
-    await ready(page); const source = await symbol(page); await source.press("F12"); await expect.poll(() => held).toBe(true);
+    await openDemo(page); const source = await symbol(page); await source.press("F12"); await expect.poll(() => held).toBe(true);
     await page.locator('[data-file="pricing.ts"]').click(); const pricing = page.getByRole("textbox", { name: "pricing.ts", exact: true });
     await pricing.press("Control+Home"); await pricing.pressSequentially("// Keep my current helper\n"); release!();
     await expect(pricing).toBeFocused(); await expect(page.locator("#editor")).toContainText("// Keep my current helper");
@@ -83,7 +83,7 @@ test("typing invalidates a held rename preview while retaining the actual edit",
         client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/rename") ids.add(value.id); server.send(message); });
         server.onMessage(message => { const value = JSON.parse(message.toString()); if (!held && ids.has(value.id)) { held = true; release = () => client.send(message); } else client.send(message); });
     });
-    await ready(page); const source = await symbol(page); await source.press("F2");
+    await openDemo(page); const source = await symbol(page); await source.press("F2");
     const dialog = page.getByRole("dialog", { name: "Rename symbol", exact: true });
     await dialog.getByRole("textbox", { name: "New name", exact: true }).fill("cartTotal");
     await dialog.getByRole("button", { name: "Preview rename", exact: true }).click(); await expect.poll(() => held).toBe(true);
@@ -101,7 +101,7 @@ test("real provider restart cancels a rename and resynchronizes edits without re
         client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/rename") ids.add(value.id); server.send(message); });
         server.onMessage(message => { const value = JSON.parse(message.toString()); if (!held && ids.has(value.id)) { held = true; disconnect = () => client.close({ code: 1011, reason: "Provider restart" }); } else client.send(message); });
     });
-    await ready(page); const source = await symbol(page); await source.press("F2");
+    await openDemo(page); const source = await symbol(page); await source.press("F2");
     const dialog = page.getByRole("dialog", { name: "Rename symbol", exact: true });
     await dialog.getByRole("textbox", { name: "New name", exact: true }).fill("cartTotal");
     await dialog.getByRole("button", { name: "Preview rename", exact: true }).click(); await expect.poll(() => held).toBe(true);
