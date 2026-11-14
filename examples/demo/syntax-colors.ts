@@ -1,4 +1,4 @@
-import { anchoredRange } from "../../src/index.ts";
+import { anchoredRange, composePositionMaps } from "../../src/index.ts";
 import type { DocumentSnapshot, PositionMapping, TextBuffer, Affinity } from "../../src/index.ts";
 import type { InlineDecoration, PresentedLine } from "../../src/browser/index.ts";
 
@@ -13,23 +13,23 @@ export class DemoSyntaxColors {
     private revision = -1;
     private base: TextBuffer | undefined;
     private spans: Uint32Array = new Uint32Array();
-    private mappings: PositionMapping[] = [];
+    private mapping: PositionMapping | undefined;
     update(capture: DocumentSnapshot): void {
         // Document IDs/revisions are workspace-local; the immutable resource-key instance owns this capture.
         const same = this.id === capture.id && this.key === capture.key;
         if (same && this.revision === capture.revision) return;
-        if (same && this.base === capture.buffer) this.mappings = []; // Exact undo to the analyzed buffer.
-        else if (this.base && same && capture.change?.previousRevision === this.revision) this.mappings.push(capture.change.mapping);
+        if (same && this.base === capture.buffer) this.mapping = undefined; // Exact undo to the analyzed buffer.
+        else if (this.base && same && capture.change?.previousRevision === this.revision)
+            this.mapping = this.mapping ? composePositionMaps(this.mapping, capture.change.mapping) : capture.change.mapping;
         else this.clear();
         this.id = capture.id; this.key = capture.key; this.revision = capture.revision;
     }
     accept(capture: DocumentSnapshot, spans: Uint32Array): void {
         this.id = capture.id; this.key = capture.key; this.revision = capture.revision; this.base = capture.buffer;
-        this.spans = spans; this.mappings = [];
+        this.spans = spans; this.mapping = undefined;
     }
     private position(offset: number, affinity: Affinity): number {
-        for (const mapping of this.mappings) offset = mapping.map(offset, affinity).offset;
-        return offset;
+        return this.mapping?.map(offset, affinity).offset ?? offset;
     }
     decorate(line: PresentedLine): InlineDecoration[] {
         const result: InlineDecoration[] = [];
@@ -44,11 +44,11 @@ export class DemoSyntaxColors {
         for (let at = low * 3; at < this.spans.length; at += 3) {
             if (this.position(this.spans[at]!, "after") >= line.to) break;
             const kind = classes[this.spans[at + 2]!]; if (!kind) continue;
-            let range = anchoredRange(this.base.length, this.spans[at]!, this.spans[at]! + this.spans[at + 1]!, { onDelete: "invalidate" });
-            for (const mapping of this.mappings) { const next = mapping.mapRange(range); if (!next) { range = { ...range, to: range.from }; break; } range = next; }
-            if (range.from < range.to && range.from < line.to && range.to > line.from) result.push({ from: range.from, to: range.to, className: `demo-token-${kind}` });
+            const original = anchoredRange(this.base.length, this.spans[at]!, this.spans[at]! + this.spans[at + 1]!, { onDelete: "invalidate" });
+            const range = this.mapping ? this.mapping.mapRange(original) : original;
+            if (range && range.from < range.to && range.from < line.to && range.to > line.from) result.push({ from: range.from, to: range.to, className: `demo-token-${kind}` });
         }
         return result;
     }
-    clear(): void { this.id = undefined; this.key = undefined; this.revision = -1; this.base = undefined; this.spans = new Uint32Array(); this.mappings = []; }
+    clear(): void { this.id = undefined; this.key = undefined; this.revision = -1; this.base = undefined; this.spans = new Uint32Array(); this.mapping = undefined; }
 }

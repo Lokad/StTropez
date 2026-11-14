@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Workspace } from "../src/index.ts";
+import { Workspace, PositionMap } from "../src/index.ts";
 import type { DocumentSnapshot } from "../src/index.ts";
 import { DemoSyntaxColors } from "../examples/demo/syntax-colors.ts";
 import { analyzeTypeScript } from "../examples/demo/syntax.ts";
@@ -25,6 +25,10 @@ test("provisional syntax survives UTF-16 line deletion and exact undo/redo witho
     workspace.redo({ documentId: id, expectedRevision: undone.revision });
     const redone = workspace.document(id); colors.update(redone);
     assert.deepEqual(colors.decorate(presented(redone)), after);
+    for (let step = 0; step < 2; step++) workspace.edit({ documentId: id, expectedRevision: workspace.document(id).revision,
+        edits: [{ from: 0, to: 0, insert: "x" }], origin: "host" });
+    const skipped = workspace.document(id); colors.update(skipped);
+    assert.deepEqual(colors.decorate(presented(skipped)), [], "a skipped revision cannot be reconstructed from only its final change");
     const other = workspace.createDocument({ scope: "colors", resource: "other", variant: "working" }, "other", text);
     colors.update(workspace.document(other));
     assert.deepEqual(colors.decorate(presented(workspace.document(other))), []);
@@ -35,7 +39,7 @@ test("provisional syntax survives UTF-16 line deletion and exact undo/redo witho
     assert.deepEqual(colors.decorate(presented(current)), [], "equal workspace-local IDs must not reuse another workspace's colors");
 });
 
-test("100k-token colors update lazily and skip collapsed deleted spans in a bounded row query", () => {
+test("100k-token colors keep bounded row work through delayed analysis, deleted spans and fresh classifications", () => {
     const workspace = new Workspace(), text = "// x\n".repeat(100_000);
     const id = workspace.createDocument({ scope: "colors", resource: "large", variant: "working" }, "large", text);
     const colors = new DemoSyntaxColors(), initial = workspace.document(id), raw = new Uint32Array(300_000);
@@ -44,11 +48,33 @@ test("100k-token colors update lazily and skip collapsed deleted spans in a boun
     const spans = new Proxy(raw, { get(target, key) { if (typeof key === "string" && /^\d+$/.test(key)) reads++; return Reflect.get(target, key, target); } });
     colors.update(initial); colors.accept(initial, spans);
     workspace.edit({ documentId: id, expectedRevision: initial.revision, edits: [{ from: 125_000, to: 375_000, insert: "" }], origin: "host" });
-    const current = workspace.document(id); colors.update(current);
+    colors.update(workspace.document(id));
+    // No successful analysis reply arrives during these revisions (delay or provider failure).
+    const revisions = 1024;
+    for (let step = 0; step < revisions; step++) {
+        workspace.edit({ documentId: id, expectedRevision: workspace.document(id).revision, edits: [{ from: 0, to: 0, insert: "x" }], origin: "host" });
+        colors.update(workspace.document(id));
+    }
+    const current = workspace.document(id), from = 125_000 + revisions;
     assert.equal(reads, 0, "the edit must not traverse the token array");
-    assert.deepEqual(colors.decorate(presented(current, 125_000, 125_020)), Array.from({ length: 4 }, (_, i) => ({
-        from: 125_000 + i * 5, to: 125_004 + i * 5, className: "demo-token-comment" })));
+    // Count use of the original transaction maps during repaint, without a timing assertion
+    // or a new production diagnostics API. Restore the inherited method after this sync query.
+    const descriptor = Object.getOwnPropertyDescriptor(PositionMap.prototype, "map"), original = PositionMap.prototype.map;
+    let mapped = 0;
+    Object.defineProperty(PositionMap.prototype, "map", { configurable: true, value: function (this: PositionMap, ...args: Parameters<PositionMap["map"]>) {
+        mapped++; return original.apply(this, args);
+    } });
+    try {
+        assert.deepEqual(colors.decorate(presented(current, from, from + 20)), Array.from({ length: 4 }, (_, i) => ({
+            from: from + i * 5, to: from + 4 + i * 5, className: "demo-token-comment" })));
+        assert.ok(mapped < 200, `visible query replayed ${mapped} transaction point lookups`);
+    } finally {
+        if (descriptor) Object.defineProperty(PositionMap.prototype, "map", descriptor); else Reflect.deleteProperty(PositionMap.prototype, "map");
+    }
     assert.ok(reads < 200, `visible query read ${reads} token entries`);
+    colors.accept(current, new Uint32Array([from, 4, 1]));
+    assert.deepEqual(colors.decorate(presented(current, from, from + 20)), [{ from, to: from + 4, className: "demo-token-comment" }]);
+    colors.clear(); assert.deepEqual(colors.decorate(presented(current, from, from + 20)), []);
 });
 
 test("fresh compiler classifications replace provisional colors after a multiline lexical change", () => {
