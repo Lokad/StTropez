@@ -67,6 +67,20 @@ test("async regex find advances empty matches, accepts manual overlaps and prese
     } finally { overlap.finish(); }
 });
 
+test("find options patch existing choices and unrelated selections navigate without starting replacement work", async () => {
+    const f = fixture("alpha beta beta_ BETA");
+    try {
+        f.find.setOptions({ wholeWord: true }); f.find.setOptions({ matchCase: false }); f.find.setOptions({ regularExpression: true });
+        f.find.setQuery("beta"); await f.drain();
+        const state = f.find.state.getSnapshot(); assert.equal(state.wholeWord, true); assert.equal(state.matchCase, false); assert.equal(state.regularExpression, true); assert.equal(state.count, 2);
+        f.view.setSelection(0, { anchor: 0, head: 5 });
+        assert.equal(f.find.replaceCurrent("x"), true); await f.drain();
+        assert.equal(f.plans.length, 0); assert.equal(f.text(), "alpha beta beta_ BETA");
+        const selected = f.view.getSnapshot().selection; assert.deepEqual([selected.anchor, selected.head], [6, 10]);
+        assert.equal(f.find.replaceCurrent("x"), true); await f.drain(); assert.equal(f.text(), "alpha x beta_ BETA");
+    } finally { f.finish(); }
+});
+
 test("partial async regex plans respect selection, revision, composition, authority, option and view lifetime changes", async () => {
     for (const change of ["selection", "revision", "composition", "authority", "options", "view", "focus"] as const) {
         const f = fixture("cat cat");

@@ -1,9 +1,9 @@
 import type { SearchMatch, SearchStep } from "../core/search.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import type { TextEdit } from "../core/changes.ts";
-import { regexChunkUnits, regexMatchLimit, regexSourceLimit } from "./regex-session.ts";
+import { regexChunkUnits, regexMatchLimit, regexSourceLimit, regexProtocolVersion } from "./regex-session.ts";
 type Reply = Readonly<{ operation: string; id: number; revision: number; received?: number; matches?: readonly SearchMatch[]; count?: number; message?: string;
-    edits?: readonly TextEdit[]; ordinal?: number; from?: number; to?: number; units?: number; text?: string; outputLength?: number }>;
+    edits?: readonly TextEdit[]; ordinal?: number; from?: number; to?: number; units?: number; text?: string; outputLength?: number; version?: number }>;
 type Pending = { resolve: (reply: Reply) => void; reject: (error: Error) => void; timer: number };
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const integer = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -63,9 +63,10 @@ export function createRegexCursor(input: TextBuffer, revision: number, pattern: 
         if (busy) throw new Error("Regex cursor already has a pending step.");
         busy = true;
         try {
-            if (!started) { const ack = await exchange("regex-start", { length, pattern, matchCase, wholeWord: options.wholeWord ?? false,
+            if (!started) { const ack = await exchange("regex-start", { version: regexProtocolVersion, length, pattern, matchCase, wholeWord: options.wholeWord ?? false,
                 ...(options.replacement === undefined ? {} : { replacement: options.replacement, maxOutputUnits: maxOutput }), ...(options.range ? { range: options.range } : {}) });
-                if (ack.operation !== "regex-progress" || ack.received !== 0) throw new Error("Invalid regex start acknowledgement."); started = true; }
+                if (ack.operation !== "regex-progress" || ack.received !== 0) throw new Error("Invalid regex start acknowledgement.");
+                if (ack.version !== regexProtocolVersion) throw new Error("Unsupported regex worker protocol version."); started = true; }
             if (done) throw new Error("Regex search cancelled.");
             if (transferred < length) {
                 const text = buffer!.slice(transferred, Math.min(length, transferred + regexChunkUnits)), ack = await exchange("regex-chunk", { from: transferred, text });

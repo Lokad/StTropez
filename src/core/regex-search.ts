@@ -5,11 +5,35 @@ import { codeWordConstituentPattern } from "./words.ts";
 export type RegexMatch = Readonly<{ from: number; to: number; captures: readonly (string | undefined)[];
     groups: Readonly<Record<string, string | undefined>> | undefined }>;
 
+/** Native assertions retain inline flag semantics; guards restrict them to editor rows.
+ * The validated Unicode grammar has no nested character classes. Group/backreference
+ * names are copied intact because '$' is also a valid identifier character. */
+function lineAnchors(pattern: string): string {
+    let source = "", characterClass = false;
+    for (let i = 0; i < pattern.length; i++) {
+        const unit = pattern[i]!;
+        if (unit === "\\") {
+            const end = !characterClass && pattern[i + 1] === "k" && pattern[i + 2] === "<" ? pattern.indexOf(">", i + 3) : i + 1;
+            source += pattern.slice(i, end + 1); i = end; continue;
+        }
+        if (!characterClass && pattern.startsWith("(?<", i) && pattern[i + 3] !== "=" && pattern[i + 3] !== "!") {
+            const end = pattern.indexOf(">", i + 3); source += pattern.slice(i, end + 1); i = end; continue;
+        }
+        if (unit === "[") characterClass = true;
+        else if (unit === "]") characterClass = false;
+        if (!characterClass && unit === "^") source += "(?<![^\\n])^";
+        else if (!characterClass && unit === "$") source += "$(?=\\r?\\n|(?![\\s\\S]))(?!(?<=\\r)\\n)";
+        else source += unit;
+    }
+    return source;
+}
 export function regexExpression(pattern: string, matchCase = true, wholeWord = false): RegExp {
     if (typeof pattern !== "string" || typeof matchCase !== "boolean" || typeof wholeWord !== "boolean") throw new TypeError("Invalid regex search options.");
+    const flags = matchCase ? "gmu" : "gimu", validated = new RegExp(pattern, flags);
+    const lines = lineAnchors(pattern);
     // Wrap before native matching so alternatives/backtracking can reach a valid boundary.
-    const source = wholeWord ? `(?<!${codeWordConstituentPattern})(?:${pattern})(?!${codeWordConstituentPattern})` : pattern;
-    return new RegExp(source, matchCase ? "gmu" : "gimu");
+    const source = wholeWord ? `(?<!${codeWordConstituentPattern})(?:${lines})(?!${codeWordConstituentPattern})` : lines;
+    return source === pattern ? validated : new RegExp(source, flags);
 }
 export function* regexMatches(text: string, pattern: string, matchCase = true, wholeWord = false, from = 0): Generator<RegexMatch> {
     if (typeof text !== "string") throw new TypeError("Invalid regex search input.");

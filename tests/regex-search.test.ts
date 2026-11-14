@@ -11,7 +11,7 @@ test("worker regex kernel retains raw multiline, lookbehind, captures and Unicod
         [10, 22, ["𐐀value", "12"], { name: "𐐀value" }], [25, 37, ["𐐨value", "34"], { name: "𐐨value" }],
     ]);
     assert.deepEqual([...regexMatches("😀x", "(?:)")].map(m => [m.from, m.to]), [[0, 0], [2, 2], [3, 3]]);
-    assert.deepEqual([...regexMatches("a\r\nb\rc\nd", "^|$")].map(m => m.from), [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    assert.deepEqual([...regexMatches("a\r\nb\rc\nd", "^|$")].map(m => m.from), [0, 1, 3, 6, 7, 8]);
     assert.ok(found.every(m => Object.isFrozen(m) && Object.isFrozen(m.captures) && Object.isFrozen(m.groups)));
     assert.deepEqual([...regexMatches("K k K", "k", false)].map(m => m.from), [0, 2, 4]);
     assert.throws(() => [...regexMatches("text", "(")], SyntaxError);
@@ -28,12 +28,31 @@ test("regex whole words share code-word boundaries and preserve alternatives, ca
     assert.equal([...regexMatches(text, "café", true, true)][0]!.to - [...regexMatches(text, "café", true, true)][0]!.from, 5);
     assert.deepEqual([...regexMatches(text, "𐐨|k", false, true)].map(m => text.slice(m.from, m.to)), ["𐐀", "𐐨", "K", "k"]);
     assert.deepEqual([...regexMatches(" 😀 ", "(?:)", true, true)].map(m => m.from), [0, 1, 3, 4]);
+    for (const pattern of [")(", "a)|(b", "(", "[", "(?<name>x"]) {
+        for (const wholeWord of [false, true]) assert.throws(() => [...regexMatches("ab ba", pattern, true, wholeWord)], SyntaxError);
+    }
+});
+
+test("regex anchors follow LF rows and preserve CRLF, literal syntax and native group semantics", () => {
+    const offsets = (text: string, pattern: string) => [...regexMatches(text, pattern)].map(m => m.from);
+    assert.deepEqual(offsets("a\r\nb\r\n", "^"), [0, 3, 6]);
+    assert.deepEqual(offsets("a\r\nb\r\n", "$"), [1, 4, 6]);
+    assert.deepEqual(offsets("a\rb\u2028c\u2029d\n", "^|$"), [0, 7, 8]);
+    assert.deepEqual(offsets("a\r\r\n\r", "$"), [2, 5]);
+    assert.deepEqual(offsets("\r\n\n", "^$"), [0, 2, 3]);
+    assert.deepEqual(offsets("a\nb\n", "(?-m:^)|(?-m:$)"), [0, 4]);
+    assert.deepEqual(offsets("^$ ^$", "[$^]+"), [0, 3]);
+    assert.deepEqual(offsets("^$ ^$", "\\^\\$"), [0, 3]);
+    assert.deepEqual(offsets("a\n\\", "\\\\$"), [2]);
+    const named = [...regexMatches("aa\r\naa", "^(?<$value>a)\\k<$value>$")];
+    assert.deepEqual(named.map(m => [m.from, m.to, m.groups]), [[0, 2, { $value: "a" }], [4, 6, { $value: "a" }]]);
+    assert.deepEqual(offsets("a\rb\nc", "(?<=^)\\w|\\w(?=$)"), [0, 2, 4]);
 });
 
 test("planned regex substitutions agree with native replacement for optional, named and numeric captures", () => {
     const cases = [
         { text: "before ab after ab", pattern: "(?<first>a)(b)(c)?" },
-        { text: "a\r\n😀x\r\n𐐀", pattern: "^|(?=😀)|$" },
+        { text: "a\n😀x\n𐐀", pattern: "^|(?=😀)|$" },
         { text: "ab", pattern: "(a)(b)()()()()()()()(z)?" },
         { text: "a", pattern: "(?<__proto__>a)(?<constructor>b)?" },
         { text: "xabz", pattern: "(?<=x)(a)(b)(?=z)" },

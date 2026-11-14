@@ -1,10 +1,11 @@
 import { regexExpression, regexMatches, regexReplacement } from "../core/regex-search.ts";
 import type { TextEdit } from "../core/changes.ts";
+export const regexProtocolVersion = 1;
 export const regexChunkUnits = 32768;
 export const regexSourceLimit = 32 * 1024 * 1024;
 export const regexMatchLimit = 1_000_000;
 export type RegexRange = Readonly<{ from: number; to: number }>;
-export type RegexReply = Readonly<{ operation: "regex-progress"; id: number; revision: number; received: number }>
+export type RegexReply = Readonly<{ operation: "regex-progress"; id: number; revision: number; received: number; version?: number }>
     | Readonly<{ operation: "regex-matches"; id: number; revision: number; matches: readonly RegexRange[] }>
     | Readonly<{ operation: "regex-edits"; id: number; revision: number; edits: readonly TextEdit[] }>
     | Readonly<{ operation: "regex-edit"; id: number; revision: number; ordinal: number; from: number; to: number; units: number }>
@@ -32,6 +33,7 @@ export class RegexSession {
             this.generation++; this.request = undefined;
             if (!integer(value.id) || value.id === 0 || !integer(value.revision)) return;
             const error = (message: string): RegexReply => ({ operation: "regex-error", id: value.id as number, revision: value.revision as number, message });
+            if (value.version !== regexProtocolVersion) { yield error("Unsupported regex worker protocol version."); return; }
             if (!integer(value.length) || value.length > regexSourceLimit || typeof value.pattern !== "string" || value.pattern.length > 4096 || typeof value.matchCase !== "boolean"
                 || value.wholeWord !== undefined && typeof value.wholeWord !== "boolean") {
                 yield error("Regex input exceeds the supported source/pattern bounds."); return;
@@ -46,7 +48,7 @@ export class RegexSession {
             catch { yield error("Invalid regular expression."); return; }
             this.request = { id: value.id, revision: value.revision, length: value.length, pattern: value.pattern, matchCase: value.matchCase, wholeWord, received: 0, parts: [],
                 replacement: value.replacement as string | undefined, range: value.range === undefined ? undefined : { from: (value.range as RegexRange).from, to: (value.range as RegexRange).to }, maxOutputUnits: value.maxOutputUnits as number | undefined ?? regexSourceLimit };
-            yield { operation: "regex-progress", id: value.id, revision: value.revision, received: 0 }; return;
+            yield { operation: "regex-progress", id: value.id, revision: value.revision, received: 0, version: regexProtocolVersion }; return;
         }
         const request = this.request;
         if (!request) return;
@@ -99,6 +101,10 @@ export class RegexSession {
         if (outputLength > regexSourceLimit) { yield this.fail("Regex result exceeds the supported document size."); return; }
         this.request = undefined; yield { operation: "regex-done", id: request.id, revision: request.revision, count,
             ...(request.replacement === undefined ? {} : { outputLength }) };
+    }
+    /** The worker boundary uses the captured request, never the latest incoming message. */
+    abort(): RegexReply | undefined {
+        return this.request ? this.fail("Regex search failed; editing remains available.") : undefined;
     }
     private fail(message: string): RegexReply {
         const request = this.request!; this.request = undefined; this.generation++;

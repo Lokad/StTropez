@@ -10,7 +10,12 @@ function publish(replies: Generator<RegexReply>): void {
                 continuation = { id: result.value.id, revision: result.value.revision, replies }; return;
             }
         }
-    } catch { globalThis.postMessage(JSON.stringify({ operation: "regex-worker-error", message: "Regex search failed; editing remains available." })); }
+    } catch (error) {
+        continuation = undefined; replies.return(undefined);
+        const reply = session.abort();
+        if (!reply) throw error; // No live capture: the worker error channel settles the client.
+        globalThis.postMessage(JSON.stringify(reply));
+    }
 }
 globalThis.addEventListener("message", (event: MessageEvent<unknown>) => {
     let decoded: unknown;

@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { RegexSession, regexChunkUnits, regexSourceLimit } from "../src/browser/regex-session.ts";
-const start = (length: number, pattern = "😀(?<word>𐐀value)\\r\\nnext") => ({ operation: "regex-start", id: 1, revision: 7, length, pattern, matchCase: true });
+import { RegexSession, regexChunkUnits, regexSourceLimit, regexProtocolVersion } from "../src/browser/regex-session.ts";
+const start = (length: number, pattern = "😀(?<word>𐐀value)\\r\\nnext") => ({ operation: "regex-start", version: regexProtocolVersion, id: 1, revision: 7, length, pattern, matchCase: true });
 
 test("regex transfer preserves cross-chunk raw spans and publishes bounded pages only after complete capture", () => {
     const session = new RegexSession(), text = "x".repeat(regexChunkUnits - 1) + "😀𐐀value\r\nnext", request = start(text.length);
-    assert.deepEqual([...session.receive(request)], [{ operation: "regex-progress", id: 1, revision: 7, received: 0 }]);
+    assert.deepEqual([...session.receive(request)], [{ operation: "regex-progress", id: 1, revision: 7, received: 0, version: regexProtocolVersion }]);
     assert.deepEqual([...session.receive({ operation: "regex-chunk", id: 1, revision: 7, from: 0, text: text.slice(0, regexChunkUnits) })], [{ operation: "regex-progress", id: 1, revision: 7, received: regexChunkUnits }]);
     const received = [...session.receive({ operation: "regex-chunk", id: 1, revision: 7, from: regexChunkUnits, text: text.slice(regexChunkUnits) })]; assert.equal(received[0]!.operation, "regex-progress");
     assert.deepEqual([...session.receive({ operation: "regex-run", id: 1, revision: 7 })], [
@@ -17,6 +17,11 @@ test("regex transfer preserves cross-chunk raw spans and publishes bounded pages
 });
 
 test("regex capture rejects malformed ordering/bounds and superseded generators cannot finish a newer request", () => {
+    for (const version of [undefined, 2]) {
+        const session = new RegexSession();
+        assert.deepEqual([...session.receive({ ...start(1), version })], [{ operation: "regex-error", id: 1, revision: 7, message: "Unsupported regex worker protocol version." }]);
+        assert.deepEqual([...session.receive({ operation: "regex-chunk", id: 1, revision: 7, from: 0, text: "x" })], []);
+    }
     for (const bad of [{ ...start(1), length: regexSourceLimit + 1 }, { ...start(1), pattern: "(" }, { ...start(1), matchCase: "yes" }]) {
         const session = new RegexSession(); assert.equal([...session.receive(bad)][0]!.operation, "regex-error");
     }

@@ -47,6 +47,9 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         const active = cursor, plan = planCursor, authority = stopPlanAuthority; cursor = undefined; planCursor = undefined; stopPlanAuthority = undefined;
         navigatedZero = undefined; replacedZero = undefined;
         active?.dispose(); plan?.dispose(); authority?.(); };
+    const reset = (patch: Partial<FindSnapshot>) => {
+        pages = []; count = 0; publish({ ...patch, count: 0, scanned: 0, current: null, preview: Object.freeze([]) });
+    };
     const later = (work: () => void, delay = 0) => { timer = win.setTimeout(() => { timer = undefined; work(); }, delay); };
     const offsetAt = (index: number) => pages[Math.floor(index / 1024)]![(index % 1024) * 2]!;
     const endAt = (index: number) => pages[Math.floor(index / 1024)]![(index % 1024) * 2 + 1]!;
@@ -67,14 +70,14 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         if (token !== generation || disposed) return;
         stop(); const message = error instanceof Error && error.message.length <= 256 ? error.message : "Search is unavailable; editing remains available.";
         if (planning) publish({ status: "ready", message });
-        else { pages = []; count = 0; publish({ status: "failed", count: 0, current: null, preview: Object.freeze([]), message }); }
+        else reset({ status: "failed", message });
     };
     function restart(query: string, wholeWord = store.get().wholeWord, matchCase = store.get().matchCase, regularExpression = store.get().regularExpression): void {
-        stop(); pages = []; count = 0;
-        if (!valid()) { publish({ status: "expired", count: 0, current: null, preview: Object.freeze([]), message: "View is unavailable." }); return; }
+        stop();
+        if (!valid()) { reset({ status: "expired", message: "View is unavailable." }); return; }
         const document = workspace.document(documentId), token = generation;
-        publish({ query, wholeWord, matchCase, regularExpression, revision: document.revision, status: query ? "searching" : "idle", count: 0, scanned: 0, length: document.buffer.length,
-            current: null, preview: Object.freeze([]), message: "", maxScanStepMs: 0 });
+        reset({ query, wholeWord, matchCase, regularExpression, revision: document.revision, status: query ? "searching" : "idle", length: document.buffer.length,
+            message: "", maxScanStepMs: 0 });
         if (!query) return;
         try {
             if (regularExpression && !backend) throw new Error("Regular-expression search is unavailable in this host.");
@@ -133,7 +136,8 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         const index = indexAt(low);
         if (index < count && offsetAt(index) === low && endAt(index) === high && !(low === high && replacedHere())) return { from: low, to: high };
         // A manually selected overlapping regex range is validated by the captured backend plan.
-        if (state.regularExpression) return high > low ? { from: low, to: high } : undefined;
+        if (state.regularExpression) return high > low && (index < count && offsetAt(index) < high && endAt(index) > low
+            || index > 0 && endAt(index - 1) > low) ? { from: low, to: high } : undefined;
         if (state.wholeWord) return undefined;
         const buffer = workspace.document(documentId).buffer;
         if (state.matchCase) return high - low === state.query.length && buffer.slice(low, high) === state.query ? { from: low, to: high } : undefined;
@@ -209,8 +213,9 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     }
     const replaceCurrent = (replacement: string): boolean => {
         scope.assertWritable(); if (typeof replacement !== "string") throw new TypeError("Expected replacement text.");
+        if (!valid()) return false;
         if (!canEdit()) { publish({ message: "read-only" }); return false; }
-        if (editor.snapshot().composing && valid()) { publish({ message: "Finish composition before replacing." }); return false; }
+        if (editor.snapshot().composing) { publish({ message: "Finish composition before replacing." }); return false; }
         const match = currentRange(); if (!match) return next();
         if (store.get().regularExpression) return regexPlan(store.get(), replacement, match);
         const head = match.from + replacement.length;
@@ -256,13 +261,13 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     const subscriptions = [() => owner.removeEventListener("focusin", focusChanged), () => editor.input.removeEventListener("compositionstart", compositionStarted), workspace.observeDocument(documentId).subscribe(() => {
         if (store.get().status === "cancelled" && valid()) { const current = workspace.document(documentId); publish({ revision: current.revision, length: current.buffer.length }); }
         else restart(store.get().query);
-    }), workspace.tabState.subscribe(() => { if (!valid()) { stop(); pages = []; count = 0; publish({ status: "expired", count: 0, preview: Object.freeze([]), message: "View is unavailable." }); } })];
+    }), workspace.tabState.subscribe(() => { if (!valid()) { stop(); reset({ status: "expired", message: "View is unavailable." }); } })];
     return Object.freeze({ state: store.observable, setQuery: (query: string) => { scope.assertWritable(); if (typeof query !== "string") throw new TypeError("Expected a search string."); if (!disposed) restart(query); },
         setOptions: (options: FindOptions) => {
             scope.assertWritable(); if (options === null || typeof options !== "object" || (options.wholeWord !== undefined && typeof options.wholeWord !== "boolean" || options.matchCase !== undefined && typeof options.matchCase !== "boolean" || options.regularExpression !== undefined && typeof options.regularExpression !== "boolean")) throw new TypeError("Expected find options.");
-            const wholeWord = options.wholeWord ?? false, matchCase = options.matchCase ?? true, regularExpression = options.regularExpression ?? false;
+            const state = store.get(), wholeWord = options.wholeWord ?? state.wholeWord, matchCase = options.matchCase ?? state.matchCase, regularExpression = options.regularExpression ?? state.regularExpression;
             if (!disposed && (wholeWord !== store.get().wholeWord || matchCase !== store.get().matchCase || regularExpression !== store.get().regularExpression)) restart(store.get().query, wholeWord, matchCase, regularExpression);
         },
-        next, replaceCurrent, replaceAll, cancel: () => { scope.assertWritable(); if (!disposed) { stop(); pages = []; count = 0; publish({ status: "cancelled", count: 0, current: null, preview: Object.freeze([]), message: "Search cancelled." }); } },
-        destroy: () => { if (disposed) return; scope.assertWritable(); disposed = true; stop(); pages = []; count = 0; subscriptions.forEach(unsubscribe => unsubscribe()); lease.release(); publish({ status: "disposed", query: "", count: 0, scanned: 0, length: 0, current: null, preview: Object.freeze([]) }); } });
+        next, replaceCurrent, replaceAll, cancel: () => { scope.assertWritable(); if (!disposed) { stop(); reset({ status: "cancelled", message: "Search cancelled." }); } },
+        destroy: () => { if (disposed) return; scope.assertWritable(); disposed = true; stop(); subscriptions.forEach(unsubscribe => unsubscribe()); lease.release(); reset({ status: "disposed", query: "", length: 0, message: "" }); } });
 }

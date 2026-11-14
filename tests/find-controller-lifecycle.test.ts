@@ -40,17 +40,20 @@ for (const lifetime of ["destroyed", "expired", "view-disposed"] as const) for (
         const tab = workspace.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId, { anchor: 0, head: 6 });
         const owner = Object.assign(new EventTarget(), { defaultView: { setTimeout, clearTimeout, performance } });
         // This headless facade exercises controller ownership and notifications. Real DOM/input remains browser coverage.
-        const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), snapshot: () => ({ composing, disposed: false }),
-            viewport: { revealOffset: () => { throw new Error("Inactive view must not be revealed."); } },
-            focus: () => { throw new Error("Inactive editor must not receive focus."); } } as unknown as EditingCandidate;
+        let inactive = false;
+        const editor = { view, element: { ownerDocument: owner }, input: Object.assign(new EventTarget(), { readOnly: true }), snapshot: () => ({ composing: inactive && composing, disposed: false }),
+            viewport: { revealOffset: () => { assert.equal(inactive, false, "Inactive view must not be revealed."); } },
+            focus: () => { assert.equal(inactive, false, "Inactive editor must not receive focus."); } } as unknown as EditingCandidate;
         const find = createFindController(workspace, tab, editor); let stop = () => {};
         try {
             find.setQuery("sample");
             for (let turns = 0; find.state.getSnapshot().status !== "ready"; turns++) { assert.ok(turns < 100); await new Promise(resolve => setTimeout(resolve, 1)); }
+            find.next(); assert.notEqual(find.state.getSnapshot().current, null); inactive = true;
             if (lifetime === "destroyed") find.destroy();
             else if (lifetime === "expired") workspace.replace(tab, { kind: "panel", resourceId: workspace.resourceForDocument(documentId).id, panelType: "configuration" });
             else view.dispose();
             const before = find.state.getSnapshot(), document = workspace.document(documentId), selected = view.getSnapshot(), history = workspace.observeHistory(documentId).getSnapshot();
+            if (lifetime !== "view-disposed") assert.equal(before.current, null);
             let notifications = 0; stop = find.state.subscribe(() => { notifications++; });
             const returned = find.replaceCurrent("changed"), after = find.state.getSnapshot();
             t.diagnostic(JSON.stringify({ lifetime, composing, returned, notifications, before, after }));
@@ -92,7 +95,7 @@ test("case options retain raw Unicode matches, cancel captured plans and preserv
         assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).applied, true); drain(); assert.equal(text(), original);
         const many = "K k K_\n".repeat(1100);
         workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision, origin: "human", edits: [{ from: 0, to: original.length, insert: many }] });
-        find.setOptions({ matchCase: false }); find.setQuery("k"); drain(); assert.equal(find.state.getSnapshot().count, 3300);
+        find.setOptions({ matchCase: false, wholeWord: false }); find.setQuery("k"); drain(); assert.equal(find.state.getSnapshot().count, 3300);
         find.next(-1); assert.equal(view.getSnapshot().selection.anchor, many.lastIndexOf("K"));
         const revision = workspace.document(documentId).revision; find.replaceAll("x"); runOne();
         const primary = view.getSnapshot().selection;

@@ -1,4 +1,4 @@
-# Literal find and replace
+# Find and replace
 
 `LiteralSearch` scans an immutable `TextBuffer` without flattening it. Matching defaults to exact,
 case-sensitive UTF-16, with non-overlapping ranges and no newline normalization. An empty query
@@ -57,7 +57,8 @@ is released on query changes, cancellation, expiry or destruction. This is expli
 search work, outside the ordinary editing path.
 
 `setQuery`, `setOptions({ wholeWord, matchCase, regularExpression })`, `next(1 | -1)`, `replaceCurrent`, `replaceAll`, `cancel` and `destroy` are explicit
-commands. Navigation waits for a completed index, wraps, and uses the captured document view.
+commands. `setOptions` patches only supplied choices, preserving other options. Navigation waits
+for a completed index, wraps, and uses the captured document view.
 Replacing a current selection requires a literal match under the current options; otherwise the command selects
 the next match. Whole-word replacement additionally requires the selection to be in the current
 match index, so selecting a substring inside a larger word does not make it replaceable.
@@ -70,7 +71,8 @@ yielding planning does not qualify large replace-all latency or memory.
 
 Changing options cancels a queued replacement through the existing generation/timer guards
 and scans the unchanged source again. Snapshots expose immutable `wholeWord` and
-`matchCase` and `regularExpression` flags. Unspecified options use the defaults (`wholeWord: false`, `matchCase: true`, `regularExpression: false`).
+`matchCase` and `regularExpression` flags. Initial defaults are `wholeWord: false`,
+`matchCase: true` and `regularExpression: false`; subsequent patches retain unspecified choices.
 Both host find panels and the editing fixture expose **Whole word**, **Match case** and **Regular expression** checkboxes; the host keeps the options
 when commands move between source/comparison views and when views remount.
 
@@ -133,13 +135,22 @@ find.replaceAll("[$<word>]"); // after state.status becomes "ready"
 
 Expressions use `gmu`, adding `i` when **Match case** is cleared. Native matching, captures,
 lookarounds, Unicode properties and replacement tokens (`$$`, `$&`, prefix/suffix, numbered
-and named groups) retain their platform semantics. There is no normalization of raw UTF-16
-offsets or newline sequences. Whole-word mode applies the shared code-word constituent policy
-around the expression before matching, so native alternatives and backtracking respect the
-boundary. An empty query keeps find idle; use `(?:)` for zero-width matches. Navigation advances
-between distinct zero-width matches, including raw CRLF positions, and wraps. Current replacement
-accepts an indexed match or a manually selected nonempty overlap validated in full source context.
+and named groups) retain their platform semantics. Line anchors follow the editor's LF rows:
+`^` matches document start or after LF; `$` matches before LF or a complete CRLF, or at EOF.
+Neither anchor splits CRLF or treats bare CR, U+2028 or U+2029 as a row boundary. Guards around
+native assertions implement these bounds while preserving inline flag groups and captures.
+Explicit patterns still address raw UTF-16 units; text and offsets are never normalized.
+The bare pattern is validated before whole-word wrapping, which applies the shared code-word
+constituent policy so native alternatives and backtracking respect the boundary. An empty query
+keeps find idle; use `(?:)` for zero-width matches. Navigation advances between distinct zero-width
+matches, including raw CRLF positions for explicit empty patterns, and wraps. Current replacement
+accepts an indexed match or a manually selected nonempty overlap validated in full source context;
+an unrelated selection navigates to a match without starting replacement work.
 The next current command skips a just-replaced zero-width occurrence. Undo restores complete sets.
+
+The separately deployed worker and client exchange protocol version 1 in the start request and
+acknowledgement. Missing or incompatible versions fail before source transfer. Execution errors
+carry the active request ID and revision and release that capture.
 
 Source transfer is an explicit global operation: up to 32 Mi UTF-16 units in acknowledged
 32,768-unit chunks, joined only inside the worker. It avoids `TextBuffer.text()` exports, but

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { TextBuffer, applyTextEdits } from "../src/index.ts";
 import type { TextEdit } from "../src/index.ts";
 import { createRegexCursor } from "../src/browser/regex-client.ts";
-import { RegexSession } from "../src/browser/regex-session.ts";
+import { RegexSession, regexProtocolVersion } from "../src/browser/regex-session.ts";
 import type { RegexReply } from "../src/browser/regex-session.ts";
 class FixtureWorker extends EventTarget {
     readonly messages: Record<string, unknown>[] = [];
@@ -107,6 +107,15 @@ test("regex client cancellation, timeout and malformed responses release the lan
         await assert.rejects(pending); assert.equal(worker.terminated, true); assert.equal(f.timers.size, 0); assert.equal(worker.messages.length, 1); f.cursor.dispose();
     }
     const f = fixture(TextBuffer.from("text"), "x", false), pending = f.cursor.next(), worker = f.workers[0]!;
-    worker.reply({ operation: "regex-progress", id: worker.messages[0]!.id, revision: 9, received: 0 }); f.cursor.dispose(); await assert.rejects(pending, /cancelled/);
+    worker.reply({ operation: "regex-progress", id: worker.messages[0]!.id, revision: 9, received: 0, version: regexProtocolVersion }); f.cursor.dispose(); await assert.rejects(pending, /cancelled/);
     assert.equal(worker.messages.length, 1); assert.equal(f.timers.size, 0);
+});
+
+test("regex client rejects absent or incompatible handshake versions before transferring source", async () => {
+    for (const version of [undefined, 2]) {
+        const f = fixture(TextBuffer.from("text"), "x", false), pending = f.cursor.next(), worker = f.workers[0]!;
+        worker.reply({ operation: "regex-progress", id: worker.messages[0]!.id, revision: 9, received: 0, version });
+        await assert.rejects(pending, /Unsupported regex worker protocol version/);
+        assert.equal(worker.terminated, true); assert.equal(f.timers.size, 0); assert.equal(worker.messages.length, 1);
+    }
 });
