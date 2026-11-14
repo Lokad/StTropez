@@ -80,6 +80,23 @@ test("cold shared 100k-line and long-line point edits avoid document-sized index
     }
 });
 
+test("distant small edits keep alignment storage independent of unchanged row count", context => {
+    const allocations: number[] = [], Native = Int32Array;
+    context.mock.method(globalThis, "Int32Array", new Proxy(Native, { construct(target, args) {
+        const array = Reflect.construct(target, args) as Int32Array; allocations.push(array.length); return array;
+    } }));
+    for (const count of [256, 100000]) {
+        const original = Array.from({ length: count }, (_, i) => `row${i}\n`).join(""), baseline = TextBuffer.from(original);
+        const working = baseline.apply([{ from: 0, to: 1, insert: "R" }, { from: original.length - 2, to: original.length - 1, insert: "!" }]).buffer;
+        const expected = "R" + original.slice(1, -2) + "!\n"; allocations.length = 0;
+        const result = finish(baseline, working);
+        reconstruct(result, original, expected); assert.equal(result.hunks.length, 2); assert.equal(result.lineEdits, 4);
+        assert.ok(allocations.length > 0, "exercise the alignment frontier");
+        assert.ok(allocations.reduce((total, size) => total + size, 0) < 128, `allocated ${allocations} frontier slots for ${count} rows`);
+        assert.ok(result.work < 20000); assert.ok(result.readUnits < 4096);
+    }
+});
+
 test("disjoint long-line blocks retain linear scanning and lazy hash collisions still require exact equality", () => {
     const a = Array.from({ length: 300 }, (_, i) => `baseline ${i} ` + "x".repeat(1000) + "\n").join("");
     const b = Array.from({ length: 300 }, (_, i) => `working ${i}  ` + "y".repeat(1000) + "\n").join("");

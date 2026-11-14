@@ -113,9 +113,9 @@ function* singleTokenAlignment(left: Index, right: Index, region: Region, stats:
     return changes;
 }
 function* bisect(a: Index, b: Index, region: Region, stats: Stats): Generator<void, readonly [number, number] | Readonly<{ changes: readonly Region[] }>> {
-    const n = region.a1 - region.a0, m = region.b1 - region.b0, maximum = Math.ceil((n + m) / 2), origin = maximum + 1, delta = n - m;
-    const forward = new Int32Array(maximum * 2 + 3), reverse = new Int32Array(maximum * 2 + 3);
-    for (let index = 0; index < forward.length; index++) { forward[index] = -1; reverse[index] = -1; if (tick(stats, 2)) yield; }
+    const n = region.a1 - region.a0, m = region.b1 - region.b0, maximum = Math.ceil((n + m) / 2), delta = n - m;
+    let radius = 0, origin = 1, forward = new Int32Array(3).fill(-1), reverse = new Int32Array(3).fill(-1);
+    if (tick(stats, 6)) yield;
     forward[origin + 1] = 0; reverse[origin + 1] = 0;
     const start = (vector: Int32Array, diagonal: number): number => {
         const index = origin + diagonal, insert = vector[index + 1]!, remove = vector[index - 1]! < 0 ? -1 : vector[index - 1]! + 1;
@@ -128,6 +128,18 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats): Generator<vo
         if (distance === 64 && Math.min(n, m) >= 64) {
             const changes = yield* singleTokenAlignment(a, b, region, stats);
             if (changes) return { changes };
+        }
+        if (distance > radius) {
+            // Only visited diagonals need storage. Retain both parities and their empty
+            // neighbours so growth preserves the same frontier and overlap tie choices.
+            const nextRadius = Math.min(maximum, Math.max(8, radius * 2)), nextOrigin = nextRadius + 1;
+            const nextForward = new Int32Array(nextRadius * 2 + 3), nextReverse = new Int32Array(nextForward.length);
+            for (let index = 0; index < nextForward.length; index++) {
+                const prior = index - nextOrigin + origin;
+                nextForward[index] = forward[prior] ?? -1; nextReverse[index] = reverse[prior] ?? -1;
+                if (tick(stats, 2)) yield;
+            }
+            radius = nextRadius; origin = nextOrigin; forward = nextForward; reverse = nextReverse;
         }
         for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
             let x = start(forward, diagonal), y = x - diagonal;

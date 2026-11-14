@@ -135,7 +135,9 @@ lines, and stale revision jobs are
 disposed before replacement. The budget is work accounting, not a hard millisecond deadline:
 allocation, garbage collection, publication and rendering can still delay a turn. Alignment
 uses line metadata and linear search space; difficult repeated-line cases can take quadratic
-work. No worker or WASM runtime is required.
+work. Bisection frontiers grow geometrically with the explored edit distance instead of the
+whole region's line count. Growth copies and initializes slots cooperatively; exact alignment
+and tie choices are unchanged. No worker or WASM runtime is required.
 
 Diff progress alone does not invalidate either viewport. A new generation or status redraws
 decorations; selection and scrolling retain their viewport-owned invalidation. This avoids
