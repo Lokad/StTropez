@@ -32,6 +32,62 @@ function raw() {
 }
 const flush = async () => { await setImmediate(); await setImmediate(); };
 
+test("RPC JSON node limits follow the message budget and accept large bounded replies", async t => {
+    const wire = raw(), timer = clock(), rpc = new JsonRpcConnection(wire.port, { schedule: timer.schedule });
+    t.after(() => rpc.dispose());
+    const items = Array.from({ length: 60_000 }, (_, i) => ({ label: `item${i}` })), call = rpc.request("items");
+    let received: unknown; void call.result.then(value => { received = value; }, error => { received = error; });
+    wire.receive({ jsonrpc: "2.0", id: call.id, result: items }); await flush();
+    assert.equal(rpc.snapshot().pendingRequests, 0); assert.equal(timer.count(), 0);
+    assert.deepEqual(received, items); assert.equal(Object.isFrozen(received), true); assert.equal(Object.isFrozen((received as object[])[0]), true);
+    rpc.notify("items", items); assert.deepEqual(wire.sent.at(-1), { jsonrpc: "2.0", method: "items", params: items });
+});
+
+test("over-budget response envelopes reject their known calls immediately without replying to responses", async t => {
+    const wire = raw(), timer = clock(), failures: Error[] = [], rpc = new JsonRpcConnection(wire.port, {
+        schedule: timer.schedule, maxJsonNodes: 64, onError: error => { failures.push(error); } });
+    t.after(() => rpc.dispose());
+    const unrelated = rpc.request("unrelated"); void unrelated.result.catch(() => {});
+    for (const batch of [false, true]) {
+        const first = rpc.request("large"), second = batch ? rpc.request("also-large") : undefined, rejected: unknown[] = [];
+        const calls = [first, ...(second ? [second] : [])];
+        calls.forEach(call => { void call.result.catch(error => { rejected.push(error); }); });
+        const replies = calls.map(call => ({ jsonrpc: "2.0", id: call.id, result: Array(100).fill(0) })), sent = wire.sent.length;
+        wire.receive(batch ? replies : replies[0]); await flush();
+        assert.equal(rpc.snapshot().pendingRequests, 1); assert.equal(timer.count(), 1); assert.equal(rejected.length, calls.length);
+        assert.ok(rejected.every(error => error instanceof RpcError && /JSON.*limit/.test(error.message)));
+        assert.equal(wire.sent.length, sent); assert.equal(rpc.snapshot().disposed, false);
+    }
+    assert.throws(() => rpc.notify("large", Array(100).fill(0)), /bounded JSON/);
+    wire.receive({ jsonrpc: "2.0", id: unrelated.id, result: "still usable" }); assert.equal(await unrelated.result, "still usable");
+    assert.equal(timer.count(), 0); assert.deepEqual(failures, []);
+    const deep = rpc.request("deep"); let depthError: unknown; void deep.result.catch(error => { depthError = error; });
+    let nested: unknown = null; for (let i = 0; i < 70; i++) nested = [nested];
+    wire.receive({ jsonrpc: "2.0", id: deep.id, result: nested }); await flush();
+    assert.ok(depthError instanceof RpcError); assert.equal(timer.count(), 0); assert.equal(rpc.snapshot().disposed, false);
+    const sent = wire.sent.length;
+    wire.receive([{ jsonrpc: "2.0", method: "note", params: Array(100).fill(0) },
+        { jsonrpc: "2.0", method: "host/work", id: "incoming", params: Array(100).fill(0) }]); await flush();
+    assert.equal(failures.length, 1); assert.equal(wire.sent.length, sent + 1);
+    assert.deepEqual(wire.sent.at(-1), [{ jsonrpc: "2.0", id: "incoming", error: { code: -32600, message: "RPC JSON structure exceeds the configured node limit or nesting limit." } }]);
+    for (const maxJsonNodes of [0, -1, NaN, Infinity, 1.5]) assert.throws(() => new JsonRpcConnection(raw().port, { schedule: timer.schedule, maxJsonNodes }), /Invalid RPC limits/);
+    const excessBatch = rpc.request("batch"), closed = assert.rejects(excessBatch.result, /batch exceeds/);
+    wire.receive(Array(129).fill({ jsonrpc: "2.0", id: excessBatch.id, result: null })); await closed;
+    assert.equal(timer.count(), 0); assert.equal(rpc.snapshot().disposed, true);
+});
+
+test("uncorrelated RPC errors are reported while successful late responses remain harmless", async t => {
+    const wire = raw(), timer = clock(), failures: Error[] = [], rpc = new JsonRpcConnection(wire.port, { schedule: timer.schedule, onError: error => { failures.push(error); } });
+    t.after(() => rpc.dispose());
+    const call = rpc.request("current"), sent = wire.sent.length;
+    void call.result.catch(() => {});
+    for (const id of [null, "unknown", call.id + 1]) wire.receive({ jsonrpc: "2.0", id, error: { code: -32700, message: "Peer failure", data: { id } } });
+    wire.receive({ jsonrpc: "2.0", id: call.id + 1, result: "late" }); await flush();
+    assert.equal(failures.length, 3); assert.ok(failures.every(error => error instanceof RpcError && error.code === -32700 && error.message === "Peer failure"));
+    assert.equal(wire.sent.length, sent); assert.equal(rpc.snapshot().pendingRequests, 1);
+    wire.receive({ jsonrpc: "2.0", id: call.id, result: "current" }); assert.equal(await call.result, "current"); rpc.dispose();
+});
+
 test("reference3.17.5 peer interoperates bidirectionally with standard LSP envelopes and out-of-order responses", async t => {
     const wire = channel(), timer = clock(), rpc = new JsonRpcConnection(wire.left, { schedule: timer.schedule }), peer = referencePeer(wire.right);
     t.after(() => { rpc.dispose(); peer.dispose(); }); let initialized = false;

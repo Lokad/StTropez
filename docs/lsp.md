@@ -153,10 +153,16 @@ time is neither editor input-handler time nor complete interaction/display laten
 establish session behavior, not native input, production-provider or full LSP feature qualification.
 
 Default limits are 64 concurrent outgoing and incoming calls, 15-second request/open deadlines,
-4 Mi UTF-16 units per message, 128 batch elements, 64 JSON nesting levels and 100,000 JSON values.
+4 Mi UTF-16 units per message, 128 batch elements and 64 JSON nesting levels. `rpc.maxJsonNodes`
+bounds JSON values in a complete message, including a batch; it defaults to `rpc.maxMessageUnits`
+(4,194,304). A value counts once, including each array/object and each primitive. Host-supplied
+option/feature snapshots retain their separate 100,000-value validation bound.
 The browser adapter also bounds queued output by a conservative 16 MiB UTF-8 estimate. Exceeding
-transport bounds closes the connection; malformed responses cannot advance another request.
-Notifications receive no responses, and late cancelled/expired response identifiers are ignored.
+transport or batch-count bounds closes the connection; malformed responses cannot advance another request.
+A structurally over-budget response rejects its identified pending call and releases its deadline
+immediately. Other calls remain usable. A rejected batch rejects its identified calls as a group.
+Notifications receive no responses; successful late replies are ignored, while uncorrelated error
+responses (including null IDs) reach `onError` without generating a response of their own.
 Identifiers support strings, null and safe integers; fractional or unsafe numeric identifiers are refused.
 
 The envelope/error/batch rules follow [JSON-RPC 2.0](https://www.jsonrpc.org/specification).

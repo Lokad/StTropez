@@ -39,7 +39,7 @@ export type LspSessionOptions = Readonly<{ connect: (context: LspConnectContext)
     markdownDocumentation?: boolean;
     /** Declare only features whose results the consuming host validates and presents. */
     features?: readonly LspFeature[]; diagnostics?: boolean; workspaceEdits?: boolean; applyEdit?: boolean; pathForUri?: LspUriPath; maxDocuments?: number; maxDocumentUnits?: number; maxTotalUnits?: number;
-    rpc?: Pick<RpcOptions, "timeoutMs" | "maxPending" | "maxMessageUnits">; onError?: (error: Error) => void }>;
+    rpc?: Pick<RpcOptions, "timeoutMs" | "maxPending" | "maxMessageUnits" | "maxJsonNodes">; onError?: (error: Error) => void }>;
 type Entry = { snapshot: LspDocumentSnapshot; handle: LspDocument };
 type Remote = { entry: Entry; snapshot: LspDocumentSnapshot; index: LspLineIndex; version: number };
 type Registration = { value: LspRegistration; selector: LspSelector };
