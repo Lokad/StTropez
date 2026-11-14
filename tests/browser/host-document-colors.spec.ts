@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const input = (p: Page, name = "Primary source") => p.getByRole("textbox", { name, exact: true });
@@ -10,7 +10,7 @@ async function ready(p: Page): Promise<void> { await expect.poll(() => p.evaluat
         && (!c || c.status === "ready" && !c.input.pendingCommand && !c.input.pendingCaret && !c.workingViewport.pending && !c.referenceViewport?.pending);
 }), { timeout: 30000 }).toBe(true); }
 async function exact(p: Page, text: string): Promise<void> { expect(await p.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false; for (let at = 0; at < text.length; at += 32768) if (f.range(at, Math.min(at + 32768, text.length)) !== text.slice(at, at + 32768)) return false; return true; }, text)).toBe(true); }
-async function setup(p: Page, host: string, text: string): Promise<void> { p.on("pageerror", error => { throw error; }); await p.goto(`/hosts/${host}/?editor=candidate`); await p.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text); await ready(p); }
+async function setup(p: Page, host: string, text: string): Promise<void> {  await p.goto(`/hosts/${host}/?editor=candidate`); await p.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text); await ready(p); }
 async function select(p: Page, at = 16): Promise<void> { await input(p).focus(); await p.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: at, head: at }]); }, at); }
 async function discover(p: Page): Promise<void> { await button(p, "Discover document colors").click(); await ready(p); }
 async function preview(p: Page, proposed = "#112233"): Promise<void> { await value(p).fill(proposed); await button(p, "Preview color presentations").click(); await ready(p); }

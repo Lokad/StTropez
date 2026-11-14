@@ -42,6 +42,7 @@ pane("workload").addEventListener("change", event => load((event.currentTarget a
 const status = () => { const current = workspace.document(source.documentId); pane("status").textContent = `${current.buffer.lineCount.toLocaleString()} lines · Revision ${current.revision}`; };
 const unsubscribe = workspace.observeDocument(source.documentId).subscribe(status); status();
 const fixture = { ready: true, load, edit, background,
+    reload: (value: string) => workspace.beginLoad(source).accept({ value }),
     select: (which: "primary" | "secondary", ranges: readonly Selection[], primary = 0) => views[which].view.setSelections(workspace.document(source.documentId).revision, ranges, primary),
     capture: (which: "primary" | "secondary") => views[which].captureView(),
     restore: (which: "primary" | "secondary", state: ViewState) => views[which].restoreView(state),

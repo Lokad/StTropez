@@ -396,7 +396,7 @@ async function select(page: Page, source: Locator, text: string) {
 
 /** The same user workflow is reusable by the source demo and a restored-assets consumer. */
 export async function runDemoWalkthrough(page: Page, url = "/") {
-    const errors: string[] = []; page.on("pageerror", error => errors.push(error.message)); page.on("dialog", dialog => dialog.accept());
+      page.on("dialog", dialog => dialog.accept());
     await page.goto(url);
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await expect(page.locator("#analysis-status")).toContainText("syntax & emit", { timeout: 30000 });
@@ -457,16 +457,16 @@ export async function runDemoWalkthrough(page: Page, url = "/") {
     await expect(page.locator("#editor")).toContainText("basketTotal(cart, 0.2)"); await expect(page.locator("#recovery-offer")).toBeHidden();
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await expect(page.locator("#analysis-status")).toContainText("syntax & emit", { timeout: 30000 });
-    expect(errors).toEqual([]);
+
     return Object.freeze({ provider: true, syntaxAndEmission: true, hover: true, signature: true, definition: true, crossFileRenameAndUndo: true,
-        quickFix: true, comparisonRevertUndo: true, projectSave: true, explicitRecoveryAndUndo: true, reload: true, pageErrors: errors });
+        quickFix: true, comparisonRevertUndo: true, projectSave: true, explicitRecoveryAndUndo: true, reload: true });
 }
 
 /** Concurrent saves use the same real provider/editor/review composition as the walkthrough. */
 export async function runDemoConflict(page: Page, url = "/") {
-    const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+
     await page.goto(url); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
-    const peer = await page.context().newPage(); peer.on("pageerror", error => errors.push(error.message));
+    const peer = await page.context().newPage();
     try {
         await peer.goto(page.url()); await expect(peer.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
         const main = page.getByRole("textbox", { name: "main.ts", exact: true });
@@ -491,8 +491,8 @@ export async function runDemoConflict(page: Page, url = "/") {
         await expect(page.locator("#editor")).not.toContainText("// Main page saved");
         await page.locator('[data-file="pricing.ts"]').click(); await expect(page.locator("#editor")).toContainText("// Peer helper work");
         await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
-        expect(errors).toEqual([]);
-        return Object.freeze({ concurrentProviderPages: true, projectConflict: true, preservedLocalEdits: true, staleReviewRejected: true, reviewedSave: true, reloadBothFiles: true, pageErrors: errors });
+
+        return Object.freeze({ concurrentProviderPages: true, projectConflict: true, preservedLocalEdits: true, staleReviewRejected: true, reviewedSave: true, reloadBothFiles: true });
     } finally { await peer.close(); }
 }
 /** One real-provider journey shared by source, static and restored-package demos. */

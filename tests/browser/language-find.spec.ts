@@ -1,12 +1,12 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.editingFixture.snapshot());
 async function ready(page: Page) { await expect.poll(async () => { const s = await snapshot(page); return s.primary.viewport.revision === s.document?.revision && !s.primary.viewport.pending && !s.secondary.viewport.pending; }).toBe(true); }
 async function found(page: Page, count: number) { await expect.poll(async () => { const s = (await snapshot(page)).find; return s.status === "ready" ? s.count : -1; }).toBe(count); }
 async function offer(page: Page) { await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible(); }
 test.beforeEach(async ({ page }) => {
-    page.on("pageerror", error => { throw error; });
-    page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
+
     await page.goto("/editing/"); await ready(page);
 });
 

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -16,7 +16,7 @@ async function exact(page: Page, text: string): Promise<void> {
 }
 for (const host of ["plain", "react"]) {
     for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} folding preserves independent views, review, history, captured Save/Run and remount`, async ({ page }) => {
-        test.setTimeout(120000); page.on("pageerror", error => { throw error; }); await page.goto(`/hosts/${host}/?editor=candidate`);
+        test.setTimeout(120000);  await page.goto(`/hosts/${host}/?editor=candidate`);
         const original = "header\r\nneedle one\r\nneedle two\r\n" + (large ? "const filler = 1;\r\n".repeat(100000) : "") + "footer\r\nend", footer = original.indexOf("footer");
         await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
         await button(page, "Open source review").click(); await ready(page); const reference = (await snapshot(page)).bindings.comparison!.baseline!.version;
@@ -58,7 +58,7 @@ for (const host of ["plain", "react"]) {
         await expect.poll(() => page.workers().length).toBe(0);
     });
     test(`${host} disclosure rejects old DOM captures, expires hover and respects composition`, async ({ page }) => {
-        page.on("pageerror", error => { throw error; }); await page.goto(`/hosts/${host}/?editor=candidate`); const text = "const alpha\r\nconst beta\r\nend";
+         await page.goto(`/hosts/${host}/?editor=candidate`); const text = "const alpha\r\nconst beta\r\nend";
         await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text);
         await input(page).focus(); await page.evaluate(to => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: to }]); }, text.indexOf("end"));
         await button(page, "Fold selected lines").click(); await ready(page); await input(page).press("ArrowRight"); await input(page).press("ArrowRight"); await ready(page);

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -12,7 +12,7 @@ async function ready(page: Page): Promise<void> {
     }), { timeout: 15000 }).toBe(true);
 }
 async function setup(page: Page, host: string, text: string): Promise<void> {
-    page.on("pageerror", error => { throw error; }); await page.goto(`/hosts/${host}/?editor=candidate`);
+     await page.goto(`/hosts/${host}/?editor=candidate`);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text); await ready(page); await input(page).focus();
 }
 async function select(page: Page, from: number, view: "primary" | "secondary" | "comparison" = "primary"): Promise<void> {

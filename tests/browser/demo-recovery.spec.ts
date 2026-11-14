@@ -1,7 +1,7 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 
 test("demo captures both files and explicitly restores a draft after real reload with linked undo", async ({ page }) => {
-    const errors: string[] = []; page.on("pageerror", error => errors.push(error.message)); page.on("dialog", dialog => dialog.accept());
+      page.on("dialog", dialog => dialog.accept());
     await page.goto("/");
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+Home"); await source.pressSequentially("// Recover my cart\n");
@@ -25,7 +25,7 @@ test("demo captures both files and explicitly restores a draft after real reload
     await page.reload();
     await expect(page.locator("#editor")).toContainText("// Recover my cart");
     await expect(page.locator("#recovery-offer")).toBeHidden();
-    expect(errors).toEqual([]);
+
 });
 
 test("typing while a committed restore awaits completion preserves current text and its recoverable draft", async ({ page }) => {

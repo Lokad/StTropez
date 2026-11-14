@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const button = (p: Page, name: string) => p.getByRole("button", { name, exact: true });
@@ -12,7 +12,7 @@ async function ready(p: Page): Promise<void> { await p.waitForFunction(() => { c
         && (!c.work.rowsAligned || c.workingViewport.aligned && c.referenceViewport?.aligned && c.workingViewport.alignmentId === c.referenceViewport.alignmentId)
         && s.bindings.views.every(v => !v.metrics!.pendingCommand && !v.metrics!.pendingInput && !v.metrics!.pendingCaret && !v.metrics!.viewport.pending);
 }, undefined, { timeout: 30000 }); }
-async function setup(p: Page, host: string, raw: string): Promise<void> { p.on("pageerror", e => { throw e; }); await p.goto(`/hosts/${host}/?editor=candidate`); await p.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, raw); for (const name of ["Open source review", "Capture review acceptance", "Finish review acceptance"]) { await button(p, name).click(); await ready(p); } }
+async function setup(p: Page, host: string, raw: string): Promise<void> {  await p.goto(`/hosts/${host}/?editor=candidate`); await p.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, raw); for (const name of ["Open source review", "Capture review acceptance", "Finish review acceptance"]) { await button(p, name).click(); await ready(p); } }
 async function exactWorking(p: Page, text: string): Promise<void> { expect(await p.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false; for (let i = 0; i < text.length; i += 32768) if (f.range(i, Math.min(i + 32768, text.length)) !== text.slice(i, i + 32768)) return false; return true; }, text)).toBe(true); }
 async function copy(p: Page, expected: string): Promise<void> { expect(await reference(p).evaluate((node, text) => { const data = new DataTransfer(), event = new ClipboardEvent("copy", { clipboardData: data, bubbles: true, cancelable: true }); node.dispatchEvent(event); return event.defaultPrevented && event.clipboardData!.getData("text/plain") === text; }, expected)).toBe(true); }
 async function dispose(p: Page): Promise<void> { await p.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(p); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.comparison).toBeNull(); }

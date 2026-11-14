@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snap = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const command = (p: Page, name: string) => p.getByRole("button", { name, exact: true }).click();
@@ -8,7 +8,7 @@ async function ready(p: Page) { await p.waitForFunction(() => { const b = window
 async function exact(p: Page, text: string) { expect(await p.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false; for (let i = 0; i < text.length; i += 32768) if (f.range(i, Math.min(text.length, i + 32768)) !== text.slice(i, i + 32768)) return false; return true; }, text)).toBe(true); }
 test.afterEach(async ({ page }, info) => { if (info.status !== info.expectedStatus && !page.isClosed()) await info.attach("load-failure-state", { contentType: "application/json", body: JSON.stringify(await snap(page), null, 2) }); });
 for (const host of ["plain", "react"]) for (const editor of ["native", "candidate"]) test(`${host} ${editor} repeated loads release clean documents and preserve reachable drafts`, async ({ page: p }) => {
-    const errors: string[] = []; p.on("pageerror", e => errors.push(e.message)); await p.goto(`/hosts/${host}/?editor=${editor}`); await expect(primary(p)).toBeVisible();
+      await p.goto(`/hosts/${host}/?editor=${editor}`); await expect(primary(p)).toBeVisible();
     const original = '// @transfer {"destination":"target.csv","batchSize":"1000"}\r\n' + "row café😀\r\n".repeat(editor === "candidate" ? 100000 : 8);
     await p.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
     await primary(p).press("Control+End"); await primary(p).pressSequentially("X"); await command(p, "Save source"); await command(p, "Run captured inputs");
@@ -46,5 +46,5 @@ for (const host of ["plain", "react"]) for (const editor of ["native", "candidat
     await command(p, "Begin delayed load"); expect((await snap(p)).loadPending).toBe(true); await command(p, "Finish delayed load"); await expect(primary(p)).toBeVisible();
     await command(p, "Prompt close"); await command(p, "Confirm close"); await command(p, "Reopen primary source"); await ready(p); await exact(p, text);
     expect(owned((await snap(p)).diagnostics)).toEqual(owned(completed));
-    await p.evaluate(() => window.hostFixture.dispose()); expect((await snap(p)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(errors).toEqual([]);
+    await p.evaluate(() => window.hostFixture.dispose()); expect((await snap(p)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });

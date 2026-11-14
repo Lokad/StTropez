@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
@@ -23,7 +23,7 @@ const nativeState = (page: Page) => page.locator("textarea").evaluateAll(nodes =
 for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const)
 for (const corpus of editor === "candidate" ? ["normal", "lines-100000"] : ["normal"]) {
     test(`${mode} ${editor} ${corpus} host form reset preserves source projections, captured save and shared history`, async ({ page }) => {
-        page.on("pageerror", error => { throw error; });
+
         await page.goto(`/hosts/${mode}/?editor=${editor}`);
         const button = (name: string) => page.getByRole("button", { name, exact: true });
         const primary = page.getByRole("textbox", { name: "Primary source", exact: true });

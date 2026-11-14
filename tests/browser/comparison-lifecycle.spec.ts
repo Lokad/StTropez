@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 async function ready(page: Page): Promise<void> {
@@ -12,7 +12,7 @@ async function ready(page: Page): Promise<void> {
 
 for (const host of ["plain", "react"]) for (const editor of ["native", "candidate"]) {
     test(`${host} ${editor} retains independent comparison views through close, background edits and full remount`, async ({ page }) => {
-        page.on("pageerror", error => { throw error; });
+
         await page.goto(`/hosts/${host}/?editor=${editor}`);
         await page.waitForFunction(() => window.hostFixture?.snapshot().bindings.activeViews === 2);
         await page.evaluate(() => {

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const input = (p: Page, name = "Primary source") => p.getByRole("textbox", { name, exact: true });
@@ -15,7 +15,7 @@ async function exact(p: Page, text: string): Promise<void> { expect(await p.eval
     for (let from = 0; from < text.length; from += 32768) if (f.range(from, Math.min(text.length, from + 32768)) !== text.slice(from, from + 32768)) return false; return true;
 }, text)).toBe(true); }
 async function setup(p: Page, host: string, text: string): Promise<void> {
-    p.on("pageerror", error => { throw error; }); await p.goto(`/hosts/${host}/?editor=candidate`);
+     await p.goto(`/hosts/${host}/?editor=candidate`);
     await p.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text); await ready(p);
 }
 async function select(p: Page, at: number, name: "primary" | "secondary" | "comparison" = "primary"): Promise<void> {

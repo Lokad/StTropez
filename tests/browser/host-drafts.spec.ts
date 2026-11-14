@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const button = (p: Page, name: string) => p.getByRole("button", { name, exact: true });
@@ -32,7 +32,7 @@ async function stored(p: Page, text: string | null): Promise<string | null> { co
 }), text); expect(row.matches).toBe(true); return row.token; }
 const selections = (s: Awaited<ReturnType<typeof snapshot>>) => ({ views: s.bindings.views.map(v => ({ id: v.id, set: v.selectionSet })), working: s.bindings.comparison?.selectionSet, reference: s.bindings.comparison?.referenceViewport?.selectionSet });
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} loaded-source checkpoint survives close and real reload independently`, async ({ page: p }, info) => {
-    test.setTimeout(120000); const errors: string[] = []; p.on("pageerror", e => errors.push(e.message));
+    test.setTimeout(120000);
     await p.goto(`/hosts/${host}/?editor=candidate`); await ready(p);
     await button(p, "Begin delayed load").click(); await button(p, "Finish delayed load").click(); await ready(p);
     const loaded = (await snapshot(p)).bindings.views.find(v => v.id === "primary")!;
@@ -66,7 +66,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     }));
     expect(storedLoaded).toBe(value + "K"); expect(await warning(p)).toBe(false); await exact(p, "start");
     expect(restored.metrics!.viewport.rows).toBeLessThan(100); await p.screenshot({ path: info.outputPath("loaded-source-restored.png") });
-    await dispose(p); expect(errors).toEqual([]);
+    await dispose(p);
 });
 async function ready(p: Page): Promise<void> { await p.waitForFunction(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison; return !s.draft?.busy && s.bindings.views.every(v => !v.metrics || !v.metrics.pendingInput && !v.metrics.pendingCommand && !v.metrics.pendingCaret && !v.metrics.viewport.pending)
     && (!c || c.status === "ready" && !c.input.pendingInput && !c.input.pendingCaret && !c.workingViewport.pending && !c.referenceViewport?.pending); }); }
@@ -82,7 +82,7 @@ async function closeWithDecision(p: Page, accept: boolean): Promise<void> {
     if (closed) await closed;
 }
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} browser close decisions retain live work and offer only explicit checkpoint recovery`, async ({ page: p }) => {
-    test.setTimeout(120000); const errors: string[] = []; p.on("pageerror", e => errors.push(e.message));
+    test.setTimeout(120000);
     await p.goto(`/hosts/${host}/?editor=candidate`); await ready(p);
     const raw = "close café😀 é\r\n" + "const stableValue = 123;\r\n".repeat(large ? 100000 : 10) + "tail";
     await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, raw);
@@ -106,7 +106,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await source(p, "Secondary source").press("Control+z"); await ready(p); await exact(p, raw + "K");
     await source(p, "Secondary source").press("Control+Shift+z"); await ready(p); await exact(p, raw + "KL");
     const context = p.context(), url = p.url(); await closeWithDecision(p, true); expect(p.isClosed()).toBe(true);
-    const reopened = await context.newPage(); reopened.on("pageerror", e => errors.push(e.message)); await reopened.goto(url); await ready(reopened);
+    const reopened = await context.newPage();  await reopened.goto(url); await ready(reopened);
     await exact(reopened, "start"); await expect(reopened.getByRole("textbox", { name: "Configuration path", exact: true })).toHaveValue("source.csv");
     expect((await snapshot(reopened)).draft).toMatchObject({ present: true, valid: true, sourceUnits: raw.length + 1 });
     await stored(reopened, raw + "K"); await restore(reopened, "Restore source draft"); await exact(reopened, raw + "K");
@@ -118,10 +118,10 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     // Covered, settled inputs can really close without showing a confirmation.
     const dialogs: string[] = []; reopened.on("dialog", async dialog => { dialogs.push(dialog.type()); await dialog.accept(); });
     const closed = reopened.waitForEvent("close"); await reopened.close({ runBeforeUnload: true }); await closed;
-    expect(dialogs).toEqual([]); expect(errors).toEqual([]);
+    expect(dialogs).toEqual([]);
 });
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} durable drafts restore independent inputs after true reload and preserve history Save/Run`, async ({ page: p }) => {
-    test.setTimeout(120000); p.on("pageerror", e => { throw e; }); await p.goto(`/hosts/${host}/?editor=candidate`); await ready(p);
+    test.setTimeout(120000);  await p.goto(`/hosts/${host}/?editor=candidate`); await ready(p);
     const raw = "café😀 é;\r\n" + "const stableValue = 123;\r\n".repeat(large ? 100000 : 10) + "tail";
     await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, raw);
     await source(p).press("Control+End"); await source(p).pressSequentially("K"); await p.getByRole("textbox", { name: "Configuration path", exact: true }).fill("recovered.csv"); await ready(p); expect((await snapshot(p)).source.exports).toBe(0);
@@ -158,7 +158,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await button(p, "Deliver proposal").click(); await expect.poll(async () => (await snapshot(p)).pendingCommands).toBe(0); await ready(p); await exact(p, raw + "KLMN"); expect((await snapshot(p)).review.proposal).toBeNull(); expect((await snapshot(p)).history).toEqual(intent.history); expect(selections(await snapshot(p))).toEqual(selections(intent)); await dispose(p);
 });
 for (const host of ["plain", "react"]) test(`${host} draft confirmation, authority, storage errors and discard never overwrite later work`, async ({ page: p }) => {
-    test.setTimeout(120000); p.on("pageerror", e => { throw e; });
+    test.setTimeout(120000);
     await p.addInitScript(() => { const open = IDBFactory.prototype.open; let reject = true; IDBFactory.prototype.open = function (...args) { if (args[0] === "sttropez-example-drafts-v1" && reject) { reject = false; throw new DOMException("Injected temporary open rejection", "UnknownError"); } return open.apply(this, args); }; });
     await p.goto(`/hosts/${host}/?editor=candidate`); await ready(p); await expect(p.getByLabel("Draft recovery status", { exact: true })).toContainText("unavailable");
     await source(p).press("Control+a"); await source(p).pressSequentially("stored draft"); await button(p, "Retry draft storage").click(); await ready(p); await button(p, "Keep recovery draft").click(); await ready(p); expect((await snapshot(p)).draft!.valid).toBe(true);

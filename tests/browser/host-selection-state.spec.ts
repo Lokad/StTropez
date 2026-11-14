@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
@@ -13,7 +13,7 @@ async function ready(page: Page): Promise<void> {
 }
 
 for (const host of ["plain", "react"]) for (const editor of ["native", "candidate"]) test(`${host} ${editor} full view selections survive detached edits and comparison remount`, async ({ page }) => {
-    page.on("pageerror", error => { throw error; });
+
     await page.goto(`/hosts/${host}/?editor=${editor}`);
     const line = "const sample = 123;\r\n";
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, line.repeat(100000));

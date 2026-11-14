@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import { runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoHighlights } from "./demo-walkthrough.ts";
 import { holdDemoFolds } from "./demo-folding-gate.ts";
 
@@ -53,7 +53,7 @@ test("real provider retains the 1200-field catalogue through filtering, acceptan
 });
 
 test("real TypeScript diagnostics select the captured error and clear after correction", async ({ page }) => {
-    const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+
     await page.goto("/"); await page.locator("#sample").selectOption("errors");
     await expect(page.locator("#language-status")).toHaveText("Language ready");
     await page.locator('[data-panel="problems"]').click();
@@ -64,7 +64,7 @@ test("real TypeScript diagnostics select the captured error and clear after corr
     await expect(page.locator("#language-status")).toHaveText("Language ready");
     await expect(page.locator("#panel-content")).toHaveText("No problems in this project.");
     await expect(page.locator("#editor")).toContainText("calculateTotal(cart, 0.1)");
-    expect(errors).toEqual([]);
+
 });
 
 test("real member completion preserves provider punctuation, resolves, applies once and undoes", async ({ page }) => {
@@ -129,8 +129,9 @@ test("late real diagnostic responses cannot annotate a newer project or follow l
     await expect(page.getByRole("textbox", { name: "pricing.ts", exact: true })).toBeVisible();
 });
 
-test("provider startup failure leaves typing and saving usable and retries current documents", async ({ page }) => {
+test("provider startup failure leaves typing and saving usable and retries current documents", async ({ page, baseURL, browserErrors }) => {
     let attempts = 0;
+    browserErrors.allowConsoleError("Failed to load resource: the server responded with a status of 503 (Service Unavailable)", new URL("/demo-provider?sample=pricing", baseURL).href);
     await page.route("**/demo-provider?sample=pricing", route => { attempts++; return route.fulfill({ status: 503, body: "Unavailable" }); });
     await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language service unavailable");
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });

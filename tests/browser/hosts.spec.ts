@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 
 for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const) {
     test.describe(`${mode} ${editor} controller host`, () => {
@@ -19,8 +19,8 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             if (nativeControls.has(name) || editor === "candidate" && (mode === "plain" || reactIntegration.has(name))) test(name, body);
         };
         test.beforeEach(async ({ page }) => {
-            page.on("pageerror", error => { throw error; });
-            page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
+
             await page.goto(`/hosts/${mode}/?editor=${editor}`);
             await expect(page.getByRole("textbox", { name: "Primary source", exact: true })).toBeVisible();
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().bindings.activeViews)).toBe(2);
@@ -481,7 +481,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
 
 for (const editor of ["native", "candidate"] as const) {
 test(`React ${editor} root error callbacks retain resources and recover through an explicit host lifecycle`, async ({ page }) => {
-    page.on("pageerror", error => { throw error; });
+
     await page.goto(`/hosts/react/?editor=${editor}`);
     const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
     await primary.fill("unsaved before failure");

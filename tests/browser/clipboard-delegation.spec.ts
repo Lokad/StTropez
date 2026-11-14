@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 
 test("copy and cut with collapsed selections leave clipboard contents and history alone", async ({ page }) => {
     await page.goto("/editing/");

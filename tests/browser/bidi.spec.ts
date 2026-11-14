@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.editingFixture.snapshot());
 const ready = (page: Page) => expect.poll(() => page.evaluate(() => { const s = window.editingFixture?.snapshot(); return s && !s.primary.viewport.pending && s.primary.viewport.revision === s.document?.revision; })).toBe(true);
@@ -7,7 +7,7 @@ async function setup(page: Page, text: string, direction: "ltr" | "rtl" = "ltr")
 }
 const position = (page: Page) => page.evaluate(() => { const s = window.editingFixture.snapshot(), p = window.editingFixture.coords(s.primary.selection.head, s.primary.selection.headAffinity)!;
     return { x: p.left - document.querySelector("#primary .st-viewport")!.getBoundingClientRect().left + s.primary.viewport.scrollLeft, offset: p.offset }; });
-test.beforeEach(async ({ page }) => { page.on("pageerror", error => { throw error; }); await page.goto("/editing/"); await ready(page); });
+test.beforeEach(async ({ page }) => {  await page.goto("/editing/"); await ready(page); });
 
 test("mixed-script boundaries have distinct affinities and pointer selection retains the measured side", async ({ page }) => {
     await setup(page, "abc אבג xyz");

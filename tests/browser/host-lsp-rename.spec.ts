@@ -1,9 +1,6 @@
-import { test as base, expect } from "@playwright/test";
+import { isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
-const test = base.extend({ page: async ({ playwright, browserName, baseURL }, use) => {
-    const browser = await playwright[browserName].launch({ headless: true });
-    try { await use(await browser.newPage({ ...(baseURL ? { baseURL } : {}), viewport: { width: 1440, height: 900 } })); } finally { await browser.close(); }
-} });
+
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
@@ -21,7 +18,7 @@ async function preview(page: Page, value = "inventory") { await name(page).fill(
 async function exact(page: Page, text: string) { expect(await page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false; for (let at = 0; at < text.length; at += 32768) if (f.range(at, Math.min(text.length, at + 32768)) !== text.slice(at, at + 32768)) return false; return true; }, text)).toBe(true); }
 async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.rename).toMatchObject({ transport: null, sessions: 0, subscriptions: 0, disposed: true }); }
 for (const host of ["plain", "react"]) test.describe(`${host} LSP rename host`, () => {
-    test.beforeEach(async ({ page }) => { page.on("pageerror", error => { throw error; }); await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(input(page)).toBeVisible(); await ready(page); });
+    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(input(page)).toBeVisible(); await ready(page); });
     test("new-name preview applies exact provider edits across captured resources with shared complete-set history", async ({ page }) => {
         const requests: { method: string; params: any }[] = [], responses: any[] = []; let opened = 0, closed = 0;
         page.on("websocket", socket => { opened++; socket.on("close", () => closed++); socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) requests.push(value); }); socket.on("framereceived", frame => { const value = JSON.parse(frame.payload.toString()); if (value.result?.documentChanges) responses.push(value.result); }); });

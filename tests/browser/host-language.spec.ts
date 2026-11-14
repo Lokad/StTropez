@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const text = (page: Page) => page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length));
@@ -14,7 +14,7 @@ async function completionCaret(page: Page) {
 }
 for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrated language host`, () => {
     test.beforeEach(async ({ page }) => {
-        page.on("pageerror", error => { throw error; }); page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
         await page.goto(`/hosts/${mode}/?editor=candidate`); await expect(primary(page)).toBeVisible(); await ready(page);
     });
     test("keyboard completion, find and shared history remain usable during remote conflict review", async ({ page }) => {

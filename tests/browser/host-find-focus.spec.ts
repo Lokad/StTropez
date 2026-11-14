@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 type FocusEventRecord = Readonly<{ type: string; key: string | null; trusted: boolean; label: string | null; revision: number }>;
@@ -36,8 +36,8 @@ test.afterEach(async ({ page }, info) => {
 
 for (const host of ["plain", "react"] as const) for (const arm of ["stay", "form", "interrupt"] as const)
     test(`${host} 100000 replace all ${arm} preserves focus intent and captured work`, async ({ page }) => {
-        page.on("pageerror", error => { throw error; });
-        page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
+
         const original = Array(100000).fill("const sample = 1234567;").join("\r\n"), changed = original.replaceAll("sample", "changed");
         await page.goto(`/hosts/${host}/?editor=candidate`); await expect(primary(page)).toBeVisible();
         await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot();

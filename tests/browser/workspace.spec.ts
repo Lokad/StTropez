@@ -1,9 +1,9 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import { corpus } from "../fixtures/workloads.ts";
 
 test("real typing reaches the document and moving the surface preserves identity and selection", async ({ page }) => {
-    const errors: string[] = [];
-    page.on("pageerror", error => errors.push(error.message));
+
+
     await page.goto("/workspace/");
     await expect.poll(() => page.evaluate(() => window.sttropez?.ready)).toBe(true);
     const editor = page.getByRole("textbox", { name: "Transform source" });
@@ -20,12 +20,12 @@ test("real typing reaches the document and moving the surface preserves identity
     expect(after.tabs[0]?.id).toBe(before.tabs[0]?.id);
     expect(after.documents[0]?.revision).toBeGreaterThan(before.documents[0]?.revision ?? -1);
     expect(after.documents[0]?.length).toBe(11);
-    expect(errors).toEqual([]);
+
 });
 
 test("deferred Save and explicit Run preserve their source/configuration targets while views move and typing continues", async ({ page }) => {
-    const errors: string[] = [];
-    page.on("pageerror", error => errors.push(error.message));
+
+
     await page.goto("/workspace/");
     const input = page.getByRole("textbox", { name: "Transform source", exact: true });
     const secondary = page.getByRole("textbox", { name: "Secondary source view", exact: true });
@@ -48,12 +48,12 @@ test("deferred Save and explicit Run preserve their source/configuration targets
     expect(after.commands.lastRun).toMatchObject({ sourceRevision: beforeRun.documents[0]!.revision,
         configurationRevision: beforeRun.connection.revision, sourceLength: beforeRun.documents[0]!.length, pathLength: 8 });
     expect(after.commands.savedWrites).toBe(1);
-    expect(after.commands.errors).toEqual([]); expect(errors).toEqual([]);
+    expect(after.commands.errors).toEqual([]);
 });
 
 test("host typed form has no dummy document and updates independently of source text", async ({ page }) => {
-    const errors: string[] = [];
-    page.on("pageerror", error => errors.push(error.message));
+
+
     await page.goto("/workspace/");
     await expect.poll(() => page.evaluate(() => window.sttropez?.ready)).toBe(true);
     const before = await page.evaluate(() => window.sttropez.snapshot());
@@ -63,11 +63,11 @@ test("host typed form has no dummy document and updates independently of source 
     expect(after.documents).toHaveLength(1);
     expect(after.connection.revision).toBeGreaterThan(before.connection.revision);
     expect(after.resources.find(resource => resource.kind === "panel")?.dirty).toBe(true);
-    expect(errors).toEqual([]);
+
 });
 
 test("read-only transitions reach both views and reject an in-flight composition attempt", async ({ page }) => {
-    page.on("pageerror", error => { throw error; });
+
     await page.goto("/workspace/");
     const input = page.getByRole("textbox", { name: "Transform source", exact: true });
     await input.fill("retained");
@@ -87,7 +87,7 @@ test("read-only transitions reach both views and reject an in-flight composition
 });
 
 test("native LF selection and deletion map to exact CRLF model ranges and history restores original text", async ({ page }) => {
-    page.on("pageerror", error => { throw error; });
+
     await page.goto("/workspace/"); await page.evaluate(() => window.sttropez.loadCorpus("unicode"));
     const input = page.getByRole("textbox", { name: "Transform source", exact: true }), original = corpus("unicode");
     await expect(input).toHaveValue(original.replaceAll("\r\n", "\n"));
@@ -101,7 +101,7 @@ test("native LF selection and deletion map to exact CRLF model ranges and histor
 });
 
 test("pointer focus places the caret at the clicked character and undo preserves that selection", async ({ page }) => {
-    page.on("pageerror", error => { throw error; }); await page.goto("/workspace/");
+     await page.goto("/workspace/");
     const input = page.getByRole("textbox", { name: "Transform source", exact: true });
     await input.fill("abcde"); await page.getByRole("button", { name: "Save source", exact: true }).focus();
     const point = await input.evaluate((node: HTMLTextAreaElement) => {

@@ -1,9 +1,6 @@
-import { test as base, expect } from "@playwright/test";
+import { isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
-const test = base.extend({ page: async ({ playwright, browserName, baseURL }, use) => {
-    const browser = await playwright[browserName].launch({ headless: true });
-    try { await use(await browser.newPage({ ...(baseURL ? { baseURL } : {}), viewport: { width: 1440, height: 900 } })); } finally { await browser.close(); }
-} });
+
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
@@ -30,7 +27,7 @@ async function preview(page: Page) { await button(page, "Preview module action")
 async function exact(page: Page, text: string) { expect(await page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false; for (let at = 0; at < text.length; at += 32768) if (f.range(at, Math.min(at + 32768, text.length)) !== text.slice(at, at + 32768)) return false; return true; }, text)).toBe(true); }
 async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.actions).toMatchObject({ sessions: 0, subscriptions: 0, transport: null, disposed: true }); }
 for (const host of ["plain", "react"]) test.describe(`${host} LSP code actions`, () => {
-    test.beforeEach(async ({ page }) => { page.on("pageerror", error => { throw error; });
+    test.beforeEach(async ({ page }) => {
         await page.addInitScript(() => { const send = WebSocket.prototype.send; WebSocket.prototype.send = function(this: WebSocket, data) { if (typeof data === "string") { const value = JSON.parse(data); if (value.method === "initialize" && value.params.capabilities.textDocument?.codeAction) Reflect.set(window, "actionTestSocket", this); } send.call(this, data); }; });
         await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(input(page)).toBeVisible(); await ready(page); });
     test("action choices and lazy previews preserve captured diagnostic ranges, safe commands and complete-set history", async ({ page }) => {

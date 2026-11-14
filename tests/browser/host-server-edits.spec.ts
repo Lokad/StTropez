@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { reviewHeader, reviewFooter } from "../../examples/probes/project-commands.ts";
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
@@ -16,7 +16,7 @@ async function exact(p: Page, text: string): Promise<void> {
     }, text)).toBe(true);
 }
 async function setup(p: Page, host: string, text: string): Promise<void> {
-    p.on("pageerror", error => { throw error; }); await p.goto(`/hosts/${host}/?editor=candidate`);
+     await p.goto(`/hosts/${host}/?editor=candidate`);
     await p.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text); await ready(p);
 }
 async function register(p: Page): Promise<void> { await input(p).focus(); await button(p, "Register provider review command").click(); await ready(p); expect((await snapshot(p)).bindings.project.registered).toBe(true); }

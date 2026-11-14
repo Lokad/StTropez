@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import type { Locator } from "@playwright/test";
 
@@ -27,7 +27,7 @@ async function clipboard(input: Locator, type: "copy" | "cut" | "paste", text = 
 
 for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrated pilot commands`, () => {
     test.beforeEach(async ({ page }) => {
-        page.on("pageerror", error => { throw error; }); page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
         await page.goto(`/hosts/${mode}/?editor=candidate`); await expect(primary(page)).toBeVisible(); await ready(page);
     });
     for (const key of ["Tab", "Shift+Tab"]) test(`read-only ${key} cannot become a deferred edit after the host restores permission`, async ({ page }) => {
@@ -146,8 +146,8 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
 
 for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const) {
     test(`${mode} ${editor} keyboard re-entry preserves backward and collapsed model selections`, async ({ page }) => {
-        page.on("pageerror", error => { throw error; });
-        page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
+
         await page.goto(`/hosts/${mode}/?editor=${editor}`); await expect(primary(page)).toBeVisible();
         const original = "first\r\nsecond😀\r\nthird";
         await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);

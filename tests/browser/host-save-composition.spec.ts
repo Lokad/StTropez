@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 
 const snapshot = (page: import("@playwright/test").Page) => page.evaluate(() => window.hostFixture.snapshot());
 const source = (page: import("@playwright/test").Page) => page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); });
@@ -10,8 +10,8 @@ const selection = (state: Awaited<ReturnType<typeof snapshot>>, id: string) => s
 
 for (const host of ["plain", "react"] as const) for (const reply of ["unchanged", "canonical"] as const)
     test(`${host} ${reply} save reply preserves staged input or captured recovery`, async ({ page }) => {
-        page.on("pageerror", error => { throw error; });
-        page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
+
         const button = (name: string) => page.getByRole("button", { name, exact: true });
         const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
         const original = "alpha omega\r\n// café 😀" + (reply === "canonical" ? "  " : "");

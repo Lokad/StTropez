@@ -88,8 +88,11 @@ npm run test:package   # One pack/restore, then full, LSP and React consumers (.
 ```
 
 Generated evidence is in `artifacts/`; failed browser tests also retain traces in
-`test-results/`. Missing browsers, missing readiness, page errors and missing tests
-cause failures. [Qualification ownership](docs/qualification.md) separates focused changes,
+`test-results/`. Missing browsers, missing readiness, uncaught page errors, `console.error`
+and missing tests cause failures. Browser specs use the shared automatic context guard in
+`tests/browser/fixtures.ts`; it includes secondary tabs. Standalone restored-demo journeys use
+the same error policy. An injected network failure may permit one exact console diagnostic
+for its URL; other errors fail. [Qualification ownership](docs/qualification.md) separates focused changes,
 broad boundaries and performance runs. Input-handler time, frame readiness and complete
 scripted action latency are different clocks; none establishes physical input/display latency.
 See [runtime ownership](docs/editor-ownership.md) for composition, caret and delayed work.

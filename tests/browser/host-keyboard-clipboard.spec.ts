@@ -1,4 +1,6 @@
-import { test, expect, chromium } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
+import { chromium } from "@playwright/test";
+import { captureBrowserErrors } from "../helpers/browser-errors.ts";
 import type { Page, TestInfo } from "@playwright/test";
 import { createHash } from "node:crypto";
 
@@ -74,7 +76,7 @@ async function dispose(page: Page, info: TestInfo): Promise<void> {
 }
 async function isolatedClipboard(baseURL: string | undefined, info: TestInfo, run: (page: Page) => Promise<void>): Promise<void> {
     if (!baseURL) throw new Error("Clipboard regressions require the local host fixture server.");
-    const browser = await chromium.launch({ headless: true, args: ["--enable-automation"] }); let page: Page | undefined;
+    const browser = await chromium.launch({ headless: true, args: ["--enable-automation"] }); let page: Page | undefined, errors: ReturnType<typeof captureBrowserErrors> | undefined;
     try {
         const session = await browser.newBrowserCDPSession(), commandLine = await session.send("Browser.getBrowserCommandLine"), version = await session.send("Browser.getVersion");
         // Fail before the first clipboard action if a launch change selects a platform-backed browser.
@@ -83,7 +85,7 @@ async function isolatedClipboard(baseURL: string | undefined, info: TestInfo, ru
         expect(version.product).toMatch(/^HeadlessChrome\//);
         await info.attach("headless-clipboard-backend", { contentType: "application/json", body: JSON.stringify({ commandLine, version }, null, 2) }); await session.detach();
         page = await browser.newPage({ baseURL, viewport: { width: 1440, height: 900 } });
-        page.on("pageerror", error => { throw error; }); await run(page);
+        errors = captureBrowserErrors(page.context()); await run(page);
     } catch (error) {
         if (page) {
             const state = await page.evaluate(() => { const fixture = window.hostFixture; if (!fixture) return null;
@@ -95,7 +97,7 @@ async function isolatedClipboard(baseURL: string | undefined, info: TestInfo, ru
             await info.attach("failed-clipboard-view", { contentType: "image/png", body: await page.screenshot() });
         }
         throw error;
-    } finally { await browser.close(); }
+    } finally { try { await browser.close(); } finally { errors?.dispose(); errors?.assertClean(); } }
 }
 
 const normal = "const café = 'é 😀';\r\nconst end = 123;";

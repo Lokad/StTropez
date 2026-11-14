@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 
 test("bounded input remains bounded during a bulk insertion with one edit and undo unit", async ({ page }, info) => {
     await page.goto("/hosts/plain/?editor=candidate");
@@ -56,7 +56,7 @@ test("bulk beforeinput honors host veto and native fallback, and maps every capt
 
 for (const host of ["plain", "react"]) for (const editor of ["native", "candidate"]) {
     test(`${host} ${editor} continuous typing beside repeated text keeps one undo unit and shared selection mapping`, async ({ page }) => {
-        page.on("pageerror", error => { throw error; });
+
         await page.goto(`/hosts/${host}/?editor=${editor}`);
         const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
         await primary.fill("const"); await primary.press("Home");

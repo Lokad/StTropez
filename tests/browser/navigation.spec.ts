@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.editingFixture.snapshot());
 async function ready(page: Page) {
@@ -7,7 +7,7 @@ async function ready(page: Page) {
 async function setup(page: Page, text: string, head = 0) {
     await page.evaluate(({ text, head }) => { window.editingFixture.setText(text); window.editingFixture.select("primary", { anchor: head, head }); window.editingFixture.focus("primary"); }, { text, head }); await ready(page);
 }
-test.beforeEach(async ({ page }) => { page.on("pageerror", error => { throw error; }); await page.goto("/editing/"); await ready(page); });
+test.beforeEach(async ({ page }) => {  await page.goto("/editing/"); await ready(page); });
 
 test("word keys navigate full model ranges, extend selections and delete one undoable code word", async ({ page }) => {
     const text = "alpha_beta  gamma.delta 😀 café"; await setup(page, text);

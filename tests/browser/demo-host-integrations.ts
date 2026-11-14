@@ -10,7 +10,7 @@ async function paste(source: Locator, plain: string) {
 
 /** One visible workflow shared by source, static and restored-assets hosts. No OS clipboard access. */
 export async function runDemoHostIntegrations(page: Page, url = "/") {
-    const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+
     await page.goto(url); await page.locator("#sample").selectOption("host");
     const source = page.getByRole("textbox", { name: "workflow.rules", exact: true });
     const notes = page.locator(".demo-source-notes span"), inventory = notes.filter({ hasText: "Inventory source" });
@@ -73,5 +73,5 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
     await source.press("Control+End"); await expect(inventory).toHaveAttribute("data-line", "203");
     await source.press("Control+z"); await expect(inventory).toHaveAttribute("data-line", "3");
     await page.locator("#sample").selectOption("pricing"); await expect(page.locator(".demo-source-notes")).toHaveCount(0);
-    await expect(page.locator("#host-status")).toBeHidden(); expect(errors).toEqual([]);
+    await expect(page.locator("#host-status")).toBeHidden();
 }

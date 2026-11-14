@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
@@ -11,7 +11,7 @@ async function ready(page: Page): Promise<void> {
     })).toBe(true);
 }
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} unchanged decorated rows survive typing and selection while current geometry and changed marks update`, async ({ page }) => {
-    page.on("pageerror", error => { throw error; }); page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
     await page.goto(`/hosts/${host}/?editor=candidate`); const line = "const sample = 123; // TODO", original = Array(large ? 100000 : 60).fill(line).join("\r\n");
     await page.evaluate(value => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: value }]); }, original);
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);
@@ -54,7 +54,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
 });
 
 for (const host of ["plain", "react"]) test(`${host} bounded long-context reveal keeps the caret visible through clicking, typing and remount`, async ({ page }) => {
-    page.on("pageerror", error => { throw error; });
+
     await page.goto(`/hosts/${host}/?editor=candidate`);
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);
     const input = page.getByRole("textbox", { name: "Primary source", exact: true });

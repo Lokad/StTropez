@@ -1,9 +1,6 @@
-import { test as base, expect } from "@playwright/test";
+import { isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
-const test = base.extend({ page: async ({ playwright, browserName, baseURL }, use) => {
-    const browser = await playwright[browserName].launch({ headless: true });
-    try { await use(await browser.newPage({ ...(baseURL ? { baseURL } : {}), viewport: { width: 1440, height: 900 } })); } finally { await browser.close(); }
-} });
+
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const field = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
@@ -13,7 +10,7 @@ async function seed(page: Page, text: string, offset = text.length) {
     await expect.poll(async () => (await snapshot(page)).bindings.language.sessions.find(session => session.id === "primary")!.provider.connected).toBe(true);
 }
 for (const host of ["plain", "react"] as const) test.describe(`${host} selected LSP features`, () => {
-    test.beforeEach(async ({ page }) => { page.on("pageerror", error => { throw error; }); await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); });
+    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); });
     test("provider color presentations preview every edit and preserve shared history while cancelled requests leave text intact", async ({ page }) => {
         const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));
         const raw = '\ufeffconst color = "#abc";\r\nvalue;'; await seed(page, raw);
@@ -86,7 +83,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
     });
 });
 test("missing and withdrawn language capabilities fail explicitly without a worker fallback or a late color edit", async ({ page }) => {
-    page.on("pageerror", error => { throw error; }); await page.goto("/hosts/plain/?editor=candidate&language=lsp&lspSubset=dynamic");
+     await page.goto("/hosts/plain/?editor=candidate&language=lsp&lspSubset=dynamic");
     const text = 'lookup("a", )\r\nconst color = "#abc";'; await seed(page, text, text.indexOf(")"));
     await field(page).press("Control+Shift+Space"); await expect.poll(async () => (await snapshot(page)).bindings.signature.presentation.status).toBe("failed");
     await button(page, "Discover module links").click(); await expect.poll(async () => (await snapshot(page)).bindings.links.state.status).toBe("failed");

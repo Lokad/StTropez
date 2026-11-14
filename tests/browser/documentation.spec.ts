@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { DocumentationView } from "../../src/browser/index.ts";
 declare global { interface Window { documentationTest: { view: DocumentationView; opened: string[]; allowed: boolean; retired?: HTMLButtonElement } } }
 

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
@@ -16,7 +16,7 @@ async function exact(page: Page, text: string): Promise<void> {
 }
 
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} document boundaries finish before immediate typing`, async ({ page }) => {
-    test.setTimeout(120000); page.on("pageerror", error => { throw error; }); await page.goto(`/hosts/${host}/?editor=candidate`);
+    test.setTimeout(120000);  await page.goto(`/hosts/${host}/?editor=candidate`);
     const bodyRows = large ? 100000 : 128, rowUnits = "const unchanged = 123;\r\n".length;
     const original = "first é😀\r\n" + "const unchanged = 123;\r\n".repeat(bodyRows) + "last\r", bodyStart = original.indexOf("\n") + 1;
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);

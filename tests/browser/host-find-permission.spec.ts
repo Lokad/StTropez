@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -15,7 +15,7 @@ async function exact(page: Page, text: string): Promise<void> {
     }, text)).toBe(true);
 }
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} replace all stays cancelled after restored authority and permits an explicit retry`, async ({ page }) => {
-    test.setTimeout(120000); page.on("pageerror", error => { throw error; }); await page.goto(`/hosts/${host}/?editor=candidate`);
+    test.setTimeout(120000);  await page.goto(`/hosts/${host}/?editor=candidate`);
     const original = "cat cat\r\n" + "const unchanged = 123;\r\n".repeat(large ? 100000 : 1), changed = "dog dog" + original.slice(7);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]);
         f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 3 }, { anchor: text.length, head: text.length }]); }, original);

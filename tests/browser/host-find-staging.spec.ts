@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 type State = ReturnType<Window["hostFixture"]["snapshot"]>;
@@ -28,8 +28,8 @@ test.afterEach(async ({ page }, info) => {
 
 for (const host of ["plain", "react"] as const) for (const action of ["Find next", "Find previous", "Replace current"] as const)
     for (const composing of [false, true]) test(`${host} ${action} ${composing ? "composition" : "ordinary"} preserves staged selection and captured work`, async ({ page }) => {
-        page.on("pageerror", error => { throw error; });
-        page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
+
         // The save fixture trims trailing whitespace; internal CRLF and Unicode remain exact.
         const original = "const sample = 123;\r\n// café 😀\r\nconst sample = 456;", first = original.indexOf("sample"), second = original.lastIndexOf("sample");
         const composed = original.slice(0, first) + "東京" + original.slice(first + 6), replaced = original.slice(0, first) + "changed" + original.slice(first + 6);

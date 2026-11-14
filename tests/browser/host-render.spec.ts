@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
@@ -12,8 +12,8 @@ async function ready(page: Page): Promise<void> {
 }
 
 for (const mode of ["plain", "react"] as const) test(`${mode} review typing retains unchanged labels and controls while new reference versions still appear`, async ({ page }) => {
-    page.on("pageerror", error => { throw error; });
-    page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
+
     await page.goto(`/hosts/${mode}/?editor=candidate`);
     const input = page.getByRole("textbox", { name: "Primary source", exact: true }), original = "const sample = 1; // TODO\n" + "x".repeat(2_400_000);
     await expect(input).toBeVisible();

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
@@ -11,7 +11,6 @@ async function ready(page: Page) {
 async function setup(page: Page, text: string, head: number) {
     await page.evaluate(({ text, head }) => { window.editingFixture.setText(text); window.editingFixture.select("primary", { anchor: head, head }); window.editingFixture.focus("primary"); }, { text, head }); await ready(page);
 }
-test.beforeEach(({ page }) => { page.on("pageerror", error => { throw error; }); });
 
 test("all Unicode 18 grapheme cases agree with gold while native differences remain observable", async ({ page, browser }, info) => {
     await page.goto("/fonts/"); await page.waitForFunction(() => window.nativeFontFixture?.ready);

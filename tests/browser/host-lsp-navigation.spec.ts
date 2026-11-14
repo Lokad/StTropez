@@ -1,9 +1,6 @@
-import { test as base, expect } from "@playwright/test";
+import { isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
-const test = base.extend({ page: async ({ playwright, browserName, baseURL }, use) => {
-    const browser = await playwright[browserName].launch({ headless: true });
-    try { await use(await browser.newPage({ ...(baseURL ? { baseURL } : {}), viewport: { width: 1440, height: 900 } })); } finally { await browser.close(); }
-} });
+
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const field = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
@@ -18,7 +15,7 @@ async function seed(page: Page, text: string, offset: number) {
 }
 async function hover(page: Page) { await field(page).press("Control+k"); await field(page).press("Control+i"); }
 for (const host of ["plain", "react"]) test.describe(`${host} LSP inspection/navigation`, () => {
-    test.beforeEach(async ({ page }) => { page.on("pageerror", error => { throw error; }); await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await ready(page); });
+    test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await ready(page); });
     test("standard hover content and absent ranges preserve selections, safe text and focus", async ({ page }) => {
         const packets: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const data = JSON.parse(frame.payload.toString()); if (data.method) packets.push(data.method); }));
         await seed(page, "const café = 1;\r\n𐐀value = 2;", 2); await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 2, head: 2 }, { anchor: 8, head: 8 }]); }); await ready(page);

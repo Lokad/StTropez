@@ -1,10 +1,10 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 
 for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const) {
     test.describe(`${mode} ${editor} save-conflict pilot`, () => {
         test.beforeEach(async ({ page }) => {
-            page.on("pageerror", error => { throw error; });
-            page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
+
             await page.goto(`/hosts/${mode}/?editor=${editor}`);
             await expect(page.getByRole("textbox", { name: "Primary source", exact: true })).toBeVisible();
         });

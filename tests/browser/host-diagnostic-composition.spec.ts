@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 type State = ReturnType<Window["hostFixture"]["snapshot"]>;
@@ -33,8 +33,8 @@ test.afterEach(async ({ page }, info) => {
 
 for (const host of ["plain", "react"] as const) for (const phase of ["ordinary", "commit", "cancel"] as const)
     test(`${host} diagnostic selection ${phase} preserves composition and captured work`, async ({ page }) => {
-        page.on("pageerror", error => { throw error; });
-        page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
+
         // The save fixture trims trailing whitespace; internal CRLF and Unicode remain exact.
         const original = "const sample = 123;\r\n// TODO verify café 😀\r\nconst end = 1;", todo = original.indexOf("TODO");
         await page.goto(`/hosts/${host}/?editor=candidate`); await expect(primary(page)).toBeVisible();

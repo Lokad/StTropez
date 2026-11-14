@@ -1,4 +1,4 @@
-import {test,expect} from "@playwright/test";
+import {test,expect} from "./fixtures.ts";
 import type {Page} from "@playwright/test";
 const snapshot=(page:Page)=>page.evaluate(()=>window.hostFixture.snapshot());
 const input=(page:Page)=>page.getByRole("textbox",{name:"Comparison working source",exact:true});
@@ -18,7 +18,7 @@ async function wordPoint(page:Page,label:string,offset:number):Promise<{x:number
  return root.evaluate((element,offset)=>{const row=[...element.querySelectorAll<HTMLElement>(".st-viewport-row")].find(r=>Number(r.dataset.from)<=offset&&Number(r.dataset.to)>offset);if(!row)throw new Error("Missing captured source row.");const nodes:Text[]=[],walker=document.createTreeWalker(row,NodeFilter.SHOW_TEXT);let node;while(node=walker.nextNode())nodes.push(node as Text);const at=(index:number)=>{for(const node of nodes){if(index<=node.length)return{node,index};index-=node.length;}throw new Error("Missing source character.");};const a=at(offset-Number(row.dataset.from)),b=at(offset-Number(row.dataset.from)+1),range=document.createRange();range.setStart(a.node,a.index);range.setEnd(b.node,b.index);const r=range.getBoundingClientRect();element.setAttribute("data-trusted-word","false");element.addEventListener("dblclick",event=>element.setAttribute("data-trusted-word",String(event.isTrusted)),{once:true});return{x:r.left+r.width*.25,y:r.top+r.height*.5};},offset);
 }
 for(const host of ["plain","react"])for(const corpus of ["normal","100k"])test(`${host} ${corpus} comparison typing survives remote review, reviewed-save failure and retry without remounting`,async({page})=>{
- page.on("pageerror",error=>{throw error;});page.on("console",message=>{if(message.type()==="error")throw new Error(message.text());});
+
  const original=Array(corpus==="normal"?60:100000).fill("const sample = '😀 é';").join("\r\n");await setup(page,host,original);const target=input(page);await target.press("Control+Home");await ready(page);
  const root=page.locator('.st-editing-candidate:has(> textarea[aria-label="Comparison working source"])');await root.scrollIntoViewIfNeeded();
  const point=await wordPoint(page,"Comparison working source",8);

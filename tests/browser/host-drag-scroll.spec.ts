@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
@@ -52,9 +52,6 @@ async function begin(page: Page, host: string, axis: Axis, sign: -1 | 1) {
     await expect.poll(async () => Math.sign(primary(await snapshot(page)).metrics!.viewport[key] - start), { timeout: 2000 }).toBe(sign);
     return { original, point, before, key } as const;
 }
-test.beforeEach(async ({ page }) => {
-    page.on("pageerror", error => { throw error; }); page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
-});
 for (const host of ["plain", "react"]) for (const axis of ["y", "x"] as const) for (const sign of [1, -1] as const) test(`${host} ${axis === "y" ? "100k" : "long-line"} captured drag keeps selecting past the ${axis}${sign} edge, stops on release and remains one undoable typing target`, async ({ page }) => {
     const { original, point, before, key } = await begin(page, host, axis, sign);
     if (axis === "x") expect(primary(before).metrics!.viewport.horizontalExtent).toBeGreaterThan(primary(before).metrics!.viewport.physicalWidth);

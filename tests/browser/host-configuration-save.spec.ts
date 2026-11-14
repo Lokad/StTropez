@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
@@ -14,7 +14,7 @@ async function exact(p: Page, text: string) { expect(await p.evaluate(text => { 
 }, text)).toBe(true); }
 
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} configuration Save stays independent through typing, review, Run and remount`, async ({ page: p }, info) => {
-    const errors: string[] = []; p.on("pageerror", e => errors.push(e.message));
+
     await p.goto(`/hosts/${host}/?editor=candidate`);
     const input = p.getByRole("textbox", { name: "Primary source", exact: true }), field = p.getByRole("textbox", { name: "Configuration path", exact: true });
     await expect(input).toBeVisible(); const original = large ? Array(100000).fill("const café = 1234567;😀").join("\r\n") : "café😀\r\nrow two";
@@ -64,5 +64,5 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     expect((await snapshot(p)).bindings.comparison!.baseline).toEqual(prior.bindings.comparison!.baseline);
     if (!large) await info.attach("configuration-save", { body: await p.screenshot(), contentType: "image/png" });
     await p.evaluate(() => window.hostFixture.dispose()); const stopped = await snapshot(p); expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0);
-    expect(errors).toEqual([]);
+
 });

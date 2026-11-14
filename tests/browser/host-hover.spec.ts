@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const primary = (page: Page) => page.getByRole("textbox", { name: "Primary source", exact: true });
@@ -18,7 +18,7 @@ async function point(page: Page): Promise<{ x: number; y: number }> {
 }
 for (const host of ["plain", "react"]) {
     test(`${host} keyboard hover keeps complete selections, safe text, input focus and shared history`, async ({ page }) => {
-        page.on("pageerror", error => { throw error; }); await page.goto(`/hosts/${host}/?editor=candidate`);
+         await page.goto(`/hosts/${host}/?editor=candidate`);
         const original = "const café = 1;\r\n𐐀value = 2;";
         await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 2, head: 2 }, { anchor: 7, head: 7 }]); }, original);
         await primary(page).focus(); await ready(page); const before = await snapshot(page), selected = before.bindings.views.find(v => v.id === "primary")!.selectionSet;
@@ -58,7 +58,7 @@ for (const host of ["plain", "react"]) {
         await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect((await snapshot(page)).hostSubscriptions).toBe(0);
     });
     test(`${host} 100k pointer hover preserves host focus and refuses stale replies across edits and remount`, async ({ page }) => {
-        test.setTimeout(90000); page.on("pageerror", error => { throw error; }); await page.goto(`/hosts/${host}/?editor=candidate`);
+        test.setTimeout(90000);  await page.goto(`/hosts/${host}/?editor=candidate`);
         await page.evaluate(() => { const f = window.hostFixture, text = "const sample = 1234567;\r\n".repeat(100000); f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); f.setSourceReadOnly(true); });
         await primary(page).press("Control+Home"); await ready(page); const form = page.getByRole("textbox", { name: "Configuration path", exact: true }); await form.fill("keep-focus.csv");
         const at = await point(page); await page.mouse.move(at.x, at.y); await expect(tooltip(page)).toContainText("Declares a constant binding.");

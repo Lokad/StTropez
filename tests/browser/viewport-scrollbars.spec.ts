@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 
 // Headless defaults hide scrollbars and therefore miss classic-scrollbar layout feedback.
 test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });

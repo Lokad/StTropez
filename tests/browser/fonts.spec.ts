@@ -1,8 +1,8 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.ts";
 import { fontFixture } from "../fixtures/consumer/font-fixture.ts";
 
 test.beforeEach(async ({ page }) => {
-    page.on("pageerror", error => { throw error; });
+
     await page.goto("/fonts/");
     await page.waitForFunction(() => window.nativeFontFixture?.ready);
 });

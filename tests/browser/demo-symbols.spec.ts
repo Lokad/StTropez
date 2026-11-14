@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { holdDemoFolds } from "./demo-folding-gate.ts";
 
@@ -13,7 +13,6 @@ async function ready(page: Page) {
     // Provider setup is a correctness prerequisite; its latency is measured separately.
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
 }
-test.beforeEach(({ page }) => { page.on("pageerror", error => { throw error; }); });
 
 test("real definition and reference navigation open the captured file and range without changing text", async ({ page }) => {
     const releaseFolds = await holdDemoFolds(page, "pricing.ts");

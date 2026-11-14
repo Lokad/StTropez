@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const check = (p: Page) => p.getByRole("checkbox", { name: "Link review scrolling", exact: true });
@@ -16,7 +16,7 @@ async function scroll(p: Page, side: "baseline" | "working", row: number, left?:
     await ready(p);
 }
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} linked review scroll preserves captured rows, selections, history, reference and lifecycle`, async ({ page: p }) => {
-    test.setTimeout(120000); p.on("pageerror", error => { throw error; }); await p.goto(`/hosts/${host}/?editor=candidate`);
+    test.setTimeout(120000);  await p.goto(`/hosts/${host}/?editor=candidate`);
     const rows = Array.from({ length: large ? 100000 : 900 }, (_, i) => `row ${i.toString().padStart(6, "0")}: café😀;ok;\r\n`); rows[9] = "long " + "x".repeat(1000) + "\r\n";
     const raw = rows.join(""), offset = (line: number) => rows.slice(0, line).join("").length;
     await p.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, raw);

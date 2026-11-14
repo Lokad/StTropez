@@ -1,10 +1,7 @@
-import { test as base, expect } from "@playwright/test";
+import { isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 // Explicit background process ownership also avoids the known Firefox context-deletion issue.
-const test = base.extend({ page: async ({ playwright, browserName, baseURL }, use) => {
-    const browser = await playwright[browserName].launch({ headless: true });
-    try { await use(await browser.newPage({ ...(baseURL ? { baseURL } : {}), viewport: { width: 1440, height: 900 } })); } finally { await browser.close(); }
-} });
+
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const source = (page: Page) => page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length));
 const field = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -22,7 +19,7 @@ async function offer(page: Page) { await field(page).press("Control+Space"); awa
 
 for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP editor host`, () => {
     test.beforeEach(async ({ page }) => {
-        page.on("pageerror", error => { throw error; }); await page.goto(`/hosts/${mode}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await ready(page);
+         await page.goto(`/hosts/${mode}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await ready(page);
     });
     test("actual typing, insert/replace choices and additional edits share history across views", async ({ page }) => {
         const packets: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()) as { method?: string }; if (value.method) packets.push(value.method); }));

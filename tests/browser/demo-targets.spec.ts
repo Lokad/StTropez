@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import { runDemoUnopenedNavigation } from "./demo-walkthrough.ts";
 
 test("unopened targets load for navigation and atomic rename with read-only declarations and return", async ({ page }) => {
@@ -29,7 +29,7 @@ test("held target contents cannot load a tab or steal focus after source edits o
 });
 
 test("an action preview includes a newly resolved module and applies one guarded undo unit", async ({ page }) => {
-    const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+
     await page.routeWebSocket("**/demo-provider/*", client => {
         const server = client.connectToServer(), requests = new Map<number, string>();
         client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/codeAction") requests.set(value.id, value.params.textDocument.uri); server.send(message); });
@@ -53,5 +53,5 @@ test("an action preview includes a newly resolved module and applies one guarded
     await expect(page.locator("#editor")).toContainText("// main note");
     await page.locator('#files [data-file="labels.ts"]').click(); await expect(page.locator("#editor")).toContainText("// module note");
     await page.getByRole("textbox", { name: "labels.ts", exact: true }).press("Control+z"); await expect(page.locator("#editor")).not.toContainText("// module note");
-    await page.locator('#files [data-file="main.ts"]').click(); await expect(page.locator("#editor")).not.toContainText("// main note"); expect(errors).toEqual([]);
+    await page.locator('#files [data-file="main.ts"]').click(); await expect(page.locator("#editor")).not.toContainText("// main note");
 });

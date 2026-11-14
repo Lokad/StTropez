@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 test("automatic discovery preserves newer view choices, cancels changed targets and waits for composition", async ({ page }) => {
@@ -33,7 +33,7 @@ test("automatic discovery preserves newer view choices, cancels changed targets 
     expect((await page.evaluate(() => window.editingFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });
 test("a host generator may invalidate itself without reentrant cancellation or leaking its iterator", async ({ page }) => {
-    const errors: string[] = []; page.on("pageerror", error => errors.push(error.message)); await page.goto("/editing/");
+      await page.goto("/editing/");
     await page.evaluate(() => {
         const f = window.editingFixture; f.setText("head\n  child\nend"); let first = true;
         Object.assign(window, { foldIteratorClosed: false });
@@ -43,7 +43,7 @@ test("a host generator may invalidate itself without reentrant cancellation or l
         });
     });
     await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
-    expect(await page.evaluate(() => (window as unknown as { foldIteratorClosed: boolean }).foldIteratorClosed)).toBe(true); expect(errors).toEqual([]);
+    expect(await page.evaluate(() => (window as unknown as { foldIteratorClosed: boolean }).foldIteratorClosed)).toBe(true);
 });
 async function ready(page: Page): Promise<void> {
     await expect.poll(() => page.evaluate(() => { const f = window.editingFixture, s = f.snapshot();

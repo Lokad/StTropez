@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import { build } from "esbuild";
 import { basename } from "node:path";
 
@@ -11,7 +11,7 @@ test("independent comparison modules share workspace identity and release retain
         const body = modules.get(new URL(route.request().url()).pathname.split("/").at(-1)!);
         return body === undefined ? route.abort() : route.fulfill({ contentType: "text/javascript", body });
     });
-    page.on("pageerror", error => { throw error; }); await page.goto("/comparison/");
+     await page.goto("/comparison/");
     const result = await page.evaluate(async () => {
         const path = "/comparison-ownership/";
         const { Workspace, TextBuffer } = await import(path + "core.js") as typeof import("../../src/index.ts");

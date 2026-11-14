@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 type HostState = ReturnType<Window["hostFixture"]["snapshot"]>;
@@ -43,11 +43,12 @@ test.afterEach(async ({ page }, info) => {
     }
 });
 
-for (const host of ["plain", "react"] as const) for (const lines of [1024, 100000])
+// Eight 256-line planning batches force a deferred turn without depending on machine speed.
+for (const host of ["plain", "react"] as const) for (const lines of [2048, 100000])
     for (const key of ["Tab", "Shift+Tab"]) for (const outcome of ["ordinary", "commit", "cancel"] as const)
         test(`${host} ${lines} ${key} ${outcome} preserves staged composition and captured save`, async ({ page }) => {
-            page.on("pageerror", error => { throw error; });
-            page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
+
             const original = Array(lines).fill("    const café = 1;").join("\r\n");
             const changed = key === "Tab" ? "    " + original.replaceAll("\r\n", "\r\n    ") : original.replace(/^ {4}/gm, "");
             await page.goto(`/hosts/${host}/?editor=candidate`); await expect(primary(page)).toBeVisible();

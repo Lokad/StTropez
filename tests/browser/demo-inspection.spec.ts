@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { runDemoDocumentation } from "./demo-walkthrough.ts";
 
@@ -13,7 +13,7 @@ async function select(page: Page, query: string) {
 const hover = (page: Page) => page.locator(".demo-language-popups .host-symbol-info:not(.host-signature)");
 
 test("real type inspection works from Code, keyboard and pointer without changing source or pointer focus", async ({ page }) => {
-    const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+
     await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready");
     const source = await select(page, "calculateTotal(cart"); await source.press("ArrowLeft"); await source.press("ArrowRight");
     await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Inspect type", exact: true }).click();
@@ -46,11 +46,11 @@ test("real type inspection works from Code, keyboard and pointer without changin
         document.querySelector("#editor .st-editing-candidate")!.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: point.x, clientY: point.y }));
     }, point);
     await expect(hover(page)).toContainText("calculateTotal(items: readonly CartItem[]"); await expect(page.locator("#walkthrough-toggle")).toBeFocused();
-    await expect(page.locator("#files")).not.toContainText("●"); expect(errors).toEqual([]);
+    await expect(page.locator("#files")).not.toContainText("●");
 });
 
 test("real signature help follows typed arguments and respects completion Escape priority", async ({ page }) => {
-    const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+
     await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready");
     const source = page.getByRole("textbox", { name: "main.ts", exact: true }), popup = page.getByRole("tooltip", { name: "Signature help", exact: true });
     await source.press("Control+End"); await source.pressSequentially("\ncalculateTotal(");
@@ -62,7 +62,7 @@ test("real signature help follows typed arguments and respects completion Escape
     await source.press("Escape"); await expect(popup).toBeHidden();
     await source.press("Control+Shift+Space"); await expect(popup.getByLabel("Active signature parameter")).toContainText("discount");
     await page.getByRole("button", { name: "pricing.ts", exact: true }).click(); await expect(popup).toHaveCount(0);
-    expect(errors).toEqual([]);
+
 });
 
 test("held real hover and signature replies cannot reopen a popup after edits or file changes", async ({ page }) => {

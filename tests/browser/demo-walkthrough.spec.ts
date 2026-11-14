@@ -1,4 +1,4 @@
-import { test } from "@playwright/test";
+import { test } from "./fixtures.ts";
 import { runDemoWalkthrough, runDemoConflict } from "./demo-walkthrough.ts";
 
 test("complete real-provider edit, inspect, navigate, rename, fix, review, save and recover walkthrough", async ({ page }, info) => {

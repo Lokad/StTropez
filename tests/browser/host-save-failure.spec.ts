@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
@@ -29,8 +29,8 @@ async function ready(page: Page): Promise<void> {
 for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const) {
     test.describe(`${mode} ${editor} save failure pilot`, () => {
         test.beforeEach(async ({ page }, testInfo) => {
-            page.on("pageerror", error => { throw error; });
-            page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
+
             if (editor === "native" && testInfo.title.startsWith("normal typing,")) {
                 testInfo.annotations.push({ type: "native-projection-cache", description: "Optional whole-value projection cache evicted between tasks; native exports are diagnostic and candidate zero-export gates remain strict." });
                 await page.addInitScript(() => {

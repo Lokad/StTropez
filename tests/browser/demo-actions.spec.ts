@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { runDemoActions } from "./demo-walkthrough.ts";
 
@@ -15,7 +15,6 @@ async function typo(page: Page) {
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await page.locator('[data-panel="problems"]').click(); await page.getByRole("button", { name: /main.ts · TS2552:/ }).click(); return source;
 }
-test.beforeEach(({ page }) => { page.on("pageerror", error => { throw error; }); });
 
 test("selecting a real spelling fix applies once and shares undo/redo with actual typing", async ({ page }) => {
     await ready(page); const source = await typo(page);

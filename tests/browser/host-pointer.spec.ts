@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 const state = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
@@ -51,7 +51,7 @@ async function exact(page: Page, expected: string): Promise<void> {
 }
 for (const host of ["plain", "react"]) test.describe(`${host} pointer gesture ownership`, () => {
     test.beforeEach(async ({ page }) => {
-        page.on("pageerror", error => { throw error; }); page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
         await page.goto(`/hosts/${host}/?editor=candidate`); await expect(page.getByRole("textbox", { name: "Primary source", exact: true })).toBeVisible();
     });
     test.afterEach(async ({ page }) => {

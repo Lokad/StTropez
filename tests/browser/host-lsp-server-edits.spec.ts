@@ -1,9 +1,6 @@
-import { test as base, expect } from "@playwright/test";
+import { isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
-const test = base.extend({ page: async ({ playwright, browserName, baseURL }, use) => {
-    const browser = await playwright[browserName].launch({ headless: true });
-    try { await use(await browser.newPage({ ...(baseURL ? { baseURL } : {}), viewport: { width: 1440, height: 900 } })); } finally { await browser.close(); }
-} });
+
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
@@ -22,7 +19,7 @@ async function exact(page: Page, text: string) { expect(await page.evaluate(text
 async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.project).toMatchObject({ pending: false, transport: null, sessions: 0, subscriptions: 0, disposed: true }); }
 for (const host of ["plain", "react"]) test.describe(`${host} LSP server edits`, () => {
     test.beforeEach(async ({ page }) => {
-        page.on("pageerror", error => { throw error; }); await page.addInitScript(() => { const send = WebSocket.prototype.send; WebSocket.prototype.send = function(this: WebSocket, data) { if (typeof data === "string") { const value = JSON.parse(data); if (value.method === "initialize" && value.params.capabilities.workspace?.applyEdit) Reflect.set(window, "projectTestSocket", this); } send.call(this, data); }; });
+         await page.addInitScript(() => { const send = WebSocket.prototype.send; WebSocket.prototype.send = function(this: WebSocket, data) { if (typeof data === "string") { const value = JSON.parse(data); if (value.method === "initialize" && value.params.capabilities.workspace?.applyEdit) Reflect.set(window, "projectTestSocket", this); } send.call(this, data); }; });
         await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(input(page)).toBeVisible(); await editors(page);
     });
     test("advertised commands and explicit server-edit decisions retain wire versions, complete history and one acknowledgement", async ({ page }) => {

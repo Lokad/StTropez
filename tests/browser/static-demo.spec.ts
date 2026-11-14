@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.ts";
 import { runDemoHostIntegrations } from "./demo-host-integrations.ts";
 
 test("host language, structured/literal insertion and mapped notes share editing and review", async ({ page, baseURL }) => {

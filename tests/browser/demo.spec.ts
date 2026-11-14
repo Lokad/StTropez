@@ -1,8 +1,8 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import { controlDemoAnalysis, holdDemoAnalysis, releaseDemoAnalysis } from "./demo-presentation.ts";
 
 test("demo edits real files, preserves selection/history, finds text and reviews undoable changes", async ({ page }) => {
-    const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+
     await page.goto("/");
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await expect(source).toBeVisible();
@@ -35,7 +35,7 @@ test("demo edits real files, preserves selection/history, finds text and reviews
     await expect(page.locator(".st-comparison-panes > section").last()).toContainText("/* Mine */");
     await page.getByRole("button", { name: "JavaScript", exact: true }).click();
     await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
-    expect(errors).toEqual([]);
+
 });
 
 test("demo retains independent samples and resets both project files through shared history", async ({ page }) => {

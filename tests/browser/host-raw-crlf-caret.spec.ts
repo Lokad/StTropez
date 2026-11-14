@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page, Locator } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 async function ready(page: Page): Promise<void> {
@@ -10,7 +10,7 @@ async function ready(page: Page): Promise<void> {
 const painted = (input: Locator) => input.evaluate(node => !(node.parentElement!.querySelector(".st-input-caret") as HTMLElement).hidden);
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} raw CRLF caret remains painted and moves vertically in source and comparison`, async ({ page }, testInfo) => {
     test.setTimeout(120000);
-    page.on("pageerror", error => { throw error; }); await page.goto(`/hosts/${host}/?editor=candidate`);
+     await page.goto(`/hosts/${host}/?editor=candidate`);
     await page.evaluate(large => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: "a\r\nb" + (large ? "\r\nconst unchanged = 123;".repeat(100000) : "") }]); }, large);
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);
     for (const view of ["primary", "comparison"] as const) {

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import type { Selection } from "../../src/index.ts";
 
@@ -27,7 +27,7 @@ async function exact(page: Page, text: string): Promise<void> {
     expect(await page.evaluate(text => { const f = window.hostFixture; return f.snapshot().source.length === text.length && f.range(0, text.length) === text; }, text)).toBe(true);
 }
 async function mount(page: Page, host: string, text: string): Promise<void> {
-    page.on("pageerror", error => { throw error; }); await page.goto(`/hosts/${host}/?editor=candidate`);
+     await page.goto(`/hosts/${host}/?editor=candidate`);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text);
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);
     for (const name of ["Capture review acceptance", "Finish review acceptance"]) await page.getByRole("button", { name, exact: true }).click();

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const button = (p: Page, name: string) => p.getByRole("button", { name, exact: true });
@@ -11,7 +11,7 @@ async function exact(p: Page, text: string) { expect(await p.evaluate(text => { 
 async function draftAction(p: Page, name: string) { await button(p, name).click(); await expect(button(p, "Confirm draft action")).toBeEnabled(); await button(p, "Confirm draft action").click(); await ready(p); }
 
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} transfer settings and immutable Run/log inspection retain independent inputs`, async ({ page: p }, info) => {
-    const errors: string[] = []; p.on("pageerror", e => errors.push(e.message)); await p.goto(`/hosts/${host}/?editor=candidate`);
+      await p.goto(`/hosts/${host}/?editor=candidate`);
     const input = p.getByRole("textbox", { name: "Primary source", exact: true }), destination = p.getByRole("textbox", { name: "Transfer destination", exact: true }), batch = p.getByRole("textbox", { name: "Transfer batch size", exact: true }), path = p.getByRole("textbox", { name: "Configuration path", exact: true });
     await expect(input).toBeVisible(); await button(p, "Open source review").click(); const original = large ? "const café = '😀';\r\n".repeat(100000) + "tail" : "café😀\r\nrow two";
     await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
@@ -39,5 +39,5 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await p.evaluate(() => window.hostFixture.mount()); await ready(p); await button(p, "Finish transfer settings save").click(); await expect(destination).toHaveValue("final.csv");
     await button(p, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(p)).runResources.runs.length).toBe(1); await button(p, "Inspect Run 1").click();
     if (!large) await info.attach("transfer-run-inspection", { body: await p.screenshot(), contentType: "image/png" });
-    await p.evaluate(() => window.hostFixture.dispose()); const stopped = await snapshot(p); expect(stopped.runResources.runs[0]?.status).toBe("interrupted"); expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0); expect(errors).toEqual([]);
+    await p.evaluate(() => window.hostFixture.dispose()); const stopped = await snapshot(p); expect(stopped.runResources.runs[0]?.status).toBe("interrupted"); expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0);
 });

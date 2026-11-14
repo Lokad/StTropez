@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 async function ready(page: Page): Promise<void> {
@@ -6,8 +6,8 @@ async function ready(page: Page): Promise<void> {
 }
 const state = (page: Page) => page.evaluate(() => window.editingFixture.snapshot());
 test.beforeEach(async ({ page }) => {
-    page.on("pageerror", error => { throw error; });
-    page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
+
     await page.goto("/editing/"); await ready(page);
 });
 

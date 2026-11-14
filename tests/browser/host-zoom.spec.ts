@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Locator, Page } from "@playwright/test";
 
 const source = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -36,7 +36,7 @@ async function caret(input: Locator, offset: number, secondary = false): Promise
 }
 
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} inherited CSS zoom preserves carets, pointer ranges and navigation`, async ({ page }) => {
-    test.setTimeout(90000); page.on("pageerror", error => { throw error; });
+    test.setTimeout(90000);
     await page.goto(`/hosts/${host}/?editor=candidate`);
     const line = "0123456789abcdef Δ😀 xyz\r\n", text = line.repeat(large ? 100000 : 80);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text);
@@ -90,7 +90,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
 });
 
 for (const host of ["plain", "react"]) test(`${host} scroll boundary keeps the display caret on source while the native input stays bounded`, async ({ page }) => {
-    page.on("pageerror", error => { throw error; }); await page.goto(`/hosts/${host}/?editor=candidate`);
+     await page.goto(`/hosts/${host}/?editor=candidate`);
     const line = "0123456789abcdef Δ😀 xyz\r\n", text = line.repeat(80), offset = line.length * 20 + 8, input = source(page);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text);
     for (const zoom of [1, 1.5]) {

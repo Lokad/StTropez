@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 async function ready(page: Page): Promise<void> {
@@ -11,9 +11,17 @@ async function checkRows(page: Page): Promise<void> {
     }))).toBe(true);
 }
 test.beforeEach(async ({ page }) => {
-    page.on("pageerror", error => { throw error; });
-    page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
+
     await page.goto("/viewport/"); await ready(page);
+});
+
+test("reloading shorter and empty text resets both live viewport row indexes", async ({ page }) => {
+    for (const text of ["first\nlast", "", "a\nb\nc"]) {
+        expect(await page.evaluate(value => window.viewportFixture.reload(value), text)).toBe(true);
+        await ready(page);
+        for (const pane of ["primary", "secondary"]) await expect(page.locator(`#${pane} .st-viewport-row`)).toHaveText(text.split("\n"));
+    }
 });
 
 test("browser zoom wheels are not cancelled or interpreted as editor scrolling", async ({ page }) => {

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snap = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const button = (p: Page, name: string) => p.getByRole("button", { name, exact: true });
@@ -11,7 +11,7 @@ async function exact(p: Page, text: string) { expect(await p.evaluate(text => { 
     for (let i = 0; i < text.length; i += 32768) if (f.range(i, Math.min(text.length, i + 32768)) !== text.slice(i, i + 32768)) return false; return true; }, text)).toBe(true); }
 test.afterEach(async ({ page }, info) => { if (info.status !== info.expectedStatus && !page.isClosed()) await info.attach("instruction-failure-state", { contentType: "application/json", body: JSON.stringify(await snap(page), null, 2) }); });
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} anchored instruction preserves source, history, copy and virtualized ownership`, async ({ page: p }, info) => {
-    const errors: string[] = []; p.on("pageerror", e => errors.push(e.message)); await p.goto(`/hosts/${host}/?editor=candidate`); await expect(source(p)).toBeVisible();
+      await p.goto(`/hosts/${host}/?editor=candidate`); await expect(source(p)).toBeVisible();
     const prefix = "before\r\n".repeat(large ? 50000 : 2), line = '  // @transfer { "destination":"a\\u0041.csv", "batchSize":"1000", "unknown":{"n":-0,"s":"😀,}"} }', tail = "\r\nafter".repeat(large ? 50000 : 8), original = prefix + line + tail;
     await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
     await button(p, "Open source review").click(); await button(p, "Capture review acceptance").click(); await button(p, "Finish review acceptance").click(); await ready(p);
@@ -56,11 +56,11 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await field.dispatchEvent("compositionend", { data: "uncommitted café😀" }); await p.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await ready(p); await expect(field).toHaveValue("aA.csvXY"); await exact(p, committed);
     await field.press("Control+s"); await expect.poll(async () => (await snap(p)).pendingSaves.length).toBe(1); await button(p, "Fail save").click(); await button(p, "Dismiss message").click();
     if (!large) await info.attach("anchored-instruction", { body: await p.screenshot(), contentType: "image/png" });
-    await p.evaluate(() => window.hostFixture.dispose()); const stopped = await snap(p); expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0); expect(errors).toEqual([]);
+    await p.evaluate(() => window.hostFixture.dispose()); const stopped = await snap(p); expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0);
 });
 
 for (const host of ["plain", "react"]) test(`${host} anchored instruction stays with its source across primary document replacement`, async ({ page: p }) => {
-    const errors: string[] = []; p.on("pageerror", e => errors.push(e.message)); await p.goto(`/hosts/${host}/?editor=candidate`);
+      await p.goto(`/hosts/${host}/?editor=candidate`);
     const original = '// @transfer {"destination":"café😀.csv","batchSize":"1000"}\r\nsource tail';
     await expect(source(p)).toBeVisible(); await p.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
     await button(p, "Open source review").click(); await ready(p); await source(p).press("Control+Home"); await button(p, "Anchor instruction at caret").click();
@@ -80,5 +80,5 @@ for (const host of ["plain", "react"]) test(`${host} anchored instruction stays 
     expect((await snap(p)).bindings.views.find(v => v.id === "primary")?.selectionSet).toEqual(before.bindings.views.find(v => v.id === "primary")?.selectionSet);
     await field.focus(); await field.press("Escape"); await expect(source(p)).toBeFocused(); await source(p).press("Control+End"); await source(p).pressSequentially(" source edit"); await ready(p); await exact(p, original + " source edit");
     await source(p).press("Control+z"); await ready(p); await exact(p, original); expect((await snap(p)).history).toEqual({ undoDepth: before.history.undoDepth, redoDepth: 1 });
-    await p.evaluate(() => window.hostFixture.dispose()); expect((await snap(p)).diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(errors).toEqual([]);
+    await p.evaluate(() => window.hostFixture.dispose()); expect((await snap(p)).diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 });
 });

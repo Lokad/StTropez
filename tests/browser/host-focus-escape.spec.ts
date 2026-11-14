@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page, Locator } from "@playwright/test";
 
 type FocusKey = Readonly<{ key: string; shift: boolean; trusted: boolean; prevented: boolean; tag: string | null; label: string | null }>;
@@ -44,8 +44,8 @@ async function activate(page: Page, name: string): Promise<void> {
     await keyboardFocus(page, button(page, name)); await page.keyboard.press("Enter");
 }
 async function mount(page: Page, host: "plain" | "react", editor: "native" | "candidate", original: string): Promise<void> {
-    page.on("pageerror", error => { throw error; });
-    page.on("console", message => { if (message.type() === "error") throw new Error(message.text()); });
+
+
     await page.goto(`/hosts/${host}/?editor=${editor}`); await expect(primary(page)).toBeVisible();
     // Fixture preparation is separate from the keyboard-only user workflow below.
     await page.evaluate(text => { const fixture = window.hostFixture, state = fixture.snapshot();

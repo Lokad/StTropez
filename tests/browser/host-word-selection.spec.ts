@@ -1,4 +1,4 @@
-import {test,expect} from "@playwright/test";
+import {test,expect} from "./fixtures.ts";
 import type {Page} from "@playwright/test";
 const snapshot=(page:Page)=>page.evaluate(()=>window.hostFixture.snapshot());
 const primary=(s:Awaited<ReturnType<typeof snapshot>>)=>s.bindings.views.find(v=>v.id==="primary")!;
@@ -19,7 +19,7 @@ async function nativeReplacement(page:Page,entry:typeof cases[number]){
 for(const host of ["plain","react"])for(const entry of cases)test(`${host} ${entry.name} doubleclick selects the source word and typing replaces it as one undoable saved-reference edit`,async({page},testInfo)=>{
   const native=await nativeReplacement(page,entry);
   await testInfo.attach("native replacement control",{body:JSON.stringify(native),contentType:"application/json"});
-  page.on("pageerror",error=>{throw error;});page.on("console",message=>{if(message.type()==="error")throw new Error(message.text());});
+
   await page.goto(`/hosts/${host}/?editor=candidate`);await expect(input(page)).toBeVisible();const original=Array(entry.count).fill(entry.before+entry.selected+entry.after).join("\r\n"),from=entry.before.length,to=from+entry.selected.length;
   await page.evaluate(text=>{const f=window.hostFixture,s=f.snapshot();f.editSource(s.source.revision,[{from:0,to:s.source.length,insert:text}]);f.selectSource("secondary",f.snapshot().source.revision,{anchor:4,head:1});},original);
   await page.getByRole("button",{name:"Open source review",exact:true}).click();await ready(page);await page.getByRole("button",{name:"Save source",exact:true}).click();await expect.poll(async()=>(await snapshot(page)).pendingSaves.length).toBe(1);await page.evaluate(()=>window.hostFixture.finishSave());await expect.poll(async()=>(await snapshot(page)).pendingCommands).toBe(0);

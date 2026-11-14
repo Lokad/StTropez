@@ -1,11 +1,7 @@
-import { test as base, expect } from "@playwright/test";
+import { isolatedTest as test, expect } from "./fixtures.ts";
 // Qualify the wire path with explicit process ownership; Firefox context deletion remains unqualified.
-const test = base.extend({ page: async ({ playwright, browserName, baseURL }, use) => {
-    const browser = await playwright[browserName].launch({ headless: true });
-    try { const page = await browser.newPage({ ...(baseURL ? { baseURL } : {}), viewport: { width: 1440, height: 900 } }); await use(page); }
-    finally { await browser.close(); }
-} });
-test.beforeEach(async ({ page }) => { page.on("pageerror", error => { throw error; }); await page.goto("/protocol/"); await page.waitForFunction(() => window.protocolFixture?.ready); });
+
+test.beforeEach(async ({ page }) => {  await page.goto("/protocol/"); await page.waitForFunction(() => window.protocolFixture?.ready); });
 test("JSON-RPC wire foundation uses the reference peer over real WebSockets without worker fallback", async ({ page }) => {
     const state = await page.evaluate(() => window.protocolFixture.exercise());
     expect(state.initialization).toEqual({ capabilities: { positionEncoding: "utf-16", textDocumentSync: 2, hoverProvider: true, completionProvider: { triggerCharacters: ["."] }, signatureHelpProvider: { triggerCharacters: ["("], retriggerCharacters: [","] }, documentLinkProvider: { resolveProvider: true }, colorProvider: true, definitionProvider: true, referencesProvider: true, renameProvider: true, codeActionProvider: { resolveProvider: true, codeActionKinds: ["quickfix", "refactor", "source"] }, executeCommandProvider: { commands: ["fixture.status"] } }, serverInfo: { name: "Generic protocol fixture" } });

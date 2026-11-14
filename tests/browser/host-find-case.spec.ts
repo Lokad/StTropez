@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const source = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -19,7 +19,7 @@ async function exact(page: Page, value: string, reference = false): Promise<void
 }
 for (const host of ["plain", "react"]) for (const large of [false, true])
 test(`${host} ${large ? "100k" : "normal"} match-case find keeps Unicode ranges, shared undo, comparison and working Save/Run`, async ({ page }) => {
-    test.setTimeout(120000); page.on("pageerror", error => { throw error; });
+    test.setTimeout(120000);
     await page.goto(`/hosts/${host}/?editor=candidate`);
     const original = "K k K_ 𐐀 𐐨 i ı ss ß café\r\n" + (large ? "const stableValue = 123;\r\n".repeat(100000) : "unchanged\r\n") + "K";
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);

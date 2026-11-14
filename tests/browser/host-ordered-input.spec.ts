@@ -1,4 +1,4 @@
-import {test,expect} from "@playwright/test";
+import {test,expect} from "./fixtures.ts";
 import type {Page} from "@playwright/test";
 
 const snapshot=(page:Page)=>page.evaluate(()=>window.hostFixture.snapshot());
@@ -7,7 +7,7 @@ async function exact(page:Page,text:string):Promise<void>{expect(await page.eval
 const insert=(text:string,heads:readonly number[],data:string):string=>{const parts:string[]=[];let from=0;for(const head of heads){parts.push(text.slice(from,head),data);from=head;}parts.push(text.slice(from));return parts.join("");};
 
 for(const host of ["plain","react"])for(const kind of ["many-carets","long-word"])test(`${host} ${kind} preserves typing behind captured navigation and shared history`,async({page})=>{
-    test.setTimeout(180000);page.on("pageerror",error=>{throw error;});
+    test.setTimeout(180000);
     const original=kind==="many-carets"?Array<string>(100000).fill("0123456789").join("\r\n"):"a"+" ".repeat(1000000)+"next";
     const heads=kind==="many-carets"?Array.from({length:1024},(_,i)=>i*80*12+4):[0],destinations=kind==="many-carets"?heads.map(head=>head+12):[1000001];
     for(const mode of ["cancelled","native","input-only","paste-primary","paste-comparison"] as const){
