@@ -149,9 +149,12 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         const at = verticalAnchor(); if (at && !anchor) anchor = { revision: at.revision, offset: at.offset, topRemainder: at.topRemainder, leftRemainder: left - (at.offset - document!.buffer.offsetAt(document!.buffer.lineAt(at.offset))) * columnWidth };
         comparisonRows = value && Object.freeze({ ...value }); rowGeneration++; clearPreparedRows(); schedule(); return true;
     }
+    const validateScroll = (position: Readonly<{ top?: number; left?: number }>) => {
+        if ((position.top !== undefined && !Number.isFinite(position.top)) || (position.left !== undefined && !Number.isFinite(position.left))) throw new RangeError("Invalid scroll position.");
+    };
     const setScroll = (position: Readonly<{ top?: number; left?: number }>) => {
         if (disposed) return;
-        if ((position.top !== undefined && !Number.isFinite(position.top)) || (position.left !== undefined && !Number.isFinite(position.left))) throw new RangeError("Invalid scroll position.");
+        validateScroll(position);
         if (position.top !== undefined) top = Math.max(0, position.top);
         if (position.left !== undefined) left = Math.max(0, position.left);
         anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
@@ -569,6 +572,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
                 ...(horizontalAnchor ? { horizontalAnchor: Object.freeze({ ...horizontalAnchor }) } : {}) }); },
         restoreView: (state: ViewState) => {
             if (disposed || !workspace.resolveTab(target)) return; const document = workspace.document(documentId), value = state.horizontalAnchor, vertical = state.verticalAnchor;
+            validateScroll({ top: state.scrollTop, left: state.scrollLeft });
             if (value && (!Number.isSafeInteger(value.revision) || value.revision < 0 || !Number.isSafeInteger(value.offset) || value.offset < 0
                 || !Number.isFinite(value.left) || value.left < 0 || value.affinity !== "before" && value.affinity !== "after")) throw new RangeError("Invalid horizontal view anchor.");
             if (value?.revision === document.revision && value.offset > document.buffer.length) throw new RangeError("Horizontal view anchor is outside the document.");

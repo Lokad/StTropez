@@ -11,6 +11,44 @@ test.beforeEach(async ({ page }) => {
     await page.goto("/editing/"); await ready(page);
 });
 
+test("failed command turns release input and report the cause before later typing", async ({ page }) => {
+    const text = "abcdefghij\n".repeat(80), source = page.getByRole("textbox", { name: "Primary source", exact: true });
+    for (const failure of ["inline-decoration", "deferred-decoration", "queued-transform", "committed-transform", "language-policy"] as const) {
+        const immediate = failure === "inline-decoration" || failure === "language-policy";
+        await page.evaluate(({ text, failure }) => {
+            const f = window.editingFixture; f.setText(text);
+            f.selections(Array.from({ length: failure === "inline-decoration" || failure === "language-policy" ? 1 : 33 }, (_, i) => ({ anchor: i * 11 + 1, head: i * 11 + (failure === "language-policy" ? 2 : 1) })));
+        }, { text, failure }); await ready(page); await source.focus();
+        const before = await state(page);
+        await source.evaluate((element, failure) => {
+            const input = element as HTMLTextAreaElement, f = window.editingFixture;
+            if (failure === "language-policy") {
+                f.configureLanguage({ allowPair: () => { throw new Error("Fixture language failure"); } });
+                input.dispatchEvent(new KeyboardEvent("keydown", { key: "(", bubbles: true, cancelable: true })); return;
+            } else if (failure === "queued-transform") {
+                const release = f.registerEditTransform(() => { release(); throw new Error("Fixture transform failure"); });
+            } else if (failure === "committed-transform") {
+                const release = f.registerEditTransform(edit => ({ ...edit, complete: () => { release(); throw new Error("Fixture completion failure"); } }));
+            } else f.failNextDecoration();
+            input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+            if (failure !== "inline-decoration" && input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "queued", bubbles: true, cancelable: true }))) throw new Error("Expected queued input");
+        }, failure);
+        await expect.poll(async () => (await state(page)).conflicts.filter(item => item.reason === "command-failed").length).toBe(
+            before.conflicts.filter(item => item.reason === "command-failed").length + 1);
+        await expect.poll(() => page.evaluate(() => { const s = window.editingFixture.snapshot().primary; return !s.pendingWord && !s.pendingGrapheme && !s.pendingInput; })).toBe(true);
+        const failed = await state(page);
+        expect(failed.document!.revision).toBe(before.document!.revision + (failure === "committed-transform" ? 1 : 0));
+        const error = failure === "language-policy" ? "Fixture language failure" : failure === "queued-transform" ? "Fixture transform failure" : failure === "committed-transform" ? "Fixture completion failure" : "Fixture decoration failure";
+        expect(failed.conflicts.at(-1)).toMatchObject({ reason: "command-failed", error });
+        expect(await page.evaluate(index => window.editingFixture.conflictText(index), before.conflicts.length)).toBe(failure === "language-policy" ? "(" : !immediate && failure !== "committed-transform" ? "queued" : "");
+        if (failure === "committed-transform") expect(failed.document!.length).toBe(text.length + 33 * "queued".length);
+        await page.evaluate(() => { window.editingFixture.configureLanguage({}); window.editingFixture.select("primary", { anchor: 0, head: 0 }); }); await ready(page);
+        await source.pressSequentially("after"); await ready(page);
+        expect(await page.evaluate(() => window.editingFixture.range(0, 5))).toBe("after");
+        expect((await state(page)).conflicts).toEqual(failed.conflicts);
+    }
+});
+
 test("read-only Tab traverses surrounding host controls in both directions", async ({ page }) => {
     await page.goto("/editing/?readonly"); await ready(page);
     await page.evaluate(() => {

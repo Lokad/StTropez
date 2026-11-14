@@ -14,13 +14,17 @@ const workspace = new Workspace(), source = workspace.createTextResource({ scope
 const primaryTab = workspace.open({ kind: "text", documentId: source.documentId }, "left"), secondaryTab = workspace.open({ kind: "text", documentId: source.documentId }, "right");
 const pane = (id: string) => document.getElementById(id)!;
 const presentation = { primary: new EditingPresentation(), secondary: new EditingPresentation() };
-const editors = { primary: mountEditingCandidate(pane("primary"), workspace, primaryTab, { ariaLabel: "Primary source", readOnly: new URLSearchParams(location.search).has("readonly"), decorate: presentation.primary.decorate }),
+let failDecoration = false;
+const editors = { primary: mountEditingCandidate(pane("primary"), workspace, primaryTab, { ariaLabel: "Primary source", readOnly: new URLSearchParams(location.search).has("readonly"), decorate: slice => {
+    if (failDecoration) { failDecoration = false; throw new Error("Fixture decoration failure"); }
+    return presentation.primary.decorate(slice);
+} }),
     secondary: mountEditingCandidate(pane("secondary"), workspace, secondaryTab, { ariaLabel: "Secondary source", decorate: presentation.secondary.decorate }) };
 const findUI = mountFindUI(workspace, primaryTab, editors.primary, presentation.primary), provider = mountProviderUI(workspace, primaryTab, editors.primary, presentation.primary);
 const paragraph = mountParagraphUI(workspace, primaryTab, editors.primary);
 const listeners = new AbortController(); let disposed = false;
 let foldingController: FoldingController | undefined;
-const conflicts: Readonly<{ reason: string; expectedRevision: number; attemptedText: string }>[] = [];
+const conflicts: Readonly<{ reason: string; expectedRevision: number; attemptedText: string; cause?: unknown }>[] = [];
 pane("primary").addEventListener("sttropez-conflict", event => { conflicts.push((event as CustomEvent).detail); }, { signal: listeners.signal });
 function edit(edits: readonly TextEdit[]) { return workspace.edit({ documentId: source.documentId, expectedRevision: workspace.document(source.documentId).revision, edits, origin: "host", history: { kind: "live" } }); }
 function setText(text: string) {
@@ -37,6 +41,7 @@ pane("undo").addEventListener("click", () => history("undo"), { signal: listener
 const status = () => { const current = workspace.document(source.documentId); pane("status").textContent = `${current.buffer.lineCount.toLocaleString()} lines · Revision ${current.revision}`; };
 const unsubscribe = workspace.observeDocument(source.documentId).subscribe(status); status();
 const fixture = { ready: true, setText, edit, select, history,
+    failNextDecoration: () => { failDecoration = true; },
     captureInsertion: () => editors.primary.captureInsertion(),
     registerEditTransform: (transform: CandidateEditTransform) => editors.primary.registerEditTransform(transform),
     discoverFolds: (discover: FoldDiscovery) => { foldingController?.dispose(); foldingController = createFoldingController(workspace, primaryTab, editors.primary, discover, { delayMs: 0 }); },
@@ -67,7 +72,8 @@ const fixture = { ready: true, setText, edit, select, history,
             history: current ? workspace.observeHistory(source.documentId).getSnapshot() : null,
             find: (() => { const state = findUI.find.state.getSnapshot(); return { wholeWord: state.wholeWord, matchCase: state.matchCase, regularExpression: state.regularExpression, revision: state.revision, status: state.status, count: state.count, scanned: state.scanned, current: state.current, previewCount: state.preview.length, message: state.message, maxScanStepMs: state.maxScanStepMs, replaceTransactionMs: state.replaceTransactionMs }; })(),
             presentation: { primary: presentation.primary.snapshot(), secondary: presentation.secondary.snapshot() }, provider: provider.snapshot(), paragraph: paragraph.snapshot(),
-            conflicts: conflicts.map(item => ({ reason: item.reason, expectedRevision: item.expectedRevision, attemptedUnits: item.attemptedText.length })), diagnostics: workspace.diagnostics(), disposed };
+            conflicts: conflicts.map(item => ({ reason: item.reason, expectedRevision: item.expectedRevision, attemptedUnits: item.attemptedText.length,
+                ...(item.cause instanceof Error ? { error: item.cause.message } : {}) })), diagnostics: workspace.diagnostics(), disposed };
     },
     dispose: () => {
         if (disposed) return; disposed = true; foldingController?.dispose(); listeners.abort(); unsubscribe(); findUI.destroy(); provider.destroy(); paragraph.destroy();

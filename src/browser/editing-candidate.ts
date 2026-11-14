@@ -110,9 +110,11 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (graphemeTimer !== undefined) { win.clearTimeout(graphemeTimer); commandTimers.delete(graphemeTimer); graphemeTimer = undefined; }
     }
     function cancelWord(): void {
-        cancelScans(); rangeCommand?.release(); rangeCommand = undefined;
+        const command = rangeCommand; rangeCommand = undefined;
         if (rangeTimer !== undefined) { win.clearTimeout(rangeTimer); commandTimers.delete(rangeTimer); rangeTimer = undefined; }
-        const pending = takeInput(); if (pending) recoverInput(pending, "pending-input-cancelled");
+        const pending = takeInput();
+        try { cancelScans(); command?.release(); }
+        finally { if (pending) recoverInput(pending, "pending-input-cancelled"); }
     }
     function cancelCommandTimers(): void {
         commandTimers.forEach(timer => win.clearTimeout(timer)); commandTimers.clear();
@@ -158,11 +160,28 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         finally { selecting = false; }
         scheduleCaret();
     }
-    const conflict = (reason: string, edit?: TextEdit, expectedRevision = revision, contextFrom = context.from, attemptedText = input.value) => {
+    const conflict = (reason: string, edit?: TextEdit, expectedRevision = revision, contextFrom = context.from, attemptedText = input.value, cause?: unknown) => {
         conflicts++; group = undefined;
         input.dispatchEvent(new CustomEvent("sttropez-conflict", { bubbles: true, detail: Object.freeze({ documentId, expectedRevision, reason,
-            attemptedText, contextFrom, ...(edit ? { attemptedEdit: Object.freeze({ ...edit }) } : {}) }) }));
+            attemptedText, contextFrom, ...(edit ? { attemptedEdit: Object.freeze({ ...edit }) } : {}), ...(cause === undefined ? {} : { cause }) }) }));
     };
+    // One failure boundary for inline and deferred command work. Detach ownership before
+    // notifying the host; reporting must not leave a failed job blocking later input.
+    function commandTurn(work: () => void, attemptedText = ""): void {
+        const expectedRevision = rangeCommand?.capture.revision ?? executingInput?.capture.revision ?? revision;
+        try { work(); }
+        catch (error) {
+            const pending = takeInput(), executing = executingInput;
+            let cause = error;
+            try { cancelWord(); refresh(); }
+            catch (cleanupError) { cause = new AggregateError([error, cleanupError], "Command and cleanup failed."); }
+            finally { cancelCommandTimers(); }
+            if (pending) recoverInput(pending, "pending-input-failed");
+            if (executing && executing !== pending) recoverInput(executing, "pending-input-failed");
+            const unapplied = !executing && workspace.observeDocument(documentId).getSnapshot()?.revision === expectedRevision ? attemptedText : "";
+            conflict("command-failed", undefined, expectedRevision, 0, unapplied, cause);
+        }
+    }
     function revealCaret(selected = view.getSnapshot().selection): void {
         viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" });
     }
@@ -187,7 +206,9 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 ...("ranges" in selection ? { selectionSet: selection } : { selection }),
                 history: { kind, ...(key ? { group: key } : {}) } });
             applied = result.applied;
-            if (result.applied) { commits++; const after = view.getSnapshot(); revealCaret(after.selection);
+            if (result.applied) { // A later presentation/completion failure must not recover this text twice.
+                if (executingInput) delete executingInput.running;
+                commits++; const after = view.getSnapshot(); revealCaret(after.selection);
                 if (type && key) group = { type, revision: result.revision, selectionSet: after.selectionSet, time: now, key }; }
             else conflict(result.reason, edits[0], expectedRevision, context.from, recoveryText);
         } finally { committing = false; try { transformed?.complete?.(applied); } finally { refresh(); } }
@@ -261,18 +282,17 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const from = buffer.offsetAt(line), to = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
         if (graphemeCache?.buffer === buffer && graphemeCache.from === from && graphemeCache.to === to) { done(point(graphemeCache.index)); return; }
         const job = { cursor: createGraphemeCursor(buffer, { from, to }), capture, purpose }; graphemeJob = job;
-        const step = () => turn(() => {
+        const step = () => turn(() => commandTurn(() => {
             const started = purpose === "word-selection" ? win.performance.now() : 0;
             try {
             if (graphemeJob !== job) return; if (!validCommand(capture)) { cancelWord(); return; }
             const began = win.performance.now(); let result, calls = 0;
-            try { do { result = job.cursor.next(4096); calls++; } while (result.status === "running" && calls < 8 && win.performance.now() - began < 4); }
-            catch { cancelWord(); conflict("grapheme-limit"); return; }
+            do { result = job.cursor.next(4096); calls++; } while (result.status === "running" && calls < 8 && win.performance.now() - began < 4);
             graphemeScanSteps++; maxGraphemeScanStepMs = Math.max(maxGraphemeScanStepMs, win.performance.now() - began);
             if (result.status === "running") { const timer = win.setTimeout(() => turn(() => { commandTimers.delete(timer); if (graphemeJob === job) graphemeTimer = undefined; step(); }), 0); graphemeTimer = timer; commandTimers.add(timer); return; }
             const index = result.result!; job.cursor.dispose(); graphemeJob = undefined; graphemeCache = Object.freeze({ buffer, from, to, index }); done(point(index));
             } finally { if (purpose === "word-selection") maxWordSelectionTurnMs = Math.max(maxWordSelectionTurnMs, win.performance.now() - started); }
-        }); step();
+        })); step();
     }
     function commandCapture(deleting: boolean): CommandCapture {
         const document = workspace.document(documentId), { selection, selectionSet } = view.getSnapshot();
@@ -283,12 +303,13 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         options: Readonly<{ validLayout?: () => boolean; prepare?: (ranges: readonly Selection[]) => () => void; batchSize?: number; navigation?: boolean; inline?: boolean }> = {}): void {
         let release: (() => void) | undefined, batchEnd = options.prepare ? 0 : capture.selectionSet.ranges.length;
         const validLayout = options.validLayout ?? (() => true), turn = options.navigation ? navigationTurn : (work: () => void) => work();
-        const job = { capture, purpose, release: () => { release?.(); release = undefined; } }; rangeCommand = job;
+        const job = { capture, purpose, release: () => { const previous = release; release = undefined; previous?.(); } }; rangeCommand = job;
         const ranges: Selection[] = []; let index = 0, pumping = false, waiting = false;
         const active = () => rangeCommand === job && validCommand(capture);
-        const pump = () => turn(() => {
+        const pump = () => turn(() => commandTurn(() => {
             if (!active() || !validLayout()) { if (rangeCommand === job) cancelWord(); return; }
             const began = win.performance.now(); let count = 0; pumping = true;
+            try {
             if (options.prepare && index === batchEnd) { job.release(); batchEnd = Math.min(capture.selectionSet.ranges.length, index + (options.batchSize ?? 32));
                 release = options.prepare(capture.selectionSet.ranges.slice(index, batchEnd)); }
             while (index < batchEnd && !waiting && count++ < 64 && (options.inline || win.performance.now() - began < 4)) {
@@ -298,13 +319,13 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                     ranges.push(range); index++; waiting = false; if (!pumping) pump();
                 });
             }
-            pumping = false;
+            } finally { pumping = false; }
             if (!active()) return;
             if (index === capture.selectionSet.ranges.length) { job.release(); rangeCommand = undefined; if (validLayout()) done(ranges); }
             else if (!waiting && options.inline) pump();
             else if (!waiting) { const timer = win.setTimeout(() => turn(() => { commandTimers.delete(timer); if (rangeCommand === job) rangeTimer = undefined; pump(); }), 0);
                 rangeTimer = timer; commandTimers.add(timer); }
-        }); pump();
+        })); pump();
     }
     function completeCaptured(capture: CommandCapture, work: () => boolean): boolean {
         if (!validCommand(capture)) { cancelWord(); return false; }
@@ -361,7 +382,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         withGraphemes(capture, selected.head, deleting ? direction < 0 ? 1 : -1 : direction, "word", point => {
         const start = (deleting ? -direction : direction) < 0 ? point.floor : point.ceil;
         const job = { cursor: new WordCursor(capture.buffer, start, direction), revision: capture.revision, selection: selected }; wordJob = job;
-        const step = () => {
+        const step = () => commandTurn(() => {
             if (wordJob !== job) return;
             const current = workspace.observeDocument(documentId).getSnapshot();
             if (!validCommand(capture) || current?.revision !== job.revision) { cancelWord(); return; }
@@ -376,7 +397,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             const end = direction < 0 ? point.floor : point.ceil;
             done(deleting ? { anchor: Math.min(start, end), head: Math.max(start, end) } : moved(selected, end, extend));
             });
-        }; step();
+        }); step();
         });
         }, ranges => finishRanges(capture, ranges));
     }
@@ -394,7 +415,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const scan = (start: number, direction: -1 | 1, done: (offset: number) => void) => {
             if (!validCommand(capture)) return;
             const job = { cursor: new WordCursor(buffer, start, direction, { from, to, skipWhitespace: false }), revision: capture.revision, selection: selected }; wordJob = job;
-            const step = () => {
+            const step = () => commandTurn(() => {
                 const started = win.performance.now();
                 try {
                 if (wordJob !== job) return; if (!validCommand(capture)) { cancelWord(); return; }
@@ -407,7 +428,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 }
                 done(result.offset!);
                 } finally { maxWordSelectionTurnMs = Math.max(maxWordSelectionTurnMs, win.performance.now() - started); }
-            }; step();
+            }); step();
         };
         withGraphemes(capture, Math.min(offset, to), -1, "word-selection", point => {
             const probe = Math.max(from, offset >= to ? point.preceding ?? from : point.floor);
@@ -443,20 +464,20 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     }
     function beginNavigation(prepare: (capture: CommandCapture, style: string, inline: boolean) => void, canInline?: (capture: CommandCapture) => boolean): void {
         cancelWord(); navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
-        navigationTurn(() => {
+        navigationTurn(() => commandTurn(() => {
             const capture = commandCapture(false), job = { capture, purpose: "grapheme" as const, release: () => {} };
             if (!validCommand(capture)) return; rangeCommand = job;
             const inline = canInline?.(capture) ?? false, style = navigationStyle();
-            const initialize = () => {
+            const initialize = () => commandTurn(() => {
                 if (rangeCommand !== job) return;
                 if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
                 prepare(capture, style, inline);
                 if (rangeCommand === job) cancelWord();
-            };
+            });
             if (capture.selectionSet.ranges.length === 1 || inline) initialize();
             else { const timer = win.setTimeout(() => navigationTurn(() => { commandTimers.delete(timer); if (rangeCommand === job) rangeTimer = undefined; initialize(); }), 0);
                 rangeTimer = timer; commandTimers.add(timer); }
-        });
+        }));
     }
     function shortHorizontal(capture: CommandCapture): boolean {
         // At most32 ranges and bounded native rows; longer contexts keep cooperative scans.
@@ -586,7 +607,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const capture = commandCapture(true), planner = planLanguageEdit(capture.buffer, capture.selectionSet, command, language);
         let planning = false;
         const job = { capture, purpose: "grapheme" as const, release: () => { if (!planning) planner.return({ edits: [], selectionSet: capture.selectionSet }); } }; rangeCommand = job;
-        const step = () => {
+        const step = () => commandTurn(() => {
             if (rangeCommand !== job) return;
             if (!validCommand(capture)) { cancelWord(); return; }
             let result;
@@ -595,7 +616,6 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 do { result = planner.next(); }
                 while (!result.done && rangeCommand === job && ++batches < 8 && win.performance.now() - began < 4);
             }
-            catch { cancelWord(); conflict("language-command-failed", undefined, capture.revision, 0, typeof command === "object" ? command.character : ""); return; }
             finally { planning = false; }
             if (rangeCommand !== job) { planner.return({ edits: [], selectionSet: capture.selectionSet }); return; }
             if (!result.done) {
@@ -609,7 +629,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 group = undefined; view.setSelections(capture.revision, plan.selectionSet.ranges, plan.selectionSet.primary);
                 revealCaret(); refresh(); return true;
             });
-        };
+        }, typeof command === "object" ? command.character : "");
         group = undefined; step(); return true;
     }
     const pairKey = (key: string) => key.length === 1 && language.pairs.some(pair => pair.open === key || pair.close === key);
@@ -663,7 +683,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const pending = takeInput(); if (!pending) return;
         if (!currentInput(pending)) { recoverInput(pending, "pending-input-expired"); return; }
         const began = win.performance.now(); let count = 0; drainingInput = true; executingInput = pending;
-        try {
+        try { commandTurn(() => {
             while (pending.actions.length && count++ < 8 && win.performance.now() - began < 4) {
                 const action = pending.actions.shift()!; pending.running = action;
                 const beforeConflicts = conflicts;
@@ -691,7 +711,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 if (!currentInput(pending)) { recoverInput(pending, "pending-input-expired"); return; }
             }
             if (pending.actions.length || pending.native) { ordered = pending; scheduleInput(); }
-        } catch { recoverInput(pending, "pending-input-failed"); }
+        }); }
         finally { replayTime = undefined; if (executingInput === pending) executingInput = undefined; drainingInput = false;
             }
     }

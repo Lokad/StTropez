@@ -140,6 +140,12 @@ Yielding double-click word selection uses the same ordered capture. Typing repla
 word range, and undo restores that exact range; cancellation retains unapplied text. Native IME
 and clipboard device qualification remain open.
 
+Inline and deferred command turns cancel their scans, prepared rows and timers after an
+exception. The existing `sttropez-conflict` event reports `reason: "command-failed"` with
+the original `cause`, including failures with no attempted text. Unapplied queued text is
+reported separately for recovery; text already committed before a presentation or completion
+callback fails is not offered again. Later input can proceed after the host corrects the fault.
+
 Literal paste reads plain text during its clipboard event and joins pending ordered input.
 It uses the completed destination set, preserves raw CRLF/Unicode and keeps each paste as a
 separate undo command. Empty or unsupported literal payloads leave the pending command intact.

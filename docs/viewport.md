@@ -91,6 +91,8 @@ native geometry. A local translation corrects wide tabs or mixed text without ch
 estimated logical scroll map or reading the whole line. Manual scrolling clears this placement.
 `captureView` retains an optional immutable `horizontalAnchor` containing the source revision,
 offset, affinity and viewport position; `restoreView` ignores an anchor from another revision.
+Invalid scroll positions are rejected before restoring selections or folds, leaving the view
+unchanged. Scroll coordinates must be finite; negative coordinates clamp to zero.
 This preserves same-revision remounts without claiming a measured global horizontal origin or
 complete contextual shaping. Complete rows continue to use their ordinary measured scroll path.
 The bounded input adapter also retains a previously visible focused selection head when a host

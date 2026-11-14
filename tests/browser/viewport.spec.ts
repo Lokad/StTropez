@@ -93,6 +93,15 @@ test("full selection sets paint bounded ranges and round-trip while legacy state
         try { f.restore("primary", { ...state, selectionSet: { ranges: [{ anchor: -1, head: 0 }], primary: 0 } }); return false; }
         catch { return JSON.stringify(f.capture("primary")) === JSON.stringify(before); } }, captured);
     expect(invalid).toBe(true);
+    const invalidScroll = await page.evaluate(() => {
+        const f = window.viewportFixture, before = f.capture("primary"), other = f.capture("secondary");
+        return [NaN, Infinity, -Infinity].flatMap(value => ["scrollTop", "scrollLeft"].map(axis => {
+            try { f.restore("primary", { ...other, [axis]: value, selectionSet: { ranges: [{ anchor: 0, head: 0 }], primary: 0 },
+                folding: { ...other.folding!, regions: [{ id: "restore-fold", from: 0, to: 500, collapsed: true }] } }); return false; }
+            catch (error) { return error instanceof RangeError && error.message === "Invalid scroll position." && JSON.stringify(f.capture("primary")) === JSON.stringify(before); }
+        }));
+    });
+    expect(invalidScroll).toEqual(Array(6).fill(true));
     await page.evaluate(state => { const { selectionSet: _, ...legacy } = state;
         window.viewportFixture.restore("primary", { ...legacy, anchor: 12, head: 12 }); }, captured); await ready(page);
     const after = await page.evaluate(() => window.viewportFixture.snapshot());
