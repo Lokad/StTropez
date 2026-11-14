@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
+import { portableDeclaration } from "./module-specifiers.mjs";
 
 export async function filesUnder(root) {
     const files = [];
@@ -18,11 +19,11 @@ const root = resolve("dist");
 for (const file of await filesUnder(root)) {
     if (file.endsWith(".d.ts")) {
         const declaration = await readFile(file, "utf8");
-        await writeFile(file, declaration.replace(/(from\s+["'][^"']+)\.ts(["'])/g, "$1.js$2"));
+        await writeFile(file, portableDeclaration(file, declaration));
     }
 }
 await writeFile(resolve(root, "package.json"), JSON.stringify({ name: "sttropez", version: "0.0.0-local",
-    private: true, type: "module", exports: {
+    private: true, license: "MIT", type: "module", exports: {
         ".": { types: "./index.d.ts", import: "./index.js" },
         "./browser": { types: "./browser/index.d.ts", import: "./browser/index.js" },
         "./protocol": { types: "./protocol/index.d.ts", import: "./protocol/index.js" },
@@ -33,7 +34,7 @@ const assets = [];
 for (const file of await filesUnder(root)) {
     const path = relative(root, file).replaceAll("\\", "/");
     if (path === "manifest.json") continue;
-    if (!/\.(js|d\.ts|css|json)$/.test(path) && path !== "UNICODE-LICENSE.txt") throw new Error(`Unexpected asset: ${path}`);
+    if (!/\.(js|d\.ts|css|json)$/.test(path) && !["LICENSE.txt", "UNICODE-LICENSE.txt"].includes(path)) throw new Error(`Unexpected asset: ${path}`);
     const bytes = await readFile(file);
     assets.push({ path, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") });
 }

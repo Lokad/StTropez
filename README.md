@@ -109,8 +109,8 @@ See [runtime ownership](docs/editor-ownership.md) for composition, caret and del
 
 `npm run build` emits ESM, declaration files and CSS to `dist/`, checks that the runtime
 dependency graph contains only `src/`, and records compressed JavaScript sizes. The
-package allowlist contains only `dist/`. The package is private until release metadata
-and a license are deliberately selected.
+package allowlist contains only `dist/`. StTropez is released under the MIT license
+(`LICENSE.txt`). The package stays private until release metadata is deliberately selected.
 
 The preferred distribution is a NuGet package containing the browser assets and MSBuild
 integration files. `npm run pack:nuget` builds a local evaluation package under

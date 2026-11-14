@@ -12,6 +12,7 @@ import { runPackagedPilot } from "./package-pilot.mjs";
 import { runPackagedHunkPilot } from "./package-hunk-pilot.mjs";
 import { runPackageTransitions } from "./package-transitions.mjs";
 import { within } from "./package-react-host.mjs";
+import { qualifyPackageExports } from "./package-exports.mjs";
 
 const hunkOnly = process.argv.includes("--hunk-only");
 const transitionsOnly = process.argv.includes("--transitions-only");
@@ -43,6 +44,7 @@ if (reused) assert.equal(reused.packageSha256, packageSha256, "Staged consumer b
 const entries = unzipSync(archive);
 const assets = JSON.parse(strFromU8(entries["assets/manifest.json"]));
 assert.equal(strFromU8(entries["assets/UNICODE-LICENSE.txt"]), await readFile("licenses/Unicode-3.0.txt", "utf8"));
+assert.equal(strFromU8(entries["assets/LICENSE.txt"]), await readFile("LICENSE.txt", "utf8"));
 const allowlist = new Set(["[Content_Types].xml", "_rels/.rels", "StTropez.Assets.nuspec", "README.md",
     "build/StTropez.Assets.props", "build/StTropez.Assets.targets", "assets/manifest.json",
     ...assets.assets.map(asset => `assets/${asset.path}`)]);
@@ -59,6 +61,7 @@ for (const [path, bytes] of Object.entries(entries)) {
 for (const path of allowlist) assert.ok(entries[path], `Missing package entry: ${path}`);
 const nuspec = strFromU8(entries["StTropez.Assets.nuspec"]);
 assert.ok(!/<dependency\b/.test(nuspec), "Package must not depend on managed or third-party packages.");
+assert.match(nuspec, /<license type="expression">MIT<\/license>/);
 
 // Separate directory, local feed and isolated restore cache; no checkout/source fallback.
 const consumer = await realpath(reused?.consumer ?? await mkdtemp(join(tmpdir(), "sttropez-consumer-")));
@@ -90,6 +93,7 @@ for (const asset of assets.assets) {
     assert.equal(createHash("sha256").update(bytes).digest("hex"), asset.sha256);
 }
 // The host already owns TypeScript/esbuild. Paths are an explicit frontend bridge.
+const exportsResolution = reused?.exportsResolution ?? await qualifyPackageExports(project, consumer, assetRoot);
 const reactHost = reactOnly ? await (await import("./package-react-host.mjs")).stagePackagedReactHost(project, consumer) : undefined;
 const compilerOptions = { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true,
     skipLibCheck: false, noEmit: true, types: [], paths: {
@@ -126,6 +130,7 @@ const bundle = await build({ absWorkingDir: consumer, entryPoints: lspOnly ? { l
 await cp(join(assetRoot, "editor.css"), join(consumer, "site/editor.css"));
 await cp(join(assetRoot, assets.entries.regexWorker), join(consumer, "site/regex-worker.js"));
 await cp(join(assetRoot, "UNICODE-LICENSE.txt"), join(consumer, "site/UNICODE-LICENSE.txt"));
+await cp(join(assetRoot, "LICENSE.txt"), join(consumer, "site/LICENSE.txt"));
 await cp(join(consumer, "index.html"), join(consumer, "site/index.html"));
 await cp(join(consumer, "pilot.html"), join(consumer, "site/pilot.html"));
 if (reactHost) await writeFile(join(consumer, "site/react.html"), reactHost.html);
@@ -136,7 +141,7 @@ const activationOutputs = deferredOnly ? Object.fromEntries(Object.entries(bundl
 })) : {};
 await mkdir("artifacts/package", { recursive: true });
 await writeFile("artifacts/package/restored-consumer.json", JSON.stringify({ schemaVersion: 1,
-    packageSha256, consumer, assetRoot, reusedStage: !!reused,
+    packageSha256, consumer, assetRoot, reusedStage: !!reused, exportsResolution,
     browser: browserName, mode: prepareOnly ? "prepare-only" : benchmark ? "benchmark" : pilotOnly ? "pilot" : "full", scenario: lspOnly ? "lsp" : workspaceOnly ? "workspace" : activationOnly ? "activation" : reactOnly ? "react" : hunkOnly ? "hunk" : pilotOnly ? "recovery" : "all", corpus,
     declarations: { files: compilerFiles, strict: true, skipLibCheck: false, passed: true, ...(reactHost ? { inputs: typeInputs } : {}) },
     inputs: Object.keys(bundle.metafile.inputs).sort(), assets,
@@ -153,7 +158,7 @@ if (prepareOnly) {
 } else {
 const server = createServer(async (request, response) => {
     const path = new URL(request.url, "http://localhost").pathname;
-    const file = { "/": lspOnly ? "lsp.html" : deferredOnly ? "activation.html" : "index.html", "/lsp.js": "lsp.js", "/app.js": "app.js", "/pilot": "pilot.html", "/pilot.js": "pilot.js", "/editor.css": "editor.css", "/regex-worker.js": "regex-worker.js", "/UNICODE-LICENSE.txt": "UNICODE-LICENSE.txt",
+    const file = { "/": lspOnly ? "lsp.html" : deferredOnly ? "activation.html" : "index.html", "/lsp.js": "lsp.js", "/app.js": "app.js", "/pilot": "pilot.html", "/pilot.js": "pilot.js", "/editor.css": "editor.css", "/regex-worker.js": "regex-worker.js", "/LICENSE.txt": "LICENSE.txt", "/UNICODE-LICENSE.txt": "UNICODE-LICENSE.txt",
         ...(deferredOnly ? Object.fromEntries(Object.keys(activationOutputs).map(name => ["/" + name, name])) : {}),
         ...(reactHost ? { "/hosts/react/": "react.html", "/host-react.js": "host-react.js", "/host-react.css": "host-react.css", "/provider-worker.js": "provider-worker.js" } : {}) }[path];
     if (!file) { response.writeHead(404).end(); return; }
@@ -174,6 +179,8 @@ try {
     assert.deepEqual(await page.evaluate(() => window.consumer.protocolExports()), { connection: "function", websocket: "function" });
     const notice = await page.request.get(`http://127.0.0.1:${server.address().port}/UNICODE-LICENSE.txt`);
     assert.equal(notice.status(), 200); assert.equal(await notice.text(), await readFile("licenses/Unicode-3.0.txt", "utf8"));
+    const license = await page.request.get(`http://127.0.0.1:${server.address().port}/LICENSE.txt`);
+    assert.equal(license.status(), 200); assert.equal(await license.text(), await readFile("LICENSE.txt", "utf8"));
     const editor = page.getByRole("textbox", { name: "Consumer source" });
     await editor.fill("edited restored package");
     assert.equal(await page.evaluate(() => window.consumer.text()), "edited restored package");

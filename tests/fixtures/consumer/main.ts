@@ -130,7 +130,7 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
             model.undo({ documentId: source.documentId, expectedRevision: model.document(source.documentId).revision }); await wait("ready"); exact(original);
             if (JSON.stringify(editor.view.getSnapshot().selectionSet) !== JSON.stringify(selected)) throw new Error("Compiled regex undo lost selections.");
             const d = model.document(source.documentId); model.edit({ documentId: source.documentId, expectedRevision: d.revision, origin: "host", edits: [{ from: 0, to: d.buffer.length, insert: "😀x\r\nlast" }] });
-            find.setOptions({ regularExpression: true }); find.setQuery("(?:)"); await wait("ready");
+            find.setOptions({ regularExpression: true, wholeWord: false, matchCase: true }); find.setQuery("(?:)"); await wait("ready");
             editor.view.setSelection(model.document(source.documentId).revision, { anchor: 0, head: 0 });
             for (const head of [0, 2, 3, 4, 5, 6, 7, 8, 9, 0]) { find.next(); await new Promise(resolve => setTimeout(resolve, 0));
                 if (editor.view.getSnapshot().selection.head !== head) throw new Error("Compiled zero-width navigation lost a raw position."); }

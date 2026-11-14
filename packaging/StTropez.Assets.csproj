@@ -6,6 +6,7 @@
     <Authors>StTropez contributors</Authors>
     <Description>Dependency-free browser editor assets. Local evaluation package.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
     <EnableDefaultItems>false</EnableDefaultItems>
@@ -15,7 +16,7 @@
   <ItemGroup>
     <None Include="../dist/**/*.js;../dist/**/*.d.ts;../dist/**/*.css;../dist/package.json;../dist/manifest.json"
           Pack="true" PackagePath="assets/%(RecursiveDir)%(Filename)%(Extension)" />
-    <None Include="../dist/UNICODE-LICENSE.txt" Pack="true" PackagePath="assets/" />
+    <None Include="../dist/LICENSE.txt;../dist/UNICODE-LICENSE.txt" Pack="true" PackagePath="assets/" />
     <None Include="StTropez.Assets.props;StTropez.Assets.targets" Pack="true" PackagePath="build/" />
     <None Include="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>

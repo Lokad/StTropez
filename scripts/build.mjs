@@ -28,6 +28,7 @@ export async function buildLibrary() {
         bytes += file.contents.length; gzipBytes += gzipSync(file.contents, { level: 9 }).length;
     }
     await copyFile("src/browser/editor.css", "dist/editor.css");
+    await copyFile("LICENSE.txt", "dist/LICENSE.txt");
     await copyFile("licenses/Unicode-3.0.txt", "dist/UNICODE-LICENSE.txt");
     await mkdir("artifacts", { recursive: true });
     await writeFile("artifacts/bundle.json", JSON.stringify({ bytes, gzipBytes, inputs, workers: ["browser/regex-worker.js"] }, null, 2));

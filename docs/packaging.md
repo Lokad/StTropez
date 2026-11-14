@@ -5,13 +5,25 @@ and small MSBuild integration files, with no managed assembly or runtime depende
 The TypeScript implementation and browser APIs remain independent of .NET.
 Compiled assets and staged consumer output include `UNICODE-LICENSE.txt` for the bundled
 Unicode character-property data. Hosts retain that notice when bundling or deploying assets.
-The project-wide release license remains a separate decision.
+StTropez itself is released under the MIT license. `LICENSE.txt` is copied unchanged from the
+repository into compiled assets, the NuGet payload, staged consumers and the static demo.
+Both notices belong with bundled or deployed assets; NuGet metadata declares `MIT`.
 
 The local evaluation package, minimal consumer and controlled version-transition proofs are
-implemented. Release metadata, license selection and compatibility across released versions
+implemented. Release metadata and compatibility across released versions
 and broader consumer toolchains remain pending. Nothing is published by these commands.
 
 ## Local proof
+
+The restored-consumer gate also copies the staged asset folder into a host-owned local package
+mount and resolves all five public exports through its shipped `package.json`. This check uses
+neither TypeScript `paths` nor bundler aliases: strict NodeNext declaration checking, browser
+bundling and Node asset resolution exercise the actual exports map. Private subpaths must be
+rejected. No npm installation or library compilation occurs in that consumer.
+
+Declaration finalization parses module syntax, including `import("…")` types, before rewriting
+relative source extensions to JavaScript specifiers. A package check rejects any remaining
+relative TypeScript module reference; unrelated string literals and comments are preserved.
 
 Run `npm run test:package` with Node.js 24+, the pinned development tools, Chromium and a
 .NET SDK 10+ installation. `npm run pack:nuget` first compiles the assets and creates
@@ -323,7 +335,7 @@ asset wrapper can be considered for another consumer later, but is not the core 
 - Keep all asset versions coherent, including any optional worker/WASM files. Validate both
   development and production builds, and distinguish local packing from publishing a release.
 
-Package ID, feed and license are release metadata decisions. No package publication or
+Package ID and feed are release metadata decisions; the license is MIT. No package publication or
 application-specific build change is implied by this document.
 
 `npm run test:package:react` runs the existing React development host against a locally

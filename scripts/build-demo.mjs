@@ -40,6 +40,7 @@ assert.ok(!Object.keys(result.metafile.inputs).some(input => input.replaceAll("\
 await copyFile("examples/demo/index.html", join(site, "index.html"));
 await copyFile(join(dist, manifest.entries.regexWorker), join(site, "regex-worker.js"));
 await copyFile(join(dist, "UNICODE-LICENSE.txt"), join(site, "UNICODE-LICENSE.txt"));
+await copyFile(join(dist, "LICENSE.txt"), join(site, "LICENSE.txt"));
 const libraries = {};
 for (const name of (await readdir("node_modules/typescript-demo/lib")).filter(name => /^lib[\w.-]*\.d\.ts$/.test(name)).sort()) {
     libraries[name] = await readFile(join("node_modules/typescript-demo/lib", name), "utf8");
@@ -52,7 +53,7 @@ for (const [name, file] of [["typescript-demo", "LICENSE.txt"], ["typescript-dem
 await writeFile(join(site, ".nojekyll"), "");
 // Every deployed file is explicit; stale files from an older build cannot enter the upload.
 const outputs = Object.keys(result.metafile.outputs).map(path => relative(site, resolve(path)).replaceAll("\\", "/"));
-const files = [...outputs, "index.html", "regex-worker.js", "UNICODE-LICENSE.txt", "typescript-libs.json", ".nojekyll",
+const files = [...outputs, "index.html", "regex-worker.js", "LICENSE.txt", "UNICODE-LICENSE.txt", "typescript-libs.json", ".nojekyll",
     "typescript-demo-LICENSE.txt", "typescript-demo-ThirdPartyNoticeText.txt", "vscode-languageserver-protocol-License.txt", "vscode-jsonrpc-License.txt", "vscode-languageserver-types-License.txt"];
 await writeFile("artifacts/pages-build.json", JSON.stringify({ schemaVersion: 1, libraryManifestSha256: hash(await readFile("dist/manifest.json")),
     librarySourceCompilation: false, compilerVersion: compilerMetadata.version, inputs: Object.keys(result.metafile.inputs),

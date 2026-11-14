@@ -13,7 +13,7 @@
       <StTropezPreparedRoot>$([System.IO.Path]::GetFullPath('$(StTropezStageDirectory)/%(_StTropezManifestHash.FileHash)/'))</StTropezPreparedRoot>
     </PropertyGroup>
     <ItemGroup>
-      <_StTropezAsset Include="$(StTropezAssetRoot)/**/*.js;$(StTropezAssetRoot)/**/*.d.ts;$(StTropezAssetRoot)/**/*.css;$(StTropezAssetRoot)/package.json;$(StTropezAssetRoot)/manifest.json;$(StTropezAssetRoot)/UNICODE-LICENSE.txt" />
+      <_StTropezAsset Include="$(StTropezAssetRoot)/**/*.js;$(StTropezAssetRoot)/**/*.d.ts;$(StTropezAssetRoot)/**/*.css;$(StTropezAssetRoot)/package.json;$(StTropezAssetRoot)/manifest.json;$(StTropezAssetRoot)/LICENSE.txt;$(StTropezAssetRoot)/UNICODE-LICENSE.txt" />
     </ItemGroup>
     <Copy SourceFiles="@(_StTropezAsset)" DestinationFiles="@(_StTropezAsset->'$(StTropezPreparedRoot)/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <Message Importance="high" Text="StTropez assets: $(StTropezPreparedRoot)" />

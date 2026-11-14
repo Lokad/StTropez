@@ -9,6 +9,7 @@ import { build } from "esbuild";
 import { chromium, firefox, webkit } from "@playwright/test";
 import { strFromU8, unzipSync } from "fflate";
 import ts from "typescript-demo";
+import { moduleSpecifiers } from "./module-specifiers.mjs";
 import { attachDemoProvider } from "../examples/demo/provider-server.ts";
 import { runDemoWalkthrough, runDemoConflict, runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoHighlights, runDemoDocumentation, runDemoActions } from "../tests/browser/demo-walkthrough.ts";
 import { runDemoUnopenedNavigation } from "../tests/browser/demo-walkthrough.ts";
@@ -71,15 +72,7 @@ while (pending.length) {
             const from = match.index + match[0].indexOf(match[1]); specifier(match[1], from, from + match[1].length);
         }
     } else {
-        const file = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
-        function visit(node) {
-            const literal = ts.isImportDeclaration(node) || ts.isExportDeclaration(node) ? node.moduleSpecifier
-                : ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) ? node.argument.literal
-                : ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword ? node.arguments[0] : undefined;
-            if (literal && ts.isStringLiteralLike(literal)) specifier(literal.text, literal.getStart(file) + 1, literal.end - 1);
-            ts.forEachChild(node, visit);
-        }
-        visit(file);
+        for (const item of moduleSpecifiers(path, text)) specifier(item.value, item.from + 1, item.to - 1);
     }
     let staged = text;
     for (const edit of edits.sort((a, b) => b.from - a.from)) staged = staged.slice(0, edit.from) + edit.text + staged.slice(edit.to);
@@ -131,6 +124,7 @@ assert.ok(inputs.some(path => within(assetRoot, resolve(project, path)) && path.
 await copyFile(join(project, "examples/demo/index.html"), join(site, "index.html"));
 await copyFile(join(assetRoot, assets.entries.regexWorker), join(site, "regex-worker.js"));
 await copyFile(join(assetRoot, "UNICODE-LICENSE.txt"), join(site, "UNICODE-LICENSE.txt"));
+await copyFile(join(assetRoot, "LICENSE.txt"), join(site, "LICENSE.txt"));
 const evidence = { schemaVersion: 1, sourceSha256: source.sha256, packageSha256, consumer, assetRoot: reused.assetRoot, reusedStage: true,
     browser: browserName, scenario: "demo", mode: prepareOnly ? "prepare-only" : measureOnly ? "measurement" : "walkthrough",
     declarations: { strict: true, skipLibCheck: false, passed: true, files: compilerFiles, inputs: typeInputs },
@@ -141,7 +135,7 @@ const evidence = { schemaVersion: 1, sourceSha256: source.sha256, packageSha256,
     native: "IME, OS clipboard and physical display remain UNVERIFIED" };
 await mkdir("artifacts/package", { recursive: true });
 if (!prepareOnly) {
-    const routes = new Map(["index.html", "app.js", "app.css", "demo-syntax-worker.js", "regex-worker.js", "UNICODE-LICENSE.txt"].map(name => ["/" + name, name]));
+    const routes = new Map(["index.html", "app.js", "app.css", "demo-syntax-worker.js", "regex-worker.js", "LICENSE.txt", "UNICODE-LICENSE.txt"].map(name => ["/" + name, name]));
     routes.set("/", "index.html");
     const server = createServer((request, response) => { void (async () => {
         if (await provider.handle(request, response)) return;
