@@ -146,14 +146,27 @@ original replacement end, preceding replacement text has already been crossed; a
 then applies to any following change at that boundary. Multiple co-located insertions are
 crossed together. Positions strictly inside a consumed range have `deleted: true`; boundary
 positions remain defined. Inversion maps the reverse geometry but cannot restore a distinct
-interior position lost by a replacement. Composition follows each map in sequence and rejects
+interior position lost by a replacement. Composition preserves sequential semantics and rejects
 incompatible lengths. A map's dimensions do not establish document identity or revision;
 the transaction owner must still check both before using delayed work.
 
 A batch map builds prefix deltas and contiguous deletion coverage in linear time. Mapping
 one position or anchored range then uses binary search in the changes, including repeated
-insertion boundaries. Inverse maps build the same index from lengths alone. Composed maps
-still visit their constituent maps; their cost also depends on the number of grouped steps.
+insertion boundaries. Inverse maps build the same index from lengths alone.
+
+Composition of built-in maps stores piecewise endpoint functions for both affinities, with
+separate summaries of nonempty-range invalidation and zero-width anchors that expand around
+insertions. The reverse direction is summarized independently: replacing a sequence with its
+net edits would lose deletion information about transient text. Queries search the summary
+instead of replaying each edit. Equivalent adjoining pieces coalesce, so continuous one-unit
+typing/deletion retains bounded mapping geometry. Distinct boundaries and deletion histories
+can still increase summary size and composition work. Opaque host mappings (including method
+overrides) retain their ordered pipeline, since their semantics cannot be inferred from edits.
+
+Consecutive one-unit insertion/deletion runs use indexed change records directly, avoiding
+general-summary construction on dense multi-caret typing. These records distinguish unit
+boundaries from the consumed interior of one large deletion. Inversion retains that distinction,
+and later arbitrary edits can still compose through the general semantic summary.
 
 `PositionMap.createMapper()` returns an independent lookup cursor with the same validation,
 affinity and deletion results as `map`. Ordered original endpoints reuse the known prefix;

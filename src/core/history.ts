@@ -1,5 +1,6 @@
 import type { TextBuffer } from "./text-buffer.ts";
 import type { PositionMapping } from "./positions.ts";
+import { composePositionMaps } from "./positions.ts";
 import type { SelectionSet } from "./selections.ts";
 export type { Selection } from "./selections.ts";
 
@@ -8,7 +9,7 @@ export type HistoryOptions = Readonly<{ maxGroups?: number; maxChanges?: number;
 export type HistorySnapshot = Readonly<{ undoDepth: number; redoDepth: number }>;
 export type HistorySelection = Readonly<{ viewId: string; before: SelectionSet; after: SelectionSet }>;
 export type HistoryChange = Readonly<{ documentId: string; before: TextBuffer; after: TextBuffer;
-    mappings: readonly PositionMapping[]; units: number; selection: HistorySelection | null }>;
+    mapping: PositionMapping; units: number; selection: HistorySelection | null }>;
 export type HistoryEntry = Readonly<{ id: number; origin: string; kind: EditKind; group: string | null;
     changes: readonly HistoryChange[]; steps: number; units: number }>;
 
@@ -53,7 +54,7 @@ export class TextHistory {
             && previous.origin === origin && previous.kind === kind && previous.group === group && first.documentId === old.documentId
             && first.before === old.after && first.selection?.viewId === old.selection?.viewId
             && this.peek(first.documentId, "undo") === previous && previous.steps + 1 <= this.limits.changes && previous.units + units <= this.limits.units) {
-            const change = Object.freeze({ ...old, after: first.after, mappings: Object.freeze([...old.mappings, ...first.mappings]), units: old.units + first.units,
+            const change = Object.freeze({ ...old, after: first.after, mapping: composePositionMaps(old.mapping, first.mapping), units: old.units + first.units,
                 selection: old.selection && first.selection ? Object.freeze({ ...old.selection, after: first.selection.after }) : null });
             const entry = Object.freeze({ ...previous, id: ++this.nextId, changes: Object.freeze([change]), steps: previous.steps + 1, units: previous.units + units });
             this.past.get(first.documentId)![this.past.get(first.documentId)!.length - 1] = entry; this.last.set(first.documentId, entry);

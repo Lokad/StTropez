@@ -57,6 +57,14 @@ second. Newlines, composition, paste/replacement, focus loss, selection movement
 origin in the same document and save boundaries separate those actions. The group belongs to the document and
 initiating view, independently of which view invokes undo later.
 
+A group retains one immutable position summary for its document, in both directions.
+Extending it composes that summary with the new transaction instead of copying a growing
+list of step maps. Undo/redo restore the exact retained buffers and use the summary for
+other views and anchors. Coalescing preserves each step's affinity and deletion semantics,
+including transient inserted text; it is not a net-text diff. Mapping cost follows retained
+boundary geometry, which can still grow for edits with distinct deletion histories. History
+limits continue to count original transactions and changed units, regardless of compression.
+
 `undo` and `redo` take a document ID and expected current revision. `observeHistory` exposes
 immutable per-document undo/redo depths. A depth counts entries; a linked entry may be blocked.
 Undo/redo validate every participating document and capability before moving the shared unit.

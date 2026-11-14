@@ -1,7 +1,6 @@
 import type { TextEdit } from "./changes.ts";
 import { textDifference } from "./changes.ts";
 import { TextBuffer } from "./text-buffer.ts";
-import { composePositionMaps } from "./positions.ts";
 import type { PositionMapping } from "./positions.ts";
 import { TextHistory, validateHistory } from "./history.ts";
 import type { EditKind, HistoryChange, HistoryOptions, HistorySnapshot, Selection } from "./history.ts";
@@ -332,7 +331,7 @@ export class Workspace {
         }
         const actual = prepared.filter(change => change.before !== change.after);
         const changes: HistoryChange[] = actual.map(change => Object.freeze({ documentId: change.request.documentId, before: change.before, after: change.after,
-            mappings: Object.freeze([change.mapping]), units: change.units,
+            mapping: change.mapping, units: change.units,
             selection: change.view ? Object.freeze({ viewId: change.view.handle.id, before: change.view.state.get().selectionSet,
                 after: change.afterSelections! }) : null }));
         if (changes.length) this.history.record(changes, first.origin, kind, requests.length === 1 ? group : undefined);
@@ -373,7 +372,7 @@ export class Workspace {
         this.history.move(entry, direction);
         const changed = new Set<Store<unknown>>(), transactionId = ++this.nextTransaction, revisions = [];
         for (const change of entry.changes) {
-            const participant = this.documents.get(change.documentId as DocumentId)!, forward = composePositionMaps(...change.mappings);
+            const participant = this.documents.get(change.documentId as DocumentId)!, forward = change.mapping;
             const view = change.selection ? participant.views.get(change.selection.viewId as ViewId) : undefined;
             this.commitText(participant, direction === "undo" ? change.before : change.after, direction === "undo" ? forward.invert() : forward,
                 origin, direction, transactionId, changed, view && change.selection ? { viewId: view.handle.id,
@@ -565,7 +564,7 @@ export class Workspace {
         if (current.state !== "ready") return { applied: false, reason: "not-ready" };
         const before = record.buffer!, result = before.apply(proposal.edits);
         if (result.buffer !== before) {
-            this.history.record([Object.freeze({ documentId: record.documentId, before, after: result.buffer, mappings: Object.freeze([result.mapping]),
+            this.history.record([Object.freeze({ documentId: record.documentId, before, after: result.buffer, mapping: result.mapping,
                 units: result.changedUnits, selection: null })], "agent", "proposal");
             this.commitText(record, result.buffer, result.mapping, "agent", "proposal", ++this.nextTransaction, changed); this.syncHistory(changed);
         } else this.history.seal(record.documentId);
@@ -744,7 +743,7 @@ export class Workspace {
                 if (canonicalApplied) {
                     const before = record.buffer!, edit = textDifference(current.value as string, savedValue as string)!;
                     const result = before.apply([edit]);
-                    this.history.record([Object.freeze({ documentId: record.documentId!, before, after: result.buffer, mappings: Object.freeze([result.mapping]),
+                    this.history.record([Object.freeze({ documentId: record.documentId!, before, after: result.buffer, mapping: result.mapping,
                         units: result.changedUnits, selection: null })], "host", "canonical");
                     this.commitText(record, result.buffer, result.mapping, "host", "canonical", ++this.nextTransaction, changed);
                 }

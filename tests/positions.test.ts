@@ -107,6 +107,7 @@ test("seeded batches, inverse edits and compositions map every UTF-16 boundary a
     };
     const ranges = (length: number, edits: readonly TextEdit[]) => {
         const spans: [number, number][] = [[0, 0], [length, length], [0, length]];
+        if (length <= 8) for (let from = 0; from <= length; from++) for (let to = from; to <= length; to++) spans.push([from, to]);
         for (const { from, to } of edits) spans.push([from, to], [from, from], [to, to], [Math.max(0, from - 1), Math.min(length, to + 1)]);
         for (let i = 0; i < 6; i++) { const from = random(length + 1); spans.push([from, from + random(length - from + 1)]); }
         return spans;
@@ -125,8 +126,14 @@ test("seeded batches, inverse edits and compositions map every UTF-16 boundary a
     for (let trial = 0; trial < 400; trial++) {
         const original = corpus("unicode").slice(0, trial % 49), maps: PositionMapping[] = [], oracles: ReturnType<typeof mappingOracle>[] = [], inverses: ReturnType<typeof mappingOracle>[] = [];
         let text = original; const batches: TextEdit[][] = [];
-        for (let step = 0; step < 3; step++) {
-            const edits = batch(text.length), expected = mappingOracle(text, edits), actual = new PositionMap(text.length, edits), inverse = mappingOracle(expected.text, expected.reverse);
+        const steps = 3 + trial % 7, anchors = [...new Set([0, Math.floor(original.length / 2), original.length])];
+        for (let step = 0; step < steps; step++) {
+            // Dense unit runs exercise both prepend/append compaction and its inverse. Half
+            // finish with an arbitrary batch, checking the transition back to general geometry.
+            const edits = trial % 5 === 0 && (step + 1 < steps || trial % 10 !== 0) ? anchors.map((at, index) => {
+                const from = at + index * step + (trial % 2 ? step : 0); return { from, to: from, insert: "q" };
+            }) : batch(text.length);
+            const expected = mappingOracle(text, edits), actual = new PositionMap(text.length, edits), inverse = mappingOracle(expected.text, expected.reverse);
             const context = `seed=${initialSeed}; trial=${trial}; step=${step}; text=${JSON.stringify(text)}; edits=${JSON.stringify(edits)}`;
             assert.equal(applyTextEdits(text, edits), expected.text, context); assert.equal(actual.newLength, expected.text.length, context);
             check(actual, expected, ranges(text.length, edits), context);
@@ -144,6 +151,8 @@ test("seeded batches, inverse edits and compositions map every UTF-16 boundary a
         assert.equal(composed.invert().oldLength, text.length); assert.equal(composed.invert().newLength, original.length);
         check(composed, sequence(oracles), ranges(original.length, batches[0]!), context + "; composition");
         check(composed.invert(), sequence(inverses), ranges(text.length, oracles.at(-1)!.reverse), context + "; inverse composition");
+        const incremental = maps.slice(1).reduce((prior, next) => composePositionMaps(prior, next), maps[0]!);
+        check(incremental, sequence(oracles), ranges(original.length, batches[0]!), context + "; incremental composition");
     }
     assert.deepEqual([...coverage].sort(), ["adjacent", "crlf", "delete", "empty", "insert", "interior", "noop", "replace", "stacked", "surrogate"]);
 });
@@ -158,6 +167,43 @@ test("composed mappings propagate deletion, reject stale dimensions and retain i
     assert.throws(() => first.map(-1), RangeError); assert.throws(() => first.map(5), RangeError);
     assert.throws(() => new PositionMap(4, [{ from: 0, to: 3, insert: "" }, { from: 2, to: 4, insert: "" }]), RangeError);
     assert.ok(Object.isFrozen(first)); assert.ok(Object.isFrozen(composed));
+    // Opaque host semantics, including subclasses, must not be inferred from edit geometry.
+    class CustomMap extends PositionMap {
+        override map(offset: number, side: Affinity = "after") { return Object.freeze({ ...super.map(offset, side), deleted: true }); }
+    }
+    const custom = composePositionMaps(new CustomMap(4, []), first);
+    assert.deepEqual(custom.map(0), { offset: 0, deleted: true });
+});
+
+test("composed maps retain transient deletion, expanded anchors and safe-integer boundaries without net-edit shortcuts", () => {
+    const first = new PositionMap(2, [{ from: 1, to: 1, insert: "ab" }]), second = new PositionMap(4, [{ from: 1, to: 2, insert: "" }]);
+    const composed = composePositionMaps(first, second), net = new PositionMap(2, [{ from: 1, to: 1, insert: "b" }]);
+    assert.deepEqual(composed.invert().map(1), { offset: 1, deleted: true });
+    assert.deepEqual(net.invert().map(1), { offset: 1, deleted: false });
+    const erased = composePositionMaps(first, first.invert());
+    const expands = anchoredRange(2, 1, 1, { fromAffinity: "before", toAffinity: "after", onDelete: "invalidate" });
+    assert.equal(erased.mapRange(expands), undefined);
+    assert.deepEqual(erased.map(1), { offset: 1, deleted: false });
+    assert.deepEqual(erased.mapRange({ ...expands, toAffinity: "before" }), { ...expands, toAffinity: "before" });
+    const partial = composePositionMaps(new PositionMap(2, [{ from: 1, to: 1, insert: "abc" }]), new PositionMap(5, [{ from: 0, to: 2, insert: "" }]));
+    assert.equal(partial.map(1, "before").deleted, true);
+    assert.deepEqual(partial.mapRange(expands), { ...expands, from: 0, to: 2 }); // Expanded range still contains surviving text.
+    const overlapping = composePositionMaps(new PositionMap(6, [{ from: 0, to: 0, insert: "X" }, { from: 0, to: 3, insert: "A" }]),
+        new PositionMap(5, [{ from: 1, to: 4, insert: "" }]));
+    const invalidating = (from: number, to: number) => anchoredRange(6, from, to, { fromAffinity: "before", toAffinity: "before", onDelete: "invalidate" });
+    assert.equal(overlapping.mapRange(invalidating(0, 3)), undefined);
+    assert.equal(overlapping.mapRange(invalidating(1, 5)), undefined);
+    assert.deepEqual(overlapping.mapRange(invalidating(0, 5)), { ...invalidating(0, 5), from: 0, to: 1 });
+    const length = Number.MAX_SAFE_INTEGER;
+    const shrinking = new PositionMap(length, [{ from: 1, to: length - 1, insert: "" }]);
+    const next = new PositionMap(2, [{ from: 1, to: 1, insert: "xy" }]);
+    const huge = composePositionMaps(shrinking, next);
+    for (const offset of [0, 1, 2, length - 2, length - 1, length]) for (const side of ["before", "after"] as const) {
+        const a = shrinking.map(offset, side), b = next.map(a.offset, side);
+        assert.deepEqual(huge.map(offset, side), { offset: b.offset, deleted: a.deleted || b.deleted });
+    }
+    assert.deepEqual(huge.invert().map(4), { offset: length, deleted: false });
+    assert.deepEqual(huge.mapRange(anchoredRange(length, 1, length - 1, { onDelete: "invalidate" })), undefined);
 });
 
 test("newline conversion is explicit, maps CRLF offsets and preserves surrogate/combining/ZWJ text", () => {
