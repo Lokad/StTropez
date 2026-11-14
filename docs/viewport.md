@@ -1,5 +1,8 @@
 # Bounded text viewport
 
+Ctrl/Meta wheel events pass through to the browser's zoom handling; the viewport does not
+cancel them or apply their deltas as editor scrolling.
+
 `mountTextViewport` is a read-only DOM projection over an indexed workspace document. It is
 the first M3 rendering layer, separate from the native `mountTextEditor` control. Per-view
 [folding](folding.md) projects visible source rows without changing raw document positions. Local native

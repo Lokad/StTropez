@@ -16,6 +16,19 @@ test.beforeEach(async ({ page }) => {
     await page.goto("/viewport/"); await ready(page);
 });
 
+test("browser zoom wheels are not cancelled or interpreted as editor scrolling", async ({ page }) => {
+    await page.evaluate(() => window.viewportFixture.scroll("primary", 2000, 0)); await ready(page);
+    const root = page.locator("#primary .st-viewport"), before = await page.evaluate(() => window.viewportFixture.snapshot().primary.scrollTop);
+    expect(await root.evaluate(node => ["ctrlKey", "metaKey"].map(modifier => {
+        const event = new WheelEvent("wheel", { [modifier]: true, deltaY: 120, bubbles: true, cancelable: true });
+        let prevented = false;
+        // Observe the editor handler, then suppress synthetic native scrolling (notably WebKit).
+        node.addEventListener("wheel", next => { prevented = next.defaultPrevented; next.preventDefault(); }, { once: true });
+        node.dispatchEvent(event); return prevented;
+    }))).toEqual([false, false]);
+    await ready(page); expect(await page.evaluate(() => window.viewportFixture.snapshot().primary.scrollTop)).toBe(before);
+});
+
 test("100k lines render bounded indexed ranges and reach the final line without whole-text export", async ({ page }) => {
     const initial = await page.evaluate(() => window.viewportFixture.snapshot());
     expect(initial.document).toMatchObject({ length: 2_400_000, lines: 100_001, longest: 23, exports: 0 });

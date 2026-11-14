@@ -22,7 +22,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
     preview.className = "st-text-drag-preview"; preview.setAttribute("aria-hidden", "true");
     type Arm = Readonly<{ revision: number; selectionSet: SelectionSet; pointer: number; offset: number; affinity: Affinity }>;
     type Aim = Readonly<{ revision: number; offset: number; affinity: Affinity; token: string | null; copy: boolean; x: number; y: number }>;
-    let armed: Arm | undefined, aim: Aim | undefined, frame: number | undefined, previousTime: number | undefined;
+    let armed: Arm | undefined, aim: Aim | undefined, frame: number | undefined, previewFrame: number | undefined, previousTime: number | undefined;
     let disposed = false, expired = false;
     function current() {
         if (disposed || !options.available() || !root.isConnected || !workspace.resolveTab(tab) || !workspace.ownsDocumentView(view)) return;
@@ -33,12 +33,16 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
         if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined; previousTime = undefined;
     }
     function clearArm(): void { armed = undefined; root.draggable = false; }
+    function clearPreview(): void {
+        if (previewFrame !== undefined) win.cancelAnimationFrame(previewFrame); previewFrame = undefined;
+        preview.remove(); preview.textContent = "";
+    }
     function invalidateSource(): void {
         const active = activeDrags.get(document);
         // Keep the opaque token as a tombstone until dragend/drop; a stale internal drag
         // must never fall through to an external-text copy. Release model references now.
         if (active?.owner === owner && active.source && (!current() || !isCurrentTextTransfer(active.source))) {
-            delete active.source; preview.remove(); preview.textContent = "";
+            delete active.source; clearPreview();
         }
     }
     function changed(): void {
@@ -48,7 +52,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
     }
     function finish(): void {
         if (activeDrags.get(document)?.owner === owner) activeDrags.delete(document);
-        clearArm(); clearAim(); expired = false; preview.remove(); preview.textContent = "";
+        clearArm(); clearAim(); expired = false; clearPreview();
     }
     function accepts(data: DataTransfer | null): data is DataTransfer {
         return !!data && (data.types.includes(transferType) || data.types.includes("text/plain"));
@@ -106,6 +110,8 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
         event.dataTransfer.effectAllowed = source.moveAllowed ? "copyMove" : "copy";
         preview.textContent = source.text.slice(0, 160) + (source.text.length > 160 ? "…" : ""); root.append(preview);
         event.dataTransfer.setDragImage(preview, 8, 8);
+        // The browser captures the drag image after dragstart; its source need not stay painted.
+        previewFrame = win.requestAnimationFrame(clearPreview);
     }, { signal: listeners.signal });
     root.addEventListener("dragenter", event => {
         if (accepts(event.dataTransfer) && current() && !input.readOnly && !expired) event.preventDefault();

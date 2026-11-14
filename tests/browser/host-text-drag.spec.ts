@@ -77,7 +77,9 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
             element.setAttribute("data-drag-events", JSON.stringify(events.slice(-16))); if (type !== "dragover") element.setAttribute(`data-trusted-${type}`, String(event.isTrusted));
         }); });
     const from = await point(page, 1), to = await point(page, destination);
-    await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.move(from.x + 8, from.y, { steps: 3 }); await page.mouse.move(to.x, to.y, { steps: 10 }); await page.mouse.up(); await ready(page);
+    await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.move(from.x + 8, from.y, { steps: 3 }); await page.mouse.move(to.x, to.y, { steps: 10 });
+    if (host === "plain" && !large) await expect(page.locator(".st-text-drag-preview")).toHaveCount(0);
+    await page.mouse.up(); await ready(page);
     await expect(root(page)).toHaveAttribute("data-trusted-dragstart", "true");
     if (info.project.name === "webkit") {
         // This runner strips custom data after trusted dragstart. Refusal is qualified;

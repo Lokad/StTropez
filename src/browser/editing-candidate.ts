@@ -695,10 +695,16 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         finally { replayTime = undefined; if (executingInput === pending) executingInput = undefined; drainingInput = false;
             }
     }
+    function caretChord(event: KeyboardEvent): Readonly<{ edge: "Home" | "End"; document: boolean }> | undefined {
+        if (!apple || !event.metaKey || event.ctrlKey || event.altKey) return;
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight") return { edge: event.key === "ArrowLeft" ? "Home" : "End", document: false };
+        if (event.key === "ArrowUp" || event.key === "ArrowDown") return { edge: event.key === "ArrowUp" ? "Home" : "End", document: true };
+        return;
+    }
     function inputKey(event: KeyboardEvent): InputKey | undefined {
         const command = (event.ctrlKey || event.metaKey) && !event.altKey, key = event.key.toLowerCase();
         const word = !event.metaKey && (event.ctrlKey && !event.altKey || apple && event.altKey && !event.ctrlKey);
-        const navigation = command && ["a", "home", "end"].includes(key) || word && ["ArrowLeft", "ArrowRight"].includes(event.key)
+        const navigation = !!caretChord(event) || command && ["a", "home", "end"].includes(key) || word && ["ArrowLeft", "ArrowRight"].includes(event.key)
             || !command && !event.altKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key);
         const historyKey = command && (key === "z" || event.ctrlKey && key === "y"), deletion = (!command && !event.altKey || word) && ["Backspace", "Delete"].includes(event.key);
         const tab = event.key === "Tab" && !escaped && !command && !event.altKey, bracketKey = !command && !event.altKey && pairKey(event.key);
@@ -822,7 +828,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         // Restore disclosure tab stops after the browser has completed focus traversal.
         if (escaped) queueMicrotask(() => { if (!disposed) escapeState(false); }); }, { signal: listeners.signal });
     function keydown(event: KeyboardEvent): void {
-        if (event.defaultPrevented || composing || event.isComposing) return;
+        if (event.defaultPrevented || composing || event.isComposing || event.keyCode === 229) return;
         if (["Shift", "Control", "Meta", "Alt"].includes(event.key)) return;
         if (hostInsertion) { hostInsertion.cancel(); if (event.key === "Escape") { event.preventDefault(); return; } }
         if (!drainingInput && (ordered || rangeCommand) && event.key !== "Escape") {
@@ -836,6 +842,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (command && (key === "z" || (event.ctrlKey && key === "y"))) { event.preventDefault(); history(event.shiftKey || key === "y" ? "redo" : "undo"); return; }
         if (command && key === "a") { event.preventDefault(); cancelWord(); preferred = undefined; const length = workspace.document(documentId).buffer.length; view.setSelection(revision, { anchor: 0, head: length }); refresh(); return; }
         if (command && (event.key === "Home" || event.key === "End")) { event.preventDefault(); syncSelection(); horizontal(event.key, event.shiftKey, true); return; }
+        const chord = caretChord(event);
+        if (chord) { event.preventDefault(); syncSelection(); horizontal(chord.edge, event.shiftKey, chord.document); return; }
         if (event.key === "Escape") {
             cancelWord(); cancelCommandTimers(); preferred = undefined;
             const state = view.getSnapshot();
@@ -859,10 +867,12 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         preferred = undefined;
         if (!command && !event.altKey && (event.key === "Backspace" || event.key === "Delete")) {
             event.preventDefault(); grapheme(event.key === "Backspace" ? -1 : 1, true);
-        } else if (event.key === "Tab" && !command && !event.altKey) { event.preventDefault(); languageCommand(event.shiftKey ? "outdent" : "indent"); }
+        } else if (event.key === "Tab" && !command && !event.altKey) { if (languageCommand(event.shiftKey ? "outdent" : "indent")) event.preventDefault(); }
         else if (command && (key === "/" || key === "?" && event.shiftKey) && languageCommand(event.shiftKey ? "block-comment" : "line-comment")) event.preventDefault();
         else if (!command && !event.altKey && event.key === "Enter" && language.enter && languageCommand("newline")) event.preventDefault();
         else if (!command && !event.altKey && pairKey(event.key) && languageCommand({ character: event.key })) event.preventDefault();
+        // Unhandled command-navigation must not move inside the bounded textarea context.
+        else if (command && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown"].includes(event.key)) event.preventDefault();
     }
     input.addEventListener("keydown", event => {
         const started = win.performance.now(); keydownEvents++;
@@ -962,6 +972,10 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             const text = event.clipboardData.getData("text/plain");
             if (text.length) appendInput({ kind: "text", text, type: "insertFromPaste" });
             return;
+        }
+        if (type !== "paste") {
+            syncSelection();
+            if (!view.getSnapshot().selectionSet.ranges.some(range => range.anchor !== range.head)) return;
         }
         event.preventDefault(); cancelWord(); syncSelection(); group = undefined;
         if (type !== "copy") view.folding.revealSelection(view.folding.getSnapshot());

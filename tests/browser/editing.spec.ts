@@ -11,6 +11,41 @@ test.beforeEach(async ({ page }) => {
     await page.goto("/editing/"); await ready(page);
 });
 
+test("read-only Tab traverses surrounding host controls in both directions", async ({ page }) => {
+    await page.goto("/editing/?readonly"); await ready(page);
+    await page.evaluate(() => {
+        const root = document.querySelector("#primary .st-editing-candidate")!;
+        const before = document.createElement("button"), after = document.createElement("button");
+        before.textContent = "Before source"; after.textContent = "After source"; root.before(before); root.after(after);
+    });
+    const source = page.getByRole("textbox", { name: "Primary source", exact: true });
+    await source.press("Tab"); await expect(page.getByRole("button", { name: "After source", exact: true })).toBeFocused();
+    await source.press("Shift+Tab"); await expect(page.getByRole("button", { name: "Before source", exact: true })).toBeFocused();
+});
+
+test("Apple caret chords navigate the document and full line beyond native input context", async ({ page }) => {
+    await page.addInitScript(() => Object.defineProperty(navigator, "platform", { value: "MacIntel" })); await page.reload(); await ready(page);
+    const text = "one\n" + "x".repeat(4000) + "\n" + "tail\n".repeat(1000);
+    await page.evaluate(text => { window.editingFixture.setText(text); window.editingFixture.select("primary", { anchor: 2004, head: 2004 }); }, text); await ready(page);
+    const source = page.getByRole("textbox", { name: "Primary source", exact: true });
+    for (const [key, anchor, head] of [["Meta+ArrowLeft", 4, 4], ["Meta+Shift+ArrowRight", 4, 4004],
+        ["Meta+ArrowDown", text.length, text.length], ["Meta+Shift+ArrowUp", text.length, 0]] as const) {
+        await source.press(key); await ready(page); expect((await state(page)).primary.selection).toMatchObject({ anchor, head });
+    }
+});
+
+test("IME confirmation keycode does not invoke a language newline after compositionend", async ({ page }) => {
+    await page.evaluate(() => { const f = window.editingFixture; f.setText("a"); f.select("primary", { anchor: 1, head: 1 }); f.configureLanguage({ enter: "keep" }); }); await ready(page);
+    const source = page.getByRole("textbox", { name: "Primary source", exact: true });
+    expect(await source.evaluate(node => {
+        node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+        node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "" }));
+        const event = new KeyboardEvent("keydown", { key: "Enter", keyCode: 229, bubbles: true, cancelable: true }); node.dispatchEvent(event); return event.defaultPrevented;
+    })).toBe(false);
+    expect(await page.evaluate(() => window.editingFixture.range(0, window.editingFixture.snapshot().document!.length))).toBe("a");
+    await source.press("Enter"); await ready(page); expect(await page.evaluate(() => window.editingFixture.range(0, 2))).toBe("a\n");
+});
+
 test("typing, newline, paste and history keep a visible caret in place on both scroll axes", async ({ page }) => {
     const source = page.getByRole("textbox", { name: "Primary source", exact: true });
     await page.evaluate(() => window.editingFixture.setText((" ".repeat(60) + "x".repeat(340) + "\n").repeat(2000))); await ready(page);

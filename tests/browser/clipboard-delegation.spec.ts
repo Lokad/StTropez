@@ -1,5 +1,20 @@
 import { test, expect } from "@playwright/test";
 
+test("copy and cut with collapsed selections leave clipboard contents and history alone", async ({ page }) => {
+    await page.goto("/editing/");
+    const result = await page.evaluate(() => {
+        const f = window.editingFixture; f.setText("alpha beta"); f.selections([{ anchor: 1, head: 1 }, { anchor: 7, head: 7 }]); f.focus("primary");
+        const before = f.snapshot(), input = document.querySelector('textarea[aria-label="Primary source"]')!, events = [];
+        for (const type of ["copy", "cut"]) {
+            const event = new ClipboardEvent(type, { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+            event.clipboardData!.setData("text/plain", "prior contents"); input.dispatchEvent(event);
+            events.push({ prevented: event.defaultPrevented, text: event.clipboardData!.getData("text/plain") });
+        }
+        const after = f.snapshot(); return { events, unchanged: before.document!.revision === after.document!.revision, history: after.history!.undoDepth - before.history!.undoDepth };
+    });
+    expect(result).toEqual({ events: [{ prevented: false, text: "prior contents" }, { prevented: false, text: "prior contents" }], unchanged: true, history: 0 });
+});
+
 test("host-cancelled copy/cut/paste preserve captured text, clipboard ownership and selections", async ({ page }) => {
     await page.goto("/editing/");
     const result = await page.evaluate(() => {

@@ -478,6 +478,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         if (Math.abs(root.scrollTop - y.toPhysical(top)) > 1 || Math.abs(root.scrollLeft - x.toPhysical(left)) > 1) { top = newTop; left = newLeft; anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined; schedule(); }
     }, { signal: listeners.signal });
     root.addEventListener("wheel", event => {
+        if (event.defaultPrevented || event.ctrlKey || event.metaKey) return;
         const factor = event.deltaMode === 1 ? lineHeight : event.deltaMode === 2 ? height : 1;
         const nextTop = position(y, top + (event.shiftKey ? 0 : event.deltaY) * factor), nextLeft = position(x, left + (event.shiftKey ? event.deltaY : event.deltaX) * factor);
         if (nextTop !== top || nextLeft !== left) { event.preventDefault(); top = nextTop; left = nextLeft; anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined; schedule(); }

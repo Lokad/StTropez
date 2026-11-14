@@ -56,6 +56,11 @@ with `preventDefault()`. The candidate then leaves clipboard data and source mut
 host, cancels queued navigation/grouping work, and stops a delegated cut/paste drag. Empty or
 unsupported nontext literal paste is a no-op, including when source text is selected. The
 [table-paste host](table-paste.md) exercises a captured conversion through this boundary.
+Copy/cut with only collapsed selections leave the clipboard event and history untouched.
+Read-only Tab/Shift+Tab traverse host controls. On Apple platforms Cmd+Left/Right navigate the
+whole source line and Cmd+Up/Down the document; Shift extends the selection. Unhandled command
+navigation cannot move within the hidden textarea's partial context. A keyCode 229 event is
+left to composition handling even when it follows compositionend; device qualification is separate.
 
 The native context contains up to 256 UTF-16 units around either side of a selection and up to
 2,048 selected units. Larger selections become one selected placeholder, with reversible maps
