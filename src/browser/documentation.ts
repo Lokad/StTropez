@@ -10,6 +10,7 @@ const unescape = (value: string) => value.replace(escape, "$1");
 const fence = (line: string) => /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
 const listItem = (line: string) => /^ {0,3}([-+*]|[0-9]{1,9}[.)])[ \t]+(.*)$/.exec(line);
 const word = (value: string) => /[\p{L}\p{N}]/u.test(value);
+const maxLinkDestinationUnits = 8192;
 
 /** Small documentation presentation, not a general Markdown engine. No HTML or automatic URLs. */
 export function mountDocumentation(host: HTMLElement, options: DocumentationOptions = {}) {
@@ -70,7 +71,9 @@ export function mountDocumentation(host: HTMLElement, options: DocumentationOpti
                 }
                 if (allowLinks && char === "[" && value[i - 1] !== "!") {
                     const labelEnd = pairs.get(i), end = labelEnd === undefined ? undefined : pairs.get(labelEnd + 1);
-                    if (labelEnd !== undefined && value[labelEnd + 1] === "(" && end !== undefined && end < to) {
+                    // Bound the raw span before slicing, trimming or matching it. Nested invalid
+                    // destinations otherwise rescan successively smaller document-sized suffixes.
+                    if (labelEnd !== undefined && value[labelEnd + 1] === "(" && end !== undefined && end < to && end - labelEnd - 2 <= maxLinkDestinationUnits) {
                         const raw = value.slice(labelEnd + 2, end).trim();
                         const destination = /^(?:<([^<>\n]*)>|([^\s]+?))(?:[ \t]+(?:"([^"]*)"|'([^']*)'))?$/.exec(raw);
                         if (destination) {

@@ -48,3 +48,20 @@ test("documentation handles escaped delimiters, unterminated fences and large un
     expect(result.parsed.code).toEqual(["a ` b", "Unclosed <tag>\n"]); expect(result.parsed.text).toContain("*literal*");
     expect(result.large.exact).toBe(true); expect(result.large.nodes).toBeLessThan(5);
 });
+
+test("documentation bounds link destinations before interpreting nested host content", async ({ page }) => {
+    await page.goto("/protocol/");
+    const result = await page.evaluate(() => {
+        const host = document.createElement("section"), checked: string[] = [], opened: string[] = [];
+        const view = window.protocolFixture.mountDocumentation(host, { canOpenLink: target => { checked.push(target); return true; }, openLink: target => opened.push(target) });
+        const boundary = "x".repeat(8192), oversized = `[long](${boundary}x)`, padded = `[padded](${" ".repeat(8192)}help:topic)`;
+        const nested = "[a](".repeat(16000) + "b c" + ")".repeat(16000);
+        view.setContent([{ kind: "markdown", value: `[boundary](${boundary})\n\n${oversized}\n\n${padded}\n\n${nested}\n\n[after](help:after)` }]);
+        const paragraphs = [...host.querySelectorAll("p")].map(node => node.textContent), buttons = [...host.querySelectorAll("button")];
+        buttons.forEach(button => button.click());
+        const result = { labels: buttons.map(button => button.textContent), exact: paragraphs.slice(1, 4).every((text, i) => text === [oversized, padded, nested][i]),
+            checked: checked.map(target => target.length), opened: opened.map(target => target.length) };
+        view.dispose(); return result;
+    });
+    expect(result).toEqual({ labels: ["boundary", "after"], exact: true, checked: [8192, 10, 8192, 10], opened: [8192, 10] });
+});

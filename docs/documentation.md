@@ -32,6 +32,9 @@ supplied, is checked both during rendering and immediately before activation. Th
 must enforce its chosen destination policy in its callback; the renderer never fetches,
 normalizes or opens a URI itself. Replacing content or disposing the view retires old
 link buttons. Hosts must also expire content when its captured request becomes obsolete.
+The raw destination span (including whitespace and an optional title) is limited to 8,192
+UTF-16 units before parsing. Longer spans remain literal text. This also bounds repeated
+destination scans in nested malformed input supplied directly by a host.
 
 The public LSP hover and signature models retain literal `text`/`documentation` fields
 and expose structured `content` (including parameter content). MarkupContent preserves
