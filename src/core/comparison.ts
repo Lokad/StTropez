@@ -2,6 +2,7 @@ import { TextBuffer } from "./text-buffer.ts";
 import { DiffReferenceCache, TextDiff } from "./diff.ts";
 import type { DiffHunk, DiffProgress } from "./diff.ts";
 import { NotificationScope, Store } from "./observable.ts";
+import { validateWorkBudget } from "./kernel-cursor.ts";
 import type { Observable } from "./observable.ts";
 import type { DocumentSnapshot, DocumentView, ResourceLease, TabId, TabTarget, TextResourceHandle, Workspace } from "./workspace.ts";
 import type { SelectionSet } from "./selections.ts";
@@ -133,6 +134,7 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
     }
     return Object.freeze({ ...state.observable, view, advance: (workBudget = 32768) => {
         scope.assertWritable();
+        validateWorkBudget(workBudget, "Comparison");
         if (job && !live()) expire();
         if (job && live()) {
             try {

@@ -1,4 +1,5 @@
 import { NotificationScope, Store } from "../core/observable.ts";
+import { validateWorkBudget } from "../core/kernel-cursor.ts";
 import type { Observable } from "../core/observable.ts";
 import { createComparisonController } from "../core/comparison.ts";
 import type { ComparisonBaseline, ComparisonController } from "../core/comparison.ts";
@@ -28,7 +29,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     options: Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView; scrollLinked?: boolean; rowsAligned?: boolean;
         workingDecorate?: (line: PresentedLine) => readonly InlineDecoration[]; baselineDecorate?: (line: PresentedLine) => readonly InlineDecoration[] }> = {}): TextComparison {
     const budget = options.workBudget ?? 32768;
-    if (!Number.isSafeInteger(budget) || budget < 512) throw new RangeError("Comparison budget must be at least 512.");
+    validateWorkBudget(budget, "Comparison");
     if (options.scrollLinked !== undefined && typeof options.scrollLinked !== "boolean") throw new TypeError("Expected a scroll-link preference.");
     if (options.rowsAligned !== undefined && typeof options.rowsAligned !== "boolean") throw new TypeError("Expected a row-alignment preference.");
     const owner = host.ownerDocument, win = owner.defaultView;

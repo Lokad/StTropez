@@ -1,6 +1,11 @@
 export type KernelStatus = "running" | "ready" | "failed" | "disposed";
 export type KernelCursor<P> = Readonly<{ next: (workBudget?: number) => P; snapshot: () => P; dispose: () => void }>;
 
+/** Work is counted between cooperative checkpoints, which may overshoot the requested budget. */
+export function validateWorkBudget(budget: number, label: string): void {
+    if (!Number.isSafeInteger(budget) || budget < 256) throw new RangeError(`${label} budget must be an integer of at least 256 units.`);
+}
+
 /** Shared synchronous driver; the host schedules calls and the kernel supplies its own checkpoints. */
 export function kernelCursor<R, P>(iterator: Generator<void, R | null> | null, work: () => number,
     progress: (status: KernelStatus, result: R | null, failure: string | null) => P, label: string): KernelCursor<P> {
@@ -9,7 +14,7 @@ export function kernelCursor<R, P>(iterator: Generator<void, R | null> | null, w
     return Object.freeze({ snapshot,
         next: (workBudget = 4096) => {
             if (busy) throw new Error(`${label} cursor is busy.`);
-            if (!Number.isSafeInteger(workBudget) || workBudget < 256) throw new RangeError(`${label} budget must be an integer of at least 256 units.`);
+            validateWorkBudget(workBudget, label);
             busy = true;
             try {
                 const start = work();

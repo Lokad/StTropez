@@ -113,8 +113,10 @@ This is a line alignment with trimmed boundaries, rather than a globally minimal
 alignment or moved-block detection. The original TypeScript implementation reuses the
 project's buffers; a general diff package would add a runtime dependency.
 
-Core callers explicitly advance work. Browser tasks group up to 32 advances of 32,768 work
-units, stopping after the first advance that reaches four milliseconds. This reduces nested
+Core callers explicitly advance work with a safe integer budget of at least 256 units, shared
+with the other work-unit cursors. Invalid budgets throw before changing the comparison or
+publishing progress; the active job remains usable. Browser tasks group up to 32 advances of
+32,768 work units, stopping after the first advance that reaches four milliseconds. This reduces nested
 timer delays while bounding each batch's advances. Reads and comparisons yield within long
 lines, and stale revision jobs are
 disposed before replacement. The budget is work accounting, not a hard millisecond deadline:

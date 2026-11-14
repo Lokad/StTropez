@@ -1,5 +1,6 @@
 import type { TextBuffer } from "./text-buffer.ts";
 import { highSurrogate as high, lowSurrogate as low } from "./utf16.ts";
+import { validateWorkBudget } from "./kernel-cursor.ts";
 
 export type WordStep = Readonly<{ status: "running" | "ready" | "cancelled"; offset: number | null; workUnits: number; readUnits: number }>;
 export type WordOptions = Readonly<{ skipWhitespace?: boolean; from?: number; to?: number }>;
@@ -88,7 +89,7 @@ export class WordCursor {
         this.iterator = scan(buffer, offset, direction, this.counters, { from, to }, options.skipWhitespace !== false);
     }
     next(maxWork = 4096): WordStep {
-        if (!Number.isSafeInteger(maxWork) || maxWork < 256) throw new RangeError("Word budget must be an integer of at least 256 units.");
+        validateWorkBudget(maxWork, "Word");
         const start = this.counters.work;
         while (this.iterator && this.counters.work - start < maxWork) {
             const next = this.iterator.next(); if (next.done) { this.offset = next.value; this.status = "ready"; this.iterator = undefined; }

@@ -2,6 +2,7 @@ import { BidiCursor } from "./bidi-cursor.ts";
 import type { BidiIndex, BidiStep } from "./bidi-cursor.ts";
 import type { BidiDirection } from "./bidi.ts";
 import { NotificationScope, Store } from "./observable.ts";
+import { validateWorkBudget } from "./kernel-cursor.ts";
 import type { Observable } from "./observable.ts";
 import type { DocumentId, TabId, Workspace } from "./workspace.ts";
 
@@ -48,7 +49,7 @@ export function createBidiIndexController(workspace: Workspace, tabId: TabId,
             publish({ status: "running", generation, revision: captured.revision, range: Object.freeze({ from, to }), progress: null, index: null, failure: null }); return generation;
         },
         advance: (workBudget = 4096) => {
-            scope.assertWritable(); if (!Number.isSafeInteger(workBudget) || workBudget < 256) throw new RangeError("Invalid bidi work budget."); reconcile();
+            scope.assertWritable(); validateWorkBudget(workBudget, "Bidi"); reconcile();
             if (cursor) {
                 try {
                     const step = cursor.next(workBudget), generation = store.get().generation;

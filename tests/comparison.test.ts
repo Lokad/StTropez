@@ -13,6 +13,30 @@ function fixture() {
 }
 function ready(controller: ComparisonController) { let state = controller.getSnapshot(); for (let i = 0; state.status === "running" && i < 10000; i++) state = controller.advance(512); assert.equal(state.status, "ready"); return state; }
 
+test("invalid comparison budgets preserve live work and the shared minimum can finish it", () => {
+    const workspace = new Workspace(), prefix = "same\r\n".repeat(1000), reference = TextBuffer.from(prefix + "baseline\n");
+    const resource = workspace.createTextResource({ scope: "test", resource: "budget", variant: "working" }, "Working", { value: prefix + "working\n" });
+    const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "main"), comparison = createComparisonController(workspace, tab, { buffer: reference, version: "one" });
+    let notifications = 0; const unsubscribe = comparison.subscribe(() => notifications++);
+    const rejectInvalid = () => {
+        const before = comparison.getSnapshot(), count = notifications;
+        for (const budget of [-1, 0, 255, 256.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+            assert.throws(() => comparison.advance(budget), RangeError);
+            assert.equal(comparison.getSnapshot(), before); assert.equal(notifications, count);
+        }
+    };
+    rejectInvalid(); let state = comparison.advance(256); assert.equal(state.status, "running"); rejectInvalid();
+    let calls = 1;
+    while (state.status === "running" && calls++ < 1000) {
+        const work = state.progress!.work; state = comparison.advance(256);
+        assert.ok(state.progress!.work - work <= 1024, "one checkpoint may overshoot the requested work budget");
+    }
+    assert.equal(state.status, "ready"); assert.equal(state.hunks.length, 1); rejectInvalid();
+    assert.equal(comparison.revert(state.generation, 0), true);
+    assert.equal(workspace.document(resource.documentId).buffer.equals(reference), true);
+    unsubscribe(); comparison.dispose(); assert.equal(workspace.diagnostics().leases, 0);
+});
+
 test("captured whole-review reversion preserves sparse 100k raw text and complete shared history", () => {
     const workspace = new Workspace(), text = "first\r\n" + "unchanged value\r\n".repeat(100000) + "last 😀\r", reference = TextBuffer.from(text);
     const resource = workspace.createTextResourceFromBuffer({ scope: "review", resource: "source", variant: "working" }, "Working", { buffer: reference, serverVersion: "saved-1" });

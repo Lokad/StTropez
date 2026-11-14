@@ -1,4 +1,5 @@
 import type { TextBuffer } from "./text-buffer.ts";
+import { validateWorkBudget } from "./kernel-cursor.ts";
 import type { DiffLine } from "./diff-lines.ts";
 import { commonText, getLine, indexLines, lineLength, matchingLines, offsetAt, tick } from "./diff-index.ts";
 import type { DiffStats as Stats, DiffIndex as Index } from "./diff-index.ts";
@@ -216,7 +217,7 @@ export class TextDiff {
         this.iterator = compare(baseline, working, this.stats, current, ++current.serial);
     }
     next(workBudget = 32_768): DiffProgress {
-        if (!Number.isSafeInteger(workBudget) || workBudget < 512) throw new RangeError("Comparison budget must be an integer of at least 512 units.");
+        validateWorkBudget(workBudget, "Comparison");
         const start = this.stats.work;
         try {
             while (this.iterator && this.stats.work - start < workBudget) {

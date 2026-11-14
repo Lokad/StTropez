@@ -3,6 +3,7 @@ import type { BidiClass } from "./bidi-data.ts";
 import type { BidiDirection, BidiParagraph, BidiText } from "./bidi.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { utf16CodePointAt } from "./utf16.ts";
+import { validateWorkBudget } from "./kernel-cursor.ts";
 
 export type BidiIndex = Readonly<{
     from: number; to: number; length: number; visualLength: number; paragraphCount: number;
@@ -208,7 +209,7 @@ export class BidiCursor {
         this.iterator = build(source, from, to, direction, this.counters);
     }
     next(workBudget = 4096): BidiStep {
-        if (!Number.isSafeInteger(workBudget) || workBudget < 256) throw new RangeError("Bidi budget must be an integer of at least 256 units.");
+        validateWorkBudget(workBudget, "Bidi");
         const start = this.counters.work;
         while (this.iterator && this.counters.work - start < workBudget) { const step = this.iterator.next(); if (step.done) { this.result = step.value; this.status = step.value ? "ready" : "cancelled"; this.iterator = undefined; } }
         return Object.freeze({ status: this.status, phase: this.status === "running" ? this.counters.phase : this.status, scannedUnits: this.counters.scanned,
