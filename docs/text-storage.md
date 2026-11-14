@@ -150,6 +150,11 @@ interior position lost by a replacement. Composition follows each map in sequenc
 incompatible lengths. A map's dimensions do not establish document identity or revision;
 the transaction owner must still check both before using delayed work.
 
+A batch map builds prefix deltas and contiguous deletion coverage in linear time. Mapping
+one position or anchored range then uses binary search in the changes, including repeated
+insertion boundaries. Inverse maps build the same index from lengths alone. Composed maps
+still visit their constituent maps; their cost also depends on the number of grouped steps.
+
 `anchoredRange` defaults to excluding new insertions at its boundaries (`after` at the start,
 `before` at the end). The deletion policy either collapses the range or invalidates it when
 its original content is fully consumed. Partially deleted ranges shrink. This is a geometry

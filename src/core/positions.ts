@@ -11,33 +11,45 @@ export type PositionMapping = Readonly<{ oldLength: number; newLength: number;
     invert: () => PositionMapping;
     isSingleInsertion?: (offset: number, units: number) => boolean }>;
 type Change = Readonly<{ from: number; to: number; insertedLength: number }>;
+type IndexedChange = Change & Readonly<{ deltaBefore: number; coveredTo: number }>;
 
 function position(length: number, offset: number): void {
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > length) throw new RangeError("Position is outside the original document.");
 }
 function affinity(value: Affinity): void { if (value !== "before" && value !== "after") throw new TypeError("Unknown selection affinity."); }
-export function anchoredRange(length: number, from: number, to: number, options: Readonly<{
-    fromAffinity?: Affinity; toAffinity?: Affinity; onDelete?: "collapse" | "invalidate" }> = {}): AnchoredRange {
+function validateRange(length: number, from: number, to: number, fromAffinity: Affinity, toAffinity: Affinity, onDelete: AnchoredRange["onDelete"]): void {
     position(length, from); position(length, to);
     if (to < from) throw new RangeError("Anchored ranges must be ordered.");
-    const result = Object.freeze({ from, to, fromAffinity: options.fromAffinity ?? "after", toAffinity: options.toAffinity ?? "before", onDelete: options.onDelete ?? "collapse" });
-    affinity(result.fromAffinity); affinity(result.toAffinity);
-    if (result.onDelete !== "collapse" && result.onDelete !== "invalidate") throw new TypeError("Unknown anchor deletion policy.");
-    return result;
+    affinity(fromAffinity); affinity(toAffinity);
+    if (onDelete !== "collapse" && onDelete !== "invalidate") throw new TypeError("Unknown anchor deletion policy.");
+}
+export function anchoredRange(length: number, from: number, to: number, options: Readonly<{
+    fromAffinity?: Affinity; toAffinity?: Affinity; onDelete?: "collapse" | "invalidate" }> = {}): AnchoredRange {
+    const fromAffinity = options.fromAffinity ?? "after", toAffinity = options.toAffinity ?? "before", onDelete = options.onDelete ?? "collapse";
+    validateRange(length, from, to, fromAffinity, toAffinity, onDelete);
+    return Object.freeze({ from, to, fromAffinity, toAffinity, onDelete });
 }
 
-/** An immutable map for one batch. Offsets are UTF-16; a replacement consumes its interior. */
-export class PositionMap implements PositionMapping {
+/** Length-only construction is shared by forward and inverse maps. */
+class ChangePositionMap implements PositionMapping {
     readonly oldLength: number;
     readonly newLength: number;
-    private readonly changes: readonly Change[];
-    constructor(oldLength: number, edits: readonly TextEdit[]) {
-        if (!Number.isSafeInteger(oldLength) || oldLength < 0) throw new RangeError("Invalid document length.");
-        validateTextEdits(oldLength, edits);
+    private readonly changes: readonly IndexedChange[];
+    constructor(oldLength: number, changes: readonly Change[]) {
         this.oldLength = oldLength;
-        this.changes = Object.freeze(edits.filter(edit => edit.from !== edit.to || edit.insert.length !== 0)
-            .map(edit => Object.freeze({ from: edit.from, to: edit.to, insertedLength: edit.insert.length })));
-        this.newLength = oldLength + this.changes.reduce((delta, change) => delta + change.insertedLength - (change.to - change.from), 0);
+        let delta = 0;
+        const indexed = changes.map(change => {
+            const result = { ...change, deltaBefore: delta, coveredTo: change.to };
+            delta += change.insertedLength - (change.to - change.from); return result;
+        });
+        // Adjacent consumed intervals cover an original range even if insertions lie between them.
+        for (let index = indexed.length - 1; index >= 0; index--) {
+            const change = indexed[index]!, next = indexed[index + 1];
+            if (next && change.to === next.from) change.coveredTo = next.coveredTo;
+            Object.freeze(change);
+        }
+        this.changes = Object.freeze(indexed);
+        this.newLength = oldLength + delta;
         if (!Number.isSafeInteger(this.newLength)) throw new RangeError("Resulting length exceeds safe positions.");
         Object.freeze(this);
     }
@@ -47,29 +59,28 @@ export class PositionMap implements PositionMapping {
     }
     map(offset: number, side: Affinity = "after"): MappedPosition {
         position(this.oldLength, offset); affinity(side);
-        let delta = 0;
-        for (const change of this.changes) {
-            if (offset < change.from) break;
-            if (offset === change.from) {
-                if (side === "before") return Object.freeze({ offset: offset + delta, deleted: false });
-                if (change.from === change.to) { delta += change.insertedLength; continue; }
-                return Object.freeze({ offset: change.from + delta + change.insertedLength, deleted: false });
-            }
-            if (offset < change.to) return Object.freeze({ offset: change.from + delta + (side === "after" ? change.insertedLength : 0), deleted: true });
-            delta += change.insertedLength - (change.to - change.from);
+        const change = this.changes[this.preceding(offset, side)];
+        if (!change) return Object.freeze({ offset, deleted: false });
+        if (offset < change.to) return Object.freeze({ offset: change.from + change.deltaBefore + (side === "after" ? change.insertedLength : 0), deleted: offset > change.from });
+        return Object.freeze({ offset: offset + (change.deltaBefore + (change.insertedLength - (change.to - change.from))), deleted: false });
+    }
+    private preceding(offset: number, side: Affinity): number {
+        let low = 0, high = this.changes.length;
+        while (low < high) {
+            const middle = low + Math.floor((high - low) / 2), from = this.changes[middle]!.from;
+            if (from < offset || from === offset && side === "after") low = middle + 1;
+            else high = middle;
         }
-        return Object.freeze({ offset: offset + delta, deleted: false });
+        return low - 1;
     }
     mapRange(range: AnchoredRange): AnchoredRange | undefined {
-        anchoredRange(this.oldLength, range.from, range.to, range);
+        validateRange(this.oldLength, range.from, range.to, range.fromAffinity ?? "after", range.toAffinity ?? "before", range.onDelete ?? "collapse");
         const from = this.map(range.from, range.fromAffinity), to = this.map(range.to, range.toAffinity);
-        let covered = range.from;
-        for (const change of this.changes) {
-            if (change.from > covered) break;
-            if (change.to > covered) covered = change.to;
+        if (range.onDelete === "invalidate") {
+            const change = this.changes[this.preceding(range.from, "after")];
+            const deleted = range.from === range.to ? from.deleted : change && change.to >= range.from && change.coveredTo >= range.to;
+            if (deleted) return undefined;
         }
-        const deleted = range.from === range.to ? from.deleted : covered >= range.to;
-        if (range.onDelete === "invalidate" && deleted) return undefined;
         return Object.freeze({ ...range, from: from.offset, to: Math.max(from.offset, to.offset) });
     }
     invert(): PositionMapping {
@@ -79,16 +90,18 @@ export class PositionMap implements PositionMapping {
             delta += change.insertedLength - (change.to - change.from);
             return Object.freeze({ from, to: from + change.insertedLength, insertedLength: change.to - change.from });
         });
-        return mappingFromChanges(this.newLength, this.oldLength, changes);
+        return new ChangePositionMap(this.newLength, changes);
     }
 }
 
-/** Inversion needs lengths only, without allocating placeholder strings for removed text. */
-function mappingFromChanges(oldLength: number, newLength: number, changes: readonly Change[]): PositionMapping {
-    const forward = Object.create(PositionMap.prototype) as PositionMap;
-    Object.defineProperties(forward, { oldLength: { value: oldLength }, newLength: { value: newLength },
-        changes: { value: Object.freeze(changes) } });
-    return Object.freeze(forward);
+/** An immutable indexed map for one batch. Offsets are UTF-16; a replacement consumes its interior. */
+export class PositionMap extends ChangePositionMap {
+    constructor(oldLength: number, edits: readonly TextEdit[]) {
+        if (!Number.isSafeInteger(oldLength) || oldLength < 0) throw new RangeError("Invalid document length.");
+        validateTextEdits(oldLength, edits);
+        super(oldLength, edits.filter(edit => edit.from !== edit.to || edit.insert.length !== 0)
+            .map(edit => ({ from: edit.from, to: edit.to, insertedLength: edit.insert.length })));
+    }
 }
 
 /** Composition preserves sequential affinity/deletion semantics instead of flattening change records. */

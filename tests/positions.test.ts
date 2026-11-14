@@ -17,6 +17,19 @@ test("position mapping defines insertion, replacement, deletion and adjacent-bat
     assert.deepEqual(map.map(6), { offset: 8, deleted: false });
     const insertions = new PositionMap(2, [{ from: 1, to: 1, insert: "a" }, { from: 1, to: 1, insert: "bc" }]);
     assert.equal(insertions.map(1, "before").offset, 1); assert.equal(insertions.map(1, "after").offset, 4);
+    const stacked = new PositionMap(4, [
+        ...Array.from({ length: 1024 }, () => ({ from: 1, to: 1, insert: "x" })),
+        { from: 1, to: 3, insert: "z" }, { from: 3, to: 3, insert: "tail" },
+    ]);
+    assert.deepEqual(stacked.map(1, "before"), { offset: 1, deleted: false });
+    assert.deepEqual(stacked.map(1, "after"), { offset: 1026, deleted: false });
+    assert.deepEqual(stacked.map(2, "before"), { offset: 1025, deleted: true });
+    assert.deepEqual(stacked.map(3, "after"), { offset: 1030, deleted: false });
+    // Length-only maps need no document allocation, including near the safe-integer bound.
+    const length = Number.MAX_SAFE_INTEGER;
+    const large = new PositionMap(length, [{ from: 0, to: 0, insert: "ab" }, { from: 1, to: length - 1, insert: "" }]);
+    assert.equal(large.newLength, 4); assert.deepEqual(large.map(length), { offset: 4, deleted: false });
+    assert.deepEqual(large.invert().map(4), { offset: length, deleted: false });
 });
 
 test("anchored ranges exclude boundary insertions and declare full-deletion invalidation or collapse", () => {
