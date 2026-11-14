@@ -1,0 +1,66 @@
+# StTropez documentation
+
+StTropez supplies a text editor, a workspace model and language-server clients. The host
+application owns storage, services, language policy and surrounding controls.
+
+## Choose a task
+
+- [Embed an editor](getting-started.md): obtain the assets, create a document, mount and dispose.
+- [Configure editing](editing-candidate.md): keyboard commands, selections and language rules.
+- [Connect a language server](lsp-integration.md): WebSocket transport, session and workspace.
+- [Save or review documents](resources.md): resource ownership and captured save operations;
+  [comparison](comparison.md) describes reference and working views.
+- [Extend the host](host-integrations.md): custom colors, captured insertion and source notes.
+
+## Subjects
+
+| Subject | Contents |
+| --- | --- |
+| [Getting started](getting-started.md) | Assets, minimal embedding and host lifecycle |
+| [Editor](editing-candidate.md) | Input, commands, selections, configuration and view state |
+| [Viewport](viewport.md) | Read-only rendering, scrolling and coordinates |
+| [Folding](folding.md) | Fold ranges, discovery, groups and commands |
+| [Search](search.md) | Literal/regular-expression search and replacement |
+| [Comparison](comparison.md) | Baselines, hunks, navigation, refresh and acceptance |
+| [Workspace](resources.md) | Resources, tabs, leases, loading and saving |
+| [Text model](text-storage.md) | Indexed buffers, UTF-16 positions and edits |
+| [Language server](lsp.md) | Protocol subset, synchronization, capabilities and transport |
+| [Language features](lsp-editor.md) | Completion and editor-language integration |
+| [Host integration](host-integrations.md) | Tokenization, insertion, notes and commands |
+| [Unicode](graphemes.md) | Grapheme boundaries and Unicode text handling |
+| [Packaging](packaging.md) | Assets, entry points, manifest and consumer integration |
+| [Architecture](architecture.md) | Layering, ownership, identity and dependencies |
+| [Testing](qualification.md) | Test layers and integration checks |
+| [Examples](demo-language.md) | Editable demonstrations and language providers |
+
+## Support matrix
+
+“Supported” describes the implemented library contract. “Unverified” identifies evidence
+that requires a real device or consuming application; it does not mean an automated test passed.
+
+| Area | Supported | Not supported | Unverified |
+| --- | --- | --- | --- |
+| Text and editing | UTF-16 range edits; multiple selections; shared undo/redo; host language rules; bounded native input and rendered rows | Word wrapping; general rich-text editing | Native IME reconversion/placement; dead keys and AltGr across keyboard layouts |
+| Clipboard and drag | Plain-text clipboard events; host conversion; captured text transfer | Arbitrary rich-document import | OS/app clipboard formats and permissions; native drag images and token-preserving transfer across applications |
+| Search and review | Literal/regular-expression search; replacement; immutable references; editable comparisons; independent folding and aligned rows | General merge/conflict-resolution UI | Consuming-host review policies and durable retention |
+| Language services | [LSP subset](lsp.md), JSON-RPC 2.0, WebSocket transport, UTF-16 positions; host-defined URIs and custom messages | Full LSP coverage; semantic tokens, formatting, code lens and inlay hints | Compatibility with a consuming application's language server and deployment |
+| Presentation | Virtualized rows, decorations, measured local geometry, grapheme and bidirectional text support | Minimap; sticky scroll; bracket-pair coloring | Physical display latency; native font rendering across target devices; constrained hardware |
+| Distribution | Compiled dependency-free modules, declarations, CSS and worker assets in NuGet | A .NET runtime dependency or consumer-time library compilation | Production deployment/toolchain adoption |
+| Accessibility | Keyboard navigation and explicit focus traversal | A screen-reader support contract | — |
+
+## Glossary
+
+| Term | Meaning |
+| --- | --- |
+| Resource identity | A host-defined scope/resource/variant key and its workspace resource handle; labels are not identity. |
+| Document identity | The text model shared by views and history. |
+| Revision | A version of document contents. A saved/server version is a separate value. |
+| Tab identity and generation | The presentation target and the generation captured before delayed work; replacement invalidates the old target. |
+| View identity | An independent selection, folding and scroll state over a document. |
+| Capture | Immutable operation inputs and guards retained before asynchronous work. Later focus cannot change the target. |
+| Lease | Explicit resource retention while a view or operation needs it. |
+| Input-handler duration | Synchronous time inside the measured input listener. It excludes later parsing, service work and rendering. |
+| Frame readiness | Time until the required text, selection, decorations and view state are observable in browser frames. It does not establish physical display latency. |
+| Provider duration | Time attributed to language/service work, with transport and scheduling boundaries stated by the measurement. |
+| Automation action duration | Time around a complete scripted action and its readiness condition, including automation transport. |
+| Workflow duration | Time around a sequence of setup, interaction and verification steps; it is not a single interaction's latency. |
