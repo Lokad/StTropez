@@ -48,7 +48,8 @@ export class HostDocumentColors {
     private readonly metrics = { requested: 0, previews: 0, applied: 0, unchanged: 0, cancelled: 0, expired: 0, failed: 0 };
     private readonly cell = new HostCell<DocumentColorsSnapshot>({ available: false, connected: false, disconnected: false, pending: false, token: null, previewToken: null, view: null, status: "idle", message: "Focus a source to discover color literals.", work: 0, total: 0, count: 0, page: 0, colors: [], selected: -1, value: "", css: null, presentation: "", choices: [], edits: [], canPreview: false, canApply: false, changed: null });
     readonly state = this.cell.observable;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, factory?: ColorBackendFactory) { this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.factory = factory; }
+    private readonly reconnectProvider: (() => void) | undefined;
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, factory?: ColorBackendFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.factory = factory; }
     private available(s: Session): boolean { const tab = this.workspace.resolveTab(s.target); return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.snapshot().disposed && this.workspace.ownsDocumentView(s.editor.view)
         && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot(); }
     private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
@@ -76,7 +77,7 @@ export class HostDocumentColors {
     private release(): void { const job = this.job; this.job = undefined; if (!job) return; job.invalid = true; this.clearPreview(job); job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.stops.splice(0).forEach(stop => stop()); job.lease.release(); if (!job.colors) this.drop(); this.syncAll(); }
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.release(); this.publish({ status: "idle", message: "Color references and presentation preview dismissed.", work: 0, total: 0, page: 0 }); };
     readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ message: "Color provider disconnected; local editing remains available." }); };
-    readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.publish({ message: "Discover fresh colors to reconnect." }); };
+    readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ message: "Discover fresh colors." }); };
     private connectionChanged(): void { if (this.dropping) return; if (this.job && !this.current(this.job)) { this.changed(this.job); return; }
         if (this.client && !this.client.snapshot().connected && !this.client.snapshot().busy) { const job = this.job; if (job) this.clearPreview(job); this.drop(); this.publish({ status: "failed", message: "Color connection failed; request a fresh preview or rediscover." }); } else this.publish(); }
     private changed(job: Job): void {

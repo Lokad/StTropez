@@ -44,7 +44,8 @@ export class HostDocumentLinks {
     private readonly metrics = { requested: 0, opened: 0, returned: 0, cancelled: 0, expired: 0, failed: 0 };
     private readonly cell = new HostCell<DocumentLinksSnapshot>({ available: false, connected: false, disconnected: false, pending: false, token: null, requestView: null, status: "idle", message: "Focus a candidate source to discover module links.", work: 0, total: 0, count: 0, page: 0, links: [], canReturn: false });
     readonly state = this.cell.observable;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, factory?: LinkBackendFactory) { this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.factory = factory; }
+    private readonly reconnectProvider: (() => void) | undefined;
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, factory?: LinkBackendFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.factory = factory; }
     private available(s: Session): boolean {
         const tab = this.workspace.resolveTab(s.target);
         return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.snapshot().disposed && this.workspace.ownsDocumentView(s.editor.view)
@@ -72,7 +73,7 @@ export class HostDocumentLinks {
     }
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.release(); this.publish({ status: "idle", message: "Module links dismissed.", work: 0, total: 0, page: 0 }); };
     readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ message: "Link provider disconnected; local editing remains available." }); };
-    readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.publish({ message: "Discover fresh links to reconnect with current resources." }); };
+    readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ message: "Discover fresh links with current resources." }); };
     readonly bindList = (list: HTMLElement | null): void => {
         this.listEvents?.abort(); this.listEvents = undefined; this.list = list ?? undefined; if (!list || this.disposed) return;
         const events = new AbortController(); this.listEvents = events;

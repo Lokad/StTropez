@@ -39,9 +39,9 @@ export function createLspCommandRunner(session: LspWorkspaceScope, notify: () =>
             const captures = session.captureProject();
             const isCurrent = () => context.isCurrent() && current(op) && op.scope.isCurrent();
             const capturedContext: LspRequestContext = Object.freeze({ id: context.id, epoch: context.epoch, get cancelled() { return context.cancelled || !current(op); }, isCurrent,
-                onCancel: listener => { let done = false; const invalid = () => { if (!done && !isCurrent()) { done = true; void Promise.resolve().then(listener); } };
+                onCancel: listener => { let done = false; const invalid = () => { if (!done && !isCurrent()) { done = true; void Promise.resolve().then(listener).catch(session.reportError); } };
                     const stopCancel = context.onCancel(invalid); invalidations.add(invalid); invalid(); return () => { done = true; stopCancel(); invalidations.delete(invalid); }; } });
-            targets = createLspTargets(captures, session.resolveTarget, { source: null,
+            targets = createLspTargets(captures, session.resolveTarget, { source: null, reportError: session.reportError,
                 isCurrent: () => capturedContext.isCurrent() && [...captures.values()].every(capture => capture.isCurrent()), onCancel: capturedContext.onCancel });
             await targets.resolve(lspApplyEditUris(value), "edit");
             const request = decodeLspApplyEdit(value, targets.get);
@@ -72,7 +72,7 @@ export function createLspCommandRunner(session: LspWorkspaceScope, notify: () =>
             } else {
                 const isCurrent = () => current(op) && scope.isCurrent() && reservation.isCurrent();
                 const onCancel = (listener: () => void) => {
-                    let done = false; const invalid = () => { if (!done && !isCurrent()) { done = true; invalidations.delete(invalid); void Promise.resolve().then(listener); } };
+                    let done = false; const invalid = () => { if (!done && !isCurrent()) { done = true; invalidations.delete(invalid); void Promise.resolve().then(listener).catch(session.reportError); } };
                     invalidations.add(invalid); invalid(); return () => { done = true; invalidations.delete(invalid); };
                 };
                 const context: LspRequestContext = Object.freeze({ id: "host-command", epoch: op.epoch, get cancelled() { return !isCurrent(); }, isCurrent, onCancel });

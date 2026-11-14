@@ -11,7 +11,8 @@ function invalid(): never { throw new TypeError("Unsupported or malformed text-d
 export function lspUriPath(uri: string): string {
     const match = /^[a-zA-Z][a-zA-Z0-9+.-]*:(?:\/\/[^/?#]*)?([^?#]*)/.exec(uri);
     if (!match) throw new TypeError("Document URI must be absolute.");
-    return decodeURIComponent(match[1]!);
+    // Invalid percent escapes are literal path text, never a session-fatal URI operation.
+    try { return decodeURIComponent(match[1]!); } catch { return match[1]!; }
 }
 function alternatives(pattern: string): string[] {
     const pending = [pattern], result: string[] = []; let total = 0;

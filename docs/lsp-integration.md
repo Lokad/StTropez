@@ -62,6 +62,10 @@ edit decision. Existing `Workspace.editDocuments` applies a complete authorized 
 as one shared undo transaction. The library supplies validated plans and request lifetime;
 application review controls, resource loading and edit authorization belong to the host.
 
+Deferred target release and cancellation callbacks report thrown errors or rejected promises
+through the provider's `onError` callback. Reporting does not interrupt other cleanup. Feature
+scopes expose `reportError(error)` for helpers that share this policy, including after disposal.
+
 Optional `prepare` callbacks run inside the captured request lifetime and receive
 the scoped custom-message API. No fixture messages, faults, delays or language IDs
 are embedded in these clients. Custom request handlers expire their context and settle
@@ -82,6 +86,9 @@ provider at the workspace/configuration boundary. Destroy the mounted editor sep
 An owner disconnect/reconnect expires old results across its features and reopens each
 current participating document once; it never replays edits or commands. Provider size,
 document, request and scope bounds remain [explicit](lsp.md).
+After a failed connection, feature requests fail until the host calls `connect()` or
+`reconnect()` on the shared provider. Wire reconnect UI to that owner and handle its
+rejected promise; recreating a feature client does not authorize another connection.
 
 `npm run test:package:lsp` restores the assets-only NuGet package into an isolated
 consumer, checks its public declarations and bundles a minimal plain TypeScript host.

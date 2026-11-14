@@ -53,7 +53,7 @@ export function clientFixture(t: TestContext, connect?: () => Promise<void>, res
         assert.deepEqual(errors, []);
     });
     const document = () => workspace.document(source.documentId);
-    return { workspace, source, other, provider, peer, document,
+    return { workspace, source, other, provider, peer, document, errors,
         sent: (method: string) => packets.filter(packet => packet.sender === 0 && packet.method === method),
         edit: () => { const doc = document(); return workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, edits: [{ from: 0, to: 0, insert: "prefix " }], origin: "human" }); }
     };

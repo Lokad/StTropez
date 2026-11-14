@@ -20,6 +20,8 @@ export type LspWorkspaceScope = Omit<LspSessionAccess, "state"> & Readonly<{
     observeDiagnostics: (document: LspDocument) => Observable<LspDiagnosticState>;
     reserveCommand: () => Readonly<{ isCurrent: () => boolean; release: () => void }>;
     resolveTarget: LspTargetResolver;
+    /** Route deferred host callback failures through the provider's existing onError policy. */
+    reportError: (error: unknown) => void;
 }>;
 export type LspDiagnosticState = Readonly<{ status: "empty" | "current" | "expired"; result: LspDiagnostics | null;
     received: number; stale: number; invalid: number; isCurrent: () => boolean }>;
@@ -152,8 +154,9 @@ export class LspWorkspace {
         return entry;
     }
     private live(entry: DocumentEntry): boolean {
+        if (!entry.active) return false;
         const current = this.workspace.observeDocument(entry.id).getSnapshot(), sent = entry.binding.getSnapshot();
-        return entry.active && current?.revision === sent.revision && current.buffer === sent.buffer;
+        return current?.revision === sent.revision && current.buffer === sent.buffer;
     }
     private synchronize(entry: DocumentEntry): void {
         if (!entry.active) return; const next = this.workspace.observeDocument(entry.id).getSnapshot();
@@ -235,13 +238,14 @@ export class LspWorkspace {
             void Promise.resolve().then(() => { if (!isCurrent()) throw cancelled(); return handler(value, captured); }).then(
                 result => finish(() => { if (isCurrent()) resolve(result); else reject(cancelled()); }), error => finish(() => reject(error)));
         });
-        const api: LspWorkspaceScope = Object.freeze({ state,
+        const api: LspWorkspaceScope = Object.freeze({ state, reportError: error => this.report(error),
             resolveTarget: async (uri, context) => {
                 writable(); const generation = scope.generation;
                 if (!context.isCurrent()) throw stale();
                 const result = await this.options.resolveTarget?.(uri, context); if (!result) return undefined;
                 let released = false;
-                const release = () => { if (released) return; released = true; try { result.release(); } catch (error) { this.report(error); } };
+                const release = () => { if (released) return; released = true;
+                    try { void Promise.resolve(result.release()).catch(error => this.report(error)); } catch (error) { this.report(error); } };
                 if (!current(generation) || !context.isCurrent()) { release(); throw stale(); }
                 return Object.freeze({ target: result.target, release });
             },

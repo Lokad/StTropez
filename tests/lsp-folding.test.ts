@@ -15,6 +15,13 @@ test("LSP folding negotiates whole lines and validates the entire response again
     value = [{ startLine: 0, endLine: 1 }, { startLine: 0, endLine: "bad" }];
     await assert.rejects(client.run(f.document()).result, /Malformed/); assert.equal(result.isCurrent(), false);
     value = null; assert.deepEqual((await client.run(f.document()).result).ranges, []);
+    const mixed = "header\rpart\r\n  child\rchild-tail\nend";
+    f.workspace.edit({ documentId: f.source.documentId, expectedRevision: f.document().revision, edits: [{ from: 0, to: f.document().buffer.length, insert: mixed }], origin: "host" });
+    value = [{ startLine: 0, endLine: 1 }, { startLine: 1, endLine: 3 }];
+    assert.deepEqual((await client.run(f.document()).result).ranges, [{ from: 7, to: mixed.indexOf("end") }]);
+    const scope = f.provider.createScope(), document = scope.attachDocument(f.source.documentId); await scope.flush();
+    const capture = scope.synchronized(document)!; scope.dispose();
+    assert.throws(() => protocol.decodeLspFoldingRanges([], capture), error => error instanceof RpcError && error.code === -32801);
 });
 test("fold discovery cancellation and edits cannot publish obsolete provider ranges", async t => {
     const f = clientFixture(t), client = createLspFoldingClient(f.provider), entered = latch<void>(), answer = latch<unknown>();

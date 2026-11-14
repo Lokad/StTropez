@@ -31,6 +31,20 @@ test("navigation resolves an opaque target once without synchronizing it, and re
     assert.equal(result.isCurrent(), false); client.cancel(); await settled(); assert.equal(lease!.released, 1); assert.equal(f.workspace.diagnostics().leases, 0);
 });
 
+test("target cancellation and deferred release failures are reported without stopping cleanup", async t => {
+    let context!: LspTargetContext, lease!: Awaited<ReturnType<typeof retained>>;
+    const f = clientFixture(t, undefined, async (_uri, captured) => {
+        context = captured; context.onCancel(async () => { throw new Error("Target cancellation failure"); }); lease = await retained(f);
+        return { ...lease.value, release: async () => { lease.value.release(); throw new Error("Target release failure"); } };
+    });
+    const client = createLspNavigationClient(f.provider); t.after(client.dispose);
+    f.peer.onRequest("textDocument/definition", () => [{ uri, range }]); const source = f.document();
+    await client.run([source], source.id, 6, "definition"); client.cancel();
+    context.onCancel(() => { throw new Error("Late target cancellation failure"); }); await settled();
+    assert.deepEqual(f.errors.splice(0).sort(), ["Late target cancellation failure", "Target cancellation failure", "Target release failure"]);
+    assert.equal(lease.released, 1); assert.equal(f.workspace.diagnostics().leases, 0); assert.equal(f.provider.state.getSnapshot().phase, "ready");
+});
+
 for (const stop of ["cancel", "dispose", "supersede", "disconnect"] as const) test(`${stop} settles target loading promptly and releases a late host result exactly once`, async t => {
     const entered = latch<void>(), answer = latch<LspResolvedTarget>(); let cancellations = 0;
     const f = clientFixture(t, undefined, async (_uri, context) => { context.onCancel(() => cancellations++); entered.resolve(); return answer.promise; });
@@ -105,7 +119,8 @@ test("server-proposed edits resolve through the same host policy and release tar
     f.peer.onRequest("workspace/executeCommand", async () => f.peer.sendRequest("workspace/applyEdit", { edit: { changes: { [uri]: [{ range, newText: "new" }] } } }));
     const batch = await client.run([source], source.id, 6, 10);
     const receipt = await batch.execute(batch.actions[0]!, { snapshots: () => [f.document()], isCurrent: () => true,
-        review: async request => { assert.equal(request.edit.documents[0]!.target.document.uri, uri); return { applied: false, failureReason: "Host declined" }; } });
+        review: async (request, context) => { assert.equal(request.edit.documents[0]!.target.document.uri, uri);
+            context.onCancel(() => { throw new Error("Review cancellation failure"); }); return { applied: false, failureReason: "Host declined" }; } });
     assert.deepEqual(receipt.decision, { applied: false, failureReason: "Host declined" }); assert.equal(context!.source, null); assert.equal(context!.purpose, "edit");
-    await settled(); assert.equal(lease!.released, 1);
+    await settled(); assert.equal(lease!.released, 1); assert.deepEqual(f.errors.splice(0), ["Review cancellation failure"]);
 });

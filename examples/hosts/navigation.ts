@@ -39,8 +39,9 @@ export class HostNavigationTools {
     private readonly metrics = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0 };
     private readonly worker: NavigationMetrics = { created: 0, posted: 0, received: 0, transferred: 0, maxChunk: 0, completed: 0, failed: 0, terminated: 0,
         opened: 0, changed: 0, closed: 0, reused: 0, snapshotUnits: 0, deltaUnits: 0, planningTurns: 0, rejected: 0 };
+    private readonly reconnectProvider: (() => void) | undefined;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined,
-        createService: NavigationServiceFactory = { positionQueries: false, create: (clock, counts, changed) => createNavigationClient(clock, counts, undefined, changed) }) {
+        createService: NavigationServiceFactory = { positionQueries: false, create: (clock, counts, changed) => createNavigationClient(clock, counts, undefined, changed) }, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider;
         this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.createService = createService;
     }
     private available(session: Session): boolean {
@@ -85,7 +86,7 @@ export class HostNavigationTools {
     }
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.clear("idle", "Symbol navigation dismissed."); };
     readonly disconnect = (): void => { this.cancel(); this.dropClient(); this.disconnected = true; this.publish({ status: "disconnected", message: "Navigation provider disconnected; local editing remains available." }); };
-    readonly reconnect = (): void => { this.cancel(); this.dropClient(); this.disconnected = false; this.publish({ status: "idle", message: "Request fresh navigation to reconnect and synchronize current resources." }); };
+    readonly reconnect = (): void => { this.cancel(); this.dropClient(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ status: "idle", message: "Request fresh navigation with current resources." }); };
     attach(id: string, tab: TabId, editor: EditingCandidate): () => void {
         const session: Session = { token: ++sessionSerial, id, target: this.workspace.captureTab(tab), editor }, listeners = new AbortController(); this.sessions.set(session.token, session);
         editor.input.addEventListener("focus", () => { this.active = session; this.publish(); }, { signal: listeners.signal });

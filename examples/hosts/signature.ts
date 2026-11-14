@@ -44,7 +44,8 @@ export class HostSignatureTools {
     private readonly cell = new HostCell<SignatureSnapshot>({ available: false, connected: false, disconnected: false, visible: false, pending: false,
         status: "idle", message: "Use Ctrl/Cmd+Shift+Space for signature help.", view: null, left: 8, top: 8, before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", content: emptyContent, parameterContent: emptyContent, activeSignature: 0, signatureCount: 0, argument: null, work: 0, total: 0 });
     readonly state = this.cell.observable;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, beforeRequest: () => void, factory?: SignatureBackendFactory, completionOpen?: () => boolean) { this.workspace = workspace; this.canCapture = canCapture; this.beforeRequest = beforeRequest; this.factory = factory; this.completionOpen = completionOpen; }
+    private readonly reconnectProvider: (() => void) | undefined;
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, beforeRequest: () => void, factory?: SignatureBackendFactory, completionOpen?: () => boolean, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.beforeRequest = beforeRequest; this.factory = factory; this.completionOpen = completionOpen; }
     private available(s: Session): boolean {
         const tab = this.workspace.resolveTab(s.target);
         return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.snapshot().disposed && this.workspace.ownsDocumentView(s.editor.view)
@@ -85,7 +86,7 @@ export class HostSignatureTools {
     }
     readonly dismiss = (): void => { this.armed = false; this.stopAuto(); if (this.job && !this.job.ready) this.counts.cancelled++; this.clear("idle", "Signature help dismissed."); };
     readonly disconnect = (): void => { this.dismiss(); this.drop(); this.disconnected = true; this.publish({ message: "Signature provider disconnected; local editing remains available." }); };
-    readonly reconnect = (): void => { this.dismiss(); this.drop(); this.disconnected = false; this.publish({ message: "Request signature help to reconnect with current text." }); };
+    readonly reconnect = (): void => { this.dismiss(); this.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ message: "Request signature help with current text." }); };
     private schedule(s: Session, context?: LspSignatureContext): void {
         const captured = context ?? (this.auto?.session === s ? this.auto.context : { triggerKind: 3 as const, isRetrigger: true });
         this.stopAuto(); if (!this.armed || this.disconnected || !this.available(s)) return; this.counts.scheduled++;

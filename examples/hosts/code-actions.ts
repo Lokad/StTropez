@@ -48,7 +48,8 @@ export class HostActionsTools {
     private readonly metrics = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0 };
     private readonly cell = new HostCell<ActionsSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, pending: false, canApply: false, token: null, module: "sample-utils", status: "idle", message: "Focus a candidate source to preview a module-import action.", title: "", disabled: null, work: 0, total: 0, command: null, edits: [], changed: null, changes: [], choices: [], choice: null, choicePage: 0, resolving: false, page: 0, editCount: 0 });
     readonly state = this.cell.observable;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, backendFactory?: LspActionFactory, reviewOwner?: HostProjectTools, provider?: LspWorkspace) {
+    private readonly reconnectProvider: (() => void) | undefined;
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, backendFactory?: LspActionFactory, reviewOwner?: HostProjectTools, provider?: LspWorkspace, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider;
         this.provider = provider;
         this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory; this.reviewOwner = reviewOwner; this.usesLsp = backendFactory !== undefined;
         this.stopReviewOwner = this.usesLsp ? reviewOwner?.state.subscribe(() => this.publish()) : undefined;
@@ -106,7 +107,7 @@ export class HostActionsTools {
     readonly cancel = (): void => { const execution = this.execution, applied = execution?.handle.applied() ?? false; this.execution = undefined; execution?.handle.cancel(); if (this.job || execution) this.metrics.cancelled++; this.release();
         this.publish({ status: "idle", message: applied ? "Action command cancelled after application; the edits remain undoable." : "Action preview dismissed; source is unchanged by this action.", edits: [], title: "", disabled: null, work: 0, total: 0, choices: [], page: 0, editCount: 0 }); };
     readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ message: "Action provider disconnected; local editing remains available." }); };
-    readonly reconnect = (): void => { this.cancel(); this.provider?.disconnect(); this.drop(); this.disconnected = false; this.publish({ message: "Preview a fresh action to reconnect with current source." }); };
+    readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ message: "Preview a fresh action with current source." }); };
     setModule(value: string): void { if (value === this.cell.get().module) return; this.cancel(); this.publish({ module: value.slice(0, 65), status: "idle", message: "Module changed; preview a fresh action.", title: "", disabled: null, edits: [], work: 0, total: 0, choices: [], page: 0, editCount: 0 }); }
     readonly bindModule = (input: HTMLInputElement | null): void => {
         this.moduleEvents?.abort(); this.moduleEvents = undefined; this.moduleInput = input ?? undefined; if (!input || this.disposed) return;

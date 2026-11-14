@@ -7,7 +7,7 @@ export type LspTargetContext = Readonly<{ purpose: "navigation" | "edit"; source
 /** The host retains the exact resource/buffer until release; loading grants no edit authority. */
 export type LspResolvedTarget = Readonly<{ target: LspEditTarget; release: () => void }>;
 export type LspTargetResolver = (uri: string, context: LspTargetContext) => Promise<LspResolvedTarget | undefined>;
-type Lifetime = Omit<LspTargetContext, "purpose">;
+type Lifetime = Omit<LspTargetContext, "purpose"> & Readonly<{ reportError: (error: unknown) => void }>;
 const stale = () => new RpcError(-32801, "Captured LSP target loading expired.");
 
 /** Shared by read results, text edits and server edit requests. No URI I/O occurs here. */
@@ -18,10 +18,10 @@ export function createLspTargets(captured: ReadonlyMap<string, LspEditTarget>, r
     const live = () => !disposed && lifetime.isCurrent();
     const isCurrent = () => live() && [...targets.values()].every(target => target.isCurrent());
     // A host release may update Workspace retention, which cannot run inside commit observers.
-    const release = (lease: LspResolvedTarget) => { void Promise.resolve().then(lease.release); };
+    const release = (lease: LspResolvedTarget) => { void Promise.resolve().then(lease.release).catch(lifetime.reportError); };
     const dispose = () => {
         if (disposed) return; disposed = true; stop(); reject(new RpcError(-32800, "LSP target loading cancelled."));
-        for (const listener of [...listeners]) { try { listener(); } catch { /* Cancellation must release every target. */ } } listeners.clear();
+        for (const listener of [...listeners]) { try { void Promise.resolve(listener()).catch(lifetime.reportError); } catch (error) { lifetime.reportError(error); } } listeners.clear();
         for (const lease of leases) release(lease); leases.clear();
     };
     stop = lifetime.onCancel(dispose); if (disposed) stop();
@@ -34,8 +34,8 @@ export function createLspTargets(captured: ReadonlyMap<string, LspEditTarget>, r
                 // can reuse this check in its target guard without recursive target validation.
                 const context: LspTargetContext = Object.freeze({ purpose, source: lifetime.source, isCurrent: live,
                     onCancel: listener => { let active = true;
-                        const notify = () => { if (active) { active = false; listener(); } };
-                        if (!isCurrent()) void Promise.resolve().then(notify); else listeners.add(notify);
+                        const notify = () => { if (active) { active = false; return listener(); } };
+                        if (!isCurrent()) void Promise.resolve().then(notify).catch(lifetime.reportError); else listeners.add(notify);
                         return () => { active = false; listeners.delete(notify); }; } });
                 const loading = Promise.resolve().then(() => {
                     if (!isCurrent()) throw stale(); return resolve(uri, context);

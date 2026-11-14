@@ -42,6 +42,44 @@ function fixture(t: test.TestContext, capabilities: InitializeResult["capabiliti
 const input = (text = "a😀\r\nb\rc\n", uri = "host+fixture://project/scope/doc%20one.ts", resourceId = "resource:one", revision = 40) =>
     ({ uri, resourceId, documentId: resourceId + ":working", revision, languageId: "typescript", buffer: TextBuffer.from(text) });
 
+test("an encoded document failure is isolated, reported once and retried after a new revision", async t => {
+    const host = fixture(t), errors: Error[] = [], session = new LspSession({ ...host, features: ["textDocument/hover"], rpc: { maxMessageUnits: 4096 }, onError: error => { errors.push(error); } });
+    t.after(() => session.dispose());
+    const tooLarge = session.bindDocument(input("\u0000".repeat(1000), "fixture:large", "large")), small = session.bindDocument(input("small", "fixture:small", "small"));
+    await session.connect(); await settled(); const peer = host.peers[0]!;
+    assert.equal(session.state.getSnapshot().phase, "ready"); assert.equal(errors.length, 1); assert.match(errors[0]!.message, /configured limit/);
+    assert.equal(session.synchronized(tooLarge), undefined); assert.equal(peer.documents.has("fixture:large"), false);
+    peer.rpc.onRequest("textDocument/hover", () => ({ contents: "healthy" }));
+    assert.deepEqual(await session.requestDocument("textDocument/hover", small, () => ({})).result, { contents: "healthy" });
+    await assert.rejects(session.requestDocument("textDocument/hover", tooLarge, () => ({})).result, /configured limit/);
+    small.update(40, 41, TextBuffer.from("still small")); await session.flush(); assert.equal(errors.length, 1);
+    tooLarge.update(40, 41, TextBuffer.from("repaired")); await session.flush(); await settled(); assert.equal(peer.documents.get("fixture:large")!.getText(), "repaired");
+    tooLarge.update(41, 42, TextBuffer.from("\u0000".repeat(1000))); await session.flush(); await settled();
+    assert.equal(peer.documents.has("fixture:large"), false); assert.equal(errors.length, 2); assert.ok(session.synchronized(small));
+});
+
+test("released notification methods recover capacity and do not retain installed dispatchers", async t => {
+    const host = fixture(t), session = new LspSession(host); t.after(() => session.dispose()); await session.connect();
+    let delivered = 0;
+    for (let i = 0; i < 256; i++) { const stop = session.onNotification(`fixture/note${i}`, () => { delivered++; }); stop(); stop(); }
+    const stale = session.onNotification("fixture/reused", () => { delivered += 100; }); stale();
+    const stop = session.onNotification("fixture/reused", () => { delivered++; }); stale();
+    host.peers[0]!.rpc.sendNotification("fixture/reused", {}); await settled(); assert.equal(delivered, 1);
+    stop(); session.disconnect(); await session.connect(); host.peers[1]!.rpc.sendNotification("fixture/reused", {}); await settled(); assert.equal(delivered, 1);
+});
+
+test("an edit queued at pump completion schedules another synchronization turn", async t => {
+    const host = fixture(t); let hook: (() => void) | undefined;
+    const session = new LspSession({ ...host, connect: async context => { const port = await host.connect(context);
+        return { ...port, send: text => { port.send(text); if (hook && text.includes('"textDocument/didChange"')) { const work = hook; hook = undefined; queueMicrotask(work); } } }; } });
+    t.after(() => session.dispose()); const document = session.bindDocument(input("initial")); await session.connect();
+    hook = () => document.update(41, 42, TextBuffer.from("second")); document.update(40, 41, TextBuffer.from("first"));
+    await session.flush(); await settled();
+    assert.equal(session.synchronized(document)?.document.revision, 42);
+    assert.equal(host.peers[0]!.documents.get(document.getSnapshot().uri)!.getText(), "second");
+    assert.equal(session.snapshotOwnership().scheduledTasks, 0);
+});
+
 test("reference peer receives ordered initialization and exact coalesced UTF-16 incremental versions", async t => {
     const host = fixture(t), session = new LspSession({ ...host, features: ["textDocument/hover"] }); t.after(() => session.dispose());
     const initial = input(), document = session.bindDocument(initial); assert.equal(session.synchronized(document), undefined); await session.connect(); await settled(); const peer = host.peers[0]!, firstCapture = session.synchronized(document)!;

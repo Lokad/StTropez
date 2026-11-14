@@ -15,6 +15,10 @@ test("text-document selectors cover glob syntax, language/scheme unions and expl
     assert.equal(compileLspSelector(["other", { language: "fixture" }])(document("a")), true);
     assert.equal(compileLspSelector([{ pattern: "/CUSTOM" }], () => "/CUSTOM")(document("a")), true);
     assert.equal(lspUriPath("opaque:custom%20path?ignored#fragment"), "custom path");
+    for (const path of ["100%/b.ts", "%FF/b.ts", "%E2%82/b.ts"]) {
+        assert.equal(lspUriPath(`file:///p/${path}`), `/p/${path}`);
+        assert.equal(compileLspSelector([{ pattern: "**/*.ts" }])({ uri: `file:///p/${path}`, languageId: "typescript" }), true);
+    }
 });
 
 test("malformed/notebook selectors and excessive patterns fail without backtracking", () => {

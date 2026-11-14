@@ -46,6 +46,9 @@ feature on the provider. Static/dynamic capability authority and reconnect use t
 session. The client advertises complete-line folds, converts inclusive LSP end lines to raw
 exclusive offsets, ignores out-of-document/degenerate line ranges and rejects malformed
 response shapes atomically. Optional character positions and collapsed text are not used.
+Conversion uses the captured LSP line index, including bare CR. A range that covers no complete
+body row in the editor's LF-based projection is ignored. Expired captures reject with RPC code
+`-32801`, consistently with other language features.
 Provider kinds become groups, including custom kinds; discovery policy remains separate.
 
 The main demo uses TypeScript outlining for both working files and immutable saved snapshots.

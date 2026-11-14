@@ -41,7 +41,8 @@ export class HostRenameTools {
     private readonly metrics = { requested: 0, applied: 0, expired: 0, failed: 0, cancelled: 0 };
     private readonly cell = new HostCell<RenameSnapshot>({ available: false, connected: false, disconnected: false, pending: false, status: "idle", message: "Focus a source and prepare a rename preview.", name: "", symbol: "", token: null, canApply: false, work: 0, total: 0, count: 0, page: 0, locations: [], changes: [] });
     readonly state = this.cell.observable;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, backendFactory?: LspRenameFactory) {
+    private readonly reconnectProvider: (() => void) | undefined;
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, backendFactory?: LspRenameFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider;
         this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory; this.usesLsp = backendFactory !== undefined;
     }
     private validName(name: string): boolean { return this.usesLsp ? name.length > 0 && name.length <= 256 && !/[\u0000-\u001f\u007f]/.test(name) : renameName(name); }
@@ -72,7 +73,7 @@ export class HostRenameTools {
     }
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.release(); this.publish({ status: "idle", message: "Rename preview dismissed; source is unchanged.", locations: [], work: 0, total: 0, page: 0 }); };
     readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ message: "Rename provider disconnected; local editing remains available." }); };
-    readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.publish({ message: "Prepare a fresh rename preview to reconnect." }); };
+    readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ message: "Prepare a fresh rename preview." }); };
     setName(value: string): void { const name = value.slice(0, 256); if (name === this.cell.get().name) return;
         if (this.usesLsp && this.job) { this.metrics.cancelled++; this.release(); this.publish({ status: "idle", locations: [], work: 0, total: 0, page: 0, message: "Name changed; request a fresh provider preview." }); }
         this.publish({ name }); }

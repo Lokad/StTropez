@@ -6,7 +6,7 @@ import type { DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTe
 import { referencePeer } from "../examples/protocol/reference-peer.ts";
 import { Workspace } from "../src/core/workspace.ts";
 import type { LspFeature, LspRequestContext, RpcScheduler, RpcTransport } from "../src/protocol/index.ts";
-const { LspWorkspace, createLspCommandRunner, createLspSignatureClient, createLspLinkClient, createLspColorClient, createLspFoldingClient, createLspHighlightClient, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
+const { LspWorkspace, createLspHoverClient, createLspCommandRunner, createLspSignatureClient, createLspLinkClient, createLspColorClient, createLspFoldingClient, createLspHighlightClient, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 const settled = async () => { await setImmediate(); await setImmediate(); };
 const latch = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; };
 test("occurrences require current dynamic authority through withdrawal and reconnect", async t => {
@@ -208,6 +208,17 @@ test("shared diagnostic placement preserves unknown freshness and expires on edi
     const replacement = a.attachDocument(f.source.documentId); await a.flush(); assert.equal(beforeReuse.isCurrent(), false);
     assert.equal(a.observeDiagnostics(replacement).getSnapshot().status, "empty"); assert.equal(first.getSnapshot().status, "expired");
     const buffer = f.workspace.document(f.source.documentId).buffer; assert.equal(buffer.slice(0, buffer.length), "a😀\r\nsource!"); assert.deepEqual(f.errors, []);
+    replacement.close(); await settled(); f.workspace.releaseResource(f.source.id, true);
+    assert.throws(() => f.workspace.document(f.source.documentId), /released/);
+    assert.equal(beforeReuse.isCurrent(), false); assert.equal(verified.isCurrent(), false);
+});
+
+test("feature requests require explicit reconnect after transport loss", async t => {
+    const f = fixture(t), client = createLspHoverClient(f.provider); t.after(client.dispose);
+    const run = () => client.run(f.workspace.document(f.source.documentId), 0).result;
+    await run(); f.peers[0]!.transport.dispose(); await settled();
+    for (let i = 0; i < 3; i++) await assert.rejects(run(), /explicit.*connect/i);
+    assert.equal(f.peers.length, 1); await f.provider.reconnect(); await run(); assert.equal(f.peers.length, 2);
 });
 
 test("command reservation blocks competing preparation before sync and preserves reads during recovery", async t => {

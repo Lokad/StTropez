@@ -74,6 +74,8 @@ export function createLspClient(provider: LspWorkspace) {
             op.identities = new Map([...documents].map(([id, document]) => [id, document.getSnapshot()]));
             const target = documents.get(origin);
             if (!target) throw new Error("LSP source is outside the captured project.");
+            const connection = scope.state.getSnapshot();
+            if (connection.phase === "disconnected" && connection.epoch !== 0) throw new RpcError(-32097, "LSP connection requires an explicit host connect or reconnect.");
             await scope.connect();
             validate(op);
             await scope.flush();
@@ -92,7 +94,7 @@ export function createLspClient(provider: LspWorkspace) {
             const isGenerationCurrent = () => current(op) && scope.state.getSnapshot().phase === "ready"
                 && scope.state.getSnapshot().epoch === capture!.epoch && scope.state.getSnapshot().registrationGeneration === capture!.registrationGeneration;
             const capturesCurrent = () => isGenerationCurrent() && !!captures && [...captures.values()].every(value => value.isCurrent());
-            const targets = createLspTargets(captures!, scope.resolveTarget, { source: capture!.document, isCurrent: capturesCurrent,
+            const targets = createLspTargets(captures!, scope.resolveTarget, { source: capture!.document, isCurrent: capturesCurrent, reportError: scope.reportError,
                 onCancel: listener => { op.cleanups.add(listener); return () => { op.cleanups.delete(listener); }; } });
             const isCurrent = targets.isCurrent;
             if (!isCurrent()) throw stale();

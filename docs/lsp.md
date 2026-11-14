@@ -145,6 +145,16 @@ Session defaults are 100 documents, 3 Mi UTF-16 units per document and 16 Mi tot
 Queued document requests share the configured RPC pending-count limit. Wire message limits still
 apply after JSON escaping, so a permitted raw document can exceed the encoded-message budget.
 The host must configure compatible session, RPC, WebSocket and provider limits for larger payloads.
+An encoded document or selector-policy failure closes only that document's remote copy and reports
+the error through `onError`. The local binding remains available for a corrected revision; a new
+revision, capability generation or explicit reconnect retries synchronization. Requests against the
+failed capture reject with its synchronization error. Other documents remain usable.
+
+Feature clients may establish the initial connection. After a failed opening or connection loss,
+the host must call the provider's `connect()` or `reconnect()` explicitly; repeated feature requests
+do not initiate reconnect attempts. Reconnection never replays an edit or command. Invalid percent
+escapes in the default selector pathname are treated as literal path text; opaque URI identity is
+unchanged, and a host can still supply `pathForUri`.
 
 Reference-peer model checks and real WebSocket journeys cover mixed newlines, a 100,000-line
 document, capability withdrawal, cancellation, URI reuse and fresh-session reopening. Browser

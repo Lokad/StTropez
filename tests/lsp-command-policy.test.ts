@@ -83,12 +83,14 @@ test("cancelling a hanging host handler rejects its late edits and permits a fre
     const f = clientFixture(t), entered = latch<void>(), late = latch<null>(), cancelled = latch<void>(); let captured: LspHostCommandContext | undefined, calls = 0;
     const client = createLspActionClient(f.provider, { commandPolicy: () => ({ kind: "host", run: (_command, context) => {
         if (++calls > 1) return "fresh";
-        captured = context; context.onCancel(() => cancelled.resolve()); entered.resolve(); return late.promise;
+        captured = context; context.onCancel(() => { cancelled.resolve(); throw new Error("Host cancellation failure"); }); entered.resolve(); return late.promise;
     } }) }); t.after(() => { late.resolve(null); client.dispose(); });
     f.peer.onRequest("textDocument/codeAction", () => [{ title: "host", command: "host.local" }]);
     const batch = await run(client, f), pending = batch.execute(batch.actions[0]!, scopeFor(f));
     const rejected = assert.rejects(pending, error => error instanceof RpcError && error.code === -32800);
     await entered.promise; client.cancel(); await rejected; await cancelled.promise;
+    captured!.onCancel(() => { throw new Error("Late host cancellation failure"); }); await settled();
+    assert.deepEqual(f.errors.splice(0), ["Host cancellation failure", "Late host cancellation failure"]);
     assert.equal(captured!.isCurrent(), false); assert.equal((await captured!.applyEdit({ edit: { changes: {} } })).applied, false);
     late.resolve(null); await settled(); assert.equal(f.provider.state.getSnapshot().commandAvailable, true);
     assert.equal(f.provider.state.getSnapshot().commandRequiresReconnect, false); assert.equal(f.sent("workspace/executeCommand").length, 0);
