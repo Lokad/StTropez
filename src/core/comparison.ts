@@ -3,6 +3,7 @@ import { DiffReferenceCache, TextDiff } from "./diff.ts";
 import type { DiffHunk, DiffProgress } from "./diff.ts";
 import { Store } from "./observable.ts";
 import { validateWorkBudget } from "./kernel-cursor.ts";
+import { mapComparisonHunks } from "./comparison-presentation.ts";
 import type { Observable } from "./observable.ts";
 import type { DocumentSnapshot, DocumentView, ResourceLease, TabId, TabTarget, TextResourceHandle, Workspace } from "./workspace.ts";
 import type { SelectionSet } from "./selections.ts";
@@ -11,7 +12,9 @@ export type ComparisonBaseline = Readonly<{ buffer: TextBuffer; version: string 
 export type ComparisonSnapshot = Readonly<{
     status: "running" | "ready" | "failed" | "expired" | "disposed";
     generation: number; baseline: (ComparisonBaseline & Readonly<{ epoch: number }>) | null;
-    working: DocumentSnapshot | null; hunks: readonly DiffHunk[]; progress: DiffProgress | null; failure: string | null;
+    working: DocumentSnapshot | null;
+    /** Exact when ready; while running, mapped prior hunks are presentation only. */
+    hunks: readonly DiffHunk[]; progress: DiffProgress | null; failure: string | null;
 }>;
 export type ComparisonCapture = Readonly<{
     baselineEpoch: number; baselineVersion: string; working: DocumentSnapshot; serverVersion: string | null;
@@ -63,10 +66,13 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
         publish({ status: "expired", generation: state.get().generation + 1, baseline: null, working: null, hunks: empty, progress: null, failure: null });
     }
     function restart(reference: ComparisonBaseline & Readonly<{ epoch: number }>, working: DocumentSnapshot): void {
+        const previous = state.get(), change = working.change;
+        const hunks = previous.baseline === reference && previous.working && change?.previousRevision === previous.working.revision
+            ? mapComparisonHunks(reference.buffer, previous.working.buffer, working.buffer, change.mapping, previous.hunks) : empty;
         job?.dispose(); job = new TextDiff(reference.buffer, working.buffer, referenceCache);
-        publish({ status: "running", generation: state.get().generation + 1, baseline: reference, working, hunks: empty, progress: null, failure: null });
+        publish({ status: "running", generation: previous.generation + 1, baseline: reference, working, hunks, progress: null, failure: null });
     }
-    const unsubscribe = workspace.subscribe(() => {
+    const update = () => {
         if (disposed || state.get().status === "expired") return;
         const metadata = resource.metadata.getSnapshot();
         if (metadata.capabilities !== reversionPolicy.capabilities || metadata.editLock !== reversionPolicy.editLock || metadata.serverVersion !== reversionPolicy.serverVersion) reversionPolicyGeneration++;
@@ -76,7 +82,8 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
             const current = workspace.document(documentId);
             if (state.get().working?.revision !== current.revision) restart(state.get().baseline!, current);
         }
-    });
+    };
+    const stopDocument = workspace.observeDocument(documentId).subscribe(update), stopMetadata = resource.metadata.subscribe(update), stopTab = workspace.tabState.subscribe(update);
     function begin(kind: "refresh" | "accept"): ComparisonTicket {
         scope.assertWritable();
         if (!(kind === "accept" ? canAccept() : live())) throw new Error("Comparison command is unavailable.");
@@ -140,7 +147,7 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
             try {
                 const progress = job.next(workBudget), previous = state.get();
                 if (progress.status === "ready") { job.dispose(); job = undefined; }
-                publish({ ...previous, status: progress.status === "ready" ? "ready" : "running", progress, hunks: progress.hunks });
+                publish({ ...previous, status: progress.status === "ready" ? "ready" : "running", progress, hunks: progress.status === "ready" ? progress.hunks : previous.hunks });
             } catch (error) {
                 job?.dispose(); job = undefined;
                 publish({ ...state.get(), status: "failed", failure: error instanceof Error ? error.message : "Comparison failed.", hunks: empty });
@@ -159,7 +166,7 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
         scope.assertWritable(); if (disposed) return;
         retention.release();
         for (const finish of [...pending]) finish();
-        disposed = true; unsubscribe(); job?.dispose(); job = undefined; referenceCache.dispose();
+        disposed = true; stopDocument(); stopMetadata(); stopTab(); job?.dispose(); job = undefined; referenceCache.dispose();
         if (!options.view) view.dispose();
         publish({ status: "disposed", generation: state.get().generation + 1, baseline: null, working: null, hunks: empty, progress: null, failure: null });
     } });

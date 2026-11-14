@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createComparisonController, TextBuffer, Workspace } from "../src/index.ts";
+import { mapComparisonHunks } from "../src/core/comparison-presentation.ts";
 import type { ComparisonController } from "../src/index.ts";
 function fixture() {
     const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "working", variant: "source" }, "Working", { value: "first\nworking\nlast\n", serverVersion: "saved-1" });
@@ -119,6 +120,78 @@ test("comparison hunk reversion is revision-guarded, undoable and shared across 
     const stale = ready(comparison); edit("later"); assert.equal(comparison.revert(stale.generation, 0), false);
     assert.equal(reference.buffer.slice(0, reference.buffer.length), "first\nbaseline\nlast\n");
     sibling.dispose(); comparison.dispose(); assert.equal(workspace.diagnostics().leases, 0);
+});
+
+test("running comparisons map retained review hunks through consecutive edits without enabling stale actions", () => {
+    const f = fixture();
+    try {
+        const exact = ready(f.comparison), original = exact.hunks, originalJson = JSON.stringify(original);
+        let before = f.workspace.document(f.resource.documentId), prior = original;
+        for (const edit of [{ from: 0, to: 0, insert: "prefix\n" }, { from: 14, to: 14, insert: "x" }, { from: 2, to: 7, insert: "\n" }]) {
+            f.workspace.edit({ documentId: before.id, expectedRevision: before.revision, origin: "host", edits: [edit] });
+            const running = f.comparison.getSnapshot(), after = f.workspace.document(before.id), map = after.change!.mapping;
+            assert.equal(running.status, "running"); assert.equal(running.hunks.length, 1);
+            const from = map.map(prior[0]!.working.from, "before").offset, to = map.map(prior[0]!.working.to, "after").offset;
+            assert.deepEqual(running.hunks[0]!.working, { from, to, lineFrom: after.buffer.lineAt(from), lineTo: from === to ? after.buffer.lineAt(from) : after.buffer.lineAt(to - 1) + 1 });
+            assert.equal(running.hunks[0]!.baseline, original[0]!.baseline);
+            assert.equal(f.comparison.revert(exact.generation, 0), false); assert.equal(f.comparison.revert(running.generation, 0), false);
+            assert.throws(() => f.comparison.beginReversion(), /unavailable/);
+            assert.ok(Object.isFrozen(running.hunks)); assert.ok(Object.isFrozen(running.hunks[0]!.working));
+            prior = running.hunks; before = after;
+        }
+        const progress = f.comparison.advance(256); assert.equal(progress.status, "running"); assert.equal(progress.hunks, prior);
+        assert.equal(JSON.stringify(original), originalJson);
+        const final = ready(f.comparison); assert.notEqual(final.hunks, prior);
+        const refresh = f.comparison.beginRefresh(); refresh.complete({ buffer: TextBuffer.from("replacement\n"), version: "other" });
+        assert.deepEqual(f.comparison.getSnapshot().hunks, [], "old-baseline differences must never decorate a replacement reference");
+    } finally { f.comparison.dispose(); assert.equal(f.workspace.diagnostics().subscriptions, 0); }
+});
+
+test("provisional hunk mapping preserves row coordinates and merges collapsed change boundaries", () => {
+    const before = TextBuffer.from("a\nb\nc\nd\ne\n"), base = (from: number, to: number) => Object.freeze({ from, to, lineFrom: before.lineAt(from), lineTo: before.lineAt(to - 1) + 1 });
+    const hunks = Object.freeze([0, 4, 8].map(at => Object.freeze({ baseline: base(at, at + 1), working: base(at, at + 1), whitespaceOnly: true })));
+    for (const edits of [[{ from: 1, to: 1, insert: "\n" }], [{ from: 0, to: 1, insert: "\n" }], [{ from: 4, to: 8, insert: "" }],
+        [{ from: 0, to: before.length, insert: "" }], [{ from: 1, to: 2, insert: "" }, { from: 3, to: 4, insert: "" }]]) {
+        const change = before.apply(edits), mapped = mapComparisonHunks(before, before, change.buffer, change.mapping, hunks);
+        let end = -1, lastLine = -1;
+        for (const h of mapped) {
+            assert.ok(h.working.from > end); end = h.working.to;
+            assert.ok(h.working.lineFrom >= lastLine); lastLine = Math.max(h.working.lineFrom + 1, h.working.lineTo);
+            assert.equal(h.working.lineFrom, change.buffer.lineAt(h.working.from));
+            assert.equal(h.working.lineTo, change.buffer.lineAt(h.working.from === h.working.to ? h.working.to : h.working.to - 1) + (h.working.from === h.working.to ? 0 : 1));
+        }
+        if (edits[0]!.to === before.length) { assert.equal(mapped.length, 1); assert.equal(mapped[0]!.baseline.from, 0); assert.equal(mapped[0]!.baseline.to, 9); }
+        if (edits.length === 2) { assert.equal(mapped.length, 2); assert.equal(mapped[0]!.working.from, 0); assert.equal(mapped[0]!.working.to, 3); }
+    }
+    const deletionPoint = Object.freeze({ baseline: base(4, 5), working: Object.freeze({ from: 4, to: 4, lineFrom: 2, lineTo: 2 }), whitespaceOnly: false });
+    const joined = before.apply([{ from: 1, to: 4, insert: "" }]);
+    const result = mapComparisonHunks(before, before, joined.buffer, joined.mapping, Object.freeze([hunks[0]!, deletionPoint]));
+    assert.deepEqual(result[0]!.working, { from: 0, to: 1, lineFrom: 0, lineTo: 1 }, "a merged deletion marker must retain the preceding nonempty row");
+    for (let from = 0; from <= before.length; from++) for (let to = from; to <= before.length; to++) for (const insert of ["", "\n", "x\r\ny"]) {
+        const change = before.apply([{ from, to, insert }]);
+        for (const ranges of [hunks, Object.freeze([hunks[0]!, deletionPoint, hunks[2]!]),
+            Object.freeze(hunks.map(h => Object.freeze({ ...h, baseline: Object.freeze({ ...h.baseline, to: h.baseline.from, lineTo: h.baseline.lineFrom }) })))]) {
+            const projected = mapComparisonHunks(before, before, change.buffer, change.mapping, ranges);
+            for (const h of projected) for (const [buffer, r] of [[before, h.baseline], [change.buffer, h.working]] as const) {
+                const context = JSON.stringify({ from, to, insert, r, side: buffer === before ? "baseline" : "working" });
+                assert.equal(r.lineFrom, buffer.lineAt(r.from), context); assert.equal(r.lineTo, r.from === r.to ? r.lineFrom : buffer.lineAt(r.to - 1) + 1, context);
+            }
+        }
+    }
+});
+
+test("comparison observes its document, policy and tab rather than unrelated workspace edits", () => {
+    class ObservedWorkspace extends Workspace { reads = 0; override document(...args: Parameters<Workspace["document"]>) { this.reads++; return super.document(...args); } }
+    const workspace = new ObservedWorkspace(), source = workspace.createTextResource({ scope: "review", resource: "own", variant: "source" }, "Own", { value: "working" });
+    const other = workspace.createDocument({ scope: "review", resource: "other", variant: "source" }, "Other", "other");
+    const tab = workspace.open({ kind: "text", documentId: source.documentId }, "main"), controller = createComparisonController(workspace, tab, { buffer: TextBuffer.from("base"), version: "one" });
+    try {
+        const captured = ready(controller); workspace.reads = 0;
+        workspace.edit({ documentId: other, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 0, insert: "x" }] });
+        assert.equal(workspace.reads, 0); assert.equal(controller.getSnapshot(), captured);
+        workspace.setCapabilities(source.id, { edit: [], save: true, run: false }); assert.equal(controller.revert(captured.generation, 0), false);
+        workspace.close(tab); assert.equal(controller.getSnapshot().status, "expired");
+    } finally { controller.dispose(); assert.equal(workspace.diagnostics().subscriptions, 0); }
 });
 
 test("refresh and acceptance preserve later typing, saved identity, history and explicit versions", () => {

@@ -6,6 +6,16 @@ the experimental input candidate on both sides: editable working text and a read
 synthetic host responses. No retrieval, persistence, execution or application service is
 included in the package.
 
+During a working edit, the last review hunks follow that transaction's position mapping and
+remain visible while exact alignment is recomputed. `status: "running"` identifies these
+provisional hunks: they describe retained presentation, not a current edit plan. Typing at a
+change boundary is included; deletion can merge adjacent projected ranges. Progress updates
+preserve this capture, and completion replaces it atomically. Reference replacement or a gap
+in document revision history clears it. Navigation and reversion require a ready comparison
+and its current generation; provisional colors never authorize a stale edit.
+Comparison observes the working document, its metadata and tab lifecycle rather than the
+workspace-wide store.
+
 The reference version, reference epoch, working resource ID, document revision, tab
 generation and view selection have separate meanings. Moving a tab preserves the comparison;
 closing or replacing it expires the captured presentation. Baseline display resources have

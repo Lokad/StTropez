@@ -60,7 +60,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     const referenceScope = workspace.createNotificationScope(), referenceStore = new Store<ComparisonReferenceView | undefined>(undefined, referenceScope);
     const publishReference = (value: ComparisonReferenceView | undefined) => { const changed = new Set<Store<unknown>>(); referenceStore.set(value, changed); referenceScope.deliver([...changed]); };
     function rangeAt(side: "baseline" | "working", line: number): DiffRange | undefined {
-        if (state.status !== "ready") return;
+        if (state.status !== "ready" && state.status !== "running") return;
         let low = 0, high = state.hunks.length;
         while (low < high) { const mid = (low + high) >>> 1, range = state.hunks[mid]![side]; if (Math.max(range.lineFrom + 1, range.lineTo) <= line) low = mid + 1; else high = mid; }
         const range = state.hunks[low]?.[side]; return range && range.lineFrom <= line ? range : undefined;
@@ -122,7 +122,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
         const navigationDisabled = state.status !== "ready" || count === 0 || composing();
         for (const button of [previous, next]) if (button.disabled !== navigationDisabled) button.disabled = navigationDisabled;
         const metadata = state.working ? workspace.resource(state.working.resourceId).metadata.getSnapshot() : undefined;
-        const revertDisabled = !hunk || !metadata?.capabilities.edit.includes("human") || metadata.editLock !== null || composing();
+        const revertDisabled = state.status !== "ready" || !hunk || !metadata?.capabilities.edit.includes("human") || metadata.editLock !== null || composing();
         if (revert.disabled !== revertDisabled) revert.disabled = revertDisabled;
         if (preview.hidden !== !hunk) preview.hidden = !hunk;
         if (hunk && state.baseline && state.working) {
@@ -170,11 +170,14 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     working.input.addEventListener("compositionstart", schedule, { signal: listeners.signal }); working.input.addEventListener("compositionend", schedule, { signal: listeners.signal });
     link.addEventListener("change", () => setScrollLinked(link.checked), { signal: listeners.signal });
     align.addEventListener("change", () => setRowsAligned(align.checked), { signal: listeners.signal });
-    const unsubscribe = controller.subscribe(schedule), unsubscribeWorkspace = workspace.subscribe(schedule);
+    // A document notification can paint the working viewport before the scheduled controls.
+    // Decoration queries must already see the mapped capture for that same revision.
+    const unsubscribe = controller.subscribe(() => { state = controller.getSnapshot(); schedule(); }),
+        stopMetadata = workspace.resourceForDocument(controller.view.documentId).metadata.subscribe(schedule);
     function destroy(): void {
         if (disposed) return; referenceScope.assertWritable(); disposed = true; if (timer !== undefined) win!.clearTimeout(timer);
         try {
-            unsubscribe(); unsubscribeWorkspace(); listeners.abort(); scroll.dispose(); alignment.dispose();
+            unsubscribe(); stopMetadata(); listeners.abort(); scroll.dispose(); alignment.dispose();
             try { working.destroy(); } finally { clearReference(); }
         } finally {
             try { controller.dispose(); } finally { state = controller.getSnapshot(); selected = -1; root.remove(); }
