@@ -52,7 +52,7 @@ const knownPath = (value: unknown, project: Project) => !!knownDocument(value, p
 export function attachDemoProvider(server: Server) {
     const sockets = new WebSocketServer({ noServer: true, maxPayload: 24 * 1024 * 1024 });
     const projects = new Map<string, Project>(), removals = new Set<Promise<void>>(), requests = new Set<Promise<boolean>>();
-    let closing = false, processes = 0;
+    let closing = false, processes = 0, allocating = 0;
     async function remove(project: Project): Promise<void> {
         if (project.removed) { await project.stopping; return; }
         project.removed = true; projects.delete(project.id); if (project.idle) clearTimeout(project.idle);
@@ -321,8 +321,18 @@ export function attachDemoProvider(server: Server) {
                     files[name] = text;
                 }
             } catch { json(response, 400, { error: "Invalid unopened demo files." }); return true; }
-            if (projects.size >= 32) { json(response, 503, { error: "Close another demo page before opening a provider." }); return true; }
-            const directory = await mkdtemp(join(resolve(tmpdir()), "sttropez-demo-"));
+            // Closed pages may leave their reconnect cache behind until idle expiry. Reclaim an
+            // idle slot before rejecting a new page; connected and bootstrapping clients keep theirs.
+            let eviction: Promise<void> | undefined;
+            if (projects.size + allocating >= 32) {
+                const cached = [...projects.values()].find(project => project.idle && !project.connection);
+                if (!cached) { json(response, 503, { error: "Close another demo page before opening a provider." }); return true; }
+                eviction = retire(cached);
+            }
+            allocating++;
+            let directory: string;
+            try { await eviction; directory = await mkdtemp(join(resolve(tmpdir()), "sttropez-demo-")); }
+            finally { allocating--; }
             const project: Project = { id: crypto.randomUUID(), directory, rootUri: URI.file(directory).toString(), documents: {},
                 idle: undefined, connection: undefined, stopping: Promise.resolve(), stopProcess: undefined, removed: false };
             projects.set(project.id, project);

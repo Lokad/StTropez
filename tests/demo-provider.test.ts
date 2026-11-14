@@ -13,6 +13,36 @@ import { LspWorkspace, createLspActionClient } from "../src/protocol/index.ts";
 import type { LspSessionAccess } from "../src/protocol/index.ts";
 import { openWebSocketTransport } from "../src/browser/index.ts";
 
+test("demo capacity reclaims idle workspaces while retaining connected clients and bounding concurrent allocation", { timeout: 15000 }, async () => {
+    const server = createServer((request, response) => { void provider.handle(request, response).then(handled => { if (!handled) response.writeHead(404).end(); }); });
+    const provider = attachDemoProvider(server);
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address(); assert.ok(address && typeof address === "object");
+    const url = `http://127.0.0.1:${address.port}`;
+    const open = async () => {
+        const response = await fetch(url + "/demo-provider?sample=pricing", { method: "POST" });
+        assert.equal(response.status, 200); assert.ok(provider.snapshot().projects <= 32);
+        return await response.json() as DemoProviderBootstrap;
+    };
+    let connection: WebSocket | undefined;
+    try {
+        const active = await open(); connection = new WebSocket(url.replace("http:", "ws:") + active.endpoint);
+        await new Promise<void>((resolve, reject) => { connection!.onopen = () => resolve(); connection!.onerror = () => reject(new Error("Provider connection failed")); });
+        const idle = await open();
+        for (let i = 0; i < 30; i++) await open();
+        assert.equal(provider.snapshot().projects, 32);
+        await open(); await assert.rejects(access(fileURLToPath(idle.rootUri)));
+        const opened = await Promise.allSettled(Array.from({ length: 16 }, () => open()));
+        for (const result of opened) assert.equal(result.status, "fulfilled");
+        assert.equal(provider.snapshot().projects, 32); assert.equal(provider.snapshot().connections, 1);
+        await access(fileURLToPath(active.rootUri)); assert.equal(connection.readyState, WebSocket.OPEN);
+    } finally {
+        connection?.close(); await provider.close();
+        await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+    assert.deepEqual(provider.snapshot(), { projects: 0, connections: 0, processes: 0, removals: 0 });
+});
+
 test("Windows demo cleanup awaits a briefly locked workspace directory", { skip: process.platform !== "win32", timeout: 10000 }, async () => {
     const server = createServer((request, response) => { void provider.handle(request, response).then(handled => { if (!handled) response.writeHead(404).end(); }); });
     const provider = attachDemoProvider(server);
