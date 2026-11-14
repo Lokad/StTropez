@@ -73,6 +73,9 @@ selected range; paste and indentation still have costs proportional to their cha
 
 `focus`, `captureView`, `restoreView`, `view`, `viewport` and `destroy` support explicit host
 lifecycle. Supplied views stay host-owned; otherwise destruction releases the retained view.
+Typing, paste, language commands, drop and undo/redo reveal the caret at the nearest edge on
+both axes, respecting its affinity. Editing keeps the current scroll position while the caret
+fits in the view. Explicit host navigation can request a centered reveal through the viewport.
 Two candidates share document history while keeping their selection, scroll and focus separate.
 `readOnly: true` is captured for that mount. It keeps navigation, selection, copying and Find
 available while refusing input, paste/cut/drop, history and Find replacements through that view.

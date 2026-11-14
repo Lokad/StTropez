@@ -163,6 +163,9 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         input.dispatchEvent(new CustomEvent("sttropez-conflict", { bubbles: true, detail: Object.freeze({ documentId, expectedRevision, reason,
             attemptedText, contextFrom, ...(edit ? { attemptedEdit: Object.freeze({ ...edit }) } : {}) }) }));
     };
+    function revealCaret(selected = view.getSnapshot().selection): void {
+        viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" });
+    }
     function apply(edits: readonly TextEdit[], selection: Selection | SelectionSet, kind: EditKind, type?: string, expectedRevision = revision, recoveryText?: string): boolean {
         if (disposed) return false;
         hostInsertion?.cancel();
@@ -184,7 +187,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 ...("ranges" in selection ? { selectionSet: selection } : { selection }),
                 history: { kind, ...(key ? { group: key } : {}) } });
             applied = result.applied;
-            if (result.applied) { commits++; const after = view.getSnapshot(); viewport.revealOffset(after.selection.head);
+            if (result.applied) { commits++; const after = view.getSnapshot(); revealCaret(after.selection);
                 if (type && key) group = { type, revision: result.revision, selectionSet: after.selectionSet, time: now, key }; }
             else conflict(result.reason, edits[0], expectedRevision, context.from, recoveryText);
         } finally { committing = false; try { transformed?.complete?.(applied); } finally { refresh(); } }
@@ -234,7 +237,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (!workspace.resolveTab(target)) { conflict("expired-view"); refresh(); return; }
         const result = workspace[direction]({ documentId, expectedRevision: revision });
         if (!result.applied && result.reason !== "history-empty") conflict(result.reason);
-        else if (result.applied) viewport.revealOffset(view.getSnapshot().selection.head);
+        else if (result.applied) revealCaret();
         refresh();
     }
     const focus = () => { if (!disposed) { input.focus({ preventScroll: true }); scheduleCaret(); } };
@@ -538,7 +541,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         beginNavigation((capture, style, inline) => {
         const began = win.performance.now(); viewport.flush();
         const buffer = capture.buffer, selected = capture.selection;
-        if (!viewport.coordsAt(selected.head, selected.headAffinity)) { viewport.revealOffset(selected.head); viewport.flush(); }
+        if (!viewport.coordsAt(selected.head, selected.headAffinity)) { revealCaret(selected); viewport.flush(); }
         if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
         const state = viewport.snapshot(), layout = navigationLayout();
         const prior = preferred?.selections === capture.selectionSet && preferred.revision === capture.revision && preferred.layout === layout ? preferred.columns : undefined;
@@ -604,7 +607,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 const plan = result.value;
                 if (plan.edits.length) return apply(plan.edits, plan.selectionSet, typeof command === "object" ? "typing" : "replace", undefined, capture.revision);
                 group = undefined; view.setSelections(capture.revision, plan.selectionSet.ranges, plan.selectionSet.primary);
-                viewport.revealOffset(view.getSnapshot().selection.head); refresh(); return true;
+                revealCaret(); refresh(); return true;
             });
         };
         group = undefined; step(); return true;
@@ -877,7 +880,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     const textDrag = mountTextDragDrop({ workspace, tab: target, view, viewport, input,
         available: () => !disposed && !composing && !input.disabled,
         beforeStart: () => { stopDrag(); cancelWord(); cancelCommandTimers(); preferred = undefined; group = undefined; },
-        afterDrop: offset => { commits++; viewport.revealOffset(offset); focus(); refresh(); },
+        afterDrop: () => { commits++; revealCaret(); focus(); refresh(); },
         rejected: reason => { conflict(reason); refresh(); } });
     root.addEventListener("pointerdown", event => {
         if (event.button !== 0 || disposed || composing || input.disabled || !workspace.resolveTab(target)) return;

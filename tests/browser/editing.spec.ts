@@ -11,6 +11,35 @@ test.beforeEach(async ({ page }) => {
     await page.goto("/editing/"); await ready(page);
 });
 
+test("typing, newline, paste and history keep a visible caret in place on both scroll axes", async ({ page }) => {
+    const source = page.getByRole("textbox", { name: "Primary source", exact: true });
+    await page.evaluate(() => window.editingFixture.setText((" ".repeat(60) + "x".repeat(340) + "\n").repeat(2000))); await ready(page);
+    await page.evaluate(() => {
+        const f = window.editingFixture; f.configureLanguage({ enter: "keep" });
+        const offset = 500 * 401 + 80; f.selections([{ anchor: offset, head: offset }]); f.focus("primary");
+        const root = document.querySelector<HTMLElement>("#primary .st-viewport")!;
+        root.scrollTop = f.snapshot().primary.viewport.lineHeight * 498; root.scrollLeft = 250;
+        root.dispatchEvent(new Event("scroll"));
+    });
+    const settled = async () => {
+        await page.waitForFunction(() => { const s = window.editingFixture.snapshot(); return !s.primary.pendingInput && !s.primary.pendingCommand && !s.primary.pendingCaret && !s.primary.viewport.pending && s.primary.viewport.revision === s.document?.revision; });
+        return page.evaluate(() => { const s = window.editingFixture.snapshot().primary; return { top: s.viewport.scrollTop, left: s.viewport.scrollLeft }; });
+    };
+    const before = await settled(); expect(before.top).toBeGreaterThan(1000); expect(before.left).toBe(250);
+    const unchanged = async () => {
+        expect(await settled()).toEqual(before);
+        expect(await page.evaluate(() => {
+            const f = window.editingFixture, s = f.snapshot().primary, point = f.coords(s.selection.head, s.selection.headAffinity);
+            const box = document.querySelector("#primary .st-viewport")!.getBoundingClientRect();
+            return !!point && point.top >= box.top && point.top + point.height <= box.bottom && point.left >= box.left && point.left <= box.right;
+        })).toBe(true);
+    };
+    await source.press("x"); await unchanged(); await source.press("Enter"); await unchanged();
+    await source.evaluate(node => { const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
+        event.clipboardData!.setData("text/plain", "p"); node.dispatchEvent(event); }); await unchanged();
+    for (const key of ["Control+z", "Control+z", "Control+y", "Control+y"]) { await source.press(key); await unchanged(); }
+});
+
 test("captured host insertion uses the input transform once and expires before later typing", async ({ page }) => {
     await page.evaluate(() => { window.editingFixture.setText("abc"); window.editingFixture.select("primary", { anchor: 1, head: 2 }); }); await ready(page);
     expect(await page.evaluate(() => {
