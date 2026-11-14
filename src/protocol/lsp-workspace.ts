@@ -69,7 +69,7 @@ export class LspWorkspace {
     constructor(workspace: Workspace, options: LspWorkspaceOptions) {
         this.workspace = workspace; this.options = options;
         if (!Number.isSafeInteger(options.maxScopes ?? 128) || (options.maxScopes ?? 128) < 1) throw new RangeError("Invalid provider scope limit.");
-        this.notifications = new NotificationScope(error => this.report(error));
+        this.notifications = workspace.createNotificationScope(error => this.report(error));
         this.session = new LspSession({ ...options, connect: async context => {
             const transport = await options.connect(context); this.created++; let released = false;
             return { send: text => transport.send(text), subscribe: listener => transport.subscribe(listener), dispose: () => {

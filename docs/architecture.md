@@ -124,8 +124,10 @@ Construct persistent controllers at the host composition boundary, outside compo
 Resource, document, metadata and tab observables now notify only for their own changes; a coarse
 workspace observable remains for tooling. Unchanged metadata and unrelated form snapshots keep
 their identity through typing. Listener exceptions are reported without stopping other delivery.
-Reentrant mutations are rejected during notification; a host can queue its next command after
-delivery. Plain-host fixtures exercise two text views, a typed form and deferred save/Run ports.
+Reentrant mutations are rejected throughout nested workspace/controller notification delivery;
+a host can queue its next command after delivery. Controllers use `workspace.createNotificationScope`
+to share that write guard while keeping their listener counts and error policies independent.
+Unrelated workspaces remain independent. Plain-host fixtures exercise two text views, a typed form and deferred save/Run ports.
 The shared plain/React controller fixtures test queued host-write ordering, stable refs and
 Strict Mode remounts, plus root error recovery without discarding documents. The runtime imports
 no React or host cell library. See [the host adapter](host-adapter.md) for fixture boundaries.

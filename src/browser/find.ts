@@ -5,7 +5,7 @@ import type { SearchMatch, SearchStep } from "../core/search.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import type { TextEdit } from "../core/changes.ts";
-import { NotificationScope, Store } from "../core/observable.ts";
+import { Store } from "../core/observable.ts";
 import type { EditingCandidate } from "./editing-candidate.ts";
 export type FindOptions = Readonly<{ wholeWord?: boolean; matchCase?: boolean; regularExpression?: boolean }>;
 export type FindQueryCapture = Readonly<{ documentId: DocumentId; revision: number; buffer: TextBuffer; query: string; wholeWord: boolean; matchCase: boolean }>;
@@ -32,7 +32,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
     if (!tab || tab.surface.kind !== "text" || tab.surface.documentId !== editor.view.documentId || !workspace.ownsDocumentView(editor.view)) throw new Error("Find requires the captured document view.");
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId), lease = workspace.acquire(resource.id), owner = editor.element.ownerDocument, win = owner.defaultView!;
-    const scope = new NotificationScope(() => {}), initial = workspace.document(documentId);
+    const scope = workspace.createNotificationScope(), initial = workspace.document(documentId);
     const store = new Store<FindSnapshot>(Object.freeze({ query: "", wholeWord: false, matchCase: true, regularExpression: false, revision: initial.revision, status: "idle", count: 0, scanned: 0, length: initial.buffer.length,
         current: null, preview: Object.freeze([]), message: "", maxScanStepMs: 0, replaceTransactionMs: 0 }), scope);
     let disposed = false, timer: number | undefined, cursor: FindSearchCursor | undefined, planCursor: FindPlanCursor | undefined, generation = 0, focusGeneration = 0;

@@ -53,6 +53,11 @@ Tabs retain their resource, while `acquire(id)` leases retain it for host work. 
 view retains the workspace data until explicit release. `releaseResource` refuses live tabs,
 pending leases and dirty state without an explicit discard decision. Released handles become
 tombstones without content. Reopening the same key after release gets a fresh resource ID.
+`createResourceKey(scope, resource)` allocates a unique variant through the workspace, so separately
+loaded views need no module-local identity counter. `releaseResourceWhenUnowned(id)` releases
+immediately when possible, or requests release after the last tab/lease leaves. Deferred release
+runs after notification delivery and rechecks ownership. Unsaved changes cancel a deferred request
+unless it explicitly allows discard; no caller's lease or tab is forcibly removed.
 
 `beginOperation(id, lane, presentation?)` captures identity, revision and a request generation.
 A new operation on the same lane cancels the old generation; different lanes are independent.

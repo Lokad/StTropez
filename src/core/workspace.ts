@@ -141,6 +141,8 @@ export class Workspace {
     private readonly scope: NotificationScope;
     private readonly records = new Map<ResourceId, ResourceRecord>();
     private readonly handles = new WeakMap<object, ResourceRecord>();
+    private readonly deferredReleases = new Map<ResourceId, boolean>();
+    private readonly queuedReleases = new Set<ResourceId>();
     private readonly documents = new Map<DocumentId, ResourceRecord>();
     private readonly tabs: Store<readonly TabSnapshot[]>;
     private readonly state: Store<WorkspaceSnapshot>;
@@ -157,6 +159,21 @@ export class Workspace {
         this.tabState = this.tabs.observable;
         this.getSnapshot = this.state.observable.getSnapshot;
         this.subscribe = this.state.observable.subscribe;
+    }
+
+    /** Controller notifications share this workspace's write guard, with their own listeners/error policy. */
+    createNotificationScope(onListenerError: (error: unknown) => void = () => {}): NotificationScope {
+        return new NotificationScope(onListenerError, this.scope);
+    }
+
+    /** Allocate a resource key in this workspace, including across independently loaded views. */
+    createResourceKey(scope: string, resource: string): ResourceKey {
+        this.scope.assertWritable();
+        let variant: string;
+        do { variant = String(++this.nextId); } while ([...this.records.values()].some(record => {
+            const key = record.metadata.get().key; return key.scope === scope && key.resource === resource && key.variant === variant;
+        }));
+        return Object.freeze({ scope, resource, variant });
     }
 
     createResource<T extends SnapshotValue>(key: ResourceKey, title: string, loaded?: LoadedResource<T>, permissions = defaultCapabilities): ResourceHandle<T> {
@@ -236,7 +253,7 @@ export class Workspace {
         const state = new Store<DocumentViewSnapshot>(viewSnapshot(id, document.revision, selections), this.scope);
         const folds = new Store<FoldingSnapshot>(foldingSnapshot(document.buffer, document.revision, 0, Object.freeze([])), this.scope);
         const viewId = `view-${++this.nextId}` as ViewId, retention = Symbol("view"); record.leases.add(retention);
-        const lease = Object.freeze({ resourceId: record.handle.id, active: () => record.leases.has(retention), release: () => { record.leases.delete(retention); } });
+        const lease = Object.freeze({ resourceId: record.handle.id, active: () => record.leases.has(retention), release: () => { record.leases.delete(retention); this.scheduleRelease(record.handle.id); } });
         const foldTarget = (expected: FoldVersion) => record.views.has(viewId) && record.state.get().state === "ready" && expected !== null && typeof expected === "object"
             && record.state.get().revision === expected.revision && folds.get().generation === expected.generation;
         const setFoldRegions = (regions: FoldingSnapshot["regions"]): boolean => {
@@ -595,7 +612,7 @@ export class Workspace {
         const record = this.requireResource(id), lease = Symbol("resource-lease");
         record.leases.add(lease);
         return Object.freeze({ resourceId: id, active: () => record.leases.has(lease), release: () => {
-            this.scope.assertWritable(); record.leases.delete(lease);
+            this.scope.assertWritable(); record.leases.delete(lease); this.scheduleRelease(id);
         } });
     }
     ownership(id: ResourceId): Readonly<{ leases: number; tabs: number }> {
@@ -769,13 +786,15 @@ export class Workspace {
         this.publishTabs(this.tabs.get().map(tab => tab.id === id ? Object.freeze({ ...tab, paneId }) : tab));
     }
     replace(id: TabId, surface: Surface): void {
-        this.scope.assertWritable(); this.requireTab(id); this.surfaceResource(surface);
+        this.scope.assertWritable(); const previous = this.surfaceResource(this.requireTab(id).surface); this.surfaceResource(surface);
         this.publishTabs(this.tabs.get().map(tab => tab.id === id ? Object.freeze({ ...tab, generation: tab.generation + 1, surface: Object.freeze({ ...surface }) }) : tab));
+        this.scheduleRelease(previous);
     }
     /** Immediate host decision. Use captureClose/completeClose for an asynchronous dirty prompt. */
     close(id: TabId): void {
-        this.scope.assertWritable(); this.requireTab(id);
+        this.scope.assertWritable(); const previous = this.surfaceResource(this.requireTab(id).surface);
         this.publishTabs(this.tabs.get().filter(tab => tab.id !== id));
+        this.scheduleRelease(previous);
     }
     captureClose(id: TabId): CloseIntent {
         const tab = this.requireTab(id), resource = this.requireResource(this.surfaceResource(tab.surface));
@@ -796,6 +815,26 @@ export class Workspace {
             finally { operation.finish(); }
         } });
     }
+    /** Release now, or after the last tab/lease leaves. Unsaved changes cancel a non-discarding release. */
+    releaseResourceWhenUnowned(id: ResourceId, discard = false): void {
+        this.scope.assertWritable(); const record = this.requireResource(id), owners = this.ownership(id);
+        if (record.metadata.get().dirty && !discard) throw new Error("Explicit discard is required to release unsaved work.");
+        if (!owners.tabs && !owners.leases) { this.releaseResource(id, discard); return; }
+        this.deferredReleases.set(id, discard);
+    }
+    private scheduleRelease(id: ResourceId): void {
+        if (!this.deferredReleases.has(id) || this.queuedReleases.has(id)) return;
+        this.queuedReleases.add(id);
+        // View disposal can occur during notification. Release after the complete delivery,
+        // and recheck ownership in case a host attached another view before this microtask.
+        void Promise.resolve().then(() => {
+            this.queuedReleases.delete(id);
+            const discard = this.deferredReleases.get(id), record = this.records.get(id);
+            if (discard === undefined || !record) return;
+            if (record.metadata.get().dirty && !discard) { this.deferredReleases.delete(id); return; }
+            const owners = this.ownership(id); if (!owners.tabs && !owners.leases) this.releaseResource(id, discard);
+        });
+    }
     releaseResource(id: ResourceId, discard = false): void {
         this.scope.assertWritable();
         const record = this.requireResource(id), owners = this.ownership(id), state = record.state.get();
@@ -803,7 +842,7 @@ export class Workspace {
         if (state.metadata.dirty && !discard) throw new Error("Explicit discard is required to release unsaved work.");
         record.saved = undefined; record.buffer = null; record.savedBuffer = null; record.change = null;
         if (record.documentId !== null) this.history.forget(record.documentId);
-        this.records.delete(id);
+        this.records.delete(id); this.deferredReleases.delete(id);
         const changed = new Set<Store<unknown>>();
         record.agent.set(emptyAgentState, changed);
         this.setRecord(record, { state: "released", revision: state.revision,

@@ -9,7 +9,7 @@ import type { FoldIndex } from "../core/folding.ts";
 import type { EditingCandidate } from "./editing-candidate.ts";
 import { RpcError, UnsupportedLspSnippetError, decodeLspCompletions, decodeLspResolvedCompletion, lspCompletionPlan, rebaseLspCompletion } from "../protocol/index.ts";
 import type { LspCall, LspCompletion, LspCompletions, LspCompletionFallback, LspDocument, LspDocumentCapture, LspSessionAccess, LspWorkspace } from "../protocol/index.ts";
-import { NotificationScope, Store } from "../core/observable.ts";
+import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import type { JsonValue } from "../protocol/index.ts";
 
@@ -58,7 +58,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
     const owner = editor.element.ownerDocument, clock = owner.defaultView!;
     const emptyDiagnostics: readonly LspEditorDiagnostic[] = Object.freeze([]), emptyMessages: readonly string[] = Object.freeze([]);
     let diagnostics = emptyDiagnostics, unversioned = emptyMessages, diagnosticRevision = -1;
-    const notifications = new NotificationScope(error => options.onError?.(error)), observers = new Set<() => void>();
+    const notifications = workspace.createNotificationScope(error => options.onError?.(error)), observers = new Set<() => void>();
     const cell = new Store<LspEditorSnapshot>(Object.freeze({ message: "LSP provider disconnected; local editing remains available.", connected: false, pending: false, offerText: null, diagnostics, diagnosticRevision, choices: Object.freeze([]), choiceIndex: 0, completionId: 0, completionIncomplete: false, completionDetail: "", resolving: false, unversionedDiagnostics: Object.freeze([]), snippet: null, omittedCompletions: Object.freeze([]) }), notifications);
     const state: Observable<LspEditorSnapshot> = Object.freeze({ getSnapshot: cell.observable.getSnapshot, subscribe: listener => {
         notifications.assertWritable(); if (disposed) throw new Error("LSP editor is disposed."); const stop = cell.observable.subscribe(listener);

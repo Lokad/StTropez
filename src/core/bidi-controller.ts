@@ -1,7 +1,7 @@
 import { BidiCursor } from "./bidi-cursor.ts";
 import type { BidiIndex, BidiStep } from "./bidi-cursor.ts";
 import type { BidiDirection } from "./bidi.ts";
-import { NotificationScope, Store } from "./observable.ts";
+import { Store } from "./observable.ts";
 import { validateWorkBudget } from "./kernel-cursor.ts";
 import type { Observable } from "./observable.ts";
 import type { DocumentId, TabId, Workspace } from "./workspace.ts";
@@ -25,7 +25,7 @@ export function createBidiIndexController(workspace: Workspace, tabId: TabId,
     if (!document.getSnapshot()) throw new Error("Bidi indexing requires a ready document.");
     const direction = options.direction ?? "ltr";
     if (direction !== "ltr" && direction !== "rtl" && direction !== "auto") throw new TypeError("Invalid bidi direction.");
-    const retention = workspace.acquire(resource.id), scope = new NotificationScope(options.onListenerError ?? (() => {}));
+    const retention = workspace.acquire(resource.id), scope = workspace.createNotificationScope(options.onListenerError);
     const store = new Store<BidiIndexSnapshot>(Object.freeze({ status: "idle", documentId, revision: null, generation: 0, range: null, progress: null, index: null, failure: null }), scope);
     let cursor: BidiCursor | undefined, disposed = false;
     const live = () => !disposed && retention.active() && workspace.resolveTab(target) !== undefined && resource.getSnapshot().state === "ready" && document.getSnapshot() !== undefined;

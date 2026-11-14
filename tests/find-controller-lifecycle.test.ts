@@ -1,8 +1,45 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Workspace } from "../src/index.ts";
+import { createComparisonController, TextBuffer, Workspace } from "../src/index.ts";
 import { createFindController } from "../src/browser/find.ts";
 import type { EditingCandidate } from "../src/browser/editing-candidate.ts";
+
+test("controller and workspace notifications reject cross-owner writes through nested delivery", () => {
+    const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => errors.push(error) });
+    const documentId = workspace.createDocument({ scope: "find", resource: "notifications", variant: "working" }, "Source", "cat");
+    const tab = workspace.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>();
+    let serial = 0;
+    const owner = Object.assign(new EventTarget(), { defaultView: { performance,
+        setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
+    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), snapshot: () => ({ composing: false, disposed: false }),
+        viewport: { revealOffset: () => {} }, focus: () => {} } as unknown as EditingCandidate;
+    const find = createFindController(workspace, tab, editor), comparison = createComparisonController(workspace, tab, { buffer: TextBuffer.from("cat"), version: "one" });
+    const other = new Workspace(), independent = other.createDocument({ scope: "find", resource: "other", variant: "working" }, "Other", "a");
+    const write = () => workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision, origin: "human", edits: [{ from: 0, to: 0, insert: "x" }] });
+    const rejected: string[] = [], attempt = (name: string, command: () => unknown) => { try { command(); } catch (error) { if (error instanceof Error && /Reentrant mutation/.test(error.message)) rejected.push(name); else errors.push(error); } };
+    let attempted = false;
+    const stops = [find.state.subscribe(() => {
+        if (attempted) return; attempted = true;
+        attempt("workspace", write); attempt("comparison", () => comparison.advance()); attempt("find", () => find.cancel());
+        other.edit({ documentId: independent, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 1, insert: "b" }] });
+    })];
+    try {
+        find.setQuery("cat"); assert.deepEqual(rejected, ["workspace", "comparison", "find"]);
+        assert.equal(workspace.document(documentId).revision, 0); assert.equal(other.document(independent).text, "b");
+        const seen: number[] = [];
+        stops.push(workspace.subscribe(() => { seen.push(workspace.document(documentId).revision);
+            attempt("after nested workspace", write); attempt("after nested find", () => find.cancel());
+        }));
+        write(); assert.deepEqual(seen, [1]); assert.equal(find.state.getSnapshot().revision, 1);
+        assert.deepEqual(rejected, ["workspace", "comparison", "find", "after nested workspace", "after nested find"]);
+        assert.equal(find.state.getSnapshot().status, "searching"); assert.equal(workspace.document(documentId).text, "xcat");
+        find.cancel(); assert.equal(find.state.getSnapshot().status, "cancelled"); assert.equal(comparison.advance().status, "ready");
+        assert.deepEqual(errors, []);
+    } finally {
+        stops.forEach(stop => stop()); find.destroy(); comparison.dispose(); view.dispose(); workspace.close(tab);
+        assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0);
+    }
+});
 
 test("changing whole-word mode cancels captured replacement and excludes selected substring matches", () => {
     const workspace = new Workspace(), original = "cat scatter cat_ cat", documentId = workspace.createDocument({ scope: "find", resource: "options", variant: "working" }, "Source", original);

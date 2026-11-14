@@ -1,4 +1,4 @@
-import { NotificationScope, Store } from "../core/observable.ts";
+import { Store } from "../core/observable.ts";
 import type { DocumentId, TabId, Workspace } from "../core/workspace.ts";
 import { createLspHighlightClient } from "../protocol/lsp-highlights.ts";
 import type { LspDocumentHighlight } from "../protocol/lsp-highlights.ts";
@@ -16,7 +16,7 @@ export function createLspHighlightController(workspace: Workspace, tabId: TabId,
     if (tab?.surface.kind !== "text" || tab.surface.documentId !== documentId || !workspace.ownsDocumentView(view)) throw new Error("Invalid highlight view.");
     if (!Number.isFinite(delay) || delay < 0) throw new RangeError("Invalid highlight delay.");
     const client = createLspHighlightClient(options.provider), empty: readonly LspDocumentHighlight[] = Object.freeze([]);
-    const notifications = new NotificationScope(() => {}), cell = new Store<LspHighlightSnapshot>(Object.freeze({ status: "idle", documentId,
+    const notifications = workspace.createNotificationScope(), cell = new Store<LspHighlightSnapshot>(Object.freeze({ status: "idle", documentId,
         revision: workspace.document(documentId).revision, caret: null, items: empty }), notifications);
     const events = new AbortController(); let disposed = false, generation = 0, timer: number | undefined;
     let result: Awaited<ReturnType<typeof client.run>["result"]> | undefined;
@@ -60,8 +60,8 @@ export function createLspHighlightController(workspace: Workspace, tabId: TabId,
         })];
     for (const event of ["focus", "blur", "compositionstart", "compositionend"] as const) editor.input.addEventListener(event, refresh, { signal: events.signal });
     refresh();
-    return Object.freeze({ state: cell.observable, refresh,
+    return Object.freeze({ state: cell.observable, refresh: () => { notifications.assertWritable(); refresh(); },
         intersect: (from: number, to: number): readonly LspDocumentHighlight[] => result?.isCurrent() && available() && focused() ? result.intersect(from, to) : empty,
-        dispose: () => { if (disposed) return; disposed = true; cancel(); events.abort(); stops.forEach(stop => stop()); client.dispose(); publish("disposed"); } });
+        dispose: () => { if (disposed) return; notifications.assertWritable(); disposed = true; cancel(); events.abort(); stops.forEach(stop => stop()); client.dispose(); publish("disposed"); } });
 }
 export type LspHighlightController = ReturnType<typeof createLspHighlightController>;

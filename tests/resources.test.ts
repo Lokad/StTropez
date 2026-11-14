@@ -106,6 +106,33 @@ test("scoped subscriptions keep unrelated handles and metadata stable, deliver d
     assert.equal(workspace.document(source.documentId).text, "d");
 });
 
+test("deferred resource release follows final ownership and preserves later unsaved work", async () => {
+    const workspace = new Workspace(), keys = [workspace.createResourceKey("test", "display"), workspace.createResourceKey("test", "display")];
+    assert.notDeepEqual(keys[0], keys[1]); assert.ok(Object.isFrozen(keys[0]));
+    const source = workspace.createTextResource(keys[0]!, "Reference", { value: "base" }), target = workspace.captureResource(source.id);
+    const tab = workspace.open({ kind: "text", documentId: source.documentId }, "reference"), view = workspace.createDocumentView(source.documentId), lease = workspace.acquire(source.id);
+    workspace.releaseResourceWhenUnowned(source.id); view.dispose(); workspace.close(tab); await Promise.resolve();
+    assert.equal(workspace.resolveResource(target), source); assert.equal(workspace.document(source.documentId).text, "base");
+    lease.release(); const replacementLease = workspace.acquire(source.id); await Promise.resolve();
+    assert.equal(workspace.resolveResource(target), source); replacementLease.release(); await Promise.resolve();
+    assert.equal(workspace.resolveResource(target), undefined); assert.equal(source.getSnapshot().state, "released"); lease.release();
+
+    const observed = workspace.createTextResource(workspace.createResourceKey("test", "display"), "Observed", { value: "read" });
+    const observedView = workspace.createDocumentView(observed.documentId);
+    workspace.releaseResourceWhenUnowned(observed.id);
+    const stop = workspace.subscribe(() => observedView.dispose());
+    const trigger = workspace.createTextResource(workspace.createResourceKey("test", "trigger"), "Trigger", { value: "change" });
+    stop(); await Promise.resolve(); assert.equal(observed.getSnapshot().state, "released"); workspace.releaseResource(trigger.id);
+
+    const edited = workspace.createTextResource(keys[1]!, "Edited", { value: "base" }), held = workspace.acquire(edited.id), editedTarget = workspace.captureResource(edited.id);
+    workspace.releaseResourceWhenUnowned(edited.id);
+    workspace.edit({ documentId: edited.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "keep " }] });
+    held.release(); await Promise.resolve(); assert.equal(workspace.resolveResource(editedTarget), edited);
+    assert.equal(workspace.document(edited.documentId).text, "keep base"); assert.throws(() => workspace.releaseResourceWhenUnowned(edited.id), /Explicit discard/);
+    workspace.releaseResourceWhenUnowned(edited.id, true); assert.equal(edited.getSnapshot().state, "released");
+    assert.equal(workspace.diagnostics().resources, 0); assert.equal(workspace.diagnostics().leases, 0);
+});
+
 test("dirty close confirmations capture generations/revisions and hold ownership after closure", () => {
     const { workspace, source, form, tab, edit } = fixture();
     edit("dirty");

@@ -1,4 +1,4 @@
-import { NotificationScope, Store } from "../core/observable.ts";
+import { Store } from "../core/observable.ts";
 import { validateWorkBudget } from "../core/kernel-cursor.ts";
 import type { Observable } from "../core/observable.ts";
 import { createComparisonController } from "../core/comparison.ts";
@@ -23,7 +23,6 @@ export type TextComparison = Readonly<{
     setRowsAligned: (aligned: boolean) => void;
     selectHunk: (generation: number, index: number) => boolean; destroy: () => void;
 }>;
-let nextMount = 0;
 /** Two independently virtualized panes. Hosts own reference retrieval, acceptance, saving and execution. */
 export function mountTextComparison(host: HTMLElement, workspace: Workspace, workingTab: TabId, baseline: ComparisonBaseline,
     options: Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView; scrollLinked?: boolean; rowsAligned?: boolean;
@@ -34,7 +33,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     if (options.rowsAligned !== undefined && typeof options.rowsAligned !== "boolean") throw new TypeError("Expected a row-alignment preference.");
     const owner = host.ownerDocument, win = owner.defaultView;
     if (!win) throw new Error("Comparison requires an attached browser document.");
-    const controller = createComparisonController(workspace, workingTab, baseline, options), mount = ++nextMount;
+    const controller = createComparisonController(workspace, workingTab, baseline, options);
     const root = owner.createElement("div"), controls = owner.createElement("div"), panes = owner.createElement("div");
     root.className = "st-comparison"; root.setAttribute("role", "group"); root.setAttribute("aria-label", options.ariaLabel ?? "Text comparison");
     controls.className = "st-comparison-controls"; panes.className = "st-comparison-panes";
@@ -58,7 +57,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     let measuredGeneration = -1, steps = 0, advances = 0, maxStepMs = 0, totalStepMs = 0;
     let decoratedGeneration = -1, decoratedStatus: string | undefined;
     const listeners = new AbortController();
-    const referenceScope = new NotificationScope(() => {}), referenceStore = new Store<ComparisonReferenceView | undefined>(undefined, referenceScope);
+    const referenceScope = workspace.createNotificationScope(), referenceStore = new Store<ComparisonReferenceView | undefined>(undefined, referenceScope);
     const publishReference = (value: ComparisonReferenceView | undefined) => { const changed = new Set<Store<unknown>>(); referenceStore.set(value, changed); referenceScope.deliver([...changed]); };
     function rangeAt(side: "baseline" | "working", line: number): DiffRange | undefined {
         if (state.status !== "ready") return;
@@ -84,14 +83,14 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     const scroll = createComparisonScroll(win, working.viewport, () => reference, controller.getSnapshot, () => {
         return !busy(working) && !busy(referenceInput) && !alignment.snapshot().pending;
     });
-    const setScrollLinked = (value: boolean) => { scroll.setLinked(value); link.checked = scroll.snapshot().linked; };
-    const setRowsAligned = (value: boolean) => { const old = alignment.snapshot().enabled; alignment.setEnabled(value); align.checked = alignment.snapshot().enabled; if (value && !old) setScrollLinked(true); };
+    const setScrollLinked = (value: boolean) => { referenceScope.assertWritable(); scroll.setLinked(value); link.checked = scroll.snapshot().linked; };
+    const setRowsAligned = (value: boolean) => { referenceScope.assertWritable(); const old = alignment.snapshot().enabled; alignment.setEnabled(value); align.checked = alignment.snapshot().enabled; if (value && !old) setScrollLinked(true); };
     function clearReference(): void {
         publishReference(undefined);
         referenceEvents?.abort(); referenceEvents = undefined; referenceInput?.destroy(); referenceInput = undefined; reference = undefined;
         if (displayTarget && workspace.resolveTab(displayTarget)) workspace.close(displayTarget.id);
         displayTab = undefined; displayTarget = undefined;
-        if (display) { workspace.releaseResource(display.id); display = undefined; }
+        if (display) { const retired = display; display = undefined; workspace.releaseResourceWhenUnowned(retired.id); }
     }
     function visible(value: string): string { return value.replaceAll(" ", "·").replaceAll("\t", "⇥").replaceAll("\r", "␍").replaceAll("\n", "↵\n"); }
     const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
@@ -99,9 +98,9 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
         if (disposed) return; state = controller.getSnapshot();
         if (state.baseline && state.baseline.epoch !== epoch) {
             clearReference(); epoch = state.baseline.epoch;
-            display = workspace.createTextResourceFromBuffer({ scope: `comparison-${mount}`, resource: "baseline", variant: String(epoch) }, "Comparison baseline",
+            display = workspace.createTextResourceFromBuffer(workspace.createResourceKey("comparison", "baseline"), "Comparison baseline",
                 { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false, run: false });
-            displayTab = workspace.open({ kind: "text", documentId: display.documentId }, `comparison-${mount}`);
+            displayTab = workspace.open({ kind: "text", documentId: display.documentId }, display.id);
             displayTarget = workspace.captureTab(displayTab);
             referenceInput = mountEditingCandidate(referencePane.content, workspace, displayTab, { ariaLabel: "Comparison baseline source", decorate: decorate("baseline"), lineClass: lineClass("baseline") });
             reference = referenceInput.viewport; referenceEvents = new AbortController();
@@ -154,6 +153,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
         render(); if (controller.getSnapshot().status === "running") schedule();
     }
     function selectHunk(generation: number, index: number): boolean {
+        referenceScope.assertWritable();
         const current = controller.getSnapshot();
         if (disposed || composing() || current.status !== "ready" || current.generation !== generation || !Number.isSafeInteger(index)) return false;
         const hunk = current.hunks[index]; if (!hunk || !current.working || !reference) return false;
@@ -172,9 +172,13 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     align.addEventListener("change", () => setRowsAligned(align.checked), { signal: listeners.signal });
     const unsubscribe = controller.subscribe(schedule), unsubscribeWorkspace = workspace.subscribe(schedule);
     function destroy(): void {
-        if (disposed) return; disposed = true; if (timer !== undefined) win!.clearTimeout(timer);
-        unsubscribe(); unsubscribeWorkspace(); listeners.abort(); scroll.dispose(); alignment.dispose(); working.destroy(); clearReference(); controller.dispose();
-        state = controller.getSnapshot(); selected = -1; root.remove();
+        if (disposed) return; referenceScope.assertWritable(); disposed = true; if (timer !== undefined) win!.clearTimeout(timer);
+        try {
+            unsubscribe(); unsubscribeWorkspace(); listeners.abort(); scroll.dispose(); alignment.dispose();
+            try { working.destroy(); } finally { clearReference(); }
+        } finally {
+            try { controller.dispose(); } finally { state = controller.getSnapshot(); selected = -1; root.remove(); }
+        }
     }
     try { render(); setRowsAligned(options.rowsAligned ?? false); setScrollLinked(options.scrollLinked ?? options.rowsAligned ?? false); schedule(); } catch (error) { destroy(); throw error; }
     return Object.freeze({ element: root, controller, working, referenceViewport: () => reference, referenceEditor: () => referenceInput, reference: referenceStore.observable, selectHunk, setScrollLinked, setRowsAligned,

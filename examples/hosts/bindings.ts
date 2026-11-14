@@ -112,8 +112,12 @@ export class ViewBindings {
                 resumeReferenceFind = false;
             }
         };
-        const stopReferenceFind = reviewReference.subscribe(syncReferenceFind); syncReferenceFind();
-        this.detachReviewLanguage = () => { stopReferenceFind(); detachReferenceFind?.(); detachColors(); detachLinks(); detachActions(); detachRename(); detachSignature(); detachProject(); detachNavigation(); detachDomain(); detachPaste(); detachHover(); detachLanguage(); referencePresentation.clear(); };
+        let referenceSyncQueued = false, referenceSyncActive = true;
+        const stopReferenceFind = reviewReference.subscribe(() => {
+            if (referenceSyncQueued) return; referenceSyncQueued = true;
+            queueMicrotask(() => { referenceSyncQueued = false; if (referenceSyncActive) syncReferenceFind(); });
+        }); syncReferenceFind();
+        this.detachReviewLanguage = () => { referenceSyncActive = false; stopReferenceFind(); detachReferenceFind?.(); detachColors(); detachLinks(); detachActions(); detachRename(); detachSignature(); detachProject(); detachNavigation(); detachDomain(); detachPaste(); detachHover(); detachLanguage(); referencePresentation.clear(); };
         const state = this.states.get("comparison")?.get(view.documentId);
         if (state) this.review.working.restoreView(this.restoreState(state, view));
         if (this.referenceState?.baseline.buffer === baseline.buffer && this.referenceState.baseline.version === baseline.version)

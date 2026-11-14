@@ -262,7 +262,12 @@ function mountFile(file: DemoFile, focus = false): void {
                 (capture, signal) => plain
                     ? discoverIndentationFolds(capture.buffer, outlineFolds(editingConfiguration().tabSize!)) : syntax!.discoverFolds(capture, signal));
         };
-        stopReference = comparison.reference.subscribe(configureReference); configureReference();
+        let referenceSyncQueued = false, referenceSyncActive = true;
+        const unsubscribeReference = comparison.reference.subscribe(() => {
+            if (referenceSyncQueued) return; referenceSyncQueued = true;
+            queueMicrotask(() => { referenceSyncQueued = false; if (referenceSyncActive) configureReference(); });
+        });
+        stopReference = () => { referenceSyncActive = false; unsubscribeReference(); }; configureReference();
     } else {
         editor = mountEditingCandidate(element("editor"), project.workspace, file.tab,
             { view: file.view, ariaLabel: file.name, decorate: line => [...(project?.sample.id === "host" ? hostDecorations(line) : presentation.decorate(line)), ...(languageView?.decorate(line) ?? [])] });

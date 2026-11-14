@@ -1,4 +1,4 @@
-import { NotificationScope, Store } from "../core/observable.ts";
+import { Store } from "../core/observable.ts";
 import { FoldIndex, createFoldRegions } from "../core/folding.ts";
 import { reconcileFoldRanges } from "../core/fold-discovery.ts";
 import type { DiscoveredFold } from "../core/fold-discovery.ts";
@@ -20,7 +20,7 @@ export function createFoldingController(workspace: Workspace, tabId: TabId, edit
     if (tab?.surface.kind !== "text" || tab.surface.documentId !== view.documentId || !workspace.ownsDocumentView(view)) throw new Error("Invalid fold discovery view.");
     const delay = options.delayMs ?? 100;
     if (!Number.isFinite(delay) || delay < 0) throw new RangeError("Invalid fold discovery delay.");
-    const notifications = new NotificationScope(() => {});
+    const notifications = workspace.createNotificationScope();
     const cell = new Store<FoldingStatus>(Object.freeze({ status: "pending", revision: workspace.document(view.documentId).revision,
         regions: 0, collapsed: 0, groups: Object.freeze([]), message: "Discovering folds…" }), notifications);
     const listeners = new AbortController(); let disposed = false, generation = 0, timer: number | undefined;
@@ -87,6 +87,7 @@ export function createFoldingController(workspace: Workspace, tabId: TabId, edit
     const stopTab = workspace.tabState.subscribe(() => { if (!available()) cancel(); });
     const stopFolds = view.folding.subscribe(() => { if (!disposed) publish(cell.get().status, cell.get().message); });
     const runCommand = (command: FoldCommand, group?: string): boolean => {
+        notifications.assertWritable();
         if (!available() || busy()) return false;
         const document = workspace.document(view.documentId), before = view.folding.getSnapshot(), state = view.getSnapshot();
         const line = document.buffer.lineAt(state.selection.head), collapse = command === "collapse" || command === "collapse-all";
@@ -118,8 +119,8 @@ export function createFoldingController(workspace: Workspace, tabId: TabId, edit
         if (command && runCommand(command)) event.preventDefault();
     }, { signal: listeners.signal });
     refresh();
-    return Object.freeze({ state: cell.observable, refresh, runCommand, dispose: () => {
-        if (disposed) return; disposed = true; cancel(); listeners.abort(); stopDocument(); stopTab(); stopFolds(); publish("disposed");
+    return Object.freeze({ state: cell.observable, refresh: () => { notifications.assertWritable(); refresh(); }, runCommand, dispose: () => {
+        if (disposed) return; notifications.assertWritable(); disposed = true; cancel(); listeners.abort(); stopDocument(); stopTab(); stopFolds(); publish("disposed");
     } });
 }
 export type FoldingController = ReturnType<typeof createFoldingController>;

@@ -1,7 +1,7 @@
 import { TextBuffer } from "./text-buffer.ts";
 import { DiffReferenceCache, TextDiff } from "./diff.ts";
 import type { DiffHunk, DiffProgress } from "./diff.ts";
-import { NotificationScope, Store } from "./observable.ts";
+import { Store } from "./observable.ts";
 import { validateWorkBudget } from "./kernel-cursor.ts";
 import type { Observable } from "./observable.ts";
 import type { DocumentSnapshot, DocumentView, ResourceLease, TabId, TabTarget, TextResourceHandle, Workspace } from "./workspace.ts";
@@ -47,7 +47,7 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
     const retention = workspace.acquire(resource.id);
     let view: DocumentView;
     try { view = options.view ?? workspace.createDocumentView(documentId); } catch (error) { retention.release(); throw error; }
-    const scope = new NotificationScope(options.onListenerError ?? (() => {}));
+    const scope = workspace.createNotificationScope(options.onListenerError);
     const state = new Store<ComparisonSnapshot>(Object.freeze({ status: "running", generation: 0, baseline: initialBaseline,
         working: document, hunks: empty, progress: null, failure: null }), scope);
     const referenceCache = new DiffReferenceCache();

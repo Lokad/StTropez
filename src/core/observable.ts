@@ -3,25 +3,27 @@ export type Observable<T> = Readonly<{ getSnapshot: () => T; subscribe: (listene
 
 /** All stores publish before delivery. Reentrant writes are rejected, so a delivery sees one commit. */
 export class NotificationScope {
-    private delivering = false;
+    private readonly delivery: { depth: number };
     private subscriptions = 0;
     private readonly onListenerError: (error: unknown) => void;
-    constructor(onListenerError: (error: unknown) => void) { this.onListenerError = onListenerError; }
+    constructor(onListenerError: (error: unknown) => void, parent?: NotificationScope) {
+        this.onListenerError = onListenerError; this.delivery = parent?.delivery ?? { depth: 0 };
+    }
     assertWritable(): void {
-        if (this.delivering) throw new Error("Reentrant mutation during notification; queue the command in the host.");
+        if (this.delivery.depth) throw new Error("Reentrant mutation during notification; queue the command in the host.");
     }
     subscriptionChanged(delta: number): void { this.subscriptions += delta; }
     subscriptionCount(): number { return this.subscriptions; }
     deliver(stores: readonly Store<unknown>[]): void {
         const listeners = stores.flatMap(store => store.listeners());
-        this.delivering = true;
+        this.delivery.depth++;
         try {
             for (const listener of listeners) {
                 try { listener(); } catch (error) {
                     try { this.onListenerError(error); } catch { /* Error reporters cannot interrupt delivery. */ }
                 }
             }
-        } finally { this.delivering = false; }
+        } finally { this.delivery.depth--; }
     }
 }
 

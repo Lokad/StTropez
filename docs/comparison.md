@@ -24,8 +24,11 @@ must resolve the current handle after refresh. Focusing the reference viewport a
 The stable `reference` observable publishes an immutable `{ editor, target, epoch, version }`
 reference-view handle. `target` is the captured tab identity; it is separate from the buffer version,
 view and document revision. The observable publishes `undefined` before releasing an old editor or
-display resource, then publishes the replacement handle. Hosts cancel attached jobs and listeners
-at this boundary and unsubscribe when the comparison unmounts. `referenceSubscriptions` in the
+display resource, then publishes the replacement handle. Subscribers queue attachment and cleanup
+after notification delivery, resolve the latest handle, and cancel queued callbacks when the
+comparison unmounts. A retired baseline stays readable while a host lease or independent view
+owns it; the workspace releases it after that last owner leaves. The comparison still releases
+its own controller, editor and DOM immediately. `referenceSubscriptions` in the
 comparison work snapshot supports lifecycle diagnostics.
 
 
