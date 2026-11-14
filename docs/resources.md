@@ -13,6 +13,9 @@ its `accept` or `fail` operation transitions to ready or failed and finishes tha
 Retry uses the same resource ID. A superseded response is rejected even if the service ignored
 cancellation. An obsolete load retains ownership until its response settles or the host calls
 `finish` after settlement. Dirty resources and resources with reserved saves cannot refresh.
+An accepted text load clears history, resets every live view's selection to the start, and
+replaces its fold regions and line index at the new document revision. Hosts rediscover folds
+for the loaded text; fold commands captured before the load are stale.
 
 The host owns schema, validation, conversion and services. Typed values are finite acyclic
 plain objects/arrays and primitive values; functions, accessors, class instances, undefined and

@@ -83,6 +83,41 @@ test("loads distinguish readiness, ignore superseded responses and retain cancel
     assert.notEqual(fresh.id, handle.id);
 });
 
+test("text reload resets every view's folds and selection at the accepted document revision", () => {
+    const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => errors.push(error) }), initial = "header\nbody\nlast\n";
+    const resource = workspace.createTextResource({ scope: "load", resource: "source", variant: "working" }, "Source", { value: initial });
+    const views = [workspace.createDocumentView(resource.documentId), workspace.createDocumentView(resource.documentId)];
+    const old = views.map(view => {
+        view.setSelection(0, { anchor: initial.length, head: initial.length });
+        view.folding.setRanges(view.folding.getSnapshot(), [{ id: "old", from: 0, to: initial.length, collapsed: true }]);
+        return view.folding.getSnapshot();
+    });
+    let publications = 0;
+    const stop = workspace.observeDocument(resource.documentId).subscribe(() => {
+        const document = workspace.observeDocument(resource.documentId).getSnapshot(); if (!document) return;
+        publications++;
+        for (const view of views) {
+            const folds = view.folding.getSnapshot();
+            assert.equal(folds.revision, document.revision); assert.equal(folds.index.lineCount, document.buffer.lineCount);
+            assert.deepEqual(folds.regions, []);
+            assert.deepEqual(view.getSnapshot().selection, { anchor: 0, head: 0, anchorAffinity: "after", headAffinity: "after" });
+        }
+    });
+    for (const value of ["", "a\nb\nc\nd\ne\n", "short"]) {
+        assert.equal(workspace.beginLoad(resource).accept({ value }), true);
+        const document = workspace.document(resource.documentId);
+        for (const [i, view] of views.entries()) {
+            const folds = view.folding.getSnapshot();
+            assert.equal(folds.revision, document.revision); assert.equal(folds.generation, old[i]!.generation + document.revision);
+            assert.equal(folds.index.lineCount, document.buffer.lineCount); assert.equal(folds.index.collapsedCount, 0);
+            for (let row = 0; row < folds.index.visibleLineCount; row++) assert.doesNotThrow(() => document.buffer.offsetAt(folds.index.lineAt(row)));
+            assert.equal(view.folding.setCollapsed(old[i]!, "old", false), false);
+        }
+    }
+    assert.equal(publications, 3); assert.deepEqual(errors, []);
+    stop(); views.forEach(view => view.dispose()); workspace.releaseResource(resource.id);
+});
+
 test("scoped subscriptions keep unrelated handles and metadata stable, deliver despite errors and reject reentrant writes", () => {
     const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => { errors.push(error); throw new Error("Reporter failed"); } });
     const source = workspace.createTextResource({ scope: "probe", resource: "source", variant: "working" }, "Source", { value: "a" });

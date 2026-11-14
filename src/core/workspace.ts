@@ -668,8 +668,10 @@ export class Workspace {
                 const changed = new Set<Store<unknown>>(), revision = current.revision + 1;
                 this.setRecord(record, readySnapshot({ ...current.metadata, state: "ready", dirty: false, serverVersion: loaded.serverVersion ?? null, failure: null, saveStatus: "idle" },
                     revision, record.buffer ?? value), changed);
-                for (const view of record.views.values()) view.state.set(viewSnapshot(record.documentId!, revision,
-                    createSelectionSet(record.buffer!.length, [{ anchor: 0, head: 0 }])), changed);
+                for (const view of record.views.values()) {
+                    view.folds.set(foldingSnapshot(record.buffer!, revision, view.folds.get().generation + 1, Object.freeze([])), changed);
+                    view.state.set(viewSnapshot(record.documentId!, revision, createSelectionSet(record.buffer!.length, [{ anchor: 0, head: 0 }])), changed);
+                }
                 this.syncHistory(changed); this.publish(changed);
                 return true;
             } finally { operation.finish(); }
