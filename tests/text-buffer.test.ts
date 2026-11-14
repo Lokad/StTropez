@@ -66,11 +66,57 @@ test("random replay preserves UTF-16, CRLF and all retained roots against a stri
             assert.equal([...buffer.chunks(edit.from, Math.min(buffer.length, edit.from + 12))].join(""), text.slice(edit.from, edit.from + 12));
             if (index % 37 === 0) {
                 assert.equal(buffer.text(), text); buffer.diagnostics();
-                assert.equal(buffer.longestLineLength, text.split("\n").reduce((longest, line) => Math.max(longest, line.length), 0));
+                const lines = text.split("\n"), context = `${id}, edit ${index}: ${JSON.stringify(edit)}`;
+                assert.equal(buffer.longestLineLength, lines.reduce((longest, line) => Math.max(longest, line.length), 0), context);
+                assert.equal(buffer.lineCount, lines.length, context);
+                for (const offset of [0, edit.from, Math.floor(text.length / 2), text.length]) {
+                    assert.equal(buffer.lineAt(offset), text.slice(0, offset).split("\n").length - 1, context);
+                }
+                for (const line of [0, Math.floor(lines.length / 2), lines.length - 1]) {
+                    const expected = lines.slice(0, line).reduce((offset, value) => offset + value.length + 1, 0);
+                    assert.equal(buffer.offsetAt(line), expected, context);
+                }
             }
         }
         assert.equal(buffer.text(), text); history.forEach(entry => assert.equal(entry.buffer.text(), entry.text));
     }
+});
+
+for (const text of ["", "\n", "\r\n", "a\r\nb\r\n", "\ud800x\udc00", "😀e\u0301\n👩‍💻"]) {
+    test(`buffer validates ranges and line indexes without changing ${JSON.stringify(text)}`, () => {
+        const buffer = TextBuffer.from(text);
+        assert.equal(buffer.replace(0, 0, ""), buffer);
+        for (const [from, to] of [[-1, 0], [0, text.length + 1], [1.5, 2], [2, 1], [NaN, 0]] as const) {
+            assert.throws(() => buffer.replace(from, to, "x"), RangeError);
+            assert.throws(() => buffer.slice(from, to), RangeError);
+            assert.throws(() => buffer.chunks(from, to), RangeError);
+        }
+        for (const value of [-1, 0.5, NaN, Infinity]) {
+            assert.throws(() => buffer.lineAt(value), RangeError);
+            assert.throws(() => buffer.offsetAt(value), RangeError);
+        }
+        assert.throws(() => buffer.lineAt(text.length + 1), RangeError);
+        assert.throws(() => buffer.offsetAt(buffer.lineCount), RangeError);
+        assert.equal(buffer.text(), text);
+        assert.equal(buffer.lineAt(0), 0); assert.equal(buffer.offsetAt(0), 0);
+        assert.equal(buffer.lineAt(text.length), text.split("\n").length - 1);
+        assert.equal(buffer.offsetAt(buffer.lineCount - 1), text.lastIndexOf("\n") + 1);
+    });
+}
+
+test("buffer trees stay balanced under alternating end edits, deletes and retained history", () => {
+    let buffer = TextBuffer.from("x".repeat(100_000));
+    const history: { buffer: TextBuffer; text: string }[] = [];
+    for (let index = 0; index < 1_000; index++) {
+        const offset = index % 2 ? 0 : buffer.length;
+        buffer = buffer.replace(offset, offset, `${index}\n`);
+        if (index % 50 === 0) history.push({ buffer, text: buffer.text() });
+    }
+    for (let index = 0; index < 100; index++) buffer = buffer.replace(0, Math.min(17, buffer.length), "");
+    const shape = buffer.diagnostics(), retained = TextBuffer.retained(history.map(entry => entry.buffer));
+    assert.ok(shape.height <= 2 * Math.log2(shape.retention.nodes + 1));
+    assert.ok(retained.backingTextUnits < buffer.length * history.length);
+    history.forEach(entry => assert.equal(entry.buffer.text(), entry.text));
 });
 
 test("longest line indexing survives splits, joined lines, CRLF, empty lines and retained roots", () => {
