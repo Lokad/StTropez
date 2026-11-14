@@ -1,21 +1,25 @@
-name: Publish editor demo
+name: Qualify library and publish demo
 
 on:
   push:
     branches: [master, main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: github-pages
+  group: qualify-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      STTROPEZ_PORT: '4183'
+      STTROPEZ_DEMO_PORT: '4184'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -24,17 +28,24 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      - run: node --test tests/demo-browser-provider.test.ts tests/demo-recovery.test.ts tests/demo-syntax-colors.test.ts tests/demo-syntax.test.ts
-      - run: npm run build:demo
+      - run: npm test
+      - run: npm run build
       - run: npx playwright install --with-deps chromium
+      - run: npm run test:ci
+      - run: node scripts/build-demo.mjs
       - run: npm run test:demo -- --project=chromium
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
         with:
           path: artifacts/pages
 
   deploy:
     needs: build
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
     permissions:
       contents: read
       pages: write

@@ -72,6 +72,7 @@ assertion limits are separate. Pass `--workers=1` to Playwright for a serial foc
 
 ```sh
 npm run check          # Type checking, model tests, build, Chromium tests
+npm run test:ci        # Representative Chromium owner journeys used in CI
 npm run test:browsers  # Chromium, Firefox and WebKit
 npm run inspect        # Screenshot and machine-readable state
 npm run bench          # Representative model and bounded-editor timing samples
@@ -92,6 +93,13 @@ cause failures. [Qualification ownership](docs/qualification.md) separates focus
 broad boundaries and performance runs. Input-handler time, frame readiness and complete
 scripted action latency are different clocks; none establishes physical input/display latency.
 See [runtime ownership](docs/editor-ownership.md) for composition, caret and delayed work.
+
+Pushes to the main branches and pull requests run all model tests, strict type checking,
+the library build, `test:ci` and the Chromium static-demo suite. Pages publishes the same
+qualified static output from main-branch runs. Multi-engine and package qualification stay
+explicit checkpoint commands. Set `STTROPEZ_PORT` for development/browser tests and
+`STTROPEZ_DEMO_PORT` for static preview/demo tests when their default ports (4173/4174)
+are occupied; both the launcher and test configuration use those environment values.
 
 ## Layout
 

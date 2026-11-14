@@ -18,6 +18,6 @@ export async function serveDemo(port = 0, prefix = "/StTropez/") {
     return { url: `http://127.0.0.1:${server.address().port}${prefix}`, close: () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())) };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-    const server = await serveDemo(4174); console.log(`Static demo: ${server.url}`);
+    const server = await serveDemo(Number(process.env.STTROPEZ_DEMO_PORT ?? 4174)); console.log(`Static demo: ${server.url}`);
     for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, async () => { await server.close(); process.exit(0); });
 }

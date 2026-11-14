@@ -74,7 +74,7 @@ export async function startServer(port) {
     })() };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-    const server = await startServer(4173);
+    const server = await startServer(Number(process.env.STTROPEZ_PORT ?? 4173));
     console.log(`StTropez: ${server.url}`);
     process.on("SIGINT", async () => { await server.close(); process.exit(0); });
     process.on("SIGTERM", async () => { await server.close(); process.exit(0); });
