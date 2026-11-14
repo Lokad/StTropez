@@ -13,6 +13,13 @@ test("selection sets normalize overlaps, occupied carets and primary direction w
     assert.equal(set.ranges[0]!.anchorAffinity, "before"); assert.equal(set.ranges[0]!.headAffinity, "after");
     raw[2]!.anchor = 25; assert.equal(set.ranges[0]!.anchor, 4);
     assert.ok(Object.isFrozen(set)); assert.ok(Object.isFrozen(set.ranges)); assert.ok(set.ranges.every(Object.isFrozen));
+    assert.strictEqual(createSelectionSet(25, set.ranges, set.primary), set);
+    assert.strictEqual(createSelectionSet(30, set.ranges, set.primary), set);
+    assert.throws(() => createSelectionSet(19, set.ranges, set.primary), RangeError);
+    assert.throws(() => createSelectionSet(NaN, set.ranges, set.primary), RangeError);
+    assert.equal(createSelectionSet(25, set.ranges, 1).primary, 1);
+    const frozenInput = Object.freeze([Object.freeze({ anchor: 4, head: 1 }), Object.freeze({ anchor: 0, head: 0 })]);
+    assert.deepEqual(endpoints(createSelectionSet(5, frozenInput)), [[0, 0], [4, 1]]);
     assert.deepEqual(endpoints(createSelectionSet(5, [{ anchor: 1, head: 1 }, { anchor: 1, head: 3 }], 0)), [[1, 3]]);
     assert.deepEqual(endpoints(createSelectionSet(5, [{ anchor: 0, head: 2 }, { anchor: 2, head: 4 }])), [[0, 2], [2, 4]]);
     for (const run of [() => createSelectionSet(-1, [{ anchor: 0, head: 0 }]), () => createSelectionSet(2, []),
@@ -29,6 +36,19 @@ test("mapping coalesces deleted carets while retaining primary identity and indi
     assert.equal(after.ranges[1]!.anchorAffinity, "before"); assert.equal(after.ranges[1]!.headAffinity, "before");
     assert.strictEqual(mapSelectionSet(new PositionMap(12, []), before), before);
     assert.deepEqual(endpoints(before), [[3, 3], [4, 4], [8, 10]]);
+    // Different affinities inside one replacement can reverse the output order.
+    const opposite = createSelectionSet(10, [
+        { anchor: 3, head: 2, anchorAffinity: "after", headAffinity: "after" },
+        { anchor: 4, head: 5, anchorAffinity: "before", headAffinity: "before" },
+    ]);
+    const replacement = new PositionMap(10, [{ from: 1, to: 7, insert: "abc" }]);
+    const reordered = mapSelectionSet(replacement, opposite);
+    assert.deepEqual(endpoints(reordered), [[1, 1], [4, 4]]); assert.equal(reordered.primary, 1);
+    // Host mappings need only the existing point/range contract, and may use their receiver.
+    const custom = { oldLength: replacement.oldLength, newLength: replacement.newLength,
+        map(offset: number, affinity?: "before" | "after") { assert.equal(this.oldLength, 10); return replacement.map(offset, affinity); },
+        mapRange: replacement.mapRange.bind(replacement), invert: replacement.invert.bind(replacement) };
+    assert.deepEqual(mapSelectionSet(custom, opposite), reordered);
 });
 
 test("selection replacement plans preserve original coordinates, per-range text and resulting primary carets", () => {

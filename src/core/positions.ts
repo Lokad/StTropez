@@ -7,6 +7,8 @@ export type AnchoredRange = Readonly<{ from: number; to: number; fromAffinity: A
     onDelete: "collapse" | "invalidate" }>;
 export type PositionMapping = Readonly<{ oldLength: number; newLength: number;
     map: (offset: number, affinity?: Affinity) => MappedPosition;
+    /** Independent lookup cursor. Ordered endpoints reuse progress; arbitrary order remains valid. */
+    createMapper?: () => PositionMapping["map"];
     mapRange: (range: AnchoredRange) => AnchoredRange | undefined;
     invert: () => PositionMapping;
     isSingleInsertion?: (offset: number, units: number) => boolean }>;
@@ -59,13 +61,43 @@ class ChangePositionMap implements PositionMapping {
     }
     map(offset: number, side: Affinity = "after"): MappedPosition {
         position(this.oldLength, offset); affinity(side);
-        const change = this.changes[this.preceding(offset, side)];
+        return this.mapped(offset, side, this.preceding(offset, side));
+    }
+    createMapper(): PositionMapping["map"] {
+        let previous = -1, before = -1, after = -1;
+        return (offset, side = "after") => {
+            position(this.oldLength, offset); affinity(side);
+            if (offset !== previous) {
+                before = this.preceding(offset, "before", offset > previous ? after + 1 : 0);
+                after = this.preceding(offset, "after", before + 1);
+                previous = offset;
+            }
+            return this.mapped(offset, side, side === "before" ? before : after);
+        };
+    }
+    private mapped(offset: number, side: Affinity, index: number): MappedPosition {
+        const change = this.changes[index];
         if (!change) return Object.freeze({ offset, deleted: false });
         if (offset < change.to) return Object.freeze({ offset: change.from + change.deltaBefore + (side === "after" ? change.insertedLength : 0), deleted: offset > change.from });
         return Object.freeze({ offset: offset + (change.deltaBefore + (change.insertedLength - (change.to - change.from))), deleted: false });
     }
-    private preceding(offset: number, side: Affinity): number {
-        let low = 0, high = this.changes.length;
+    private preceding(offset: number, side: Affinity, start?: number): number {
+        let low = start ?? 0, high = this.changes.length;
+        // Gallop from a cursor's known prefix: nearby endpoints advance in constant time,
+        // while a sparse jump (including the first lookup at EOF) stays logarithmic.
+        if (start !== undefined) {
+            let step = 1;
+            while (low < high) {
+                const from = this.changes[low]!.from;
+                if (from > offset || from === offset && side === "before") { high = low; break; }
+                const next = Math.min(high, low + step);
+                low++;
+                if (next === high) break;
+                const end = this.changes[next]!.from;
+                if (end > offset || end === offset && side === "before") { high = next; break; }
+                low = next; step *= 2;
+            }
+        }
         while (low < high) {
             const middle = low + Math.floor((high - low) / 2), from = this.changes[middle]!.from;
             if (from < offset || from === offset && side === "after") low = middle + 1;

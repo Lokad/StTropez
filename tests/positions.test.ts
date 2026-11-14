@@ -25,6 +25,12 @@ test("position mapping defines insertion, replacement, deletion and adjacent-bat
     assert.deepEqual(stacked.map(1, "after"), { offset: 1026, deleted: false });
     assert.deepEqual(stacked.map(2, "before"), { offset: 1025, deleted: true });
     assert.deepEqual(stacked.map(3, "after"), { offset: 1030, deleted: false });
+    const cursor = stacked.createMapper();
+    for (const offset of [4, 0, 1, 1, 2, 3, 3, 4, 1]) for (const side of ["after", "before", "after"] as const)
+        assert.deepEqual(cursor(offset, side), stacked.map(offset, side));
+    assert.throws(() => cursor(-1), RangeError); assert.throws(() => cursor(5), RangeError);
+    assert.throws(() => cursor(1, "invalid" as "after"), TypeError);
+    assert.deepEqual(cursor(1, "before"), stacked.map(1, "before"));
     // Length-only maps need no document allocation, including near the safe-integer bound.
     const length = Number.MAX_SAFE_INTEGER;
     const large = new PositionMap(length, [{ from: 0, to: 0, insert: "ab" }, { from: 1, to: length - 1, insert: "" }]);
@@ -106,8 +112,11 @@ test("seeded batches, inverse edits and compositions map every UTF-16 boundary a
         return spans;
     };
     const check = (actual: PositionMapping, expected: Pick<ReturnType<typeof mappingOracle>, "map" | "mapRange">, spans: readonly [number, number][], context: string) => {
-        for (let offset = 0; offset <= actual.oldLength; offset++) for (const side of ["before", "after"] as const)
+        const cursor = actual.createMapper?.();
+        for (let offset = 0; offset <= actual.oldLength; offset++) for (const side of ["after", "before"] as const) {
             assert.deepEqual(actual.map(offset, side), expected.map(offset, side), `${context}; offset=${offset}, ${side}`);
+            if (cursor) assert.deepEqual(cursor(offset, side), expected.map(offset, side), `${context}; cursor offset=${offset}, ${side}`);
+        }
         for (const [from, to] of spans) for (const fromAffinity of ["before", "after"] as const) for (const toAffinity of ["before", "after"] as const) for (const onDelete of ["collapse", "invalidate"] as const) {
             const range = { from, to, fromAffinity, toAffinity, onDelete };
             assert.deepEqual(actual.mapRange(range), expected.mapRange(range), `${context}; range=${JSON.stringify(range)}`);

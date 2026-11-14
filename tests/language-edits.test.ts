@@ -28,6 +28,15 @@ test("configured line indentation and comments preserve reversed selections, bla
     assert.equal(plan("// first\nsecond", selection(0, 15), "line-comment").text, "// // first\n// second");
     assert.equal(plan("", selection(0), "line-comment").text, "// ");
     assert.equal(plan("\tx", selection(0, 2), "indent", { tabSize: 4, insertSpaces: false }).text, "\t\tx");
+    const directed = [{ anchor: 5, head: 2, anchorAffinity: "before", headAffinity: "before" },
+        { anchor: 6, head: 9, anchorAffinity: "before", headAffinity: "before" }] as const;
+    const multiple = plan("  one\ntwo", directed, "line-comment");
+    assert.deepEqual(multiple.ranges, [[8, 5], [12, 15]]);
+    assert.ok(multiple.value.selectionSet.ranges.every(range => range.anchorAffinity === "before" && range.headAffinity === "before"));
+    // Raw public input defaults affinities after mapping, including a collapsed reversed range.
+    const raw = planLanguageEdit(TextBuffer.from("  x"), { ranges: [{ anchor: 2, head: 0 }], primary: 0 }, "outdent", resolveLanguageConfiguration(configuration)).next();
+    assert.equal(raw.done, true);
+    assert.deepEqual(raw.value!.selectionSet.ranges, [{ anchor: 0, head: 0, anchorAffinity: "after", headAffinity: "after" }]);
 });
 
 test("block comments and pair surrounds retain directed and adjacent selections without copying selected text", () => {

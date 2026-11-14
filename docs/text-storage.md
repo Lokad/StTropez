@@ -155,6 +155,20 @@ one position or anchored range then uses binary search in the changes, including
 insertion boundaries. Inverse maps build the same index from lengths alone. Composed maps
 still visit their constituent maps; their cost also depends on the number of grouped steps.
 
+`PositionMap.createMapper()` returns an independent lookup cursor with the same validation,
+affinity and deletion results as `map`. Ordered original endpoints reuse the known prefix;
+sparse jumps use exponential bounds and binary search. Repeated offsets can use either
+affinity in any order. A backward query restarts the search, so arbitrary order remains valid.
+Custom `PositionMapping` implementations may omit this optional method. Selection mapping
+and language-command planning use it when available, visiting a reverse selection's lower
+endpoint first. The immutable map itself retains no cursor state.
+
+Selection construction reuses its own deeply frozen normalized arrays when the primary
+index matches and the endpoints fit the requested length. Caller-owned inputs still undergo
+validation and normalization. Mapped outputs still coalesce overlaps and sort when necessary:
+opposing affinities within a replacement can reverse their order. Reuse establishes geometry,
+not document identity or revision.
+
 `anchoredRange` defaults to excluding new insertions at its boundaries (`after` at the start,
 `before` at the end). The deletion policy either collapses the range or invalidates it when
 its original content is fully consumed. Partially deleted ranges shrink. This is a geometry

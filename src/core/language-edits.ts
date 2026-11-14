@@ -2,7 +2,7 @@ import type { TextBuffer } from "./text-buffer.ts";
 import type { TextEdit } from "./changes.ts";
 import type { Selection } from "./history.ts";
 import { PositionMap } from "./positions.ts";
-import { createSelectionSet } from "./selections.ts";
+import { createSelectionSet, mapSelectionRanges } from "./selections.ts";
 import type { SelectionSet, SelectionEditPlan } from "./selections.ts";
 
 export type EditingCommand = "indent" | "outdent" | "line-comment" | "block-comment" | "newline";
@@ -62,8 +62,7 @@ function lineEnding(buffer: TextBuffer, line: number): string {
 }
 function mapped(buffer: TextBuffer, selections: SelectionSet, edits: readonly TextEdit[]): SelectionEditPlan {
     const mapping = new PositionMap(buffer.length, edits);
-    return result(edits, createSelectionSet(mapping.newLength, selections.ranges.map(range => ({ ...range,
-        anchor: mapping.map(range.anchor, "after").offset, head: mapping.map(range.head, "after").offset })), selections.primary));
+    return result(edits, mapSelectionRanges(mapping, selections, "after"));
 }
 function result(edits: readonly TextEdit[], selectionSet: SelectionSet): SelectionEditPlan {
     return Object.freeze({ edits: Object.freeze(edits.map(edit => Object.freeze(edit))), selectionSet });
