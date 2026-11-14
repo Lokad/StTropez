@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
+import { createReportWriter } from "./benchmark-report.mjs";
 import { openHarness } from "./browser-harness.mjs";
 import { corpus } from "../tests/fixtures/workloads.ts";
-import { distribution, environment, sourceIdentity } from "./measurement.mjs";
+import { distribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
 import { typeHostSuffix } from "./host-typing.mjs";
 
 const source = await sourceIdentity(), smoke = process.env.STTROPEZ_HOST_SMOKE === "1", warmup = smoke ? 0 : 3, measured = smoke ? 1 : 10;
+const writer = await createReportWriter("artifacts/bench/hosts", smoke ? "smoke" : "full");
 let activeCase;
 const harness = await openHarness(), cases = [];
 const snapshot = () => harness.page.evaluate(() => window.hostFixture.snapshot());
@@ -105,17 +106,15 @@ try {
         }
         cases.push({ host, editor, corpus: corpusId, length: original.length, warmup, measured, workflowAutomationProxyMs: distribution(samples.map(s => s.workflowAutomationProxyMs)),
             disposeAutomationProxyMs: distribution(samples.map(s => s.disposeAutomationProxyMs)), proposalTransactionMs: distribution(samples.map(s => s.proposalTransactionMs)), samples });
-        console.log(JSON.stringify({ host, editor, corpus: corpusId, samples: measured, workflowProxyP95: cases.at(-1).workflowAutomationProxyMs.p95, proposalP95: cases.at(-1).proposalTransactionMs.p95 }));
+        console.log(JSON.stringify({ host, editor, corpus: corpusId, workflowProxyMs: timingSummary(cases.at(-1).workflowAutomationProxyMs), proposalMs: timingSummary(cases.at(-1).proposalTransactionMs) }));
     }
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
-    await mkdir("artifacts/bench/hosts", { recursive: true });
-    await writeFile("artifacts/bench/hosts/latest.json", JSON.stringify({ schemaVersion: 3, created: new Date().toISOString(), source, smoke,
+    await writer.write({ schemaVersion: 3, status: "passed", created: new Date().toISOString(), source, smoke,
         environment: { ...environment(), browser: harness.browser.version(), viewport: { width: 1440, height: 900 } }, cases, errors: harness.errors,
-        note: "Synthetic complete host workflows with two source editor views, an immutable-reference/editable-working comparison after proposal delivery, a typed form and 20Hz activity. Candidate cases include 100,000 lines. Three warmups and ten measured fresh-page workflows per condition unless explicitly smoke mode. Workflow/disposal proxies include automation transport, controls, local deferred service settlement, RAF/readiness polling, completed diff work and current comparison viewports. No imposed network delay or physical presentation is measured. Proposal transaction timing covers synchronous request acceptance and workspace/view notification, excluding host navigation/rendered-frame readiness. Observed input-handler samples are only selected candidate keystrokes; ordinary input has its separate report. Full working/reference text oracles are outside timing. Explicit service capture can export exact whole text; routine candidate rendering and diagnostics remain bounded. Review step metrics describe the latest diff generation, not the longest call across the workflow. Desktop diagnostic measurements establish no production tail, retention, native-device or renderer-selection guarantee." }, null, 2));
+        note: "Synthetic complete host workflows with two source editor views, an immutable-reference/editable-working comparison after proposal delivery, a typed form and 20Hz activity. Candidate cases include 100,000 lines. Three warmups and ten measured fresh-page workflows per condition unless explicitly smoke mode. Workflow/disposal proxies include automation transport, controls, local deferred service settlement, RAF/readiness polling, completed diff work and current comparison viewports. No imposed network delay or physical presentation is measured. Proposal transaction timing covers synchronous request acceptance and workspace/view notification, excluding host navigation/rendered-frame readiness. Observed input-handler samples are only selected candidate keystrokes; ordinary input has its separate report. Full working/reference text oracles are outside timing. Explicit service capture can export exact whole text; routine candidate rendering and diagnostics remain bounded. Review step metrics describe the latest diff generation, not the longest call across the workflow. Desktop diagnostic measurements establish no production tail, retention, native-device or renderer-selection guarantee." });
 } catch (error) {
     const observed = await harness.page.evaluate(() => { const f = window.hostFixture; if (!f) return null; const s = f.snapshot();
         return { snapshot: s, head: f.range(0, Math.min(s.source.length, 80)), tail: f.range(Math.max(0, s.source.length - 100), s.source.length) }; }).catch(failure => ({ observationError: String(failure) }));
-    await mkdir("artifacts/bench/hosts", { recursive: true });
-    await writeFile(`artifacts/bench/hosts/failure-${Date.now()}.json`, JSON.stringify({ source, activeCase, error: String(error), observed, browserErrors: harness.errors }, null, 2));
+    await writer.write({ status: "failed", source, smoke, cases, activeCase, error: String(error), observed, browserErrors: harness.errors });
     throw error;
 } finally { await harness.close(); }

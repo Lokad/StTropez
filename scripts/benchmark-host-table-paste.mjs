@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
+import { createReportWriter } from "./benchmark-report.mjs";
 import { performance } from "node:perf_hooks";
 import { openHarness } from "./browser-harness.mjs";
-import { distribution, environment, sourceIdentity } from "./measurement.mjs";
+import { distribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
 import { corpus } from "../tests/fixtures/workloads.ts";
 
-const source = await sourceIdentity(), harness = await openHarness(), page = harness.page, directory = "artifacts/bench/host-table-paste";
+const source = await sourceIdentity(), writer = await createReportWriter("artifacts/bench/host-table-paste", "full");
+const harness = await openHarness(), page = harness.page;
 const report = { schemaVersion: 1, created: new Date().toISOString(), source, environment: { ...environment(), browser: harness.browser.version(), viewport: { width: 1440, height: 900 } },
     status: "running", active: null, cases: [],
     scope: "One fixed table-paste experiment: both hosts, normal/100k sources, HTML/TSV, two raw warmups and ten measured workflows per group. Normal tables have two rows; large tables have1500. One captured caret, independent source/review views, immutable reference, actual worker reply before the point and20Hz background host traffic. No prior experiment rerun.",
     clocks: "captureHandlerMs covers only the host capture listener; it excludes candidate cleanup and conversion. dispatchMs wraps complete synchronous synthetic paste dispatch, including all listeners. maxTurnMs covers entire scheduled conversion callbacks, including final assembly, commit/publication and scheduling. commitMs measures the atomic model call including synchronous subscribers; conversionToCommitMs starts after clipboard capture and stops at commit. eventToReviewReadyMs requires exact revision, complete selections, all working views, caret/scans, immutable reference/comparison and two RAFs; later language replies are excluded. completeActionProxyMs includes automation payload transfer and the same readiness. workflowMs includes setup, fold-free controls, oracles, shared undo and disposal. No OS clipboard, native IME, CPU or physical-display qualification.",
     retention: "All raw warmups and observations are retained. Failed partial workflows and the last active identity are saved without automatic retries." };
-await mkdir(directory, { recursive: true }); const save = () => writeFile(directory + "/latest.json", JSON.stringify(report, null, 2));
+const save = () => writer.write(report);
 const click = name => page.getByRole("button", { name, exact: true }).click();
 const ready = () => page.waitForFunction(() => { const s = window.hostFixture?.snapshot(), c = s?.bindings.comparison;
     return s && !s.bindings.tablePaste.pending && s.bindings.views.every(v => !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.pendingDragScroll && !v.metrics.viewport.pending
@@ -77,8 +78,9 @@ try {
         group.distributions = Object.fromEntries(["captureHandlerMs", "dispatchMs", "maxTurnMs", "commitMs", "conversionToCommitMs", "eventToReviewReadyMs", "completeActionProxyMs"].map(key => [key, distribution(observed.map(s => s.paste[key]))]));
         group.distributions.workflowMs = distribution(observed.map(s => s.workflowMs));
     }
+    assert.equal((await sourceIdentity()).sha256, source.sha256, "Source changed during measurement.");
     report.status = "passed"; report.active = null; report.finished = new Date().toISOString(); await save();
-    console.log(JSON.stringify(report.cases.map(g => ({ host: g.host, corpus: g.corpus, format: g.format, dispatchP95: g.distributions.dispatchMs.p95, callbackP95: g.distributions.maxTurnMs.p95,
-        readyP95: g.distributions.eventToReviewReadyMs.p95, actionP95: g.distributions.completeActionProxyMs.p95 }))));
+    console.log(JSON.stringify(report.cases.map(g => ({ host: g.host, corpus: g.corpus, format: g.format, dispatchMs: timingSummary(g.distributions.dispatchMs), callbackMs: timingSummary(g.distributions.maxTurnMs),
+        readyMs: timingSummary(g.distributions.eventToReviewReadyMs), actionMs: timingSummary(g.distributions.completeActionProxyMs) }))));
 } catch (error) { report.status = "failed"; report.failure = String(error.stack ?? error); report.finished = new Date().toISOString(); await save(); throw error; }
 finally { await harness.close(); }

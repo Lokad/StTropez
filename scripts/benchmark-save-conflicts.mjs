@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
+import { createReportWriter } from "./benchmark-report.mjs";
 import { openHarness } from "./browser-harness.mjs";
-import { distribution, environment, sourceIdentity } from "./measurement.mjs";
+import { distribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
 import { corpus } from "../tests/fixtures/workloads.ts";
 import { typeHostSuffix } from "./host-typing.mjs";
 
 const source = await sourceIdentity(), smoke = process.env.STTROPEZ_CONFLICT_SMOKE === "1", warmup = smoke ? 0 : 3, measured = smoke ? 1 : 10;
+const writer = await createReportWriter("artifacts/bench/save-conflicts", smoke ? "smoke" : "full");
 const harness = await openHarness(), cases = [], snapshot = () => harness.page.evaluate(() => window.hostFixture.snapshot());
 const click = name => harness.page.getByRole("button", { name, exact: true }).click();
 async function ready() {
@@ -99,15 +100,16 @@ try {
             inputHandlerMs: editor === "candidate" ? distribution(samples.map(s => s.point.inputHandlerMs)) : null,
             inputToReviewReadyProxyMs: distribution(samples.map(s => s.point.inputToReviewReadyProxyMs)), completeActionProxyMs: distribution(samples.map(s => s.point.completeActionProxyMs)), samples };
         const large = original.length > 100000;
-        result.provisionalBudgets = { handlerMs: 16, readyMs: large ? 250 : 100, completeActionMs: large ? 500 : 200,
-            handlerMet: result.inputHandlerMs ? result.inputHandlerMs.p95 <= 16 : null,
-            readinessMet: result.inputToReviewReadyProxyMs.p95 <= (large ? 250 : 100), completeActionMet: result.completeActionProxyMs.p95 <= (large ? 500 : 200) };
-        cases.push(result); console.log(JSON.stringify({ host, editor, corpus: corpusId, samples: measured, handlerP95: result.inputHandlerMs?.p95 ?? null,
-            reviewReadyP95: result.inputToReviewReadyProxyMs.p95, completeActionP95: result.completeActionProxyMs.p95, workflowP95: result.workflowActionProxyMs.p95 }));
+        const statistic = result.completeActionProxyMs.statistic;
+        result.provisionalBudgets = { statistic, n: measured, handlerMs: 16, readyMs: large ? 250 : 100, completeActionMs: large ? 500 : 200,
+            handlerMet: result.inputHandlerMs ? result.inputHandlerMs[statistic] <= 16 : null,
+            readinessMet: result.inputToReviewReadyProxyMs[statistic] <= (large ? 250 : 100), completeActionMet: result.completeActionProxyMs[statistic] <= (large ? 500 : 200) };
+        cases.push(result); console.log(JSON.stringify({ host, editor, corpus: corpusId, handlerMs: result.inputHandlerMs ? timingSummary(result.inputHandlerMs) : null,
+            reviewReadyMs: timingSummary(result.inputToReviewReadyProxyMs), completeActionMs: timingSummary(result.completeActionProxyMs), workflowMs: timingSummary(result.workflowActionProxyMs) }));
     }
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
-    await mkdir("artifacts/bench/save-conflicts", { recursive: true });
-    await writeFile("artifacts/bench/save-conflicts/latest.json", JSON.stringify({ schemaVersion: 1, created: new Date().toISOString(), source, smoke,
+    await writer.write({ schemaVersion: 1, status: "passed", created: new Date().toISOString(), source, smoke,
         environment: { ...environment(), browser: harness.browser.version(), viewport: { width: 1440, height: 900 } }, cases, errors: harness.errors,
-        note: "Deferred local conflict/review/retry workflows with two source views, immutable remote reference, editable comparison and 20Hz host traffic. External writer setup is outside the workflow clock. No network or imposed service delay. Stage timings include automation controls, typing while waiting, settlement and completed comparison/view readiness. Point input begins at document-capture beforeinput and ends after exact text/revision/primary selection and all working viewports plus diff are current for two frames. Complete point action begins before keyboard automation and includes transport and returning the readiness result. Adapter-handler elapsed time is separate; the native baseline has no corresponding handler timer. These elapsed clocks do not measure process CPU time. Full text/reference oracles are outside timing. Three warmups and ten fresh-page measured workflows per condition unless explicitly smoke. Neither proxy measures physical presentation; this diagnostic does not qualify native IME, contextual long-line geometry, production tails or adoption budgets." }, null, 2));
-} finally { await harness.close(); }
+        note: "Deferred local conflict/review/retry workflows with two source views, immutable remote reference, editable comparison and 20Hz host traffic. External writer setup is outside the workflow clock. No network or imposed service delay. Stage timings include automation controls, typing while waiting, settlement and completed comparison/view readiness. Point input begins at document-capture beforeinput and ends after exact text/revision/primary selection and all working viewports plus diff are current for two frames. Complete point action begins before keyboard automation and includes transport and returning the readiness result. Adapter-handler elapsed time is separate; the native baseline has no corresponding handler timer. These elapsed clocks do not measure process CPU time. Full text/reference oracles are outside timing. Three warmups and ten fresh-page measured workflows per condition unless explicitly smoke. Neither proxy measures physical presentation; this diagnostic does not qualify native IME, contextual long-line geometry, production tails or adoption budgets." });
+} catch (error) { await writer.write({ status: "failed", source, smoke, cases, error: String(error), browserErrors: harness.errors }); throw error; }
+finally { await harness.close(); }

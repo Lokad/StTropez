@@ -180,12 +180,25 @@ the UTF-16 horizontal estimate still needs measured glyph geometry for long shap
   hardware, viewport/font, build mode, power settings, sample count and raw samples. Separate
   cold and warm results. Test production bundles for release decisions.
 - Alternate baseline/candidate order on the same machine, use repeated independent runs,
-  report p50/p95 and enough observations before claiming p99. Do not compare noisy CI machines
+  report sample count and p50/max for batches below 20; use p95 only with enough observations
+  and a stated sampling method, and gather more before claiming p99. Do not compare noisy CI machines
   directly. Keep detailed tracing in separate diagnostic runs so its overhead is explicit.
 - Start with deterministic guards for bounded DOM, unchanged-resource notification counts,
   bounded caches and actual operation success. Add timing thresholds only after establishing
   variance on reference hardware, with both an absolute budget and a meaningful regression
   allowance. Missing samples or a skipped path must fail a benchmark, not produce a fast score.
+
+The shared distribution includes `n`, `max` and the exact nearest-rank `p95`. With fewer than
+20 samples, that p95 is the sample maximum, so `statistic` is `max` and console summaries omit
+the p95 label. These small batches describe observed values, not production latency tails.
+
+Host workflows, save/conflicts, services, folding and table-paste reports use one writer. Each
+explicit variant keeps `artifacts/bench/<driver>/<variant>/runs/<run-id>.json`; only a passed
+run updates that variant's `latest.json`. Writes use a temporary file and rename. Running and
+failed records retain their own run identity and cannot replace the last passed report; completed
+records cannot be rewritten. Full and smoke variants are separate. Services additionally separate
+literal/regex, whole-word/substring and case-sensitive/ignore-case choices. Existing historical
+artifacts remain intact. Report writing stays outside the timed point actions.
 
 At 60 Hz, a frame is 16.7 ms; at 120 Hz, 8.3 ms. A provisional synchronous model budget of
 p95 below 4 ms on reference hardware leaves some room for the host and browser, but does not

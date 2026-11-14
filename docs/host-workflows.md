@@ -313,6 +313,12 @@ Two source views, an integrated comparison after proposal delivery and 20 Hz hos
 active. Reports contain exact source/environment metadata and raw samples. Full text oracles
 run outside timed intervals, and actual candidate mounts are required.
 
+Host and save/conflict drivers write separate `full` and `smoke` directories under their benchmark
+directory. Each run is retained; `latest.json` refers only to a passed run of that variant.
+Set `STTROPEZ_HOST_SMOKE=1` or `STTROPEZ_CONFLICT_SMOKE=1` for a one-observation wiring check.
+Its output cannot replace full-run evidence. Ten-observation budgets use the observed maximum
+and report the sample count; they do not estimate a production p95.
+
 The full-workflow and disposal numbers include browser automation transport, controls,
 deferred response settlement and readiness polling, including completed diff work and current
 working/reference viewports. They are automation proxies. Synchronous

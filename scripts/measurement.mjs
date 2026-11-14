@@ -7,8 +7,12 @@ export function distribution(samples) {
     if (!samples.length || samples.some(sample => !Number.isFinite(sample) || sample < 0)) throw new Error("Missing or invalid timing samples.");
     const sorted = [...samples].sort((a, b) => a - b);
     const percentile = fraction => sorted[Math.ceil(sorted.length * fraction) - 1];
-    return { samples, p50: percentile(.5), p95: percentile(.95) };
+    return { samples, n: samples.length, max: sorted.at(-1), p50: percentile(.5), p95: percentile(.95),
+        statistic: samples.length < 20 ? "max" : "p95" };
 }
+
+/** Small batches describe their observed maximum, not an inferred latency tail. */
+export function timingSummary({ n, p50, p95, max }) { return { n, p50, max, ...(n >= 20 ? { p95 } : {}) }; }
 
 export async function sourceIdentity() {
     if (process.env.STTROPEZ_SOURCE_MANIFEST) {

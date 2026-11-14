@@ -184,5 +184,8 @@ a percentile or production budget. No physical input/presentation claim follows.
 `node scripts/benchmark-services.mjs --whole-word` uses the same workloads and measurements with
 whole-word mode enabled, including a huge-line no-match control. The existing driver retains
 observed samples; its omitted raw warmups remain an evidence limitation.
+Results live under `artifacts/bench/services/<mode>-<boundary>-<case>/`, for example
+`regex-whole-word-ignore-case/`. Each run is retained and only a completed passing run updates
+that variant's `latest.json`. Summaries with fewer than 20 observations report `n`, p50 and max.
 Readiness polling uses constant-work `TextBuffer.readMetrics()` counters. Full `diagnostics()`
 retention/tree validation is explicit and stays outside routine telemetry and timed subscribers.
