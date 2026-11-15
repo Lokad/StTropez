@@ -190,6 +190,11 @@ Default limits are 64 concurrent outgoing and incoming calls, 15-second request/
 bounds JSON values in a complete message, including a batch; it defaults to `rpc.maxMessageUnits`
 (4,194,304). A value counts once, including each array/object and each primitive. Host-supplied
 option/feature snapshots retain their separate 100,000-value validation bound.
+Opaque snapshots reuse parsed, deeply frozen JSON subtrees only when they satisfy that
+narrower bound. Host-supplied values are still validated and copied, including frozen host
+objects; array/object accessors are refused. A subtree containing negative zero follows the
+copy path to retain JSON serialization's zero normalization. Completion resolution keeps
+unchanged captured items and copies items that inherit list defaults.
 The browser adapter also bounds queued output by a conservative 16 MiB UTF-8 estimate. Exceeding
 transport or batch-count bounds closes the connection; malformed responses cannot advance another request.
 A structurally over-budget response rejects its identified pending call and releases its deadline

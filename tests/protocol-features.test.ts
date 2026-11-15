@@ -3,15 +3,45 @@ import assert from "node:assert/strict";
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
 import type { ApplyWorkspaceEditParams, CodeAction, Command, CompletionList, PublishDiagnosticsParams, WorkspaceEdit } from "vscode-languageserver-protocol/node.js";
 import { TextBuffer } from "../src/core/text-buffer.ts";
-import type { LspDocumentCapture } from "../src/protocol/index.ts";
+import type { JsonValue, LspDocumentCapture, RpcTransport } from "../src/protocol/index.ts";
 
 const { LspLineIndex, UnsupportedLspSnippetError, decodeLspCompletions, decodeLspResolvedCompletion, rebaseLspCompletion, lspCompletionPlan, decodeLspDiagnostics, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, decodeLspApplyEdit, decodeLspCodeActions, decodeLspResolvedCodeAction, lspRangeOffsets, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
-const { decodeLspSignatureHelp, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspColor, decodeLspDocumentColors, decodeLspColorPresentations } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
+const { JsonRpcConnection, decodeLspSignatureHelp, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspColor, decodeLspDocumentColors, decodeLspColorPresentations } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 async function captured(text = "// header\r\nconst saMORE = 1; // TODO\rb\n") {
     const buffer = TextBuffer.from(text), index = await LspLineIndex.create(buffer, async () => {}); let active = true;
     const capture: LspDocumentCapture = Object.freeze({ document: Object.freeze({ uri: "host+fixture:source", languageId: "fixture", resourceId: "resource", documentId: "working", revision: 70, buffer }), index, version: 3, epoch: 2, registrationGeneration: 4, isCurrent: () => active });
     return { capture, expire: () => { active = false; } };
 }
+
+function rpcIncoming(t: test.TestContext) {
+    let receive!: (message: string) => void;
+    const port: RpcTransport = { send: () => {}, subscribe: listener => { receive = listener.message; return () => {}; }, dispose: () => {} };
+    const rpc = new JsonRpcConnection(port, { schedule: () => () => {} }); t.after(() => rpc.dispose());
+    return async (json: string) => { const call = rpc.request("fixture/data"); receive(`{"jsonrpc":"2.0","id":${call.id},"result":${json}}`); return call.result; };
+}
+test("opaque captures reuse bounded RPC-owned JSON without trusting host freezes or weakening snapshot limits", async t => {
+    const { capture } = await captured("text"), incoming = rpcIncoming(t);
+    const read = (data: unknown) => decodeLspDiagnostics({ uri: capture.document.uri, version: capture.version,
+        diagnostics: [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, message: "message", data }] }, capture).items[0]!.data;
+    const wire = await incoming('{"nested":[{"value":1}],"__proto__":{"safe":true}}') as { nested: { value: number }[] };
+    assert.equal(read(wire), wire); assert.equal(Object.isFrozen(wire.nested[0]), true); assert.ok(Object.hasOwn(wire, "__proto__"));
+    assert.throws(() => { wire.nested[0]!.value = 2; }, TypeError);
+    const host = { nested: [{ value: 1 }] }, snapshot = read(host) as typeof host; host.nested[0]!.value = 2;
+    assert.notEqual(snapshot, host); assert.equal(snapshot.nested[0]!.value, 1); assert.equal(read(snapshot), snapshot);
+    const frozen = Object.freeze({ nested: { value: 1 } }); assert.notEqual(read(frozen), frozen);
+    const bounded = await incoming(JSON.stringify(Array(99_999).fill(0))); assert.equal(read(bounded), bounded);
+    const wide = await incoming(JSON.stringify({ large: Array(100_000).fill(0), small: { value: 1 } })) as { large: JsonValue; small: JsonValue };
+    assert.throws(() => read(wide), TypeError); assert.throws(() => read(wide.large), TypeError); assert.equal(read(wide.small), wide.small);
+    let deep: JsonValue = "leaf"; for (let i = 0; i < 63; i++) deep = [deep]; deep = await incoming(JSON.stringify(deep));
+    assert.equal(read(deep), deep); assert.doesNotThrow(() => read([deep])); assert.throws(() => read([[deep]]), TypeError);
+    const signed = await incoming('{"value":-0}') as { value: number }, normalized = read(signed) as typeof signed;
+    assert.equal(Object.is(signed.value, -0), true); assert.equal(Object.is(normalized.value, 0), true); assert.notEqual(normalized, signed);
+    const cyclic: { self?: unknown } = {}; cyclic.self = cyclic; assert.throws(() => read(cyclic), TypeError);
+    let calls = 0; const accessor = Object.defineProperty({}, "value", { enumerable: true, get: () => { calls++; return 1; } });
+    const array = Object.defineProperty([0], "0", { enumerable: true, get: () => { calls++; return 1; } });
+    assert.throws(() => read(accessor), TypeError); assert.throws(() => read(array), TypeError); assert.equal(calls, 0);
+    assert.throws(() => read(Array(1)), TypeError); assert.throws(() => read({ value: NaN }), TypeError);
+});
 test("signature help validates the complete literal result and normalizes active signatures and parameters", async () => {
     const { capture, expire } = await captured("😀 call("), value = { activeSignature: 1, activeParameter: 1, signatures: [
         { label: "call(x: number, y: number)", parameters: [{ label: "x: number" }, { label: [16, 25], documentation: { kind: "markdown", value: "<b>literal</b>" } }] },
@@ -128,7 +158,7 @@ test("completion catalogues retain every candidate and reject malformed later ed
     assert.throws(() => decodeLspCompletions([...values, { label: "bad tail", textEdit: { range: range(0, 0, 999), newText: "invalid" } }], capture, 8, fallback));
 });
 
-test("completion metadata and item defaults retain immutable resolve data with bounded filtering and commit characters", async () => {
+test("completion metadata and item defaults retain immutable resolve data with bounded filtering and commit characters", async t => {
     const { capture } = await captured("const saMORE"), response: CompletionList = { isIncomplete: false, itemDefaults: { editRange: { insert: range(0, 6, 8), replace: range(0, 6, 12) }, data: { token: 7 }, commitCharacters: [".", "::", "."] },
         items: [{ label: "sample", filterText: "sampleAlias", sortText: "01", preselect: true, documentation: { kind: "markdown", value: "<b>literal</b>" } }, { label: "second", data: { token: 8 }, commitCharacters: [";"] }] };
     const decoded = decodeLspCompletions(response, capture, 8, undefined, { resolve: true }), item = decoded.items[0]!;
@@ -136,6 +166,11 @@ test("completion metadata and item defaults retain immutable resolve data with b
     assert.equal(item.source, capture.document); assert.deepEqual(item.primary, { from: 6, insertTo: 8, replaceTo: 12, text: "sample" });
     const opaque = item.resolve as { data: { token: number }; textEdit: unknown }; assert.equal(opaque.data.token, 7); assert.ok(opaque.textEdit); assert.ok(Object.isFrozen(opaque.data));
     assert.deepEqual(decoded.items[1]!.commitCharacters, [";"]); assert.deepEqual((decoded.items[1]!.resolve as { data: unknown }).data, { token: 8 });
+    const incoming = rpcIncoming(t), wire = await incoming(JSON.stringify(response)) as unknown as CompletionList;
+    const inherited = decodeLspCompletions(wire, capture, 8, undefined, { resolve: true }).items[0]!.resolve as typeof opaque;
+    assert.notEqual(inherited, wire.items[0]); assert.equal(wire.items[0]!.textEdit, undefined); assert.deepEqual(inherited, opaque);
+    const plain = await incoming(JSON.stringify([{ label: "standalone", data: { token: 9 } }])) as JsonValue[];
+    assert.equal(decodeLspCompletions(plain, capture, 8, undefined, { resolve: true }).items[0]!.resolve, plain[0]);
     response.itemDefaults!.data.token = 99; assert.equal(opaque.data.token, 7);
     assert.deepEqual(decodeLspCompletions([{ label: "sample" }], capture, 8, undefined, { commitCharacters: [";"] }).items[0]!.commitCharacters, [";"]);
     for (const bad of [{ label: "bad", filterText: 1 }, { label: "bad", sortText: false }, { label: "bad", preselect: 1 }, { label: "bad", commitCharacters: null }, { label: "bad", data: { n: NaN } }]) assert.throws(() => decodeLspCompletions([response.items[0], bad], capture, 8, undefined, { resolve: true }));

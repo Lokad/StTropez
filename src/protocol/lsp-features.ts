@@ -263,9 +263,14 @@ export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture
         if (item.additionalTextEdits !== undefined) { if (!Array.isArray(item.additionalTextEdits)) invalid(); additional = item.additionalTextEdits.map(value => edit(index, value)).sort((a, b) => a.from - b.from || a.to - b.to); }
         let resolution: JsonValue | null = null;
         if (options.resolve) {
-            const wire = { ...item };
-            for (const key of ["data", "commitCharacters", "insertTextFormat", "insertTextMode"]) if (wire[key] === undefined && defaults[key] !== undefined) wire[key] = defaults[key];
-            if (item.textEdit === undefined && defaults.editRange !== undefined) wire.textEdit = { newText: insert.insert, insert: { start: index.at(insert.from), end: index.at(insert.to) }, replace: { start: index.at(replace.from), end: index.at(replace.to) } };
+            let wire = item;
+            for (const key of ["data", "commitCharacters", "insertTextFormat", "insertTextMode"]) if (wire[key] === undefined && defaults[key] !== undefined) {
+                if (wire === item) wire = { ...item }; wire[key] = defaults[key];
+            }
+            if (item.textEdit === undefined && defaults.editRange !== undefined) {
+                if (wire === item) wire = { ...item };
+                wire.textEdit = { newText: insert.insert, insert: { start: index.at(insert.from), end: index.at(insert.to) }, replace: { start: index.at(replace.from), end: index.at(replace.to) } };
+            }
             resolution = jsonSnapshot(wire);
         }
         let snippet: readonly SnippetStop[] | null = null;
