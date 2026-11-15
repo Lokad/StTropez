@@ -1,5 +1,6 @@
 import type { DocumentId, DocumentSnapshot, ResourceLease, Workspace } from "../core/workspace.ts";
 import { NotificationScope, Store } from "../core/observable.ts";
+import { anchoredRange } from "../core/positions.ts";
 import type { Observable } from "../core/observable.ts";
 import { LspSession } from "./lsp-session.ts";
 import type { LspDocument, LspDocumentCapture, LspDocumentSnapshot, LspRequestContext, LspSessionOptions, LspSessionSnapshot } from "./lsp-session.ts";
@@ -25,8 +26,12 @@ export type LspWorkspaceScope = Omit<LspSessionAccess, "state"> & Readonly<{
     /** Route deferred host callback failures through the provider's existing onError policy. */
     reportError: (error: unknown) => void;
 }>;
-export type LspDiagnosticState = Readonly<{ status: "empty" | "current" | "expired"; result: LspDiagnostics | null;
-    received: number; stale: number; invalid: number; isCurrent: () => boolean }>;
+export type LspDiagnosticState = Readonly<{ status: "empty" | "current" | "pending" | "expired"; result: LspDiagnostics | null;
+    received: number; stale: number; invalid: number;
+    /** Provider result still belongs to the synchronized source; always false for mapped pending results. */
+    isCurrent: () => boolean;
+    /** Display/navigation offsets still belong to the local source, including mapped pending results. */
+    isPlacementCurrent: () => boolean }>;
 export type LspWorkspaceSnapshot = LspSessionSnapshot & Readonly<{ commandAvailable: boolean; commandRequiresReconnect: boolean }>;
 export type LspWorkspaceOptions = LspSessionOptions & Readonly<{
     /** URI/language policy at participation. Replace bindings explicitly when provider configuration changes. */
@@ -102,7 +107,7 @@ export class LspWorkspace {
             try {
                 if (!sent || !isCurrent()) throw stale();
                 const result = decodeLspDiagnostics(value, Object.freeze({ ...sent, isCurrent }));
-                entry.diagnostics.set(Object.freeze({ ...previous, status: "current", result, received: previous.received + 1, isCurrent }), this.changed);
+                entry.diagnostics.set(Object.freeze({ ...previous, status: "current", result, received: previous.received + 1, isCurrent, isPlacementCurrent: isCurrent }), this.changed);
             } catch (error) {
                 const key = error instanceof RpcError && error.code === -32801 ? "stale" : "invalid";
                 entry.diagnostics.set(Object.freeze({ ...previous, [key]: previous[key] + 1 }), this.changed);
@@ -134,7 +139,30 @@ export class LspWorkspace {
     private queueDelivery(): void { if (!this.notificationQueued) { this.notificationQueued = true; void Promise.resolve().then(() => this.deliver()).catch(error => this.report(error)); } }
     private expireDiagnostics(entry: DocumentEntry): void {
         const before = entry.diagnostics.get(); if (before.result === null) return;
-        entry.diagnostics.set(Object.freeze({ ...before, status: "expired", result: null, isCurrent: () => false }), this.changed); this.queueDelivery();
+        entry.diagnostics.set(Object.freeze({ ...before, status: "expired", result: null, isCurrent: () => false, isPlacementCurrent: () => false }), this.changed); this.queueDelivery();
+    }
+    private mapDiagnostics(entry: DocumentEntry): void {
+        const before = entry.diagnostics.get(), result = before.result;
+        if (!result) return;
+        const next = this.workspace.observeDocument(entry.id).getSnapshot(), session = this.session.state.getSnapshot();
+        if (!next || next.resourceId !== entry.binding.getSnapshot().resourceId || session.phase !== "ready") { this.expireDiagnostics(entry); return; }
+        if (next.revision === result.snapshotRevision) return;
+        if (next.change?.previousRevision !== result.snapshotRevision) { this.expireDiagnostics(entry); return; }
+        const mapping = next.change.mapping;
+        const items = result.items.flatMap(item => {
+            if (item.placement !== "placed") return [item];
+            const range = mapping.mapRange(anchoredRange(mapping.oldLength, item.from!, item.to!, { onDelete: "invalidate" }));
+            return range ? [Object.freeze({ ...item, from: range.from, to: range.to })] : [];
+        });
+        const isPlacementCurrent = () => {
+            if (!entry.active) return false;
+            const now = this.workspace.observeDocument(entry.id).getSnapshot(), provider = this.session.state.getSnapshot();
+            return provider.phase === "ready" && provider.epoch === session.epoch
+                && now?.resourceId === next.resourceId && now.revision === next.revision && now.buffer === next.buffer;
+        };
+        // Preserve provider version, original wire ranges and metadata as provenance, not fresh edit authority.
+        entry.diagnostics.set(Object.freeze({ ...before, status: "pending", result: Object.freeze({ ...result, snapshotRevision: next.revision, items: Object.freeze(items) }),
+            isCurrent: () => false, isPlacementCurrent }), this.changed); this.queueDelivery();
     }
     private document(id: DocumentId): DocumentEntry {
         this.writable(); const current = this.workspace.document(id), info = this.options.documentInfo(current);
@@ -147,10 +175,10 @@ export class LspWorkspace {
         try { binding = this.session.bindDocument({ ...info, resourceId: current.resourceId, documentId: id, revision: current.revision, buffer: current.buffer }); }
         catch (error) { lease.release(); throw error; }
         const entry: DocumentEntry = { id, binding, lease, active: true, queued: false, stop: () => {}, users: new Set(),
-            diagnostics: new Store<LspDiagnosticState>(Object.freeze({ status: "empty", result: null, received: 0, stale: 0, invalid: 0, isCurrent: () => false }), this.notifications) };
+            diagnostics: new Store<LspDiagnosticState>(Object.freeze({ status: "empty", result: null, received: 0, stale: 0, invalid: 0, isCurrent: () => false, isPlacementCurrent: () => false }), this.notifications) };
         this.documents.set(id, entry); this.uris.set(info.uri, entry);
         entry.stop = this.workspace.observeDocument(id).subscribe(() => {
-            this.expireDiagnostics(entry);
+            this.mapDiagnostics(entry);
             if (!entry.active || entry.queued) return; entry.queued = true;
             void Promise.resolve().then(() => { entry.queued = false; this.synchronize(entry); });
         });

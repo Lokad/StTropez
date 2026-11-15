@@ -7,7 +7,7 @@ import type { TextBuffer } from "../core/text-buffer.ts";
 import type { FoldIndex } from "../core/folding.ts";
 import type { EditingCandidate } from "./editing-candidate.ts";
 import { RpcError, UnsupportedLspSnippetError, decodeLspCompletions, decodeLspResolvedCompletion, lspCompletionPlan, rebaseLspCompletion } from "../protocol/index.ts";
-import type { LspCall, LspCompletion, LspCompletions, LspCompletionFallback, LspDocument, LspDocumentCapture, LspSessionAccess, LspWorkspace } from "../protocol/index.ts";
+import type { LspCall, LspCompletion, LspCompletions, LspCompletionFallback, LspDiagnostics, LspDocument, LspDocumentCapture, LspSessionAccess, LspWorkspace } from "../protocol/index.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import type { JsonValue } from "../protocol/index.ts";
@@ -22,7 +22,7 @@ export type LspEditorDiagnostic = Readonly<{ from: number; to: number; message: 
 export type LspEditorSnippet = Readonly<{ id: number; stop: number; position: number; count: number; choices: readonly string[]; choiceIndex: number }>;
 export type LspEditorSnapshot = Readonly<{ message: string; connected: boolean; pending: boolean; offerText: string | null;
     snippet: LspEditorSnippet | null; omittedCompletions: LspCompletions["omitted"];
-    diagnostics: readonly LspEditorDiagnostic[]; diagnosticRevision: number; choices: readonly string[]; choiceIndex: number; completionId: number; completionIncomplete: boolean; completionDetail: string; resolving: boolean; unversionedDiagnostics: readonly string[] }>;
+    diagnostics: readonly LspEditorDiagnostic[]; diagnosticRevision: number; diagnosticsPending: boolean; choices: readonly string[]; choiceIndex: number; completionId: number; completionIncomplete: boolean; completionDetail: string; resolving: boolean; unversionedDiagnostics: readonly string[] }>;
 export type LspEditorOptions = Readonly<{ provider: LspWorkspace; autoConnect?: boolean; automatic?: boolean;
     /** Narrow explicit requests using each item's captured edit prefix, as automatic requests do. */
     filterManualCompletions?: boolean; canCapture?: () => boolean;
@@ -34,7 +34,7 @@ export type LspEditorController = Readonly<{ state: Observable<LspEditorSnapshot
     customRequest: (method: string, params: JsonValue) => Promise<JsonValue>; destroy: () => void;
     snapshot: () => Readonly<{ posted: number; received: number; applied: number; stale: number; cancelled: number; invalid: number; failed: number; resolved: number;
         completionBeforeInputEvents: number; lastCompletionBeforeInputMs: number; completionKeydownEvents: number; lastCompletionKeydownMs: number;
-        connected: boolean; pending: boolean; offer: boolean; diagnostics: number; diagnosticRevision: number; transport: "lsp3.17"; protocol: ReturnType<LspWorkspace["snapshot"]>["protocol"] }> }>;
+        connected: boolean; pending: boolean; offer: boolean; diagnostics: number; diagnosticRevision: number; diagnosticsPending: boolean; transport: "lsp3.17"; protocol: ReturnType<LspWorkspace["snapshot"]>["protocol"] }> }>;
 const word = new RegExp(`^(?:${codeWordConstituentPattern})$`, "u");
 // IDs also distinguish retained host controls from lists belonging to another mounted view.
 let completionSequence = 0;
@@ -59,8 +59,9 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
     const emptyDiagnostics: readonly LspEditorDiagnostic[] = Object.freeze([]), emptyMessages: readonly string[] = Object.freeze([]);
     let labelItems: readonly LspCompletion[] | undefined, labels = emptyMessages;
     let diagnostics = emptyDiagnostics, unversioned = emptyMessages, diagnosticRevision = -1;
+    let diagnosticsPending = false, diagnosticResult: LspDiagnostics | null = null;
     const notifications = workspace.createNotificationScope(error => options.onError?.(error)), observers = new Set<() => void>();
-    const cell = new Store<LspEditorSnapshot>(Object.freeze({ message: "LSP provider disconnected; local editing remains available.", connected: false, pending: false, offerText: null, diagnostics, diagnosticRevision, choices: Object.freeze([]), choiceIndex: 0, completionId: 0, completionIncomplete: false, completionDetail: "", resolving: false, unversionedDiagnostics: Object.freeze([]), snippet: null, omittedCompletions: Object.freeze([]) }), notifications);
+    const cell = new Store<LspEditorSnapshot>(Object.freeze({ message: "LSP provider disconnected; local editing remains available.", connected: false, pending: false, offerText: null, diagnostics, diagnosticRevision, diagnosticsPending, choices: Object.freeze([]), choiceIndex: 0, completionId: 0, completionIncomplete: false, completionDetail: "", resolving: false, unversionedDiagnostics: Object.freeze([]), snippet: null, omittedCompletions: Object.freeze([]) }), notifications);
     const state: Observable<LspEditorSnapshot> = Object.freeze({ getSnapshot: cell.observable.getSnapshot, subscribe: listener => {
         notifications.assertWritable(); if (disposed) throw new Error("LSP editor is disposed."); const stop = cell.observable.subscribe(listener);
         const release = () => { stop(); observers.delete(release); }; observers.add(release); return release;
@@ -94,7 +95,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
         completionIncomplete: job?.choices?.incomplete ?? false, completionDetail: selected ? [selected.detail, selected.documentation].filter(Boolean).join("\n") : "", resolving: !!job?.resolution,
         snippet: snippet ? Object.freeze({ id: snippet.id, stop: snippet.stops[snippet.active]!.index, position: snippet.active + 1,
             count: snippet.stops.length - 1, choices: activeStop!.choices, choiceIndex: snippetChoiceIndex(snippet, activeStop!) }) : null,
-        omittedCompletions: job?.choices?.omitted ?? Object.freeze([]), diagnostics, diagnosticRevision, unversionedDiagnostics: unversioned }), changed); notifications.deliver([...changed]); };
+        omittedCompletions: job?.choices?.omitted ?? Object.freeze([]), diagnostics, diagnosticRevision, diagnosticsPending, unversionedDiagnostics: unversioned }), changed); notifications.deliver([...changed]); };
     const release = () => {
         const old = job; job = undefined; if (!old) return; old.cancelled = true; old.call?.cancel(); old.resolution?.call?.cancel(); old.resolution = undefined;
         // Workspace observers run during commit delivery; retention cleanup must follow that delivery.
@@ -103,7 +104,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
     const cancelAuto = () => { inputIntent = undefined; if (autoFrame !== undefined) clock.cancelAnimationFrame(autoFrame); autoFrame = undefined; autoTurns = 0; };
     const cancelResolution = (captured: Job) => { const old = captured.resolution; captured.resolution = undefined; old?.call?.cancel(); };
     const expire = (message: string) => { if (job) counters.stale++; release(); publish(message); };
-    const clearDiagnostics = () => { diagnostics = emptyDiagnostics; unversioned = emptyMessages; diagnosticRevision = -1; };
+    const clearDiagnostics = () => { diagnostics = emptyDiagnostics; unversioned = emptyMessages; diagnosticRevision = -1; diagnosticsPending = false; diagnosticResult = null; };
     const connect = () => {
         if (disposed || connecting || session.state.getSnapshot().phase === "ready") return;
         const work = session.connect(); connecting = work; publish("LSP provider connecting.");
@@ -320,16 +321,21 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
         if (!editor.view.setSelection(diagnosticRevision, { anchor: diagnostic.from, head: diagnostic.to })) return false; editor.viewport.revealOffset(diagnostic.from); editor.focus(); return true;
     };
     let diagnosticStale = 0, diagnosticInvalid = 0;
-    const updateDiagnostics = () => {
+    const updateDiagnostics = (announce = true) => {
         const state = diagnosticState.getSnapshot(); counters.stale += state.stale - diagnosticStale; counters.invalid += state.invalid - diagnosticInvalid;
         diagnosticStale = state.stale; diagnosticInvalid = state.invalid;
-        const decoded = available() && state.isCurrent() ? state.result : null;
-        if (!decoded) { clearDiagnostics(); publish(cell.get().message); return; }
-        diagnostics = Object.freeze(decoded.items.filter(item => item.placement === "placed").map(item => Object.freeze({ from: item.from!, to: item.to!, message: item.message })));
-        unversioned = Object.freeze(decoded.items.filter(item => decoded.freshness === "unversioned" || item.placement !== "placed")
-            .map(item => `${item.message}${item.placement === "placed" ? " (provider version unknown)" : " (range outside the current snapshot)"}`));
+        const decoded = available() && state.isPlacementCurrent() ? state.result : null;
+        if (!decoded) { clearDiagnostics(); if (announce) publish(cell.get().message); return; }
+        if (decoded !== diagnosticResult) {
+            diagnostics = Object.freeze(decoded.items.filter(item => item.placement === "placed").map(item => Object.freeze({ from: item.from!, to: item.to!, message: item.message })));
+            unversioned = Object.freeze(decoded.items.filter(item => decoded.freshness === "unversioned" || item.placement !== "placed")
+                .map(item => `${item.message}${item.placement === "placed" ? " (provider version unknown)" : " (range outside the current snapshot)"}`));
+            diagnosticResult = decoded;
+        }
+        diagnosticsPending = state.status === "pending";
         diagnosticRevision = decoded.snapshotRevision;
-        publish(decoded.freshness === "unversioned" ? "LSP diagnostic locations use the current snapshot; provider version is unknown." : "Versioned LSP diagnostics updated.");
+        if (announce) publish(diagnosticsPending ? "Diagnostic locations follow local edits; analysis is pending."
+            : decoded.freshness === "unversioned" ? "LSP diagnostic locations use the current snapshot; provider version is unknown." : "Versioned LSP diagnostics updated.");
     };
     const stops = [diagnosticState.subscribe(updateDiagnostics), options.provider.state.subscribe(() => {
         const phase = session.state.getSnapshot().phase;
@@ -339,7 +345,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
         publish(cell.get().message);
     }),
     workspace.observeDocument(documentId).subscribe(() => {
-        clearDiagnostics(); if (applying || snippetChanging) return;
+        updateDiagnostics(false); if (applying || snippetChanging) return;
         snippet = undefined;
         const intent = inputIntent, captured = job, document = workspace.document(documentId), selected = editor.view.getSnapshot().selectionSet, caret = selected.ranges[selected.primary]!;
         if (intent) intent.after = selected;
@@ -421,6 +427,6 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
         cancel: () => { notifications.assertWritable(); if (!disposed) cancel(); }, connect: () => { notifications.assertWritable(); connect(); },
         selectDiagnostic: index => { notifications.assertWritable(); return !disposed && selectDiagnostic(index); },
         customRequest: (method, params) => { notifications.assertWritable(); return session.request(method, params).result; },
-        snapshot: () => Object.freeze({ ...counters, connected: session.state.getSnapshot().phase === "ready", pending: cell.get().pending, offer: !!job?.visible.length, diagnostics: diagnostics.length, diagnosticRevision, transport: "lsp3.17", protocol: session.snapshotOwnership() }),
+        snapshot: () => Object.freeze({ ...counters, connected: session.state.getSnapshot().phase === "ready", pending: cell.get().pending, offer: !!job?.visible.length, diagnostics: diagnostics.length, diagnosticRevision, diagnosticsPending, transport: "lsp3.17", protocol: session.snapshotOwnership() }),
         destroy: () => { if (disposed) return; notifications.assertWritable(); disposed = true; snippet = undefined; stopTransform(); cancelAuto(); for (const stop of stops) stop(); listeners.abort(); release(); binding.close(); session.dispose(); clearDiagnostics(); publish("LSP editor disposed."); for (const stop of [...observers]) stop(); } });
 }

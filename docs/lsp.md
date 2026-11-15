@@ -92,14 +92,22 @@ and participation; `scope.disconnect()` cancels that feature's work. Owner `disc
 Scopes are bounded to 128 by default, in addition to the existing session/document/RPC limits.
 
 `scope.observeDiagnostics(binding)` supplies one stable shared diagnostic snapshot per binding.
-It distinguishes received/current, empty and expired results, rejected stale/invalid batches and
+It distinguishes received/current, mapped pending, empty and expired results, rejected stale/invalid batches and
 unknown URIs. A result keeps the provider `version`/`revision` nullable, independently of the explicit
 `snapshotRevision` used to place its validated wire ranges. Unversioned markers have uncertain
 freshness; ranges with nonexistent lines retain their message and wire range with null offsets.
 Character positions past a valid line's end clamp to that end under LSP 3.17; the original wire
 range remains available alongside the placed offsets. These presentation anchors grant
-no edit authority. A local edit, close/URI reuse or reconnect expires associations. Invalid or known
-stale pushes preserve the previous valid batch. An unrelated capability registration does not
+no edit authority. Consecutive local edits map placed offsets through the document's transaction
+map and set `status: "pending"`; wholly deleted ranges disappear. `snapshotRevision` follows
+the mapped source, while provider `version`/`revision`, original wire ranges and related metadata
+remain unchanged. Pending `isCurrent()` is always false; `isPlacementCurrent()` separately
+guards display/navigation offsets against the local revision, buffer and provider lifetime.
+Undo maps surviving ranges but cannot resurrect deleted diagnostics. Missing transaction maps,
+close/URI reuse and reconnect expire associations. Fresh pushes replace the batch, including
+an empty batch that clears it. Invalid or known stale pushes preserve the previous valid batch.
+Mapping visits the retained diagnostics, with no full-source export or provider request.
+An unrelated capability registration does not
 manufacture a new analysis revision or erase still-current diagnostic placement.
 
 Diagnostics retain immutable `code` (integer or string), `codeDescription`, `tags`,
@@ -108,7 +116,7 @@ the advertised presentation tags are unnecessary and deprecated. Related URIs an
 are preserved without loading resources. Help opening and related-location navigation belong
 to the host. Malformed metadata rejects the complete batch, including an invalid final item.
 The action client forwards this metadata for overlapping, placed diagnostics from a matching
-current provider version. Unversioned diagnostics remain available for uncertain presentation
+current provider version. Pending and unversioned diagnostics remain available for uncertain presentation
 but are excluded from that version-verified context. Action results also retain attached
 diagnostics, including after edit resolution. No metadata supplies edit or command authority.
 

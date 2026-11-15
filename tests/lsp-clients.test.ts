@@ -46,7 +46,10 @@ test("actions forward immutable diagnostic metadata only for matching current ve
     };
     await send(capture.version); assert.deepEqual(await run(), [diagnostic]); assert.deepEqual(await run(0, 1), []);
     await send(undefined); assert.deepEqual(await run(), []); // Fresh placement is not a known provider version.
-    await send(capture.version); f.edit(); assert.deepEqual(await run(), []);
+    await send(capture.version); f.edit();
+    const pending = control.observeDiagnostics(binding).getSnapshot(); assert.equal(pending.status, "pending");
+    assert.equal(pending.isPlacementCurrent(), true); assert.equal(pending.isCurrent(), false); assert.equal(pending.result!.items[0]!.from, 13);
+    assert.deepEqual(await run(13, 17), []); assert.equal(control.observeDiagnostics(binding).getSnapshot().status, "pending");
 });
 
 test("a new hover invalidates a completed result on the same unchanged document", async t => {

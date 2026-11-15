@@ -157,6 +157,13 @@ rule without silently truncating a provider list. Items requiring a follow-up co
 omitted individually with a label/reason, preserving supported siblings. Their command data
 and edits are still validated; malformed commands or overlapping edits reject the batch.
 Completion acceptance never executes a command, and lazy resolution cannot add one.
+Diagnostic locations remain visible through mapped local edits while the provider analyzes
+the new source. `diagnosticsPending` distinguishes that presentation from a newly received
+batch; `diagnosticRevision` identifies the offsets used by `selectDiagnostic`. The host examples
+show a separate pending-analysis status so completion messages cannot hide that distinction.
+Deleted diagnostic ranges disappear, and reconnect/close invalidates all retained locations.
+Pending diagnostics never supply code-action context; see [diagnostic ownership](lsp.md).
+
 Completion documentation remains literal text;
 hover and signature help separately support the focused [documentation subset](documentation.md).
 

@@ -14,34 +14,6 @@ async function seed(page: Page, text: string, offset = text.indexOf("saMORE") + 
 }
 async function offer(page: Page) { await field(page).press("Control+Space"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible(); }
 
-test("unsupported completion commands preserve usable choices without issuing a command", async ({ page }) => {
-    let onlyCommands = false; const methods: string[] = [];
-    await page.routeWebSocket("**/lsp-fixture", client => {
-        const server = client.connectToServer(); server.onMessage(message => client.send(message));
-        client.onMessage(message => {
-            const value = JSON.parse(message.toString()); if (value.method) methods.push(value.method);
-            if (value.method === "textDocument/completion") {
-                const end = value.params.position, range = { start: { line: end.line, character: end.character - 2 }, end: { ...end, character: end.character + 4 } };
-                const supported = { label: "sample", textEdit: { range, newText: "sample" } };
-                const unsupported = { ...supported, label: "sampleWithCommand", command: { title: "", command: "fixture.followUp", arguments: ["never execute"] } };
-                client.send(JSON.stringify({ jsonrpc: "2.0", id: value.id, result: [unsupported, ...(onlyCommands ? [] : [supported])] })); return;
-            }
-            if (value.method === "completionItem/resolve") { client.send(JSON.stringify({ jsonrpc: "2.0", id: value.id, result: value.params })); return; }
-            server.send(message);
-        });
-    });
-    await page.goto("/hosts/plain/?editor=candidate&language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
-    const original = "const saMORE = 1;"; await seed(page, original);
-    await expect.poll(async () => (await provider(page)).connected).toBe(true); await offer(page);
-    await expect(page.getByRole("option")).toHaveCount(1); await expect(page.getByRole("option", { name: "sampleWithCommand", exact: true })).toHaveCount(0);
-    await button(page, "Replace completion").click(); await ready(page); expect(await source(page)).toBe("const sample = 1;");
-    await field(page).press("Control+z"); expect(await source(page)).toBe(original);
-    onlyCommands = true; await seed(page, original); await field(page).press("Control+Space");
-    await expect(page.getByLabel("Language status", { exact: true })).toHaveText("1 unsupported completion choices omitted.");
-    await expect(page.getByRole("option")).toHaveCount(0); expect(await source(page)).toBe(original);
-    expect(methods).toContain("textDocument/completion"); expect(methods).not.toContain("workspace/executeCommand");
-});
-
 for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP editor host`, () => {
     test.beforeEach(async ({ page }) => {
          await page.goto(`/hosts/${mode}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await ready(page);

@@ -134,6 +134,7 @@ function LanguageTools() {
         <output aria-label="Language status">{state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider?.message ?? "Focus a source view to use language actions."}</output>
         <ul role="listbox" aria-label="Completion choices">{choices.map((label, index) => <li key={`${state.provider?.completionId}:${index}:${label}`} role="option" aria-selected={index === (state.provider?.choiceIndex ?? 0)}><button onClick={() => tools.chooseCompletion(index, state.provider?.completionId)}>{label}</button></li>)}</ul>
         <pre aria-label="Completion detail">{state.provider?.completionDetail ?? ""}</pre>
+        <output aria-label="Diagnostic status">{state.provider?.diagnosticsPending ? "Diagnostics pending analysis." : ""}</output>
         <ul aria-label="Source diagnostics">{state.provider?.diagnostics.map((diagnostic, index) => <li key={`${diagnostic.from}:${diagnostic.to}:${index}`}>
             <button onClick={() => tools.selectDiagnostic(index)}>{diagnostic.from}: {diagnostic.message}</button></li>)}</ul>
         <ul aria-label="Unversioned diagnostics">{state.provider?.unversionedDiagnostics?.map((message, index) => <li key={index}>{message}</li>)}</ul>

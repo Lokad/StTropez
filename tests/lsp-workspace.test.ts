@@ -277,7 +277,7 @@ test("a rejected oversized update expires associations but preserves unrelated d
     assert.deepEqual(await b.requestDocument("textDocument/definition", b.attachDocument(f.companion.documentId), index => ({ position: index.at(0) })).result, []);
 });
 
-test("shared diagnostic placement preserves unknown freshness and expires on editing, reconnect and URI reuse", async t => {
+test("shared diagnostic placement preserves unknown freshness and expires on reconnect and URI reuse", async t => {
     const f = fixture(t), a = f.provider.createScope(), b = f.provider.createScope(), left = a.attachDocument(f.source.documentId), right = b.attachDocument(f.source.documentId);
     const first = a.observeDiagnostics(left), second = b.observeDiagnostics(right); await a.connect();
     const send = async (value: unknown) => { f.peers.at(-1)!.rpc.sendNotification("textDocument/publishDiagnostics", value); await a.request("test/barrier").result; };
@@ -290,17 +290,60 @@ test("shared diagnostic placement preserves unknown freshness and expires on edi
     await send({ ...message, uri: "host+opaque:unknown" }); assert.equal(f.provider.snapshot().unknownDiagnosticUris, 1); assert.equal(first.getSnapshot().result, verified.result);
     await send(message); const uncertain = first.getSnapshot(); assert.equal(uncertain.result!.version, null); assert.equal(uncertain.result!.revision, null);
     assert.equal(uncertain.result!.snapshotRevision, capture.document.revision); assert.equal(uncertain.result!.items[0]!.from, 5); assert.equal(uncertain.isCurrent(), true);
-    f.edit(); assert.equal(uncertain.isCurrent(), false); assert.equal(first.getSnapshot().status, "expired"); assert.equal(first.getSnapshot().result, null);
+    f.edit(); assert.equal(uncertain.isCurrent(), false); assert.equal(uncertain.isPlacementCurrent(), false);
+    assert.equal(first.getSnapshot().status, "pending"); assert.equal(first.getSnapshot().result!.items[0]!.from, 5);
     await a.flush(); await send({ ...message, diagnostics: [{ range: { start: { line: 100, character: 0 }, end: { line: 100, character: 4 } }, message: "outside" }] });
     assert.equal(first.getSnapshot().result!.items[0]!.placement, "out-of-bounds"); assert.equal(first.getSnapshot().result!.items[0]!.from, null);
     const beforeReconnect = first.getSnapshot(); await f.provider.reconnect(); assert.equal(beforeReconnect.isCurrent(), false); assert.equal(first.getSnapshot().status, "expired");
-    await send(message); const beforeReuse = first.getSnapshot(); left.close(); right.close(); await settled();
+    await send(message); f.edit(f.source.documentId, "?"); const beforeReuse = first.getSnapshot();
+    assert.equal(beforeReuse.status, "pending"); assert.equal(beforeReuse.isPlacementCurrent(), true); left.close(); right.close(); await settled();
     const replacement = a.attachDocument(f.source.documentId); await a.flush(); assert.equal(beforeReuse.isCurrent(), false);
     assert.equal(a.observeDiagnostics(replacement).getSnapshot().status, "empty"); assert.equal(first.getSnapshot().status, "expired");
-    const buffer = f.workspace.document(f.source.documentId).buffer; assert.equal(buffer.slice(0, buffer.length), "a😀\r\nsource!"); assert.deepEqual(f.errors, []);
+    const buffer = f.workspace.document(f.source.documentId).buffer; assert.equal(buffer.slice(0, buffer.length), "a😀\r\nsource!?"); assert.deepEqual(f.errors, []);
     replacement.close(); await settled(); f.workspace.releaseResource(f.source.id, true);
     assert.throws(() => f.workspace.document(f.source.documentId), /released/);
-    assert.equal(beforeReuse.isCurrent(), false); assert.equal(verified.isCurrent(), false);
+    assert.equal(beforeReuse.isCurrent(), false); assert.equal(beforeReuse.isPlacementCurrent(), false); assert.equal(verified.isCurrent(), false);
+});
+
+test("pending diagnostics map consecutive edits and undo without renewing provider authority", async t => {
+    const f = fixture(t), scope = f.provider.createScope(), binding = scope.attachDocument(f.source.documentId), state = scope.observeDiagnostics(binding);
+    await scope.connect(); const capture = scope.synchronized(binding)!;
+    const send = async (diagnostics: unknown[], version = capture.version) => {
+        f.peers.at(-1)!.rpc.sendNotification("textDocument/publishDiagnostics", { uri: capture.document.uri, version, diagnostics });
+        await scope.request("test/barrier").result;
+    };
+    const range = (line: number, start: number, end: number) => ({ start: { line, character: start }, end: { line, character: end } });
+    await send([{ range: range(1, 0, 6), message: "word" }, { range: range(1, 2, 2), message: "point" }, { range: range(100, 0, 1), message: "unplaced" }]);
+    const fresh = state.getSnapshot(), initial = fresh.result!;
+    const edit = (from: number, to: number, insert: string) => {
+        const doc = f.workspace.document(f.source.documentId);
+        assert.equal(f.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, edits: [{ from, to, insert }], origin: "human" }).applied, true);
+    };
+    const check = (from: number, to: number) => {
+        const pending = state.getSnapshot(); assert.equal(pending.status, "pending"); assert.equal(pending.isCurrent(), false); assert.equal(pending.isPlacementCurrent(), true);
+        assert.equal(pending.result!.snapshotRevision, f.workspace.document(f.source.documentId).revision);
+        assert.equal(pending.result!.version, initial.version); assert.equal(pending.result!.revision, initial.revision);
+        assert.deepEqual(pending.result!.items.map(item => [item.from, item.to]), [[from, to], [from + 2, from + 2], [null, null]]);
+        assert.equal(pending.result!.items[0]!.range, initial.items[0]!.range); assert.ok(Object.isFrozen(pending.result!.items));
+        return pending;
+    };
+    edit(0, 0, "head\r\n"); const first = check(11, 17); assert.equal(fresh.isCurrent(), false); assert.equal(fresh.isPlacementCurrent(), false);
+    edit(0, 0, "😀"); check(13, 19); assert.equal(first.isPlacementCurrent(), false);
+    const undo = () => { assert.equal(f.workspace.undo({ documentId: f.source.documentId, expectedRevision: f.workspace.document(f.source.documentId).revision }).applied, true); };
+    undo(); check(11, 17); undo(); check(5, 11);
+    assert.deepEqual(initial.items.map(item => [item.from, item.to]), [[5, 11], [7, 7], [null, null]], "Retained snapshots never mutate.");
+    await scope.flush(); const beforeStale = state.getSnapshot().result;
+    await send([]); assert.equal(state.getSnapshot().result, beforeStale); assert.equal(state.getSnapshot().stale, 1);
+    edit(5, 11, "replacement"); assert.deepEqual(state.getSnapshot().result!.items.map(item => item.message), ["unplaced"]);
+    undo(); assert.deepEqual(state.getSnapshot().result!.items.map(item => item.message), ["unplaced"], "Undo cannot resurrect invalidated provider ranges.");
+    const beforeReconnect = state.getSnapshot(); await f.provider.reconnect();
+    assert.equal(beforeReconnect.isPlacementCurrent(), false); assert.equal(state.getSnapshot().status, "expired");
+    await scope.flush(); await send([], scope.synchronized(binding)!.version);
+    assert.equal(state.getSnapshot().status, "current"); assert.equal(state.getSnapshot().isCurrent(), true); assert.deepEqual(state.getSnapshot().result!.items, []);
+    assert.equal(f.workspace.document(f.source.documentId).buffer.diagnostics().textExports, 0);
+    const beforeLoad = state.getSnapshot(), load = f.workspace.beginLoad(f.source);
+    assert.equal(load.accept({ value: "replacement source" }), true); await scope.flush();
+    assert.equal(beforeLoad.isPlacementCurrent(), false); assert.equal(state.getSnapshot().status, "expired"); assert.equal(state.getSnapshot().result, null);
 });
 
 test("feature requests require explicit reconnect after transport loss", async t => {

@@ -41,6 +41,7 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
     const help = owner.createElement("p"); help.textContent = "Ctrl+Space requests completion; Alt+Enter replaces it. Ctrl+F finds, Ctrl+H replaces, F3 moves to the next match, and Escape returns to source. Ctrl+S saves the working source.";
     const choices = owner.createElement("ul"), detail = owner.createElement("pre"), diagnostics = owner.createElement("ul"), uncertain = owner.createElement("ul"), nav = owner.createElement("div"), findStatus = owner.createElement("output");
     detail.setAttribute("aria-label", "Completion detail");
+    const diagnosticStatus = owner.createElement("output"); diagnosticStatus.setAttribute("aria-label", "Diagnostic status");
     uncertain.setAttribute("aria-label", "Unversioned diagnostics");
     choices.setAttribute("role", "listbox"); choices.setAttribute("aria-label", "Completion choices"); diagnostics.setAttribute("aria-label", "Source diagnostics"); findStatus.setAttribute("aria-label", "Find status");
     const fields = ["Find source", "Replacement"].map((name, index) => {
@@ -61,7 +62,7 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
     const buttons = languageActions(tools).map(action => { const button = owner.createElement("button"); button.textContent = action.label;
         nav.append(button); return button; });
     const foldStatus = owner.createElement("output"); foldStatus.setAttribute("aria-label", "Fold status");
-    host.append(heading, help, status, choices, detail, diagnostics, uncertain, ...fields.map(f => f.label), wholeLabel, caseLabel, regexLabel, findStatus, foldStatus, nav);
+    host.append(heading, help, status, choices, detail, diagnosticStatus, diagnostics, uncertain, ...fields.map(f => f.label), wholeLabel, caseLabel, regexLabel, findStatus, foldStatus, nav);
     const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
     const render = () => {
         const state = tools.state.getSnapshot(); setText(status, state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider?.message ?? "Focus a source view to use language actions.");
@@ -80,6 +81,7 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
             uncertain.replaceChildren(...messages.map(message => { const item = owner.createElement("li"); item.textContent = message; return item; }));
         }
         const currentDiagnostics = state.provider?.diagnostics ?? [];
+        setText(diagnosticStatus, state.provider?.diagnosticsPending ? "Diagnostics pending analysis." : "");
         if (diagnostics.childElementCount !== currentDiagnostics.length || currentDiagnostics.some((diagnostic, index) => diagnostics.children.item(index)?.textContent !== `${diagnostic.from}: ${diagnostic.message}`)) {
             const items = currentDiagnostics.map((diagnostic, index) => { const item = owner.createElement("li"), button = owner.createElement("button"); button.textContent = `${diagnostic.from}: ${diagnostic.message}`;
                 button.onclick = () => tools.selectDiagnostic(index); item.append(button); return item; });
