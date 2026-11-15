@@ -10,6 +10,7 @@ type Fixture = { workspace: Workspace; editor: EditingCandidate; host: HTMLEleme
 declare global { interface Window { presentationFixture: Fixture } }
 
 let modules: Map<string, string>, css: string;
+test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
 test.beforeAll(async () => {
     const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/index.ts" }, outdir: "artifacts/presentation-fixture",
         bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
@@ -22,6 +23,130 @@ test.beforeEach(async ({ page }) => {
     });
     await page.goto("/presentation-fixture/");
     await page.addStyleTag({ content: css });
+});
+
+test.describe("scrolling beyond the last line", () => {
+    test("trailing space follows visible rows and scaled extents while editing keeps the visible caret stable", async ({ page }, info) => {
+        const initial = await page.evaluate(async () => {
+            const path = "/presentation-fixture/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
+            const { mountEditingCandidate } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+            const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "trailing-space", variant: "text" }, "Trailing space", { value: "head\nbody\nend" });
+            const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "trailing-space"), host = document.createElement("section");
+            host.style.cssText = "height:240.4px;width:600.4px;zoom:1.25"; document.body.append(host);
+            try { mountEditingCandidate(host, workspace, tab, { scrollBeyondLastLine: 1 as unknown as boolean }); throw new Error("Invalid scroll option accepted."); }
+            catch (error) { if (!(error instanceof TypeError)) throw error; }
+            if (host.childNodes.length || workspace.diagnostics().views) throw new Error("Invalid scroll mount leaked ownership.");
+            const editor = mountEditingCandidate(host, workspace, tab, { ariaLabel: "Trailing source" }), viewport = editor.viewport;
+            window.presentationFixture = { workspace, editor, host, tab, resource: resource.id };
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
+            const defaults = viewport.scrollBeyondLastLine(), ordinary = viewport.snapshot(), selection = editor.view.getSnapshot().selectionSet;
+            viewport.configureScrollBeyondLastLine(true); viewport.flush();
+            const preserved = viewport.snapshot().scrollTop === ordinary.scrollTop, enabled = viewport.snapshot();
+            viewport.scrollTo({ top: 1e12 }); viewport.flush(); const end = viewport.snapshot(), last = host.querySelector('.st-viewport-row[data-line="2"]')!.getBoundingClientRect();
+            const layer = host.querySelector(".st-viewport-layer")!.getBoundingClientRect();
+            viewport.configureScrollBeyondLastLine(false); viewport.flush();
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush(); const restored = viewport.snapshot();
+            let invalid = false; try { viewport.configureScrollBeyondLastLine(null as unknown as boolean); } catch (error) { invalid = error instanceof TypeError; }
+            const renders = restored.renders; viewport.configureScrollBeyondLastLine(false); viewport.flush();
+            return { defaults, ordinary, enabled, end, topError: Math.abs((last.top - layer.top) / 1.25 - 12), preserved, invalid,
+                restored, sameSelection: selection === editor.view.getSnapshot().selectionSet, noOpRenders: viewport.snapshot().renders - renders, pending: viewport.activity().pending };
+        });
+        expect(initial).toMatchObject({ defaults: false, preserved: true, invalid: true, sameSelection: true, noOpRenders: 0, pending: false });
+        expect(initial.ordinary.verticalExtent).toBeCloseTo(3 * initial.ordinary.lineHeight + 24, 5);
+        expect(initial.enabled.verticalExtent).toBeCloseTo(2 * initial.enabled.lineHeight + initial.enabled.height, 5);
+        expect(initial.end.scrollTop).toBeCloseTo(2 * initial.end.lineHeight, 5); expect(initial.topError).toBeLessThan(.05);
+        expect(initial.restored.verticalExtent).toBe(initial.ordinary.verticalExtent); expect(initial.restored.scrollTop).toBe(0);
+
+        const scaled = await page.evaluate(async () => {
+            const f = window.presentationFixture, viewport = f.editor.viewport, doc = f.workspace.document(f.editor.view.documentId);
+            f.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "host", edits: [{ from: 0, to: doc.buffer.length, insert: "x\n".repeat(110000) + "end" }] });
+            viewport.element.style.fontSize = "20px"; viewport.element.style.lineHeight = "2"; f.host.style.height = "300.4px";
+            viewport.configureScrollBeyondLastLine(true); viewport.flush();
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
+            // Drive the native scrollbar to its physical end, then let its scroll event map back.
+            viewport.element.scrollTop = viewport.element.scrollHeight;
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
+            const s = viewport.snapshot();
+            const current = f.workspace.document(doc.id), end = current.buffer.length;
+            f.editor.view.setSelection(current.revision, { anchor: end, head: end }); viewport.flush();
+            const caret = viewport.coordsAt(end)!, layer = f.host.querySelector(".st-viewport-layer")!.getBoundingClientRect();
+            const below = viewport.hitTest(caret.left, layer.bottom - 20);
+            return { s, topError: Math.abs((viewport.rowBounds(110000)!.top - layer.top) / 1.25 - 12), hit: below?.offset, end,
+                horizontalOverflow: viewport.element.scrollWidth - viewport.element.clientWidth, exports: current.buffer.readMetrics().textExports };
+        });
+        expect(scaled.s.verticalExtent).toBeGreaterThan(4_000_000); expect(scaled.s.physicalHeight).toBe(4_000_000);
+        expect(scaled.s.rows).toBeLessThan(16); expect(scaled.s.textUnits).toBeLessThan(40); expect(scaled.topError).toBeLessThan(1.01);
+        expect(scaled.hit).toBe(scaled.end); expect(scaled.horizontalOverflow).toBe(0); expect(scaled.exports).toBe(0);
+        const source = page.getByRole("textbox", { name: "Trailing source", exact: true });
+        const before = await page.evaluate(() => window.presentationFixture.editor.viewport.snapshot().scrollTop);
+        await source.press("A"); await expect(page.locator('.st-viewport-layer .st-viewport-row[data-line="110000"]')).toHaveText("endA");
+        expect(await page.evaluate(() => window.presentationFixture.editor.viewport.snapshot().scrollTop)).toBeCloseTo(before, 4);
+        await source.press("Control+z"); await expect(page.locator('.st-viewport-layer .st-viewport-row[data-line="110000"]')).toHaveText("end");
+        expect(await page.evaluate(() => window.presentationFixture.editor.viewport.snapshot().scrollTop)).toBeCloseTo(before, 4);
+        await info.attach("trailing-space", { body: await page.screenshot(), contentType: "image/png" });
+        const folded = await page.evaluate(() => {
+            const f = window.presentationFixture, viewport = f.editor.viewport, doc = f.workspace.document(f.editor.view.documentId);
+            f.editor.view.folding.setRanges(f.editor.view.folding.getSnapshot(), [{ id: "body", from: 0, to: doc.buffer.offsetAt(110000), collapsed: true }]); viewport.flush();
+            viewport.scrollTo({ top: 1e12 }); viewport.flush(); const s = viewport.snapshot();
+            viewport.configureScrollBeyondLastLine(false); viewport.flush(); const clamped = viewport.snapshot().scrollTop;
+            f.editor.destroy(); return { s, clamped, rejected: !viewport.configureScrollBeyondLastLine(true), reset: !viewport.scrollBeyondLastLine(), nodes: f.host.childNodes.length, views: f.workspace.diagnostics().views };
+        });
+        expect(folded.s.visibleLines).toBe(2); expect(folded.s.scrollTop).toBeCloseTo(folded.s.lineHeight, 5);
+        expect(folded).toMatchObject({ clamped: 0, rejected: true, reset: true, nodes: 0, views: 0 });
+        await info.attach("trailing-space-geometry", { body: JSON.stringify({ initial, scaled, folded }), contentType: "application/json" });
+    });
+
+    test("aligned review applies trailing space independently against the shared visual grid", async ({ page }) => {
+        await page.evaluate(async () => {
+            const path = "/presentation-fixture/", { Workspace, TextBuffer } = await import(path + "core.js") as typeof import("../../src/index.ts");
+            const { mountTextComparison } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+            const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "aligned-trailing", variant: "text" }, "Working", { value: "a\nb\nc" });
+            const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "review"), host = document.createElement("section");
+            host.style.cssText = "height:500px;width:800px"; document.body.append(host);
+            const comparison = mountTextComparison(host, workspace, tab, { buffer: TextBuffer.from("extra\na\nb\nc"), version: "one" }, { rowsAligned: true });
+            window.presentationFixture = { workspace, resource: resource.id, host, tab, comparison, editor: comparison.working };
+        });
+        await page.waitForFunction(() => { const c = window.presentationFixture.comparison!;
+            return c.controller.getSnapshot().status === "ready" && c.snapshot().rowsAligned && !c.working.viewport.activity().pending && !c.referenceViewport()?.activity().pending; });
+        const result = await page.evaluate(() => {
+            const f = window.presentationFixture, c = f.comparison!, working = c.working.viewport, reference = c.referenceViewport()!;
+            working.configureScrollBeyondLastLine(true); working.scrollTo({ top: 1e12 }); working.flush();
+            const independent = !reference.scrollBeyondLastLine(), grid = working.snapshot();
+            reference.configureScrollBeyondLastLine(true); reference.scrollTo({ top: 1e12 }); reference.flush();
+            const top = (viewport: typeof working, line: number) => viewport.rowBounds(line)!.top - viewport.element.querySelector(".st-viewport-layer")!.getBoundingClientRect().top;
+            const workingTop = top(working, 2), referenceTop = top(reference, 3), rows = reference.snapshot().visualRows;
+            working.configureScrollBeyondLastLine(false); working.flush();
+            const clamped = working.snapshot().scrollTop, retained = reference.scrollBeyondLastLine(); c.destroy();
+            return { independent, grid, rows, workingTop, referenceTop, clamped, retained, views: f.workspace.diagnostics().views };
+        });
+        expect(result).toMatchObject({ independent: true, rows: 4, clamped: 0, retained: true, views: 0 });
+        expect(result.grid.visualRows).toBe(4); expect(result.grid.scrollTop).toBeCloseTo(3 * result.grid.lineHeight, 5);
+        expect(result.workingTop).toBeCloseTo(12, 1); expect(result.referenceTop).toBeCloseTo(12, 1);
+    });
+
+    test("empty and single-row documents stay stable in fractional classic-scrollbar viewports", async ({ page }) => {
+        const result = await page.evaluate(async () => {
+            const path = "/presentation-fixture/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
+            const { mountEditingCandidate } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+            const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "empty-trailing", variant: "text" }, "Empty", { value: "" });
+            const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "empty"), host = document.createElement("section");
+            host.style.cssText = "height:240.6px;width:600.6px;zoom:1.25"; document.body.append(host);
+            const editor = mountEditingCandidate(host, workspace, tab, { scrollBeyondLastLine: true }), viewport = editor.viewport;
+            const samples: { width: number; height: number; overflow: boolean; extent: number; lineHeight: number }[] = [];
+            for (const value of ["", "single"]) {
+                const doc = workspace.document(resource.documentId);
+                if (value) workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "host", edits: [{ from: 0, to: 0, insert: value }] });
+                for (let i = 0; i < 12; i++) {
+                    await new Promise(resolve => requestAnimationFrame(resolve)); viewport.flush(); const s = viewport.snapshot(), root = viewport.element;
+                    samples.push({ width: root.clientWidth, height: root.clientHeight, overflow: root.scrollWidth > root.clientWidth || root.scrollHeight > root.clientHeight, extent: s.verticalExtent, lineHeight: s.lineHeight });
+                }
+            }
+            const enabled = viewport.scrollBeyondLastLine(); editor.destroy(); return { samples, enabled, nodes: host.childNodes.length, views: workspace.diagnostics().views };
+        });
+        expect(result).toMatchObject({ enabled: true, nodes: 0, views: 0 });
+        expect(result.samples.every(sample => !sample.overflow && sample.extent === sample.lineHeight + 24)).toBe(true);
+        expect(new Set(result.samples.map(sample => `${sample.width}:${sample.height}`)).size).toBe(1);
+    });
 });
 
 test("ligature policy changes native shaping while preserving caret, selection, input and ownership", async ({ page }, info) => {

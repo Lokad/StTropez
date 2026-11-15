@@ -37,6 +37,8 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     configureCurrentLineHighlight: (enabled: boolean) => boolean;
     fontLigatures: () => boolean;
     configureFontLigatures: (enabled: boolean) => boolean;
+    scrollBeyondLastLine: () => boolean;
+    configureScrollBeyondLastLine: (enabled: boolean) => boolean;
     captureView: () => ViewState; restoreView: (state: ViewState) => void;
     scrollTo: (position: Readonly<{ top?: number; left?: number }>) => void;
     setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean;
@@ -83,12 +85,14 @@ export type RevealOptions = Readonly<{ horizontal?: "center" | "nearest"; vertic
 /** Bounded DOM view layer with local native text geometry. Native-device qualification remains separate. */
 export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId: TabId,
     options: Readonly<{ ariaLabel?: string; view?: DocumentView; overscanLines?: number; overscanUnits?: number; decorate?: LineDecorator; lineClass?: LineClass;
-        columnRulers?: readonly number[]; highlightCurrentLine?: boolean; fontLigatures?: boolean }> = {}): TextViewport {
+        columnRulers?: readonly number[]; highlightCurrentLine?: boolean; fontLigatures?: boolean; scrollBeyondLastLine?: boolean }> = {}): TextViewport {
     let columns = resolveColumnRulers(options.columnRulers);
     let highlightCurrentLine = options.highlightCurrentLine === undefined ? false : options.highlightCurrentLine;
     if (typeof highlightCurrentLine !== "boolean") throw new TypeError("Current-line highlighting must be boolean.");
     let fontLigatures = options.fontLigatures === undefined ? false : options.fontLigatures;
     if (typeof fontLigatures !== "boolean") throw new TypeError("Font ligatures must be boolean.");
+    let scrollBeyondLastLine = options.scrollBeyondLastLine === undefined ? false : options.scrollBeyondLastLine;
+    if (typeof scrollBeyondLastLine !== "boolean") throw new TypeError("Scrolling beyond the last line must be boolean.");
     const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
     if (!tab || tab.surface.kind !== "text") throw new Error("Expected a text surface.");
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId);
@@ -432,7 +436,10 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         }
         const requested = reveal; if (!deferAnchor || requested) anchor = undefined; reveal = undefined;
         x = scrollAxis(Math.max(document.buffer.longestLineLength * columnWidth, measuredWidth) + padding * 2, width);
-        y = scrollAxis(index.visibleLineCount * lineHeight + padding * 2, height);
+        // A lone visible row is already at the top. Do not inflate it to rounded clientHeight:
+        // fractional fitting viewports would acquire mutually triggering classic scrollbars.
+        const trailingSpace = scrollBeyondLastLine && index.visibleLineCount > 1 ? Math.max(0, height - lineHeight - padding * 2) : 0;
+        y = scrollAxis(index.visibleLineCount * lineHeight + padding * 2 + trailingSpace, height);
         top = position(y, top); left = position(x, left);
         // Presentation-only configuration can repaint guides without reading or rebuilding rows.
         rulers.paint(columns, columnWidth, left, width);
@@ -630,6 +637,13 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             if (fontLigatures === enabled) return true;
             fontLigatures = enabled; root.style.fontVariantLigatures = enabled ? "normal" : "none"; invalidate(); return true;
         },
+        scrollBeyondLastLine: () => scrollBeyondLastLine,
+        configureScrollBeyondLastLine: enabled => {
+            notifications.assertWritable(); if (disposed) return false;
+            if (typeof enabled !== "boolean") throw new TypeError("Scrolling beyond the last line must be boolean.");
+            if (scrollBeyondLastLine === enabled) return true;
+            scrollBeyondLastLine = enabled; schedule(); return true;
+        },
         prepareNavigationRows,
         invalidate,
         coordsAt: coordinates,
@@ -737,6 +751,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             rulers.clear(); columns = resolveColumnRulers();
             clearCurrentLine(); highlightCurrentLine = false;
             fontLigatures = false;
+            scrollBeyondLastLine = false;
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); rowSources.clear(); rowSourceRevision = null; paddingRows.clear(); comparisonRows = undefined; renderedAlignmentId = null; geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             painted = undefined; commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove(); clearPreparedRows();
             navigationBatches = 0; maxNavigationBatchRows = 0;

@@ -69,6 +69,17 @@ font asset or shaping engine. A generated fixture with a known `fi` substitution
 actual glyph-width changes, interior carets, selection, hit testing, typing and undo across
 the supported browser engines; native IME/device qualification remains separate.
 
+`scrollBeyondLastLine: true` adds enough empty space below the document to scroll its last
+visible row to the top text padding. It defaults to false. Read it with
+`viewport.scrollBeyondLastLine()` and change it with `configureScrollBeyondLastLine(boolean)`.
+Disabling clamps scrolling to the ordinary document extent; enabling preserves the current
+scroll position. Nearest-edge caret reveal still leaves an already visible caret in place.
+The extra space follows viewport size, line height, folding and the aligned comparison grid,
+including any trailing alignment padding. It adds no source rows or editable text and uses
+the same capped physical/logical scroll mapping as large documents. An empty document or
+single visible row needs no added extent. Validation, no-op and disposal rules match the
+other settings. Each comparison viewport owns its policy.
+
 The display caret follows the measured source position at scroll boundaries, including partly
 clipped rows. Its placement is independent of the bounded native input anchor, so keeping that
 anchor inside the viewport cannot shift the visible caret away from its character.
