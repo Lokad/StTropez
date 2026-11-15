@@ -29,8 +29,8 @@ horizontal ranges, then writes the DOM. A bounded batch of native row-width read
 writes; extent/reveal corrections schedule another frame. Rows are reused, kept in document order and removed
 outside the window. The default overscan is four lines and 32 UTF-16 units per horizontal edge.
 Unchanged row text and inline classes retain their text/span nodes, including selection and
-provider decorations. Each render still obtains current decorations and updates row offsets,
-geometry and revision metadata. Changed text, classes or selection segments replace the affected
+provider decorations. Each render still obtains current decorations and updates row offsets
+and revision metadata. Changed text, classes or selection segments replace the affected
 children; no second document or provider-state cache is retained. Comparison marks can change
 when the exact alignment replaces mapped presentation, replacing the affected styled children.
 Lines up to 512 UTF-16 units render whole for natural browser shaping; longer lines use bounded
@@ -38,6 +38,16 @@ windows. Mounted text and reads scale with viewport dimensions and that per-row 
 rendering, scroll changes nor metadata updates access `DocumentSnapshot.text` or resource value.
 Unrelated resource notifications do not schedule a frame. Multiple changes coalesce into one
 animation frame, while each revision's map updates the retained scroll anchor synchronously.
+
+Native geometry is retained for unchanged mounted rows while the source offset, document
+revision and effective line height match. Each measurement checks the row's client bounds and
+row/inline typography; movement or typography changes expire the measured rectangles, even when
+inline changes leave the outer width unchanged. Changed children, removed rows, font completion
+and explicit `invalidate()` calls discard their geometry. Hosts should invalidate after external
+style or decoration changes. Geometry owns one reusable native Range; it retains copied rectangle
+results, never a Range per character. Coordinate lookup uses the indexed source line, including
+CRLF, empty final rows and collapsed-fold projection. The first query still measures the whole
+bounded row; this cache does not make glyph measurement lazy or skip unchanged viewport paints.
 
 Inline painting validates and clips decoration ranges once, sorts their boundaries, and sweeps
 the active ranges in host-supplied order. Overlapping and duplicate classes retain that order;

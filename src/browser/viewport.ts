@@ -109,26 +109,34 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     let measuredWidth = 0, measuredFont = "", measuredRevision: number | null = null;
     const rows = new Map<number, HTMLDivElement>();
     const paddingRows = new Map<number, HTMLDivElement>();
-    const geometries = new Map<number, ReturnType<typeof rowGeometry>>();
+    type Geometry = Readonly<{ value: ReturnType<typeof rowGeometry>; from: number; revision: number; height: number }>;
+    const geometries = new Map<number, Geometry>();
     const geometry = (element: HTMLDivElement) => {
-        const line = Number(element.dataset.line); let value = geometries.get(line);
-        if (!value) { value = rowGeometry(element, Number(element.dataset.from), renderedRevision!, lineHeight * cssZoom(root)); geometries.set(line, value); } return value;
+        const line = Number(element.dataset.line), from = Number(element.dataset.from), height = lineHeight * cssZoom(root);
+        let entry = geometries.get(line);
+        if (!entry || entry.from !== from || entry.revision !== renderedRevision || entry.height !== height) {
+            entry = { value: rowGeometry(element, from, renderedRevision!, height), from, revision: renderedRevision!, height }; geometries.set(line, entry);
+        }
+        return entry.value;
     };
     const coordinates = (offset: number, affinity: Affinity = "after"): CaretRectangle | undefined => {
         if (disposed || !workspace.resolveTab(target)) return undefined;
         const document = workspace.observeDocument(documentId).getSnapshot();
         if (document?.revision !== renderedRevision || view.folding.getSnapshot().generation !== renderedFoldGeneration
             || !Number.isSafeInteger(offset) || offset < 0 || offset > document.buffer.length) return undefined;
-        const hidden = renderedIndex.hiddenBy(document.buffer.lineAt(offset));
+        const line = document.buffer.lineAt(offset), hidden = renderedIndex.hiddenBy(line);
         if (hidden) { const header = rows.get(hidden.lineFrom), point = header && geometry(header).point(Number(header.dataset.to), "before");
             return point ? Object.freeze({ ...point, offset, affinity }) : undefined; }
-        for (const element of rows.values()) if (offset >= Number(element.dataset.from) && offset <= Number(element.dataset.to) + 1) {
-            const at = rowCaretOffset(document.buffer, Number(element.dataset.to), offset); if (at === undefined) continue;
+        const element = rows.get(line);
+        if (element && offset >= Number(element.dataset.from) && offset <= Number(element.dataset.to) + 1) {
+            const at = rowCaretOffset(document.buffer, Number(element.dataset.to), offset); if (at === undefined) return;
             const point = geometry(element).point(at, affinity); return point && at !== offset ? Object.freeze({ ...point, offset }) : point;
         }
         return undefined;
     };
     const schedule = () => { if (!disposed && frame === undefined) frame = win.requestAnimationFrame(render); };
+    // Host invalidation and font loading can change inline layout without changing text/classes.
+    const invalidate = () => { geometries.clear(); commandGeometry = undefined; clearPreparedRows(); schedule(); };
     const flush = () => { if (disposed) return; if (frame !== undefined) { win.cancelAnimationFrame(frame); frame = undefined; } render(); };
     const position = (axis: ScrollAxis, value: number): number => Math.min(axis.maximum, Math.max(0, value));
     const gapAt = (index: RowIndex, row: number) => "gapAt" in index ? index.gapAt(row) : undefined;
@@ -369,7 +377,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             element.style.transform = `translate(${item.left + shift}px, ${padding + index.rowAt(item.line) * lineHeight - top}px)`;
             element.style.height = `${lineHeight}px`;
             element.style.lineHeight = comparisonRows ? `${lineHeight}px` : "";
-            paintRow(element, item, document, selectionSet);
+            if (paintRow(element, item, document, selectionSet)) geometries.delete(item.line);
             const fold = index.headerAt(item.line), hidden = fold?.collapsed && item.endsLine ? fold.lineTo - fold.lineFrom - 1 : 0;
             // Generated content stays outside text nodes, native text geometry and clipboard data.
             if (hidden) element.dataset.foldedSummary = `… ${hidden} ${hidden === 1 ? "line" : "lines"} hidden`;
@@ -377,7 +385,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             textUnits += item.text.length;
         }
         const visibleLines = new Set(next.map(item => item.line));
-        for (const [line, element] of rows) if (!visibleLines.has(line)) { element.remove(); rows.delete(line); }
+        for (const [line, element] of rows) if (!visibleLines.has(line)) { element.remove(); rows.delete(line); geometries.delete(line); }
         next.forEach((item, index) => { const element = rows.get(item.line)!; if (layer.children.item(index) !== element) layer.insertBefore(element, layer.children.item(index)); });
         const visiblePadding = new Set(blanks);
         for (const [at, element] of paddingRows) if (!visiblePadding.has(at)) { element.remove(); paddingRows.delete(at); }
@@ -386,7 +394,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             element.style.transform = `translate(0px, ${padding + at * lineHeight - top}px)`; element.style.height = `${lineHeight}px`; element.style.width = `${width}px`;
         }
         root.removeAttribute("aria-disabled"); root.dataset.revision = String(document.revision);
-        renderedRevision = document.revision; renderedSelection = selected; renderedSelectionSet = selectionSet; previous = document; renderedIndex = index; renderedFoldGeneration = folds.generation; renderedAlignmentId = comparisonRows?.id ?? null; renders++; geometries.clear();
+        renderedRevision = document.revision; renderedSelection = selected; renderedSelectionSet = selectionSet; previous = document; renderedIndex = index; renderedFoldGeneration = folds.generation; renderedAlignmentId = comparisonRows?.id ?? null; renders++;
         const visibleFolds = new Set<string>(), orderedButtons: HTMLButtonElement[] = [];
         for (const item of next) {
             const region = index.headerAt(item.line); if (!region) continue; visibleFolds.add(region.id);
@@ -481,13 +489,13 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         if (delta) { event.preventDefault(); setScroll({ left: position(x, left + delta[0]!), top: position(y, top + delta[1]!) }); }
     }, { signal: listeners.signal });
     const observer = new ResizeObserver(schedule); observer.observe(root); observer.observe(probe);
-    owner.fonts.addEventListener("loadingdone", schedule, { signal: listeners.signal });
-    owner.fonts.addEventListener("loadingerror", schedule, { signal: listeners.signal });
+    owner.fonts.addEventListener("loadingdone", invalidate, { signal: listeners.signal });
+    owner.fonts.addEventListener("loadingerror", invalidate, { signal: listeners.signal });
     const subscriptions = [workspace.observeDocument(documentId).subscribe(documentChanged), view.subscribe(schedule), view.folding.subscribe(foldsChanged), resource.metadata.subscribe(schedule), workspace.tabState.subscribe(schedule)];
     schedule();
     return Object.freeze({ element: root, view,
         prepareNavigationRows,
-        invalidate: schedule,
+        invalidate,
         coordsAt: coordinates,
         rowBounds: (line: number) => {
             const current = workspace.observeDocument(documentId).getSnapshot(), folding = view.folding.getSnapshot();

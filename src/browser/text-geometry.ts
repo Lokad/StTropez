@@ -9,11 +9,18 @@ export function rowGeometry(element: HTMLElement, from: number, revision: number
     const text = element.textContent ?? "", boundaries = graphemeBoundaries(text), nodes: Text[] = [], owner = element.ownerDocument;
     const iterator = owner.createTreeWalker(element, NodeFilter.SHOW_TEXT);
     for (let node = iterator.nextNode(); node; node = iterator.nextNode()) nodes.push(node as Text);
+    const styled = [element, ...new Set(nodes.map(node => node.parentElement!).filter(parent => parent !== element))];
+    let nativeRange: Range | undefined;
     type Glyph = Readonly<{ start: CaretRectangle; end: CaretRectangle; rtl: boolean; nativeStart: boolean; nativeEnd: boolean }>;
     let bounds: DOMRect | undefined, glyphs = new Map<number, Glyph>(), boxes = new Map<number, readonly DOMRect[]>(), raw = new Map<number, readonly DOMRect[]>(), levels: readonly (number | null)[] = [], order: readonly number[] = [], styleKey = "", flow = 1, prepared = false;
     const ensure = () => {
         const next = element.getBoundingClientRect(), style = owner.defaultView!.getComputedStyle(element);
-        const key = [style.direction, style.font, style.letterSpacing, style.wordSpacing, style.fontVariantLigatures, style.fontKerning, style.unicodeBidi, style.tabSize, style.textAlign].join("|");
+        // Inline typography can change while the row's outer dimensions stay identical.
+        const key = styled.map(node => {
+            const value = node === element ? style : owner.defaultView!.getComputedStyle(node);
+            return [value.direction, value.font, value.letterSpacing, value.wordSpacing, value.fontVariantLigatures, value.fontKerning,
+                value.fontFeatureSettings, value.fontVariationSettings, value.unicodeBidi, value.tabSize, value.textAlign, value.textTransform, value.verticalAlign].join("|");
+        }).join("\n");
         if (bounds && key === styleKey && next.left === bounds.left && next.top === bounds.top && next.width === bounds.width && next.height === bounds.height) return;
         styleKey = key; flow = style.direction === "rtl" ? -1 : 1;
         bounds = next; glyphs = new Map(); boxes = new Map(); raw = new Map(); prepared = false;
@@ -24,7 +31,7 @@ export function rowGeometry(element: HTMLElement, from: number, revision: number
     };
     const range = (start: number, end: number): Range | undefined => {
         const a = locate(start), b = locate(end); if (!a || !b) return;
-        const value = owner.createRange(); value.setStart(a.node, a.offset); value.setEnd(b.node, b.offset); return value;
+        const value = nativeRange ??= owner.createRange(); value.setStart(a.node, a.offset); value.setEnd(b.node, b.offset); return value;
     };
     const collapsed = (offset: number): readonly DOMRect[] => {
         let result = raw.get(offset); if (!result) { result = [...range(offset, offset)?.getClientRects() ?? []]; raw.set(offset, result); } return result;
