@@ -3,7 +3,8 @@ import type { TextEdit } from "./changes.ts";
 import { PositionMap } from "./positions.ts";
 import { joinTrees } from "./avl.ts";
 
-type Backing = Readonly<{ text: string; lines: Readonly<Float64Array>; gaps: Readonly<Float64Array>; gapBase: number }>;
+type LineIndex = Readonly<Uint32Array | Float64Array>;
+type Backing = Readonly<{ text: string; lines: LineIndex; gaps: LineIndex; gapBase: number }>;
 type Piece = Readonly<{ backing: Backing; from: number; length: number; firstLine: number; breaks: number }>;
 type LineMeasure = Readonly<{ prefix: number; suffix: number; longest: number }>;
 type Leaf = LineMeasure & Readonly<{ kind: "leaf"; piece: Piece; length: number; breaks: number; height: 1 }>;
@@ -25,7 +26,7 @@ function readCounters(buffer: TextBuffer) {
 }
 function lowerBound(values: ArrayLike<number>, target: number): number {
     let low = 0, high = values.length;
-    while (low < high) { const middle = (low + high) >>> 1; if (values[middle]! < target) low = middle + 1; else high = middle; }
+    while (low < high) { const middle = low + Math.floor((high - low) / 2); if (values[middle]! < target) low = middle + 1; else high = middle; }
     return low;
 }
 function piece(backing: Backing, from: number, length: number): Leaf {
@@ -41,15 +42,18 @@ function piece(backing: Backing, from: number, length: number): Leaf {
     return Object.freeze({ kind: "leaf", piece: Object.freeze({ backing, from, length, firstLine, breaks }), length, breaks, height: 1, prefix, suffix, longest });
 }
 function backing(text: string): Backing {
-    const offsets: number[] = [];
-    for (let index = text.indexOf("\n"); index !== -1; index = text.indexOf("\n", index + 1)) offsets.push(index);
-    const lines = new Float64Array(offsets);
+    let count = 0;
+    for (let index = text.indexOf("\n"); index !== -1; index = text.indexOf("\n", index + 1)) count++;
+    // Offsets and gaps are bounded by this backing's length, not the whole tree's length.
+    // Keep a wider fallback rather than assuming an engine-specific string length limit.
+    const Index = text.length <= 0xffff_ffff ? Uint32Array : Float64Array, lines = new Index(count);
+    let line = 0;
+    for (let index = text.indexOf("\n"); index !== -1; index = text.indexOf("\n", index + 1)) lines[line++] = index;
     let gapBase = lines.length > 1 ? 1 : 0; while (gapBase < lines.length - 1) gapBase *= 2;
-    const gaps = new Float64Array(gapBase * 2);
+    const gaps = new Index(gapBase * 2);
     for (let index = 0; index + 1 < lines.length; index++) gaps[gapBase + index] = lines[index + 1]! - lines[index]! - 1;
     for (let index = gapBase - 1; index > 0; index--) gaps[index] = Math.max(gaps[index * 2]!, gaps[index * 2 + 1]!);
-    // Owned indexes never escape the private root or change after construction. As in
-    // other immutable numeric indexes, float64 preserves numeric range without freezing every array entry.
+    // Owned indexes never escape the private root or change after construction.
     return Object.freeze({ text, lines, gaps, gapBase });
 }
 function original(text: string): Root { return text.length ? piece(backing(text), 0, text.length) : null; }
