@@ -7,12 +7,13 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .brand { color: #81ddc7; letter-spacing: .17em; text-decoration: none; font-size: 12px; font-weight: 650; }
 .brand span { display: block; color: #e4ecf7; letter-spacing: 0; font-size: 17px; font-weight: 450; margin-top: 4px; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-#code-menu { position: relative; font-size: 13px; }
-#code-menu summary { cursor: pointer; border: 1px solid #36435a; border-radius: 5px; background: #1b273a; padding: 7px 11px; }
-#code-menu > div { position: absolute; top: calc(100% + 6px); right: 0; min-width: 190px; max-height: calc(100vh - 110px); overflow: auto; z-index: 30; padding: 5px; border: 1px solid #40536e; border-radius: 6px; background: #1b283c; box-shadow: 0 8px 28px #0007; }
-#code-menu button { display: block; width: 100%; border: 0; text-align: left; }
-#code-menu label { display: grid; gap: 5px; padding: 7px 11px; }
-#code-menu .menu-check { display: flex; align-items: center; }
+.toolbar-menu { position: relative; font-size: 13px; }
+.toolbar-menu summary { cursor: pointer; border: 1px solid #36435a; border-radius: 5px; background: #1b273a; padding: 7px 11px; }
+.toolbar-menu > div { position: absolute; top: calc(100% + 6px); right: 0; min-width: 190px; max-height: calc(100vh - 110px); overflow: auto; z-index: 30; padding: 5px; border: 1px solid #40536e; border-radius: 6px; background: #1b283c; box-shadow: 0 8px 28px #0007; }
+.toolbar-menu button { display: block; width: 100%; border: 0; text-align: left; }
+.toolbar-menu label { display: grid; gap: 5px; padding: 7px 11px; }
+.toolbar-menu .menu-check { display: flex; align-items: center; white-space: nowrap; }
+#view-menu p { max-width: 240px; padding: 0 11px; color: #aebed3; line-height: 1.5; }
 #character-warning-details { max-width: 340px; }
 #character-warning-details p { padding: 0 11px; color: #aebed3; line-height: 1.5; }
 .demo-symbols, .demo-rename, .demo-actions { position: fixed; z-index: 25; width: min(350px, calc(100vw - 16px)); max-height: min(270px, calc(100vh - 16px)); overflow: auto; padding: 12px; border: 1px solid #50627f; border-radius: 7px; background: #1b283c; box-shadow: 0 8px 28px #0007; font-size: 12px; }

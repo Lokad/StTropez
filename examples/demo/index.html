@@ -10,7 +10,7 @@
     <header><a class="brand" href="./">STTROPEZ<span>TypeScript editor</span></a>
         <div class="toolbar"><label>Example <select id="sample"></select></label>
             <button id="find-toggle" title="Find (Ctrl+F)">Find</button>
-            <details id="code-menu"><summary>Code</summary><div>
+            <details id="code-menu" class="toolbar-menu"><summary>Code</summary><div>
                 <button id="complete" title="Ctrl+Space">Complete</button>
                 <button id="inspect-type" title="Ctrl+K, Ctrl+I">Inspect type</button>
                 <button id="signature" title="Ctrl+Shift+Space">Signature help</button>
@@ -37,6 +37,13 @@
                     <button id="host-insert-table">Insert example table</button>
                     <button id="host-annotate" title="Ctrl+Alt+M">Add source note</button>
                 </div>
+            </div></details>
+            <details id="view-menu" class="toolbar-menu"><summary>View</summary><div>
+                <label class="menu-check"><input id="view-rulers" type="checkbox"> Rulers at 80 and 120</label>
+                <label class="menu-check"><input id="view-current-line" type="checkbox" checked> Highlight current line</label>
+                <label class="menu-check"><input id="view-ligatures" type="checkbox"> Font ligatures</label>
+                <label class="menu-check"><input id="view-trailing-space" type="checkbox"> Scroll beyond last line</label>
+                <p>Applies to source and both review panes. Ligatures depend on the current font.</p>
             </div></details>
             <button id="compare">Compare</button><button id="reset" title="Restore the selected sample's original files; other samples and stored drafts are kept">Reset sample</button>
             <button id="save" class="primary" title="Save in this browser (Ctrl+S)">Save locally</button>

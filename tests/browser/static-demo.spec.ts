@@ -2,6 +2,48 @@ import { expect, test } from "./fixtures.ts";
 import { runDemoHostIntegrations } from "./demo-host-integrations.ts";
 import { runDemoDiagnosticRetention } from "./demo-diagnostics.ts";
 
+test("view controls survive file switches and saved-reference replacement in both review panes", async ({ page, baseURL }, info) => {
+    await page.setViewportSize({ width: 2000, height: 1000 }); await page.goto(baseURL!);
+    const source = page.locator("#editor .st-viewport"), input = source.getByRole("textbox");
+    await expect(source.locator(".st-current-line")).toHaveCount(1);
+    const mounted = await source.elementHandle(), initialHeight = await source.evaluate(element => element.scrollHeight);
+    await page.locator("#view-menu summary").click();
+    for (const id of ["view-rulers", "view-ligatures", "view-trailing-space"]) await page.locator(`#${id}`).check();
+    await expect(source.locator(".st-column-ruler").first()).toBeVisible();
+    await expect(source).toHaveCSS("font-variant-ligatures", "normal");
+    await expect.poll(() => source.evaluate(element => element.scrollHeight)).toBeGreaterThan(initialHeight);
+    expect(await mounted!.evaluate(element => element.isConnected)).toBe(true);
+    await page.locator("#view-menu summary").press("Escape"); await expect(page.locator("#view-menu")).not.toHaveAttribute("open", "");
+    await input.press("Control+Home"); await page.keyboard.type("// View controls\n");
+    await page.getByRole("button", { name: "Compare", exact: true }).click();
+    const panes = page.locator(".st-comparison-panes > section"), left = panes.first(), right = panes.last();
+    await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
+    for (const pane of [left, right]) {
+        await expect(pane.locator(".st-column-ruler").first()).toBeVisible();
+        await expect(pane.locator(".st-current-line")).toHaveCount(1);
+        await expect(pane.locator(".st-viewport")).toHaveCSS("font-variant-ligatures", "normal");
+    }
+    await page.locator("#save").click();
+    await expect(left.locator('.st-viewport-row[data-line="0"]')).toHaveText("// View controls");
+    await expect(left.locator(".st-column-ruler").first()).toBeVisible();
+    await expect(left.locator(".st-viewport")).toHaveCSS("font-variant-ligatures", "normal");
+    await page.locator("#files button").filter({ hasText: "pricing.ts" }).click();
+    await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
+    for (const pane of [left, right]) await expect(pane.locator(".st-column-ruler").first()).toBeVisible();
+    await page.locator("#sample").selectOption("unicode");
+    await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
+    for (const pane of [left, right]) await expect(pane.locator(".demo-token-string").first()).toBeVisible();
+    await page.locator("#view-menu summary").click();
+    for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-trailing-space"]) await expect(page.locator(`#${id}`)).toBeChecked();
+    await info.attach("presentation-controls", { body: await page.screenshot(), contentType: "image/png" });
+    for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-trailing-space"]) await page.locator(`#${id}`).uncheck();
+    for (const pane of [left, right]) {
+        await expect(pane.locator(".st-column-ruler, .st-current-line-background")).toHaveCount(0);
+        await expect(pane.locator(".st-viewport")).toHaveCSS("font-variant-ligatures", "none");
+    }
+    await page.locator("#view-menu summary").press("Escape"); await expect(page.locator("#view-menu summary")).toBeFocused();
+});
+
 test("character warnings explain source characters and stay consistent across review panes", async ({ page, baseURL }, info) => {
     await page.goto(baseURL!); await page.locator("#sample").selectOption("unicode");
     const source = page.getByRole("textbox", { name: "greetings.ts", exact: true });

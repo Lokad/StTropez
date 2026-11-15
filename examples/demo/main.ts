@@ -33,6 +33,13 @@ let viewListeners: AbortController | undefined;
 let reviewLabel: HTMLSpanElement | undefined;
 let hostIntegrations: ReturnType<typeof mountHostIntegrations> | undefined;
 const hostLanguage = () => project?.sample.id === "outline" || project?.sample.id === "host";
+function configurePresentation(view: EditingCandidate | undefined): void {
+    if (!view) return;
+    view.viewport.configureColumnRulers(field("view-rulers").checked ? [80, 120] : []);
+    view.viewport.configureCurrentLineHighlight(field("view-current-line").checked);
+    view.viewport.configureFontLigatures(field("view-ligatures").checked);
+    view.viewport.configureScrollBeyondLastLine(field("view-trailing-space").checked);
+}
 let referencePresentation: DemoPresentation | undefined;
 let problemPage = 0, problemBatch: unknown;
 function refreshBrackets(captured: EditingCandidate | undefined) {
@@ -275,6 +282,7 @@ function mountFile(file: DemoFile, focus = false): void {
             referencePresentation = syntax;
             reference.editor.configureLanguage(editingConfiguration(syntax?.editing)); reference.editor.bracketMatching.configure(true);
             reference.editor.characterWarnings.configure(field("character-warnings").checked);
+            configurePresentation(reference.editor);
             syntax?.update(project!.workspace.document(reference.editor.view.documentId));
             referenceFolding = createFoldingController(project!.workspace, reference.target.id, reference.editor,
                 (capture, signal) => plain
@@ -294,6 +302,7 @@ function mountFile(file: DemoFile, focus = false): void {
     editor.configureLanguage(editingConfiguration());
     editor.bracketMatching.configure(true);
     editor.characterWarnings.configure(field("character-warnings").checked); element("character-warning-details").replaceChildren();
+    configurePresentation(editor);
     if (savedViews.has(file.view)) editor.restoreView({ ...savedViews.get(file.view)!, ...file.view.getSnapshot().selection,
         selectionSet: file.view.getSnapshot().selectionSet });
     folding = mountDemoFolding(project, file, editor, () => editingConfiguration().tabSize!);
@@ -393,6 +402,9 @@ field("character-warnings").addEventListener("change", () => {
     editor?.characterWarnings.configure(enabled); comparison?.reference.getSnapshot()?.editor.characterWarnings.configure(enabled);
     element("character-warning-details").replaceChildren();
 }, { signal: listeners.signal });
+for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-trailing-space"]) field(id).addEventListener("change", () => {
+    configurePresentation(editor); configurePresentation(comparison?.reference.getSnapshot()?.editor);
+}, { signal: listeners.signal });
 on("quickfix", () => languageView?.quickfix());
 for (const command of ["line-comment", "block-comment", "indent", "outdent"] as const) on(command, () => {
     if (editor?.runCommand(command)) editor.focus();
@@ -411,10 +423,12 @@ codeMenu.addEventListener("click", event => {
     const inspection = event.composedPath().some(node => node instanceof HTMLElement && (node.id === "inspect-characters" || node.id === "character-warning-details"));
     if (target.closest("button") && !inspection) codeMenu.open = false;
 }, { signal: listeners.signal });
-document.addEventListener("pointerdown", event => { if (!codeMenu.contains(event.target as Node)) codeMenu.open = false; }, { signal: listeners.signal });
-codeMenu.addEventListener("keydown", event => {
-    if (event.key === "Escape" && codeMenu.open) { event.preventDefault(); codeMenu.open = false; codeMenu.querySelector("summary")!.focus(); }
-}, { signal: listeners.signal });
+for (const menu of [codeMenu, element("view-menu") as HTMLDetailsElement]) {
+    document.addEventListener("pointerdown", event => { if (!menu.contains(event.target as Node)) menu.open = false; }, { signal: listeners.signal });
+    menu.addEventListener("keydown", event => {
+        if (event.key === "Escape" && menu.open) { event.preventDefault(); menu.open = false; menu.querySelector("summary")!.focus(); }
+    }, { signal: listeners.signal });
+}
 on("language-retry", () => {
     const captured = project, file = active, view = editor; if (!captured || !file || !view) return;
     languageView?.destroy(); languageView = undefined;
