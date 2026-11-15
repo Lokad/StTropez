@@ -33,14 +33,26 @@ test("native font registration copies bytes and expires superseded generations o
     expect(result).toMatchObject({ rejected: null, unchanged: true, stable: true, current: true, old: false, secure: false, uuid: "undefined" });
 });
 
-test("failed native decoding preserves the registered font and foreign faces", async ({ page }) => {
+test("failed native decoding preserves the registered font and foreign faces", async ({ page, browserName, browserErrors }) => {
+    // Give only the deliberately rejected face a deterministic name for exact native diagnostics.
+    const family = `_stfont_${"0".repeat(32)}`;
+    if (browserName === "firefox") for (const reason of ["rejected by sanitizer", "font load failed"])
+        browserErrors.allowConsoleError(`[JavaScript Error: "downloadable font: ${reason} (font-family: "${family}" style:normal weight:400 width:100 src index:0) source: (invalid URI)"]`, "");
     const result = await page.evaluate(async bytes => {
         const f = window.nativeFontFixture, foreign = new FontFace("HostExistingFixture", new Uint8Array(bytes));
         await foreign.load(); document.fonts.add(foreign);
         try {
             await f.request().settled;
             const active = f.asset.getSnapshot().current!;
-            const failed = await f.asset.request(f.asset.getSnapshot().generation, new Uint8Array())!.settled;
+            const random = crypto.getRandomValues;
+            crypto.getRandomValues = array => {
+                if (!(array instanceof Uint32Array) || array.length !== 4) throw new Error("Unexpected fault-injection nonce.");
+                array.fill(0); return array;
+            };
+            let rejected;
+            try { rejected = f.asset.request(f.asset.getSnapshot().generation, new Uint8Array())!; }
+            finally { crypto.getRandomValues = random; }
+            const failed = await rejected.settled;
             return { failed, status: f.asset.getSnapshot().status, same: active === f.asset.getSnapshot().current,
                 current: f.asset.isCurrent(active.generation), foreign: document.fonts.has(foreign) };
         } finally { document.fonts.delete(foreign); f.asset.dispose(); }
