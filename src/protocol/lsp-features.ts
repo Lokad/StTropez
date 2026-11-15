@@ -13,6 +13,7 @@ import { isCapturedJson, jsonEqual, jsonSnapshot, RpcError } from "./json-rpc.ts
 import type { JsonValue } from "./json-rpc.ts";
 import type { LspDocumentCapture, LspDocumentSnapshot } from "./lsp-session.ts";
 import type { LspLineIndex, LspPosition, LspRange } from "./lsp-positions.ts";
+import { decodeLspCommand } from "./lsp-command-value.ts";
 
 export type LspDiagnostic = Readonly<{ range: LspRange; placement: "placed" | "out-of-bounds"; from: number | null; to: number | null; message: string; severity: number | null; source: string | null;
     code?: number | string; codeDescription?: Readonly<{ href: string }>; tags?: readonly number[];
@@ -254,7 +255,7 @@ function completionPlans(source: LspDocumentSnapshot, primary: LspCompletion["pr
     return { insert: plan(source.buffer.length, Object.freeze({ from: primary.from, to: primary.insertTo, insert: formatted.text }), additional, formatted.snippet),
         replace: plan(source.buffer.length, Object.freeze({ from: primary.from, to: primary.replaceTo, insert: formatted.text }), additional, formatted.snippet) };
 }
-/** Validate every edit before publication; unsupported snippet items have an explicit disposition. */
+/** Validate every edit before publication; unsupported snippet/command items have an explicit disposition. */
 export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture, offset: number, fallback: LspCompletionFallback | (() => LspCompletionFallback) = { from: offset, to: offset, replaceTo: offset }, options: LspCompletionOptions = {}): LspCompletions {
     // Candidate count and aggregate item text are not protocol validity rules. The session's
     // configurable RPC message limit bounds transport; hosts bound presentation independently.
@@ -277,7 +278,7 @@ export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture
         maxUnits: capture.maxDocumentUnits ?? Number.MAX_SAFE_INTEGER };
     const insertions = new Map<1 | 2, LspCompletion["insertion"]>();
     const items = values.map((item: unknown): LspCompletion | undefined => {
-        if (!record(item) || item.command !== undefined || ![1, 2].includes((item.insertTextFormat ?? defaults.insertTextFormat ?? 1) as number)) invalid();
+        if (!record(item) || ![1, 2].includes((item.insertTextFormat ?? defaults.insertTextFormat ?? 1) as number)) invalid();
         const mode = item.insertTextMode === undefined ? defaults.insertTextMode ?? 2 : item.insertTextMode; if (mode !== 1 && mode !== 2) invalid();
         let insertion = insertions.get(mode);
         if (!insertion) { insertion = Object.freeze({ ...indentation, mode }); insertions.set(mode, insertion); }
@@ -315,6 +316,11 @@ export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture
                 wire.textEdit = { newText: insert.insert, insert: { start: index.at(insert.from), end: index.at(insert.to) }, replace: { start: index.at(replace.from), end: index.at(replace.to) } };
             }
             resolution = jsonSnapshot(wire);
+        }
+        if (item.command !== undefined) {
+            decodeLspCommand(item.command);
+            plan(index.buffer.length, insert, additional); plan(index.buffer.length, replace, additional);
+            omitted.push(Object.freeze({ label, reason: "Completion commands are not supported." })); return;
         }
         let snippet: readonly SnippetStop[] | null = null;
         if ((item.insertTextFormat ?? defaults.insertTextFormat) === 2) {

@@ -6,7 +6,7 @@ import { createLspTargets } from "./lsp-targets.ts";
 import type { LspApplyEdit, LspApplyEditResult } from "./lsp-features.ts";
 import type { LspCommandCall, LspRequestContext } from "./lsp-session.ts";
 import type { LspWorkspaceScope } from "./lsp-workspace.ts";
-import type { LspCommand } from "./lsp-code-actions.ts";
+import type { LspCommand } from "./lsp-command-value.ts";
 
 export type LspCommandScope = Readonly<{ snapshots: () => readonly DocumentSnapshot[]; isCurrent: () => boolean;
     prepare?: () => void; review: (request: LspApplyEdit, context: LspRequestContext) => Promise<LspApplyEditResult> }>;

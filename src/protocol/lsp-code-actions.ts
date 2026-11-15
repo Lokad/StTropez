@@ -3,8 +3,9 @@ import type { JsonValue } from "./json-rpc.ts";
 import { decodeLspDiagnostics, decodeLspWorkspaceEdit, lspWorkspaceEditUris } from "./lsp-features.ts";
 import type { LspDiagnostic, LspEditTarget, LspWorkspaceEdit } from "./lsp-features.ts";
 import type { LspDocumentCapture } from "./lsp-session.ts";
+import { decodeLspCommand } from "./lsp-command-value.ts";
+import type { LspCommand } from "./lsp-command-value.ts";
 
-export type LspCommand = Readonly<{ title: string; command: string; arguments: readonly JsonValue[] }>;
 export type LspCodeAction = Readonly<{ title: string; kind: string | null; preferred: boolean; disabled: string | null;
     edit: LspWorkspaceEdit | null; command: LspCommand | null; resolve: JsonValue | null; diagnostics?: readonly LspDiagnostic[] }>;
 export type LspCodeActions = readonly LspCodeAction[];
@@ -19,16 +20,11 @@ export function lspCodeActionUris(value: unknown): readonly string[] {
 export function decodeLspCodeActions(value: unknown, origin: LspDocumentCapture, resolve: (uri: string) => LspEditTarget | undefined, canResolve = false): LspCodeActions {
     current(origin); if (value === null) return Object.freeze([]); if (!Array.isArray(value)) invalid();
     const text = (value: unknown): string => { if (typeof value !== "string" || !value) invalid(); return value; };
-    const command = (value: unknown): LspCommand => {
-        if (!record(value)) invalid(); const title = text(value.title), name = text(value.command);
-        if (value.arguments !== undefined && !Array.isArray(value.arguments)) invalid(); const args = jsonSnapshot(value.arguments ?? []);
-        return Object.freeze({ title, command: name, arguments: args as readonly JsonValue[] });
-    };
     const actions = value.map((item: unknown): LspCodeAction => {
         if (!record(item)) invalid(); const title = text(item.title);
         if (typeof item.command === "string") {
             if (item.edit !== undefined || item.kind !== undefined || item.disabled !== undefined || item.data !== undefined) invalid();
-            return Object.freeze({ title, kind: null, preferred: false, disabled: null, edit: null, command: command(item), resolve: null });
+            return Object.freeze({ title, kind: null, preferred: false, disabled: null, edit: null, command: decodeLspCommand(item), resolve: null });
         }
         const kind = item.kind === undefined ? null : item.kind === "" ? "" : text(item.kind);
         if (item.isPreferred !== undefined && typeof item.isPreferred !== "boolean") invalid();
@@ -38,7 +34,7 @@ export function decodeLspCodeActions(value: unknown, origin: LspDocumentCapture,
             : decodeLspDiagnostics({ uri: origin.document.uri, version: origin.version, diagnostics: item.diagnostics }, origin).items;
         if (diagnostics?.some(item => item.placement !== "placed")) invalid();
         if (item.data !== undefined) jsonSnapshot(item.data);
-        const edit = item.edit === undefined ? null : decodeLspWorkspaceEdit(item.edit, resolve), cmd = item.command === undefined ? null : command(item.command);
+        const edit = item.edit === undefined ? null : decodeLspWorkspaceEdit(item.edit, resolve), cmd = item.command === undefined ? null : decodeLspCommand(item.command);
         const deferred = canResolve && !edit && !cmd && disabled === null ? jsonSnapshot(item) : null;
         return Object.freeze({ title, kind, preferred: item.isPreferred === true, disabled, edit, command: cmd, resolve: deferred,
             ...(diagnostics === undefined ? {} : { diagnostics }) });

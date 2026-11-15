@@ -98,7 +98,7 @@ test("completion defaults, word fallback and whole-list validation refuse unsupp
     assert.equal(decodeLspCompletions([{ label: "label", insertText: "insert", textEditText: "ignored" }], capture, 8, fallback).items[0]!.insert.edits[0]!.insert, "insert");
     assert.equal(decodeLspCompletions({ ...response, items: [{ label: "label", insertText: "ignored" }] }, capture, 8).items[0]!.insert.edits[0]!.insert, "label");
     assert.deepEqual(decodeLspCompletions(null, capture, 8), { incomplete: false, items: [], omitted: [] });
-    for (const bad of [{ label: "invalid format", insertTextFormat: 3 }, { label: "command", command: { title: "run", command: "host/run" } },
+    for (const bad of [{ label: "invalid format", insertTextFormat: 3 },
         { label: "overlap", textEdit: { newText: "x", range: range(0, 6, 12) }, additionalTextEdits: [{ range: range(0, 7, 8), newText: "bad" }] },
         { label: "clamped", textEdit: { newText: "x", range: range(0, 6, 999) } }, { label: "reversed", textEdit: { newText: "x", insert: range(0, 6, 10), replace: range(0, 6, 8) } },
         { label: "duplicate insert", textEdit: { newText: "x", range: range(0, 8, 8) }, additionalTextEdits: [{ range: range(0, 8, 8), newText: "bad" }] }]) {
@@ -108,6 +108,29 @@ test("completion defaults, word fallback and whole-list validation refuse unsupp
     assert.throws(() => decodeLspCompletions({ ...response, itemDefaults: { ...response.itemDefaults, unknownBehavior: true } }, capture, 8));
     assert.throws(() => decodeLspCompletions({ isIncomplete: false, items: [], itemDefaults: { editRange: range(0, 0, 999) } }, capture, 8));
     assert.equal(decodeLspCompletions(response, capture, 8, () => { throw new Error("Unused word fallback must not reject explicit ranges"); }).items.length, 1);
+});
+
+test("command-bearing completions are omitted without losing valid siblings or accepting malformed edits", async () => {
+    const { capture, expire } = await captured("const saMORE\r\n"), fallback = { from: 6, to: 8, replaceTo: 12 };
+    const command = { title: "", command: "host/follow-up", arguments: [{ uri: capture.document.uri, nested: [1, "x"] }] };
+    const item = { label: "needs command", command, textEdit: { range: range(0, 6, 12), newText: "commandResult" } };
+    const response = { isIncomplete: true, items: [{ label: "first", insertText: "alpha" }, item, { label: "last", insertText: "omega" }] };
+    const result = decodeLspCompletions(response, capture, 8, fallback, { resolve: true });
+    assert.equal(result.incomplete, true); assert.deepEqual(result.items.map(item => item.label), ["first", "last"]);
+    assert.deepEqual(result.omitted, [{ label: "needs command", reason: "Completion commands are not supported." }]);
+    assert.ok(Object.isFrozen(result.omitted) && Object.isFrozen(result.omitted[0]));
+    assert.deepEqual(result.items.map(item => item.replace.edits), [[{ from: 6, to: 12, insert: "alpha" }], [{ from: 6, to: 12, insert: "omega" }]]);
+    command.arguments[0]!.nested.push("changed"); item.label = "changed";
+    assert.equal(result.omitted[0]!.label, "needs command");
+    assert.equal(decodeLspCompletions([item], capture, 8, fallback).items.length, 0);
+    for (const malformed of [null, {}, { ...command, command: 1 }, { ...command, title: 1 }, { ...command, arguments: {} }])
+        assert.throws(() => decodeLspCompletions([{ label: "valid" }, { ...item, command: malformed }], capture, 8, fallback));
+    for (const invalid of [{ ...item, textEdit: { range: range(99, 0, 0), newText: "x" } },
+        { ...item, additionalTextEdits: [{ range: range(0, 7, 8), newText: "overlap" }] }])
+        assert.throws(() => decodeLspCompletions([{ label: "valid" }, invalid], capture, 8, fallback));
+    const lazy = result.items[0]!;
+    assert.throws(() => decodeLspResolvedCompletion({ ...lazy.resolve as object, command }, lazy, capture));
+    expire(); assert.throws(() => decodeLspCompletions(response, capture, 8, fallback), RpcError);
 });
 
 test("mixed snippet lists retain supported choices, map stops past additional edits and validate omitted item ranges", async () => {

@@ -151,8 +151,11 @@ defaults against the session's configured `maxDocumentUnits`. Captures from `Lsp
 that limit. Callers constructing their own capture for the pure decoder should supply it when
 they need an expansion bound; these decoders do not constitute a transport or allocation policy.
 Opaque data still passes immutable JSON validation. Commit characters follow LSP's single-unit
-rule without silently truncating a provider list. Follow-up commands on completion items are
-not advertised and are refused if supplied. Completion documentation remains literal text;
+rule without silently truncating a provider list. Items requiring a follow-up command are
+omitted individually with a label/reason, preserving supported siblings. Their command data
+and edits are still validated; malformed commands or overlapping edits reject the batch.
+Completion acceptance never executes a command, and lazy resolution cannot add one.
+Completion documentation remains literal text;
 hover and signature help separately support the focused [documentation subset](documentation.md).
 
 Pending typing/navigation/table conversion, composition, multiple carets, source revision, selection

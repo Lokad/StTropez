@@ -159,7 +159,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
             const choices = decodeLspCompletions(result, captured.capture, selected.head, () => wordRange(captured.capture!.document.buffer, selected.head), { resolve: configuration.some(option => option.resolveProvider === true), commitCharacters: commits, indentation: captured.indentation });
             captured.choices = Object.freeze({ ...choices, items: Object.freeze(choices.items.map((item, order) => ({ item, order })).sort((a, b) => a.item.sortText < b.item.sortText ? -1 : a.item.sortText > b.item.sortText ? 1 : a.order - b.order).map(value => value.item)) });
             captured.pendingList = false; filter(captured, invocation.automatic === true || options.filterManualCompletions === true);
-            if (!captured.visible.length) { const omitted = choices.omitted.length; release(); publish(omitted ? `${omitted} unsupported snippet choices omitted.` : "No LSP completions for this caret."); return; }
+            if (!captured.visible.length) { const omitted = choices.omitted.length; release(); publish(omitted ? `${omitted} unsupported completion choices omitted.` : "No LSP completions for this caret."); return; }
             publish("LSP completion ready.");
             resolveSelected(captured);
         })().catch(error => {
