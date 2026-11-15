@@ -74,7 +74,8 @@ test("cancelling delayed connection settles the feature without disconnecting an
     const control = f.provider.createScope(); control.attachDocument(f.source.documentId); t.after(control.dispose);
     const call = client.run(f.document(), 6); let result: unknown;
     const observed = call.result.catch(error => { result = error; });
-    call.cancel(); await settled(); assert.ok(cancelled(result)); assert.equal(f.provider.snapshot().documentParticipants, 1);
+    call.cancel(); await settled(); assert.ok(cancelled(result)); assert.equal(f.provider.snapshot().documentParticipants, 2);
+    client.dispose(); assert.equal(f.provider.snapshot().documentParticipants, 1);
     opening.resolve(); await control.connect(); await observed;
     assert.equal(f.provider.snapshot().created, 1); assert.equal(control.synchronized(control.attachDocument(f.source.documentId))!.isCurrent(), true);
 });

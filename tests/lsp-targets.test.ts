@@ -49,7 +49,8 @@ test("navigation resolves an opaque target once without synchronizing it, and re
     assert.equal(result.locations[0]!.from, 6); assert.equal(f.sent("textDocument/didOpen").length, 1); assert.equal(result.isCurrent(), true);
     const doc = f.workspace.document(f.other.documentId);
     f.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, edits: [{ from: 0, to: 0, insert: "changed " }], origin: "human" });
-    assert.equal(result.isCurrent(), false); client.cancel(); await settled(); assert.equal(lease!.released, 1); assert.equal(f.workspace.diagnostics().leases, 0);
+    assert.equal(result.isCurrent(), false); client.cancel(); await settled(); assert.equal(lease!.released, 1); assert.equal(f.workspace.diagnostics().leases, 1);
+    client.dispose(); await settled(); assert.equal(f.workspace.diagnostics().leases, 0);
 });
 
 test("target cancellation and deferred release failures are reported without stopping cleanup", async t => {
@@ -63,7 +64,8 @@ test("target cancellation and deferred release failures are reported without sto
     await client.run([source], source.id, 6, "definition"); client.cancel();
     context.onCancel(() => { throw new Error("Late target cancellation failure"); }); await settled();
     assert.deepEqual(f.errors.splice(0).sort(), ["Late target cancellation failure", "Target cancellation failure", "Target release failure"]);
-    assert.equal(lease.released, 1); assert.equal(f.workspace.diagnostics().leases, 0); assert.equal(f.provider.state.getSnapshot().phase, "ready");
+    assert.equal(lease.released, 1); assert.equal(f.workspace.diagnostics().leases, 1); assert.equal(f.provider.state.getSnapshot().phase, "ready");
+    client.dispose(); await settled(); assert.equal(f.workspace.diagnostics().leases, 0);
 });
 
 for (const stop of ["cancel", "dispose", "supersede", "disconnect"] as const) test(`${stop} settles target loading promptly and releases a late host result exactly once`, async t => {

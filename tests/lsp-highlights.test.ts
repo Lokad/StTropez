@@ -36,13 +36,24 @@ test("large occurrence results retain every range and query overlapping interval
     assert.throws(() => result.intersect(-1, 10)); assert.throws(() => result.intersect(10, 9)); assert.throws(() => result.intersect(0, 20001));
 });
 
-test("occurrence clients cancel obsolete requests, expire edited results and release document ownership", async t => {
+test("occurrence cancellation preserves one synchronization binding until document replacement or disposal", async t => {
     const f = clientFixture(t), client = createLspHighlightClient(f.provider), entered = latch<void>(), answer = latch<unknown>();
     t.after(() => { answer.resolve([]); client.dispose(); });
     f.peer.onRequest("textDocument/documentHighlight", () => { entered.resolve(); return answer.promise; });
     const call = client.run(f.document(), 1), rejected = assert.rejects(call.result, error => error instanceof RpcError && error.code === -32800);
     await entered.promise; call.cancel(); await rejected; await settled(); assert.equal(f.sent("$/cancelRequest").length, 1);
+    assert.equal(f.provider.snapshot().documentParticipants, 1); assert.equal(f.sent("textDocument/didClose").length, 0);
     answer.resolve([]); await settled(); f.peer.onRequest("textDocument/documentHighlight", () => [{ range: range(0, 0, 5) }]);
     const result = await client.run(f.document(), 1).result; assert.equal(result.isCurrent(), true); f.edit(); assert.equal(result.isCurrent(), false);
+    for (let i = 0; i < 5; i++) {
+        client.cancel(); f.edit(); client.options(f.document());
+        const latest = await client.run(f.document(), 1).result; assert.equal(latest.isCurrent(), true);
+        client.cancel(); assert.equal(latest.isCurrent(), false);
+    }
+    assert.equal(f.sent("textDocument/didOpen").length, 1); assert.equal(f.sent("textDocument/didClose").length, 0);
+    assert.equal(f.provider.snapshot().documentParticipants, 1);
+    await client.run(f.workspace.document(f.other.documentId), 1).result; await f.provider.flush();
+    assert.equal(f.sent("textDocument/didOpen").length, 2); assert.equal(f.sent("textDocument/didClose").length, 1);
     client.dispose(); await settled(); assert.equal(f.provider.snapshot().documentParticipants, 0); assert.equal(f.workspace.diagnostics().leases, 0);
+    await f.provider.flush(); assert.equal(f.sent("textDocument/didClose").length, 2);
 });

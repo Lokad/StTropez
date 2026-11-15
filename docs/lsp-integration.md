@@ -38,9 +38,11 @@ Cancellation also settles a request waiting on host preparation; it cannot stop 
 host code, whose late completion is ignored. Releasing an already completed call is a no-op;
 client cancellation, supersession and disposal still expire its published result.
 
-Explicit cancellation/error cleanup releases that feature's document participation.
-Success retains the binding for result currentness and subsequent queries; same-document
-supersession reuses it. Command preparation remains a separate host mutation policy: it may
+Cancellation ends the request and expires its results, releasing any asynchronously loaded
+targets while retaining its synchronization bindings. Repeated caret queries therefore reuse
+one open document and continue sending edits while idle. Bindings leave participation when
+the next project omits them, the client is disposed, the host closes them or a request fails.
+Success and same-document supersession also reuse bindings. Command preparation remains a separate host mutation policy: it may
 commit an explicitly authorized phase and supply its new snapshots before command dispatch.
 
 | Client | Request/result |

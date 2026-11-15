@@ -131,7 +131,7 @@ export function createLspClient(provider: LspWorkspace) {
         // Completed calls may be released by a view without invalidating their published result.
         return Object.freeze({ result, cancel: () => {
             if (op.pending < 1 || op.cancelled) return;
-            if (latest === op) invalidate(true);
+            if (latest === op) invalidate(false);
             else { op.cancelled = true; op.reject(cancelled()); }
         } });
     };
@@ -152,7 +152,7 @@ export function createLspClient(provider: LspWorkspace) {
                 const capture = scope.synchronized(document);
                 return capture ? [Object.freeze({ document: capture.document.documentId, revision: capture.document.revision, length: capture.document.buffer.length })] : [];
             })) }),
-        cancel: () => { if (!disposed) { invalidate(true); notify(); } },
+        cancel: () => { if (!disposed) { invalidate(false); notify(); } },
         dispose: () => {
             if (disposed) return;
             disposed = true;
