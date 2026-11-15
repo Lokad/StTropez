@@ -156,22 +156,29 @@ accepts an indexed match or a manually selected nonempty overlap validated in fu
 an unrelated selection navigates to a match without starting replacement work.
 The next current command skips a just-replaced zero-width occurrence. Undo restores complete sets.
 
-The separately deployed worker and client exchange protocol version 1 in the start request and
+The separately deployed worker and client exchange protocol version 2 in the start request and
 acknowledgement. Missing or incompatible versions fail before source transfer. Execution errors
 carry the active request ID and revision and release that capture.
 
-Source transfer is an explicit global operation: up to 32 Mi UTF-16 units in acknowledged
-32,768-unit chunks, joined only inside the worker. It avoids `TextBuffer.text()` exports, but
-does transfer the entire captured source. Patterns are limited to 4,096 units and one million
+Each controller owns its regex backend and calls its idempotent `dispose()` on expiry or
+destruction. Completed searches and replacement plans retain one worker and one source keyed
+by document ID, revision and immutable buffer identity. Pattern/options changes and replacement
+queries reuse that exact source; a query cancelled before its first message also preserves it.
+New source captures transfer up to 32 Mi UTF-16 units in acknowledged 32,768-unit chunks,
+joined only inside the worker. This avoids `TextBuffer.text()` exports, but changed revisions
+still transfer the complete source. A source token and start acknowledgement prevent reuse
+of incomplete or foreign captures. Patterns are limited to 4,096 units and one million
 matches. Search pages contain at most 512 ranges; replacement pages contain at most 512 small
 edits, with large insertions transferred in acknowledged 32,768-unit fragments. Templates are
 limited to 32,768 units; planned inserted text and final document length are each capped at
 32 Mi units. Limits and malformed responses fail visibly without committing partial plans.
 
 The controller coalesces regex query changes for 80ms by default. A five-second timeout per
-worker exchange terminates the cursor when native matching cannot yield; termination/realm
+worker exchange terminates the worker when native matching cannot yield; termination/realm
 closure is asynchronous. Cancellation, query/revision/selection changes, composition, authority
-loss, tab replacement and disposal invalidate captured work. Only a complete validated plan can
+loss, tab replacement and disposal invalidate captured work. Cancelling an active exchange or
+result stream terminates its worker and drops the source cache; retry starts a fresh lane.
+Worker failures also drop idle cached sources. Only a complete validated plan can
 commit one shared history transaction. Final fragment assembly and model application remain
 synchronous bulk work; worker isolation does not qualify their latency or memory use. A missing
 backend or failed worker reports unavailability without a fallback matcher.

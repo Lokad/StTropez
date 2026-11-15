@@ -1,6 +1,6 @@
 import { regexExpression, regexMatches, regexReplacement } from "../core/regex-search.ts";
 import type { TextEdit } from "../core/changes.ts";
-export const regexProtocolVersion = 1;
+export const regexProtocolVersion = 2;
 export const regexChunkUnits = 32768;
 export const regexSourceLimit = 32 * 1024 * 1024;
 export const regexMatchLimit = 1_000_000;
@@ -12,7 +12,7 @@ export type RegexReply = Readonly<{ operation: "regex-progress"; id: number; rev
     | Readonly<{ operation: "regex-insert"; id: number; revision: number; ordinal: number; from: number; text: string }>
     | Readonly<{ operation: "regex-done"; id: number; revision: number; count: number; outputLength?: number }>
     | Readonly<{ operation: "regex-error"; id: number; revision: number; message: string }>;
-type Request = { id: number; revision: number; length: number; pattern: string; matchCase: boolean; wholeWord: boolean; received: number; parts: string[];
+type Request = { id: number; source: number; revision: number; length: number; pattern: string; matchCase: boolean; wholeWord: boolean; received: number; parts: string[];
     replacement: string | undefined; range: RegexRange | undefined; maxOutputUnits: number };
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const integer = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -21,6 +21,7 @@ const integer = (value: unknown): value is number => typeof value === "number" &
  * Text is joined only in the worker, preserving cross-chunk patterns and lookbehind. */
 export class RegexSession {
     private request: Request | undefined;
+    private source: { id: number; revision: number; text: string } | undefined;
     private generation = 0;
     private readonly matchLimit: number;
     constructor(matchLimit = regexMatchLimit) {
@@ -34,7 +35,7 @@ export class RegexSession {
             if (!integer(value.id) || value.id === 0 || !integer(value.revision)) return;
             const error = (message: string): RegexReply => ({ operation: "regex-error", id: value.id as number, revision: value.revision as number, message });
             if (value.version !== regexProtocolVersion) { yield error("Unsupported regex worker protocol version."); return; }
-            if (!integer(value.length) || value.length > regexSourceLimit || typeof value.pattern !== "string" || value.pattern.length > 4096 || typeof value.matchCase !== "boolean"
+            if (!integer(value.source) || value.source === 0 || !integer(value.length) || value.length > regexSourceLimit || typeof value.pattern !== "string" || value.pattern.length > 4096 || typeof value.matchCase !== "boolean"
                 || value.wholeWord !== undefined && typeof value.wholeWord !== "boolean") {
                 yield error("Regex input exceeds the supported source/pattern bounds."); return;
             }
@@ -46,9 +47,12 @@ export class RegexSession {
             }
             try { regexExpression(value.pattern, value.matchCase, wholeWord); }
             catch { yield error("Invalid regular expression."); return; }
-            this.request = { id: value.id, revision: value.revision, length: value.length, pattern: value.pattern, matchCase: value.matchCase, wholeWord, received: 0, parts: [],
+            const retained = this.source?.id === value.source && this.source.revision === value.revision && this.source.text.length === value.length;
+            if (!retained) this.source = undefined;
+            const received = retained ? value.length : 0;
+            this.request = { id: value.id, source: value.source, revision: value.revision, length: value.length, pattern: value.pattern, matchCase: value.matchCase, wholeWord, received, parts: [],
                 replacement: value.replacement as string | undefined, range: value.range === undefined ? undefined : { from: (value.range as RegexRange).from, to: (value.range as RegexRange).to }, maxOutputUnits: value.maxOutputUnits as number | undefined ?? regexSourceLimit };
-            yield { operation: "regex-progress", id: value.id, revision: value.revision, received: 0, version: regexProtocolVersion }; return;
+            yield { operation: "regex-progress", id: value.id, revision: value.revision, received, version: regexProtocolVersion }; return;
         }
         const request = this.request;
         if (!request) return;
@@ -62,7 +66,8 @@ export class RegexSession {
             yield { operation: "regex-progress", id: request.id, revision: request.revision, received: request.received }; return;
         }
         if (value.operation !== "regex-run" || request.received !== request.length) { yield this.fail("Incomplete regex source capture."); return; }
-        const generation = this.generation, text = request.parts.join(""); request.parts = [];
+        const generation = this.generation, text = this.source?.text ?? request.parts.join(""); request.parts = [];
+        this.source = { id: request.source, revision: request.revision, text };
         if (request.range) for (const at of [request.range.from, request.range.to]) if (at > 0 && at < text.length && /^[\ud800-\udbff][\udc00-\udfff]$/.test(text.slice(at - 1, at + 1))) {
             yield this.fail("Captured regex range splits a Unicode character."); return;
         }
@@ -107,7 +112,7 @@ export class RegexSession {
         return this.request ? this.fail("Regex search failed; editing remains available.") : undefined;
     }
     private fail(message: string): RegexReply {
-        const request = this.request!; this.request = undefined; this.generation++;
+        const request = this.request!; this.request = undefined; this.source = undefined; this.generation++;
         return { operation: "regex-error", id: request.id, revision: request.revision, message };
     }
 }

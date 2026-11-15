@@ -9,12 +9,13 @@ import { regexMatches, regexReplacement } from "../src/core/regex-search.ts";
 function fixture(text: string, supplied = true) {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "find", resource: "regex", variant: "working" }, "Source", { value: text });
     const tab = workspace.open({ kind: "text", documentId: source.documentId }, "left"), view = workspace.createDocumentView(source.documentId), peer = workspace.createDocumentView(source.documentId);
-    let serial = 0, focused = 0, composing = false, holdSecond = false, failPlan = false, badPlan = false;
+    let serial = 0, focused = 0, composing = false, holdSecond = false, failPlan = false, badPlan = false, backendDisposed = false;
     const tasks = new Map<number, () => void>(), held: (() => void)[] = [], plans: { disposed: boolean; capture: FindQueryCapture }[] = [];
     const owner = Object.assign(new EventTarget(), { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), activity: () => ({ disposed: false, composing }),
         viewport: { revealOffset: () => {} }, focus: () => { focused++; } } as unknown as EditingCandidate;
     const backend: FindBackend = {
+        dispose: () => { backendDisposed = true; },
         search: capture => {
             const raw = capture.buffer.slice(0, capture.buffer.length), ranges = [...regexMatches(raw, capture.query, capture.matchCase, capture.wholeWord)].map(m => ({ from: m.from, to: m.to }));
             return { next: () => Promise.resolve({ done: true, scanned: raw.length, readUnits: raw.length, matches: ranges }), dispose: () => {} };
@@ -41,6 +42,7 @@ function fixture(text: string, supplied = true) {
         compose: () => { composing = true; editor.input.dispatchEvent(new Event("compositionstart")); },
         release: () => { held.splice(0).forEach(resolve => resolve()); },
         finish: () => { find.destroy(); held.splice(0).forEach(resolve => resolve()); view.dispose(); peer.dispose(); workspace.close(tab);
+            assert.equal(backendDisposed, supplied);
             assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0); } };
 }
 

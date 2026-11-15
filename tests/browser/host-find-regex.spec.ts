@@ -31,8 +31,9 @@ for (const host of ["plain", "react"]) {
         await query.fill(pattern); await expect(status(page)).toContainText("0 matches · ready"); expect(workers.filter(url => url.endsWith("/regex-worker.js"))).toHaveLength(0);
         await page.getByRole("checkbox", { name: "Match case", exact: true }).uncheck(); await page.getByRole("checkbox", { name: "Whole word", exact: true }).check(); await regex.check();
         await expect(status(page)).toContainText("6 matches · ready"); expect(workers.some(url => url.endsWith("/regex-worker.js"))).toBe(true);
-        const opened = page.waitForEvent("worker", { predicate: worker => worker.url().endsWith("/regex-worker.js") });
-        await query.fill(pattern + "|nomatch"); await opened;
+        const beforeQuery = workers.filter(url => url.endsWith("/regex-worker.js")).length;
+        await query.fill(pattern + "|nomatch"); await expect(status(page)).toContainText("6 matches · ready");
+        expect(workers.filter(url => url.endsWith("/regex-worker.js"))).toHaveLength(beforeQuery);
         await source(page).press("Escape"); await source(page).press("Control+Home"); await source(page).pressSequentially("human ");
         await expect(status(page)).toContainText("6 matches · ready"); await ready(page); expect(await page.evaluate(() => window.hostFixture.range(0, 6))).toBe("human ");
         await button(page, "Find next").click(); await ready(page); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 6, head: 12 });
@@ -58,8 +59,10 @@ for (const host of ["plain", "react"]) {
         await query.focus(); await button(page, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(page)).pendingRuns.length).toBe(1);
         expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(beforeAll.source.id); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source.slice(0, 23))).toBe(changed.slice(0, 23)); await button(page, "Finish run").click();
         await working.press("Control+f"); await expect(status(page)).toContainText("18 matches · ready");
-        const pending = page.waitForEvent("worker", { predicate: worker => worker.url().endsWith("/regex-worker.js") }); await query.fill(pattern + "|nomatch"); const oldWorker = await pending;
-        const oldClosed = oldWorker.waitForEvent("close"); await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); }); await oldClosed; await ready(page);
+        await query.fill(pattern + "|nomatch"); await expect(status(page)).toContainText("18 matches · ready");
+        const oldWorkers = page.workers().filter(worker => worker.url().endsWith("/regex-worker.js")); expect(oldWorkers.length).toBeGreaterThan(0);
+        const oldClosed = Promise.all(oldWorkers.map(worker => worker.waitForEvent("close")));
+        await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); }); await oldClosed; await ready(page);
         await working.press("Control+f"); await expect(regex).toBeChecked(); await expect(status(page)).toContainText("18 matches · ready");
         expect((await snapshot(page)).bindings.comparison!.baseline!.version).toBe(baseline); await exact(page, changed); await exact(page, original, true);
         expect((await snapshot(page)).bindings.views.every(v => v.metrics!.inputUnits <= 2600 && v.metrics!.viewport.rows < 100)).toBe(true);
