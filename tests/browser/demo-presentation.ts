@@ -3,6 +3,46 @@ import type { Page } from "@playwright/test";
 
 type AnalysisControl = { hold: boolean; held: number; release: () => void };
 
+type MetadataProbe = { active: boolean; frame: number; writes: { frame: number; text: string }[] };
+
+export async function runDemoMetadataBatching(page: Page, url: string) {
+    await page.addInitScript(() => {
+        const probe: MetadataProbe = { active: false, frame: 0, writes: [] };
+        Object.assign(window, { demoMetadataProbe: probe });
+        const property = Object.getOwnPropertyDescriptor(Node.prototype, "textContent")!;
+        Object.defineProperty(Node.prototype, "textContent", { ...property, set(this: Node, text: string | null) {
+            if (probe.active && (this as HTMLElement).id === "cursor") probe.writes.push({ frame: probe.frame, text: text ?? "" });
+            property.set!.call(this, text);
+        } });
+        const frame = () => { probe.frame++; requestAnimationFrame(frame); }; requestAnimationFrame(frame);
+    });
+    await page.goto(url);
+    await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    await source.press("Control+Home");
+    await page.evaluate(() => { (window as unknown as { demoMetadataProbe: MetadataProbe }).demoMetadataProbe.active = true; });
+    await source.pressSequentially("// BATCH\n");
+    await expect(page.locator("#cursor")).toHaveText("Ln 2, Col 1");
+    await expect(page.getByRole("button", { name: "main.ts ●", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: "pricing.ts", exact: true }).click();
+    await expect(page.locator("#cursor")).toHaveText("Ln 1, Col 1"); await expect(page).toHaveTitle(/pricing\.ts/);
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    const writes = await page.evaluate(() => (window as unknown as { demoMetadataProbe: MetadataProbe }).demoMetadataProbe.writes);
+    expect(writes.length).toBeGreaterThan(0);
+    const counts = new Map<number, number>(); for (const write of writes) counts.set(write.frame, (counts.get(write.frame) ?? 0) + 1);
+    expect(Math.max(...counts.values())).toBe(1);
+    const afterDispose = await page.evaluate(async () => {
+        const probe = (window as unknown as { demoMetadataProbe: MetadataProbe }).demoMetadataProbe;
+        document.querySelector("#editor textarea")!.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+        window.dispatchEvent(new PageTransitionEvent("pagehide")); const before = probe.writes.length;
+        await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        probe.active = false; return { before, after: probe.writes.length };
+    });
+    expect(afterDispose.after).toBe(afterDispose.before);
+    return { writes: writes.length, frames: counts.size, maximumWritesPerFrame: Math.max(...counts.values()), afterDispose };
+}
+
 type SyntaxTraffic = { worker: number; kind: string; job: number; units: number; base?: number; emit?: boolean }[];
 
 /** Inspect the real worker boundary; no instrumentation is shipped in the demo. */
@@ -29,11 +69,21 @@ export async function runDemoSyntaxDemand(page: Page, url: string): Promise<Synt
     });
     await page.goto(url); await page.locator("#sample").selectOption("large");
     const source = page.getByRole("textbox", { name: "large.ts", exact: true }), status = page.locator("#analysis-status");
-    await expect(source).toBeVisible(); await expect(status).toContainText("syntax & emit", { timeout: 30000 });
     const traffic = () => page.evaluate(() => (window as unknown as { demoSyntaxTraffic: SyntaxTraffic }).demoSyntaxTraffic.filter(m => m.worker === 0));
+    // A status label may describe the preceding frame. Wait for the captured worker job
+    // before asserting transfer counts, including the full initial large-document seed.
+    const completed = (since: number, minimumUnits = 0) => page.waitForFunction(({ since, minimumUnits }) => {
+        const records = (window as unknown as { demoSyntaxTraffic: SyntaxTraffic }).demoSyntaxTraffic.filter(m => m.worker === 0).slice(since);
+        const job = records.filter(m => m.kind === "start").at(-1)?.job;
+        return job !== undefined && records.some(m => m.kind === "result" && m.job === job)
+            && records.filter(m => m.kind === "chunk" && m.job === job).reduce((sum, m) => sum + m.units, 0) >= minimumUnits;
+    }, { since, minimumUnits }, { timeout: 30000 });
+    await expect(source).toBeVisible(); await completed(0, 4_000_000);
+    await expect(status).toContainText("syntax & emit", { timeout: 30000 });
     const hiddenStart = (await traffic()).length;
     await page.locator("#panel-collapse").click();
     await source.press("Control+Home"); await page.keyboard.insertText("// hidden output\n");
+    await completed(hiddenStart);
     await expect(status).toHaveText("TypeScript 5.9.3 · syntax", { timeout: 30000 });
     await expect(page.locator("#editor .demo-token-comment").first()).toHaveText("// hidden output");
     const hidden = (await traffic()).slice(hiddenStart);
@@ -44,6 +94,7 @@ export async function runDemoSyntaxDemand(page: Page, url: string): Promise<Synt
     expect(hidden.filter(m => m.kind === "result").every(m => m.units === 0)).toBe(true);
     const reopenStart = (await traffic()).length;
     await page.locator("#panel-collapse").click();
+    await completed(reopenStart);
     await expect(status).toContainText("syntax & emit", { timeout: 30000 });
     await expect(page.getByRole("region", { name: "JavaScript output", exact: true })).toContainText("// hidden output");
     const reopened = (await traffic()).slice(reopenStart);
@@ -52,11 +103,13 @@ export async function runDemoSyntaxDemand(page: Page, url: string): Promise<Synt
     const problemsStart = (await traffic()).length;
     await page.locator('[data-panel="problems"]').click();
     await source.press("Control+Home"); await page.keyboard.insertText("// problems visible\n");
+    await completed(problemsStart);
     await expect(status).toHaveText("TypeScript 5.9.3 · syntax", { timeout: 30000 });
     const problems = (await traffic()).slice(problemsStart);
     expect(problems.some(m => m.kind === "finish")).toBe(true);
     expect(problems.filter(m => m.kind === "finish").every(m => m.emit === false)).toBe(true);
-    await page.locator('[data-panel="javascript"]').click();
+    const finalStart = (await traffic()).length;
+    await page.locator('[data-panel="javascript"]').click(); await completed(finalStart);
     await expect(status).toContainText("syntax & emit", { timeout: 30000 });
     await expect(page.getByRole("region", { name: "JavaScript output", exact: true })).toContainText("// problems visible");
     return traffic();

@@ -23,6 +23,7 @@ let project: DemoProject | undefined, active: DemoFile | undefined, editor: Edit
 let comparison: TextComparison | undefined, find: FindController | undefined;
 let output: ReturnType<typeof mountDemoOutput> | undefined;
 let panel: "javascript" | "problems" | "changes" = "javascript", disposed = false, opening = 0;
+let metadataFrame: number | undefined;
 let stopWorkspace: (() => void) | undefined, stopRecovery: (() => void) | undefined, stopView: (() => void) | undefined, stopFind: (() => void) | undefined;
 let stopLanguage: (() => void) | undefined, languageView: ReturnType<typeof mountDemoLanguage> | undefined;
 let stopReference: (() => void) | undefined;
@@ -174,6 +175,13 @@ function renderLanguage(): void {
 }
 function renderMetadata(): void {
     if (!project || !active || disposed) return;
+    if (metadataFrame === undefined) metadataFrame = requestAnimationFrame(() => { metadataFrame = undefined; paintMetadata(); });
+    // Capture every revision immediately. Deferring this with the DOM would skip position
+    // maps and lose provisional colors when several edits arrive before one frame.
+    presentation.update(project.workspace.document(active.resource.documentId), hostLanguage());
+}
+function paintMetadata(): void {
+    if (!project || !active || disposed) return;
     const current = project.workspace.document(active.resource.documentId), selection = active.view.getSnapshot().selection;
     const line = current.buffer.lineAt(selection.head), column = selection.head - current.buffer.offsetAt(line);
     element("cursor").textContent = `Ln ${line + 1}, Col ${column + 1}`;
@@ -201,7 +209,6 @@ function renderMetadata(): void {
         tab.setAttribute("aria-pressed", String(file === active));
     }
     document.title = `${project.dirty() ? "● " : ""}${active.name} · StTropez`;
-    presentation.update(current, hostLanguage());
 }
 function detachView(): void {
     hostIntegrations?.dispose(); hostIntegrations = undefined;
@@ -216,6 +223,7 @@ function detachView(): void {
     if (comparison) comparison.destroy(); else editor?.destroy();
     comparison = undefined; editor = undefined; reviewLabel = undefined;
     element("editor").replaceChildren(); element("panel-content").replaceChildren();
+    if (metadataFrame !== undefined) cancelAnimationFrame(metadataFrame); metadataFrame = undefined;
 }
 function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEditor: EditingCandidate) {
     if (capturedProject.sample.id === "outline" || capturedProject.sample.id === "host") return;

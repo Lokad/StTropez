@@ -64,12 +64,12 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
     await expect(page.locator("#files button")).toHaveText(["main.ts"]);
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await select(page, main, "const label = formatLabel"); await main.press("ArrowRight"); await main.press("ArrowLeft");
-    const cursor = await page.locator("#cursor").textContent();
+    const cursor = "Ln 6, Col 25"; await expect(page.locator("#cursor")).toHaveText(cursor);
     await main.press("F12"); await expect(labels).toBeVisible();
     await expect(page.locator("#editor")).toContainText("export function formatLabel");
     await labels.press("Control+End"); await page.keyboard.insertText("// edit the loaded module\n");
     await expect(page.locator("#files")).toContainText("labels.ts ●"); await labels.press("Control+z");
-    await labels.press("Alt+ArrowLeft"); await expect(main).toBeFocused(); await expect(page.locator("#cursor")).toHaveText(cursor!);
+    await labels.press("Alt+ArrowLeft"); await expect(main).toBeFocused(); await expect(page.locator("#cursor")).toHaveText(cursor);
     await select(page, main, "const record: RecordId"); await main.press("ArrowRight"); await main.press("ArrowLeft"); await main.press("F12");
     const declaration = page.getByRole("textbox", { name: "contracts.d.ts", exact: true }); await expect(declaration).toBeVisible();
     await expect(page.locator("#files")).toContainText("contracts.d.ts (read-only)");

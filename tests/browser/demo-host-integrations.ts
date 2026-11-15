@@ -38,14 +38,13 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
     // Textarea values normalize line endings; model paste tests own exact CRLF preservation.
     await expect(source).toHaveValue(original + '"a","b"\n"c","d"');
     await source.press("Control+z"); await expect(source).toHaveValue(original);
-    expect(await source.evaluate(node => {
+    await source.evaluate(node => {
         const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
         event.clipboardData!.setData("text/plain", "pending\tvalue\n".repeat(5000)); node.dispatchEvent(event);
         document.querySelector<HTMLButtonElement>("#save")!.click();
-        const message = document.querySelector("#status")!.textContent;
         node.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
-        return message;
-    })).toContain("An edit is still in progress");
+    });
+    await expect(page.locator("#status")).toContainText("An edit is still in progress");
     await expect(page.locator("#host-status")).toContainText("cancelled"); await source.press("?"); await expect(source).toHaveValue(original + "?");
     await source.press("Control+z"); await expect(source).toHaveValue(original);
     await page.locator("#code-menu summary").click(); await page.locator("#host-insert-table").click();

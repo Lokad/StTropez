@@ -18,7 +18,12 @@ test("documentation and diagnostic details preserve metadata and open permitted 
 test("occurrences follow the caret, edits and large virtualized documents", async ({ page, baseURL }) => { await runDemoHighlights(page, baseURL!, true); });
 
 test("automatic folding survives edits, find and independent review views", async ({ page, baseURL }) => { await runDemoFolding(page, baseURL!); });
-import { runDemoPresentationContinuity, runDemoSyntaxDemand } from "./demo-presentation.ts";
+import { runDemoPresentationContinuity, runDemoSyntaxDemand, runDemoMetadataBatching } from "./demo-presentation.ts";
+
+test("metadata batches frame writes while typing, switching files and disposing", async ({ page, baseURL }, info) => {
+    const counts = await runDemoMetadataBatching(page, baseURL!);
+    await info.attach("metadata-work", { body: JSON.stringify(counts, null, 2), contentType: "application/json" });
+});
 
 test("syntax worker retains large documents and emits only for the visible JavaScript panel", async ({ page, baseURL }, info) => {
     const traffic = await runDemoSyntaxDemand(page, baseURL!);

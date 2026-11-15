@@ -37,6 +37,8 @@ them. File changes clear presentation ownership. See the [visible-continuity che
 The syntax worker retains compiler state and receives incremental replacement text. JavaScript
 emission follows panel visibility; reopening requests current output without re-uploading the
 source. Syntax colors remain active when the output panel is hidden or showing review/problems.
+Cursor, tab, save and recovery metadata paint at most once per animation frame. Document
+captures and provisional color mapping still follow every revision immediately.
 
 Reset sample restores only the selected sample's original files as an undoable edit. Saved
 copies and drafts for other samples are retained. Recovery notices name the draft's files:
