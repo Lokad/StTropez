@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { TextBuffer } from "../src/core/text-buffer.ts";
-import { adjustInsertionText, insertionContext } from "../src/core/insertion-text.ts";
+import { adjustInsertionText, insertionContext, reindentInsertionText } from "../src/core/insertion-text.ts";
 
 test("multiline insertion keeps relative indentation and maps body ranges through spaces and CRLF", () => {
     const buffer = TextBuffer.from("function outer() {\r\n\t\tcall\r\n}\r\n"), at = buffer.offsetAt(1) + 2;
@@ -56,6 +56,10 @@ test("format markers distinguish empty lines, trailing stops and normalized whit
     assert.equal(tabs.mapPosition(2), 3); assert.equal(tabs.mapPosition(3), 3); assert.equal(tabs.mapPosition(4), 4);
     assert.equal(tabs.mapPosition(3, "before"), 3); assert.equal(tabs.mapPosition(2, "before"), 2);
     assert.throws(() => tabs.mapPosition(100), RangeError);
+    const moved = reindentInsertionText("\n        body\n  tail", 8, { columns: 4, tabSize: 4, insertSpaces: true, lineEnding: "\r\n" });
+    assert.equal(moved.text, "\r\n    body\r\ntail");
+    assert.equal(moved.text.slice(moved.mapPosition(9), moved.mapPosition(13, "before")), "body");
+    assert.equal(moved.mapPosition(16), moved.text.indexOf("tail"));
 });
 
 test("formatted marker bounds remain ordered and preserve raw body ranges across varied indentation", () => {

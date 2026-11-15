@@ -115,6 +115,16 @@ must fit the captured document limit. Applying that batch and selection set thro
 Workspace edit makes acceptance one undo unit. The pure planner does not establish a
 browser snippet session or qualify subsequent editing of differently indented fields.
 
+The core snippet planner retains per-occurrence insertion context. `planSnippetEdit` maps
+corresponding field bodies across different indentation and LF/CRLF lengths, while ordinary
+paste/composition text remains literal. Its optional final `adjustNewlines` argument is for
+editor-generated newline indentation; it uses the current local line context. An incompatible
+selection/edit batch returns no snippet plan so the editor can apply that user edit normally.
+`planSnippetChoice` formats each occurrence, preserves the requested primary occurrence and
+checks the aggregate document limit. `snippetChoiceText` supplies the corresponding display
+value, including the captured first-line placement when indentation crosses a tab boundary.
+These helpers are qualified independently; the browser integration remains pending below.
+
 Acceptance selects every occurrence of the first numbered field. Typing, deletion, paste and
 composition commit mirror through the existing input, Workspace validation and history paths.
 Tab/Shift+Tab traverse fields; Alt+Up/Down cycles choices. Hosts render `snapshot.snippet` and use

@@ -6,10 +6,12 @@ import type { Affinity, PositionMapping } from "./positions.ts";
 
 export type InsertionIndentation = Readonly<{ tabSize: number; insertSpaces: boolean }>;
 export type InsertionContext = InsertionIndentation & Readonly<{ columns: number; lineEnding: "\n" | "\r\n" }>;
+export type InsertionMarkerIndentation = Readonly<{ sourceColumns: number; columns: number }>;
 export type InsertionText = Readonly<{ text: string; mapping: PositionMapping;
     /** Annotation positions stay before line breaks and can exclude newly added indentation.
      * Positions inside whitespace compressed to a tab snap to its requested boundary. */
-    mapPosition: (offset: number, affinity?: Affinity) => number }>;
+    mapPosition: (offset: number, affinity?: Affinity) => number;
+    markerIndentation: (offset: number) => InsertionMarkerIndentation | undefined }>;
 
 function validateIndentation(value: InsertionIndentation): void {
     if (!Number.isSafeInteger(value.tabSize) || value.tabSize < 1 || value.tabSize > 256 || typeof value.insertSpaces !== "boolean")
@@ -33,8 +35,13 @@ export function insertionContext(buffer: TextBuffer, offset: number, indentation
 /** Preserve the first line and relative indentation, adding the insertion line's indentation
  * to subsequent lines. Normalize their leading whitespace and LF/CRLF endings only. */
 export function adjustInsertionText(value: string, context: InsertionContext, maxUnits = Number.MAX_SAFE_INTEGER): InsertionText {
+    return reindentInsertionText(value, 0, context, maxUnits);
+}
+/** Transfer editor-generated newline indentation between captured insertion contexts. */
+export function reindentInsertionText(value: string, sourceColumns: number, context: InsertionContext, maxUnits = Number.MAX_SAFE_INTEGER): InsertionText {
     validateIndentation(context);
     if (typeof value !== "string" || !Number.isSafeInteger(context.columns) || context.columns < 0
+        || !Number.isSafeInteger(sourceColumns) || sourceColumns < 0
         || context.lineEnding !== "\n" && context.lineEnding !== "\r\n" || !Number.isSafeInteger(maxUnits) || maxUnits < 0)
         throw new RangeError("Invalid insertion text context or limit.");
     const changes: { from: number; to: number; insert: string | number }[] = [];
@@ -52,7 +59,7 @@ export function adjustInsertionText(value: string, context: InsertionContext, ma
             else break;
             to++;
         }
-        columns += context.columns;
+        columns = Math.max(0, columns + context.columns - sourceColumns);
         if (!Number.isSafeInteger(columns)) throw new RangeError("Adjusted insertion exceeds the insertion limit.");
         runs.push({ from: end + 1, to, columns, tabEnds });
         const tabs = context.insertSpaces ? 0 : Math.floor(columns / context.tabSize), spaces = context.insertSpaces ? columns : columns % context.tabSize;
@@ -77,15 +84,18 @@ export function adjustInsertionText(value: string, context: InsertionContext, ma
         while (low < high) { const mid = Math.floor((low + high) / 2); if (items[mid]!.from <= offset) low = mid + 1; else high = mid; }
         return items[low - 1];
     };
+    const sourceColumn = (run: typeof runs[number], offset: number) => {
+        let low = 0, high = run.tabEnds.length / 2;
+        while (low < high) { const mid = Math.floor((low + high) / 2); if (run.tabEnds[mid * 2]! <= offset) low = mid + 1; else high = mid; }
+        return low ? run.tabEnds[(low - 1) * 2 + 1]! + offset - run.tabEnds[(low - 1) * 2]! : offset - run.from;
+    };
     const mapPosition = (offset: number, affinity: Affinity = "after"): number => {
         if (!Number.isSafeInteger(offset) || offset < 0 || offset > value.length || affinity !== "before" && affinity !== "after") throw new RangeError("Invalid insertion marker.");
         const run = preceding(runs, offset);
         if (run && offset <= run.to) {
             const start = mapping.map(run.from, "before").offset;
             if (offset === run.from && affinity === "before") return start;
-            let low = 0, high = run.tabEnds.length / 2;
-            while (low < high) { const mid = Math.floor((low + high) / 2); if (run.tabEnds[mid * 2]! <= offset) low = mid + 1; else high = mid; }
-            const columns = context.columns + (low ? run.tabEnds[(low - 1) * 2 + 1]! + offset - run.tabEnds[(low - 1) * 2]! : offset - run.from);
+            const columns = Math.max(0, context.columns - sourceColumns + sourceColumn(run, offset));
             if (context.insertSpaces) return start + columns;
             const tabs = Math.floor(run.columns / context.tabSize), tabColumns = tabs * context.tabSize;
             return start + (columns < tabColumns ? (affinity === "after" ? Math.ceil : Math.floor)(columns / context.tabSize) : tabs + columns - tabColumns);
@@ -93,5 +103,10 @@ export function adjustInsertionText(value: string, context: InsertionContext, ma
         const ending = preceding(breaks, offset);
         return ending && offset < ending.to ? mapping.map(ending.from, "before").offset : mapping.map(offset, affinity).offset;
     };
-    return Object.freeze({ text: edits.length ? applyTextEdits(value, edits) : value, mapping, mapPosition });
+    const markerIndentation = (offset: number): InsertionMarkerIndentation | undefined => {
+        const run = preceding(runs, offset); if (!run || offset > run.to) return;
+        const raw = sourceColumn(run, offset), columns = Math.max(0, context.columns - sourceColumns + raw), tabColumns = Math.floor(run.columns / context.tabSize) * context.tabSize;
+        return Object.freeze({ sourceColumns: raw, columns: !context.insertSpaces && columns < tabColumns ? Math.ceil(columns / context.tabSize) * context.tabSize : columns });
+    };
+    return Object.freeze({ text: edits.length ? applyTextEdits(value, edits) : value, mapping, mapPosition, markerIndentation });
 }

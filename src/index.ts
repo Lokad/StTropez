@@ -36,7 +36,7 @@ export { createSelectionSet, mapSelectionSet, planSelectionEdits } from "./core/
 export type { SelectionSet, SelectionEditPlan } from "./core/selections.ts";
 export { resolveLanguageConfiguration, planLanguageEdit } from "./core/language-edits.ts";
 export type { LanguageConfiguration, ResolvedLanguageConfiguration, EditingCommand, EditingPair, LanguageEditContext, PairingContext, EnterIndent } from "./core/language-edits.ts";
-export { parseSnippet, offsetSnippetStops, planSnippetEdit } from "./core/snippets.ts";
+export { parseSnippet, offsetSnippetStops, planSnippetEdit, snippetChoiceText, planSnippetChoice } from "./core/snippets.ts";
 export type { Snippet, SnippetStop, SnippetOccurrence, SnippetParseResult, SnippetEditPlan } from "./core/snippets.ts";
 export { Workspace } from "./core/workspace.ts";
 export type {

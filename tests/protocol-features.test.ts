@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
 import type { ApplyWorkspaceEditParams, CodeAction, Command, CompletionList, PublishDiagnosticsParams, WorkspaceEdit } from "vscode-languageserver-protocol/node.js";
 import { TextBuffer } from "../src/core/text-buffer.ts";
-import { Workspace, createSelectionSet, planSnippetEdit } from "../src/index.ts";
+import { Workspace, createSelectionSet, planSnippetEdit, planSnippetChoice, snippetChoiceText } from "../src/index.ts";
 import type { JsonValue, LspDocumentCapture, RpcTransport } from "../src/protocol/index.ts";
 
 const { LspLineIndex, UnsupportedLspSnippetError, decodeLspCompletions, decodeLspResolvedCompletion, rebaseLspCompletion, lspCompletionPlan, decodeLspDiagnostics, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, decodeLspApplyEdit, decodeLspCodeActions, decodeLspResolvedCodeAction, lspRangeOffsets, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
@@ -202,6 +202,20 @@ test("adjusted insertion expansion respects the captured limit before publicatio
     const lazy = decodeLspCompletions([{ ...wire, insertText: "short" }], bounded, 8, undefined, { resolve: true }).items[0]!;
     assert.throws(() => decodeLspResolvedCompletion(wire, lazy, bounded), /insertion limit/);
     assert.equal(decodeLspCompletions([{ ...wire, insertTextMode: 1 }], bounded, 8).items[0]!.replace.edits[0]!.insert, wire.insertText);
+});
+
+test("contextual choices retain their captured first-line placement when indentation crosses a tab boundary", async () => {
+    const { capture } = await captured("  target\n"), item = decodeLspCompletions([{ label: "choice", insertTextMode: 2, insertTextFormat: 2,
+        textEdit: { range: range(0, 2, 8), newText: "first\n${1|  a,    b,c|}\n$0" } }], capture, 8, undefined,
+        { indentation: { tabSize: 4, insertSpaces: false } }).items[0]!;
+    const buffer = capture.document.buffer.apply(item.replace.edits).buffer, stop = item.replace.snippet![0]!, rangeValue = stop.ranges[0]!;
+    assert.equal(buffer.text(), "  first\n\ta\n  \n");
+    assert.equal(snippetChoiceText(stop, rangeValue, 0), buffer.slice(rangeValue.from, rangeValue.to));
+    const chosen = planSnippetChoice(buffer, item.replace.snippet!, 0, 1)!, next = buffer.apply(chosen.edits).buffer;
+    assert.equal(next.text(), "  first\n\t  b\n  \n");
+    assert.equal(snippetChoiceText(chosen.stops[0]!, chosen.stops[0]!.ranges[0]!, 1), "  b");
+    const last = planSnippetChoice(next, chosen.stops, 0, 2)!;
+    assert.equal(next.apply(last.edits).buffer.text(), "  first\n\tc\n  \n");
 });
 
 test("several-caret completion formats each context and restores the full transaction and primary selection through undo", async t => {

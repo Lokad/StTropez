@@ -240,11 +240,12 @@ function plan(length: number, primary: TextEdit, additional: readonly TextEdit[]
     return Object.freeze({ edits: Object.freeze(edits), head, snippet });
 }
 function completionText(source: LspDocumentSnapshot, from: number, text: string, snippet: readonly SnippetStop[] | null, insertion: LspCompletion["insertion"]) {
-    if (insertion.mode === 1 || !text.includes("\n")) return { text, snippet };
-    const formatted = adjustInsertionText(text, insertionContext(source.buffer, from, insertion), insertion.maxUnits);
+    if (insertion.mode === 1 || !snippet && !text.includes("\n")) return { text, snippet };
+    const context = insertionContext(source.buffer, from, insertion), formatted = adjustInsertionText(text, context, insertion.maxUnits);
     const stops = snippet && Object.freeze(snippet.map(stop => Object.freeze({ ...stop, ranges: Object.freeze(stop.ranges.map(range => {
         const from = formatted.mapPosition(range.from), to = range.from === range.to ? from : Math.max(from, formatted.mapPosition(range.to, "before"));
-        return Object.freeze({ ...range, from, to });
+        const firstLine = formatted.markerIndentation(range.from);
+        return Object.freeze({ ...range, from, to, insertion: context, ...(firstLine ? { firstLine } : {}) });
     })) })));
     return { text: formatted.text, snippet: stops };
 }
@@ -433,7 +434,7 @@ export function lspCompletionPlan(item: LspCompletion, mode: "insert" | "replace
     const groups = targets.map((target, index) => {
         const from = mapping.map(target.from, "before").offset, value = formatted[index]!, base = order;
         const snippet = value.snippet && Object.freeze(value.snippet.map(stop => Object.freeze({ ...stop, ranges: Object.freeze(stop.ranges.map(range => {
-            order = Math.max(order, base + range.order + 1); return Object.freeze({ from: from + range.from, to: from + range.to, order: base + range.order });
+            order = Math.max(order, base + range.order + 1); return Object.freeze({ ...range, from: from + range.from, to: from + range.to, order: base + range.order, group: index });
         })) })));
         return { snippet, head: snippet?.find(stop => stop.index === 0)?.ranges[0]?.from ?? from + value.text.length };
     });
