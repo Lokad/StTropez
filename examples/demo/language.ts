@@ -154,18 +154,20 @@ export class DemoLanguage {
         try {
             await scope.flush(); if (!current()) return;
             const project = scope.captureProject(), documents = this.files.map(file => this.workspace.document(file.resource.documentId)), results: DemoDiagnostic[] = [];
+            // Any source or inventory change invalidates this generation. Check the request's
+            // target at each await, then all bindings once before publishing the project result.
             const capturesCurrent = () => current() && [...project.values()].every(capture => capture.isCurrent());
             for (const file of this.files) {
                 const uri = this.config!.documents[file.name]!.uri, capture = project.get(uri)!;
                 const document = this.workspace.document(file.resource.documentId), syntax = this.diagnostics.syntax(document);
                 for (const kind of ["syntactic", "semantic"] as const) {
-                    if (!capturesCurrent()) return;
+                    if (!current() || !capture.isCurrent()) return;
                     if (kind === "syntactic" && syntax) { results.push(...syntax); continue; }
                     // Semantic diagnostics may change in untouched importers. The demo provider
                     // supplies no dependency proof, so keep the project-wide semantic fallback.
                     const call = scope.request("sttropez/diagnostics", { uri, kind }); this.calls.add(call);
                     let response: unknown; try { response = await call.result; } finally { this.calls.delete(call); }
-                    if (!capturesCurrent()) return;
+                    if (!current() || !capture.isCurrent()) return;
                     if (!object(response) || response.success !== true || !Array.isArray(response.body)) throw new Error("Invalid TypeScript diagnostics.");
                     // This custom response is correlated to our request/project, but has no provider version.
                     const batch = decodeLspDiagnostics({ uri, diagnostics: response.body }, capture);

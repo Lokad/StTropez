@@ -33,6 +33,10 @@ Unchanged documents reuse syntax results; semantic checks still cover every load
 because an edited export can change errors in an untouched importer. The current provider
 supplies no dependency graph for narrower invalidation. Mapping traverses retained diagnostic
 items and related locations without scanning document text. Retry/disconnect clear these caches.
+Each check uses the project's source/inventory generation and validates its current target
+before and after a reply. A final pass validates all captured bindings before publication,
+including bindings that expired without a source change. This avoids checking the whole
+project around every request while retaining rejection of cross-file and late replies.
 
 The Code menu exposes line/block comments, indentation and two/four-space or tab settings.
 The same public configuration serves the source and comparison views. TypeScript Enter adds
