@@ -14,7 +14,21 @@ test("binary messages close the text transport and release pending requests", as
     const state = await page.evaluate(() => window.protocolFixture.binaryRejection()); expect(state.reason).toContain("text messages");
     expect(state.snapshot).toEqual({ disposed: true, pendingRequests: 0, incomingRequests: 0, requestHandlers: 0, notificationHandlers: 0 }); expect(state.timers).toBe(0);
 });
-test("cancelling socket opening rejects without creating protocol ownership", async ({ page }) => {
+test("cancelling socket opening rejects without creating protocol ownership", async ({ page, browserName, browserErrors }) => {
+    const endpoint = new URL("/lsp-fixture", page.url()); endpoint.protocol = "ws:";
+    const script = new URL("/protocol-fixture.js", page.url()).href;
+    if (browserName === "webkit") browserErrors.allowConsoleError(
+        `WebSocket connection to '${endpoint.href}' failed: WebSocket is closed before the connection is established.`, script);
+    if (browserName === "firefox") {
+        // Firefox includes the native constructor's bundle line in its abort diagnostics.
+        // Locate that line so each allowance still matches one exact message and source URL.
+        const source = await (await page.request.get(script)).text();
+        const lines = source.split(/\r?\n/).flatMap((line, index) => /\bnew WebSocket\(/.test(line) ? [index + 1] : []);
+        expect(lines).toHaveLength(1);
+        for (const message of [`Firefox can’t establish a connection to the server at ${endpoint.href}.`,
+            `The connection to ${endpoint.href} was interrupted while the page was loading.`])
+            browserErrors.allowConsoleError(`[JavaScript Error: "${message}" {file: "${script}" line: ${lines[0]}}]`, script);
+    }
     expect(await page.evaluate(() => window.protocolFixture.abortOpening())).toBe(true);
 });
 for (const large of [false, true]) test(`LSP session synchronizes ${large ? "100k-line" : "mixed-newline"} documents and owns registration/reconnect`, async ({ page }) => {
