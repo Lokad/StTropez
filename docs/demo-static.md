@@ -46,6 +46,8 @@ visiting Large file can therefore offer unsaved edits from an earlier visit even
 Shopping cart. Restore applies them, Download preserves a copy, and Keep current files discards
 that exact offered draft. A draft already identical to the current saved files is cleared on
 reopen; token checks prevent cleanup from deleting a newer draft written by another page.
+Peer draft notices identify the changed sample, so unrelated cached samples do not reread
+their records. Token checks remain authoritative when peer notifications are unavailable.
 Caret/scroll snapshots belong to the actual document view, independently of workspace-local IDs.
 
 The completion catalogue sample offers 1,200 fields from a real TypeScript object. Every matching

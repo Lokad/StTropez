@@ -13,7 +13,13 @@ export function createBrowserDraftStore(owner: Window & typeof globalThis,
     const name = options.name ?? "sttropez-example-drafts-v1", slot = options.slot ?? "working-inputs", watchers = new Set<() => void>();
     let opening: Promise<IDBDatabase> | undefined, closed = false;
     let channel: BroadcastChannel | undefined;
-    try { channel = new owner.BroadcastChannel(name); channel.onmessage = () => { for (const changed of [...watchers]) changed(); }; } catch { /* Storage operations still enforce captured tokens. */ }
+    try {
+        channel = new owner.BroadcastChannel(name);
+        channel.onmessage = ({ data }: MessageEvent<unknown>) => {
+            if (!data || typeof data !== "object" || !("slot" in data) || data.slot !== slot) return;
+            for (const changed of [...watchers]) changed();
+        };
+    } catch { /* Storage operations still enforce captured tokens. */ }
     const database = () => opening ??= new Promise<IDBDatabase>((resolve, reject) => {
         try {
             const request = owner.indexedDB.open(name, 1); let failed = false;
@@ -33,7 +39,7 @@ export function createBrowserDraftStore(owner: Window & typeof globalThis,
         return new Promise((resolve, reject) => {
             const tx = change ? db.transaction("drafts", "readwrite", { durability: "strict" }) : db.transaction("drafts", "readonly");
             const store = tx.objectStore("drafts"), get = store.get(slot); let result: StoredDraft | null = null, failure: unknown;
-            tx.oncomplete = () => { resolve(result); if (change) try { channel?.postMessage("changed"); } catch { /* Token checks remain authoritative if notification fails. */ } };
+            tx.oncomplete = () => { resolve(result); if (change) try { channel?.postMessage({ slot }); } catch { /* Token checks remain authoritative if notification fails. */ } };
             tx.onabort = tx.onerror = () => reject(failure ?? tx.error ?? new Error("Recovery transaction failed."));
             get.onsuccess = () => { try {
                 result = envelope(get.result);

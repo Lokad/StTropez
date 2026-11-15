@@ -62,6 +62,48 @@ test("browser-only providers retain two-page save/conflict and recovery ownershi
     await runDemoConflict(page, baseURL!);
 });
 
+test("peer recovery reads only the changed sample while unrelated samples stay cached", async ({ page, baseURL }, info) => {
+    type Probe = { reads: string[]; notices: number };
+    await page.addInitScript(() => {
+        const probe: Probe = { reads: [], notices: 0 }, name = "sttropez-demo-recovery-v1";
+        Object.assign(window, { demoRecoveryProbe: probe });
+        const get = IDBObjectStore.prototype.get, Native = BroadcastChannel;
+        IDBObjectStore.prototype.get = function (key) {
+            if (this.transaction.db.name === name) probe.reads.push(String(key));
+            return get.call(this, key);
+        };
+        window.BroadcastChannel = class extends Native {
+            constructor(channel: string) { super(channel); if (channel === name) this.addEventListener("message", () => { probe.notices++; }); }
+        };
+    });
+    await page.goto(baseURL!); await expect(page.locator("#recovery-status")).toHaveText("Recovery is ready.");
+    await page.locator("#sample").selectOption("host");
+    await expect(page.locator("#recovery-status")).toHaveText("Recovery is ready.");
+    const peer = await page.context().newPage();
+    try {
+        await peer.goto(baseURL!); await expect(peer.locator("#recovery-status")).toHaveText("Recovery is ready.");
+        await page.evaluate(() => { const probe = (window as unknown as { demoRecoveryProbe: Probe }).demoRecoveryProbe; probe.reads = []; probe.notices = 0; });
+        const source = peer.getByRole("textbox", { name: "main.ts", exact: true });
+        await source.press("Control+Home"); await peer.keyboard.insertText("// Peer recovery\n");
+        await expect(peer.locator("#recovery-status")).toHaveText("Recovery draft captured in this browser.");
+        // Both cached stores receive the native broadcast. Only its owning slot may read.
+        await page.waitForFunction(() => {
+            const probe = (window as unknown as { demoRecoveryProbe: Probe }).demoRecoveryProbe;
+            return probe.notices === 2 && probe.reads.includes("pricing");
+        });
+        const work = await page.evaluate(() => (window as unknown as { demoRecoveryProbe: Probe }).demoRecoveryProbe);
+        await info.attach("recovery-work", { body: JSON.stringify(work, null, 2), contentType: "application/json" });
+        expect(work.reads).toEqual(["pricing"]);
+        await expect(page.locator("#recovery-offer")).toBeHidden();
+        await expect(page.locator("#recovery-status")).toHaveText("Recovery is ready.");
+        await page.locator("#sample").selectOption("pricing");
+        await expect(page.locator("#recovery-offer")).toBeVisible();
+        await peer.close();
+        await page.getByRole("button", { name: "Restore draft", exact: true }).click();
+        await expect(page.locator("#editor")).toContainText("// Peer recovery");
+    } finally { if (!peer.isClosed()) await peer.close(); }
+});
+
 test("reset names its sample and recovery follows the stored draft across sample switches and reload", async ({ page, baseURL }) => {
     const prompts: string[] = []; page.on("dialog", dialog => { prompts.push(dialog.message()); void dialog.accept(); });
     await page.goto(baseURL!);
