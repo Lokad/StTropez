@@ -46,8 +46,8 @@ const control = (gcb: number) => gcb >= 1 && gcb <= 3;
 function* segment(source: GraphemeSource, from: number, to: number, maxOperations: number, maxClusters: number, c: Counters): Generator<void, GraphemeIndex | null> {
     const tick = (n = 1) => { c.work += n; if (c.work > maxOperations) throw new GraphemeLimitError("operations"); }, pause = () => { if (c.work - c.yielded < 256) return false; c.yielded = c.work; return true; };
     const blocks: (readonly number[])[] = []; let pending: number[] = [];
-    function* boundary(at: number): Generator<void, void> { c.phase = "publish"; tick(); if (pause()) yield; if (c.boundaries > maxClusters) throw new GraphemeLimitError("clusters"); pending.push(at); c.boundaries++; c.clusters = c.boundaries - 1; if (pending.length === 256) { blocks.push(Object.freeze(pending)); pending = []; } }
-    yield* boundary(from);
+    const boundary = (at: number) => { if (c.boundaries > maxClusters) throw new GraphemeLimitError("clusters"); pending.push(at); c.boundaries++; c.clusters = c.boundaries - 1; if (pending.length === 256) { blocks.push(Object.freeze(pending)); pending = []; } };
+    c.phase = "publish"; tick(); if (pause()) yield; boundary(from);
     let offset = from, windowFrom = from, window = "", previous = -1, regionalCount = 0, emojiExtends = false, previousZwjAfterEmoji = false, linker = false;
     while (offset < to) {
         c.phase = "scan"; let cp: number, width: number;
@@ -70,13 +70,14 @@ function* segment(source: GraphemeSource, from: number, to: number, maxOperation
         else if (linker && incb === 1) breaks = false; // Unicode18 GB9c: Linker Extend* x Consonant
         else if (previous === 5 && previousZwjAfterEmoji && pictographic) breaks = false; // GB11
         else if (previous === 6 && current === 6 && regionalCount % 2 === 1) breaks = false; // GB12/13
-        if (breaks) yield* boundary(offset);
+        if (breaks) { c.phase = "publish"; tick(); if (pause()) yield; boundary(offset); }
         previousZwjAfterEmoji = current === 5 && emojiExtends;
         if (pictographic) emojiExtends = true; else if (current !== 4) emojiExtends = false;
         if (incb === 3) linker = true; else if (incb !== 2) linker = false;
         regionalCount = current === 6 ? regionalCount + 1 : 0; previous = current; offset += width; c.scanned = offset - from; c.points++;
     }
-    if (to > from) yield* boundary(to); if (pending.length) blocks.push(Object.freeze(pending)); return publish(source, from, to, Object.freeze(blocks), c.boundaries);
+    if (to > from) { c.phase = "publish"; tick(); if (pause()) yield; boundary(to); }
+    if (pending.length) blocks.push(Object.freeze(pending)); return publish(source, from, to, Object.freeze(blocks), c.boundaries);
 }
 function drive(iterator: Generator<void, GraphemeIndex | null> | null, c: Counters): GraphemeCursor {
     const cursor = kernelCursor(iterator, () => c.work, (status, result, failure): GraphemeProgress => Object.freeze({ status, phase: c.phase, scannedUnits: c.scanned, readUnits: c.reads,

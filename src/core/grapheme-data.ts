@@ -126,6 +126,7 @@ const ranges: readonly number[] = [
 /** Internal packed properties: GCB bits0..3, InCB bits4..5, Extended_Pictographic bit6. */
 export function graphemeProperties(cp: number): number {
     if (!Number.isInteger(cp) || cp < 0 || cp > 0x10ffff) throw new RangeError("Invalid Unicode code point.");
+    if (cp < 128) return cp === 13 ? 1 : cp === 10 ? 2 : cp < 32 || cp === 127 ? 3 : 0;
     if (cp >= 0xac00 && cp <= 0xd7a3) return (cp - 0xac00) % 28 ? 13 : 12;
     let low = 0, high = ranges.length / 2; while (low + 1 < high) { const mid = (low + high) >>> 1; if (ranges[mid * 2]! <= cp) low = mid; else high = mid; } return ranges[low * 2 + 1]!;
 }
