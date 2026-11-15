@@ -17,7 +17,9 @@ units per value and 16,384 units of combined display text.
 Hover keeps its existing independent service lifetime. Requests retain the source revision,
 complete selection set, fold generation and captured view. Pending input/composition prevents
 capture; editing, navigation, blur, dismissal, view removal and stale service generations expire
-results. Keyboard inspection keeps focus in its source; pointer inspection changes neither focus
+results. Keyboard inspection keeps focus in its source and stays anchored through passive pointer
+motion, including delayed motion after a dialog closes. Escape, source clicks, scrolling, focus
+loss and changes to the captured state still dismiss it. Pointer inspection changes neither focus
 nor selections. A service cancellation never applies an edit. Request leases, observers and
 connections are released at their explicit host boundaries.
 

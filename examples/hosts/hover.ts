@@ -100,6 +100,9 @@ export class HostHoverTools {
         };
         editor.element.addEventListener("pointerenter", () => { session.overTarget = true; if (this.current === session) this.clearDismiss(); }, { signal: listeners.signal });
         editor.element.addEventListener("pointermove", event => {
+            // Keyboard inspection owns the popup until dismissal or a captured-state change.
+            // Browsers can deliver delayed pointer motion after a dialog or layout change.
+            if (this.current && this.kind === "keyboard" && !event.buttons) { cancelPointer(); return; }
             if (!this.allowInspect("pointer")) { cancelPointer(); return; }
             if (event.buttons || editor.activity().composing) { cancelPointer(); if (this.current === session) this.dismiss(); return; }
             const x = event.clientX, y = event.clientY, pending = editor.viewport.activity().pending, point = pointerAt(x, y);

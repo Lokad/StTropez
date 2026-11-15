@@ -17,6 +17,8 @@ for (const host of ["plain", "react"]) {
         await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 2, head: 2 }, { anchor: 7, head: 7 }]); }, original);
         await primary(page).focus(); await ready(page); const before = await snapshot(page), selected = before.bindings.views.find(v => v.id === "primary")!.selectionSet;
         await primary(page).press("Control+k"); await primary(page).press("Control+i");
+        // A delayed pointer move over blank space must not cancel keyboard inspection.
+        await primary(page).locator("..").dispatchEvent("pointermove", { clientX: -100, clientY: -100, buttons: 0 });
         await expect(tooltip(page)).toContainText("Declares a constant binding."); expect(await primary(page).evaluate(node => node.ownerDocument.activeElement === node)).toBe(true);
         await page.evaluate(() => window.hostFixture.externalWrite("remote")); await primary(page).press("Control+s");
         await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1); await page.evaluate(() => window.hostFixture.finishSave());
