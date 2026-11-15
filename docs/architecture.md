@@ -39,6 +39,9 @@ contracts and release their reference display resources on refresh or teardown.
 Resource keys are indexed by their exact scope/resource/variant components. Duplicate checks and
 generated-key collision checks avoid traversing the resource inventory. Only successful creation
 and release change membership; failed validation or rejected release leave ownership unchanged.
+Tab capture and resolution use an index of the current immutable tab snapshots. Tab publication
+refreshes it before notifying listeners, preserving generation checks and old captured snapshots.
+Changing the tab list still constructs the new ordered array; repeated target reads do not scan it.
 
 The scaffold implements resource/document/tab/generation identities, guarded operations,
 save receipts, captured Run inputs and versioned agent association/proposal/acknowledgement.

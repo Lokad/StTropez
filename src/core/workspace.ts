@@ -125,6 +125,7 @@ function readySnapshot(metadata: ResourceMetadata, revision: number, value: Snap
 }
 /** Preserve a lazy value descriptor through metadata-only commits. Object spread would export text. */
 function withMetadata(state: ResourceSnapshot<SnapshotValue>, metadata: ResourceMetadata): ResourceSnapshot<SnapshotValue> {
+    if (state.metadata === metadata) return Object.freeze(state);
     return Object.freeze(Object.defineProperties({}, { ...Object.getOwnPropertyDescriptors(state), metadata: { value: metadata, enumerable: true } })) as ResourceSnapshot<SnapshotValue>;
 }
 function viewSnapshot(documentId: DocumentId, revision: number, selectionSet: SelectionSet): DocumentViewSnapshot {
@@ -147,6 +148,7 @@ export class Workspace {
     private readonly queuedReleases = new Set<ResourceId>();
     private readonly documents = new Map<DocumentId, ResourceRecord>();
     private readonly tabs: Store<readonly TabSnapshot[]>;
+    private readonly tabIndex = new Map<TabId, TabSnapshot>();
     private readonly state: Store<number>;
     private snapshot: WorkspaceSnapshot | undefined;
     readonly getSnapshot: () => WorkspaceSnapshot;
@@ -867,10 +869,11 @@ export class Workspace {
         const tab = this.requireTab(id); return Object.freeze({ workspace: this.lifetime, id, generation: tab.generation });
     }
     resolveTab(target: TabTarget): TabSnapshot | undefined {
-        return target.workspace === this.lifetime ? this.tabs.get().find(tab => tab.id === target.id && tab.generation === target.generation) : undefined;
+        const tab = target.workspace === this.lifetime ? this.tabIndex.get(target.id) : undefined;
+        return tab?.generation === target.generation ? tab : undefined;
     }
     private requireTab(id: TabId): TabSnapshot {
-        const tab = this.tabs.get().find(tab => tab.id === id);
+        const tab = this.tabIndex.get(id);
         if (!tab) throw new Error("Unknown tab."); return tab;
     }
     private requireResource(id: ResourceId): ResourceRecord {
@@ -899,6 +902,7 @@ export class Workspace {
         const changed = new Set<Store<unknown>>(); this.setRecord(record, next, changed); this.publish(changed);
     }
     private publishTabs(tabs: readonly TabSnapshot[]): void {
+        this.tabIndex.clear(); for (const tab of tabs) this.tabIndex.set(tab.id, tab);
         const changed = new Set<Store<unknown>>(); this.tabs.set(Object.freeze(tabs), changed); this.publish(changed);
     }
     private publish(changed: Set<Store<unknown>>): void {

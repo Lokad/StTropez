@@ -12,6 +12,8 @@ and host services. Their getter is lazy and shared within that revision's snapsh
 commits preserve the getter without invoking it. History holds buffers, not snapshot getters
 or their optional exported strings. The native projection cache uses weak values so retained
 undo buffers do not keep every rendered whole-text string alive.
+When a resource snapshot already holds the chosen metadata object, publication reuses that snapshot
+and freezes it if needed. Replacing metadata preserves the lazy value descriptor without exporting text.
 
 `edit` checks document identity, expected revision, edit capability and exclusive lease, then
 validates every original-coordinate range before committing. `editDocuments` performs the same

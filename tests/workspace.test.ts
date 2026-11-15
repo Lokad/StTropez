@@ -12,15 +12,38 @@ function fixture() {
 test("delayed actions follow a moved tab and expire after replacement or close", async () => {
     const { workspace, documentId, tabId } = fixture();
     const target = workspace.captureTab(tabId);
+    const before = workspace.tabState.getSnapshot();
+    let observed = workspace.resolveTab(target);
+    const stop = workspace.tabState.subscribe(() => { observed = workspace.resolveTab(target); });
     workspace.move(tabId, "right");
     await Promise.resolve();
     assert.equal(workspace.resolveTab(target)?.paneId, "right");
+    assert.equal(observed, workspace.resolveTab(target)); assert.equal(before[0]!.paneId, "left");
+    const moved = workspace.tabState.getSnapshot();
+    assert.throws(() => workspace.replace(tabId, { kind: "text", documentId: "missing" as typeof documentId }));
+    assert.equal(workspace.tabState.getSnapshot(), moved); assert.equal(workspace.resolveTab(target), moved[0]);
     workspace.replace(tabId, { kind: "panel", resourceId: workspace.resourceForDocument(documentId).id, panelType: "configuration" });
-    assert.equal(workspace.resolveTab(target), undefined);
+    assert.equal(workspace.resolveTab(target), undefined); assert.equal(observed, undefined);
     const replacement = workspace.captureTab(tabId);
     workspace.close(tabId);
     workspace.open({ kind: "text", documentId }, "right");
     assert.equal(workspace.resolveTab(replacement), undefined);
+    assert.throws(() => workspace.captureTab(tabId), /Unknown tab/); stop();
+});
+
+test("repeated tab captures and resolution do not scan the tab inventory", t => {
+    const workspace = new Workspace(), documentId = workspace.createDocument({ scope: "tabs", resource: "shared", variant: "working" }, "Document", "x");
+    const tabs = Array.from({ length: 1000 }, () => workspace.open({ kind: "text", documentId }, "main"));
+    const id = tabs.at(-1)!, target = workspace.captureTab(id), snapshot = workspace.tabState.getSnapshot().at(-1);
+    const find = Array.prototype.find; let visits = 0, valid = true;
+    Array.prototype.find = function<T>(this: T[], predicate: (value: T, index: number, values: T[]) => unknown, thisArg?: unknown) {
+        return find.call(this, (value, index, values) => { visits++; return predicate.call(thisArg, value, index, values); });
+    };
+    try {
+        for (let i = 0; i < 100; i++) valid &&= workspace.captureTab(id).generation === target.generation && workspace.resolveTab(target) === snapshot;
+    } finally { Array.prototype.find = find; }
+    t.diagnostic(JSON.stringify({ captures: 100, resolutions: 100, predicateVisits: visits }));
+    assert.equal(valid, true); assert.equal(visits, 0);
 });
 
 test("guards cannot target a different workspace with identical local IDs", () => {

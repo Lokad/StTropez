@@ -32,7 +32,7 @@ test("packed bulk changes preserve initiating selection, independent views and e
     assert.equal(before.readMetrics().textExports, 0); assert.equal(after.readMetrics().textExports, 0); first.dispose(); second.dispose();
 });
 
-test("workspace buffer snapshots stay immutable and bounded readers and metadata commits never export text", () => {
+test("workspace buffer snapshots stay immutable and bounded readers and metadata commits never export text", t => {
     const { workspace, source, document, errors } = fixture(corpus("lines-100000"));
     const first = document(), saved = first.buffer, seen = [];
     let anchor = anchoredRange(saved.length, 100, 130);
@@ -40,13 +40,22 @@ test("workspace buffer snapshots stay immutable and bounded readers and metadata
         const current = document(); anchor = current.change!.mapping.mapRange(anchor)!;
         seen.push(current.buffer.slice(current.buffer.offsetAt(100), current.buffer.offsetAt(100) + 12));
     });
-    workspace.edit({ documentId: source.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "😀" }] });
+    const wrappers = (work: () => void) => {
+        const descriptors = Object.getOwnPropertyDescriptors; let calls = 0;
+        Object.getOwnPropertyDescriptors = function<T>(value: T) { calls++; return descriptors(value); };
+        try { work(); return calls; } finally { Object.getOwnPropertyDescriptors = descriptors; }
+    };
+    const edit = wrappers(() => { workspace.edit({ documentId: source.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "😀" }] }); });
     assert.deepEqual([anchor.from, anchor.to], [102, 132]);
     const current = document(); assert.notEqual(current.buffer, saved); assert.equal(current.buffer.length, saved.length + 2);
-    const lease = workspace.acquireEditLease(source.id, "synthetic", "host"); lease.release();
-    workspace.setCapabilities(source.id, { edit: ["human"], save: true, run: true });
+    const lease = wrappers(() => { const lease = workspace.acquireEditLease(source.id, "synthetic", "host"); lease.release(); });
+    const capabilities = wrappers(() => { workspace.setCapabilities(source.id, { edit: ["human"], save: true, run: true }); });
     assert.equal(document(), current); assert.equal(saved.diagnostics().textExports, 0); assert.equal(current.buffer.diagnostics().textExports, 0);
     assert.equal(seen.length, 1); assert.ok(Object.isFrozen(current)); assert.equal(errors.length, 0);
+    assert.ok(Object.isFrozen(source.getSnapshot())); assert.ok(Object.isFrozen(source.metadata.getSnapshot()));
+    assert.equal(source.getSnapshot().metadata, source.metadata.getSnapshot());
+    t.diagnostic(JSON.stringify({ edit, lease, capabilities }));
+    assert.deepEqual({ edit, lease, capabilities }, { edit: 0, lease: 2, capabilities: 1 });
     assert.equal(first.text.length, 2_400_000); assert.equal(document().buffer.diagnostics().textExports, 0);
 });
 
