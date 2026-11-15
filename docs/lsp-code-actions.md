@@ -73,6 +73,11 @@ opaque host URIs. Source/target revision, authority, complete selection set, fol
 tab/view and session/capability changes expire the whole preview. Pending input/composition/table
 conversion prevents capture. Typing, dismissal, disconnect and remount cancel pending discovery or
 resolve without blocking local editing. A fresh reconnect never automatically replays an action.
+The origin uses `captureViewRequest` as a read capture, so inspection does not require edit
+permission. The capture owns its source lease and view subscriptions; other project-resource
+guards remain separate. Direct application consumes the capture once. Command execution first
+acquires the review controller's retention, then releases the action capture without cancelling
+the transferred provider command.
 
 Application uses the public `applyLspWorkspaceEdit` helper with `historyKind: "refactor"` and
 one existing atomic `Workspace.editDocuments` transaction after rechecking every edited target's

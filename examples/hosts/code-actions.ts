@@ -1,5 +1,6 @@
-import type { DocumentId, DocumentSnapshot, FoldIndex, ResourceLease, SelectionSet, TabId, TabTarget, Workspace } from "../../src/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
+import { captureViewRequest } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
 import { createNavigationClient, navigationMetrics } from "../editing/navigation-client.ts";
 import { validateActionInput } from "../probes/actions.ts";
 import type { ActionInput, ActionResult } from "../probes/actions.ts";
@@ -9,7 +10,7 @@ import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
 import type { LspActionBatch, LspActionClient, LspActionFactory } from "../editing/lsp-action-client.ts";
 import type { HostProjectTools, ProjectActionHandle } from "./project.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
-type Job = { origin: Session; input: ActionInput; document: DocumentSnapshot; selections: SelectionSet; folds: FoldIndex;
+type Job = { origin: Session; input: ActionInput; document: DocumentSnapshot; capture: CapturedViewRequest;
     sources: Map<DocumentId, Readonly<{ document: DocumentSnapshot; authority: string }>>; leases: ResourceLease[];
     stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; result: ActionResult | undefined;
     batch?: LspActionBatch; selected?: LspCodeAction; choice: number | null; choicePage: number; resolving: boolean; page: number };
@@ -62,9 +63,12 @@ export class HostActionsTools {
     private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
     private editable(id: DocumentId): boolean { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return m.capabilities.edit.includes("human") && m.capabilities.edit.includes("host") && m.editLock === null; }
     private currentCapture(job: Job): boolean {
-        if (this.job !== job || job.invalid || !this.available(job.origin) || job.input.module !== this.cell.get().module
-            || job.origin.editor.view.getSnapshot().selectionSet !== job.selections || !job.folds.sameProjection(job.origin.editor.view.folding.getSnapshot().index)) return false;
-        try { for (const source of job.sources.values()) if (!this.canCapture(source.document.id) || this.workspace.observeDocument(source.document.id).getSnapshot()?.revision !== source.document.revision || this.authority(source.document.id) !== source.authority) return false; } catch { return false; }
+        if (this.job !== job || job.invalid || job.input.module !== this.cell.get().module) return false;
+        try {
+            if (!job.capture.isCurrent()) return false;
+            for (const source of job.sources.values()) if (source.document.id !== job.capture.document.id
+                && (!this.canCapture(source.document.id) || this.workspace.observeDocument(source.document.id).getSnapshot()?.revision !== source.document.revision || this.authority(source.document.id) !== source.authority)) return false;
+        } catch { return false; }
         return true;
     }
     private current(job: Job): boolean { return this.currentCapture(job) && (!job.batch || job.batch.isCurrent()); }
@@ -91,7 +95,7 @@ export class HostActionsTools {
     private drop(): void { const client = this.client, backend = this.backend; this.client = undefined; this.backend = undefined; client?.dispose(); backend?.dispose(); }
     private release(): void {
         const job = this.job; this.job = undefined; if (!job) return; job.invalid = true;
-        job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.stops.splice(0).forEach(stop => stop()); job.leases.splice(0).forEach(lease => lease.release()); if (!job.ready || job.resolving) this.drop(); else if (!this.execution) this.backend?.cancel();
+        job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.stops.splice(0).forEach(stop => stop()); job.capture.cancel(); job.leases.splice(0).forEach(lease => lease.release()); if (!job.ready || job.resolving) this.drop(); else if (!this.execution) this.backend?.cancel();
     }
     private retainTargets(job: Job, actions: readonly LspCodeAction[]): void {
         for (const action of actions) for (const change of action.edit?.documents ?? []) {
@@ -146,8 +150,12 @@ export class HostActionsTools {
         let input: ActionInput;
         try { input = validateActionInput({ operation: "action-start", id: ++this.sequence, document: doc.id, revision: doc.revision, length: doc.buffer.length, from: Math.min(selected.selection.anchor, selected.selection.head), to: Math.max(selected.selection.anchor, selected.selection.head), module, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid action capture." }); return; }
-        this.fault = undefined; const win = origin.editor.element.ownerDocument.defaultView!, job: Job = { origin, input, document: doc, selections: selected.selectionSet, folds: origin.editor.view.folding.getSnapshot().index,
-            sources: new Map(documents.map(doc => [doc.id, { document: doc, authority: this.authority(doc.id) }])), leases: [], stops: [], timer: 0, invalid: false, ready: false, result: undefined, choice: null, choicePage: 0, resolving: false, page: 0 };
+        this.fault = undefined;
+        const sources = new Map(documents.map(doc => [doc.id, { document: doc, authority: this.authority(doc.id) }]));
+        const capture = captureViewRequest(this.workspace, origin.target, origin.editor.view, { available: () => this.available(origin) && this.canCapture(origin.editor.view.documentId) });
+        if (!capture) { this.publish({ message: "The source changed before capture; request a fresh action." }); return; }
+        const win = origin.editor.element.ownerDocument.defaultView!, job: Job = { origin, input, document: capture.document, capture,
+            sources, leases: [], stops: [], timer: 0, invalid: false, ready: false, result: undefined, choice: null, choicePage: 0, resolving: false, page: 0 };
         this.job = job; this.metrics.requested++;
         const changed = () => {
             if (this.publishing || this.job !== job) return;
@@ -157,8 +165,8 @@ export class HostActionsTools {
             this.expire(job);
         };
         try {
-            for (const doc of documents) { job.leases.push(this.workspace.acquire(doc.resourceId)); job.stops.push(this.workspace.observeDocument(doc.id).subscribe(changed), this.workspace.resourceForDocument(doc.id).metadata.subscribe(changed)); }
-            job.stops.push(origin.editor.view.subscribe(changed), origin.editor.view.folding.subscribe(changed), this.workspace.tabState.subscribe(changed));
+            capture.signal.addEventListener("abort", changed, { once: true });
+            for (const doc of documents) if (doc.id !== capture.document.id) { job.leases.push(this.workspace.acquire(doc.resourceId)); job.stops.push(this.workspace.observeDocument(doc.id).subscribe(changed), this.workspace.resourceForDocument(doc.id).metadata.subscribe(changed)); }
             job.timer = win.setTimeout(() => { if (this.job === job && !job.ready) { this.release(); this.metrics.failed++; this.publish({ status: "failed", message: "Action provider timed out; source is unchanged.", edits: [], choices: [] }); } }, 30000);
             this.publish({ status: "pending", message: this.usesLsp ? "Requesting captured provider actions." : `Preparing an import action for ${origin.id}.`, edits: [], title: "", disabled: null, work: 0, total: doc.buffer.length });
             if (this.backendFactory) {
@@ -247,14 +255,17 @@ export class HostActionsTools {
         }
         this.publishing = true;
         try {
-            let documents: readonly DocumentSnapshot[];
-            if (job.batch) documents = applyLspWorkspaceEdit(this.workspace, job.selected!.edit!, { origin: "host", requiredOrigins: ["human"], historyKind: "refactor", view: job.origin.editor.view });
-            else {
-                const requests = job.result!.action.edits.map(at => ({ documentId: job.document.id, expectedRevision: at.revision, edits: at.edits,
-                    origin: "host" as const, history: { kind: "refactor" as const }, view: job.origin.editor.view }));
-                const result = this.workspace.editDocuments(requests); if (!result.applied) throw new Error(result.reason);
-                documents = requests.map(request => job.sources.get(request.documentId)!.document);
-            }
+            let documents: readonly DocumentSnapshot[] = [];
+            if (!job.capture.commit(() => {
+                if (job.batch) documents = applyLspWorkspaceEdit(this.workspace, job.selected!.edit!, { origin: "host", requiredOrigins: ["human"], historyKind: "refactor", view: job.origin.editor.view });
+                else {
+                    const requests = job.result!.action.edits.map(at => ({ documentId: job.document.id, expectedRevision: at.revision, edits: at.edits,
+                        origin: "host" as const, history: { kind: "refactor" as const }, view: job.origin.editor.view }));
+                    const result = this.workspace.editDocuments(requests); if (!result.applied) throw new Error(result.reason);
+                    documents = requests.map(request => job.sources.get(request.documentId)!.document);
+                }
+                return true;
+            })) throw new Error("Captured action context changed before application.");
             const changes = Object.freeze(documents.map(doc => Object.freeze({ document: doc.id, title: doc.title.slice(0, 128) })));
             this.metrics.applied++; this.release(); this.publish({ status: "applied", message: job.batch ? "Applied exact captured provider edits as one shared undo command." : "Applied the captured import action as one shared undo command.", title: "", edits: [], choices: [], editCount: 0, page: 0, changes, changed: changes.find(change => change.document === job.document.id) ?? changes[0] ?? null });
             if (this.available(job.origin)) { job.origin.editor.viewport.revealOffset(job.origin.editor.view.getSnapshot().selection.head); job.origin.editor.focus(); }
@@ -273,6 +284,6 @@ export class HostActionsTools {
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid action delay."); this.delay = value; }
     faultNext(value: NonNullable<ActionInput["fault"]>): void { this.fault = value; }
     faultIdle(): boolean { return this.backend?.faultIdle() ?? this.client?.faultIdle() ?? false; }
-    debug() { const job = this.job; return { ...this.metrics, worker: { ...this.worker }, state: this.cell.get(), capture: job ? { view: job.origin.id, input: job.input, selections: job.selections } : null, transport: this.backend?.snapshot() ?? this.client?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
+    debug() { const job = this.job; return { ...this.metrics, worker: { ...this.worker }, state: this.cell.get(), capture: job ? { view: job.origin.id, input: job.input, selections: job.capture.selectionSet } : null, transport: this.backend?.snapshot() ?? this.client?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
     dispose(): void { if (this.disposed) return; this.cancel(); this.drop(); this.bindModule(null); this.stopReviewOwner?.(); this.disposed = true; this.active = undefined; this.publish({ changed: null, changes: [] }); }
 }
