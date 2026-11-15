@@ -125,9 +125,10 @@ export class HostLanguageTools {
         this.cancelFindCommand();
         const find = this.ensureFind(); if (!find) return;
         const captured = find.state.getSnapshot();
-        const execute = () => { if (command.kind === "navigate") find.next(command.direction); else find.replaceCurrent(command.text); };
+        const execute = () => command.kind === "navigate" ? find.next(command.direction) : find.replaceCurrent(command.text);
         if (captured.status === "ready") { execute(); return; }
         if (captured.status !== "searching") return;
+        if (captured.retained && execute()) return;
         const metadata = this.workspace.resourceForDocument(session.editor.view.documentId).metadata;
         const authority = () => { const m = metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); };
         const capturedAuthority = command.kind === "replace" ? authority() : undefined, access = metadata.getSnapshot();

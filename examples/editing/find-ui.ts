@@ -16,7 +16,7 @@ export function mountFindUI(workspace: Workspace, tab: TabId, editor: EditingCan
         const state = find.state.getSnapshot(), changed = presentation.search?.revision !== state.revision || presentation.search.ranges !== state.preview;
         presentation.search = { revision: state.revision, ranges: state.preview };
         owner.getElementById("find-status")!.textContent = state.message || (state.status === "searching" ? `Searching… ${state.count} matches` : `${state.count} matches · ${state.status}`);
-        for (const control of controls) control.disabled = state.status !== "ready" || !state.count;
+        for (const control of controls) control.disabled = !state.count || !(state.status === "ready" || control.id !== "replace-all" && state.status === "searching" && state.retained);
         wholeWord.checked = state.wholeWord; matchCase.checked = state.matchCase; regularExpression.checked = state.regularExpression;
         if (changed) editor.viewport.invalidate();
     };

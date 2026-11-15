@@ -1,0 +1,130 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { TextBuffer, Workspace } from "../src/index.ts";
+import { LiteralSearch } from "../src/core/search.ts";
+import { unchangedPositionEdges } from "../src/core/positions.ts";
+import { FindIndex, LiteralFindRepair } from "../src/browser/find-index.ts";
+import { createFindController } from "../src/browser/find.ts";
+import type { EditingCandidate } from "../src/browser/editing-candidate.ts";
+
+const options = { matchCase: true, wholeWord: false };
+function scan(buffer: TextBuffer, query: string, settings = options) {
+    const cursor = new LiteralSearch(buffer, query, settings), index = new FindIndex(); let reads = 0;
+    for (;;) { const step = cursor.next(); reads += step.readUnits; step.matches.forEach(m => index.append(m)); if (step.done) break; }
+    cursor.dispose(); return { index, reads };
+}
+function finish(repair: LiteralFindRepair, units = 4096, matches = 64) {
+    let reads = 0;
+    for (let turns = 0;; turns++) { assert.ok(turns < 100000); const step = repair.next(units, matches); reads += step.readUnits; if (step.done) break; }
+    repair.dispose(); return reads;
+}
+const all = (index: FindIndex) => Array.from({ length: index.count }, (_, i) => index.at(i));
+
+test("find index slices keep captured pages immutable through shifts, appends and repeated joins", () => {
+    const original = new FindIndex(); for (let i = 0; i < 5000; i++) original.append({ from: i * 4, to: i * 4 + 2 });
+    const captured = all(original), preview = original.preview(); let index = original;
+    for (let turn = 0; turn < 40; turn++) {
+        const next = new FindIndex(); next.appendRange(index, 0, 2049); next.appendRange(index, 2049, index.count, 1);
+        next.append({ from: 30000 + turn * 4, to: 30002 + turn * 4 }); index = next;
+    }
+    original.append({ from: 40000, to: 40002 });
+    assert.deepEqual(all(original).slice(0, 5000), captured); assert.equal(index.count, 5040);
+    assert.deepEqual(index.at(2048), captured[2048]); assert.deepEqual(index.at(2049), { from: 8236, to: 8238 });
+    assert.equal(index.lowerBound(8236), 2049); assert.equal(index.lowerBound(8237), 2050);
+    assert.equal(index.at(5039).from, 30156); assert.deepEqual(preview, captured.slice(0, 200));
+    assert.ok(Object.isFrozen(preview) && preview.every(Object.isFrozen)); assert.throws(() => index.at(index.count), RangeError);
+});
+
+test("local literal repair reuses a large suffix but repeated-pattern phase changes scan to the end", t => {
+    const text = "const sample = 1;\n".repeat(20000), before = TextBuffer.from(text), base = scan(before, "sample"), from = text.length / 2 + 6;
+    const buffer = before.replace(from, from + 6, "other"), repair = new LiteralFindRepair(buffer, "sample", options, base.index, before.length,
+        { prefix: from, suffix: before.length - from - 6 });
+    const retainedPrefixMatches = repair.index.count; assert.ok(retainedPrefixMatches > 9000); const reads = finish(repair);
+    assert.deepEqual(all(repair.index), all(scan(buffer, "sample").index)); assert.ok(reads < 4096); assert.ok(base.reads >= before.length);
+    const repeated = TextBuffer.from("a".repeat(20000)), old = scan(repeated, "aa").index, changed = repeated.replace(10000, 10000, "a");
+    const parity = new LiteralFindRepair(changed, "aa", options, old, repeated.length, { prefix: 10000, suffix: 10000 });
+    const fallbackReads = finish(parity); assert.ok(fallbackReads >= 10000);
+    assert.deepEqual(all(parity.index), all(scan(changed, "aa").index));
+    t.diagnostic(JSON.stringify({ sourceUnits: before.length, fullReadUnits: base.reads, repairReadUnits: reads, retainedPrefixMatches, repeatedFallbackReadUnits: fallbackReads }));
+});
+
+test("literal repair agrees with fresh search across batches, raw surrogate seams, case and word boundaries", () => {
+    let seed = 0x51a710;
+    const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return (seed >>> 8) % n; };
+    const alphabet = ["a", "b", " ", "K", "k", "𐐀", "𐐨", "\ud801", "\udc00", "\n", "\u0301", "\u200c", "_", "\r"];
+    const text = (n: number) => Array.from({ length: n }, () => alphabet[random(alphabet.length)]!).join("");
+    const workspace = new Workspace(), documentId = workspace.createDocument({ scope: "find", resource: "differential", variant: "working" }, "Source", "");
+    for (let trial = 0; trial < 2000; trial++) {
+        const original = text(20 + random(100));
+        workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision, origin: "human", edits: [{ from: 0, to: workspace.document(documentId).buffer.length, insert: original }] });
+        const before = workspace.document(documentId), query = trial % 3 ? text(1 + random(4)) : original.slice(random(original.length - 3), original.length).slice(0, 3);
+        const settings = { wholeWord: !!(trial & 1), matchCase: !!(trial & 2) }, old = scan(before.buffer, query, settings).index;
+        const a = random(Math.floor(original.length / 2)), b = a + random(Math.floor(original.length / 2) - a + 1);
+        const c = Math.floor(original.length / 2) + 1 + random(original.length - Math.floor(original.length / 2)), d = c + random(original.length - c + 1);
+        workspace.edit({ documentId, expectedRevision: before.revision, origin: "human", edits: [{ from: a, to: b, insert: text(random(8)) }, { from: c, to: d, insert: text(random(8)) }] });
+        const current = workspace.document(documentId);
+        if (current.revision === before.revision) continue;
+        const proof = unchangedPositionEdges(current.change!.mapping)!;
+        const repair = new LiteralFindRepair(current.buffer, query, settings, old, before.buffer.length, proof);
+        finish(repair, 1 + random(19), 1 + random(4));
+        assert.deepEqual(all(repair.index), all(scan(current.buffer, query, settings).index), `batch ${trial}`);
+        workspace.undo({ documentId, expectedRevision: current.revision });
+        const undone = workspace.document(documentId), inverse = new LiteralFindRepair(undone.buffer, query, settings, repair.index, current.buffer.length, unchangedPositionEdges(undone.change!.mapping)!);
+        finish(inverse, 1 + random(19), 1 + random(4)); assert.deepEqual(all(inverse.index), all(old), `undo ${trial}`);
+    }
+});
+
+test("caseless repair cannot expose a clipped surrogate as a new literal match", () => {
+    const before = TextBuffer.from("xx𐐀xxxx"), buffer = before.replace(7, 7, "!"), settings = { matchCase: false, wholeWord: false };
+    const repair = new LiteralFindRepair(buffer, "\udc00", settings, scan(before, "\udc00", settings).index, before.length, { prefix: 7, suffix: 1 });
+    finish(repair, 1, 1); assert.deepEqual(all(repair.index), all(scan(buffer, "\udc00", settings).index));
+});
+
+function fixture(text: string) {
+    const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => errors.push(error) });
+    const documentId = workspace.createDocument({ scope: "find", resource: "retention", variant: "working" }, "Source", text);
+    const tab = workspace.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>(); let serial = 0;
+    const owner = Object.assign(new EventTarget(), { defaultView: { performance,
+        setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
+    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), activity: () => ({ composing: false, disposed: false }), viewport: { revealOffset: () => {} }, focus: () => {} } as unknown as EditingCandidate;
+    const find = createFindController(workspace, tab, editor), document = () => workspace.document(documentId);
+    const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 1000); const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); } assert.deepEqual(errors, []); };
+    const edit = (from: number, to: number, insert: string) => { assert.equal(workspace.edit({ documentId, expectedRevision: document().revision, origin: "human", edits: [{ from, to, insert }], history: { kind: "replace" } }).applied, true); };
+    const select = (anchor: number, head = anchor) => view.setSelection(document().revision, { anchor, head });
+    const dispose = () => { find.destroy(); view.dispose(); workspace.close(tab); assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().subscriptions, 0); };
+    return { workspace, documentId, view, find, document, drain, edit, select, dispose };
+}
+
+test("confirmed matches remain navigable and replaceable during repair without wrapping over unknown matches", () => {
+    const f = fixture("cat ".repeat(20000));
+    try {
+        f.find.setQuery("cat"); f.drain(); const previous = f.find.state.getSnapshot().preview;
+        f.edit(40000, 40003, "dog"); const state = f.find.state.getSnapshot();
+        assert.equal(state.status, "searching"); assert.equal(state.retained, true); assert.ok(state.count > 9000); assert.equal(state.preview, previous);
+        f.select(0); assert.equal(f.find.next(-1), false); assert.equal(f.find.next(), true); assert.equal(f.view.getSnapshot().selection.anchor, 0); assert.equal(f.view.getSnapshot().selection.head, 3);
+        f.select(60000); assert.equal(f.find.next(-1), false); assert.equal(f.find.next(), false);
+        const revision = f.document().revision; f.find.replaceAll("wrong"); assert.equal(f.document().revision, revision);
+        f.select(4, 7); assert.equal(f.find.replaceCurrent("kitten"), true); assert.equal(f.find.state.getSnapshot().retained, true);
+        f.drain(); assert.equal(f.find.state.getSnapshot().count, 19998); assert.equal(f.find.state.getSnapshot().status, "ready");
+        assert.deepEqual(f.find.state.getSnapshot().preview, all(scan(f.document().buffer, "cat").index).slice(0, 200));
+        f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.state.getSnapshot().count, 19999);
+        f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.state.getSnapshot().count, 20000);
+        f.workspace.redo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.state.getSnapshot().count, 19999);
+    } finally { f.dispose(); }
+});
+
+test("rapid edits accumulate safe bounds and undo to the completed capture reuses it immediately", () => {
+    const f = fixture("K k cat\n".repeat(2000));
+    try {
+        f.find.setOptions({ matchCase: false, wholeWord: true }); f.find.setQuery("k"); f.drain();
+        const original = f.document().buffer, preview = f.find.state.getSnapshot().preview;
+        f.edit(8000, 8001, "x"); f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision });
+        assert.equal(f.document().buffer, original); assert.equal(f.find.state.getSnapshot().status, "ready"); assert.equal(f.find.state.getSnapshot().preview, preview);
+        f.edit(12000, 12000, "long "); f.edit(2000, 2001, "k_"); f.edit(14000, 14002, "K "); f.drain();
+        const expected = scan(f.document().buffer, "k", { wholeWord: true, matchCase: false }).index;
+        assert.equal(f.find.state.getSnapshot().count, expected.count); assert.deepEqual(f.find.state.getSnapshot().preview, expected.preview());
+        f.edit(10000, 10000, "k "); f.find.setQuery("cat"); assert.equal(f.find.state.getSnapshot().retained, false); assert.equal(f.find.state.getSnapshot().count, 0); f.drain();
+        assert.equal(f.find.state.getSnapshot().count, scan(f.document().buffer, "cat", { wholeWord: true, matchCase: false }).index.count);
+        f.edit(10000, 10000, "cat "); f.find.cancel(); f.edit(10000, 10000, "cat "); f.drain(); assert.equal(f.find.state.getSnapshot().status, "cancelled"); assert.equal(f.find.state.getSnapshot().count, 0);
+    } finally { f.dispose(); }
+});

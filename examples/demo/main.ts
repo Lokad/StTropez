@@ -304,7 +304,7 @@ function mountFile(file: DemoFile, focus = false): void {
     find.setOptions({ matchCase: false });
     const renderFind = () => {
         const snapshot = find!.state.getSnapshot(); presentation.search = { revision: snapshot.revision, ranges: snapshot.preview };
-        element("find-status").textContent = snapshot.message || `${snapshot.count} matches`;
+        element("find-status").textContent = snapshot.message || `${snapshot.status === "searching" ? "Searching… " : ""}${snapshot.count} matches`;
         editor?.viewport.invalidate();
     };
     stopFind = find.state.subscribe(renderFind); if (!element("find-bar").hidden) find.setQuery(field("find-query").value);

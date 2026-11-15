@@ -1,7 +1,8 @@
 import type { HostLanguageTools } from "./language.ts";
 
 export function languageActions(tools: HostLanguageTools) {
-    const state = tools.state.getSnapshot(), available = state.view !== null, providerAvailable = state.provider !== null, offered = state.provider?.offerText != null, found = state.find?.status === "ready" && state.find.count > 0;
+    const state = tools.state.getSnapshot(), available = state.view !== null, providerAvailable = state.provider !== null, offered = state.provider?.offerText != null;
+    const found = !!state.find?.count && (state.find.status === "ready" || state.find.status === "searching" && state.find.retained);
     return [
         { label: "Request completion", invoke: tools.request, disabled: !providerAvailable },
         { label: "Insert completion", invoke: () => tools.insert(state.provider?.completionId), disabled: !offered || !!state.provider?.pending },
@@ -12,7 +13,7 @@ export function languageActions(tools: HostLanguageTools) {
         { label: "Find next", invoke: tools.next, disabled: !found },
         { label: "Find previous", invoke: tools.previous, disabled: !found },
         { label: "Replace current", invoke: tools.replaceCurrent, disabled: !found || state.readOnlyReference },
-        { label: "Replace all", invoke: tools.replaceAll, disabled: !found || state.readOnlyReference },
+        { label: "Replace all", invoke: tools.replaceAll, disabled: !found || state.find?.status !== "ready" || state.readOnlyReference },
         { label: "Cancel find", invoke: tools.cancelFind, disabled: !available },
         { label: "Fold selected lines", invoke: tools.foldSelection, disabled: !available },
         { label: "Expand all folds", invoke: tools.expandFolds, disabled: !state.folds?.index.collapsedCount },

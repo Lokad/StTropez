@@ -62,11 +62,29 @@ The controller retains all matching start/end pairs in 1,024-match pages for bin
 while `preview` exposes only the first 200 ranges for bounded decorations. The preview cap never
 limits the count, navigation or replacement. Index memory is proportional to match count and
 is released on query changes, cancellation, expiry or destruction. This is explicit global
-search work, outside the ordinary editing path.
+search work. With an active completed literal query, edits retain a proven prefix and repair
+one conservative changed region using the existing matcher. Its first repair step reads up to
+4,096 units or 64 matches; unresolved scans then use the ordinary budgets. A freshly accepted
+match with identical mapped bounds in the unchanged
+suffix proves the same non-overlap state; only then is the remaining suffix reused. Repeated
+patterns can change every subsequent match and still require a full suffix scan. Batch edits
+use their enclosing change region; unknown revision lineage falls back to a full search.
+
+Completed indexes share sealed offset pages with the next revision. Joining slices copies at
+most a page; shifted suffixes reuse their backing arrays. Repair setup/completion traverses
+page descriptors, so this cost remains proportional to retained page count, not constant.
+Rapid edits accumulate conservative unchanged edges against the last completed capture.
+Query/option changes, cancellation and disposal discard that capture. Public previews remain
+immutable and reuse their identity when their first 200 coordinates do not change.
 
 `setQuery`, `setOptions({ wholeWord, matchCase, regularExpression })`, `next(1 | -1)`, `replaceCurrent`, `replaceAll`, `cancel` and `destroy` are explicit
-commands. `setOptions` patches only supplied choices, preserving other options. Navigation waits
-for a completed index, wraps, and uses the captured document view.
+commands. `setOptions` patches only supplied choices, preserving other options. Navigation uses
+the captured document view. A completed index wraps. During literal repair, `retained: true`
+with `status: "searching"` exposes only confirmed matches; count/preview are partial. Navigation
+and current replacement may use that confirmed prefix but cannot wrap or skip an unsearched
+region. Replace-all waits for completion. Initial searches and regex searches still wait for
+a completed index. Host keyboard commands that cannot yet resolve retain their captured
+selection/focus/revision guards while waiting.
 Replacing a current selection requires a literal match under the current options; otherwise the command selects
 the next match. Whole-word replacement additionally requires the selection to be in the current
 match index, so selecting a substring inside a larger word does not make it replaceable.
