@@ -139,6 +139,16 @@ test("an edit queued at pump completion schedules another synchronization turn",
     assert.equal(session.snapshotOwnership().scheduledTasks, 0);
 });
 
+test("a binding closed synchronously while its open is sent still receives exactly one close", async t => {
+    const host = fixture(t); let document: ReturnType<InstanceType<typeof LspSession>["bindDocument"]>;
+    const session = new LspSession({ ...host, connect: async context => { const port = await host.connect(context);
+        return { ...port, send: text => { port.send(text); if (JSON.parse(text).method === "textDocument/didOpen") document.close(); } }; } });
+    t.after(() => session.dispose()); document = session.bindDocument(input("closed during send")); await session.connect();
+    const peer = host.peers[0]!; peer.rpc.onRequest("fixture/barrier", () => null); await session.request("fixture/barrier").result;
+    assert.deepEqual(peer.events.slice(-2), ["open", "close"]); assert.equal(peer.documents.size, 0);
+    assert.equal(session.snapshotOwnership().documents, 0); assert.equal(session.snapshotOwnership().remoteDocuments, 0); assert.equal(session.snapshotOwnership().scheduledTasks, 0);
+});
+
 test("reference peer receives ordered initialization and exact coalesced UTF-16 incremental versions", async t => {
     const host = fixture(t), session = new LspSession({ ...host, features: ["textDocument/hover"] }); t.after(() => session.dispose());
     const initial = input(), document = session.bindDocument(initial); assert.equal(session.synchronized(document), undefined); await session.connect(); await settled(); const peer = host.peers[0]!, firstCapture = session.synchronized(document)!;
@@ -182,6 +192,65 @@ test("dynamic registrations validate atomically, select documents and withdraw c
     await peer.rpc.sendRequest(UnregistrationRequest.type, { unregisterations: [{ id: "hover", method: "textDocument/hover" }, { id: "change", method: "textDocument/didChange" }] }); await session.flush(); await settled();
     assert.equal(peer.documents.size, 0); assert.equal(session.canRequest("textDocument/hover", documents[0]!), false); assert.equal(immutable.registrations.length, 3);
     await assert.rejects(peer.rpc.sendRequest(RegistrationRequest.type, { registrations: [registration("notebook", "textDocument/hover", { documentSelector: [{ notebook: "fixture" }] })] }), error => error instanceof ResponseError && error.code === -32602);
+});
+
+test("ordinary edits visit one binding and reuse selector results until registration or binding identity changes", async t => {
+    const host = fixture(t, { foldingRangeProvider: { documentSelector: [{ language: "typescript", pattern: "**/*.ts" }] } }); let paths = 0;
+    const session = new LspSession({ ...host, features: ["textDocument/foldingRange", "textDocument/completion"], pathForUri: uri => { paths++; return uri.slice(uri.indexOf(":") + 1); } });
+    t.after(() => session.dispose());
+    const documents = Array.from({ length: 100 }, (_, i) => session.bindDocument(input("text", `fixture:/source/${i}.${i === 99 ? "txt" : "ts"}`, `resource:${i}`)));
+    await session.connect(); const peer = host.peers[0]!; peer.rpc.onRequest("fixture/barrier", () => null);
+    const drain = async () => { await session.flush(); await session.request("fixture/barrier").result; };
+    const registrations = (language: string) => ["didOpen", "didChange", "completion"].map(method => ({ id: method, method: `textDocument/${method}`,
+        registerOptions: { documentSelector: [{ language, pattern: "**/*.ts" }], ...(method === "didChange" ? { syncKind: 2 } : {}) } }));
+    await peer.rpc.sendRequest("client/registerCapability", { registrations: registrations("typescript") }); await drain();
+    assert.equal(peer.documents.size, 99);
+    for (const doc of documents) { session.canRequest("textDocument/foldingRange", doc); session.featureOptions("textDocument/completion", doc); }
+    paths = 0; let visits = 0;
+    // Count the existing synchronization-policy owner, not elapsed time on a shared test host.
+    const syncs = Reflect.get(session, "syncs") as (...args: unknown[]) => boolean;
+    Reflect.set(session, "syncs", (...args: unknown[]) => { visits++; return syncs.apply(session, args); });
+    try {
+        const doc = documents[0]!; doc.update(40, 41, doc.getSnapshot().buffer.replace(0, 0, "edited "));
+        await drain(); const editPolicyVisits = visits;
+        assert.ok(visits <= 3, `An ordinary edit visited synchronization policy ${visits} times.`);
+        for (const doc of documents) { session.canRequest("textDocument/foldingRange", doc); session.featureOptions("textDocument/completion", doc); }
+        assert.equal(paths, 0); assert.equal(peer.events.filter(event => event === "change").length, 1);
+        assert.equal(peer.documents.get(doc.getSnapshot().uri)!.getText(), "edited text");
+        t.diagnostic(JSON.stringify({ bindings: documents.length, editPolicyVisits, selectorPaths: paths }));
+    } finally { Reflect.set(session, "syncs", syncs); }
+    const old = documents[0]!, uri = old.getSnapshot().uri; old.close();
+    const replacement = session.bindDocument({ ...input("replacement", uri, "new-resource", 0), languageId: "plain" });
+    await drain(); assert.equal(peer.documents.has(uri), false); assert.equal(session.canRequest("textDocument/completion", replacement), false);
+    assert.throws(() => old.update(41, 42, TextBuffer.from("stale")), RpcError);
+    await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: registrations("typescript").map(({ id, method }) => ({ id, method })) });
+    await peer.rpc.sendRequest("client/registerCapability", { registrations: registrations("plain") }); await drain();
+    assert.equal(peer.documents.size, 1); assert.equal(peer.documents.get(uri)!.getText(), "replacement");
+    assert.equal(session.canRequest("textDocument/completion", replacement), true); assert.equal(session.canRequest("textDocument/foldingRange", replacement), false);
+    session.disconnect(); await session.connect(); await settled(); assert.equal(host.peers[1]!.documents.size, 0);
+    assert.equal(session.canRequest("textDocument/completion", replacement), false);
+});
+
+test("registration changes during indexing reconcile the latest snapshot without losing the pending close or rebuilding its index", async t => {
+    const host = fixture(t, {}), queued = new Set<() => void>(); let blocked = false, time = 0;
+    const session = new LspSession({ ...host, now: () => time += 4, schedule: (ms, callback) => {
+        if (blocked && ms === 0) { queued.add(callback); return () => { queued.delete(callback); }; } return host.schedule(ms, callback);
+    } }); t.after(() => session.dispose());
+    const initial = input("small"), document = session.bindDocument(initial); await session.connect(); const peer = host.peers[0]!;
+    peer.rpc.onRequest("fixture/barrier", () => null);
+    const change = { id: "change", method: "textDocument/didChange", registerOptions: { documentSelector: null, syncKind: 2 } };
+    await peer.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "open", method: "textDocument/didOpen", registerOptions: { documentSelector: null } }, change] });
+    await session.flush(); await session.request("fixture/barrier").result; assert.equal(peer.documents.get(initial.uri)!.getText(), "small");
+    blocked = true; const large = TextBuffer.from("line\r\n".repeat(40_000)); document.update(40, 41, large);
+    const start = queued.values().next().value!; queued.delete(start); start(); await settled(); assert.equal(queued.size, 1);
+    await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: change.id, method: change.method }] });
+    blocked = false; for (const callback of queued) callback(); queued.clear(); await session.flush(); await session.request("fixture/barrier").result;
+    assert.equal(peer.documents.size, 0); assert.equal(peer.events.filter(event => event === "change").length, 0); assert.equal(session.synchronized(document), undefined);
+    const reads = large.readMetrics().sliceUnits;
+    await peer.rpc.sendRequest("client/registerCapability", { registrations: [change] }); await session.flush(); await session.request("fixture/barrier").result;
+    assert.ok(large.readMetrics().sliceUnits - reads <= large.length, "Restoring synchronization should reuse the completed index and export the current text once.");
+    assert.equal(peer.documents.get(initial.uri)!.getText(), large.slice(0, large.length)); assert.deepEqual(peer.events.slice(-2), ["close", "open"]);
+    assert.equal(session.synchronized(document)!.document.revision, 41); assert.equal(session.snapshotOwnership().scheduledTasks, 0);
 });
 
 test("code-action resolve options follow matching registrations and immutable negotiated capabilities", async t => {

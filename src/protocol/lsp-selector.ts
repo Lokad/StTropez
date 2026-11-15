@@ -1,5 +1,6 @@
 /** Text-document selectors only; notebook and file-watcher registration are not advertised. */
 export type LspSelectorDocument = Readonly<{ uri: string; languageId: string }>;
+/** Stable URI-to-path policy for a binding's lifetime; rebind or reconnect after changing that policy. */
 export type LspUriPath = (uri: string) => string;
 export type LspSelector = (document: LspSelectorDocument) => boolean;
 type Token = Readonly<{ kind: "literal"; value: string } | { kind: "any" } | { kind: "star" } | { kind: "glob" } | { kind: "directory" } |

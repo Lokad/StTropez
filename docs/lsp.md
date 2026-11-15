@@ -80,6 +80,11 @@ feature scope, `attachDocument(id)` or `setDocuments(snapshots)`, then connect/r
 that scope. `captureProject()` returns the exact synchronized URI captures. An owner holds one
 Workspace lease/observer and one protocol binding per participating document; further scopes reuse
 them. Local edits expire captures immediately and coalesce synchronization after commit delivery.
+Ordinary edits queue only their document URI. Connection and capability changes reconcile all
+bindings, including pending closes, before reopening matching captures. Static/dynamic selector
+results are reused within a binding and registration generation; revision changes preserve URI
+and language identity. A host `pathForUri` policy must remain stable for the binding's lifetime;
+close/rebind or reconnect after changing that policy. Closing releases the binding's cached results.
 The last participant closes the binding and releases its lease after delivery. The host may retain
 its own scope for open, unmounted project resources. Scope disposal releases its calls, subscriptions
 and participation; `scope.disconnect()` cancels that feature's work. Owner `disconnect()` or
