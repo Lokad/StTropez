@@ -74,6 +74,11 @@ not acknowledge completed provider analysis. Cancelling navigation leaves other 
 usable. Capabilities/session changes invalidate previously
 published results. Source or target revision/authority changes also expire the host result batch.
 Unopened/removed resources cannot be retargeted by tab position or by whichever editor gains focus.
+The host uses `captureViewRequest` while a navigation request is pending: the captured origin
+selection, visible fold projection, revision and authority must remain current. Publication
+releases that view capture and its lease after installing source-resource guards. Result pages
+then allow navigation and selection movement while retaining resource/provider validation.
+The captured complete selection set remains available for Return; read-only origins are supported.
 
 An explicit result action reveals the captured resource and range; a single F12 definition result
 may open automatically only while the original input still has focus. Return restores the complete
