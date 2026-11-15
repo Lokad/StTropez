@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
 import type { ApplyWorkspaceEditParams, CodeAction, Command, CompletionList, PublishDiagnosticsParams, WorkspaceEdit } from "vscode-languageserver-protocol/node.js";
 import { TextBuffer } from "../src/core/text-buffer.ts";
+import { Workspace, createSelectionSet, planSnippetEdit } from "../src/index.ts";
 import type { JsonValue, LspDocumentCapture, RpcTransport } from "../src/protocol/index.ts";
 
 const { LspLineIndex, UnsupportedLspSnippetError, decodeLspCompletions, decodeLspResolvedCompletion, rebaseLspCompletion, lspCompletionPlan, decodeLspDiagnostics, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, decodeLspApplyEdit, decodeLspCodeActions, decodeLspResolvedCodeAction, lspRangeOffsets, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
@@ -201,6 +202,79 @@ test("adjusted insertion expansion respects the captured limit before publicatio
     const lazy = decodeLspCompletions([{ ...wire, insertText: "short" }], bounded, 8, undefined, { resolve: true }).items[0]!;
     assert.throws(() => decodeLspResolvedCompletion(wire, lazy, bounded), /insertion limit/);
     assert.equal(decodeLspCompletions([{ ...wire, insertTextMode: 1 }], bounded, 8).items[0]!.replace.edits[0]!.insert, wire.insertText);
+});
+
+test("several-caret completion formats each context and restores the full transaction and primary selection through undo", async t => {
+    const initial = "// header\r\n    saMORE\r\n\t\tsaMORE\r\n        saMORE\r\n", { capture } = await captured(initial);
+    const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "completion", resource: "source", variant: "working" }, "Source", { value: initial, serverVersion: "v0" });
+    const document = () => workspace.document(resource.documentId), view = workspace.createDocumentView(resource.documentId); t.after(() => view.dispose());
+    const offsets = [capture.index.offsetAt({ line: 1, character: 6 }), capture.index.offsetAt({ line: 2, character: 4 }), capture.index.offsetAt({ line: 3, character: 10 })];
+    assert.ok(view.setSelections(0, offsets.map(head => ({ anchor: head, head })), 1)); const before = view.getSnapshot().selectionSet;
+    const wire = { label: "snippet", insertTextMode: 2, insertTextFormat: 2,
+        textEdit: { range: range(2, 2, 8), newText: "if (${1:ok}) {\n\t${2|first,second|};\n$1\n}\n$0" },
+        additionalTextEdits: [{ range: range(0, 0, 0), newText: "// extra\n" }] };
+    const item = decodeLspCompletions([wire], capture, offsets[1]!).items[0]!, plan = lspCompletionPlan(item, "replace", undefined, before);
+    const expected = "// extra\n// header\r\n" + ["    ", "\t\t", "        "].map(prefix => {
+        const columns = prefix === "    " ? 4 : 8;
+        return prefix + "if (ok) {\r\n" + " ".repeat(columns + 4) + "first;\r\n" + " ".repeat(columns) + "ok\r\n"
+            + " ".repeat(columns) + "}\r\n" + " ".repeat(columns) + "\r\n";
+    }).join("");
+    assert.equal(plan.edits.length, 4); assert.equal(plan.edits.filter(edit => edit.insert === "// extra\n").length, 1);
+    assert.equal(plan.selectionSet.ranges.length, 6); assert.equal(plan.selectionSet.primary, 2);
+    let publications = 0; const stop = workspace.observeDocument(resource.documentId).subscribe(() => publications++); t.after(stop);
+    const root = document().buffer;
+    assert.ok(workspace.edit({ documentId: resource.documentId, expectedRevision: 0, origin: "human", edits: plan.edits,
+        selectionSet: plan.selectionSet, view, history: { kind: "replace" } }).applied);
+    assert.equal(publications, 1); assert.equal(document().buffer.text(), expected);
+    assert.equal(workspace.observeHistory(resource.documentId).getSnapshot().undoDepth, 1);
+    assert.deepEqual(plan.snippet![0]!.ranges.map(range => document().buffer.slice(range.from, range.to)), Array(6).fill("ok"));
+    assert.deepEqual(plan.snippet![1]!.ranges.map(range => document().buffer.slice(range.from, range.to)), Array(3).fill("first"));
+    assert.equal(plan.head, plan.snippet![2]!.ranges[1]!.from);
+    const ordered = plan.snippet!.flatMap(stop => stop.ranges).sort((a, b) => a.order - b.order);
+    assert.equal(new Set(ordered.map(range => range.order)).size, ordered.length);
+    assert.ok(ordered.every((range, index) => !index || range.from >= ordered[index - 1]!.to));
+    assert.ok(workspace.undo({ documentId: resource.documentId, expectedRevision: 1 }).applied);
+    assert.equal(document().buffer, root); assert.deepEqual(view.getSnapshot().selectionSet, before);
+    assert.ok(workspace.redo({ documentId: resource.documentId, expectedRevision: 2 }).applied);
+    assert.equal(document().buffer.text(), expected); assert.deepEqual(view.getSnapshot().selectionSet, plan.selectionSet);
+    const at = plan.snippet![0]!.ranges[2]!.from + 1, mirrored = planSnippetEdit(document().buffer, plan.snippet!, 0, [{ from: at, to: at, insert: "!" }],
+        createSelectionSet(document().buffer.length, [{ anchor: at, head: at }]), createSelectionSet(document().buffer.length + 1, [{ anchor: at + 1, head: at + 1 }]))!;
+    const edited = document().buffer.apply(mirrored.edits).buffer;
+    assert.equal(edited.text(), expected.replaceAll("ok", "o!k"));
+    assert.deepEqual(mirrored.stops[1]!.ranges.map(range => edited.slice(range.from, range.to)), Array(3).fill("first"));
+});
+
+test("several-caret plans reject mismatched, overlapping, incomplete and oversized captures atomically", async () => {
+    const { capture } = await captured("    aa\n    aa\n"), carets = createSelectionSet(capture.document.buffer.length, [{ anchor: 6, head: 6 }, { anchor: 13, head: 13 }]);
+    const wire = { label: "body", insertTextMode: 2, textEdit: { range: range(0, 4, 6), newText: "hello\nworld" } };
+    const item = decodeLspCompletions([wire], capture, 6).items[0]!;
+    for (const selections of [createSelectionSet(14, [{ anchor: 0, head: 0 }, { anchor: 6, head: 6 }], 1),
+        createSelectionSet(14, carets.ranges, 1), createSelectionSet(14, [{ anchor: 6, head: 6 }, { anchor: 12, head: 13 }]),
+        { primary: 0, ranges: [{ anchor: 6, head: 6 }, { anchor: 6, head: 6 }] }]) assert.throws(() => lspCompletionPlan(item, "replace", undefined, selections), RangeError);
+    const different = (await captured("    aa\n    ab\n")).capture;
+    assert.throws(() => lspCompletionPlan(decodeLspCompletions([wire], different, 6).items[0]!, "replace", undefined, carets), /replacement text differs/);
+    const additional = decodeLspCompletions([{ ...wire, additionalTextEdits: [{ range: range(1, 4, 6), newText: "extra" }] }], capture, 6).items[0]!;
+    assert.throws(() => lspCompletionPlan(additional, "replace", undefined, carets), RangeError);
+    const bounded = decodeLspCompletions([wire], { ...capture, maxDocumentUnits: 20 }, 6).items[0]!;
+    assert.throws(() => lspCompletionPlan(bounded, "replace", undefined, carets), /limit/);
+    const overlap = (await captured("aaaaaa")).capture, ranges = createSelectionSet(6, [{ anchor: 2, head: 2 }, { anchor: 3, head: 3 }]);
+    const overlapping = decodeLspCompletions([{ ...wire, textEdit: { range: range(0, 0, 4), newText: "x" } }], overlap, 2).items[0]!;
+    assert.throws(() => lspCompletionPlan(overlapping, "replace", undefined, ranges), /non-overlapping/);
+    assert.equal(capture.document.buffer.text(), "    aa\n    aa\n");
+});
+
+test("several-caret commit characters preserve insert/replace policy, raw mode and all final carets", async () => {
+    const { capture } = await captured("  aMORE\n    aMORE\n"), offsets = [3, 13], carets = createSelectionSet(capture.document.buffer.length, offsets.map(head => ({ anchor: head, head })), 1);
+    for (const insertionMode of [1, 2] as const) for (const mode of ["insert", "replace"] as const) {
+        const item = decodeLspCompletions([{ label: "body", insertTextMode: insertionMode, commitCharacters: [";"],
+            textEdit: { insert: range(1, 4, 5), replace: range(1, 4, 9), newText: "x\ny;" } }], capture, 13).items[0]!;
+        const plan = lspCompletionPlan(item, mode, ";", carets), after = capture.document.buffer.apply(plan.edits).buffer;
+        const suffix = mode === "insert" ? "MORE" : "";
+        assert.equal(after.text(), [2, 4].map(columns => " ".repeat(columns) + "x\n" + (insertionMode === 2 ? " ".repeat(columns) : "") + "y;" + suffix + "\n").join(""));
+        assert.equal(plan.snippet, null); assert.equal(plan.selectionSet.primary, 1); assert.equal(plan.head, plan.selectionSet.ranges[1]!.head);
+        assert.deepEqual(plan.selectionSet.ranges.map(range => after.slice(range.head - 2, range.head)), ["y;", "y;"]);
+        assert.equal(lspCompletionPlan(item, mode).selectionSet.ranges.length, 1);
+    }
 });
 
 test("lazy completion supplies primary content within captured ranges and keeps identity and edits atomic", async () => {

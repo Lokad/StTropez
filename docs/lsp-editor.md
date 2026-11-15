@@ -105,6 +105,16 @@ once. Mode 1 preserves the supplied text. The browser still advertises and defau
 mode 1 while configured editor acceptance, multiline choices/mirrors and several-caret
 integration are being completed; decoder tests alone do not qualify those interactions.
 
+`lspCompletionPlan(item, mode, commitCharacter?, capturedSelections?)` returns the complete
+edit batch and resulting `selectionSet`. With several carets, the primary must match the
+item's captured `offset`; all ranges must be collapsed and ordered. Translated replacement
+ranges must stay on each caret's line and contain the same text as the primary range.
+Overlaps with other carets or additional edits reject the whole plan. Each insertion uses
+its own captured line context, shared additional edits apply once, and the complete result
+must fit the captured document limit. Applying that batch and selection set through one
+Workspace edit makes acceptance one undo unit. The pure planner does not establish a
+browser snippet session or qualify subsequent editing of differently indented fields.
+
 Acceptance selects every occurrence of the first numbered field. Typing, deletion, paste and
 composition commit mirror through the existing input, Workspace validation and history paths.
 Tab/Shift+Tab traverse fields; Alt+Up/Down cycles choices. Hosts render `snapshot.snippet` and use

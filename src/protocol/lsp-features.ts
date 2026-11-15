@@ -3,6 +3,8 @@ import { PositionMap } from "../core/positions.ts";
 import { parseSnippet, offsetSnippetStops } from "../core/snippets.ts";
 import { adjustInsertionText, insertionContext } from "../core/insertion-text.ts";
 import type { InsertionIndentation } from "../core/insertion-text.ts";
+import { createSelectionSet } from "../core/selections.ts";
+import type { SelectionSet } from "../core/selections.ts";
 import type { SnippetStop } from "../core/snippets.ts";
 import type { TextEdit } from "../core/changes.ts";
 import type { DocumentationContent, DocumentationPart } from "../core/documentation.ts";
@@ -17,8 +19,9 @@ export type LspDiagnostic = Readonly<{ range: LspRange; placement: "placed" | "o
     relatedInformation?: readonly Readonly<{ location: Readonly<{ uri: string; range: LspRange }>; message: string }>[]; data?: JsonValue }>;
 export type LspDiagnostics = Readonly<{ uri: string; version: number | null; revision: number | null; snapshotRevision: number; freshness: "versioned" | "unversioned"; items: readonly LspDiagnostic[] }>;
 export type LspCompletionPlan = Readonly<{ edits: readonly TextEdit[]; head: number; snippet: readonly SnippetStop[] | null }>;
+export type LspCompletionSelectionPlan = LspCompletionPlan & Readonly<{ selectionSet: SelectionSet }>;
 export type LspCompletion = Readonly<{ label: string; detail: string; documentation: string; filterText: string; sortText: string; preselect: boolean;
-    commitCharacters: readonly string[]; source: LspDocumentSnapshot; primary: Readonly<{ from: number; insertTo: number; replaceTo: number; text: string }>;
+    commitCharacters: readonly string[]; source: LspDocumentSnapshot; offset: number; primary: Readonly<{ from: number; insertTo: number; replaceTo: number; text: string }>;
     /** Raw expanded primary text/stops are retained; plans use this captured formatting policy. */
     insertion: InsertionIndentation & Readonly<{ mode: 1 | 2; maxUnits: number }>;
     additional: readonly TextEdit[]; snippet: readonly SnippetStop[] | null; resolve: JsonValue | null; insert: LspCompletionPlan; replace: LspCompletionPlan }>;
@@ -322,7 +325,7 @@ export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture
         }
         const primary = Object.freeze({ from: insert.from, insertTo: insert.to, replaceTo: replace.to, text: insert.insert });
         return Object.freeze({ label, detail, documentation: description, filterText, sortText, preselect: item.preselect === true, commitCharacters: commits,
-            source: capture.document, primary, insertion, additional: Object.freeze(additional), snippet, resolve: resolution,
+            source: capture.document, offset, primary, insertion, additional: Object.freeze(additional), snippet, resolve: resolution,
             ...completionPlans(capture.document, primary, additional, snippet, insertion) });
     });
     current(capture); return Object.freeze({ incomplete, items: Object.freeze(items.filter((item): item is LspCompletion => !!item)), omitted: Object.freeze(omitted) });
@@ -376,20 +379,69 @@ export function rebaseLspCompletion(original: LspCompletion, next: LspDocumentSn
     if (change.previousRevision !== before.revision || next.revision !== before.revision + 1 || change.origin !== "human" || change.kind !== "typing"
         || next.uri !== before.uri || next.resourceId !== before.resourceId || next.documentId !== before.documentId || next.languageId !== before.languageId
         || mapping.oldLength !== before.buffer.length || mapping.newLength !== next.buffer.length || units < 1 || units > 2048
-        || caret < primary.from || caret > primary.insertTo || !mapping.isSingleInsertion?.(caret, units)) return;
+        || caret !== original.offset || caret < primary.from || caret > primary.insertTo || !mapping.isSingleInsertion?.(caret, units)) return;
     const from = mapping.map(primary.from, "before").offset, insertTo = mapping.map(primary.insertTo, "after").offset, replaceTo = mapping.map(primary.replaceTo, "after").offset;
     const additional = Object.freeze(original.additional.map(edit => Object.freeze({ from: mapping.map(edit.from, "after").offset, to: mapping.map(edit.to, edit.from === edit.to ? "after" : "before").offset, insert: edit.insert })));
     const nextPrimary = Object.freeze({ from, insertTo, replaceTo, text: primary.text });
-    return Object.freeze({ ...original, source: next, primary: nextPrimary, additional,
+    return Object.freeze({ ...original, source: next, offset: caret + units, primary: nextPrimary, additional,
         ...completionPlans(next, nextPrimary, additional, original.snippet, original.insertion) });
 }
-/** Completion plus its advertised commit character form one intended history transaction. */
-export function lspCompletionPlan(item: LspCompletion, mode: "insert" | "replace", character?: string): LspCompletionPlan {
-    if (character === undefined) return item[mode];
-    if (character.length !== 1 || !item.commitCharacters.includes(character)) invalid();
-    const primary = item.primary, inserted = primary.text.endsWith(character) ? primary.text : primary.text + character;
-    const formatted = completionText(item.source, primary.from, inserted, null, item.insertion);
-    return plan(item.source.buffer.length, Object.freeze({ from: primary.from, to: mode === "insert" ? primary.insertTo : primary.replaceTo, insert: formatted.text }), item.additional);
+/** One atomic batch, optionally replicated at captured collapsed carets with identical replacement
+ * text. Additional edits apply once. Each caret uses its own indentation and retains its selection. */
+export function lspCompletionPlan(item: LspCompletion, mode: "insert" | "replace", character?: string, selections?: SelectionSet): LspCompletionSelectionPlan {
+    if (character !== undefined && (character.length !== 1 || !item.commitCharacters.includes(character))) invalid();
+    const { source, primary } = item, buffer = source.buffer;
+    if (selections) {
+        const normalized = createSelectionSet(buffer.length, selections.ranges, selections.primary);
+        if (normalized.primary !== selections.primary || normalized.ranges.length !== selections.ranges.length
+            || normalized.ranges.some((range, index) => range.anchor !== range.head || range.head !== selections.ranges[index]!.head)
+            || normalized.ranges[normalized.primary]!.head !== item.offset) throw new RangeError("Completion requires the captured, ordered carets.");
+    }
+    const inserted = character === undefined || primary.text.endsWith(character) ? primary.text : primary.text + character;
+    if (!selections || selections.ranges.length === 1) {
+        const formatted = character === undefined ? null : completionText(source, primary.from, inserted, null, item.insertion);
+        const result = formatted ? plan(buffer.length, Object.freeze({ from: primary.from, to: mode === "insert" ? primary.insertTo : primary.replaceTo, insert: formatted.text }), item.additional) : item[mode];
+        const first = result.snippet?.[0], length = buffer.length + result.edits.reduce((n, edit) => n + edit.insert.length - (edit.to - edit.from), 0);
+        return Object.freeze({ ...result, selectionSet: createSelectionSet(length, first && first.index !== 0
+            ? first.ranges.map(range => ({ anchor: range.from, head: range.to })) : [{ anchor: result.head, head: result.head }]) });
+    }
+    // Validate the complete translated batch before allocating formatted copies. Prefix and
+    // suffix equality avoid applying provider edits to unrelated text at secondary carets.
+    const targets = selections.ranges.map(({ head }) => {
+        const delta = head - item.offset, from = primary.from + delta, insertTo = primary.insertTo + delta, replaceTo = primary.replaceTo + delta;
+        if (from < 0 || replaceTo > buffer.length || [from, insertTo, replaceTo].some(at => buffer.lineAt(at) !== buffer.lineAt(head)))
+            throw new RangeError("Completion range leaves a captured caret's line.");
+        if (delta) for (let at = primary.from; at < primary.replaceTo; at += 4096) {
+            const end = Math.min(at + 4096, primary.replaceTo);
+            if (buffer.slice(at, end) !== buffer.slice(at + delta, end + delta)) throw new RangeError("Completion caret replacement text differs.");
+        }
+        return { from, to: mode === "insert" ? insertTo : replaceTo, insert: "" };
+    });
+    const batch = [...item.additional, ...targets].sort((a, b) => a.from - b.from || a.to - b.to);
+    validateTextEdits(buffer.length, batch);
+    for (let i = 1; i < batch.length; i++) if (batch[i]!.from === batch[i - 1]!.from) throw new RangeError("Completion edits overlap a captured caret.");
+    let remaining = item.insertion.maxUnits - buffer.length - batch.reduce((n, edit) => n + edit.insert.length - (edit.to - edit.from), 0);
+    if (remaining < 0) throw new RangeError("Completion exceeds the document limit.");
+    const formatted = targets.map(target => {
+        const result = completionText(source, target.from, inserted, character === undefined ? item.snippet : null, { ...item.insertion, maxUnits: remaining });
+        remaining -= result.text.length; if (remaining < 0) throw new RangeError("Completion exceeds the document limit."); return result;
+    });
+    const edits = Object.freeze([...item.additional, ...targets.map((target, index) => Object.freeze({ ...target, insert: formatted[index]!.text }))]
+        .sort((a, b) => a.from - b.from || a.to - b.to));
+    const mapping = new PositionMap(buffer.length, edits);
+    let order = 0;
+    const groups = targets.map((target, index) => {
+        const from = mapping.map(target.from, "before").offset, value = formatted[index]!, base = order;
+        const snippet = value.snippet && Object.freeze(value.snippet.map(stop => Object.freeze({ ...stop, ranges: Object.freeze(stop.ranges.map(range => {
+            order = Math.max(order, base + range.order + 1); return Object.freeze({ from: from + range.from, to: from + range.to, order: base + range.order });
+        })) })));
+        return { snippet, head: snippet?.find(stop => stop.index === 0)?.ranges[0]?.from ?? from + value.text.length };
+    });
+    const snippet = groups[0]!.snippet && Object.freeze(groups[0]!.snippet.map((stop, index) => Object.freeze({ ...stop,
+        ranges: Object.freeze(groups.flatMap(group => group.snippet![index]!.ranges)) })));
+    const first = snippet?.[0], ranges = first && first.index !== 0 ? first.ranges.map(range => ({ anchor: range.from, head: range.to })) : groups.map(group => ({ anchor: group.head, head: group.head }));
+    const selected = first && first.index !== 0 ? selections.primary * groups[0]!.snippet![0]!.ranges.length : selections.primary;
+    return Object.freeze({ edits, head: groups[selections.primary]!.head, snippet, selectionSet: createSelectionSet(mapping.newLength, ranges, selected) });
 }
 /** Literal display only; active indices use the protocol's default-to-first policy. */
 export function decodeLspSignatureHelp(value: unknown, capture: LspDocumentCapture): LspSignatureHelp | null {
