@@ -36,7 +36,10 @@ metrics or supply a native color picker. The host inspector shows the actual
 numeric color, independently of the source spelling.
 
 Presentation requests separately capture discovery/reference identity, proposed
-RGBA, revision, complete origin selections and fold generation. The worker checks
+RGBA, revision, complete origin selections and visible fold projection. Discovery and each
+presentation preview use `captureViewRequest` as read captures. Ready references retain their
+resource guards separately, so view movement does not discard the list. Application consumes
+the preview capture once, with edit permission checked separately. The worker checks
 the captured literal and returns edit-bearing hex/RGBA choices. Hex is offered only
 for byte-representable channels, so alpha is never silently quantized; otherwise
 RGBA preserves the value. Every choice and every primary/additional edit passes

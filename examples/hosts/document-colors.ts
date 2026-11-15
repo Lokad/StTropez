@@ -1,5 +1,6 @@
-import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, TextBuffer, Workspace } from "../../src/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, TextBuffer, Workspace } from "../../src/index.ts";
+import { captureViewRequest } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
 import type { EditingPresentation } from "../editing/presentation.ts";
 import { createNavigationClient, navigationMetrics } from "../editing/navigation-client.ts";
 import { colorLimits, parseColor, rgbaColor, sameColor, validateColorsInput, validateColorPresentationInput } from "../probes/colors.ts";
@@ -13,8 +14,8 @@ export type ColorBackend = Readonly<{ colors: (input: ColorsInput, buffer: TextB
     snapshot: () => Readonly<{ connected: boolean; busy: boolean; transport?: string }>; dispose: () => void }>;
 export type ColorBackendFactory = (clock: Window, changed: () => void) => ColorBackend;
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate; presentation: EditingPresentation };
-type Preview = { input: ColorPresentationInput; selections: SelectionSet; folds: number; timer: number; invalid: boolean; result: HostColorPresentations | undefined; choice: string };
-type Job = { origin: Session; input: ColorsInput; document: DocumentSnapshot; selections: SelectionSet; folds: number; authority: string; lease: ResourceLease; stops: (() => void)[]; timer: number; invalid: boolean;
+type Preview = { input: ColorPresentationInput; capture: CapturedViewRequest; timer: number; invalid: boolean; result: HostColorPresentations | undefined; choice: string };
+type Job = { origin: Session; input: ColorsInput; document: DocumentSnapshot; capture: CapturedViewRequest; authority: string; lease: ResourceLease | undefined; stops: (() => void)[]; timer: number; invalid: boolean;
     colors: readonly ColorReference[] | undefined; index: DomainAnnotationIndex | undefined; selected: number; preview: Preview | undefined };
 export type ColorNote = ColorReference & Readonly<{ ordinal: number; line: number; column: number; css: string }>;
 export type ColorEditNote = Readonly<{ document: string; resource: string; title: string; revision: number; from: number; to: number; insert: string; context: string }>;
@@ -54,10 +55,12 @@ export class HostDocumentColors {
         && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot(); }
     private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
     private editable(id: DocumentId): boolean { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return m.capabilities.edit.includes("human") && m.capabilities.edit.includes("host") && m.editLock === null; }
+    private capture(origin: Session): CapturedViewRequest | undefined { return captureViewRequest(this.workspace, origin.target, origin.editor.view,
+        { available: () => this.available(origin) && this.canCapture(origin.editor.view.documentId) }); }
     private current(job: Job): boolean { try { return this.job === job && !job.invalid && this.available(job.origin) && this.workspace.observeDocument(job.document.id).getSnapshot()?.revision === job.document.revision && this.authority(job.document.id) === job.authority && this.canCapture(job.document.id)
-        && (this.client?.isCurrent?.() ?? true) && (!!job.colors || job.origin.editor.view.getSnapshot().selectionSet === job.selections && job.origin.editor.view.folding.getSnapshot().generation === job.folds); } catch { return false; } }
-    private currentPreview(job: Job, preview: Preview): boolean { const proposed = parseColor(this.cell.get().value); return this.current(job) && job.preview === preview && !preview.invalid && !!proposed && sameColor(proposed, preview.input.proposed)
-        && job.origin.editor.view.getSnapshot().selectionSet === preview.selections && job.origin.editor.view.folding.getSnapshot().generation === preview.folds; }
+        && (this.client?.isCurrent?.() ?? true) && (!!job.colors || job.capture.isCurrent()); } catch { return false; } }
+    private currentPreview(job: Job, preview: Preview): boolean { try { const proposed = parseColor(this.cell.get().value); return this.current(job) && job.preview === preview && !preview.invalid && !!proposed && sameColor(proposed, preview.input.proposed)
+        && preview.capture.isCurrent(); } catch { return false; } }
     private publish(patch: Partial<DocumentColorsSnapshot> = {}): void {
         const s = { ...this.cell.get(), ...patch }, job = this.job, preview = job?.preview, proposed = parseColor(s.value), choice = preview?.result?.presentations.find(p => p.id === preview.choice);
         const colors = job?.colors?.slice(s.page * colorLimits.page, (s.page + 1) * colorLimits.page).map((color, i) => { const line = job.document.buffer.lineAt(color.from); return { ...color, ordinal: s.page * colorLimits.page + i, line: line + 1, column: color.from - job.document.buffer.offsetAt(line) + 1, css: rgbaColor(color.color) }; }) ?? [];
@@ -73,8 +76,9 @@ export class HostDocumentColors {
     private syncAll(): void { for (const s of this.sessions.values()) this.sync(s); }
     private drop(): void { const client = this.client; this.client = undefined; this.dropping = true; try { client?.dispose(); } finally { this.dropping = false; } }
     private clearPreview(job: Job): void { const preview = job.preview; job.preview = undefined; if (!preview) return; preview.invalid = true; job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(preview.timer);
+        preview.capture.cancel();
         if (!preview.result) { this.drop(); if (this.factory && this.job === job) this.release(); } }
-    private release(): void { const job = this.job; this.job = undefined; if (!job) return; job.invalid = true; this.clearPreview(job); job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.stops.splice(0).forEach(stop => stop()); job.lease.release(); if (!job.colors) this.drop(); this.syncAll(); }
+    private release(): void { const job = this.job; this.job = undefined; if (!job) return; job.invalid = true; this.clearPreview(job); job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.stops.splice(0).forEach(stop => stop()); job.capture.cancel(); job.lease?.release(); if (!job.colors) this.drop(); this.syncAll(); }
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.release(); this.publish({ status: "idle", message: "Color references and presentation preview dismissed.", work: 0, total: 0, page: 0 }); };
     readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ message: "Color provider disconnected; local editing remains available." }); };
     readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ message: "Discover fresh colors." }); };
@@ -105,14 +109,20 @@ export class HostDocumentColors {
         this.cancel(); const doc = this.workspace.document(origin.editor.view.documentId), selected = origin.editor.view.getSnapshot(); let input: ColorsInput;
         try { if (doc.key.variant !== "working") throw new Error("Only a working source can publish colors."); input = validateColorsInput({ id: ++this.sequence, document: doc.id, revision: doc.revision, length: doc.buffer.length, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid color capture." }); return; }
-        this.fault = undefined; const win = origin.editor.element.ownerDocument.defaultView!, job: Job = { origin, input, document: doc, selections: selected.selectionSet, folds: origin.editor.view.folding.getSnapshot().generation, authority: this.authority(doc.id), lease: this.workspace.acquire(doc.resourceId), stops: [], timer: 0, invalid: false, colors: undefined, index: undefined, selected: -1, preview: undefined };
+        this.fault = undefined; const capture = this.capture(origin);
+        if (!capture) { this.publish({ message: "The source changed before capture; discover fresh colors." }); return; }
+        const win = origin.editor.element.ownerDocument.defaultView!, job: Job = { origin, input, document: doc, capture, authority: this.authority(doc.id), lease: undefined, stops: [], timer: 0, invalid: false, colors: undefined, index: undefined, selected: -1, preview: undefined };
         this.job = job; this.metrics.requested++;
         try {
-            const changed = () => this.changed(job); job.stops.push(this.workspace.observeDocument(doc.id).subscribe(changed), this.workspace.resourceForDocument(doc.id).metadata.subscribe(changed), origin.editor.view.subscribe(changed), origin.editor.view.folding.subscribe(changed), this.workspace.tabState.subscribe(changed));
+            const changed = () => this.changed(job); capture.signal.addEventListener("abort", changed, { once: true });
             job.timer = win.setTimeout(() => { if (this.job === job && !job.colors) { this.release(); this.metrics.failed++; this.publish({ status: "failed", message: "Color discovery timed out; source is unchanged." }); } }, 30000);
             this.publish({ status: "scan", message: `Discovering bounded color literals from ${origin.id}.`, page: 0, work: 0, total: doc.buffer.length }); this.ensureClient(win);
             void this.client!.colors(input, doc.buffer, work => { if (this.current(job)) this.publish({ work }); }).then(result => {
-                if (!this.current(job)) { this.changed(job); return; } job.colors = result.colors; job.index = new DomainAnnotationIndex(result.colors.map((color, i) => ({ id: `color-${i}`, from: color.from, to: color.to, label: color.label }))); win.clearTimeout(job.timer);
+                if (!this.current(job)) { this.changed(job); return; }
+                // Ready references outlive view movement. Retain their resource before ending discovery capture.
+                job.lease = this.workspace.acquire(doc.resourceId);
+                job.stops.push(this.workspace.observeDocument(doc.id).subscribe(changed), this.workspace.resourceForDocument(doc.id).metadata.subscribe(changed), this.workspace.tabState.subscribe(changed));
+                job.colors = result.colors; job.index = new DomainAnnotationIndex(result.colors.map((color, i) => ({ id: `color-${i}`, from: color.from, to: color.to, label: color.label }))); win.clearTimeout(job.timer); capture.cancel();
                 const at = result.colors.findIndex(c => c.from <= selected.selection.head && selected.selection.head <= c.to); job.selected = result.colors.length ? Math.max(0, at) : -1; this.syncAll();
                 const color = result.colors[job.selected]; this.publish({ status: "colors", message: `${result.colors.length} color literals. Inspect one, preview presentations and confirm explicitly.`, work: this.factory ? 0 : input.length, page: job.selected < 0 ? 0 : Math.floor(job.selected / colorLimits.page), value: color ? this.factory ? rgbaColor(color.color) : color.text : "" });
                 if (keyboard && this.job === job && this.current(job) && this.list?.isConnected && win.document.activeElement === origin.editor.input) this.list.focus();
@@ -126,7 +136,10 @@ export class HostDocumentColors {
         this.clearPreview(job); let input: ColorPresentationInput;
         try { const value = { ...job.input, id: ++this.sequence, discovery: job.input.id, reference: job.colors[job.selected]!, proposed, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }; input = this.factory ? Object.freeze(value) : validateColorPresentationInput(value, job.document.buffer); }
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid presentation capture." }); return; }
-        this.fault = undefined; const selected = job.origin.editor.view.getSnapshot(), preview: Preview = { input, selections: selected.selectionSet, folds: job.origin.editor.view.folding.getSnapshot().generation, timer: 0, invalid: false, result: undefined, choice: "rgba" }; job.preview = preview; this.metrics.previews++; const win = job.origin.editor.element.ownerDocument.defaultView!;
+        this.fault = undefined; const capture = this.capture(job.origin);
+        if (!capture) { this.publish({ message: "The source changed before capture; request a fresh presentation." }); return; }
+        const preview: Preview = { input, capture, timer: 0, invalid: false, result: undefined, choice: "rgba" }; job.preview = preview; this.metrics.previews++; const win = job.origin.editor.element.ownerDocument.defaultView!;
+        capture.signal.addEventListener("abort", () => this.changed(job), { once: true });
         preview.timer = win.setTimeout(() => { if (this.job === job && job.preview === preview && !preview.result) { this.clearPreview(job); this.metrics.failed++; this.publish({ status: "failed", message: "Presentation timed out; validated color references remain available." }); } }, 30000);
         this.publish({ status: "presentations", message: "Waiting for captured color presentation edits." }); this.ensureClient(win);
         void this.client!.colorPresentations(input, job.document.buffer).then(result => { if (!this.currentPreview(job, preview)) { this.changed(job); return; } preview.result = result; preview.choice = result.presentations[0]?.id ?? ""; win.clearTimeout(preview.timer); this.publish({ status: "presentations", message: result.presentations.length ? "Review every proposed edit and presentation before confirming." : "No provider presentation for the captured color." }); })
@@ -139,8 +152,11 @@ export class HostDocumentColors {
         if (!job || !preview || !choice || token !== job.input.id || previewToken !== preview.input.id || id !== preview.choice || !this.currentPreview(job, preview) || !this.editable(job.document.id)) { this.publish({ message: "Use a fresh applicable presentation with edit permission." }); return; }
         this.publishing = true;
         try {
-            const result = this.workspace.editDocuments(choice.edits.map(at => ({ documentId: job.document.id, expectedRevision: at.revision, edits: at.edits, origin: "host" as const, history: { kind: "refactor" as const }, view: job.origin.editor.view, selectionSet: renameSelections(job.document.buffer.length, preview.selections, at.edits) })));
-            if (!result.applied) throw new Error(result.reason); const changed = this.workspace.document(job.document.id).revision !== job.document.revision; if (changed) this.metrics.applied++; else this.metrics.unchanged++; this.release();
+            if (!preview.capture.commit(() => {
+                const result = this.workspace.editDocuments(choice.edits.map(at => ({ documentId: job.document.id, expectedRevision: at.revision, edits: at.edits, origin: "host" as const, history: { kind: "refactor" as const }, view: job.origin.editor.view, selectionSet: renameSelections(job.document.buffer.length, preview.capture.selectionSet, at.edits) })));
+                if (!result.applied) throw new Error(result.reason); return true;
+            })) throw new Error("Captured color presentation changed before application.");
+            const changed = this.workspace.document(job.document.id).revision !== job.document.revision; if (changed) this.metrics.applied++; else this.metrics.unchanged++; this.release();
             this.publish({ status: "applied", message: changed ? "Applied the captured color presentation as one shared undo command." : "Presentation already matches; text and history are unchanged.", changed: { document: job.document.id, title: job.document.title.slice(0, 128) } });
             if (this.available(job.origin)) { job.origin.editor.viewport.revealOffset(job.origin.editor.view.getSnapshot().selection.head); job.origin.editor.focus(); }
         } catch (error) { this.release(); this.publish({ status: "failed", message: error instanceof Error ? error.message : "Color edit rejected; source is unchanged." }); }
@@ -152,6 +168,6 @@ export class HostDocumentColors {
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid color delay."); this.delay = value; }
     faultNext(value: ColorFault): void { this.fault = value; }
     faultIdle(): boolean { return this.client?.faultIdle?.() ?? false; }
-    debug() { const job = this.job; return { ...this.metrics, worker: { ...this.worker }, state: this.cell.get(), capture: job ? { input: job.input, view: job.origin.id, selections: job.preview?.selections ?? job.selections } : null, transport: this.client?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), decoratedViews: [...this.sessions.values()].filter(s => !!s.presentation.colors).length, disposed: this.disposed }; }
+    debug() { const job = this.job; return { ...this.metrics, worker: { ...this.worker }, state: this.cell.get(), capture: job ? { input: job.input, view: job.origin.id, selections: (job.preview?.capture ?? job.capture).selectionSet } : null, transport: this.client?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), decoratedViews: [...this.sessions.values()].filter(s => !!s.presentation.colors).length, disposed: this.disposed }; }
     dispose(): void { if (this.disposed) return; this.cancel(); this.drop(); this.bindList(null); this.bindValue(null); this.disposed = true; this.active = undefined; this.publish({ changed: null }); }
 }
