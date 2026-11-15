@@ -24,11 +24,20 @@ test("the selected buffer applies atomic original-coordinate batches and preserv
 test("routine read counters are immutable snapshots independent of explicit retention diagnostics", () => {
     const buffer = TextBuffer.from("a😀\r\nb"), before = buffer.readMetrics();
     assert.deepEqual(before, { textExports: 0, sliceUnits: 0 }); assert.ok(Object.isFrozen(before));
+    assert.equal(buffer.diagnostics().textExports, 0); assert.equal(buffer.diagnostics().sliceUnits, 0);
+    assert.equal(buffer.slice(2, 2), ""); assert.throws(() => buffer.slice(-1, 1), RangeError);
+    assert.equal([...buffer.chunks()].join(""), "a😀\r\nb"); buffer.lineAt(2); buffer.offsetAt(1);
+    assert.deepEqual(buffer.readMetrics(), before);
     assert.equal(buffer.slice(1, 3), "😀"); buffer.text();
     assert.deepEqual(before, { textExports: 0, sliceUnits: 0 });
     assert.deepEqual(buffer.readMetrics(), { textExports: 1, sliceUnits: 2 });
-    assert.deepEqual(buffer.replace(0, 0, "x").readMetrics(), { textExports: 0, sliceUnits: 0 });
+    const next = buffer.replace(0, 0, "x");
+    assert.deepEqual(next.readMetrics(), { textExports: 0, sliceUnits: 0 }); next.slice(0, 1);
+    assert.deepEqual(next.readMetrics(), { textExports: 0, sliceUnits: 1 });
+    assert.deepEqual(buffer.readMetrics(), { textExports: 1, sliceUnits: 2 });
     const diagnostic = buffer.diagnostics(); assert.equal(diagnostic.retention.versions, 1); assert.equal(diagnostic.textExports, 1);
+    const empty = TextBuffer.from(""); empty.slice(0, 0); empty.text();
+    assert.deepEqual(empty.readMetrics(), { textExports: 1, sliceUnits: 0 });
 });
 
 test("indexed line/range subscribers do not materialize the document and retained versions share backing text", () => {
