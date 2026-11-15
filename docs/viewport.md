@@ -31,13 +31,21 @@ outside the window. The default overscan is four lines and 32 UTF-16 units per h
 Unchanged row text and inline classes retain their text/span nodes, including selection and
 provider decorations. Each render still obtains current decorations and updates row offsets,
 geometry and revision metadata. Changed text, classes or selection segments replace the affected
-children; no second document or provider-state cache is retained. Comparison marks may
-expire while a new revision is being aligned, so that intentional class change can replace nodes.
+children; no second document or provider-state cache is retained. Comparison marks can change
+when the exact alignment replaces mapped presentation, replacing the affected styled children.
 Lines up to 512 UTF-16 units render whole for natural browser shaping; longer lines use bounded
 windows. Mounted text and reads scale with viewport dimensions and that per-row cap. Neither
 rendering, scroll changes nor metadata updates access `DocumentSnapshot.text` or resource value.
 Unrelated resource notifications do not schedule a frame. Multiple changes coalesce into one
 animation frame, while each revision's map updates the retained scroll anchor synchronously.
+
+Inline painting validates and clips decoration ranges once, sorts their boundaries, and sweeps
+the active ranges in host-supplied order. Overlapping and duplicate classes retain that order;
+selection styling comes last. Changes sharing an endpoint are merged together, so disjoint
+decorations do not rescan every range per segment and coincident endpoints do not cause repeated
+array insertions/removals. Work after sorting follows the boundaries and emitted class labels;
+dense overlaps can still require large output. A bounded cache retains at most 256 validated
+class names. The existing child-node comparison preserves unchanged text/span nodes.
 
 `prepareNavigationRows(lines)` accepts at most 64 valid line indices and returns an explicit release
 function. It writes complete short command rows before native geometry reads, without revealing them.

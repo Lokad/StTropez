@@ -11,6 +11,8 @@ import type { CaretRectangle } from "./text-geometry.ts";
 import type { Affinity } from "../core/positions.ts";
 import { createFoldRegions, FoldIndex } from "../core/folding.ts";
 import { sameSelectionSet } from "../core/selections.ts";
+import { decorationParts, validDecorationClass } from "./decoration-parts.ts";
+import type { RowPart } from "./decoration-parts.ts";
 import type { ComparisonRowIndex } from "../core/comparison-rows.ts";
 type RowIndex = FoldIndex | ComparisonRowIndex;
 const emptyIndex = new FoldIndex(1, []);
@@ -42,7 +44,6 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     invalidate: () => void;
     revealOffset: (offset: number, options?: RevealOptions) => void; snapshot: () => ViewportSnapshot; destroy: () => void }>;
 type Row = Readonly<{ line: number; from: number; to: number; text: string; left: number; complete: boolean; endsLine: boolean }>;
-type RowPart = Readonly<{ text: string; className: string }>;
 /** CRLF has two raw positions at one painted line edge. Keep the requested model offset. */
 function rowCaretOffset(buffer: TextBuffer, end: number, offset: number): number | undefined {
     if (offset <= end) return offset;
@@ -222,23 +223,10 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             if (from >= item.to) break; if (from < to) selections.push({ from, to });
         }
         const presented = { documentId, revision: document.revision, line: item.line, lineStart: document.buffer.offsetAt(item.line), from: item.from, to: item.to, text: item.text };
-        const lineClass = options.lineClass?.(presented), className = "st-viewport-row" + (lineClass && /^[a-zA-Z][\w-]{0,63}$/.test(lineClass) ? ` ${lineClass}` : "");
+        const lineClass = options.lineClass?.(presented), className = "st-viewport-row" + (lineClass && validDecorationClass(lineClass) ? ` ${lineClass}` : "");
         const changed = element.className !== className; element.className = className;
         const decorations = options.decorate?.(presented);
-        if (!decorations?.length && !selections.length) return renderRowChildren(element, [{ text: item.text, className: "" }]) || changed;
-        const ranges = (decorations ?? []).filter(range => Number.isSafeInteger(range.from) && Number.isSafeInteger(range.to) && range.from >= 0 && range.to <= document.buffer.length && range.from < range.to
-            && range.from < item.to && range.to > item.from && /^[a-zA-Z][\w-]{0,63}$/.test(range.className));
-        const boundaries = new Set([item.from, item.to]);
-        for (const range of selections) { boundaries.add(range.from); boundaries.add(range.to); }
-        for (const range of ranges) { boundaries.add(Math.max(item.from, range.from)); boundaries.add(Math.min(item.to, range.to)); }
-        const offsets = [...boundaries].sort((a, b) => a - b), children: RowPart[] = []; let selectedIndex = 0;
-        for (let index = 0; index + 1 < offsets.length; index++) {
-            const start = offsets[index]!, end = offsets[index + 1]!, classes = ranges.filter(range => range.from < end && range.to > start).map(range => range.className);
-            while (selectedIndex < selections.length && selections[selectedIndex]!.to <= start) selectedIndex++;
-            if (selections[selectedIndex] && start >= selections[selectedIndex]!.from && end <= selections[selectedIndex]!.to) classes.push("st-viewport-selected");
-            children.push({ text: item.text.slice(start - item.from, end - item.from), className: classes.join(" ") });
-        }
-        return renderRowChildren(element, children) || changed;
+        return renderRowChildren(element, decorationParts(item.text, item.from, item.to, document.buffer.length, decorations, selections)) || changed;
     };
     type MeasuredRow = Readonly<{ complete: boolean; flow: -1 | 1; point: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
         visual: (offset: number, affinity: Affinity, direction: -1 | 1) => CaretRectangle | undefined;
