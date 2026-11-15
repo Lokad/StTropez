@@ -12,7 +12,7 @@ function fixture(text: string, supplied = true) {
     let serial = 0, focused = 0, composing = false, holdSecond = false, failPlan = false, badPlan = false;
     const tasks = new Map<number, () => void>(), held: (() => void)[] = [], plans: { disposed: boolean; capture: FindQueryCapture }[] = [];
     const owner = Object.assign(new EventTarget(), { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
-    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), snapshot: () => ({ disposed: false, composing }),
+    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), activity: () => ({ disposed: false, composing }),
         viewport: { revealOffset: () => {} }, focus: () => { focused++; } } as unknown as EditingCandidate;
     const backend: FindBackend = {
         search: capture => {

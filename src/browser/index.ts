@@ -10,7 +10,7 @@ import type { TextBuffer } from "../core/text-buffer.ts";
 import { captureNativeInsertion, resolveNativeInsertion } from "./input-target.ts";
 import type { NativeInsertionTarget } from "./input-target.ts";
 export { mountTextViewport } from "./viewport.ts";
-export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealOptions, TextViewport, ViewportSnapshot, ViewportComparisonRows } from "./viewport.ts";
+export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealOptions, TextViewport, ViewportActivity, ViewportSnapshot, ViewportComparisonRows } from "./viewport.ts";
 export { mountEditingCandidate } from "./editing-candidate.ts";
 export { createFoldingController } from "./folding-controller.ts";
 export type { FoldDiscovery, FoldDiscoveryBatch, FoldDiscoveryResult, FoldCommand, FoldingStatus, FoldingController } from "./folding-controller.ts";
@@ -23,7 +23,7 @@ export type { DocumentationOptions, DocumentationView } from "./documentation.ts
 export type { DocumentationContent, DocumentationPart } from "../core/documentation.ts";
 export type { LspHighlightSnapshot, LspHighlightController } from "./lsp-highlights.ts";
 export type { LspEditorController, LspEditorOptions, LspEditorSnapshot, LspEditorDiagnostic, LspEditorSnippet } from "./lsp-editor.ts";
-export type { EditingCandidate, CandidateEdit, CandidateEditTransform } from "./editing-candidate.ts";
+export type { EditingCandidate, EditingActivity, CandidateEdit, CandidateEditTransform } from "./editing-candidate.ts";
 export type { CapturedInsertion } from "./captured-insertion.ts";
 export { createFindController } from "./find.ts";
 export type { FindController, FindSnapshot, FindOptions, FindBackend, FindQueryCapture, FindSearchCursor, FindPlanCursor, FindPlanStep, FindConfiguration } from "./find.ts";

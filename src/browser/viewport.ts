@@ -21,11 +21,13 @@ export const viewportPadding = 12;
 export type ViewportComparisonRows = Readonly<{ documentId: DocumentId; revision: number; foldGeneration: number; id: number; lineHeight: number; index: ComparisonRowIndex }>;
 export type RenderedRowBounds = Readonly<{ revision: number; foldGeneration: number; line: number; top: number; height: number }>;
 
-export type ViewportSnapshot = Readonly<{ revision: number | null; selection: Selection | null; selectionSet: SelectionSet | null; renders: number; firstLine: number; lastLine: number;
-    foldGeneration: number; visibleLines: number; collapsedFolds: number; visualRows: number; paddingRows: number; aligned: boolean; alignmentId: number | null; rowGeneration: number; naturalLineHeight: number;
+export type ViewportActivity = Readonly<{ revision: number | null; selectionSet: SelectionSet | null; foldGeneration: number;
+    aligned: boolean; alignmentId: number | null; rowGeneration: number; pending: boolean; disposed: boolean }>;
+export type ViewportSnapshot = ViewportActivity & Readonly<{ selection: Selection | null; renders: number; firstLine: number; lastLine: number;
+    visibleLines: number; collapsedFolds: number; visualRows: number; paddingRows: number; naturalLineHeight: number;
     rows: number; partialRows: number; textUnits: number; readUnits: number; navigationReadUnits: number; navigationRows: number; navigationBatches: number; navigationPreparedRows: number; maxNavigationBatchRows: number; lastRenderMs: number; scrollTop: number; scrollLeft: number; width: number; height: number;
     lineHeight: number; columnWidth: number; verticalExtent: number; horizontalExtent: number;
-    physicalHeight: number; physicalWidth: number; pending: boolean; disposed: boolean }>;
+    physicalHeight: number; physicalWidth: number }>;
 export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentView;
     captureView: () => ViewState; restoreView: (state: ViewState) => void;
     scrollTo: (position: Readonly<{ top?: number; left?: number }>) => void;
@@ -42,6 +44,8 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     prepareNavigationRows: (lines: readonly number[]) => () => void;
     flush: () => void;
     invalidate: () => void;
+    /** Immutable painted identities and scheduled-work state; reused while unchanged. Does not flush or measure layout. */
+    activity: () => ViewportActivity;
     revealOffset: (offset: number, options?: RevealOptions) => void; snapshot: () => ViewportSnapshot; destroy: () => void }>;
 type Row = Readonly<{ line: number; from: number; to: number; text: string; left: number; complete: boolean; endsLine: boolean }>;
 /** CRLF has two raw positions at one painted line edge. Keep the requested model offset. */
@@ -510,8 +514,17 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     owner.fonts.addEventListener("loadingdone", invalidate, { signal: listeners.signal });
     owner.fonts.addEventListener("loadingerror", invalidate, { signal: listeners.signal });
     const subscriptions = [workspace.observeDocument(documentId).subscribe(documentChanged), view.subscribe(schedule), view.folding.subscribe(foldsChanged), resource.metadata.subscribe(schedule), workspace.tabState.subscribe(schedule)];
+    let activitySnapshot: ViewportActivity | undefined;
+    function activity(): ViewportActivity {
+        const pending = frame !== undefined;
+        if (activitySnapshot && activitySnapshot.revision === renderedRevision && activitySnapshot.selectionSet === renderedSelectionSet
+            && activitySnapshot.foldGeneration === renderedFoldGeneration && activitySnapshot.alignmentId === renderedAlignmentId
+            && activitySnapshot.rowGeneration === rowGeneration && activitySnapshot.pending === pending && activitySnapshot.disposed === disposed) return activitySnapshot;
+        return activitySnapshot = Object.freeze({ revision: renderedRevision, selectionSet: renderedSelectionSet, foldGeneration: renderedFoldGeneration,
+            aligned: renderedAlignmentId !== null, alignmentId: renderedAlignmentId, rowGeneration, pending, disposed });
+    }
     schedule();
-    return Object.freeze({ element: root, view,
+    return Object.freeze({ element: root, view, activity,
         prepareNavigationRows,
         invalidate,
         coordsAt: coordinates,
@@ -611,11 +624,11 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             reveal = { revision: document.revision, foldGeneration: view.folding.getSnapshot().generation, offset, horizontal, vertical, affinity }; schedule();
         },
-        snapshot: () => Object.freeze({ revision: renderedRevision, selection: renderedSelection, selectionSet: renderedSelectionSet, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, foldGeneration: renderedFoldGeneration, visibleLines: previous ? view.folding.getSnapshot().index.visibleLineCount : 0, collapsedFolds: previous ? renderedIndex.collapsedCount : 0, visualRows: previous ? renderedIndex.visibleLineCount : 0, paddingRows: paddingRows.size, aligned: renderedAlignmentId !== null, alignmentId: renderedAlignmentId, rowGeneration, naturalLineHeight, navigationReadUnits, navigationRows, navigationBatches, navigationPreparedRows: preparedRows?.rows.size ?? 0, maxNavigationBatchRows, lastRenderMs,
+        snapshot: () => Object.freeze({ ...activity(), selection: renderedSelection, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, visibleLines: previous ? view.folding.getSnapshot().index.visibleLineCount : 0, collapsedFolds: previous ? renderedIndex.collapsedCount : 0, visualRows: previous ? renderedIndex.visibleLineCount : 0, paddingRows: paddingRows.size, naturalLineHeight, navigationReadUnits, navigationRows, navigationBatches, navigationPreparedRows: preparedRows?.rows.size ?? 0, maxNavigationBatchRows, lastRenderMs,
             scrollTop: top, scrollLeft: left, width, height, lineHeight, columnWidth, verticalExtent: y.extent, horizontalExtent: x.extent,
-            physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent, pending: frame !== undefined, disposed }),
+            physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent }),
         destroy: () => {
-            if (disposed) return; disposed = true; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
+            if (disposed) return; disposed = true; activitySnapshot = undefined; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); paddingRows.clear(); comparisonRows = undefined; renderedAlignmentId = null; geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             painted = undefined; commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove(); clearPreparedRows();
             navigationBatches = 0; maxNavigationBatchRows = 0;

@@ -21,7 +21,7 @@ export function mountDemoActions(workspace: Workspace, file: DemoFile, editor: E
     previousChoices.textContent = "Previous fixes"; nextChoices.textContent = "Next fixes"; choicePages.append(previousChoices, choiceCount, nextChoices);
     popup.append(heading, status, choices, choicePages, edits, pages, apply, close); document.body.append(popup);
     let disposed = false, commandAction = false;
-    const idle = () => { const state = editor.snapshot(); return !disposed && valid() && !state.composing && !state.pendingInput && !state.pendingCommand; };
+    const idle = () => { const state = editor.activity(); return !disposed && valid() && !state.composing && !state.pendingInput && !state.pendingCommand; };
     const present = (id: string) => id === file.resource.documentId && valid() ? editor : undefined;
     const commands = new HostProjectTools(workspace, () => idle(), present, undefined, provider, request =>
         request.edit.documents.length === 1 && request.edit.documents[0]!.target.document.documentId === file.resource.documentId
@@ -81,7 +81,7 @@ export function mountDemoActions(workspace: Workspace, file: DemoFile, editor: E
     previous.addEventListener("click", () => tools.previousPage(), { signal: events.signal }); next.addEventListener("click", () => tools.nextPage(), { signal: events.signal });
     previousChoices.addEventListener("click", () => tools.moveChoicePage(-1), { signal: events.signal }); nextChoices.addEventListener("click", () => tools.moveChoicePage(1), { signal: events.signal });
     editor.input.addEventListener("keydown", event => {
-        if (event.defaultPrevented || event.isComposing || editor.snapshot().composing) return;
+        if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;
         if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key === ".") { event.preventDefault(); event.stopImmediatePropagation(); request(); }
         else if (!popup.hidden && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
             const state = tools.state.getSnapshot();

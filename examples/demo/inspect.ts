@@ -16,7 +16,7 @@ export function mountDemoInspection(workspace: Workspace, file: DemoFile, editor
     valid: () => boolean, completionOpen: () => boolean, cancelCompletion: () => void, beforeInspect: () => void = () => {}) {
     const host = document.createElement("div"); host.className = "demo-language-popups"; document.body.append(host);
     // Pending caret paint does not invalidate an already committed model selection.
-    const canCapture = () => { const state = editor.snapshot(); return valid() && !state.composing && !state.pendingInput && !state.pendingCommand; };
+    const canCapture = () => { const state = editor.activity(); return valid() && !state.composing && !state.pendingInput && !state.pendingCommand; };
     const hover = new HostHoverTools(workspace, kind => {
         if (kind === "pointer") return canCapture() && !completionOpen() && !signature.state.getSnapshot().visible;
         signature.dismiss(); cancelCompletion(); beforeInspect(); return canCapture();

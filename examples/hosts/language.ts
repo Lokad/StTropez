@@ -84,7 +84,7 @@ export class HostLanguageTools {
         const unsubscribe = provider.state.subscribe(update);
         editor.input.addEventListener("focus", () => this.activate(session), { signal: listeners.signal });
         editor.input.addEventListener("keydown", event => {
-            if (event.isComposing || editor.snapshot().composing || event.defaultPrevented) return;
+            if (event.isComposing || editor.activity().composing || event.defaultPrevented) return;
             if ((event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && (event.code === "BracketLeft" || event.code === "BracketRight")) {
                 event.preventDefault(); this.activate(session); if (event.code === "BracketLeft") this.foldSelection(); else this.expandFolds();
             } else if (this.findKey(event, session)) return;
@@ -102,7 +102,7 @@ export class HostLanguageTools {
         const session: Session = { id, tab: target.id, target, saveTarget, editor, presentation, initialized: true, reference: baseline }, listeners = new AbortController();
         this.sessions.set(id, session);
         editor.input.addEventListener("focus", () => this.activate(session), { signal: listeners.signal });
-        editor.input.addEventListener("keydown", event => { if (!event.defaultPrevented && !event.isComposing && !editor.snapshot().composing) this.findKey(event, session); }, { signal: listeners.signal });
+        editor.input.addEventListener("keydown", event => { if (!event.defaultPrevented && !event.isComposing && !editor.activity().composing) this.findKey(event, session); }, { signal: listeners.signal });
         // Keep the logical field target after replacement, without starting old work or moving focus.
         if (resume) this.activate(session); else this.resume(session);
         return this.detachSession(session, listeners);
@@ -145,7 +145,7 @@ export class HostLanguageTools {
             return this.active === session && this.sessions.get(session.id) === session && session.find === find
                 && (capturedAuthority === undefined || authority() === capturedAuthority)
                 && origin.isConnected && owner.activeElement === origin && !(origin.closest("button,input,select,textarea") ?? origin).matches(":disabled")
-                && editor.element.isConnected && !editor.snapshot().disposed && !editor.snapshot().composing && this.workspace.ownsDocumentView(editor.view)
+                && editor.element.isConnected && !editor.activity().disposed && !editor.activity().composing && this.workspace.ownsDocumentView(editor.view)
                 && tab?.surface.kind === "text" && tab.surface.documentId === editor.view.documentId
                 && this.workspace.document(editor.view.documentId).revision === captured.revision && editor.view.getSnapshot().selectionSet === selections
                 && state.revision === captured.revision && state.query === captured.query && state.wholeWord === captured.wholeWord
@@ -178,7 +178,7 @@ export class HostLanguageTools {
         const root = this.toolsElement, target = event.target, realm = root?.ownerDocument.defaultView, session = this.active;
         if (event.defaultPrevented || event.isComposing || !root?.isConnected || !realm || !(target instanceof realm.HTMLElement) || !root.contains(target) || !session
             || (target.closest("button,input,select,textarea") ?? target).matches(":disabled") || !session.editor.element.isConnected
-            || session.editor.snapshot().disposed || session.editor.snapshot().composing || !this.workspace.ownsDocumentView(session.editor.view)) return;
+            || session.editor.activity().disposed || session.editor.activity().composing || !this.workspace.ownsDocumentView(session.editor.view)) return;
         const tab = this.workspace.resolveTab(session.target);
         if (tab?.surface.kind !== "text" || tab.surface.documentId !== session.editor.view.documentId) return;
         return { session, control: target };
@@ -189,7 +189,7 @@ export class HostLanguageTools {
         const replacement = event.target === this.replacementElement, enter = key === "enter" && (replacement || event.target === this.queryElement);
         if (!save && !find && !enter && key !== "escape") return;
         const owned = this.toolsSession(event); if (!owned) return;
-        if (save) this.saveShortcut(event, owned.control, owned.session.saveTarget, () => owned.session.editor.snapshot().composing);
+        if (save) this.saveShortcut(event, owned.control, owned.session.saveTarget, () => owned.session.editor.activity().composing);
         else if (find) this.findKey(event, owned.session);
         else if (enter) { event.preventDefault(); if (replacement) this.replaceCurrent(); else if (event.shiftKey) this.previous(); else this.next(); }
         else { event.preventDefault(); owned.session.find?.cancel(); owned.session.editor.focus(); }
@@ -247,8 +247,8 @@ export class HostLanguageTools {
         const session = this.active; if (!session) return;
         const tab = this.workspace.resolveTab(session.target);
         if (tab?.surface.kind !== "text" || tab.surface.documentId !== session.editor.view.documentId || !this.workspace.ownsDocumentView(session.editor.view)
-            || !session.editor.element.isConnected || session.editor.snapshot().disposed) return;
-        if (session.editor.snapshot().composing) { this.cell.set({ ...this.cell.get(), foldMessage: "Finish composition before folding." }); return; }
+            || !session.editor.element.isConnected || session.editor.activity().disposed) return;
+        if (session.editor.activity().composing) { this.cell.set({ ...this.cell.get(), foldMessage: "Finish composition before folding." }); return; }
         return session;
     }
     readonly foldSelection = (): void => {

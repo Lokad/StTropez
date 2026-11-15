@@ -23,7 +23,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
     let symbols: ReturnType<typeof mountDemoSymbols> | undefined;
     let actions: ReturnType<typeof mountDemoActions> | undefined;
     let highlights: LspHighlightController | undefined, stopHighlights: (() => void) | undefined;
-    const valid = () => !disposed && editor.element.isConnected && !editor.snapshot().disposed && workspace.resolveTab(target)?.surface.kind === "text";
+    const valid = () => !disposed && editor.element.isConnected && !editor.activity().disposed && workspace.resolveTab(target)?.surface.kind === "text";
     const render = () => {
         const state = controller?.state.getSnapshot();
         const snippet = state?.snippet; snippetPanel.hidden = !valid() || !snippet;

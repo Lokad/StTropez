@@ -19,7 +19,7 @@ export function mountDemoSymbols(workspace: Workspace, files: () => readonly Dem
     let disposed = false;
     type Query = { choice: number; message: string; current: () => boolean; result?: Awaited<ReturnType<typeof navigation.run>> };
     let query: Query | undefined;
-    const idle = () => { const s = editor.snapshot(); return !disposed && valid() && !s.composing && !s.pendingInput && !s.pendingCommand; };
+    const idle = () => { const s = editor.activity(); return !disposed && valid() && !s.composing && !s.pendingInput && !s.pendingCommand; };
     const position = (element: HTMLElement) => {
         const point = editor.viewport.coordsAt(editor.view.getSnapshot().selection.head), box = editor.element.getBoundingClientRect();
         element.style.left = `${Math.max(8, Math.min(innerWidth - 360, point?.left ?? box.left + 8))}px`;
@@ -104,7 +104,7 @@ export function mountDemoSymbols(workspace: Workspace, files: () => readonly Dem
     popup.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
     renamePopup.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); closeRename(true); } }, { capture: true, signal: events.signal });
     editor.input.addEventListener("keydown", event => {
-        if (event.defaultPrevented || event.isComposing || editor.snapshot().composing || event.ctrlKey || event.metaKey || event.altKey) return;
+        if (event.defaultPrevented || event.isComposing || editor.activity().composing || event.ctrlKey || event.metaKey || event.altKey) return;
         if (event.key === "F12") { event.preventDefault(); event.stopImmediatePropagation(); request(event.shiftKey ? "references" : "definition"); }
         else if (event.key === "F2" && !event.shiftKey) { event.preventDefault(); event.stopImmediatePropagation(); beginRename(); }
         else if (event.key === "Escape" && query) { event.preventDefault(); event.stopImmediatePropagation(); cancelNavigation(); }

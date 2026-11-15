@@ -106,7 +106,7 @@ function renderProblems(): void {
         item.textContent = `${problem.name} · ${code}${problem.message}`;
         const current = () => project === captured && captured.language.state.getSnapshot().diagnostics === state.diagnostics;
         const open = (target: { documentId: typeof problem.documentId; revision: number; from: number; to: number }) => {
-            if (!current() || editor?.snapshot().composing) return;
+            if (!current() || editor?.activity().composing) return;
             const file = captured.files.find(file => file.resource.documentId === target.documentId);
             if (!file || captured.workspace.document(target.documentId).revision !== target.revision) return;
             mountFile(file, true); file.view.setSelection(target.revision, { anchor: target.from, head: target.to });
@@ -231,7 +231,7 @@ function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEd
     });
 }
 function mountFile(file: DemoFile, focus = false): void {
-    if (!project || disposed || editor?.snapshot().composing) return;
+    if (!project || disposed || editor?.activity().composing) return;
     const viewState = editor?.captureView();
     const previous = active;
     if (previous && viewState) savedViews.set(previous.view, viewState);
@@ -283,7 +283,7 @@ function mountFile(file: DemoFile, focus = false): void {
     editor.input.addEventListener("compositionstart", renderMetadata, { signal: viewListeners.signal });
     editor.input.addEventListener("compositionend", renderMetadata, { signal: viewListeners.signal });
     editor.element.addEventListener("keydown", event => {
-        if (event.isComposing || editor?.snapshot().composing || event.defaultPrevented) return;
+        if (event.isComposing || editor?.activity().composing || event.defaultPrevented) return;
         if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.key === "ArrowLeft") { event.preventDefault(); goBack(); return; }
         if ((event.ctrlKey || event.metaKey) && !event.altKey) {
             const key = event.key.toLowerCase();
@@ -308,7 +308,7 @@ function mountFile(file: DemoFile, focus = false): void {
 const savedViews = new Map<DemoFile["view"], ReturnType<EditingCandidate["captureView"]>>();
 const locations: { project: DemoProject; file: DemoFile; revision: number; selected: ReturnType<DemoFile["view"]["getSnapshot"]>["selectionSet"]; view: ReturnType<EditingCandidate["captureView"]> }[] = [];
 function goBack(): void {
-    if (!project || !editor || editor.snapshot().composing || editor.snapshot().pendingInput || editor.snapshot().pendingCommand) return;
+    if (!project || !editor || editor.activity().composing || editor.activity().pendingInput || editor.activity().pendingCommand) return;
     let index = locations.length - 1; while (index >= 0 && locations[index]!.project !== project) index--; if (index < 0) return;
     const location = locations.splice(index, 1)[0]!;
     mountFile(location.file, true);
@@ -319,11 +319,11 @@ function goBack(): void {
     renderMetadata(); editor?.focus();
 }
 async function openSample(id: SampleId): Promise<void> {
-    if (editor?.snapshot().composing) { sample.value = project!.sample.id; return; }
+    if (editor?.activity().composing) { sample.value = project!.sample.id; return; }
     const generation = ++opening; sample.disabled = true;
     let next = projects.get(id);
     if (!next) { next = await DemoProject.open(id, () => {
-        const state = project?.sample.id === id ? editor?.snapshot() : undefined;
+        const state = project?.sample.id === id ? editor?.activity() : undefined;
         return !state || !state.composing && !state.pendingInput && !state.pendingCommand;
     }); if (disposed) { next.dispose(); return; } projects.set(id, next); }
     if (disposed || generation !== opening) return;
@@ -345,7 +345,7 @@ async function openSample(id: SampleId): Promise<void> {
     mountFile(next.files.find(file => file.name === activeFiles.get(id)) ?? next.files[0]!);
 }
 function setPanel(next: typeof panel): void {
-    if (!active || editor?.snapshot().composing) return; panel = next;
+    if (!active || editor?.activity().composing) return; panel = next;
     element("workspace").classList.remove("collapsed"); element("panel-collapse").textContent = "Hide";
     for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.setAttribute("aria-pressed", String(tab.dataset.panel === panel));
     mountFile(active, true);
@@ -396,11 +396,11 @@ on("panel-collapse", () => {
 });
 on("walkthrough-toggle", () => { element("walkthrough").hidden = !element("walkthrough").hidden; });
 on("reset", () => {
-    if (!project || editor?.snapshot().composing || !window.confirm(`Restore the original files in “${project.sample.title}”? You can undo this change. Other samples and recovery drafts are kept. The saved copy changes only when you save locally.`)) return;
+    if (!project || editor?.activity().composing || !window.confirm(`Restore the original files in “${project.sample.title}”? You can undo this change. Other samples and recovery drafts are kept. The saved copy changes only when you save locally.`)) return;
     project.reset(); renderMetadata(); editor?.focus();
 });
 async function save(reviewed = false): Promise<void> {
-    const captured = project; if (!captured || editor?.snapshot().composing) return;
+    const captured = project; if (!captured || editor?.activity().composing) return;
     await captured.save(renderMetadata, reviewed);
     if (!disposed && project === captured && comparison && active) {
         const ticket = comparison.controller.beginRefresh(); ticket.complete(captured.baseline(active));
@@ -436,7 +436,7 @@ element("files").addEventListener("click", event => {
     const file = project?.files.find(file => file.name === name); if (file) mountFile(file, true);
 }, { signal: listeners.signal });
 window.addEventListener("keydown", event => {
-    if (!event.isComposing && !editor?.snapshot().composing && (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s") {
+    if (!event.isComposing && !editor?.activity().composing && (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s") {
         event.preventDefault(); void save();
     }
 }, { signal: listeners.signal });

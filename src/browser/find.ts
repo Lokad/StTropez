@@ -41,7 +41,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     let stopPlanAuthority: (() => void) | undefined;
     let pages: number[][] = [], count = 0;
     const valid = () => !disposed && lease.active() && workspace.resolveTab(target) !== undefined && workspace.ownsDocumentView(editor.view)
-        && workspace.observeDocument(documentId).getSnapshot() !== undefined && !editor.snapshot().disposed;
+        && workspace.observeDocument(documentId).getSnapshot() !== undefined && !editor.activity().disposed;
     const publish = (patch: Partial<FindSnapshot>) => { const changed = new Set<Store<unknown>>(); store.set(Object.freeze({ ...store.get(), ...patch }), changed); scope.deliver([...changed]); };
     const stop = () => { generation++; if (timer !== undefined) win.clearTimeout(timer); timer = undefined;
         const active = cursor, plan = planCursor, authority = stopPlanAuthority; cursor = undefined; planCursor = undefined; stopPlanAuthority = undefined;
@@ -151,7 +151,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     const next = (direction: 1 | -1 = 1): boolean => {
         scope.assertWritable(); if (direction !== 1 && direction !== -1) throw new RangeError("Invalid search direction.");
         const state = store.get(); if (!valid() || state.status !== "ready" || !count) return false;
-        if (editor.snapshot().composing) { publish({ message: "Finish composition before navigating." }); return false; }
+        if (editor.activity().composing) { publish({ message: "Finish composition before navigating." }); return false; }
         const selection = editor.view.getSnapshot(), selected = selection.selection, bound = direction === 1 ? Math.max(selected.anchor, selected.head) : Math.min(selected.anchor, selected.head);
         let low = indexAt(bound);
         if (direction === 1 && low < count && offsetAt(low) === bound && endAt(low) === bound
@@ -164,7 +164,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     function regexPlan(state: FindSnapshot, replacement: string, range?: SearchMatch): boolean {
         if (!backend || !valid() || state.revision !== workspace.document(documentId).revision) return false;
         if (!canEdit()) { publish({ message: "read-only" }); return false; }
-        if (editor.snapshot().composing) { publish({ message: "Finish composition before replacing." }); return false; }
+        if (editor.activity().composing) { publish({ message: "Finish composition before replacing." }); return false; }
         const request = capture(state.query, state.wholeWord, state.matchCase), positions = pages, total = range ? 1 : count;
         const selectionSet = editor.view.getSnapshot().selectionSet, edits: TextEdit[] = [];
         stop(); const token = generation, focusToken = focusGeneration; observePlanAuthority(token); publish({ status: "replacing", message: "" });
@@ -174,7 +174,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         const current = () => {
             if (token !== generation) return false;
             if (!valid() || workspace.document(documentId).revision !== state.revision || editor.view.getSnapshot().selectionSet !== selectionSet) { restart(state.query); return false; }
-            if (!canEdit() || editor.snapshot().composing) { stop(); publish({ status: "ready", message: "Replacement cancelled because editing became unavailable." }); return false; }
+            if (!canEdit() || editor.activity().composing) { stop(); publish({ status: "ready", message: "Replacement cancelled because editing became unavailable." }); return false; }
             return true;
         };
         const receive = (result: FindPlanStep) => {
@@ -215,7 +215,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         scope.assertWritable(); if (typeof replacement !== "string") throw new TypeError("Expected replacement text.");
         if (!valid()) return false;
         if (!canEdit()) { publish({ message: "read-only" }); return false; }
-        if (editor.snapshot().composing) { publish({ message: "Finish composition before replacing." }); return false; }
+        if (editor.activity().composing) { publish({ message: "Finish composition before replacing." }); return false; }
         const match = currentRange(); if (!match) return next();
         if (store.get().regularExpression) return regexPlan(store.get(), replacement, match);
         const head = match.from + replacement.length;
@@ -228,7 +228,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         scope.assertWritable(); if (typeof replacement !== "string") throw new TypeError("Expected replacement text.");
         const state = store.get(); if (!valid() || state.status !== "ready" || !count) return;
         if (!canEdit()) { publish({ message: "read-only" }); return; }
-        if (editor.snapshot().composing) { publish({ message: "Finish composition before replacing." }); return; }
+        if (editor.activity().composing) { publish({ message: "Finish composition before replacing." }); return; }
         if (state.regularExpression) { regexPlan(state, replacement); return; }
         stop(); const token = generation, focusToken = focusGeneration, positions = pages, total = count, edits: TextEdit[] = [], selectionSet = editor.view.getSnapshot().selectionSet; let index = 0;
         // A restored permission/lock does not revive an interrupted human command.

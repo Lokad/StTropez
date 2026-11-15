@@ -23,7 +23,7 @@ export function createComparisonScroll(win: Window, working: TextViewport, refer
         }
         paused = false;
         const target = source === working ? baseline : working, sourceFolds = source.view.folding.getSnapshot(), targetFolds = target.view.folding.getSnapshot();
-        const sourceRows = source.snapshot().rowGeneration, targetRows = target.snapshot().rowGeneration;
+        const sourceRows = source.activity().rowGeneration, targetRows = target.activity().rowGeneration;
         frame = win.requestAnimationFrame(() => {
             frame = undefined;
             if (disposed || !linked || snapshot() !== capture || reference() !== baseline
@@ -95,7 +95,7 @@ export function createComparisonScroll(win: Window, working: TextViewport, refer
                 stopReference = next.view.folding.subscribe(() => request(leader)); observer.observe(next.element);
             }
         }
-        const aRows = working.snapshot().rowGeneration, bRows = next?.snapshot().rowGeneration ?? -1;
+        const aRows = working.activity().rowGeneration, bRows = next?.activity().rowGeneration ?? -1;
         if (state !== prior || aRows !== workingRows || bRows !== referenceRows) { cancel(); prior = state; workingRows = aRows; referenceRows = bRows; request(leader); }
         else if (paused && state.status === "ready" && canSync()) request(leader);
     }

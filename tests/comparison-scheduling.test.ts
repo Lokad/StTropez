@@ -26,15 +26,16 @@ function fixture(count = 5000) {
     function viewport(current: DocumentView) {
         let installed: ViewportComparisonRows | undefined, top = 0;
         const element = Object.assign(new EventTarget(), { isConnected: true });
-        const value = { view: current, element, snapshot: () => { reads++; return { revision: current.getSnapshot().revision,
+        const read = () => { reads++; return { revision: current.getSnapshot().revision,
             foldGeneration: current.folding.getSnapshot().generation, naturalLineHeight: 20, lineHeight: 20, rowGeneration: installed?.id ?? 0,
-            aligned: !!installed, alignmentId: installed?.id ?? null, pending: false, disposed: false, scrollTop: top, verticalExtent: count * 40, height: 200 }; },
+            aligned: !!installed, alignmentId: installed?.id ?? null, pending: false, disposed: false, scrollTop: top, verticalExtent: count * 40, height: 200 }; };
+        const value = { view: current, element, snapshot: read, activity: read,
             setComparisonRows: (rows: ViewportComparisonRows | undefined) => { installed = rows; return true; },
             scrollTo: ({ top: next }: { top?: number }) => { if (next !== undefined) top = next; }, flush: () => {} } as unknown as TextViewport;
         return { value, element, installed: () => installed, scroll: (to: number) => { top = to; element.dispatchEvent(new Event("scroll")); } };
     }
     const working = viewport(view), reference = viewport(refView); let target: TextViewport | undefined = reference.value;
-    const editor = { view, viewport: working.value, snapshot: () => ({ composing, pendingInput: false, pendingCommand: false, pendingDragScroll: false }) } as unknown as EditingCandidate;
+    const editor = { view, viewport: working.value, activity: () => ({ composing, pendingInput: false, pendingCommand: false, pendingDragScroll: false }) } as unknown as EditingCandidate;
     const alignment = createComparisonAlignment(win, editor, () => target, () => state, () => notifications++, () => false);
     const step = () => { const entry = tasks.entries().next().value; assert.ok(entry, "Expected scheduled work"); tasks.delete(entry[0]); entry[1](); };
     const drain = () => { let turns = 0; while (tasks.size) { assert.ok(++turns < 1000, "Scheduler failed to settle"); step(); } return turns; };

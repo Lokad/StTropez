@@ -28,6 +28,8 @@ import type { CapturedInsertion } from "./captured-insertion.ts";
 
 export type CandidateEdit = Readonly<{ expectedRevision: number; edits: readonly TextEdit[]; selectionSet: SelectionSet; kind: EditKind }>;
 export type CandidateEditTransform = (edit: CandidateEdit) => Readonly<{ edits: readonly TextEdit[]; selectionSet: SelectionSet; complete?: (applied: boolean) => void }> | undefined;
+export type EditingActivity = Readonly<{ disposed: boolean; composing: boolean; pendingInput: boolean; pendingCommand: boolean;
+    pendingCaret: boolean; pendingDragScroll: boolean; pendingWord: boolean; pendingGrapheme: boolean }>;
 export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTextAreaElement; view: DocumentView; viewport: TextViewport;
     /** One pending host insertion, invalidated by later editing/selection/authority/lifecycle changes. */
     captureInsertion: (kind?: "paste" | "replace") => CapturedInsertion | undefined;
@@ -37,7 +39,9 @@ export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTe
     /** Returns whether the command was accepted; long selections finish asynchronously. */
     runCommand: (command: EditingCommand) => boolean;
     focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
-    snapshot: () => Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number; maxQueuedInputTurnMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; pendingCaret: boolean; pendingCommand: boolean; pendingDragScroll: boolean; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; composing: boolean; pendingInput: boolean; queuedInputUnits: number; pendingWord: boolean; wordScanSteps: number; maxWordScanStepMs: number; pendingGrapheme: boolean; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number; disposed: boolean }>;
+    /** Immutable activity capture, reused while its fields are unchanged. Does not collect metrics. */
+    activity: () => EditingActivity;
+    snapshot: () => EditingActivity & Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number; maxQueuedInputTurnMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; queuedInputUnits: number; wordScanSteps: number; maxWordScanStepMs: number; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number }>;
     destroy: () => void }>;
 let nextMount = 0;
 
@@ -504,7 +508,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (capture.selectionSet.ranges.length > 2) return false;
         // Page destinations use current viewport dimensions, including a pending resize.
         viewport.flush();
-        if (viewport.snapshot().aligned) return false;
+        if (viewport.activity().aligned) return false;
         const buffer = capture.buffer, folds = view.folding.getSnapshot().index, count = verticalCount(page), lines = new Set<number>();
         for (const range of capture.selectionSet.ranges) {
             const line = buffer.lineAt(range.head), row = folds.rowAt(line);
@@ -1018,8 +1022,21 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         view.folding.subscribe(() => { const revision = view.folding.getSnapshot().revision;
             if (revision === observedFoldRevision) { cancelWord(); stopDrag(); preferred = undefined; group = undefined; }
             observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh), workspace.tabState.subscribe(refresh)];
+    let activitySnapshot: EditingActivity | undefined;
+    function activity(): EditingActivity {
+        const pendingInput = hostInsertion !== undefined || ordered !== undefined || executingInput !== undefined || rangeCommand?.capture.deleting === true;
+        const pendingCommand = rangeCommand !== undefined || wordJob !== undefined || graphemeJob !== undefined;
+        const pendingCaret = caretLayer.pending(), pendingDragScroll = dragFrame !== undefined;
+        const pendingWord = rangeCommand?.purpose === "word" || wordJob !== undefined || graphemeJob?.purpose === "word" || graphemeJob?.purpose === "word-selection" || ordered?.purpose === "word";
+        const pendingGrapheme = rangeCommand?.purpose === "grapheme" || graphemeJob !== undefined || ordered?.purpose === "grapheme";
+        if (activitySnapshot && activitySnapshot.disposed === disposed && activitySnapshot.composing === composing
+            && activitySnapshot.pendingInput === pendingInput && activitySnapshot.pendingCommand === pendingCommand
+            && activitySnapshot.pendingCaret === pendingCaret && activitySnapshot.pendingDragScroll === pendingDragScroll
+            && activitySnapshot.pendingWord === pendingWord && activitySnapshot.pendingGrapheme === pendingGrapheme) return activitySnapshot;
+        return activitySnapshot = Object.freeze({ disposed, composing, pendingInput, pendingCommand, pendingCaret, pendingDragScroll, pendingWord, pendingGrapheme });
+    }
     refresh();
-    return Object.freeze({ element: root, input, view, viewport, focus,
+    return Object.freeze({ element: root, input, view, viewport, focus, activity,
         captureInsertion: (kind = "paste") => {
             if (kind !== "paste" && kind !== "replace") throw new TypeError("Unknown captured insertion kind.");
             hostInsertion?.cancel();
@@ -1046,11 +1063,10 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         },
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state: ViewState) => { viewport.restoreView(state); refresh(); },
-        snapshot: () => Object.freeze({ inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs, pendingCaret: caretLayer.pending(), pendingCommand: rangeCommand !== undefined || wordJob !== undefined || graphemeJob !== undefined,
-            pendingDragScroll: dragFrame !== undefined, dragScrollFrames, maxDragScrollStepMs, commits, conflicts, composing, pendingInput: hostInsertion !== undefined || ordered !== undefined || executingInput !== undefined || rangeCommand?.capture.deleting === true,
-            queuedInputUnits: ordered?.units ?? 0, pendingWord: rangeCommand?.purpose === "word" || wordJob !== undefined || graphemeJob?.purpose === "word" || graphemeJob?.purpose === "word-selection" || ordered?.purpose === "word", wordScanSteps, maxWordScanStepMs, pendingGrapheme: rangeCommand?.purpose === "grapheme" || graphemeJob !== undefined || ordered?.purpose === "grapheme", graphemeScanSteps, maxGraphemeScanStepMs, visualMoves, disposed }),
+        snapshot: () => Object.freeze({ ...activity(), inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs,
+            dragScrollFrames, maxDragScrollStepMs, commits, conflicts, queuedInputUnits: ordered?.units ?? 0, wordScanSteps, maxWordScanStepMs, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves }),
         destroy: () => {
-            if (disposed) return; disposed = true; editTransform = undefined;
+            if (disposed) return; disposed = true; activitySnapshot = undefined; editTransform = undefined;
             hostInsertion?.cancel();
             if (executingInput) recoverInput(executingInput, "pending-input-detached");
             cancelWord();

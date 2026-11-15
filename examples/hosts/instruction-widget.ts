@@ -84,7 +84,7 @@ export function mountInstructionWidget(host: HTMLElement, lane: HTMLElement, edi
         frame = undefined; if (disposed) return; const began = win.performance.now(), s = model.state.getSnapshot(); try {
         const active = s.active && current(); host.classList.toggle("host-instruction-enabled", active); lane.hidden = !active; sync();
         if (!active) { unmount(true); return; }
-        const v = editor.viewport.snapshot(); if (v.pending || v.revision !== s.revision) { schedule(); return; }
+        const v = editor.viewport.activity(); if (v.pending || v.revision !== s.revision) { schedule(); return; }
         const root = editor.viewport.element.getBoundingClientRect(), box = lane.getBoundingClientRect(), folded = editor.view.folding.getSnapshot().index.hiddenBy(s.line);
         const point = s.located && !folded ? editor.viewport.rowBounds(s.line) : undefined;
         if (!point || box.width < 210 || point.top + point.height <= root.top || point.top >= root.bottom) {

@@ -10,6 +10,13 @@ text geometry now supplies `coordsAt` and `hitTest`; the separate experimental
 [`mountEditingCandidate`](editing-candidate.md) adds bounded input. This component does not
 select an input engine.
 
+`activity()` returns an immutable `ViewportActivity` capture, reused while its fields are unchanged.
+It reports the last painted revision, selection set, fold generation and comparison alignment,
+the row generation, a scheduled-frame flag and disposal. It performs no layout measurement or
+flush. A caller checking settlement must also compare the painted identities with the current
+view and folds; `pending: false` alone does not establish that native events or services have
+finished. `snapshot()` retains these fields alongside dimensions, work counts and timings.
+
 `coordsAt`, `rowBounds` and `hitTest` use client coordinates. Scroll positions, navigation
 columns and inline placement use local CSS units. Inherited CSS `zoom` is converted at this
 boundary, including caret/input anchors, secondary carets, drop markers and pointer scroll

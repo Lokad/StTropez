@@ -20,9 +20,9 @@ export function createLspHighlightController(workspace: Workspace, tabId: TabId,
         revision: workspace.document(documentId).revision, caret: null, items: empty }), notifications);
     const events = new AbortController(); let disposed = false, generation = 0, timer: number | undefined;
     let result: Awaited<ReturnType<typeof client.run>["result"]> | undefined;
-    const available = () => !disposed && !editor.snapshot().disposed && workspace.ownsDocumentView(view) && !!workspace.resolveTab(target);
+    const available = () => !disposed && !editor.activity().disposed && workspace.ownsDocumentView(view) && !!workspace.resolveTab(target);
     const focused = () => editor.element.ownerDocument.activeElement === editor.input;
-    const busy = () => { const state = editor.snapshot(); return state.composing || state.pendingInput || state.pendingCommand || state.pendingWord || state.pendingGrapheme; };
+    const busy = () => { const state = editor.activity(); return state.composing || state.pendingInput || state.pendingCommand || state.pendingWord || state.pendingGrapheme; };
     const publish = (status: LspHighlightSnapshot["status"], revision = cell.get().revision, caret: number | null = null) => {
         const changed = new Set<Store<unknown>>(); cell.set(Object.freeze({ status, documentId, revision, caret, items: result?.items ?? empty }), changed); notifications.deliver([...changed]);
     };

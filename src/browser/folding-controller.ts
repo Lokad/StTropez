@@ -26,8 +26,8 @@ export function createFoldingController(workspace: Workspace, tabId: TabId, edit
         regions: 0, collapsed: 0, groups: Object.freeze([]), message: "Discovering folds…" }), notifications);
     const listeners = new AbortController(); let disposed = false, generation = 0, timer: number | undefined;
     let job: { generation: number; document: DocumentSnapshot; abort: AbortController; pumping?: boolean; iterator?: Generator<void, readonly DiscoveredFold[]> } | undefined;
-    const available = () => !disposed && !editor.snapshot().disposed && workspace.ownsDocumentView(view) && !!workspace.resolveTab(target);
-    const busy = () => { const state = editor.snapshot(); return state.composing || state.pendingInput || state.pendingCommand; };
+    const available = () => !disposed && !editor.activity().disposed && workspace.ownsDocumentView(view) && !!workspace.resolveTab(target);
+    const busy = () => { const state = editor.activity(); return state.composing || state.pendingInput || state.pendingCommand; };
     let groupRegions: readonly FoldRegion[] | undefined, groups: readonly string[] = Object.freeze([]);
     const publish = (status: FoldingStatus["status"], message = "") => {
         const folds = view.folding.getSnapshot();

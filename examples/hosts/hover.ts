@@ -101,8 +101,8 @@ export class HostHoverTools {
         editor.element.addEventListener("pointerenter", () => { session.overTarget = true; if (this.current === session) this.clearDismiss(); }, { signal: listeners.signal });
         editor.element.addEventListener("pointermove", event => {
             if (!this.allowInspect("pointer")) { cancelPointer(); return; }
-            if (event.buttons || editor.snapshot().composing) { cancelPointer(); if (this.current === session) this.dismiss(); return; }
-            const x = event.clientX, y = event.clientY, pending = editor.viewport.snapshot().pending, point = pointerAt(x, y);
+            if (event.buttons || editor.activity().composing) { cancelPointer(); if (this.current === session) this.dismiss(); return; }
+            const x = event.clientX, y = event.clientY, pending = editor.viewport.activity().pending, point = pointerAt(x, y);
             if (!pending && !point) {
                 cancelPointer(); if (this.current === session) this.dismiss(); return;
             }
@@ -118,7 +118,7 @@ export class HostHoverTools {
         editor.element.addEventListener("pointerleave", () => { cancelPointer(); session.overTarget = false; if (this.current === session) this.queueDismiss(session); }, { signal: listeners.signal });
         editor.element.addEventListener("pointerdown", () => { cancelPointer(); if (this.current === session) this.dismiss(); }, { signal: listeners.signal });
         editor.input.addEventListener("keydown", event => {
-            if (event.isComposing || editor.snapshot().composing) return;
+            if (event.isComposing || editor.activity().composing) return;
             if (["Control", "Meta", "Shift", "Alt"].includes(event.key)) return;
             if (event.key === "Escape" && (this.current || session.scheduled)) { event.preventDefault(); event.stopImmediatePropagation(); this.dismiss(); return; }
             const command = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey, name = event.key.toLowerCase();

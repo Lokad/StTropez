@@ -48,7 +48,7 @@ export class HostRenameTools {
     private validName(name: string): boolean { return this.usesLsp ? name.length > 0 && name.length <= 256 && !/[\u0000-\u001f\u007f]/.test(name) : renameName(name); }
     private available(s: Session): boolean {
         const tab = this.workspace.resolveTab(s.target);
-        return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.snapshot().disposed && this.workspace.ownsDocumentView(s.editor.view)
+        return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
             && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
     }
     private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
@@ -94,7 +94,7 @@ export class HostRenameTools {
         const s: Session = { token: ++sessionSerial, id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
         editor.input.addEventListener("keydown", event => {
-            if (event.defaultPrevented || event.isComposing || editor.snapshot().composing) return;
+            if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;
             if (event.key === "F2" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) { event.preventDefault(); event.stopImmediatePropagation(); this.active = s; this.start(true); }
         }, { capture: true, signal: events.signal });
         for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.job?.documents.has(editor.view.documentId)) this.cancel(); }, { signal: events.signal });

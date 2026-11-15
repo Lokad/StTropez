@@ -11,7 +11,7 @@ test("controller and workspace notifications reject cross-owner writes through n
     let serial = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
-    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), snapshot: () => ({ composing: false, disposed: false }),
+    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), activity: () => ({ composing: false, disposed: false }),
         viewport: { revealOffset: () => {} }, focus: () => {} } as unknown as EditingCandidate;
     const find = createFindController(workspace, tab, editor), comparison = createComparisonController(workspace, tab, { buffer: TextBuffer.from("cat"), version: "one" });
     const other = new Workspace(), independent = other.createDocument({ scope: "find", resource: "other", variant: "working" }, "Other", "a");
@@ -47,7 +47,7 @@ test("changing whole-word mode cancels captured replacement and excludes selecte
     const tasks = new Map<number, () => void>(); let serial = 0, focused = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
-    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), snapshot: () => ({ composing: false, disposed: false }),
+    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), activity: () => ({ composing: false, disposed: false }),
         viewport: { revealOffset: () => {} }, focus: () => { focused++; } } as unknown as EditingCandidate;
     const find = createFindController(workspace, tab, editor);
     const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 100); const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); } };
@@ -78,7 +78,7 @@ for (const lifetime of ["destroyed", "expired", "view-disposed"] as const) for (
         const owner = Object.assign(new EventTarget(), { defaultView: { setTimeout, clearTimeout, performance } });
         // This headless facade exercises controller ownership and notifications. Real DOM/input remains browser coverage.
         let inactive = false;
-        const editor = { view, element: { ownerDocument: owner }, input: Object.assign(new EventTarget(), { readOnly: true }), snapshot: () => ({ composing: inactive && composing, disposed: false }),
+        const editor = { view, element: { ownerDocument: owner }, input: Object.assign(new EventTarget(), { readOnly: true }), activity: () => ({ composing: inactive && composing, disposed: false }),
             viewport: { revealOffset: () => { assert.equal(inactive, false, "Inactive view must not be revealed."); } },
             focus: () => { assert.equal(inactive, false, "Inactive editor must not receive focus."); } } as unknown as EditingCandidate;
         const find = createFindController(workspace, tab, editor); let stop = () => {};
@@ -109,7 +109,7 @@ test("case options retain raw Unicode matches, cancel captured plans and preserv
     const tasks = new Map<number, () => void>(); let serial = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
-    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), snapshot: () => ({ composing: false, disposed: false }),
+    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), activity: () => ({ composing: false, disposed: false }),
         viewport: { revealOffset: () => {} }, focus: () => {} } as unknown as EditingCandidate;
     const find = createFindController(workspace, tab, editor), text = () => { const buffer = workspace.document(documentId).buffer; return buffer.slice(0, buffer.length); };
     const runOne = () => { const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); };

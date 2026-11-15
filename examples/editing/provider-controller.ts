@@ -30,7 +30,7 @@ export function createProviderController(workspace: Workspace, tabId: TabId, edi
     let pending: Pending | undefined, offer: Readonly<{ capture: Pending; result: ProviderResult }> | undefined;
     let diagnostics: readonly Diagnostic[] = [], diagnosticRevision = -1, fault: ProviderInput["fault"];
     const cell = new HostCell<ProviderSnapshot>({ message: "Provider disconnected; local editing remains available.", connected: false, pending: false, offerText: null, diagnostics: [], diagnosticRevision: -1 });
-    const valid = () => !disposed && workspace.resolveTab(target) !== undefined && workspace.ownsDocumentView(editor.view) && !editor.snapshot().disposed
+    const valid = () => !disposed && workspace.resolveTab(target) !== undefined && workspace.ownsDocumentView(editor.view) && !editor.activity().disposed
         && workspace.observeDocument(documentId).getSnapshot() !== undefined;
     const sameSelection = (selected: Selection) => { const current = editor.view.getSnapshot().selection; return selected.anchor === current.anchor && selected.head === current.head
         && selected.anchorAffinity === current.anchorAffinity && selected.headAffinity === current.headAffinity; };
@@ -65,7 +65,7 @@ export function createProviderController(workspace: Workspace, tabId: TabId, edi
     }
     function request(): void {
         if (!valid() || !worker) { render("Provider unavailable; local editing remains available."); return; }
-        if (editor.snapshot().composing) { render("Finish composition before requesting completion."); return; }
+        if (editor.activity().composing) { render("Finish composition before requesting completion."); return; }
         release(); clearResults("Request pending."); const document = workspace.document(documentId), selected = editor.view.getSnapshot().selection;
         if (selected.anchor !== selected.head) { render("Place a caret before requesting completion."); return; }
         const from = Math.max(0, selected.head - 2048), to = Math.min(document.buffer.length, selected.head + 2048);
@@ -81,7 +81,7 @@ export function createProviderController(workspace: Workspace, tabId: TabId, edi
     }
     function apply(mode: "insert" | "replace"): boolean {
         const current = offer; if (!current) return false;
-        if (editor.snapshot().composing) { clearResults("Finish composition before applying completion."); return false; }
+        if (editor.activity().composing) { clearResults("Finish composition before applying completion."); return false; }
         if (!valid() || workspace.document(documentId).revision !== current.result.revision || !sameSelection(current.capture.selection)) { counters.stale++; clearResults("Stale completion rejected."); return false; }
         const completion = current.result.completion, from = current.capture.from + completion.from, to = current.capture.from + (mode === "replace" ? completion.replaceTo : completion.to), head = from + completion.insert.length;
         const before = workspace.document(documentId), oldDiagnostics = diagnostics;
@@ -99,7 +99,7 @@ export function createProviderController(workspace: Workspace, tabId: TabId, edi
     const selectDiagnostic = (index: number): boolean => {
         const diagnostic = diagnostics[index];
         if (!diagnostic || !valid() || workspace.document(documentId).revision !== diagnosticRevision) return false;
-        if (editor.snapshot().composing) { render("Finish composition before selecting a diagnostic."); return false; }
+        if (editor.activity().composing) { render("Finish composition before selecting a diagnostic."); return false; }
         if (!editor.view.setSelection(diagnosticRevision, { anchor: diagnostic.from, head: diagnostic.to })) return false;
         editor.viewport.revealOffset(diagnostic.from); editor.focus(); return true;
     };

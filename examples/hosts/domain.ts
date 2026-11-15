@@ -37,7 +37,7 @@ export class HostDomainTools {
         provider?: DomainProvider) { this.workspace = workspace; this.canCapture = canCapture; this.provider = provider ?? this.fixture; }
     private available(session: Session): boolean {
         const tab = this.workspace.resolveTab(session.target), editor = session.editor;
-        return !this.disposed && this.sessions.get(session.token) === session && editor.element.isConnected && !editor.snapshot().disposed
+        return !this.disposed && this.sessions.get(session.token) === session && editor.element.isConnected && !editor.activity().disposed
             && tab?.surface.kind === "text" && tab.surface.documentId === editor.view.documentId && this.workspace.ownsDocumentView(editor.view)
             && this.workspace.resourceForDocument(editor.view.documentId).getSnapshot().state === "ready";
     }
@@ -85,11 +85,11 @@ export class HostDomainTools {
     }
     private guard(session: Session | undefined): session is Session {
         if (!session || !this.available(session)) { this.publish({ message: "Focus an available candidate source view." }); return false; }
-        if (session.editor.snapshot().composing || !this.canCapture(session.editor.view.documentId)) { this.publish({ message: "Finish pending typing or composition before a domain command." }); return false; }
+        if (session.editor.activity().composing || !this.canCapture(session.editor.view.documentId)) { this.publish({ message: "Finish pending typing or composition before a domain command." }); return false; }
         return true;
     }
     private current(job: Job): boolean {
-        return !job.invalid && this.job === job && this.available(job.session) && !job.session.editor.snapshot().composing
+        return !job.invalid && this.job === job && this.available(job.session) && !job.session.editor.activity().composing
             && this.canCapture(job.session.editor.view.documentId)
             && this.workspace.document(job.session.editor.view.documentId).revision === job.input.revision
             && job.session.editor.view.folding.getSnapshot().generation === job.folds.generation && this.authority(job.session) === job.authority

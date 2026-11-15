@@ -46,7 +46,7 @@ export class HostNavigationTools {
     }
     private available(session: Session): boolean {
         const tab = this.workspace.resolveTab(session.target), editor = session.editor;
-        return !this.disposed && this.sessions.get(session.token) === session && editor.element.isConnected && !editor.snapshot().disposed && this.workspace.ownsDocumentView(editor.view)
+        return !this.disposed && this.sessions.get(session.token) === session && editor.element.isConnected && !editor.activity().disposed && this.workspace.ownsDocumentView(editor.view)
             && tab?.surface.kind === "text" && tab.surface.documentId === editor.view.documentId && this.workspace.observeDocument(editor.view.documentId).getSnapshot() !== undefined;
     }
     private authority(id: DocumentId): string {
@@ -91,7 +91,7 @@ export class HostNavigationTools {
         const session: Session = { token: ++sessionSerial, id, target: this.workspace.captureTab(tab), editor }, listeners = new AbortController(); this.sessions.set(session.token, session);
         editor.input.addEventListener("focus", () => { this.active = session; this.publish(); }, { signal: listeners.signal });
         editor.input.addEventListener("keydown", event => {
-            if (event.defaultPrevented || event.isComposing || editor.snapshot().composing) return;
+            if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;
             if (event.key === "F12" && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); event.stopImmediatePropagation(); this.active = session; this.start(event.shiftKey ? "references" : "definition", true); }
             else if (event.key === "Escape" && this.job) { event.preventDefault(); event.stopImmediatePropagation(); this.cancel(); }
         }, { capture: true, signal: listeners.signal });

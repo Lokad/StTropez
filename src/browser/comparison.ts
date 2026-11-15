@@ -77,10 +77,10 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     let working: EditingCandidate;
     try { working = mountEditingCandidate(workingPane.content, workspace, workingTab, { view: controller.view, ariaLabel: "Comparison working source", decorate: decorate("working"), lineClass: lineClass("working") }); }
     catch (error) { root.remove(); controller.dispose(); throw error; }
-    const busy = (editor: EditingCandidate | undefined) => { const input = editor?.snapshot(); return !!input && (input.composing || input.pendingInput || input.pendingCommand); };
-    const composing = () => working.snapshot().composing || referenceInput?.snapshot().composing === true;
+    const busy = (editor: EditingCandidate | undefined) => { const input = editor?.activity(); return !!input && (input.composing || input.pendingInput || input.pendingCommand); };
+    const composing = () => working.activity().composing || referenceInput?.activity().composing === true;
     const alignment = createComparisonAlignment(win, working, () => reference, controller.getSnapshot, schedule,
-        () => busy(referenceInput) || referenceInput?.snapshot().pendingDragScroll === true);
+        () => busy(referenceInput) || referenceInput?.activity().pendingDragScroll === true);
     const scroll = createComparisonScroll(win, working.viewport, () => reference, controller.getSnapshot, () => {
         return !busy(working) && !busy(referenceInput) && !alignment.snapshot().pending;
     });

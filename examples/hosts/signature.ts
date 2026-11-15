@@ -48,7 +48,7 @@ export class HostSignatureTools {
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, beforeRequest: () => void, factory?: SignatureBackendFactory, completionOpen?: () => boolean, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.beforeRequest = beforeRequest; this.factory = factory; this.completionOpen = completionOpen; }
     private available(s: Session): boolean {
         const tab = this.workspace.resolveTab(s.target);
-        return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.snapshot().disposed && this.workspace.ownsDocumentView(s.editor.view)
+        return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
             && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
     }
     private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
@@ -157,14 +157,14 @@ export class HostSignatureTools {
         editor.input.addEventListener("focus", () => { if (this.active !== s) { this.dismiss(); this.active = s; this.publish(); } }, { signal: events.signal });
         editor.input.addEventListener("blur", () => { if (this.active === s) this.dismiss(); }, { signal: events.signal });
         editor.input.addEventListener("keydown", event => {
-            if (event.defaultPrevented || event.isComposing || editor.snapshot().composing) return;
+            if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;
             if ((event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && event.key === " ") { event.preventDefault(); event.stopImmediatePropagation(); this.active = s; this.request(s); }
             else if (event.key === "Escape" && (this.job || this.auto || this.armed)) { if (this.factory && this.completionOpen?.()) return; event.preventDefault(); event.stopImmediatePropagation(); this.dismiss(); }
             else if (!event.ctrlKey && !event.metaKey && !event.altKey && !this.disconnected && (this.factory ? event.key.length === 1 && this.trigger(s, false, event.key) : event.key === "(" && (this.armed || this.trigger(s, false)) || event.key === "," && this.armed)) {
                 const retrigger = this.armed; this.active = s; this.armed = true; this.clear("idle", "Signature context changed while typing."); this.schedule(s, { triggerKind: 2, triggerCharacter: event.key, isRetrigger: retrigger }); }
         }, { capture: true, signal: events.signal });
         editor.input.addEventListener("beforeinput", (event: InputEvent) => {
-            if (event.defaultPrevented || event.isComposing || editor.snapshot().composing || this.disconnected) return;
+            if (event.defaultPrevented || event.isComposing || editor.activity().composing || this.disconnected) return;
             const prior = this.auto?.session === s && this.auto.context.triggerCharacter === event.data ? this.auto.context : undefined;
             const trigger = this.factory ? !!event.data && this.trigger(s, true, event.data) : event.data === "(" && this.trigger(s, true), retrigger = prior?.isRetrigger ?? this.armed;
             if (!this.armed && !trigger) return; this.active = s; this.armed = true; this.clear("idle", "Signature context changed while typing."); this.schedule(s, trigger && event.data ? { triggerKind: 2, triggerCharacter: event.data, isRetrigger: retrigger } : undefined);

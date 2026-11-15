@@ -16,7 +16,7 @@ export function createComparisonAlignment(win: Window, working: EditingCandidate
     let oldReference: TextViewport | undefined, referenceEvents: AbortController | undefined, stopReference: (() => void) | undefined;
     let events: AbortController | undefined, stopWorking: (() => void) | undefined;
     const pointers = new Set<number>();
-    const stableInput = () => { const s = working.snapshot(); return !s.composing && !s.pendingCommand && !s.pendingInput && !s.pendingDragScroll && !pointers.size && !referenceBusy(); };
+    const stableInput = () => { const s = working.activity(); return !s.composing && !s.pendingCommand && !s.pendingInput && !s.pendingDragScroll && !pointers.size && !referenceBusy(); };
     const cancel = () => { if (timer !== undefined) win.clearTimeout(timer); timer = undefined; cursor?.dispose(); cursor = undefined; };
     const schedule = () => { if (!disposed && enabled && timer === undefined) timer = win.setTimeout(step, 0); };
     const clear = () => { working.viewport.setComparisonRows(undefined); oldReference?.setComparisonRows(undefined); };

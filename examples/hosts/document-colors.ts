@@ -50,7 +50,7 @@ export class HostDocumentColors {
     readonly state = this.cell.observable;
     private readonly reconnectProvider: (() => void) | undefined;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, factory?: ColorBackendFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.factory = factory; }
-    private available(s: Session): boolean { const tab = this.workspace.resolveTab(s.target); return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.snapshot().disposed && this.workspace.ownsDocumentView(s.editor.view)
+    private available(s: Session): boolean { const tab = this.workspace.resolveTab(s.target); return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
         && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot(); }
     private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
     private editable(id: DocumentId): boolean { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return m.capabilities.edit.includes("human") && m.capabilities.edit.includes("host") && m.editLock === null; }
@@ -94,7 +94,7 @@ export class HostDocumentColors {
     attach(id: string, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation): () => void {
         const s = { token: ++serial, id, target: this.workspace.captureTab(tab), editor, presentation }, events = new AbortController(); this.sessions.set(s.token, s); this.sync(s);
         editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
-        editor.input.addEventListener("keydown", event => { if (event.defaultPrevented || event.isComposing || editor.snapshot().composing || event.key !== "F6" || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return; event.preventDefault(); event.stopImmediatePropagation(); this.active = s; this.start(true); }, { capture: true, signal: events.signal });
+        editor.input.addEventListener("keydown", event => { if (event.defaultPrevented || event.isComposing || editor.activity().composing || event.key !== "F6" || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return; event.preventDefault(); event.stopImmediatePropagation(); this.active = s; this.start(true); }, { capture: true, signal: events.signal });
         for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.job?.document.id === editor.view.documentId) this.cancel(); }, { signal: events.signal });
         let detached = false; return () => { if (detached) return; detached = true; if (this.job?.origin === s) this.cancel(); events.abort(); this.sessions.delete(s.token); presentation.colors = undefined; if (this.active === s) this.active = undefined; if (!this.sessions.size) this.drop(); this.publish(); };
     }

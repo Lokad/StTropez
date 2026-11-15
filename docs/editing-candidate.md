@@ -7,7 +7,7 @@ The candidate is exported explicitly; native-device IME qualification remains op
 No production input strategy has been selected.
 `captureInsertion()` provides a one-use, cancelable target for asynchronous host text conversion.
 It retains the captured selections and uses the same edit-transform/history path as ordinary
-input. Pending conversions appear in `snapshot().pendingInput`; later editing invalidates them.
+input. Pending conversions appear in `activity().pendingInput`; later editing invalidates them.
 See the [public host integration recipe](host-integrations.md) for lifecycle and usage.
 The project had no bounded context/coordinate adapter to reuse. This small original adapter
 uses platform text ranges and segmentation; embedding an external editing runtime would conflict
@@ -335,7 +335,15 @@ This development diagnostic is not an alternating production comparison or adopt
 word movement/deletion and page keys in large and Unicode/CRLF documents. It retains three
 warmups, twenty measured kernel scans and ten measured browser commands per condition.
 Assertions cover exact model destinations/text/revisions, bounded native context and zero exports.
-Snapshots expose `pendingCommand` for unfinished cooperative navigation/selection work,
+`activity()` returns an immutable `EditingActivity` capture, reused while its fields are unchanged.
+It reads the owner's current composition, disposal and pending-work flags without collecting metrics
+or reading the native input value. It does not flush work, subscribe to changes or declare all
+services ready. An active composition session is distinct from scheduled editor work.
+Use the viewport's activity capture to check painted revision, selection and folds separately;
+provider requests and native/device events have their own completion requirements.
+`snapshot()` includes the same flags alongside optional counters and timings.
+
+Activity captures expose `pendingCommand` for unfinished cooperative navigation/selection work,
 separately from `pendingCaret` for a scheduled caret render (also used by focus/blur).
 Hosts can guard semantic capture without rejecting ordinary focus transitions.
 Snapshots also expose `pendingWord`, `wordScanSteps` and `maxWordScanStepMs` for the last word scan;

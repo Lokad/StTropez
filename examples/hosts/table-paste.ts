@@ -34,7 +34,7 @@ export class HostTablePaste {
     private validSession(session: Session): boolean {
         const tab = this.workspace.resolveTab(session.target);
         return this.sessions.get(session.id) === session && tab?.surface.kind === "text" && tab.surface.documentId === session.editor.view.documentId
-            && this.workspace.ownsDocumentView(session.editor.view) && session.editor.element.isConnected && !session.editor.snapshot().disposed;
+            && this.workspace.ownsDocumentView(session.editor.view) && session.editor.element.isConnected && !session.editor.activity().disposed;
     }
     private current(job: Job): boolean { return this.job === job && job.insertion.isCurrent(); }
     private release(job: Job): void {
@@ -49,7 +49,7 @@ export class HostTablePaste {
     private paste(session: Session, event: ClipboardEvent): void {
         if (!this.cell.get().enabled || event.defaultPrevented) return;
         event.preventDefault(); this.cancel();
-        if (!this.validSession(session) || session.editor.snapshot().composing || !event.clipboardData) { this.fail("Finish composition in an available source view before table paste."); return; }
+        if (!this.validSession(session) || session.editor.activity().composing || !event.clipboardData) { this.fail("Finish composition in an available source view before table paste."); return; }
         const plain = event.clipboardData.getData("text/plain"), html = event.clipboardData.getData("text/html");
         this.start(session, plain, html);
     }

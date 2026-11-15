@@ -18,7 +18,7 @@ export function createHoverController(workspace: Workspace, tabId: TabId, editor
     let worker: Worker | undefined, pending: Capture | undefined, capture: Capture | undefined, timer: number | undefined, disposed = false, sequence = 0, intent = 0, epoch = 0, delay = 0, fault: HoverInput["fault"];
     let subscriptions: (() => void)[] = [];
     let backendCall: ReturnType<HoverBackend["run"]> | undefined, backendCurrent: (() => boolean) | undefined;
-    const valid = () => !disposed && workspace.resolveTab(target) !== undefined && workspace.ownsDocumentView(editor.view) && !editor.snapshot().disposed && resource.getSnapshot().state === "ready";
+    const valid = () => !disposed && workspace.resolveTab(target) !== undefined && workspace.ownsDocumentView(editor.view) && !editor.activity().disposed && resource.getSnapshot().state === "ready";
     const current = (value: Capture) => valid() && workspace.document(documentId).revision === value.input.revision && editor.view.getSnapshot().selectionSet === value.selectionSet
         && value.folds.sameProjection(editor.view.folding.getSnapshot().index) && (options.canCapture?.() ?? true) && (backendCurrent?.() ?? true);
     const release = () => { const value = pending, call = backendCall; pending = undefined; backendCall = undefined; value?.lease.release(); call?.cancel(); if (timer !== undefined) win.clearTimeout(timer); timer = undefined; };
@@ -61,7 +61,7 @@ export function createHoverController(workspace: Workspace, tabId: TabId, editor
     function request(expectedRevision: number, offset: number): boolean {
         if (!valid()) return false;
         const document = workspace.document(documentId);
-        if (document.revision !== expectedRevision || !Number.isSafeInteger(offset) || offset < 0 || offset > document.buffer.length || editor.snapshot().composing
+        if (document.revision !== expectedRevision || !Number.isSafeInteger(offset) || offset < 0 || offset > document.buffer.length || editor.activity().composing
             || !(options.canCapture?.() ?? true) || editor.view.folding.getSnapshot().index.hiddenBy(document.buffer.lineAt(offset))) return false;
         clear("idle", "Reading captured symbol information."); if (!connect()) return false;
         const buffer = document.buffer; let from = Math.max(0, offset - 2047), to = Math.min(buffer.length, offset + 2047);

@@ -48,7 +48,7 @@ export class HostDocumentLinks {
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, factory?: LinkBackendFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.factory = factory; }
     private available(s: Session): boolean {
         const tab = this.workspace.resolveTab(s.target);
-        return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.snapshot().disposed && this.workspace.ownsDocumentView(s.editor.view)
+        return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
             && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
     }
     private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
@@ -83,7 +83,7 @@ export class HostDocumentLinks {
         const s = { token: ++serial, id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { if (this.active !== s && this.job?.resolving !== undefined) this.cancel(); this.active = s; this.publish(); }, { signal: events.signal });
         editor.input.addEventListener("keydown", event => {
-            if (event.defaultPrevented || event.isComposing || editor.snapshot().composing || event.key !== "F4" || event.ctrlKey || event.metaKey || event.altKey) return;
+            if (event.defaultPrevented || event.isComposing || editor.activity().composing || event.key !== "F4" || event.ctrlKey || event.metaKey || event.altKey) return;
             if (event.shiftKey && !this.job?.opened) return; event.preventDefault(); event.stopImmediatePropagation(); this.active = s; if (event.shiftKey) this.returnToOrigin(); else this.start(true);
         }, { capture: true, signal: events.signal });
         for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (!this.presenting && this.job?.sources.has(editor.view.documentId)) this.cancel(); }, { signal: events.signal });

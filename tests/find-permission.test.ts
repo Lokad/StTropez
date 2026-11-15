@@ -9,7 +9,7 @@ for (const change of ["permission", "lease"] as const) test(`queued replacement 
     const tab = workspace.open({ kind: "text", documentId: source.documentId }, "left"), view = workspace.createDocumentView(source.documentId);
     let serial = 0; const tasks = new Map<number, () => void>();
     const owner = Object.assign(new EventTarget(), { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
-    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), snapshot: () => ({ disposed: false, composing: false }),
+    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), activity: () => ({ disposed: false, composing: false }),
         viewport: { revealOffset: () => {} }, focus: () => {} } as unknown as EditingCandidate;
     const find = createFindController(workspace, tab, editor), drain = () => { while (tasks.size) { const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); } };
     try {

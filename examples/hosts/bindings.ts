@@ -128,10 +128,10 @@ export class ViewBindings {
         this.reviewListeners = new AbortController();
         this.review.working.input.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: this.reviewListeners.signal });
         const working = this.review.working;
-        this.bindSaveShortcut(working.input, this.controller.viewTab("primary"), () => working.snapshot().composing, this.reviewListeners.signal);
+        this.bindSaveShortcut(working.input, this.controller.viewTab("primary"), () => working.activity().composing, this.reviewListeners.signal);
         review.element.addEventListener("keydown", event => {
             const reference = review.referenceEditor();
-            if (reference && event.target === reference.input) this.handleSaveShortcut(event, reference.input, saveTarget, () => reference.snapshot().composing);
+            if (reference && event.target === reference.input) this.handleSaveShortcut(event, reference.input, saveTarget, () => reference.activity().composing);
         }, { signal: this.reviewListeners.signal });
         this.unwatchReference = this.controller.comparisonReference.subscribe(() => this.updateReference());
     };
@@ -173,7 +173,7 @@ export class ViewBindings {
     readonly finishReferenceRefresh = (): void => this.finishReference("refresh");
     readonly beginReviewAcceptance = (): void => this.beginReference("accept");
     readonly finishReviewAcceptance = (): void => this.finishReference("accept");
-    private composing(): boolean { return this.review?.working.snapshot().composing === true || [...this.mounted.values()].some(value => value.editor.metrics()?.composing); }
+    private composing(): boolean { return this.review?.working.activity().composing === true || [...this.mounted.values()].some(value => value.candidate?.activity().composing); }
     readonly beginDiscard = (): void => {
         if (!this.review) return;
         for (const { ticket } of this.discardTickets.splice(0)) ticket.cancel();
@@ -206,11 +206,11 @@ export class ViewBindings {
     constructor(controller: HostController, editor: HostEditor = "native") {
         this.controller = controller; this.editor = editor;
         this.tablePaste = new HostTablePaste(controller.workspace, editor === "candidate");
-        this.domain = new HostDomainTools(controller.workspace, documentId => !this.tablePaste.hasPendingInput(documentId) && !(this.review?.working.view.documentId === documentId && (this.review.working.snapshot().pendingInput || this.review.working.snapshot().composing))
-            && ![...this.mounted.values()].some(value => { const metrics = value.editor.metrics(); return value.documentId === documentId && (metrics?.pendingInput || metrics?.composing); }));
+        this.domain = new HostDomainTools(controller.workspace, documentId => !this.tablePaste.hasPendingInput(documentId) && !(this.review?.working.view.documentId === documentId && (this.review.working.activity().pendingInput || this.review.working.activity().composing))
+            && ![...this.mounted.values()].some(value => { const activity = value.candidate?.activity(); return value.documentId === documentId && (activity?.pendingInput || activity?.composing); }));
         const canCapture = (documentId: DocumentId) => {
-            const busy = (metrics: ReturnType<EditingCandidate["snapshot"]> | null) => metrics && (metrics.pendingInput || metrics.pendingCommand || metrics.composing);
-            return !this.tablePaste.hasPendingInput(documentId) && !(this.review?.working.view.documentId === documentId && busy(this.review.working.snapshot())) && ![...this.mounted.values()].some(value => value.documentId === documentId && busy(value.editor.metrics()));
+            const busy = (activity: ReturnType<EditingCandidate["activity"]> | undefined) => activity && (activity.pendingInput || activity.pendingCommand || activity.composing);
+            return !this.tablePaste.hasPendingInput(documentId) && !(this.review?.working.view.documentId === documentId && busy(this.review.working.activity())) && ![...this.mounted.values()].some(value => value.documentId === documentId && busy(value.candidate?.activity()));
         };
         const lsp = hostLspFactories(controller.workspace);
         this.lspOwner = lsp?.owner;
@@ -225,8 +225,8 @@ export class ViewBindings {
         this.rename = new HostRenameTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.rename, reconnectProvider);
         this.signature = new HostSignatureTools(controller.workspace, canCapture, () => this.hover.dismiss(), lsp?.signature,
             () => { const provider = this.language.state.getSnapshot().provider; return !!provider && (provider.pending || provider.offerText !== null); }, reconnectProvider);
-        this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.documentId) && !this.review?.working.snapshot().pendingInput
-            && ![...this.mounted.values()].some(value => value.editor.metrics()?.pendingInput),
+        this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.documentId) && !this.review?.working.activity().pendingInput
+            && ![...this.mounted.values()].some(value => value.candidate?.activity().pendingInput),
             documentId => this.selections.get("primary")?.get(documentId) ?? this.selections.get("comparison")?.get(documentId) ?? this.selections.get("secondary")?.get(documentId));
         this.stopDocumentCleanup = controller.registerDetachedDocumentCleanup(documentId => {
             if ([...this.mounted.values()].some(value => value.documentId === documentId) || this.review?.working.view.documentId === documentId) return;
@@ -271,8 +271,8 @@ export class ViewBindings {
     }
     private presentNavigationDocument(documentId: DocumentId): EditingCandidate | undefined {
         if (this.editor !== "candidate") return;
-        const previous = this.mounted.get("secondary"), host = previous?.editor.element.closest<HTMLDivElement>(".editor-host"), metrics = previous?.editor.metrics();
-        if (!previous || !host?.isConnected || metrics?.composing || metrics?.pendingInput || metrics?.pendingCommand) return;
+        const previous = this.mounted.get("secondary"), host = previous?.editor.element.closest<HTMLDivElement>(".editor-host"), activity = previous?.candidate?.activity();
+        if (!previous || !host?.isConnected || activity?.composing || activity?.pendingInput || activity?.pendingCommand) return;
         const workspace = this.controller.workspace, target = workspace.captureTab(this.controller.viewTab("secondary"));
         if (!workspace.resolveTab(target) || !workspace.observeDocument(documentId).getSnapshot()) return;
         // Explicit host lifecycle: replace this captured pane synchronously; React owns only its stable ref.
@@ -313,7 +313,7 @@ export class ViewBindings {
                 : { ...mountTextEditor(host, workspace, tabId, { ariaLabel, view }), metrics: () => null };
             const listeners = new AbortController();
             mounted.element.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
-            this.bindSaveShortcut(mounted.element, tabId, () => candidate?.snapshot().composing ?? false, listeners.signal);
+            this.bindSaveShortcut(mounted.element, tabId, () => candidate?.activity().composing ?? false, listeners.signal);
             const editor: BoundEditor = { ...mounted, destroy: () => { try { instruction?.dispose(); if (this.instructionMount === instruction) this.instructionMount = undefined; detachColors?.(); detachLinks?.(); detachActions?.(); detachRename?.(); detachSignature?.(); detachProject?.(); detachNavigation?.(); detachDomain?.(); detachPaste?.(); detachHover?.(); detachLanguage?.(); mounted.destroy(); } finally { listeners.abort(); if (surface !== host) surface.remove(); } } };
             const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView(this.restoreState(state, view));
             this.mounted.set(id, { editor, documentId, candidate }); this.mounts++;
