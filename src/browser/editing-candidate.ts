@@ -62,7 +62,8 @@ const emptyDecorations = Object.freeze([]);
 /** Experimental bounded-input adapter. Long contextual lines and native IME remain qualification gates. */
 export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, tabId: TabId,
     options: Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; decorate?: LineDecorator; lineClass?: LineClass; language?: LanguageConfiguration;
-        bracketMatching?: boolean | BracketMatchOptions; characterWarnings?: boolean | CharacterWarningOptions; columnRulers?: readonly number[] }> = {}): EditingCandidate {
+        bracketMatching?: boolean | BracketMatchOptions; characterWarnings?: boolean | CharacterWarningOptions;
+        columnRulers?: readonly number[]; highlightCurrentLine?: boolean }> = {}): EditingCandidate {
     let language = resolveLanguageConfiguration(options.language);
     const bracketOptions = options.bracketMatching === undefined || options.bracketMatching === false ? false
         : bracketMatchLimits(options.bracketMatching === true ? {} : options.bracketMatching);

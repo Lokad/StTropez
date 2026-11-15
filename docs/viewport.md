@@ -42,6 +42,20 @@ mounted in the clipped paint layer, behind text. They add no text, hit target or
 and changing only the ruler configuration reuses painted rows and their geometry. Customize
 their color with `--st-column-ruler`. Each comparison viewport can configure its own rulers.
 
+`highlightCurrentLine: true` enables the current-line background. It is off by default;
+`viewport.currentLineHighlight()` reads the setting and `configureCurrentLineHighlight(boolean)`
+changes it without remounting. It follows only the primary collapsed caret, including when the
+view is unfocused or read-only. A noncollapsed primary selection hides it; secondary carets do
+not add highlights. If that caret is folded away, the fold header is highlighted. Comparison
+alignment positions it on the source row, never on padding rows. Views configure it independently.
+
+The source row receives `st-current-line` in addition to the host's `lineClass`. A separate inert
+background spans the visible width behind rows; top/bottom edges stay visible over opaque host
+or comparison backgrounds. Both preserve syntax colors, selection styling, text geometry and
+scroll extents. `--st-current-line` and `--st-current-line-border` set their colors. As with
+rulers, configuration is validated before mutation, must run outside Workspace notifications,
+and returns false after disposal. A matching boolean value schedules no work.
+
 The display caret follows the measured source position at scroll boundaries, including partly
 clipped rows. Its placement is independent of the bounded native input anchor, so keeping that
 anchor inside the viewport cannot shift the visible caret away from its character.

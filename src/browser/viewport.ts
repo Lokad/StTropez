@@ -33,6 +33,8 @@ export type ViewportSnapshot = ViewportActivity & Readonly<{ selection: Selectio
 export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentView;
     columnRulers: () => readonly number[];
     configureColumnRulers: (columns: readonly number[]) => boolean;
+    currentLineHighlight: () => boolean;
+    configureCurrentLineHighlight: (enabled: boolean) => boolean;
     captureView: () => ViewState; restoreView: (state: ViewState) => void;
     scrollTo: (position: Readonly<{ top?: number; left?: number }>) => void;
     setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean;
@@ -79,8 +81,10 @@ export type RevealOptions = Readonly<{ horizontal?: "center" | "nearest"; vertic
 /** Bounded DOM view layer with local native text geometry. Native-device qualification remains separate. */
 export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId: TabId,
     options: Readonly<{ ariaLabel?: string; view?: DocumentView; overscanLines?: number; overscanUnits?: number; decorate?: LineDecorator; lineClass?: LineClass;
-        columnRulers?: readonly number[] }> = {}): TextViewport {
+        columnRulers?: readonly number[]; highlightCurrentLine?: boolean }> = {}): TextViewport {
     let columns = resolveColumnRulers(options.columnRulers);
+    let highlightCurrentLine = options.highlightCurrentLine === undefined ? false : options.highlightCurrentLine;
+    if (typeof highlightCurrentLine !== "boolean") throw new TypeError("Current-line highlighting must be boolean.");
     const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
     if (!tab || tab.surface.kind !== "text") throw new Error("Expected a text surface.");
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId);
@@ -99,6 +103,13 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     root.append(spacer, layer, probeHost, foldLayer); host.append(root);
     const listeners = new AbortController(), padding = viewportPadding;
     const rulers = mountColumnRulers(layer, padding), notifications = workspace.createNotificationScope();
+    let currentLineBackground: HTMLDivElement | undefined;
+    const clearCurrentLine = () => { currentLineBackground?.remove(); currentLineBackground = undefined; };
+    const currentLine = (document: DocumentSnapshot, selections: SelectionSet, index: RowIndex): number | undefined => {
+        if (!highlightCurrentLine) return;
+        const primary = selections.ranges[selections.primary]!; if (primary.anchor !== primary.head) return;
+        const line = document.buffer.lineAt(primary.head); return index.hiddenBy(line)?.lineFrom ?? line;
+    };
     let frame: number | undefined, disposed = false, previous: DocumentSnapshot | undefined;
     let top = 0, left = 0, width = 0, height = 0, lineHeight = 22.4, columnWidth = 8.4;
     let x = scrollAxis(0, 0), y = scrollAxis(0, 0), renderedRevision: number | null = null, renderedIndex: RowIndex = view.folding.getSnapshot().index, renderedFoldGeneration = -1, observedFoldRevision = view.folding.getSnapshot().revision;
@@ -277,7 +288,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         if (to > from && to < displayEnd) { const pair = readRow(buffer, to - 1, to + 1); if (/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(pair)) to++; }
         return { line, start, end: displayEnd, from, to, text: readRow(buffer, from, to).replaceAll("\r", "␍"), left: padding + (from - start) * columnWidth - scrollLeft, complete: from === start && to === displayEnd, endsLine: to === displayEnd };
     };
-    const paintRow = (element: HTMLDivElement, item: Row, document: DocumentSnapshot, selectionSet: SelectionSet): boolean => {
+    const paintRow = (element: HTMLDivElement, item: Row, document: DocumentSnapshot, selectionSet: SelectionSet, highlightedLine?: number): boolean => {
         element.dataset.line = String(item.line); element.dataset.from = String(item.from); element.dataset.to = String(item.to); element.dataset.complete = String(item.complete);
         let low = 0, high = selectionSet.ranges.length;
         while (low < high) { const middle = (low + high) >>> 1, range = selectionSet.ranges[middle]!;
@@ -288,7 +299,8 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             if (from >= item.to) break; if (from < to) selections.push({ from, to });
         }
         const presented = { documentId, revision: document.revision, line: item.line, lineStart: item.start, from: item.from, to: item.to, text: item.text };
-        const lineClass = options.lineClass?.(presented), className = "st-viewport-row" + (lineClass && validDecorationClass(lineClass) ? ` ${lineClass}` : "");
+        const lineClass = options.lineClass?.(presented), className = "st-viewport-row" + (lineClass && validDecorationClass(lineClass) ? ` ${lineClass}` : "")
+            + (highlightedLine === item.line ? " st-current-line" : "");
         const changed = element.className !== className; element.className = className;
         const decorations = options.decorate?.(presented);
         return renderRowChildren(element, decorationParts(item.text, item.from, item.to, document.buffer.length, decorations, selections)) || changed;
@@ -317,13 +329,14 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         if (lines.length > 64 || lines.some(line => !Number.isSafeInteger(line) || line < 0 || line >= document.buffer.lineCount)) throw new RangeError("Invalid navigation row batch.");
         const element = owner.createElement("div"), batchRows = new Map<number, CommandRow>(), selectionSet = view.getSnapshot().selectionSet;
         element.className = "st-viewport-command-measure"; element.setAttribute("aria-hidden", "true");
+        const highlightedLine = currentLine(document, selectionSet, renderedIndex);
         for (const line of lines) {
             if (batchRows.has(line) || rows.get(line)?.dataset.complete === "true") continue;
             const buffer = document.buffer, start = buffer.offsetAt(line), end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
             // Complete short rows have a known origin. Contextual windows keep the existing fallback.
             if (end - start > 514) continue;
             const item = row(buffer, line, left, true); if (!item.complete) continue;
-            const node = owner.createElement("div"); paintRow(node, item, document, selectionSet); node.style.height = `${lineHeight}px`; node.style.lineHeight = comparisonRows ? `${lineHeight}px` : "";
+            const node = owner.createElement("div"); paintRow(node, item, document, selectionSet, highlightedLine); node.style.height = `${lineHeight}px`; node.style.lineHeight = comparisonRows ? `${lineHeight}px` : "";
             element.append(node); batchRows.set(line, { item, element: node });
         }
         // Identical painted rows already reuse the single-row probe's native geometry. Keep
@@ -354,7 +367,8 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         const buffer = document.buffer, start = buffer.offsetAt(line), end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
         if (complete && end - start > 514) return;
         const item = row(buffer, line, scrollLeft, true); if (complete && !item.complete) return;
-        const changed = paintRow(commandRow, item, document, view.getSnapshot().selectionSet);
+        const selectionSet = view.getSnapshot().selectionSet;
+        const changed = paintRow(commandRow, item, document, selectionSet, currentLine(document, selectionSet, renderedIndex));
         commandRow.style.height = `${lineHeight}px`; commandRow.style.lineHeight = comparisonRows ? `${lineHeight}px` : ""; root.append(commandMeasure); navigationRows++;
         try {
             if (changed || !commandGeometry) commandGeometry = rowGeometry(commandRow, 0, document.revision, lineHeight * rectangle.zoom);
@@ -385,6 +399,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         const document = workspace.resolveTab(target) ? workspace.observeDocument(documentId).getSnapshot() : undefined;
         if (!document) {
             rulers.clear();
+            clearCurrentLine();
             painted = undefined; commandGeometry = undefined;
             layer.replaceChildren(); rows.clear(); rowSources.clear(); rowSourceRevision = null; geometries.clear(); measuredWidth = 0; measuredRevision = null; spacer.style.width = "0px"; spacer.style.height = "0px";
             layer.style.transform = "none"; layer.style.width = "0px"; layer.style.height = "0px";
@@ -418,7 +433,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         rulers.paint(columns, columnWidth, left, width);
         const { selection: selected, selectionSet } = view.getSnapshot();
         const key = [document.revision, selectionSet, folds.generation, rowGeneration, comparisonRows?.id,
-            top, left, width, height, zoom, columnWidth, naturalLineHeight, lineHeight, font, x.extent, y.extent, paintEpoch,
+            top, left, width, height, zoom, columnWidth, naturalLineHeight, lineHeight, font, x.extent, y.extent, paintEpoch, highlightCurrentLine,
             root.classList.contains("st-composing"), root.hasAttribute("data-st-tab-escape")];
         if (!requested && painted && painted.horizontalAnchor === horizontalAnchor && painted.placement === fragmentPlacement
             && key.every((value, index) => value === painted!.key[index])
@@ -428,6 +443,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             if (scheduled) root.dispatchEvent(new CustomEvent("sttropez-render"));
             return;
         }
+        const highlightedLine = currentLine(document, selectionSet, index);
         commandGeometry = undefined; readUnits = 0;
         const firstRow = Math.min(index.visibleLineCount - 1, Math.max(0, Math.floor((top - padding) / lineHeight) - overscanLines));
         const lastRow = Math.min(index.visibleLineCount, Math.max(firstRow + 1, Math.ceil((top + height) / lineHeight) + overscanLines));
@@ -443,6 +459,13 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         root.scrollLeft = physicalLeft; root.scrollTop = physicalTop;
         layer.style.width = "100%"; layer.style.height = "100%";
         layer.style.transform = `translate(${physicalLeft}px, ${physicalTop}px)`;
+        const highlightedTop = highlightedLine === undefined ? undefined : padding + index.rowAt(highlightedLine) * lineHeight - top;
+        if (highlightedTop === undefined || highlightedTop + lineHeight <= 0 || highlightedTop >= height) clearCurrentLine();
+        else {
+            if (!currentLineBackground) { currentLineBackground = owner.createElement("div"); currentLineBackground.className = "st-current-line-background";
+                currentLineBackground.setAttribute("aria-hidden", "true"); layer.append(currentLineBackground); }
+            currentLineBackground.style.top = `${highlightedTop}px`; currentLineBackground.style.height = `${lineHeight}px`;
+        }
         textUnits = 0;
         for (const item of next) {
             let element = rows.get(item.line);
@@ -452,7 +475,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             element.style.transform = `translate(${item.left + shift}px, ${padding + index.rowAt(item.line) * lineHeight - top}px)`;
             element.style.height = `${lineHeight}px`;
             element.style.lineHeight = comparisonRows ? `${lineHeight}px` : "";
-            if (paintRow(element, item, document, selectionSet)) geometries.delete(item.line);
+            if (paintRow(element, item, document, selectionSet, highlightedLine)) geometries.delete(item.line);
             const fold = index.headerAt(item.line), hidden = fold?.collapsed && item.endsLine ? fold.lineTo - fold.lineFrom - 1 : 0;
             // Generated content stays outside text nodes, native text geometry and clipboard data.
             if (hidden) element.dataset.foldedSummary = `… ${hidden} ${hidden === 1 ? "line" : "lines"} hidden`;
@@ -588,6 +611,13 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             if (next.length === columns.length && next.every((column, index) => column === columns[index])) return true;
             columns = next; schedule(); return true;
         },
+        currentLineHighlight: () => highlightCurrentLine,
+        configureCurrentLineHighlight: enabled => {
+            notifications.assertWritable(); if (disposed) return false;
+            if (typeof enabled !== "boolean") throw new TypeError("Current-line highlighting must be boolean.");
+            if (highlightCurrentLine === enabled) return true;
+            highlightCurrentLine = enabled; clearPreparedRows(); commandGeometry = undefined; schedule(); return true;
+        },
         prepareNavigationRows,
         invalidate,
         coordsAt: coordinates,
@@ -693,6 +723,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         destroy: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
             rulers.clear(); columns = resolveColumnRulers();
+            clearCurrentLine(); highlightCurrentLine = false;
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); rowSources.clear(); rowSourceRevision = null; paddingRows.clear(); comparisonRows = undefined; renderedAlignmentId = null; geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             painted = undefined; commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove(); clearPreparedRows();
             navigationBatches = 0; maxNavigationBatchRows = 0;
