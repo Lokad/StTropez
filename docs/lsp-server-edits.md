@@ -37,7 +37,8 @@ The preview retains captured document/buffer/revision, origin tab/view, complete
 generation, authority, pending-input, session and registration ownership. A later focus change
 does not retarget it. Typing, selection/fold changes, lost authority, remount or disposal expire
 the decision. Every edited target must allow human and host edits without a lock. Confirmation
-rechecks every target before one `Workspace.editDocuments` transaction; a malformed or unavailable
+uses the public `applyLspWorkspaceEdit` helper to recheck every target before one
+`Workspace.editDocuments` transaction; a malformed or unavailable
 last target cannot leave an earlier one applied.
 
 Each live incoming request has one reply. Decline and review timeout return `applied: false`;
@@ -49,7 +50,8 @@ the edits remain applied and undoable. Reconnect never retries the command or tr
 
 Each batch is one shared undo command, including unmounted resources and complete origin
 selections. Comparison baselines remain immutable. Changed-resource links, primary Save/Run and
-later dirty typing retain their existing captured identities. Previews page every 64 edits, show
+later dirty typing retain their existing captured identities. `previewLspWorkspaceEdit` builds
+the review notes from captured buffers. Previews page every 64 edits, show
 at most 256 inserted units with the full size, and bound deletion context independently of range
 length. Confirmation applies every validated edit, including those on other pages. The text-edit
 limits remain 100 resources, 1,024 edits, 16,384 units per insertion and 65,536 total inserted units.

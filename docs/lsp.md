@@ -176,7 +176,18 @@ exact sent snapshot/index/wire version, or undefined while local updates are pen
 guard expires on session, registration or binding/revision changes. `decodeLspDiagnostics` validates
 pushes against that capture. `decodeLspHover` and `decodeLspLocations` validate documentation and
 captured host URI locations. `decodeLspWorkspaceEdit` normalizes complete text-only batches for
-captured resources; the host rechecks edit authority before its atomic transaction.
+captured resources. After checking its captured intent and obtaining approval, the host can call
+`applyLspWorkspaceEdit(workspace, edit, { origin: "host", requiredOrigins: ["human"], view })`.
+This rechecks provider currentness and exact workspace document/resource/buffer/revision identity,
+then delegates range, authority and lock validation to one atomic `Workspace.editDocuments`
+transaction with shared undo. It throws on refusal and returns immutable updated snapshots of
+changed documents. Empty and text-identical batches return an empty array without history.
+The optional view is the captured origin; selections in other live views are mapped by the core.
+The helper is synchronous and owns no leases: retain the provider result through the decision,
+and keep host selection, lifecycle and approval guards outside it.
+`previewLspWorkspaceEdit(edit, titleForDocumentId, page)` reads captured buffers into immutable
+64-edit pages with bounded titles, before/insert text and context. It reports the complete edit
+count and insertion sizes, does not materialize off-page edits and grants no authority to apply.
 URI discovery and decoding share parsed location/workspace-edit syntax only for JSON
 captured and deeply frozen by the protocol owner. Mutable or frozen host inputs are
 validated afresh. Each decode still resolves captured targets and checks currentness,

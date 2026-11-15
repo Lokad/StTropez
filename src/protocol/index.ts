@@ -12,6 +12,8 @@ export type { LspCommand } from "./lsp-command-value.ts";
 export { LspWorkspace } from "./lsp-workspace.ts";
 export type { LspWorkspaceOptions, LspWorkspaceScope, LspSessionAccess, LspPrepare, LspDiagnosticState, LspWorkspaceSnapshot } from "./lsp-workspace.ts";
 export type { LspTargetContext, LspResolvedTarget, LspTargetResolver } from "./lsp-targets.ts";
+export { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "./lsp-workspace-edit.ts";
+export type { LspWorkspaceEditOptions, LspWorkspaceEditNote, LspWorkspaceEditPreview } from "./lsp-workspace-edit.ts";
 export { createLspCommandRunner } from "./lsp-command.ts";
 export type { LspCommandScope, LspCommandReceipt, LspCommandPolicy, LspCommandRoute, LspHostCommandContext } from "./lsp-command.ts";
 export { createLspHoverClient } from "./lsp-hover.ts";

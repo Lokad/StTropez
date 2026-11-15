@@ -7,13 +7,14 @@ import { HostCell } from "../shared/observable.ts";
 import type { LspApplyEdit, LspApplyEditResult, LspRequestContext, LspWorkspaceEdit, LspWorkspace } from "../../src/protocol/index.ts";
 import type { LspProjectClient, LspProjectFactory } from "../editing/lsp-project-client.ts";
 import type { LspCommandReceipt, LspCommandScope } from "../../src/protocol/index.ts";
-import type { ActionNote } from "./code-actions.ts";
+import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../../src/protocol/index.ts";
+import type { LspWorkspaceEditNote } from "../../src/protocol/index.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
 type Job = { origin: Session; input: ProjectCommand; documents: Map<string, DocumentSnapshot>; revisions: Map<string, number>; authority: Map<string, string>;
     leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; applied: boolean; selections: SelectionSet; folds: number;
     review?: Review; providerCurrent?: () => boolean; externalCancel?: () => void; changes: ProjectSnapshot["changes"] };
 type Review = { token: number; request: LspApplyEdit; context: LspRequestContext; finish: (result: LspApplyEditResult) => void; stop: () => void; timer: number; page: number };
-export type ProjectReview = Readonly<{ token: number; label: string; count: number; page: number; notes: readonly ActionNote[]; canApply: boolean }>;
+export type ProjectReview = Readonly<{ token: number; label: string; count: number; page: number; notes: readonly LspWorkspaceEditNote[]; canApply: boolean }>;
 export type ProjectActionReceipt = Readonly<{ success: boolean; applied: boolean; reason: string; changes: ProjectSnapshot["changes"] }>;
 export type ProjectActionHandle = Readonly<{ cancel: () => void; applied: () => boolean; result: Promise<ProjectActionReceipt> }>;
 export type ProjectActionEditPolicy = (request: LspApplyEdit) => "apply" | "review" | "decline";
@@ -63,11 +64,10 @@ export class HostProjectTools {
     private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
     private publish(patch: Partial<ProjectSnapshot> = {}): void {
         const job = this.job, review = job?.review;
-        const all = review?.request.edit.documents.flatMap(change => change.edits.map(edit => ({ doc: change.target.document, edit }))) ?? [];
-        const preview = job && review ? Object.freeze({ token: review.token, label: review.request.label ?? "Provider workspace edit", count: all.length, page: review.page,
-            canApply: this.current(job) && review.context.isCurrent() && review.request.edit.isCurrent() && all.every(({ doc }) => this.editable(doc.documentId as DocumentId)),
-            notes: Object.freeze(all.slice(review.page * 64, (review.page + 1) * 64).map(({ doc, edit }) => Object.freeze({ document: doc.documentId, resource: doc.resourceId, title: job.documents.get(doc.documentId)!.title.slice(0, 128), revision: doc.revision, from: edit.from, to: edit.to,
-                insert: edit.insert.slice(0, 256), insertUnits: edit.insert.length, context: doc.buffer.slice(Math.max(0, edit.from - 32), Math.min(edit.to, edit.from + 128)) + (edit.to - edit.from > 128 ? "…" : "") + doc.buffer.slice(edit.to, Math.min(doc.buffer.length, edit.to + 32)) }))) }) : null;
+        const preview = job && review ? Object.freeze({ token: review.token, label: review.request.label ?? "Provider workspace edit",
+            ...previewLspWorkspaceEdit(review.request.edit, id => job.documents.get(id)!.title, review.page),
+            canApply: this.current(job) && review.context.isCurrent() && review.request.edit.isCurrent()
+                && review.request.edit.documents.every(change => !change.edits.length || this.editable(change.target.document.documentId as DocumentId)) }) : null;
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active), connected: this.backend?.snapshot().connected ?? this.client?.snapshot().connected ?? false,
             disconnected: this.disconnected, reconnectRequired: this.provider?.state.getSnapshot().commandRequiresReconnect ?? false, registered: this.registered, pending: !!job, view: this.active?.id ?? null, changes: this.changes, review: preview });
     }
@@ -177,17 +177,11 @@ export class HostProjectTools {
         if (!this.current(job) || !edit.isCurrent() || edit.documents.some(change => change.edits.length && !this.editable(change.target.document.documentId as DocumentId))) throw new Error("Captured edit revision, authority or provider changed.");
         this.publishing = true;
         try {
-            const requests = edit.documents.filter(change => change.edits.length).map(change => {
-                const doc = job.documents.get(change.target.document.documentId)!;
-                if (doc.resourceId !== change.target.document.resourceId || doc.buffer !== change.target.document.buffer || doc.revision !== change.target.document.revision) throw new Error("Provider edit target differs from its captured working resource.");
-                return { documentId: doc.id, expectedRevision: doc.revision, edits: change.edits, origin: "host" as const, history: { kind: "replace" as const }, ...(doc.id === job.origin.editor.view.documentId ? { view: job.origin.editor.view } : {}) };
-            });
-            const result = this.workspace.editDocuments(requests); if (!result.applied) throw new Error(result.reason);
-            const changed = requests.filter(request => this.workspace.document(request.documentId).buffer !== job.documents.get(request.documentId)!.buffer);
+            const changed = applyLspWorkspaceEdit(this.workspace, edit, { origin: "host", requiredOrigins: ["human"], view: job.origin.editor.view });
             if (changed.length) {
                 job.applied = true; this.metrics.applied++;
                 const all = new Map(job.changes.map(change => [change.document, change]));
-                for (const request of changed) all.set(request.documentId, Object.freeze({ document: request.documentId, title: job.documents.get(request.documentId)!.title.slice(0, 128) }));
+                for (const document of changed) all.set(document.id, Object.freeze({ document: document.id, title: document.title.slice(0, 128) }));
                 job.changes = this.changes = Object.freeze([...all.values()]);
             }
             for (const [id, doc] of job.documents) { const current = this.workspace.document(doc.id); job.documents.set(id, current); job.revisions.set(id, current.revision); }

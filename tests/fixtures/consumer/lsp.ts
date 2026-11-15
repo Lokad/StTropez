@@ -1,7 +1,7 @@
 import { Workspace } from "sttropez";
 import type { DocumentId, DocumentSnapshot, TextEdit } from "sttropez";
 import { createLspEditor, mountEditingCandidate, openWebSocketTransport } from "sttropez/browser";
-import { LspWorkspace, createLspActionClient, createLspColorClient, createLspHoverClient, createLspLinkClient, createLspNavigationClient, createLspRenameClient, createLspSignatureClient } from "sttropez/protocol";
+import { LspWorkspace, applyLspWorkspaceEdit, previewLspWorkspaceEdit, createLspActionClient, createLspColorClient, createLspHoverClient, createLspLinkClient, createLspNavigationClient, createLspRenameClient, createLspSignatureClient } from "sttropez/protocol";
 import type { LspWorkspaceEdit } from "sttropez/protocol";
 
 const workspace = new Workspace();
@@ -42,16 +42,13 @@ command("Hover", async () => { const value = await hover.run(workspace.document(
     if (value?.isCurrent()) { notes.hover = value.text; result.textContent = value.text; } });
 command("Definition", async () => { const value = await navigation.run(project(), source.documentId, position(), "definition");
     if (value.isCurrent()) { notes.navigation = value.locations[0]?.target.document.documentId; result.textContent = `Definition targets: ${value.locations.length}`; } });
-command("Rename preview", async () => { plan = await rename.run(project(), source.documentId, position(), "inventory"); notes.renameEdits = plan.documents.reduce((sum, document) => sum + document.edits.length, 0); result.textContent = `Rename edits: ${notes.renameEdits}`; });
+command("Rename preview", async () => { plan = await rename.run(project(), source.documentId, position(), "inventory");
+    const preview = previewLspWorkspaceEdit(plan, id => workspace.document(id as DocumentId).title);
+    notes.renameEdits = preview.count; result.textContent = `Rename edits: ${notes.renameEdits}\n${preview.notes.map(note => `${note.title}: ${note.before} → ${note.insert}`).join("\n")}`; });
 command("Apply rename", () => {
     if (!plan?.isCurrent()) throw new Error("Rename preview expired");
-    // Explicit host edit policy: every target must still permit host and human edits.
-    for (const change of plan.documents) { const metadata = workspace.resourceForDocument(change.target.document.documentId as DocumentId).metadata.getSnapshot();
-        if (!metadata.capabilities.edit.includes("host") || !metadata.capabilities.edit.includes("human") || metadata.editLock !== null) throw new Error("Target is unavailable"); }
-    const applied = workspace.editDocuments(plan.documents.map(change => ({ documentId: change.target.document.documentId as DocumentId,
-        expectedRevision: change.target.document.revision, edits: change.edits, origin: "host" as const, history: { kind: "replace" as const },
-        ...(change.target.document.documentId === source.documentId ? { view: editor.view } : {}) })));
-    if (!applied.applied) throw new Error(applied.reason); result.textContent = "Rename applied";
+    applyLspWorkspaceEdit(workspace, plan, { origin: "host", requiredOrigins: ["human"], view: editor.view });
+    result.textContent = "Rename applied";
 });
 command("Code actions", async () => { const at = text().indexOf("TODO"), value = await actions.run(project(), source.documentId, at, at + 4);
     if (!value.isCurrent()) throw new Error("Action preview expired"); notes.actions = value.actions.length;
