@@ -142,3 +142,58 @@ test("nearest caret reveal leaves an already visible row and horizontal position
     await page.keyboard.press("ArrowDown"); await ready(page);
     expect((await snapshot(page)).primary.selection.head).toBe(1);
 });
+
+test("navigation reuses immediate style captures and rejects synchronous layout changes", async ({ page }, testInfo) => {
+    const text = Array.from({ length: 60 }, () => "0123456789abcdef").join("\n"), head = 17 * 20 + 4;
+    const counts = [], changes = [];
+    for (const key of ["ArrowRight", "ArrowDown"]) {
+        await setup(page, text, head);
+        counts.push(await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate((input, key) => {
+            const root = input.parentElement!, getStyle = window.getComputedStyle; let reads = 0;
+            window.getComputedStyle = (element, pseudo) => {
+                const style = getStyle.call(window, element, pseudo);
+                if (element !== root) return style;
+                return new Proxy(style, { get(target, name) {
+                    if (name === "getPropertyValue") return (property: string) => {
+                        if (property === "--st-text-direction") reads++;
+                        return target.getPropertyValue(property);
+                    };
+                    const value: unknown = Reflect.get(target, name, target);
+                    return typeof value === "function" ? value.bind(target) : value;
+                } });
+            };
+            try {
+                input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+                const state = window.editingFixture.snapshot();
+                return { key, reads, head: state.primary.selection.head, pending: state.primary.pendingCommand, exports: state.document!.exports };
+            } finally { window.getComputedStyle = getStyle; }
+        }, key));
+        await ready(page);
+    }
+    for (const phase of ["render", "geometry"] as const) {
+        await setup(page, text, head);
+        changes.push(await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate((input, phase) => {
+            const root = input.parentElement!, nativeRects = Range.prototype.getClientRects; let changed = 0;
+            const alter = () => { if (!changed) { changed++; root.style.letterSpacing = "1px"; } };
+            if (phase === "render") { root.addEventListener("sttropez-render", alter, { once: true }); root.scrollTop += 2; root.dispatchEvent(new Event("scroll")); }
+            else Range.prototype.getClientRects = function () { alter(); return nativeRects.call(this); };
+            try {
+                input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+                const state = window.editingFixture.snapshot();
+                return { phase, changed, head: state.primary.selection.head, pending: state.primary.pendingCommand, conflicts: state.conflicts.length };
+            } finally { Range.prototype.getClientRects = nativeRects; root.removeEventListener("sttropez-render", alter); }
+        }, phase));
+        await testInfo.attach(`navigation-${phase}`, { body: JSON.stringify(changes.at(-1)), contentType: "application/json" });
+        await ready(page); await page.keyboard.press("ArrowRight"); await ready(page);
+        expect((await snapshot(page)).primary.selection.head).toBe(head + 1);
+        await page.locator("#primary .st-viewport").evaluate(root => (root as HTMLElement).style.letterSpacing = "");
+    }
+    await testInfo.attach("navigation-style", { body: JSON.stringify({ counts, changes }), contentType: "application/json" });
+    for (const result of counts) {
+        expect(result.head).toBe(head + (result.key === "ArrowRight" ? 1 : 17));
+        expect(result.pending).toBe(false); expect(result.exports).toBe(0);
+        // Includes the viewport's metric reads; vertical preflight adds one flush.
+        expect(result.reads).toBeGreaterThan(0); expect(result.reads).toBeLessThanOrEqual(result.key === "ArrowRight" ? 5 : 6);
+    }
+    for (const result of changes) expect(result).toMatchObject({ changed: 1, head, pending: false, conflicts: 0 });
+});

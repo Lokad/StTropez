@@ -132,6 +132,12 @@ keeps its event-time history grouping, and queued undo/redo, brackets and indent
 normal command boundaries. Short horizontal/end-point commands and at most two short-row vertical
 carets can still finish synchronously; larger vertical/page sets cooperate between batches.
 
+Navigation reuses a captured style key only across internal synchronous steps with no intervening
+host callback. Viewport rendering, resumed command turns and final publication still validate
+current style and layout. Client dimensions remain fresh, including scrollbar changes caused by
+revealing a caret. This avoids duplicate style-key construction without caching layout for an
+entire command or hiding synchronous host CSS changes.
+
 Pending input belongs to the captured document revision, immutable selection set, view and tab
 generation. Escape, changed authority/selection/revision, composition, copy/cut, host-owned paste and
 detachment cancel that continuation. Exact unapplied text is emitted through `sttropez-conflict`

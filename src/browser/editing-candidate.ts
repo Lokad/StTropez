@@ -458,9 +458,9 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             style.letterSpacing, style.wordSpacing, style.tabSize, style.direction, style.getPropertyValue("--st-text-direction"),
             style.fontVariantLigatures, style.fontKerning, style.fontFeatureSettings, style.fontVariationSettings, style.transform, cssZoom(root), owner.fonts.status].join("|");
     }
-    function navigationLayout(): string {
+    function navigationLayout(style = navigationStyle()): string {
         const state = viewport.snapshot();
-        return [navigationStyle(), root.clientWidth, root.clientHeight, state.width, state.height, state.lineHeight, state.columnWidth, state.rowGeneration, view.folding.getSnapshot().generation].join("|");
+        return [style, root.clientWidth, root.clientHeight, state.width, state.height, state.lineHeight, state.columnWidth, state.rowGeneration, view.folding.getSnapshot().generation].join("|");
     }
     function beginNavigation(prepare: (capture: CommandCapture, style: string, inline: boolean) => void, canInline?: (capture: CommandCapture) => boolean): void {
         cancelWord(); navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
@@ -468,14 +468,16 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             const capture = commandCapture(false), job = { capture, purpose: "grapheme" as const, release: () => {} };
             if (!validCommand(capture)) return; rangeCommand = job;
             const inline = canInline?.(capture) ?? false, style = navigationStyle();
-            const initialize = () => commandTurn(() => {
+            const initialize = (resumed: boolean) => commandTurn(() => {
                 if (rangeCommand !== job) return;
-                if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
+                // No host callback separates an immediate initializer from its capture.
+                // Resumed work and preparation after viewport callbacks still recheck style.
+                if (!validCommand(capture) || resumed && navigationStyle() !== style) { cancelWord(); return; }
                 prepare(capture, style, inline);
                 if (rangeCommand === job) cancelWord();
             });
-            if (capture.selectionSet.ranges.length === 1 || inline) initialize();
-            else { const timer = win.setTimeout(() => navigationTurn(() => { commandTimers.delete(timer); if (rangeCommand === job) rangeTimer = undefined; initialize(); }), 0);
+            if (capture.selectionSet.ranges.length === 1 || inline) initialize(false);
+            else { const timer = win.setTimeout(() => navigationTurn(() => { commandTimers.delete(timer); if (rangeCommand === job) rangeTimer = undefined; initialize(true); }), 0);
                 rangeTimer = timer; commandTimers.add(timer); }
         }));
     }
@@ -533,7 +535,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         beginNavigation((capture, style, inline) => {
         const began = win.performance.now(); viewport.flush();
         if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
-        const layout = navigationLayout(), buffer = capture.buffer, arrows = key === "ArrowLeft" || key === "ArrowRight", foldIndex = view.folding.getSnapshot().index;
+        const layout = navigationLayout(style), buffer = capture.buffer, arrows = key === "ArrowLeft" || key === "ArrowRight", foldIndex = view.folding.getSnapshot().index;
         navigationPreparationMs = win.performance.now() - began;
         eachRange(capture, "grapheme", (range, done) => {
             if (key === "Home" || key === "End") {
@@ -564,7 +566,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const buffer = capture.buffer, selected = capture.selection;
         if (!viewport.coordsAt(selected.head, selected.headAffinity)) { revealCaret(selected); viewport.flush(); }
         if (!validCommand(capture) || navigationStyle() !== style) { cancelWord(); return; }
-        const state = viewport.snapshot(), layout = navigationLayout();
+        const state = viewport.snapshot(), layout = navigationLayout(style);
         const prior = preferred?.selections === capture.selectionSet && preferred.revision === capture.revision && preferred.layout === layout ? preferred.columns : undefined;
         const columns: (number | undefined)[] = [], count = verticalCount(page);
         navigationPreparationMs = win.performance.now() - began;
