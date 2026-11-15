@@ -31,7 +31,7 @@ export async function runDemoDiagnosticRetention(page: Page, url = "/") {
         window.WebSocket = class extends NativeSocket {
             private readonly ids = new Set<number>();
             constructor(url: string | URL, protocols?: string | string[]) { super(url, protocols); observe(this, this.ids); }
-            override send(data: string | ArrayBufferLike | Blob | ArrayBufferView) { outgoing(data, this.ids); super.send(data); }
+            override send(data: Parameters<typeof NativeSocket.prototype.send>[0]) { outgoing(data, this.ids); super.send(data); }
         };
     });
     await page.goto(url); await page.locator("#sample").selectOption("errors");
