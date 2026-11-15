@@ -19,8 +19,10 @@ save activity sends no text.
 
 `examples/editing/project-change.ts` reuses `TextBuffer.sharedEdge` to prove common edges by
 immutable backing identity. Its cursor visits at most 64 proof checkpoints per call and yields
-between calls, without a character scan or complete export. A small edit normally sends only
-inserted text; undo can delete with no insertion payload. A new revision returning to the same
+between calls, without a character scan or complete export. When unchanged edges retain backing
+identity, a small edit sends only inserted text; undo can delete with no insertion payload.
+Small-piece coalescing can change backing identity at an edit boundary, so synchronization may
+also resend those bounded copied pieces. A new revision returning to the same
 acknowledged buffer sends only version metadata. If identity cannot prove an edge, the change
 includes that unproved text. Multiple distant edits can therefore include unchanged text between
 them; each transfer stays bounded and exact.

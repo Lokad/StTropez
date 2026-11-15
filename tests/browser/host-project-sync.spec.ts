@@ -24,7 +24,8 @@ async function dispose(page: Page): Promise<void> {
 }
 for (const host of ["plain", "react"]) {
     for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} persistent worker uses versioned deltas through typing, shared undo/redo and canonical save`, async ({ page }) => {
-        test.setTimeout(120000); const original = "const café = 1;\r\n" + (large ? "const unchanged = 123;\r\n".repeat(100000) : "") + "café;";
+        // Keep shared edges in both fixtures; a tiny source can be copied by small-piece coalescing.
+        test.setTimeout(120000); const original = "const café = 1;\r\n" + "const unchanged = 123;\r\n".repeat(large ? 100000 : 8) + "café;";
         await setup(page, host, original); await button(page, "Open source review").click(); await waitForNavigation(page); const baseline = (await snapshot(page)).bindings.comparison!.baseline;
         await query(page, original); let s = await snapshot(page); const epoch = s.bindings.navigation.transport!.epoch;
         expect(s.bindings.navigation.worker).toMatchObject({ created: 1, opened: 1, changed: 0, snapshotUnits: original.length, deltaUnits: 0, terminated: 0 });
