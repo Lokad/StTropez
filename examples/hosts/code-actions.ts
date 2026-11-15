@@ -4,7 +4,7 @@ import { createNavigationClient, navigationMetrics } from "../editing/navigation
 import { validateActionInput } from "../probes/actions.ts";
 import type { ActionInput, ActionResult } from "../probes/actions.ts";
 import { HostCell } from "../shared/observable.ts";
-import { RpcError } from "../../src/protocol/index.ts";
+import { RpcError, applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../../src/protocol/index.ts";
 import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
 import type { LspActionBatch, LspActionClient, LspActionFactory } from "../editing/lsp-action-client.ts";
 import type { HostProjectTools, ProjectActionHandle } from "./project.ts";
@@ -217,13 +217,9 @@ export class HostActionsTools {
     }
     private showChoice(job: Job): void {
         const action = job.selected; if (!action || !this.current(job)) return;
-        const changes = action.edit?.documents.flatMap(change => change.edits.map(edit => ({ doc: change.target.document, edit }))) ?? [], disabled = this.disabled(action);
-        const edits = Object.freeze(changes.slice(job.page * 64, (job.page + 1) * 64).map(({ doc, edit }) => Object.freeze({ document: doc.documentId, resource: doc.resourceId,
-            title: job.sources.get(doc.documentId as DocumentId)!.document.title.slice(0, 128), revision: doc.revision, from: edit.from, to: edit.to,
-            before: doc.buffer.slice(edit.from, Math.min(edit.to, edit.from + 256)) + (edit.to - edit.from > 256 ? "…" : ""), insert: edit.insert.slice(0, 256), insertUnits: edit.insert.length,
-            context: doc.buffer.slice(Math.max(0, edit.from - 32), Math.min(edit.to, edit.from + 128)) + (edit.to - edit.from > 128 ? "…" : "") + doc.buffer.slice(edit.to, Math.min(doc.buffer.length, edit.to + 32)) })));
-        this.publish({ status: "ready", title: action.title, disabled, edits, editCount: changes.length, page: job.page,
-            message: disabled ?? (action.command ? `Confirm execution of ${action.command.title} (${action.command.command}) with ${action.command.arguments.length} captured arguments after ${changes.length} edits. Further edits follow the host's captured action policy.` : `Review ${changes.length} captured provider edits before confirming. Every target must permit application.`) });
+        const preview = action.edit ? previewLspWorkspaceEdit(action.edit, id => job.sources.get(id as DocumentId)!.document.title, job.page) : { count: 0, notes: [] }, disabled = this.disabled(action);
+        this.publish({ status: "ready", title: action.title, disabled, edits: preview.notes, editCount: preview.count, page: job.page,
+            message: disabled ?? (action.command ? `Confirm execution of ${action.command.title} (${action.command.command}) with ${action.command.arguments.length} captured arguments after ${preview.count} edits. Further edits follow the host's captured action policy.` : `Review ${preview.count} captured provider edits before confirming. Every target must permit application.`) });
     }
     nextPage(): void { const job = this.job; if (job?.selected?.edit && this.current(job) && !job.resolving && (job.page + 1) * 64 < this.cell.get().editCount) { job.page++; this.showChoice(job); } }
     previousPage(): void { const job = this.job; if (job?.selected && this.current(job) && !job.resolving && job.page > 0) { job.page--; this.showChoice(job); } }
@@ -251,13 +247,15 @@ export class HostActionsTools {
         }
         this.publishing = true;
         try {
-            const requests = job.batch ? job.selected!.edit!.documents.filter(change => change.edits.length).map(change => {
-                const doc = job.sources.get(change.target.document.documentId as DocumentId)!.document;
-                return { documentId: doc.id, expectedRevision: doc.revision, edits: change.edits, origin: "host" as const, history: { kind: "refactor" as const }, ...(doc.id === job.document.id ? { view: job.origin.editor.view } : {}) };
-            }) : job.result!.action.edits.map(at => ({ documentId: job.document.id, expectedRevision: at.revision, edits: at.edits, origin: "host" as const, history: { kind: "refactor" as const }, view: job.origin.editor.view }));
-            const result = this.workspace.editDocuments(requests);
-            if (!result.applied) throw new Error(result.reason);
-            const changes = Object.freeze(requests.map(request => { const doc = job.sources.get(request.documentId)!.document; return Object.freeze({ document: doc.id, title: doc.title.slice(0, 128) }); }));
+            let documents: readonly DocumentSnapshot[];
+            if (job.batch) documents = applyLspWorkspaceEdit(this.workspace, job.selected!.edit!, { origin: "host", requiredOrigins: ["human"], historyKind: "refactor", view: job.origin.editor.view });
+            else {
+                const requests = job.result!.action.edits.map(at => ({ documentId: job.document.id, expectedRevision: at.revision, edits: at.edits,
+                    origin: "host" as const, history: { kind: "refactor" as const }, view: job.origin.editor.view }));
+                const result = this.workspace.editDocuments(requests); if (!result.applied) throw new Error(result.reason);
+                documents = requests.map(request => job.sources.get(request.documentId)!.document);
+            }
+            const changes = Object.freeze(documents.map(doc => Object.freeze({ document: doc.id, title: doc.title.slice(0, 128) })));
             this.metrics.applied++; this.release(); this.publish({ status: "applied", message: job.batch ? "Applied exact captured provider edits as one shared undo command." : "Applied the captured import action as one shared undo command.", title: "", edits: [], choices: [], editCount: 0, page: 0, changes, changed: changes.find(change => change.document === job.document.id) ?? changes[0] ?? null });
             if (this.available(job.origin)) { job.origin.editor.viewport.revealOffset(job.origin.editor.view.getSnapshot().selection.head); job.origin.editor.focus(); }
         } catch (error) { this.release(); this.publish({ status: "failed", message: error instanceof Error ? error.message : "Action rejected; source is unchanged.", edits: [], title: "", choices: [], editCount: 0 }); }

@@ -1,4 +1,5 @@
 import type { DocumentId, DocumentSnapshot, DocumentView, EditOrigin, EditRequest, Workspace } from "../core/workspace.ts";
+import type { EditKind } from "../core/history.ts";
 import { RpcError } from "./json-rpc.ts";
 import type { LspWorkspaceEdit } from "./lsp-features.ts";
 
@@ -8,6 +9,8 @@ export type LspWorkspaceEditOptions = Readonly<{
     requiredOrigins?: readonly EditOrigin[];
     /** The captured originating view, if any. Other views still receive mapped selections. */
     view?: DocumentView;
+    /** One shared history command with this kind; defaults to replace. No typing-group merge. */
+    historyKind?: EditKind;
 }>;
 
 /**
@@ -33,7 +36,7 @@ export function applyLspWorkspaceEdit(workspace: Workspace, edit: LspWorkspaceEd
         if (options.requiredOrigins?.some(origin => !metadata.capabilities.edit.includes(origin))) throw new Error("read-only");
         before.push(document);
         requests.push({ documentId: document.id, expectedRevision: document.revision, edits: change.edits, origin: options.origin,
-            history: { kind: "replace" }, ...(options.view?.documentId === document.id ? { view: options.view } : {}) });
+            history: { kind: options.historyKind ?? "replace" }, ...(options.view?.documentId === document.id ? { view: options.view } : {}) });
     }
     if (!requests.length) return Object.freeze([]);
     // The core validates every range, revision, permission, lock and view before publishing.

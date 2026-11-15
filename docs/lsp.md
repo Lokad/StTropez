@@ -183,6 +183,8 @@ then delegates range, authority and lock validation to one atomic `Workspace.edi
 transaction with shared undo. It throws on refusal and returns immutable updated snapshots of
 changed documents. Empty and text-identical batches return an empty array without history.
 The optional view is the captured origin; selections in other live views are mapped by the core.
+`historyKind` preserves the host's edit classification (for example `"refactor"` for code actions);
+it defaults to `"replace"`. Each call remains a separate shared undo command without typing-group merging.
 The helper is synchronous and owns no leases: retain the provider result through the decision,
 and keep host selection, lifecycle and approval guards outside it.
 `previewLspWorkspaceEdit(edit, titleForDocumentId, page)` reads captured buffers into immutable

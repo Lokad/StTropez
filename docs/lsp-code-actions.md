@@ -74,9 +74,10 @@ tab/view and session/capability changes expire the whole preview. Pending input/
 conversion prevents capture. Typing, dismissal, disconnect and remount cancel pending discovery or
 resolve without blocking local editing. A fresh reconnect never automatically replays an action.
 
-Application uses the [workspace text-edit validator](lsp-rename.md) and one existing atomic
-`Workspace.editDocuments` transaction after rechecking every edited target's human/host permissions
-and locks. Complete-set undo/redo spans all participants, including unmounted working resources.
+Application uses the public `applyLspWorkspaceEdit` helper with `historyKind: "refactor"` and
+one existing atomic `Workspace.editDocuments` transaction after rechecking every edited target's
+human/host permissions and locks. Changed-resource links include only buffers that changed.
+Complete-set undo/redo spans all participants, including unmounted working resources.
 Independent views map normally. Comparison baselines remain immutable, and Save/Run keep their
 primary captured resource even when an action reveals another target or later typing follows Save.
 
@@ -84,7 +85,8 @@ Complete lists and lazy actions use the existing transport message/JSON limits w
 choice-count, metadata-string or aggregate edit quotas. Immutable JSON and full captured edit
 validation still apply. Command execution retains its separately documented argument/authority
 policy; decoding a command does not authorize its execution. The demo and evaluation hosts show
-16 action choices per page. Edit previews show 64 edits per page, abbreviate inserted
+16 action choices per page. `previewLspWorkspaceEdit` builds only the displayed page's notes.
+Edit previews show 64 edits per page, abbreviate inserted
 text after 256 units with its full size, and keep deletion context bounded independently of range
 length. Confirming applies every validated edit, not only the visible page.
 
