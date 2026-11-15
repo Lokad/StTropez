@@ -125,6 +125,84 @@ test("mixed snippet lists retain supported choices, map stops past additional ed
     assert.throws(() => decodeLspCompletions([item, { ...omitted, textEdit: { range: range(1, 0, 999), newText: "$TM_FILENAME" } }], capture, offset));
 });
 
+test("completion insertion modes adjust nested context while preserving explicit raw overrides and additional edits", async () => {
+    const { capture } = await captured("// header\r\n\t\tsaMORE\r\n"), at = capture.index.offsetAt({ line: 1, character: 4 });
+    const body = "if (ok) {\n\twork();\n}", extra = "// supplied\n  untouched\n";
+    const response: CompletionList = { isIncomplete: false, itemDefaults: { insertTextMode: 2,
+        editRange: { insert: range(1, 2, 4), replace: range(1, 2, 8) } }, items: [
+        { label: "adjusted", textEditText: body, additionalTextEdits: [{ range: range(0, 0, 0), newText: extra }] },
+        { label: "raw", textEditText: body, insertTextMode: 1 }, { label: "shared", textEditText: body }] };
+    const indentation = { tabSize: 3, insertSpaces: true };
+    const [adjusted, raw, shared] = decodeLspCompletions(response, capture, at, undefined, { indentation, resolve: true }).items;
+    indentation.tabSize = 8; indentation.insertSpaces = false;
+    assert.equal(adjusted!.insertion.mode, 2); assert.equal(adjusted!.insertion.tabSize, 3);
+    assert.equal(adjusted!.insertion, shared!.insertion); assert.ok(Object.isFrozen(adjusted!.insertion));
+    assert.equal(adjusted!.primary.text, body); assert.equal((adjusted!.resolve as Record<string, unknown>).insertTextMode, 2);
+    for (const mode of ["insert", "replace"] as const) {
+        assert.equal(capture.document.buffer.apply(adjusted![mode].edits).buffer.text(),
+            extra + "// header\r\n\t\tif (ok) {\r\n         work();\r\n      }" + (mode === "insert" ? "MORE" : "") + "\r\n");
+        assert.equal(raw![mode].edits[0]!.insert, body);
+    }
+    const itemOverride = decodeLspCompletions({ ...response, itemDefaults: { ...response.itemDefaults, insertTextMode: 1 },
+        items: [{ label: "tabs", insertTextMode: 2, textEditText: body }] }, capture, at, undefined,
+        { indentation: { tabSize: 4, insertSpaces: false } }).items[0]!;
+    assert.equal(itemOverride.replace.edits[0]!.insert, "if (ok) {\r\n\t\t\twork();\r\n\t\t}");
+    // The browser capability/default remains mode 1 until its session integration is qualified.
+    assert.equal(decodeLspCompletions([{ label: "default", insertText: body }], capture, at).items[0]!.insertion.mode, 1);
+    for (const invalid of [null, 0, 3, "2"]) {
+        assert.throws(() => decodeLspCompletions([{ label: "valid" }, { label: "invalid", insertTextMode: invalid }], capture, at));
+        assert.throws(() => decodeLspCompletions({ ...response, itemDefaults: { ...response.itemDefaults, insertTextMode: invalid } }, capture, at));
+    }
+});
+
+test("adjusted snippets map body, empty-line and final stops after additional edits without changing their raw model", async () => {
+    const { capture } = await captured("header\r\n        target\r\n"), at = capture.index.offsetAt({ line: 1, character: 14 });
+    const wire = { label: "snippet", insertTextMode: 2, insertTextFormat: 2,
+        textEdit: { range: range(1, 8, 14), newText: 'if (${1|yes,no|}) {\n\t${2:😀call}\n\t$3\n}\n$0' },
+        additionalTextEdits: [{ range: range(0, 0, 0), newText: "extra\n" }] };
+    const item = decodeLspCompletions([wire], capture, at).items[0]!, plan = item.replace, buffer = capture.document.buffer.apply(plan.edits).buffer;
+    assert.equal(buffer.text(), "extra\nheader\r\n        if (yes) {\r\n            😀call\r\n            \r\n        }\r\n        \r\n");
+    assert.deepEqual(plan.snippet!.map(stop => stop.ranges.map(range => buffer.slice(range.from, range.to))), [["yes"], ["😀call"], [""], [""]]);
+    const empty = plan.snippet![2]!.ranges[0]!, final = plan.snippet![3]!.ranges[0]!;
+    assert.equal(buffer.slice(empty.from, empty.from + 2), "\r\n"); assert.equal(buffer.slice(empty.from - 12, empty.from), " ".repeat(12));
+    assert.equal(buffer.slice(final.from - 8, final.from + 2), "        \r\n"); assert.equal(plan.head, final.from);
+    assert.equal(item.primary.text, "if (yes) {\n\t😀call\n\t\n}\n"); assert.deepEqual(item.snippet![0]!.choices, ["yes", "no"]);
+    for (const stop of item.snippet!) for (const occurrence of stop.ranges) assert.ok(occurrence.to <= item.primary.text.length);
+    assert.ok(Object.isFrozen(plan.snippet![0]!.ranges[0]));
+});
+
+test("adjusted completion resolution, prefix rebasing and commit characters always start from raw content", async () => {
+    const { capture } = await captured("\t\tsaMORE\r\n"), original = decodeLspCompletions({ isIncomplete: false,
+        itemDefaults: { insertTextMode: 2, insertTextFormat: 2, editRange: { insert: range(0, 2, 4), replace: range(0, 2, 8) } },
+        items: [{ label: "sample", textEditText: "old", commitCharacters: [";"] }] }, capture, 4, undefined,
+        { resolve: true, indentation: { tabSize: 2, insertSpaces: false } }).items[0]!;
+    const body = "begin\n\t${1:name}\n$1\n$0", reply = { ...original.resolve as Record<string, unknown>,
+        textEdit: { newText: body, insert: range(0, 2, 4), replace: range(0, 2, 8) },
+        additionalTextEdits: [{ range: range(0, 0, 0), newText: "extra\n" }] };
+    const resolved = decodeLspResolvedCompletion(reply, original, capture), expected = "begin\r\n\t\t\tname\r\n\t\tname\r\n\t\t";
+    assert.equal(resolved.replace.edits[1]!.insert, expected); assert.equal(resolved.insertion, original.insertion);
+    assert.throws(() => decodeLspResolvedCompletion({ ...reply, insertTextMode: 1 }, original, capture), /immutable/);
+    const applied = capture.document.buffer.apply([{ from: 4, to: 4, insert: "m" }]), next = Object.freeze({ ...capture.document, revision: 71, buffer: applied.buffer });
+    const change = Object.freeze({ previousRevision: 70, transactionId: 1, origin: "human" as const, kind: "typing" as const, mapping: applied.mapping });
+    const rebased = rebaseLspCompletion(resolved, next, change, 4)!;
+    assert.equal(rebased.replace.edits[1]!.insert, expected); assert.equal(rebased.insertion, original.insertion);
+    assert.equal(rebased.primary.text, "begin\n\tname\nname\n");
+    const committed = lspCompletionPlan(rebased, "replace", ";");
+    assert.equal(next.buffer.apply(committed.edits).buffer.text(), "extra\n\t\t" + expected + ";\r\n");
+    assert.equal(committed.snippet, null); assert.equal(committed.head, next.buffer.apply(committed.edits).buffer.length - 2);
+    const stillLazy = rebaseLspCompletion(original, next, change, 4)!, current = { ...capture, document: next, index: await LspLineIndex.create(next.buffer, async () => {}) };
+    assert.equal(decodeLspResolvedCompletion(reply, stillLazy, current).replace.edits[1]!.insert, expected);
+});
+
+test("adjusted insertion expansion respects the captured limit before publication and lazy resolution", async () => {
+    const { capture } = await captured("        x\n"), bounded = { ...capture, maxDocumentUnits: 16 };
+    const wire = { label: "large", insertTextMode: 2, insertText: "a\nb\nc" };
+    assert.throws(() => decodeLspCompletions([wire], bounded, 8), /insertion limit/);
+    const lazy = decodeLspCompletions([{ ...wire, insertText: "short" }], bounded, 8, undefined, { resolve: true }).items[0]!;
+    assert.throws(() => decodeLspResolvedCompletion(wire, lazy, bounded), /insertion limit/);
+    assert.equal(decodeLspCompletions([{ ...wire, insertTextMode: 1 }], bounded, 8).items[0]!.replace.edits[0]!.insert, wire.insertText);
+});
+
 test("lazy completion supplies primary content within captured ranges and keeps identity and edits atomic", async () => {
     const { capture } = await captured("// Header\r\ntemplate"), offset = capture.document.buffer.length;
     const original = decodeLspCompletions([{ label: "lazy", filterText: "template", insertTextFormat: 2, data: { key: 1 } }], capture, offset,

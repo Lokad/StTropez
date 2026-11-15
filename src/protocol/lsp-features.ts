@@ -1,6 +1,8 @@
 import { validateTextEdits } from "../core/changes.ts";
 import { PositionMap } from "../core/positions.ts";
 import { parseSnippet, offsetSnippetStops } from "../core/snippets.ts";
+import { adjustInsertionText, insertionContext } from "../core/insertion-text.ts";
+import type { InsertionIndentation } from "../core/insertion-text.ts";
 import type { SnippetStop } from "../core/snippets.ts";
 import type { TextEdit } from "../core/changes.ts";
 import type { DocumentationContent, DocumentationPart } from "../core/documentation.ts";
@@ -17,8 +19,10 @@ export type LspDiagnostics = Readonly<{ uri: string; version: number | null; rev
 export type LspCompletionPlan = Readonly<{ edits: readonly TextEdit[]; head: number; snippet: readonly SnippetStop[] | null }>;
 export type LspCompletion = Readonly<{ label: string; detail: string; documentation: string; filterText: string; sortText: string; preselect: boolean;
     commitCharacters: readonly string[]; source: LspDocumentSnapshot; primary: Readonly<{ from: number; insertTo: number; replaceTo: number; text: string }>;
+    /** Raw expanded primary text/stops are retained; plans use this captured formatting policy. */
+    insertion: InsertionIndentation & Readonly<{ mode: 1 | 2; maxUnits: number }>;
     additional: readonly TextEdit[]; snippet: readonly SnippetStop[] | null; resolve: JsonValue | null; insert: LspCompletionPlan; replace: LspCompletionPlan }>;
-export type LspCompletionOptions = Readonly<{ resolve?: boolean; commitCharacters?: readonly string[] }>;
+export type LspCompletionOptions = Readonly<{ resolve?: boolean; commitCharacters?: readonly string[]; indentation?: InsertionIndentation }>;
 export type LspCompletions = Readonly<{ incomplete: boolean; items: readonly LspCompletion[]; omitted: readonly Readonly<{ label: string; reason: string }>[] }>;
 /** A valid completion edit whose optional snippet syntax is outside the supported subset. */
 export class UnsupportedLspSnippetError extends Error {}
@@ -232,6 +236,20 @@ function plan(length: number, primary: TextEdit, additional: readonly TextEdit[]
     const head = snippet?.find(stop => stop.index === 0)?.ranges[0]?.from ?? from + primary.insert.length;
     return Object.freeze({ edits: Object.freeze(edits), head, snippet });
 }
+function completionText(source: LspDocumentSnapshot, from: number, text: string, snippet: readonly SnippetStop[] | null, insertion: LspCompletion["insertion"]) {
+    if (insertion.mode === 1 || !text.includes("\n")) return { text, snippet };
+    const formatted = adjustInsertionText(text, insertionContext(source.buffer, from, insertion), insertion.maxUnits);
+    const stops = snippet && Object.freeze(snippet.map(stop => Object.freeze({ ...stop, ranges: Object.freeze(stop.ranges.map(range => {
+        const from = formatted.mapPosition(range.from), to = range.from === range.to ? from : Math.max(from, formatted.mapPosition(range.to, "before"));
+        return Object.freeze({ ...range, from, to });
+    })) })));
+    return { text: formatted.text, snippet: stops };
+}
+function completionPlans(source: LspDocumentSnapshot, primary: LspCompletion["primary"], additional: readonly TextEdit[], snippet: readonly SnippetStop[] | null, insertion: LspCompletion["insertion"]) {
+    const formatted = completionText(source, primary.from, primary.text, snippet, insertion);
+    return { insert: plan(source.buffer.length, Object.freeze({ from: primary.from, to: primary.insertTo, insert: formatted.text }), additional, formatted.snippet),
+        replace: plan(source.buffer.length, Object.freeze({ from: primary.from, to: primary.replaceTo, insert: formatted.text }), additional, formatted.snippet) };
+}
 /** Validate every edit before publication; unsupported snippet items have an explicit disposition. */
 export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture, offset: number, fallback: LspCompletionFallback | (() => LspCompletionFallback) = { from: offset, to: offset, replaceTo: offset }, options: LspCompletionOptions = {}): LspCompletions {
     // Candidate count and aggregate item text are not protocol validity rules. The session's
@@ -241,7 +259,7 @@ export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture
     else if (Array.isArray(value)) values = value;
     else { if (!record(value) || typeof value.isIncomplete !== "boolean" || !Array.isArray(value.items)) invalid(); incomplete = value.isIncomplete; values = value.items;
         if (value.itemDefaults !== undefined) { if (!record(value.itemDefaults) || Object.keys(value.itemDefaults).some(key => !["editRange", "insertTextFormat", "insertTextMode", "commitCharacters", "data"].includes(key))) invalid(); defaults = value.itemDefaults;
-            if (defaults.insertTextFormat !== undefined && defaults.insertTextFormat !== 1 && defaults.insertTextFormat !== 2 || defaults.insertTextMode !== undefined && defaults.insertTextMode !== 1) invalid();
+            if (defaults.insertTextFormat !== undefined && defaults.insertTextFormat !== 1 && defaults.insertTextFormat !== 2 || defaults.insertTextMode !== undefined && defaults.insertTextMode !== 1 && defaults.insertTextMode !== 2) invalid();
             commitCharacters(defaults.commitCharacters);
             if (defaults.data !== undefined) jsonSnapshot(defaults.data);
             if (defaults.editRange !== undefined) {
@@ -251,8 +269,14 @@ export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture
             }
         } }
     let fallbackRange: LspCompletionFallback | undefined; const omitted: { label: string; reason: string }[] = [];
+    const indentation = { tabSize: options.indentation?.tabSize ?? 4, insertSpaces: options.indentation?.insertSpaces ?? true,
+        maxUnits: capture.maxDocumentUnits ?? Number.MAX_SAFE_INTEGER };
+    const insertions = new Map<1 | 2, LspCompletion["insertion"]>();
     const items = values.map((item: unknown): LspCompletion | undefined => {
-        if (!record(item) || item.command !== undefined || ![1, 2].includes((item.insertTextFormat ?? defaults.insertTextFormat ?? 1) as number) || (item.insertTextMode ?? defaults.insertTextMode ?? 1) !== 1) invalid();
+        if (!record(item) || item.command !== undefined || ![1, 2].includes((item.insertTextFormat ?? defaults.insertTextFormat ?? 1) as number)) invalid();
+        const mode = item.insertTextMode === undefined ? defaults.insertTextMode ?? 1 : item.insertTextMode; if (mode !== 1 && mode !== 2) invalid();
+        let insertion = insertions.get(mode);
+        if (!insertion) { insertion = Object.freeze({ ...indentation, mode }); insertions.set(mode, insertion); }
         const label = text(item.label); if (!label) invalid(); const detail = item.detail === undefined ? "" : text(item.detail);
         const description = documentation(item.documentation), filterText = item.filterText === undefined ? label : text(item.filterText), sortText = item.sortText === undefined ? label : text(item.sortText);
         if (item.preselect !== undefined && typeof item.preselect !== "boolean") invalid();
@@ -296,9 +320,10 @@ export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture
             if (!parsed.snippet) { omitted.push(Object.freeze({ label, reason: parsed.reason })); return; }
             snippet = parsed.snippet.stops; insert = Object.freeze({ ...insert, insert: parsed.snippet.text }); replace = Object.freeze({ ...replace, insert: parsed.snippet.text });
         }
+        const primary = Object.freeze({ from: insert.from, insertTo: insert.to, replaceTo: replace.to, text: insert.insert });
         return Object.freeze({ label, detail, documentation: description, filterText, sortText, preselect: item.preselect === true, commitCharacters: commits,
-            source: capture.document, primary: Object.freeze({ from: insert.from, insertTo: insert.to, replaceTo: replace.to, text: insert.insert }), additional: Object.freeze(additional), snippet, resolve: resolution,
-            insert: plan(index.buffer.length, insert, additional, snippet), replace: plan(index.buffer.length, replace, additional, snippet) });
+            source: capture.document, primary, insertion, additional: Object.freeze(additional), snippet, resolve: resolution,
+            ...completionPlans(capture.document, primary, additional, snippet, insertion) });
     });
     current(capture); return Object.freeze({ incomplete, items: Object.freeze(items.filter((item): item is LspCompletion => !!item)), omitted: Object.freeze(omitted) });
 }
@@ -339,9 +364,8 @@ export function decodeLspResolvedCompletion(value: unknown, original: LspComplet
         inserted = parsed.snippet.text; snippet = parsed.snippet.stops;
     }
     const nextPrimary = inserted === undefined ? primary : Object.freeze({ ...primary, text: inserted });
-    const insert = Object.freeze({ from: primary.from, to: primary.insertTo, insert: nextPrimary.text }), replace = Object.freeze({ from: primary.from, to: primary.replaceTo, insert: nextPrimary.text });
     const result = Object.freeze({ ...original, primary: nextPrimary, snippet, detail, documentation: description, additional, resolve: null,
-        insert: plan(capture.document.buffer.length, insert, additional, snippet), replace: plan(capture.document.buffer.length, replace, additional, snippet) });
+        ...completionPlans(capture.document, nextPrimary, additional, snippet, original.insertion) });
     current(capture); return result;
 }
 /** Only an exact single human typing insertion inside the captured primary range can follow a list.
@@ -355,16 +379,17 @@ export function rebaseLspCompletion(original: LspCompletion, next: LspDocumentSn
         || caret < primary.from || caret > primary.insertTo || !mapping.isSingleInsertion?.(caret, units)) return;
     const from = mapping.map(primary.from, "before").offset, insertTo = mapping.map(primary.insertTo, "after").offset, replaceTo = mapping.map(primary.replaceTo, "after").offset;
     const additional = Object.freeze(original.additional.map(edit => Object.freeze({ from: mapping.map(edit.from, "after").offset, to: mapping.map(edit.to, edit.from === edit.to ? "after" : "before").offset, insert: edit.insert })));
-    const insert = Object.freeze({ from, to: insertTo, insert: primary.text }), replace = Object.freeze({ from, to: replaceTo, insert: primary.text });
-    return Object.freeze({ ...original, source: next, primary: Object.freeze({ from, insertTo, replaceTo, text: primary.text }), additional,
-        insert: plan(next.buffer.length, insert, additional, original.snippet), replace: plan(next.buffer.length, replace, additional, original.snippet) });
+    const nextPrimary = Object.freeze({ from, insertTo, replaceTo, text: primary.text });
+    return Object.freeze({ ...original, source: next, primary: nextPrimary, additional,
+        ...completionPlans(next, nextPrimary, additional, original.snippet, original.insertion) });
 }
 /** Completion plus its advertised commit character form one intended history transaction. */
 export function lspCompletionPlan(item: LspCompletion, mode: "insert" | "replace", character?: string): LspCompletionPlan {
     if (character === undefined) return item[mode];
     if (character.length !== 1 || !item.commitCharacters.includes(character)) invalid();
     const primary = item.primary, inserted = primary.text.endsWith(character) ? primary.text : primary.text + character;
-    return plan(item.source.buffer.length, { from: primary.from, to: mode === "insert" ? primary.insertTo : primary.replaceTo, insert: inserted }, item.additional);
+    const formatted = completionText(item.source, primary.from, inserted, null, item.insertion);
+    return plan(item.source.buffer.length, Object.freeze({ from: primary.from, to: mode === "insert" ? primary.insertTo : primary.replaceTo, insert: formatted.text }), item.additional);
 }
 /** Literal display only; active indices use the protocol's default-to-first policy. */
 export function decodeLspSignatureHelp(value: unknown, capture: LspDocumentCapture): LspSignatureHelp | null {

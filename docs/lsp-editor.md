@@ -95,6 +95,16 @@ ordinary and supported choices remain usable. The pure decoder returns `omitted`
 decoding reports `UnsupportedLspSnippetError`. Every edit is validated before that disposition,
 so malformed or overlapping edits cannot hide behind an unsupported snippet.
 
+The protocol decoder also accepts explicit `insertTextMode: 2` in list defaults or items.
+Its `indentation` option captures `tabSize` and `insertSpaces` (defaults: 4 and true).
+The primary text and snippet positions remain in the expanded provider coordinates;
+`insert`/`replace` plans add the insertion line's indentation to subsequent lines and
+use that buffer's LF/CRLF convention. Additional edits remain as supplied. Lazy resolution,
+prefix rebasing and commit characters rebuild from the raw text, so indentation is applied
+once. Mode 1 preserves the supplied text. The browser still advertises and defaults to
+mode 1 while configured editor acceptance, multiline choices/mirrors and several-caret
+integration are being completed; decoder tests alone do not qualify those interactions.
+
 Acceptance selects every occurrence of the first numbered field. Typing, deletion, paste and
 composition commit mirror through the existing input, Workspace validation and history paths.
 Tab/Shift+Tab traverse fields; Alt+Up/Down cycles choices. Hosts render `snapshot.snippet` and use
