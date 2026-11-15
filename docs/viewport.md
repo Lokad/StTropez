@@ -27,6 +27,21 @@ including borders, complete selections, pointer ranges, vertical/page navigation
 comparison panes and a 2.4M-unit horizontal window. These checks cover DOM geometry; native
 IME placement, browser-toolbar zoom and OS display scaling still need platform qualification.
 
+Set `columnRulers: [80, 120]` on `mountTextViewport` or `mountEditingCandidate` to draw guides
+after 80 and 120 measured monospace cells. The default is empty. The viewport copies, sorts and
+deduplicates the array; it accepts at most 128 entries, each a positive safe integer.
+`viewport.columnRulers()` returns the frozen configuration and `configureColumnRulers(columns)`
+replaces it without remounting. Invalid values leave the current configuration intact; an empty
+array removes all guides. Configuration must run outside Workspace notifications and returns
+false after disposal. No-op configuration keeps the same capture and schedules no work.
+
+Guides follow the existing measured column width, logical horizontal scroll, font and zoom.
+They mark measured cells from the left text origin, not UTF-16 offsets or per-line shaped glyph
+positions; proportional/variable-width text can cross them differently. Only visible guides are
+mounted in the clipped paint layer, behind text. They add no text, hit target or scroll extent,
+and changing only the ruler configuration reuses painted rows and their geometry. Customize
+their color with `--st-column-ruler`. Each comparison viewport can configure its own rulers.
+
 The display caret follows the measured source position at scroll boundaries, including partly
 clipped rows. Its placement is independent of the bounded native input anchor, so keeping that
 anchor inside the viewport cannot shift the visible caret away from its character.

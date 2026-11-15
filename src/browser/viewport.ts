@@ -15,6 +15,7 @@ import { sameSelectionSet } from "../core/selections.ts";
 import { decorationParts, validDecorationClass } from "./decoration-parts.ts";
 import type { RowPart } from "./decoration-parts.ts";
 import type { ComparisonRowIndex } from "../core/comparison-rows.ts";
+import { mountColumnRulers, resolveColumnRulers } from "./column-rulers.ts";
 type RowIndex = FoldIndex | ComparisonRowIndex;
 const emptyIndex = new FoldIndex(1, []);
 /** Shared by view-only scroll coordination; this is independent of source coordinates. */
@@ -30,6 +31,8 @@ export type ViewportSnapshot = ViewportActivity & Readonly<{ selection: Selectio
     lineHeight: number; columnWidth: number; verticalExtent: number; horizontalExtent: number;
     physicalHeight: number; physicalWidth: number }>;
 export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentView;
+    columnRulers: () => readonly number[];
+    configureColumnRulers: (columns: readonly number[]) => boolean;
     captureView: () => ViewState; restoreView: (state: ViewState) => void;
     scrollTo: (position: Readonly<{ top?: number; left?: number }>) => void;
     setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean;
@@ -75,7 +78,9 @@ export type RevealOptions = Readonly<{ horizontal?: "center" | "nearest"; vertic
 
 /** Bounded DOM view layer with local native text geometry. Native-device qualification remains separate. */
 export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId: TabId,
-    options: Readonly<{ ariaLabel?: string; view?: DocumentView; overscanLines?: number; overscanUnits?: number; decorate?: LineDecorator; lineClass?: LineClass }> = {}): TextViewport {
+    options: Readonly<{ ariaLabel?: string; view?: DocumentView; overscanLines?: number; overscanUnits?: number; decorate?: LineDecorator; lineClass?: LineClass;
+        columnRulers?: readonly number[] }> = {}): TextViewport {
+    let columns = resolveColumnRulers(options.columnRulers);
     const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
     if (!tab || tab.surface.kind !== "text") throw new Error("Expected a text surface.");
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId);
@@ -93,6 +98,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     foldLayer.className = "st-fold-controls"; const foldButtons = new Map<string, HTMLButtonElement>();
     root.append(spacer, layer, probeHost, foldLayer); host.append(root);
     const listeners = new AbortController(), padding = viewportPadding;
+    const rulers = mountColumnRulers(layer, padding), notifications = workspace.createNotificationScope();
     let frame: number | undefined, disposed = false, previous: DocumentSnapshot | undefined;
     let top = 0, left = 0, width = 0, height = 0, lineHeight = 22.4, columnWidth = 8.4;
     let x = scrollAxis(0, 0), y = scrollAxis(0, 0), renderedRevision: number | null = null, renderedIndex: RowIndex = view.folding.getSnapshot().index, renderedFoldGeneration = -1, observedFoldRevision = view.folding.getSnapshot().revision;
@@ -378,6 +384,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         if (font !== measuredFont) { measuredWidth = 0; measuredFont = font; }
         const document = workspace.resolveTab(target) ? workspace.observeDocument(documentId).getSnapshot() : undefined;
         if (!document) {
+            rulers.clear();
             painted = undefined; commandGeometry = undefined;
             layer.replaceChildren(); rows.clear(); rowSources.clear(); rowSourceRevision = null; geometries.clear(); measuredWidth = 0; measuredRevision = null; spacer.style.width = "0px"; spacer.style.height = "0px";
             layer.style.transform = "none"; layer.style.width = "0px"; layer.style.height = "0px";
@@ -407,6 +414,8 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         x = scrollAxis(Math.max(document.buffer.longestLineLength * columnWidth, measuredWidth) + padding * 2, width);
         y = scrollAxis(index.visibleLineCount * lineHeight + padding * 2, height);
         top = position(y, top); left = position(x, left);
+        // Presentation-only configuration can repaint guides without reading or rebuilding rows.
+        rulers.paint(columns, columnWidth, left, width);
         const { selection: selected, selectionSet } = view.getSnapshot();
         const key = [document.revision, selectionSet, folds.generation, rowGeneration, comparisonRows?.id,
             top, left, width, height, zoom, columnWidth, naturalLineHeight, lineHeight, font, x.extent, y.extent, paintEpoch,
@@ -572,6 +581,13 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     }
     schedule();
     return Object.freeze({ element: root, view, activity,
+        columnRulers: () => columns,
+        configureColumnRulers: value => {
+            notifications.assertWritable(); if (disposed) return false;
+            const next = resolveColumnRulers(value);
+            if (next.length === columns.length && next.every((column, index) => column === columns[index])) return true;
+            columns = next; schedule(); return true;
+        },
         prepareNavigationRows,
         invalidate,
         coordsAt: coordinates,
@@ -676,6 +692,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent }),
         destroy: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
+            rulers.clear(); columns = resolveColumnRulers();
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); rowSources.clear(); rowSourceRevision = null; paddingRows.clear(); comparisonRows = undefined; renderedAlignmentId = null; geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             painted = undefined; commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove(); clearPreparedRows();
             navigationBatches = 0; maxNavigationBatchRows = 0;

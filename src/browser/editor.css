@@ -40,6 +40,8 @@
 }
 .st-viewport-spacer { pointer-events: none; }
 .st-viewport-layer { position: absolute; top: 0; left: 0; overflow: hidden; contain: strict; }
+.st-column-rulers { position: absolute; inset: 0; pointer-events: none; z-index: -1; }
+.st-column-ruler { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--st-column-ruler, #71849c40); }
 .st-viewport-row { position: absolute; top: 0; left: 0; white-space: pre; direction: var(--st-text-direction, ltr); }
 .st-viewport-row[data-folded-summary]::after { content: attr(data-folded-summary); position: absolute; left: 100%; top: 0; margin-left: .75em; padding: 0 .35em; border-radius: 3px; color: var(--st-fold-summary, #91a5bd); background: var(--st-fold-summary-background, #7e8da51a); font-size: .85em; pointer-events: none; user-select: none; direction: ltr; }
 .st-comparison-padding { position: absolute; top: 0; left: 0; pointer-events: none; background: repeating-linear-gradient(135deg, transparent 0 5px, var(--st-padding-mark, #7e8da51a) 5px 6px); }
