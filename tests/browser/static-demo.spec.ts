@@ -18,7 +18,12 @@ test("documentation and diagnostic details preserve metadata and open permitted 
 test("occurrences follow the caret, edits and large virtualized documents", async ({ page, baseURL }) => { await runDemoHighlights(page, baseURL!, true); });
 
 test("automatic folding survives edits, find and independent review views", async ({ page, baseURL }) => { await runDemoFolding(page, baseURL!); });
-import { runDemoPresentationContinuity } from "./demo-presentation.ts";
+import { runDemoPresentationContinuity, runDemoSyntaxDemand } from "./demo-presentation.ts";
+
+test("syntax worker retains large documents and emits only for the visible JavaScript panel", async ({ page, baseURL }, info) => {
+    const traffic = await runDemoSyntaxDemand(page, baseURL!);
+    await info.attach("syntax-traffic", { body: JSON.stringify(traffic, null, 2), contentType: "application/json" });
+});
 
 // Native scrollbar drags are part of the demo's user journey, including headless Chromium.
 test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });

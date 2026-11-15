@@ -49,7 +49,7 @@ function renderFolding(): void {
 }
 
 function renderOutput(): void {
-    if (panel !== "javascript") return;
+    if (panel !== "javascript" || element("workspace").classList.contains("collapsed")) return;
     const host = element("panel-content");
     if (project?.sample.id === "host") {
         if (!host.querySelector(".host-output-note")) { const note = document.createElement("p"); note.className = "panel-note host-output-note";
@@ -179,7 +179,7 @@ function renderMetadata(): void {
     element("cursor").textContent = `Ln ${line + 1}, Col ${column + 1}`;
     element("status").textContent = project.message;
     element("analysis-status").textContent = hostLanguage() ? "Host colors & editing rules" : referencePresentation?.status === "failed" ? "Saved-copy analysis unavailable" : presentation.status === "failed" ? "Analysis unavailable" : presentation.status === "ready"
-        ? "TypeScript 5.9.3 · syntax & emit" : "TypeScript · analyzing…";
+        ? `TypeScript 5.9.3 · ${panel === "javascript" && !element("workspace").classList.contains("collapsed") ? "syntax & emit" : "syntax"}` : "TypeScript · analyzing…";
     element("analysis-retry").hidden = presentation.status !== "failed" && referencePresentation?.status !== "failed";
     button("save").disabled = project.saving;
     button("navigate-back").disabled = !locations.some(location => location.project === project);
@@ -347,6 +347,7 @@ async function openSample(id: SampleId): Promise<void> {
 function setPanel(next: typeof panel): void {
     if (!active || editor?.activity().composing) return; panel = next;
     element("workspace").classList.remove("collapsed"); element("panel-collapse").textContent = "Hide";
+    presentation.setEmit(panel === "javascript");
     for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.setAttribute("aria-pressed", String(tab.dataset.panel === panel));
     mountFile(active, true);
 }
@@ -393,6 +394,7 @@ on("language-retry", () => {
 on("panel-collapse", () => {
     if (panel === "changes") setPanel("javascript");
     const collapsed = element("workspace").classList.toggle("collapsed"); element("panel-collapse").textContent = collapsed ? "Show" : "Hide";
+    presentation.setEmit(!collapsed && panel === "javascript");
 });
 on("walkthrough-toggle", () => { element("walkthrough").hidden = !element("walkthrough").hidden; });
 on("reset", () => {

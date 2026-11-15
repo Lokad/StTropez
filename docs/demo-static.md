@@ -34,6 +34,9 @@ keep bounded DOM content in both panes instead of laying out the complete output
 Edits retain provisionally mapped syntax colors and the last completed output while analysis
 runs; the footer reports pending or unavailable analysis. Only current worker results replace
 them. File changes clear presentation ownership. See the [visible-continuity checks](demo-qualification.md#visible-continuity-and-complete-host-coverage).
+The syntax worker retains compiler state and receives incremental replacement text. JavaScript
+emission follows panel visibility; reopening requests current output without re-uploading the
+source. Syntax colors remain active when the output panel is hidden or showing review/problems.
 
 Reset sample restores only the selected sample's original files as an undoable edit. Saved
 copies and drafts for other samples are retained. Recovery notices name the draft's files:

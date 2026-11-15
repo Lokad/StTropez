@@ -1,16 +1,20 @@
-import type { DocumentSnapshot, TextBuffer, DiscoveredFold } from "../../src/index.ts";
+import { BufferChangeCursor } from "../../src/index.ts";
+import type { DocumentSnapshot, BufferChangeSpan, DiscoveredFold } from "../../src/index.ts";
 import type { InlineDecoration, PresentedLine } from "../../src/browser/index.ts";
 import { DemoSyntaxColors } from "./syntax-colors.ts";
 import { DemoEditingRules } from "./editing-rules.ts";
 import type { SyntaxOptions } from "./syntax.ts";
-
-type Analysis = Readonly<{ job: number; kind: "result" | "failed"; spans?: Uint32Array; javascript?: string; folds?: readonly DiscoveredFold[] }>;
+import type { SyntaxRequest, SyntaxResponse } from "./syntax-session.ts";
 
 /** One worker for the active document. Immutable captures survive upload and asynchronous analysis. */
 export class DemoPresentation {
     private worker: Worker | undefined;
     private timer: number | undefined;
     private job = 0;
+    private synchronized: Readonly<{ capture: DocumentSnapshot; job: number }> | undefined;
+    private planner: BufferChangeCursor | undefined;
+    private uploading: number | undefined;
+    private emit: boolean;
     private capture: DocumentSnapshot | undefined;
     private foldRanges: readonly DiscoveredFold[] | undefined;
     private readonly waiting = new Set<() => void>();
@@ -24,41 +28,67 @@ export class DemoPresentation {
     status: "starting" | "pending" | "ready" | "failed" = "starting";
     private readonly changed: () => void;
     private readonly options: SyntaxOptions;
-    constructor(changed: () => void, options: SyntaxOptions = {}) { this.changed = changed; this.options = options; this.start(); }
+    constructor(changed: () => void, options: SyntaxOptions = {}) {
+        this.changed = changed; this.options = options; this.emit = options.emit !== false; this.start();
+    }
     private notify(): void { for (const listener of [...this.waiting]) listener(); if (!this.disposed) this.changed(); }
     private start(): void {
-        this.worker = new Worker(new URL("demo-syntax-worker.js", document.baseURI), { type: "module" });
-        this.worker.addEventListener("message", (event: MessageEvent<Analysis>) => {
+        const worker = this.worker = new Worker(new URL("demo-syntax-worker.js", document.baseURI), { type: "module" });
+        worker.addEventListener("message", (event: MessageEvent<SyntaxResponse>) => {
             const message = event.data;
-            if (this.disposed || message.job !== this.job) return;
+            if (this.disposed || worker !== this.worker || message.job !== this.job || !this.capture) return;
             if (message.kind === "failed" || !(message.spans instanceof Uint32Array) || typeof message.javascript !== "string" || !Array.isArray(message.folds)) {
-                this.status = "failed"; this.notify(); return;
+                this.fail(); return;
             }
             this.colors.accept(this.capture!, message.spans); this.javascript = message.javascript;
             this.editing.accept(this.capture!.buffer, message.spans);
             this.foldRanges = Object.freeze(message.folds.map(range => Object.freeze({ ...range })));
             this.status = "ready"; this.notify();
         });
-        this.worker.addEventListener("error", event => { event.preventDefault(); if (!this.disposed) { this.status = "failed"; this.notify(); } });
+        worker.addEventListener("error", event => { event.preventDefault(); if (!this.disposed && worker === this.worker) this.fail(); });
+    }
+    private post(message: SyntaxRequest): void { this.worker!.postMessage(message); }
+    private cancelWork(): void {
+        if (this.timer !== undefined) window.clearTimeout(this.timer); this.timer = undefined;
+        this.planner?.dispose(); this.planner = undefined;
+        if (this.uploading !== undefined) {
+            try { this.post({ job: this.uploading, kind: "cancel" }); } catch { /* A failed worker will be replaced by retry. */ }
+            this.uploading = undefined;
+        }
+    }
+    private fail(): void { this.cancelWork(); this.status = "failed"; this.notify(); }
+    /** Emission is a view demand; colors and editing rules continue while output is hidden. */
+    setEmit(visible: boolean): void {
+        const emit = visible && this.options.emit !== false;
+        if (this.disposed || this.emit === emit) return;
+        this.emit = emit; this.javascript = "";
+        if (!this.capture || this.plain) return;
+        if (!emit && this.status === "ready") this.notify();
+        else this.schedule(this.capture, 0);
+    }
+    private schedule(capture: DocumentSnapshot, delay = 100): void {
+        const job = ++this.job; this.cancelWork();
+        if (this.status === "failed") { this.notify(); return; }
+        this.status = "pending";
+        // Planning and serialization remain outside native input and decoration callbacks.
+        this.timer = window.setTimeout(() => { this.timer = undefined; this.prepare(capture, job); }, delay);
+        this.notify();
     }
     update(capture: DocumentSnapshot, plain = false): void {
-        if (this.disposed || this.capture?.buffer === capture.buffer && this.capture.id === capture.id && this.plain === plain) return;
+        if (this.disposed || this.capture?.buffer === capture.buffer && this.capture.id === capture.id && this.capture.key === capture.key
+            && this.capture.revision === capture.revision && this.plain === plain) return;
         this.plain = plain;
         this.foldRanges = undefined;
         if (plain) {
-            this.job++; if (this.timer !== undefined) window.clearTimeout(this.timer); this.timer = undefined;
+            this.job++; this.cancelWork(); this.synchronized = undefined;
+            this.worker?.terminate(); this.worker = undefined;
             this.capture = capture; this.colors.clear(); this.editing.clear(); this.javascript = "// This host outline has no JavaScript output.\n";
             this.foldRanges = Object.freeze([]); this.status = "ready"; this.notify(); return;
         }
+        if (!this.worker) { this.status = "starting"; this.start(); }
         if (this.capture?.key !== capture.key) this.editing.clear();
         this.colors.update(capture); this.capture = capture; this.javascript = "";
-        const job = ++this.job;
-        if (this.timer !== undefined) window.clearTimeout(this.timer);
-        if (this.status === "failed") { this.timer = undefined; this.notify(); return; }
-        this.status = "pending";
-        // Snapshot serialization is scheduled outside native input and decoration callbacks.
-        this.timer = window.setTimeout(() => { this.timer = undefined; this.upload(capture.buffer, job, 0); }, 100);
-        this.notify();
+        this.schedule(capture);
     }
     /** Review-only outlining shares the color worker and its exact immutable snapshot lifetime. */
     discoverFolds(capture: DocumentSnapshot, signal: AbortSignal): Promise<readonly DiscoveredFold[]> {
@@ -75,13 +105,42 @@ export class DemoPresentation {
             this.waiting.add(check); signal.addEventListener("abort", check, { once: true }); check();
         });
     }
-    private upload(buffer: TextBuffer, job: number, from: number): void {
+    private prepare(capture: DocumentSnapshot, job: number): void {
         if (this.disposed || job !== this.job) return;
-        if (from === 0) this.worker?.postMessage({ job, kind: "start" });
-        const to = Math.min(buffer.length, from + 65536);
-        this.worker?.postMessage({ job, kind: "chunk", text: buffer.slice(from, to) });
-        if (to === buffer.length) { this.worker?.postMessage({ job, kind: "finish", options: this.options }); return; }
-        this.timer = window.setTimeout(() => { this.timer = undefined; this.upload(buffer, job, to); }, 0);
+        const previous = this.synchronized;
+        if (!previous || previous.capture.key !== capture.key || previous.capture.id !== capture.id) {
+            this.beginUpload(capture, job, { from: 0, to: 0, insertFrom: 0, insertTo: capture.buffer.length }); return;
+        }
+        const planner = this.planner = new BufferChangeCursor(previous.capture.buffer, capture.buffer);
+        const advance = () => {
+            if (this.disposed || job !== this.job) return;
+            try {
+                const step = planner.next();
+                if (step.done) { planner.dispose(); this.planner = undefined; this.beginUpload(capture, job, step.result!, previous.job); }
+                else this.timer = window.setTimeout(() => { this.timer = undefined; advance(); }, 0);
+            } catch { this.fail(); }
+        };
+        advance();
+    }
+    private beginUpload(capture: DocumentSnapshot, job: number, span: BufferChangeSpan, base?: number): void {
+        try {
+            this.post({ kind: "start", job, ...(base === undefined ? {} : { change: { base, from: span.from, to: span.to } }) });
+            this.uploading = job; this.upload(capture, job, span.insertFrom, span.insertTo);
+        } catch { this.fail(); }
+    }
+    private upload(capture: DocumentSnapshot, job: number, from: number, end: number): void {
+        if (this.disposed || job !== this.job) return;
+        try {
+            const to = Math.min(end, from + 65536);
+            if (to > from) this.post({ job, kind: "chunk", text: capture.buffer.slice(from, to) });
+            if (to === end) {
+                this.post({ job, kind: "finish", options: { ...this.options, emit: this.emit } }); this.uploading = undefined;
+                // Worker messages are ordered. The next delta may build on a queued finish,
+                // even if its analysis reply is late or no longer belongs to the visible job.
+                this.synchronized = { capture, job }; return;
+            }
+            this.timer = window.setTimeout(() => { this.timer = undefined; this.upload(capture, job, to, end); }, 0);
+        } catch { this.fail(); }
     }
     readonly decorate = (line: PresentedLine): readonly InlineDecoration[] => {
         const result = this.colors.decorate(line);
@@ -94,12 +153,13 @@ export class DemoPresentation {
         return result;
     };
     retry(): void {
-        if (this.disposed) return;
+        if (this.disposed || this.plain) return;
+        this.cancelWork(); this.synchronized = undefined;
         this.worker?.terminate(); this.status = "starting"; this.start();
         const capture = this.capture; this.capture = undefined; if (capture) this.update(capture, this.plain);
     }
     dispose(): void {
-        this.disposed = true; this.job++; if (this.timer !== undefined) window.clearTimeout(this.timer);
+        this.disposed = true; this.job++; this.cancelWork(); this.synchronized = undefined;
         this.worker?.terminate(); this.worker = undefined; this.capture = undefined; this.colors.clear(); this.editing.clear(); this.search = undefined; this.diagnostics = undefined;
         this.foldRanges = undefined; this.notify();
     }

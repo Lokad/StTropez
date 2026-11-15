@@ -11,6 +11,20 @@ The [GitHub Pages build](demo-static.md) substitutes an example-owned browser wo
 using the same compiler and public LSP clients. It needs no Node service; the local route below
 retains its WebSocket/stdio integration and qualification.
 
+The syntax worker retains one language service and versioned snapshots. After the initial
+document upload, the host uses the public `BufferChangeCursor` to send a bounded replacement
+span in chunks; incomplete uploads cannot change the worker's committed document. File/session
+changes seed fresh text, and worker retry starts a fresh session. Compiler snapshots supply
+the direct previous version's change range without retaining an unbounded text history;
+older compiler caches safely reparse. Classification still covers the whole source in the worker.
+
+JavaScript is emitted from that service only while its panel is visible. Hidden/Problems/Changes
+views continue syntax colors and editing rules without emitting JavaScript. Reopening output
+requests the current version without uploading unchanged source. An emission already executing
+in a worker cannot be interrupted; obsolete replies remain excluded by worker/job identity.
+The host-language samples release their unused syntax worker. These changes stay in the demo;
+they add no library API or runtime dependency.
+
 The Code menu exposes line/block comments, indentation and two/four-space or tab settings.
 The same public configuration serves the source and comparison views. TypeScript Enter adds
 indentation after opening brackets and separates a matching closer. Quotes/brackets can surround
