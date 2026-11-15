@@ -61,11 +61,23 @@ export class HostRenameTools {
         return true;
     }
     private editCount(job: Job): number { return job.workspaceEdit?.documents.reduce((count, change) => count + change.edits.length, 0) ?? job.locations.length; }
+    private editableTargets(job: Job): boolean {
+        const seen = new Set<string>();
+        const editable = (id: string) => {
+            if (seen.has(id)) return true; seen.add(id);
+            const metadata = this.workspace.resourceForDocument(id as DocumentId).metadata.getSnapshot();
+            return metadata.capabilities.edit.includes("human") && metadata.capabilities.edit.includes("host") && metadata.editLock === null;
+        };
+        return job.workspaceEdit ? job.workspaceEdit.documents.every(change => !change.edits.length || editable(change.target.document.documentId))
+            : job.locations.every(at => editable(at.document));
+    }
     private publish(patch: Partial<RenameSnapshot> = {}): void {
         const state = { ...this.cell.get(), ...patch }, job = this.job;
+        const current = !!job?.ready && this.current(job), editable = current && this.editableTargets(job);
         this.cell.set({ ...state, available: !!this.active && this.available(this.active), connected: this.backend?.snapshot().connected ?? this.client?.snapshot().connected ?? false, disconnected: this.disconnected,
             pending: !!job && !job.ready, token: job?.capture.input.id ?? null, count: job ? this.editCount(job) : 0,
-            canApply: !!job?.ready && this.current(job) && this.validName(state.name) && (this.usesLsp ? this.editCount(job) > 0 : state.name !== job.capture.input.symbol) });
+            message: state.status === "ready" && current && !editable ? "A captured source is read-only or locked; this preview cannot be applied." : state.message,
+            canApply: editable && this.validName(state.name) && (this.usesLsp ? this.editCount(job) > 0 : state.name !== job.capture.input.symbol) });
     }
     private drop(): void { const client = this.client, backend = this.backend; this.client = undefined; this.backend = undefined; client?.dispose(); backend?.dispose(); }
     private release(): void {
@@ -185,6 +197,7 @@ export class HostRenameTools {
     apply(token: number | null): void {
         const job = this.job, name = this.cell.get().name;
         if (!job?.ready || token !== job.capture.input.id || !this.current(job) || !this.validName(name) || !this.editCount(job) || !this.usesLsp && name === job.capture.input.symbol) { this.publish({ message: "Use a fresh complete preview and a valid new name." }); return; }
+        if (!this.editableTargets(job)) { this.publish(); return; }
         this.publishing = true;
         try {
             let documents: readonly DocumentSnapshot[];

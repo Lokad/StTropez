@@ -39,6 +39,9 @@ Pending input/composition/table conversion prevents capture. Editing, changed se
 name changes, authority changes, remount and expired session/capability generations cancel or
 expire the preview. Idle disconnection makes a fresh reconnect available; it never applies or
 automatically replays a rename. Cancellation during initial synchronization also releases its work.
+Read-only or locked targets remain inspectable in a fresh preview, with an explicit explanation
+and Apply disabled. Only targets with actual edits affect this availability; unrelated read-only
+project resources do not block it. The controller and transaction both recheck authority on application.
 
 The preview shows each provider range and its actual old/new text, including additional edits that
 are not identifier replacements. Display text is abbreviated after 256 units with its full length;

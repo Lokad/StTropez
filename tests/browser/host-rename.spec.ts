@@ -72,7 +72,10 @@ for (const host of ["plain", "react"]) {
         await select(p); await preview(p); const before = await snapshot(p), companion = before.bindings.navigation.companion!;
         await p.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion); await waitForRename(p);
         expect((await snapshot(p)).bindings.rename.state.canApply).toBe(false); await exact(p, raw);
-        await select(p); await preview(p); await button(p, "Apply captured rename").click(); await waitForRename(p);
+        await select(p); await preview(p); await expect(button(p, "Apply captured rename")).toBeDisabled();
+        await expect(p.getByLabel("Rename status", { exact: true })).toContainText("read-only or locked");
+        await button(p, "Apply captured rename").dispatchEvent("click"); await waitForRename(p);
+        expect((await snapshot(p)).bindings.rename.state.status).toBe("ready"); expect((await snapshot(p)).bindings.rename.state.locations.length).toBeGreaterThan(0);
         await exact(p, raw); expect((await snapshot(p)).history.undoDepth).toBe(before.history.undoDepth); expect(await p.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("const catalogue = 1;\r\ncatalogue;\r\n");
         await p.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
         for (const mode of ["selection", "typing", "lease", "remount"] as const) {

@@ -48,7 +48,13 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP rename host`, 
         await seed(page); await button(page, "Add navigation companion").click(); const before = await snapshot(page), companion = before.bindings.navigation.companion!;
         await page.evaluate(() => window.hostFixture.faultRenameNext("malformed")); await preview(page); expect((await snapshot(page)).bindings.rename.state).toMatchObject({ status: "failed", count: 0, canApply: false }); await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
         await preview(page); await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion); await waitForRename(page); await expect(button(page, "Apply captured rename")).toBeDisabled();
-        await preview(page); await button(page, "Apply captured rename").click(); await waitForRename(page); await exact(page, raw); expect((await snapshot(page)).bindings.rename.state.status).toBe("failed"); expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("const catalogue = 1;\r\ncatalogue;\r\n"); await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
+        await preview(page); await expect(button(page, "Apply captured rename")).toBeDisabled();
+        await expect(page.getByLabel("Rename status", { exact: true })).toContainText("read-only or locked");
+        // A programmatic click must not bypass the captured permission policy either.
+        await button(page, "Apply captured rename").dispatchEvent("click"); await waitForRename(page); await exact(page, raw);
+        expect((await snapshot(page)).bindings.rename.state.status).toBe("ready"); expect((await snapshot(page)).history).toEqual(before.history);
+        expect(await targets(page).count()).toBeGreaterThan(0);
+        expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("const catalogue = 1;\r\ncatalogue;\r\n"); await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
         for (const mode of ["selection", "typing", "remount"] as const) {
             await select(page, raw.indexOf("catalogue") + 2); await name(page).fill("inventory"); await page.evaluate(() => window.hostFixture.setRenameDelay(1000)); await button(page, "Prepare rename preview").click(); expect((await snapshot(page)).bindings.rename.state.pending).toBe(true);
             if (mode === "selection") await select(page, raw.indexOf("catalogue") + 3);
