@@ -36,6 +36,10 @@ contracts and release their reference display resources on refresh or teardown.
 | Request ID | One pending operation | Until completed, cancelled or superseded |
 | Proposal revision | One offered change against a specified baseline | Until explicitly acknowledged or retired |
 
+Resource keys are indexed by their exact scope/resource/variant components. Duplicate checks and
+generated-key collision checks avoid traversing the resource inventory. Only successful creation
+and release change membership; failed validation or rejected release leave ownership unchanged.
+
 The scaffold implements resource/document/tab/generation identities, guarded operations,
 save receipts, captured Run inputs and versioned agent association/proposal/acknowledgement.
 Shared history survives tab/view lifecycles. Stable document-view handles map selections across

@@ -56,6 +56,65 @@ test("a non-text panel traverses load failure, retry, ownership and release with
     workspace.releaseResource(form.id); assert.equal(form.getSnapshot().state, "released");
 });
 
+test("resource keys retain exact component identity through failed creation and release", () => {
+    const workspace = new Workspace(), foreign = new Workspace();
+    const keys = [
+        { scope: "a:b", resource: "c", variant: "d" }, { scope: "a", resource: "b:c", variant: "d" },
+        { scope: "a", resource: "b", variant: "c:d" }, { scope: "a\0b", resource: "c", variant: "d" },
+        { scope: "a", resource: "b\0c", variant: "d" }, { scope: "", resource: "", variant: "" },
+        { scope: "__proto__", resource: '["x", "y"]', variant: "\ud800" },
+        { scope: "__proto__", resource: '["x", "y"]', variant: "\ufffd" },
+    ];
+    for (const key of keys) {
+        const handle = workspace.createResource(key, "Panel", { value: 0 });
+        assert.throws(() => workspace.createTextResource({ ...key }, "Duplicate", { value: "" }), /already exists/);
+        foreign.createTextResource(key, "Independent", { value: "" });
+        assert.deepEqual(handle.metadata.getSnapshot().key, key);
+    }
+    const key = { scope: "lifecycle", resource: "item", variant: "working" }, before = workspace.getSnapshot();
+    assert.throws(() => workspace.createResource(key, "Bad value", { value: NaN }), TypeError);
+    assert.throws(() => workspace.createResource(key, "Bad permissions", { value: 0 }, { edit: ["bad" as "human"], save: true, run: false }), TypeError);
+    assert.equal(workspace.getSnapshot(), before);
+    const handle = workspace.createResource(key, "Valid", { value: 0 }), capturedKey = { ...key }, target = workspace.captureResource(handle.id);
+    key.resource = "mutated";
+    assert.deepEqual(handle.metadata.getSnapshot().key, capturedKey); assert.ok(Object.isFrozen(handle.metadata.getSnapshot().key));
+    const lease = workspace.acquire(handle.id);
+    assert.throws(() => workspace.releaseResource(handle.id), /leases/); lease.release();
+    workspace.updateResource(handle, { expectedRevision: 0, value: 1, origin: "human" });
+    assert.throws(() => workspace.releaseResource(handle.id), /discard/);
+    assert.throws(() => workspace.createResource(capturedKey, "Still owned"), /already exists/);
+    workspace.releaseResource(handle.id, true);
+    const replacement = workspace.createResource(capturedKey, "Replacement", { value: 2 });
+    assert.notEqual(replacement.id, handle.id); assert.equal(workspace.resolveResource(target), undefined);
+    assert.equal(handle.getSnapshot().state, "released");
+
+    const generated = new Workspace();
+    // The first panel consumes ID 1; the next generated variant must skip the host-owned "2".
+    generated.createResource({ scope: "generated", resource: "item", variant: "2" }, "Host");
+    const next = generated.createResourceKey("generated", "item"), later = generated.createResourceKey("generated", "item");
+    assert.notEqual(next.variant, "2"); assert.notDeepEqual(next, later); assert.ok(Object.isFrozen(next));
+    generated.createResource(next, "Generated");
+});
+
+test("resource-key allocation and duplicate checks do not traverse the workspace inventory", t => {
+    const workspace = new Workspace();
+    for (let i = 0; i < 1000; i++) workspace.createResource({ scope: "many", resource: String(i), variant: "panel" }, "Panel");
+    const values = Map.prototype.values; let visits = 0;
+    Map.prototype.values = function () {
+        const iterator = values.call(this), next = iterator.next.bind(iterator);
+        iterator.next = (...args) => { const item = next(...args); if (!item.done) visits++; return item; };
+        return iterator;
+    };
+    try {
+        const key = workspace.createResourceKey("many", "new"), allocation = visits; visits = 0;
+        workspace.createResource(key, "New"); const creation = visits; visits = 0;
+        assert.throws(() => workspace.createResource({ ...key }, "Duplicate"), /already exists/);
+        const duplicate = visits;
+        t.diagnostic(JSON.stringify({ allocation, creation, duplicate }));
+        assert.deepEqual({ allocation, creation, duplicate }, { allocation: 0, creation: 0, duplicate: 0 });
+    } finally { Map.prototype.values = values; }
+});
+
 test("loads distinguish readiness, ignore superseded responses and retain cancelled ownership until settlement", () => {
     const workspace = new Workspace();
     const handle = workspace.createTextResource({ scope: "probe", resource: "loading", variant: "working" }, "Loading");

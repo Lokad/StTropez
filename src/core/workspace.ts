@@ -115,6 +115,8 @@ function capabilities(value: Capabilities): Capabilities {
 function sameMetadata(a: ResourceMetadata, b: ResourceMetadata): boolean {
     return (Object.keys(a) as (keyof ResourceMetadata)[]).every(key => a[key] === b[key]);
 }
+/** Tuple encoding preserves exact string components, including delimiters and empty values. */
+function resourceKeyIdentity(key: ResourceKey): string { return JSON.stringify([key.scope, key.resource, key.variant]); }
 function readySnapshot(metadata: ResourceMetadata, revision: number, value: SnapshotValue | TextBuffer): ResourceSnapshot<SnapshotValue> {
     if (!(value instanceof TextBuffer)) return Object.freeze({ state: "ready", revision, metadata, value });
     // History retains buffers, not these closures or their optional whole-text exports.
@@ -139,6 +141,7 @@ export class Workspace {
     private readonly history: TextHistory;
     private readonly scope: NotificationScope;
     private readonly records = new Map<ResourceId, ResourceRecord>();
+    private readonly resourceKeys = new Set<string>();
     private readonly handles = new WeakMap<object, ResourceRecord>();
     private readonly deferredReleases = new Map<ResourceId, boolean>();
     private readonly queuedReleases = new Set<ResourceId>();
@@ -177,9 +180,7 @@ export class Workspace {
     createResourceKey(scope: string, resource: string): ResourceKey {
         this.scope.assertWritable();
         let variant: string;
-        do { variant = String(++this.nextId); } while ([...this.records.values()].some(record => {
-            const key = record.metadata.get().key; return key.scope === scope && key.resource === resource && key.variant === variant;
-        }));
+        do { variant = String(++this.nextId); } while (this.resourceKeys.has(resourceKeyIdentity({ scope, resource, variant })));
         return Object.freeze({ scope, resource, variant });
     }
 
@@ -199,17 +200,16 @@ export class Workspace {
     }
     private create(key: ResourceKey, title: string, kind: "text" | "panel", loaded: LoadedResource<SnapshotValue> | LoadedTextBuffer | undefined, permissions: Capabilities): ResourceHandle<SnapshotValue> {
         this.scope.assertWritable();
-        for (const record of this.records.values()) {
-            const existing = record.metadata.get().key;
-            if (existing.scope === key.scope && existing.resource === key.resource && existing.variant === key.variant) throw new Error("Resource already exists in this workspace.");
-        }
+        key = Object.freeze({ ...key });
+        const identity = resourceKeyIdentity(key);
+        if (this.resourceKeys.has(identity)) throw new Error("Resource already exists in this workspace.");
         if (loaded && "buffer" in loaded && kind !== "text") throw new TypeError("Only text resources accept a TextBuffer.");
         const value = loaded === undefined || "buffer" in loaded ? undefined : snapshotValue(loaded.value);
         if (kind === "text" && value !== undefined && typeof value !== "string") throw new TypeError("Text resource requires a string.");
         const buffer = loaded && "buffer" in loaded ? loaded.buffer : kind === "text" && typeof value === "string" ? TextBuffer.from(value) : null;
         const id = `resource-${++this.nextId}` as ResourceId;
         const documentId = kind === "text" ? `document-${++this.nextId}` as DocumentId : null;
-        const metadata = Object.freeze({ id, key: Object.freeze({ ...key }), title, kind,
+        const metadata = Object.freeze({ id, key, title, kind,
             state: loaded === undefined ? "loading" as const : "ready" as const, dirty: false,
             serverVersion: loaded?.serverVersion ?? null, capabilities: capabilities(permissions), saveStatus: "idle" as const, failure: null, editLock: null });
         const state = new Store<ResourceSnapshot<SnapshotValue>>(loaded === undefined
@@ -222,7 +222,7 @@ export class Workspace {
             leases: new Set(), operations: new Map(), nextOperation: 0,
             saveReservations: 0, saving: null, editLease: null, agent: new Store(emptyAgentState, this.scope), proposalLease: null,
             agentRequest: null, acknowledgements: new Map() };
-        this.records.set(id, record); this.handles.set(handle, record);
+        this.records.set(id, record); this.resourceKeys.add(identity); this.handles.set(handle, record);
         if (documentId !== null) this.documents.set(documentId, record);
         const changed = new Set<Store<unknown>>();
         this.projectDocument(record, changed); this.publish(changed);
@@ -852,7 +852,7 @@ export class Workspace {
         if (state.metadata.dirty && !discard) throw new Error("Explicit discard is required to release unsaved work.");
         record.saved = undefined; record.buffer = null; record.savedBuffer = null; record.change = null;
         if (record.documentId !== null) this.history.forget(record.documentId);
-        this.records.delete(id); this.deferredReleases.delete(id);
+        this.records.delete(id); this.resourceKeys.delete(resourceKeyIdentity(state.metadata.key)); this.deferredReleases.delete(id);
         const changed = new Set<Store<unknown>>();
         record.agent.set(emptyAgentState, changed);
         this.setRecord(record, { state: "released", revision: state.revision,
