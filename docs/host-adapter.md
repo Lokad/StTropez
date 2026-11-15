@@ -39,6 +39,16 @@ The React mount key includes tab ID/generation so replacement remounts an expire
 Saved view state is keyed by view identity and document ID, preserving each resource's cursor
 without carrying another document's selection into it.
 
+Source and comparison views share one ordered tool registry. Each successful editor, widget,
+feature and listener attachment immediately registers its cleanup with an example-owned scope.
+If later setup fails, the scope releases acquired owners in reverse order; cleanup failures do
+not skip remaining owners and are reported alongside the setup error. Normal detach consumes
+the same scope once. Retained document views belong to `ViewBindings` across mount attempts.
+Each feature remains responsible for releasing its own partial setup if it throws before returning
+its cleanup. This ES2022 helper adds no runtime dependency or public library API.
+`tests/browser/host-attachment.spec.ts` injects source/reference attachment and cleanup failures,
+checks DOM, sessions, subscriptions and leases, then remounts and edits through the input surface.
+
 React owns each empty editor container and surrounding controls; StTropez owns its descendants.
 The plain host uses the same explicit mount/destroy boundary. Strict Mode's extra ref cycle must
 leave exactly two active views and the expected subscription count. `workspace.diagnostics()`

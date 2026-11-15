@@ -4,6 +4,7 @@ import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, Documen
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../editing/presentation.ts";
 import { comparisonSettled, editorSettled } from "../shared/readiness.ts";
+import { CleanupScope } from "../shared/cleanup-scope.ts";
 import { HostLanguageTools } from "./language.ts";
 import { hostLspFactories } from "../protocol/editor-provider.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
@@ -22,6 +23,7 @@ import type { InstructionViewState } from "./instruction-widget.ts";
 
 export type HostEditor = "native" | "candidate";
 type BoundEditor = MountedEditor & Readonly<{ metrics: () => null | ReturnType<EditingCandidate["snapshot"]> & Readonly<{ viewport: ViewportSnapshot }> }>;
+type ViewTool = Readonly<{ attach(id: string, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation): () => void }>;
 export function hostEditor(): HostEditor { return new URLSearchParams(location.search).get("editor") === "candidate" ? "candidate" : "native"; }
 
 /** Stable refs own editor descendants; the controller and resource IDs survive every detach. */
@@ -50,22 +52,20 @@ export class ViewBindings {
     readonly actions: HostActionsTools;
     readonly links: HostDocumentLinks;
     readonly colors: HostDocumentColors;
-    private detachReviewLanguage: (() => void) | undefined;
+    private readonly tools: readonly ViewTool[];
+    private reviewScope: CleanupScope | undefined;
     private referenceState: Readonly<{ baseline: ComparisonBaseline; state: ViewState }> | undefined;
     private reviewStatus: HTMLOutputElement | undefined;
-    private reviewListeners: AbortController | undefined;
     private readonly reviewTickets: ComparisonTicket[] = [];
     private readonly discardTickets: { ticket: ComparisonReversion; variantGeneration: number }[] = [];
     private referenceSerial = 0;
     private reviewResult = "No reference command";
-    private unwatchReference: (() => void) | undefined;
     private referenceGeneration = -1;
     private reviewScrollLinked = false;
     private reviewRowsAligned = false;
     readonly primary: (host: HTMLDivElement | null) => void;
     readonly secondary: (host: HTMLDivElement | null) => void;
     readonly comparison = (host: HTMLDivElement | null): void => {
-        this.unwatchReference?.(); this.unwatchReference = undefined;
         for (const ticket of this.reviewTickets.splice(0)) ticket.cancel();
         for (const { ticket } of this.discardTickets.splice(0)) ticket.cancel();
         if (this.review) {
@@ -75,65 +75,66 @@ export class ViewBindings {
             if (baseline && reference) this.referenceState = { baseline, state: reference.captureView() };
             if (this.review.controller.getSnapshot().working) this.retainState("comparison", this.review.working.view.documentId, this.review.working.captureView());
         }
-        this.detachReviewLanguage?.(); this.detachReviewLanguage = undefined;
-        this.review?.destroy(); this.review = undefined; this.reviewListeners?.abort(); this.reviewListeners = undefined;
-        this.reviewStatus?.remove(); this.reviewStatus = undefined;
+        const previous = this.reviewScope; this.reviewScope = undefined; previous?.dispose();
         if (!host) return;
-        this.reviewStatus = host.ownerDocument.createElement("output"); this.reviewStatus.setAttribute("aria-label", "Reference operation status");
-        this.reviewStatus.textContent = this.reviewResult; host.append(this.reviewStatus);
-        const publication = this.controller.comparisonReference.getSnapshot(), baseline = publication.baseline;
-        this.referenceGeneration = publication.generation;
-        const view = this.retainedView("comparison", this.controller.source.documentId);
-        const presentation = new EditingPresentation(), referencePresentation = new EditingPresentation();
-        this.review = mountTextComparison(host, this.controller.workspace, this.controller.viewTab("primary"),
-            baseline, { ariaLabel: "Source review", view, scrollLinked: this.reviewScrollLinked, rowsAligned: this.reviewRowsAligned, workingDecorate: presentation.decorate, baselineDecorate: referencePresentation.decorate });
-        const review = this.review, saveTarget = this.controller.workspace.captureTab(this.controller.viewTab("primary"));
-        const detachLanguage = this.language.attach("comparison", this.controller.viewTab("primary"), this.review.working, presentation);
-        const detachHover = this.hover.attach("comparison", this.controller.viewTab("primary"), this.review.working);
-        const detachPaste = this.tablePaste.attach("comparison", this.controller.viewTab("primary"), this.review.working);
-        const detachDomain = this.domain.attach("comparison", this.controller.viewTab("primary"), this.review.working, presentation);
-        const detachNavigation = this.navigation.attach("comparison", this.controller.viewTab("primary"), this.review.working);
-        const detachProject = this.project.attach("comparison", this.controller.viewTab("primary"), this.review.working);
-        const detachSignature = this.signature.attach("comparison", this.controller.viewTab("primary"), this.review.working);
-        const detachRename = this.rename.attach("comparison", this.controller.viewTab("primary"), this.review.working);
-        const detachActions = this.actions.attach("comparison", this.controller.viewTab("primary"), this.review.working);
-        const detachLinks = this.links.attach("comparison", this.controller.viewTab("primary"), this.review.working);
-        const detachColors = this.colors.attach("comparison", this.controller.viewTab("primary"), this.review.working, presentation);
-        let detachReferenceFind: (() => void) | undefined;
-        let resumeReferenceFind = false;
-        const reviewReference = review.reference;
-        const syncReferenceFind = () => {
-            const active = this.language.state.getSnapshot().view;
-            resumeReferenceFind = active === "reference" || resumeReferenceFind && active === null;
-            detachReferenceFind?.(); detachReferenceFind = undefined; referencePresentation.clear();
-            const value = reviewReference.getSnapshot();
-            if (value) {
-                const reference = review.controller.getSnapshot().baseline!;
-                detachReferenceFind = this.language.attachReferenceFind("reference", value.target, value.editor, referencePresentation, reference, saveTarget, resumeReferenceFind);
-                resumeReferenceFind = false;
-            }
-        };
-        let referenceSyncQueued = false, referenceSyncActive = true;
-        const stopReferenceFind = reviewReference.subscribe(() => {
-            if (referenceSyncQueued) return; referenceSyncQueued = true;
-            queueMicrotask(() => { referenceSyncQueued = false; if (referenceSyncActive) syncReferenceFind(); });
-        }); syncReferenceFind();
-        this.detachReviewLanguage = () => { referenceSyncActive = false; stopReferenceFind(); detachReferenceFind?.(); detachColors(); detachLinks(); detachActions(); detachRename(); detachSignature(); detachProject(); detachNavigation(); detachDomain(); detachPaste(); detachHover(); detachLanguage(); referencePresentation.clear(); };
-        const state = this.states.get("comparison")?.get(view.documentId);
-        if (state) this.review.working.restoreView(this.restoreState(state, view));
-        if (this.referenceState?.baseline.buffer === baseline.buffer && this.referenceState.baseline.version === baseline.version)
-            this.review.referenceEditor()?.restoreView(this.referenceState.state);
-        else this.referenceState = undefined;
-        const documentId = this.review.working.view.documentId;
-        this.reviewListeners = new AbortController();
-        this.review.working.input.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: this.reviewListeners.signal });
-        const working = this.review.working;
-        this.bindSaveShortcut(working.input, this.controller.viewTab("primary"), () => working.activity().composing, this.reviewListeners.signal);
-        review.element.addEventListener("keydown", event => {
-            const reference = review.referenceEditor();
-            if (reference && event.target === reference.input) this.handleSaveShortcut(event, reference.input, saveTarget, () => reference.activity().composing);
-        }, { signal: this.reviewListeners.signal });
-        this.unwatchReference = this.controller.comparisonReference.subscribe(() => this.updateReference());
+        const scope = new CleanupScope();
+        try {
+            // Destruction can emit recovery for unfinished input. Keep these listeners
+            // alive until the editor has released that input, including during rollback.
+            const listeners = new AbortController(); scope.defer(() => listeners.abort());
+            const status = host.ownerDocument.createElement("output"); status.setAttribute("aria-label", "Reference operation status");
+            status.textContent = this.reviewResult; host.append(status); this.reviewStatus = status;
+            scope.defer(() => { if (this.reviewStatus === status) this.reviewStatus = undefined; status.remove(); });
+            const publication = this.controller.comparisonReference.getSnapshot(), baseline = publication.baseline;
+            this.referenceGeneration = publication.generation;
+            const view = this.retainedView("comparison", this.controller.source.documentId);
+            const presentation = new EditingPresentation(), referencePresentation = new EditingPresentation();
+            const review = mountTextComparison(host, this.controller.workspace, this.controller.viewTab("primary"),
+                baseline, { ariaLabel: "Source review", view, scrollLinked: this.reviewScrollLinked, rowsAligned: this.reviewRowsAligned, workingDecorate: presentation.decorate, baselineDecorate: referencePresentation.decorate });
+            this.review = review;
+            scope.defer(() => { if (this.review === review) this.review = undefined; review.destroy(); });
+            const saveTarget = this.controller.workspace.captureTab(this.controller.viewTab("primary"));
+            this.attachTools(scope, "comparison", this.controller.viewTab("primary"), review.working, presentation);
+            scope.defer(() => referencePresentation.clear());
+            let detachReferenceFind: (() => void) | undefined;
+            let resumeReferenceFind = false;
+            const reviewReference = review.reference;
+            const syncReferenceFind = () => {
+                const active = this.language.state.getSnapshot().view;
+                resumeReferenceFind = active === "reference" || resumeReferenceFind && active === null;
+                detachReferenceFind?.(); detachReferenceFind = undefined; referencePresentation.clear();
+                const value = reviewReference.getSnapshot();
+                if (value) {
+                    const reference = review.controller.getSnapshot().baseline!;
+                    detachReferenceFind = this.language.attachReferenceFind("reference", value.target, value.editor, referencePresentation, reference, saveTarget, resumeReferenceFind);
+                    resumeReferenceFind = false;
+                }
+            };
+            let referenceSyncQueued = false, referenceSyncActive = true;
+            const stopReferenceFind = reviewReference.subscribe(() => {
+                if (referenceSyncQueued) return; referenceSyncQueued = true;
+                queueMicrotask(() => { referenceSyncQueued = false; if (referenceSyncActive) syncReferenceFind(); });
+            });
+            scope.defer(() => detachReferenceFind?.());
+            scope.defer(stopReferenceFind);
+            scope.defer(() => { referenceSyncActive = false; });
+            syncReferenceFind();
+            const state = this.states.get("comparison")?.get(view.documentId);
+            if (state) review.working.restoreView(this.restoreState(state, view));
+            if (this.referenceState?.baseline.buffer === baseline.buffer && this.referenceState.baseline.version === baseline.version)
+                review.referenceEditor()?.restoreView(this.referenceState.state);
+            else this.referenceState = undefined;
+            const documentId = review.working.view.documentId;
+            review.working.input.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
+            const working = review.working;
+            this.bindSaveShortcut(working.input, this.controller.viewTab("primary"), () => working.activity().composing, listeners.signal);
+            review.element.addEventListener("keydown", event => {
+                const reference = review.referenceEditor();
+                if (reference && event.target === reference.input) this.handleSaveShortcut(event, reference.input, saveTarget, () => reference.activity().composing);
+            }, { signal: listeners.signal });
+            scope.defer(this.controller.comparisonReference.subscribe(() => this.updateReference()));
+            this.reviewScope = scope;
+        } catch (error) { scope.rollback(error); }
     };
     private bindSaveShortcut(input: HTMLTextAreaElement, tabId: TabId, composing: () => boolean, signal: AbortSignal): void {
         const target = this.controller.workspace.captureTab(tabId);
@@ -229,6 +230,8 @@ export class ViewBindings {
         this.rename = new HostRenameTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.rename, reconnectProvider);
         this.signature = new HostSignatureTools(controller.workspace, canCapture, () => this.hover.dismiss(), lsp?.signature,
             () => { const provider = this.language.state.getSnapshot().provider; return !!provider && (provider.pending || provider.offerText !== null); }, reconnectProvider);
+        this.tools = [this.language, this.hover, this.tablePaste, this.domain, this.navigation, this.project,
+            this.signature, this.rename, this.actions, this.links, this.colors];
         this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.documentId) && !this.review?.working.activity().pendingInput
             && ![...this.mounted.values()].some(value => value.candidate?.activity().pendingInput),
             documentId => this.selections.get("primary")?.get(documentId) ?? this.selections.get("comparison")?.get(documentId) ?? this.selections.get("secondary")?.get(documentId));
@@ -292,42 +295,42 @@ export class ViewBindings {
             if (tab?.surface.kind !== "text") throw new Error("Text view requires a text tab.");
             const documentId = tab.surface.documentId;
             const view = this.retainedView(id, documentId);
-            const presentation = new EditingPresentation();
-            const surface = id === "primary" && this.editor === "candidate" ? host.ownerDocument.createElement("div") : host;
-            if (surface !== host) { surface.className = "host-instruction-source"; host.append(surface); }
-            const candidate = this.editor === "candidate" ? mountEditingCandidate(surface, workspace, tabId, { ariaLabel, view, decorate: presentation.decorate }) : undefined;
-            const lane = surface !== host ? host.ownerDocument.createElement("div") : undefined;
-            if (lane) { lane.className = "host-instruction-lane"; lane.hidden = true; host.append(lane); }
-            const instruction = lane && candidate ? mountInstructionWidget(host, lane, candidate, this.controller, tabId, this.instructionMemory) : undefined;
-            if (instruction) this.instructionMount = instruction;
-            const detachLanguage = candidate ? this.language.attach(id, tabId, candidate, presentation) : undefined;
-            const detachHover = candidate ? this.hover.attach(id, tabId, candidate) : undefined;
-            const detachPaste = candidate ? this.tablePaste.attach(id, tabId, candidate) : undefined;
-            const detachDomain = candidate ? this.domain.attach(id, tabId, candidate, presentation) : undefined;
-            const detachNavigation = candidate ? this.navigation.attach(id, tabId, candidate) : undefined;
-            const detachProject = candidate ? this.project.attach(id, tabId, candidate) : undefined;
-            const detachSignature = candidate ? this.signature.attach(id, tabId, candidate) : undefined;
-            const detachRename = candidate ? this.rename.attach(id, tabId, candidate) : undefined;
-            const detachActions = candidate ? this.actions.attach(id, tabId, candidate) : undefined;
-            const detachLinks = candidate ? this.links.attach(id, tabId, candidate) : undefined;
-            const detachColors = candidate ? this.colors.attach(id, tabId, candidate, presentation) : undefined;
-            const mounted: BoundEditor = candidate ? { element: candidate.input, view, captureView: candidate.captureView,
-                restoreView: candidate.restoreView, destroy: candidate.destroy,
-                metrics: () => ({ ...candidate.snapshot(), viewport: candidate.viewport.snapshot() }) }
-                : { ...mountTextEditor(host, workspace, tabId, { ariaLabel, view }), metrics: () => null };
-            const listeners = new AbortController();
-            mounted.element.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
-            this.bindSaveShortcut(mounted.element, tabId, () => candidate?.activity().composing ?? false, listeners.signal);
-            const editor: BoundEditor = { ...mounted, destroy: () => { try { instruction?.dispose(); if (this.instructionMount === instruction) this.instructionMount = undefined; detachColors?.(); detachLinks?.(); detachActions?.(); detachRename?.(); detachSignature?.(); detachProject?.(); detachNavigation?.(); detachDomain?.(); detachPaste?.(); detachHover?.(); detachLanguage?.(); mounted.destroy(); } finally { listeners.abort(); if (surface !== host) surface.remove(); } } };
-            const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView(this.restoreState(state, view));
-            this.mounted.set(id, { editor, documentId, candidate }); this.mounts++;
+            const scope = new CleanupScope();
+            try {
+                const listeners = new AbortController(); scope.defer(() => listeners.abort());
+                const presentation = new EditingPresentation();
+                const surface = id === "primary" && this.editor === "candidate" ? host.ownerDocument.createElement("div") : host;
+                if (surface !== host) { surface.className = "host-instruction-source"; host.append(surface); scope.defer(() => surface.remove()); }
+                const candidate = this.editor === "candidate" ? mountEditingCandidate(surface, workspace, tabId, { ariaLabel, view, decorate: presentation.decorate }) : undefined;
+                const mounted: BoundEditor = candidate ? { element: candidate.input, view, captureView: candidate.captureView,
+                    restoreView: candidate.restoreView, destroy: candidate.destroy,
+                    metrics: () => ({ ...candidate.snapshot(), viewport: candidate.viewport.snapshot() }) }
+                    : { ...mountTextEditor(host, workspace, tabId, { ariaLabel, view }), metrics: () => null };
+                scope.defer(mounted.destroy);
+                const lane = surface !== host ? host.ownerDocument.createElement("div") : undefined;
+                if (lane) { lane.className = "host-instruction-lane"; lane.hidden = true; host.append(lane); scope.defer(() => lane.remove()); }
+                const instruction = lane && candidate ? mountInstructionWidget(host, lane, candidate, this.controller, tabId, this.instructionMemory) : undefined;
+                if (instruction) {
+                    this.instructionMount = instruction;
+                    scope.defer(() => { if (this.instructionMount === instruction) this.instructionMount = undefined; instruction.dispose(); });
+                }
+                if (candidate) this.attachTools(scope, id, tabId, candidate, presentation);
+                mounted.element.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
+                this.bindSaveShortcut(mounted.element, tabId, () => candidate?.activity().composing ?? false, listeners.signal);
+                const editor: BoundEditor = { ...mounted, destroy: scope.dispose };
+                const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView(this.restoreState(state, view));
+                this.mounted.set(id, { editor, documentId, candidate }); this.mounts++;
+            } catch (error) { scope.rollback(error); }
         };
+    }
+    private attachTools(scope: CleanupScope, id: string, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation): void {
+        for (const tool of this.tools) scope.defer(tool.attach(id, tab, editor, presentation));
     }
     private detach(id: string): void {
         const mounted = this.mounted.get(id); if (!mounted) return;
         this.retainState(id, mounted.documentId, mounted.editor.captureView());
-        mounted.editor.destroy(); this.mounted.delete(id); this.destroys++;
-        this.controller.collectLoadedDocument();
+        try { mounted.editor.destroy(); }
+        finally { this.mounted.delete(id); this.destroys++; this.controller.collectLoadedDocument(); }
     }
     readonly anchorInstruction = (): void => {
         const current = this.mounted.get("primary"); if (!current?.candidate || current.documentId !== this.controller.source.documentId || !this.controller.canCaptureRecovery()) return;
