@@ -1,37 +1,49 @@
-import type { HostProjectTools } from "./project.ts";
+import type { HostProjectTools, ProjectSnapshot } from "./project.ts";
 import { actionTarget } from "./actions-panel.ts";
-export function projectActions(tools: HostProjectTools) {
-    const s = tools.state.getSnapshot(), unavailable = !s.available || s.disconnected || s.pending;
-    return [
-        { label: "Register provider review command", invoke: tools.register, disabled: unavailable || s.registered },
-        { label: "Unregister provider review command", invoke: tools.unregister, disabled: unavailable || !s.registered },
-        { label: "Request provider review edits", invoke: tools.requestEdits, disabled: unavailable || !s.registered || s.reconnectRequired },
-        { label: "Request provider workspace status", invoke: tools.requestStatus, disabled: unavailable || s.reconnectRequired },
-        { label: "Cancel workspace provider request", invoke: tools.cancel, disabled: !s.pending },
-        ...(tools.usesLsp ? [{ label: "Apply captured provider edits", invoke: () => tools.confirmReview(s.review?.token ?? null), disabled: !s.review?.canApply },
-            { label: "Decline captured provider edits", invoke: () => tools.declineReview(s.review?.token ?? null), disabled: !s.review },
-            { label: "Previous provider edits", invoke: () => tools.previousReviewPage(), disabled: !s.review || s.review.page === 0 },
-            { label: "Next provider edits", invoke: () => tools.nextReviewPage(), disabled: !s.review || (s.review.page + 1) * 64 >= s.review.count }] : []),
-        { label: "Disconnect workspace provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
-        { label: "Reconnect workspace provider", invoke: tools.reconnect, disabled: !s.disconnected && !s.reconnectRequired && s.status !== "failed" }
-    ] as const;
+type ProjectPanelTools = Pick<HostProjectTools, "usesLsp" | "register" | "unregister" | "requestEdits" | "requestStatus" | "cancel" | "confirmReview" | "declineReview" | "previousReviewPage" | "nextReviewPage" | "disconnect" | "reconnect" | "openChanged">;
+
+/** Captured decisions and lazy bounded lists shared by both host renderers. */
+export function projectPanelModel(tools: ProjectPanelTools, s: ProjectSnapshot) {
+    const unavailable = !s.available || s.disconnected || s.pending, review = s.review;
+    return {
+        title: "Workspace provider", status: { label: "Workspace provider status", text: s.message },
+        actions: [
+            { label: "Register provider review command", invoke: tools.register, disabled: unavailable || s.registered },
+            { label: "Unregister provider review command", invoke: tools.unregister, disabled: unavailable || !s.registered },
+            { label: "Request provider review edits", invoke: tools.requestEdits, disabled: unavailable || !s.registered || s.reconnectRequired },
+            { label: "Request provider workspace status", invoke: tools.requestStatus, disabled: unavailable || s.reconnectRequired },
+            { label: "Cancel workspace provider request", invoke: tools.cancel, disabled: !s.pending },
+            ...(tools.usesLsp ? [{ label: "Apply captured provider edits", invoke: () => tools.confirmReview(review?.token ?? null), disabled: !review?.canApply },
+                { label: "Decline captured provider edits", invoke: () => tools.declineReview(review?.token ?? null), disabled: !review },
+                { label: "Previous provider edits", invoke: () => tools.previousReviewPage(), disabled: !review || review.page === 0 },
+                { label: "Next provider edits", invoke: () => tools.nextReviewPage(), disabled: !review || (review.page + 1) * 64 >= review.count }] : []),
+            { label: "Disconnect workspace provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
+            { label: "Reconnect workspace provider", invoke: tools.reconnect, disabled: !s.disconnected && !s.reconnectRequired && s.status !== "failed" }
+        ],
+        review: { enabled: tools.usesLsp, visible: review !== null, identity: review, titleLabel: "Provider edit review", title: review?.label ?? "",
+            label: "Captured provider edits", start: (review?.page ?? 0) * 64 + 1, items: () => review?.notes.map(actionTarget) ?? [] },
+        changes: { label: "Provider changed resources", description: "Last applied provider edits", visible: s.changes.length > 0, disabled: s.pending,
+            identity: s.changes, items: () => s.changes.map(change => ({ key: change.document, label: `Open provider changes in ${change.title}`,
+                invoke: () => tools.openChanged(change.document) } as const)) },
+    } as const;
 }
 export function mountProjectPanel(host: HTMLElement, tools: HostProjectTools): () => void {
+    const initial = projectPanelModel(tools, tools.state.getSnapshot());
     const owner = host.ownerDocument, heading = owner.createElement("h2"), status = owner.createElement("output"), controls = owner.createElement("div"), changed = owner.createElement("ul"), description = owner.createElement("p");
-    heading.textContent = "Workspace provider"; status.setAttribute("aria-label", "Workspace provider status");
-    const previewTitle = owner.createElement("p"), preview = owner.createElement("ol"); previewTitle.setAttribute("aria-label", "Provider edit review"); preview.setAttribute("aria-label", "Captured provider edits");
-    const buttons = projectActions(tools).map(action => { const button = owner.createElement("button"); button.textContent = action.label; button.onclick = action.invoke; controls.append(button); return button; });
-    description.textContent = "Last applied provider edits"; changed.setAttribute("aria-label", "Provider changed resources");
-    host.replaceChildren(heading, status, controls, ...(tools.usesLsp ? [previewTitle, preview] : []), description, changed); let previous: ReturnType<HostProjectTools["state"]["getSnapshot"]>["changes"] | undefined, previousReview: unknown;
+    host.setAttribute("aria-label", initial.title); heading.textContent = initial.title; status.setAttribute("aria-label", initial.status.label);
+    const previewTitle = owner.createElement("p"), preview = owner.createElement("ol"); previewTitle.setAttribute("aria-label", initial.review.titleLabel); preview.setAttribute("aria-label", initial.review.label);
+    const buttons = initial.actions.map(action => { const button = owner.createElement("button"); button.textContent = action.label; button.onclick = action.invoke; controls.append(button); return button; });
+    description.textContent = initial.changes.description; changed.setAttribute("aria-label", initial.changes.label);
+    host.replaceChildren(heading, status, controls, ...(initial.review.enabled ? [previewTitle, preview] : []), description, changed); let previous: ProjectSnapshot["changes"] | undefined, previousReview: unknown;
     const render = () => {
-        const state = tools.state.getSnapshot(); status.textContent = state.message; for (const [i, action] of projectActions(tools).entries()) buttons[i]!.disabled = action.disabled;
-        for (const [i, action] of projectActions(tools).entries()) buttons[i]!.onclick = action.invoke;
-        previewTitle.hidden = !state.review; previewTitle.textContent = state.review?.label ?? "";
-        if (previousReview !== state.review) { previousReview = state.review; preview.start = (state.review?.page ?? 0) * 64 + 1; preview.replaceChildren(...state.review?.notes.map(note => { const li = owner.createElement("li"), pre = owner.createElement("pre"); pre.textContent = actionTarget(note); li.append(pre); return li; }) ?? []); }
-        if (previous !== state.changes) { previous = state.changes; changed.replaceChildren(...state.changes.map(c => { const item = owner.createElement("li"), button = owner.createElement("button");
-            button.textContent = `Open provider changes in ${c.title}`; button.onclick = () => tools.openChanged(c.document); item.append(button); return item; })); }
-        for (const button of changed.querySelectorAll("button")) button.disabled = state.pending;
-        description.hidden = !state.changes.length;
+        const model = projectPanelModel(tools, tools.state.getSnapshot()); status.textContent = model.status.text;
+        for (const [i, action] of model.actions.entries()) { buttons[i]!.disabled = action.disabled; buttons[i]!.onclick = action.invoke; }
+        previewTitle.hidden = !model.review.visible; previewTitle.textContent = model.review.title;
+        if (previousReview !== model.review.identity) { previousReview = model.review.identity; preview.start = model.review.start; preview.replaceChildren(...model.review.items().map(text => { const li = owner.createElement("li"), pre = owner.createElement("pre"); pre.textContent = text; li.append(pre); return li; })); }
+        if (previous !== model.changes.identity) { previous = model.changes.identity; changed.replaceChildren(...model.changes.items().map(change => { const item = owner.createElement("li"), button = owner.createElement("button");
+            button.textContent = change.label; button.onclick = change.invoke; item.append(button); return item; })); }
+        for (const button of changed.querySelectorAll("button")) button.disabled = model.changes.disabled;
+        description.hidden = !model.changes.visible;
     };
     const stop = tools.state.subscribe(render); render(); return () => { stop(); host.replaceChildren(); };
 }

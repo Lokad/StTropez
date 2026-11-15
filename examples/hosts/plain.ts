@@ -48,8 +48,8 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const language = document.createElement("section"); language.setAttribute("aria-label", "Language and find tools"); language.className = "host-language";
     const tablePaste = document.createElement("section"); tablePaste.className = "host-language"; tablePaste.setAttribute("aria-label", "Table paste tools");
     const domain = document.createElement("section"); domain.className = "host-language"; domain.setAttribute("aria-label", "Domain tools");
-    const navigation = document.createElement("section"); navigation.className = "host-language"; navigation.setAttribute("aria-label", "Symbol navigation");
-    const project = document.createElement("section"); project.className = "host-language"; project.setAttribute("aria-label", "Workspace provider");
+    const navigation = document.createElement("section"); navigation.className = "host-language";
+    const project = document.createElement("section"); project.className = "host-language";
     const rename = document.createElement("section"); rename.className = "host-language"; rename.setAttribute("aria-label", "Rename preview");
     const codeActions = document.createElement("section"); codeActions.className = "host-language"; codeActions.setAttribute("aria-label", "Code actions");
     const links = document.createElement("section"); links.className = "host-language"; links.setAttribute("aria-label", "Module document links");

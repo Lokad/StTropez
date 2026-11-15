@@ -38,8 +38,10 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP inspection/nav
         await expect(field(page, "Configuration path")).toBeFocused(); await expect(results(page)).toHaveText(["Navigation companion:1:7 · declaration"]);
         expect((await snapshot(page)).bindings.navigation.transport?.version).toBe("LSP3.17");
         const companion = (await snapshot(page)).bindings.navigation.companion!; expect((await snapshot(page)).bindings.views.every(view => view.documentId !== companion)).toBe(true);
+        await results(page).first().evaluate(node => { node.dataset.retained = "navigation-row"; });
         await results(page).first().click(); await waitForNavigation(page); await expect(field(page, "Secondary source")).toBeFocused(); expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")!.documentId).toBe(companion);
         await button(page, "Return to navigation origin").click(); await waitForNavigation(page); await expect(field(page)).toBeFocused(); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);
+        await expect(results(page).first()).toHaveAttribute("data-retained", "navigation-row");
         await page.evaluate(() => window.hostFixture.setNavigationDelay(0)); await button(page, "Find references").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(3);
         await page.getByRole("checkbox", { name: "Include declarations in references", exact: true }).uncheck(); await button(page, "Find references").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(2);
         expect((await snapshot(page)).source.id).toBe(before.source.id); expect((await snapshot(page)).source.revision).toBe(before.source.revision); expect((await snapshot(page)).history).toEqual(before.history);

@@ -10,8 +10,8 @@ import { installHostHarness } from "./harness.ts";
 import { HostLifecycle } from "./lifecycle.ts";
 import { findText, foldText, languageActions, languageToolsKey } from "./language-panel.ts";
 import { domainActions } from "./domain-panel.ts";
-import { navigationActions } from "./navigation-panel.ts";
-import { projectActions } from "./project-panel.ts";
+import { navigationPanelModel } from "./navigation-panel.ts";
+import { projectPanelModel } from "./project-panel.ts";
 import { documentColorActions, documentColorDescription, documentColorLabel, colorEditLabel } from "./document-colors-panel.ts";
 import { documentLinkActions, documentLinkDescription, documentLinkLabel, documentLinkDetails } from "./document-links-panel.ts";
 import { actionsControls, actionsDescriptionFor, actionChoiceLabel, actionTarget } from "./actions-panel.ts";
@@ -211,23 +211,22 @@ function RenameTools() {
         <ul aria-label="Renamed resources">{s.changes.map(c => <li key={c.document}><button disabled={s.token !== null} onClick={() => tools.openChanged(c.document)}>Open renamed changes in {c.title}</button></li>)}</ul></section>;
 }
 function ProjectTools() {
-    const tools = bindings.project, state = useObserved(tools.state);
-    return <section className="host-language" aria-label="Workspace provider"><h2>Workspace provider</h2>
-        <output aria-label="Workspace provider status">{state.message}</output>
-        <div>{projectActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
-        {state.review && <><p aria-label="Provider edit review">{state.review.label}</p><ol aria-label="Captured provider edits" start={state.review.page * 64 + 1}>{state.review.notes.map((note, index) => <li key={index}><pre>{actionTarget(note)}</pre></li>)}</ol></>}
-        {state.changes.length > 0 && <p>Last applied provider edits</p>}
-        <ul aria-label="Provider changed resources">{state.changes.map(c => <li key={c.document}><button disabled={state.pending} onClick={() => tools.openChanged(c.document)}>Open provider changes in {c.title}</button></li>)}</ul></section>;
+    const tools = bindings.project, model = projectPanelModel(tools, useObserved(tools.state));
+    return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2>
+        <output aria-label={model.status.label}>{model.status.text}</output>
+        <div>{model.actions.map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        {model.review.visible && <><p aria-label={model.review.titleLabel}>{model.review.title}</p><ol aria-label={model.review.label} start={model.review.start}>{model.review.items().map((text, index) => <li key={index}><pre>{text}</pre></li>)}</ol></>}
+        {model.changes.visible && <p>{model.changes.description}</p>}
+        <ul aria-label={model.changes.label}>{model.changes.items().map(change => <li key={change.key}><button disabled={model.changes.disabled} onClick={change.invoke}>{change.label}</button></li>)}</ul></section>;
 }
 function NavigationTools() {
-    const tools = bindings.navigation, state = useObserved(tools.state);
-    return <section className="host-language" aria-label="Symbol navigation"><h2>Symbol navigation</h2>
-        <output aria-label="Symbol navigation status">{state.message}</output>
-        <progress aria-label="Symbol navigation progress" hidden={state.status !== "pending"} max={Math.max(1, state.total)} value={state.work} />
-        <label><input type="checkbox" checked={state.includeDeclaration} onChange={event => tools.setIncludeDeclaration(event.currentTarget.checked)} />Include declarations in references</label>
-        <div>{navigationActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
-        <ul aria-label="Navigation results">{state.locations.map(note => <li key={`${state.token}:${note.ordinal}`}><button onClick={() => tools.open(state.token!, note.ordinal)}>
-            {note.title}:{note.line}:{note.column}{note.declaration ? " · declaration" : ""}</button></li>)}</ul></section>;
+    const tools = bindings.navigation, model = navigationPanelModel(tools, useObserved(tools.state));
+    return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2>
+        <output aria-label={model.status.label}>{model.status.text}</output>
+        <progress aria-label={model.progress.label} hidden={model.progress.hidden} max={model.progress.max} value={model.progress.value} />
+        <label><input type="checkbox" checked={model.declarations.checked} onChange={event => model.declarations.change(event.currentTarget.checked)} />{model.declarations.label}</label>
+        <div>{model.actions.map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        <ul aria-label={model.results.label}>{model.results.items().map(note => <li key={note.key}><button onClick={note.invoke}>{note.label}</button></li>)}</ul></section>;
 }
 function DomainTools() {
     const tools = bindings.domain, state = useObserved(tools.state);
