@@ -56,6 +56,19 @@ scroll extents. `--st-current-line` and `--st-current-line-border` set their col
 rulers, configuration is validated before mutation, must run outside Workspace notifications,
 and returns false after disposal. A matching boolean value schedules no work.
 
+`fontLigatures: true` on either mount enables the font's normal common/contextual ligatures
+through native CSS shaping. The default is false (`font-variant-ligatures: none`).
+`viewport.fontLigatures()` reads the policy; `configureFontLigatures(boolean)` changes it and
+invalidates existing font measurements and native caret/navigation geometry. It preserves the
+document, selection and view identity. Validation, notification and disposal rules match the
+other presentation settings; a matching value schedules no work.
+
+The selected font must provide the substitutions. Hosts can still override features through
+CSS `font-feature-settings`, whose feature-level values take precedence. The setting adds no
+font asset or shaping engine. A generated fixture with a known `fi` substitution qualifies
+actual glyph-width changes, interior carets, selection, hit testing, typing and undo across
+the supported browser engines; native IME/device qualification remains separate.
+
 The display caret follows the measured source position at scroll boundaries, including partly
 clipped rows. Its placement is independent of the bounded native input anchor, so keeping that
 anchor inside the viewport cannot shift the visible caret away from its character.

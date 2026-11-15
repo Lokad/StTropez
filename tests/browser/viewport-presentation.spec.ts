@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import type { Workspace, ResourceId, TabId } from "../../src/index.ts";
 import type { EditingCandidate, TextComparison } from "../../src/browser/index.ts";
+import { fontFixture } from "../fixtures/consumer/font-fixture.ts";
 
 type Fixture = { workspace: Workspace; editor: EditingCandidate; host: HTMLElement; tab: TabId; resource: ResourceId; comparison?: TextComparison };
 declare global { interface Window { presentationFixture: Fixture } }
@@ -21,6 +22,79 @@ test.beforeEach(async ({ page }) => {
     });
     await page.goto("/presentation-fixture/");
     await page.addStyleTag({ content: css });
+});
+
+test("ligature policy changes native shaping while preserving caret, selection, input and ownership", async ({ page }, info) => {
+    const initial = await page.evaluate(async bytes => {
+        const path = "/presentation-fixture/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { mountEditingCandidate } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const face = new FontFace("StLigatureFixture", new Uint8Array(bytes)); await face.load(); document.fonts.add(face);
+        const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "ligatures", variant: "text" }, "Ligatures", { value: "fi AB\nfi" });
+        const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "ligatures"), host = document.createElement("section");
+        host.style.cssText = "height:240px;width:600px;--st-font:StLigatureFixture;--st-font-size:40px"; document.body.append(host);
+        try { mountEditingCandidate(host, workspace, tab, { fontLigatures: "normal" as unknown as boolean }); throw new Error("Invalid ligatures accepted."); }
+        catch (error) { if (!(error instanceof TypeError)) throw error; }
+        if (host.childNodes.length || workspace.diagnostics().views) throw new Error("Invalid ligature mount leaked ownership.");
+        const editor = mountEditingCandidate(host, workspace, tab, { ariaLabel: "Ligature source" }), viewport = editor.viewport;
+        window.presentationFixture = { workspace, editor, host, tab, resource: resource.id };
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
+        const selection = editor.view.getSnapshot().selectionSet, child = host.querySelector('.st-viewport-row[data-line="0"]')!.firstChild!;
+        const sample = () => {
+            viewport.flush(); const row = host.querySelector('.st-viewport-row[data-line="0"]')!, range = document.createRange();
+            range.setStart(row.firstChild!, 0); range.setEnd(row.firstChild!, 2); const width = range.getBoundingClientRect().width;
+            const points = [0, 1, 2].map(offset => {
+                range.setStart(row.firstChild!, offset); range.collapse(true); const native = range.getClientRects()[0]!, point = viewport.coordsAt(offset)!;
+                return { offset, left: point.left, error: Math.abs(point.left - native.left), hit: viewport.hitTest(point.left, point.top + point.height / 2)?.offset };
+            });
+            return { enabled: viewport.fontLigatures(), css: getComputedStyle(row).fontVariantLigatures, width, points };
+        };
+        const off = sample(); viewport.configureFontLigatures(true); const on = sample();
+        viewport.configureFontLigatures(false); const restored = sample(); viewport.configureFontLigatures(true); const again = sample();
+        const observer = new MutationObserver(() => {}); observer.observe(viewport.element, { subtree: true, childList: true, attributes: true });
+        const renders = viewport.snapshot().renders; viewport.configureFontLigatures(true); viewport.flush();
+        const noOp = { mutations: observer.takeRecords().length, renders: viewport.snapshot().renders - renders, pending: viewport.activity().pending }; observer.disconnect();
+        let invalid = false; try { viewport.configureFontLigatures(null as unknown as boolean); } catch (error) { invalid = error instanceof TypeError; }
+        return { off, on, restored, again, noOp, invalid, enabled: viewport.fontLigatures(), sameChild: child === host.querySelector('.st-viewport-row[data-line="0"]')!.firstChild,
+            sameSelection: selection === editor.view.getSnapshot().selectionSet, revision: workspace.document(resource.documentId).revision };
+    }, Array.from(fontFixture({ ligatures: true })));
+    expect(initial).toMatchObject({ invalid: true, enabled: true, sameChild: true, sameSelection: true, revision: 0,
+        noOp: { mutations: 0, renders: 0, pending: false }, off: { enabled: false, css: "none" }, on: { enabled: true, css: "normal" } });
+    expect(initial.off.width).toBeCloseTo(24, 1); expect(initial.on.width).toBeCloseTo(20, 1);
+    expect(initial.restored).toEqual(initial.off); expect(initial.again).toEqual(initial.on);
+    for (const sample of [initial.off, initial.on]) {
+        expect(sample.points.map(point => point.hit)).toEqual([0, 1, 2]);
+        expect(sample.points[1]!.left).toBeGreaterThan(sample.points[0]!.left);
+        expect(sample.points[1]!.left).toBeLessThan(sample.points[2]!.left);
+        for (const point of sample.points) expect(point.error).toBeLessThan(1.01);
+    }
+    expect(initial.on.points[1]!.left).not.toBe(initial.off.points[1]!.left);
+    const source = page.getByRole("textbox", { name: "Ligature source", exact: true });
+    await source.press("Control+Home"); await source.press("ArrowRight");
+    expect(await page.evaluate(() => window.presentationFixture.editor.view.getSnapshot().selection.head)).toBe(1);
+    await source.press("A"); await expect(page.locator('.st-viewport-layer .st-viewport-row[data-line="0"]')).toHaveText("fAi AB");
+    await source.press("Control+z"); await expect(page.locator('.st-viewport-layer .st-viewport-row[data-line="0"]')).toHaveText("fi AB");
+    await source.press("Shift+ArrowRight");
+    expect(await page.evaluate(() => window.presentationFixture.editor.view.getSnapshot().selection)).toMatchObject({ anchor: 1, head: 2 });
+    await source.press("Backspace"); await expect(page.locator('.st-viewport-layer .st-viewport-row[data-line="0"]')).toHaveText("f AB");
+    await source.press("Control+z"); await expect(page.locator('.st-viewport-layer .st-viewport-row[data-line="0"]')).toHaveText("fi AB");
+    const selected = await page.evaluate(() => {
+        const { editor, workspace, host } = window.presentationFixture, viewport = editor.viewport;
+        editor.view.setSelection(workspace.document(editor.view.documentId).revision, { anchor: 0, head: 2 }); viewport.flush();
+        const row = host.querySelector('.st-viewport-row[data-line="0"]')!, range = document.createRange(); range.selectNodeContents(row.firstChild!);
+        const width = range.getBoundingClientRect().width, points = [0, 1, 2].map(offset => viewport.coordsAt(offset)!);
+        return { width, text: row.firstChild!.textContent, hits: points.map(point => viewport.hitTest(point.left, point.top + point.height / 2)?.offset) };
+    });
+    expect(selected).toMatchObject({ text: "fi", hits: [0, 1, 2] }); expect(selected.width).toBeCloseTo(20, 1);
+    await info.attach("ligature-selection", { body: await page.screenshot(), contentType: "image/png" });
+    const disposed = await page.evaluate(async () => {
+        const f = window.presentationFixture, viewport = f.editor.viewport;
+        f.editor.destroy(); const disabled = !viewport.fontLigatures(), rejected = !viewport.configureFontLigatures(true);
+        const path = "/presentation-fixture/", { mountEditingCandidate } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const second = mountEditingCandidate(f.host, f.workspace, f.tab, { fontLigatures: true }); second.viewport.flush();
+        const mounted = second.viewport.fontLigatures(), css = getComputedStyle(second.element).fontVariantLigatures; second.destroy();
+        return { disabled, rejected, mounted, css, nodes: f.host.childNodes.length, views: f.workspace.diagnostics().views };
+    });
+    expect(disposed).toEqual({ disabled: true, rejected: true, mounted: true, css: "normal", nodes: 0, views: 0 });
 });
 
 test("column rulers follow measured scroll/font/zoom without changing source geometry, extent or ownership", async ({ page }, info) => {

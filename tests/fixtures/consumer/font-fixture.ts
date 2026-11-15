@@ -44,7 +44,20 @@ function glyph(width: number, height: number, bottom = 0): Uint8Array {
     [0, width, 0, -width].forEach((value, i) => b.i16(18 + i * 2, value)); [bottom, 0, height, 0].forEach((value, i) => b.i16(26 + i * 2, value)); return b.data;
 }
 
-export function fontFixture(options: Readonly<{ advanceA?: number }> = {}): Uint8Array {
+/** One optional common ligature: f (4) + i (5) becomes glyph 6, with a distinct advance. */
+function ligatureTable(): Uint8Array {
+    return new FontBytes(80)
+        .u16(0, 1).u16(4, 10).u16(6, 30).u16(8, 44) // GSUB 1.0 header
+        .u16(10, 1).tag(12, "DFLT").u16(16, 8) // ScriptList
+        .u16(18, 4).u16(24, 0xffff).u16(26, 1) // Default LangSys, feature 0
+        .u16(30, 1).tag(32, "liga").u16(36, 8).u16(40, 1) // FeatureList, lookup 0
+        .u16(44, 1).u16(46, 4).u16(48, 4).u16(52, 1).u16(54, 8) // LookupList, type 4
+        .u16(56, 1).u16(58, 8).u16(60, 1).u16(62, 14) // LigatureSubst format 1
+        .u16(64, 1).u16(66, 1).u16(68, 4) // Coverage: f
+        .u16(70, 1).u16(72, 4).u16(74, 6).u16(76, 2).u16(78, 5).data; // LigatureSet: fi
+}
+
+export function fontFixture(options: Readonly<{ advanceA?: number; ligatures?: boolean }> = {}): Uint8Array {
     const head = new FontBytes(54).u32(0, 0x10000).u32(4, 0x10000).u32(12, 0x5f0f3cf5).u16(16, 3).u16(18, 1000).i16(40, 1000).i16(42, 850).u16(46, 8).i16(48, 2).i16(50, 1);
     const widths = [500, 250, options.advanceA ?? 600, 700, 400, 200, 500, 1000, 900, 0], metricCount = widths.length;
     const hhea = new FontBytes(36).u32(0, 0x10000).i16(4, 800).i16(6, -200).u16(10, 1000).i16(16, 1000).i16(18, 1).u16(34, metricCount);
@@ -63,5 +76,6 @@ export function fontFixture(options: Readonly<{ advanceA?: number }> = {}): Uint
         const loca = new FontBytes(44), glyf = new FontBytes(outlines.reduce((sum, data) => sum + data.length, 0)); let offset = 0;
         outlines.forEach((data, i) => { loca.u32(i * 4, offset); glyf.put(offset, data); offset += data.length; }); loca.u32(40, offset); tables.set("loca", loca.data); tables.set("glyf", glyf.data);
     }
+    if (options.ligatures) tables.set("GSUB", ligatureTable());
     return assembleFont(tables);
 }

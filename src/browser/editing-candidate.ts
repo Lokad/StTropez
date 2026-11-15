@@ -63,7 +63,7 @@ const emptyDecorations = Object.freeze([]);
 export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, tabId: TabId,
     options: Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; decorate?: LineDecorator; lineClass?: LineClass; language?: LanguageConfiguration;
         bracketMatching?: boolean | BracketMatchOptions; characterWarnings?: boolean | CharacterWarningOptions;
-        columnRulers?: readonly number[]; highlightCurrentLine?: boolean }> = {}): EditingCandidate {
+        columnRulers?: readonly number[]; highlightCurrentLine?: boolean; fontLigatures?: boolean }> = {}): EditingCandidate {
     let language = resolveLanguageConfiguration(options.language);
     const bracketOptions = options.bracketMatching === undefined || options.bracketMatching === false ? false
         : bracketMatchLimits(options.bracketMatching === true ? {} : options.bracketMatching);

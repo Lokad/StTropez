@@ -35,6 +35,8 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     configureColumnRulers: (columns: readonly number[]) => boolean;
     currentLineHighlight: () => boolean;
     configureCurrentLineHighlight: (enabled: boolean) => boolean;
+    fontLigatures: () => boolean;
+    configureFontLigatures: (enabled: boolean) => boolean;
     captureView: () => ViewState; restoreView: (state: ViewState) => void;
     scrollTo: (position: Readonly<{ top?: number; left?: number }>) => void;
     setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean;
@@ -81,10 +83,12 @@ export type RevealOptions = Readonly<{ horizontal?: "center" | "nearest"; vertic
 /** Bounded DOM view layer with local native text geometry. Native-device qualification remains separate. */
 export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId: TabId,
     options: Readonly<{ ariaLabel?: string; view?: DocumentView; overscanLines?: number; overscanUnits?: number; decorate?: LineDecorator; lineClass?: LineClass;
-        columnRulers?: readonly number[]; highlightCurrentLine?: boolean }> = {}): TextViewport {
+        columnRulers?: readonly number[]; highlightCurrentLine?: boolean; fontLigatures?: boolean }> = {}): TextViewport {
     let columns = resolveColumnRulers(options.columnRulers);
     let highlightCurrentLine = options.highlightCurrentLine === undefined ? false : options.highlightCurrentLine;
     if (typeof highlightCurrentLine !== "boolean") throw new TypeError("Current-line highlighting must be boolean.");
+    let fontLigatures = options.fontLigatures === undefined ? false : options.fontLigatures;
+    if (typeof fontLigatures !== "boolean") throw new TypeError("Font ligatures must be boolean.");
     const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
     if (!tab || tab.surface.kind !== "text") throw new Error("Expected a text surface.");
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId);
@@ -96,6 +100,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     const win = browserWindow;
     const root = owner.createElement("div"), spacer = owner.createElement("div"), layer = owner.createElement("div"), probeHost = owner.createElement("div"), probe = owner.createElement("span"), foldLayer = owner.createElement("div");
     root.className = "st-viewport"; root.tabIndex = 0; root.setAttribute("role", "region"); root.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
+    root.style.fontVariantLigatures = fontLigatures ? "normal" : "none";
     spacer.className = "st-viewport-spacer"; spacer.setAttribute("aria-hidden", "true");
     layer.className = "st-viewport-layer"; probe.className = "st-viewport-measure"; probe.textContent = "M".repeat(64); probe.setAttribute("aria-hidden", "true");
     probeHost.className = "st-viewport-measure-host"; probeHost.setAttribute("aria-hidden", "true"); probeHost.append(probe);
@@ -618,6 +623,13 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             if (highlightCurrentLine === enabled) return true;
             highlightCurrentLine = enabled; clearPreparedRows(); commandGeometry = undefined; schedule(); return true;
         },
+        fontLigatures: () => fontLigatures,
+        configureFontLigatures: enabled => {
+            notifications.assertWritable(); if (disposed) return false;
+            if (typeof enabled !== "boolean") throw new TypeError("Font ligatures must be boolean.");
+            if (fontLigatures === enabled) return true;
+            fontLigatures = enabled; root.style.fontVariantLigatures = enabled ? "normal" : "none"; invalidate(); return true;
+        },
         prepareNavigationRows,
         invalidate,
         coordsAt: coordinates,
@@ -724,6 +736,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             if (disposed) return; disposed = true; activitySnapshot = undefined; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
             rulers.clear(); columns = resolveColumnRulers();
             clearCurrentLine(); highlightCurrentLine = false;
+            fontLigatures = false;
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); rowSources.clear(); rowSourceRevision = null; paddingRows.clear(); comparisonRows = undefined; renderedAlignmentId = null; geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             painted = undefined; commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove(); clearPreparedRows();
             navigationBatches = 0; maxNavigationBatchRows = 0;
