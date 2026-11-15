@@ -25,6 +25,11 @@ export class TextHistory {
     private readonly past = new Map<string, HistoryEntry[]>();
     private readonly future = new Map<string, HistoryEntry[]>();
     private readonly changed = new Set<string>();
+    // Insertion order follows entry IDs; extending a group replaces its retained entry.
+    private readonly retained = new Map<HistoryEntry, number>();
+    private steps = 0;
+    private units = 0;
+    private selections = 0;
     private nextId = 0;
     private readonly last = new Map<string, HistoryEntry>();
     private readonly limits: Readonly<{ groups: number; changes: number; units: number; selections: number }>;
@@ -39,8 +44,7 @@ export class TextHistory {
         const ids = Object.freeze([...this.changed]); this.changed.clear(); return ids;
     }
     diagnostics(): Readonly<{ groups: number; changes: number; changedUnits: number }> {
-        const entries = [...new Set([...this.past.values(), ...this.future.values()].flat())];
-        return Object.freeze({ groups: entries.length, changes: entries.reduce((sum, entry) => sum + entry.steps, 0), changedUnits: entries.reduce((sum, entry) => sum + entry.units, 0) });
+        return Object.freeze({ groups: this.retained.size, changes: this.steps, changedUnits: this.units });
     }
     peek(id: string, direction: "undo" | "redo"): HistoryEntry | undefined { return (direction === "undo" ? this.past : this.future).get(id)?.at(-1); }
     available(entry: HistoryEntry, direction: "undo" | "redo"): boolean {
@@ -63,10 +67,12 @@ export class TextHistory {
                 selection: old.selection && first.selection ? Object.freeze({ ...old.selection, after: first.selection.after }) : null });
             const entry = Object.freeze({ ...previous, id: ++this.nextId, changes: Object.freeze([change]), steps: previous.steps + 1, units: previous.units + units });
             this.past.get(first.documentId)![this.past.get(first.documentId)!.length - 1] = entry; this.last.set(first.documentId, entry);
+            this.discard(previous); this.retain(entry);
         } else {
             const entry = Object.freeze({ id: ++this.nextId, origin, kind, group: group ?? null, changes: Object.freeze([...changes]), steps: 1, units });
             for (const change of changes) { this.stack(this.past, change.documentId).push(entry); this.changed.add(change.documentId); }
             for (const change of changes) this.last.set(change.documentId, entry);
+            this.retain(entry);
         }
         this.trim();
     }
@@ -85,6 +91,7 @@ export class TextHistory {
             const current = pending.pop()!; if (visited.has(current)) continue; visited.add(current);
             for (const stack of [this.past.get(current), this.future.get(current)]) for (const entry of stack ?? []) {
                 entry.changes.forEach(change => pending.push(change.documentId));
+                this.discard(entry);
             }
         }
         visited.forEach(current => {
@@ -101,22 +108,27 @@ export class TextHistory {
             const id = pending.pop()!; if (visited.has(id)) continue; visited.add(id);
             const future = this.future.get(id);
             if (future?.length) this.changed.add(id);
-            for (const entry of future ?? []) entry.changes.forEach(change => pending.push(change.documentId));
+            for (const entry of future ?? []) { entry.changes.forEach(change => pending.push(change.documentId)); this.discard(entry); }
             this.future.delete(id);
         }
     }
+    private retain(entry: HistoryEntry): void {
+        const selections = selectionRanges(entry.changes);
+        this.retained.set(entry, selections); this.steps += entry.steps; this.units += entry.units; this.selections += selections;
+    }
+    private discard(entry: HistoryEntry): void {
+        const selections = this.retained.get(entry); if (selections === undefined) return;
+        this.retained.delete(entry); this.steps -= entry.steps; this.units -= entry.units; this.selections -= selections;
+    }
     private trim(): void {
-        while (true) {
-            const entries = [...new Set([...this.past.values(), ...this.future.values()].flat())].sort((a, b) => a.id - b.id);
-            const steps = entries.reduce((total, entry) => total + entry.steps, 0), units = entries.reduce((total, entry) => total + entry.units, 0);
-            const selections = entries.reduce((total, entry) => total + selectionRanges(entry.changes), 0);
-            if (entries.length <= this.limits.groups && steps <= this.limits.changes && units <= this.limits.units && selections <= this.limits.selections) return;
-            const entry = entries[0]!;
+        while (this.retained.size > this.limits.groups || this.steps > this.limits.changes || this.units > this.limits.units || this.selections > this.limits.selections) {
+            const entry = this.retained.keys().next().value!;
             for (const change of entry.changes) {
                 const stack = this.past.get(change.documentId), index = stack?.indexOf(entry) ?? -1;
                 if (index >= 0) { stack!.splice(index, 1); this.changed.add(change.documentId); }
             }
             if (entry.changes.some(change => this.future.get(change.documentId)?.includes(entry))) this.clearFuture(entry.changes.map(change => change.documentId));
+            this.discard(entry);
             entry.changes.forEach(change => { if (this.last.get(change.documentId) === entry) this.seal(change.documentId); });
         }
     }

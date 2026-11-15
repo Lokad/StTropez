@@ -93,6 +93,11 @@ but clears undo/redo for its affected/linked documents because it cannot be reta
 unrelated document histories remain. `diagnostics().history` reports groups, transactions and
 changed units without content.
 
+Retention totals and eviction order are maintained when entries are added, extended or removed.
+Undo/redo movement retains the same entry and totals. Admission without eviction and history
+diagnostics do not traverse unrelated entries. Eviction still visits affected document stacks;
+linked clearing follows the connected units it removes.
+
 These are operation/text-unit bounds, not a byte-accurate heap limit. A surviving piece can
 reference a larger backing; current content, saved baselines, pending operations and snapshots
 retained by a host have their own lifetimes. Long-session compaction, GC/DOM measurements and
