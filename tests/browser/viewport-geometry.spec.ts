@@ -88,7 +88,7 @@ test("viewport retains valid native geometry and expires changed captures withou
     for (const [index, step] of result.steps.entries()) {
         expect(step.error, step.name).toBeLessThanOrEqual(1.5); expect(step.revision).toBe(index < 5 ? 0 : 1);
         if (index === 1 || index === 2) expect(step.queries, step.name).toBe(0);
-        else { expect(step.queries, step.name).toBeGreaterThan(0); expect(step.queries, step.name).toBeLessThanOrEqual(1001); }
+        else { expect(step.queries, step.name).toBeGreaterThan(0); expect(step.queries, step.name).toBeLessThanOrEqual(7); }
     }
     expect(result.boundaries.map(point => point.offset)).toEqual([0, 2, 3, 4, 6, 7]);
     expect(result.boundaries[1]!.left).toBe(result.boundaries[2]!.left);

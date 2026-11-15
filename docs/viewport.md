@@ -56,8 +56,16 @@ inline changes leave the outer width unchanged. Changed children, removed rows, 
 and explicit `invalidate()` calls discard their geometry. Hosts should invalidate after external
 style or decoration changes. Geometry owns one reusable native Range; it retains copied rectangle
 results, never a Range per character. Coordinate lookup uses the indexed source line, including
-CRLF, empty final rows and collapsed-fold projection. The first query still measures the whole
-bounded row; this cache does not make glyph measurement lazy or skip unchanged viewport paints.
+CRLF, empty final rows and collapsed-fold projection.
+
+A caret-point query measures its glyph and the visible neighbors needed to reconcile their
+facing edges. Invisible clusters inherit corrected logical-neighbor edges before their fallback
+is cached. Later full preparation preserves those returned points. Bidi/grapheme ordering still
+covers the bounded row, and finding neighbors through a long zero-width run can scan that run;
+this is not a constant-work guarantee for arbitrary text. Hit testing, visual navigation and
+visual-edge queries still prepare the full bounded row. A single point in the 500-character
+plain-row regression needs at most seven native rectangle queries; repeated valid points reuse
+the results. No native shaping or affinity rule is replaced.
 
 Inline painting validates and clips decoration ranges once, sorts their boundaries, and sweeps
 the active ranges in host-supplied order. Overlapping and duplicate classes retain that order;

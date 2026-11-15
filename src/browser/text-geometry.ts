@@ -10,9 +10,12 @@ export function rowGeometry(element: HTMLElement, from: number, revision: number
     const iterator = owner.createTreeWalker(element, NodeFilter.SHOW_TEXT);
     for (let node = iterator.nextNode(); node; node = iterator.nextNode()) nodes.push(node as Text);
     const styled = [element, ...new Set(nodes.map(node => node.parentElement!).filter(parent => parent !== element))];
+    const clusters = new Int32Array(text.length);
+    for (let index = 0; index + 1 < boundaries.length; index++) clusters.fill(index, boundaries[index]!, boundaries[index + 1]!);
     let nativeRange: Range | undefined;
     type Glyph = Readonly<{ start: CaretRectangle; end: CaretRectangle; rtl: boolean; nativeStart: boolean; nativeEnd: boolean }>;
-    let bounds: DOMRect | undefined, glyphs = new Map<number, Glyph>(), boxes = new Map<number, readonly DOMRect[]>(), raw = new Map<number, readonly DOMRect[]>(), levels: readonly (number | null)[] = [], order: readonly number[] = [], styleKey = "", flow = 1, prepared = false;
+    let bounds: DOMRect | undefined, glyphs = new Map<number, Glyph>(), boxes = new Map<number, readonly DOMRect[]>(), raw = new Map<number, readonly DOMRect[]>(), levels: readonly (number | null)[] = [], order: number[] = [], styleKey = "", flow = 1, prepared = false;
+    const positions = new Int32Array(boundaries.length - 1), corrected = new Set<number>();
     const ensure = () => {
         const next = element.getBoundingClientRect(), style = owner.defaultView!.getComputedStyle(element);
         // Inline typography can change while the row's outer dimensions stay identical.
@@ -23,8 +26,10 @@ export function rowGeometry(element: HTMLElement, from: number, revision: number
         }).join("\n");
         if (bounds && key === styleKey && next.left === bounds.left && next.top === bounds.top && next.width === bounds.width && next.height === bounds.height) return;
         styleKey = key; flow = style.direction === "rtl" ? -1 : 1;
-        bounds = next; glyphs = new Map(); boxes = new Map(); raw = new Map(); prepared = false;
-        const resolved = resolveBidi(text, flow < 0 ? "rtl" : "ltr"); levels = resolved.levels; order = resolved.order;
+        bounds = next; glyphs = new Map(); boxes = new Map(); raw = new Map(); prepared = false; corrected.clear(); positions.fill(-1); order = [];
+        const resolved = resolveBidi(text, flow < 0 ? "rtl" : "ltr"); levels = resolved.levels;
+        for (const offset of resolved.order) { const index = clusters[offset]!;
+            if (positions[index] === -1) { positions[index] = order.length; order.push(index); } }
     };
     const locate = (offset: number): Readonly<{ node: Text; offset: number }> | undefined => {
         for (const node of nodes) { if (offset <= node.length) return { node, offset }; offset -= node.length; } return undefined;
@@ -67,28 +72,44 @@ export function rowGeometry(element: HTMLElement, from: number, revision: number
         } else {
             let before = index - 1, after = index + 1;
             while (before >= 0 && !measured(before).length) before--; while (after + 1 < boundaries.length && !measured(after).length) after++;
+            // Invisible glyphs copy logical neighbors. Correct those visible edges before caching
+            // a fallback, just as full preparation does before filling its invisible glyphs.
+            if (before >= 0) correctVisible(before); if (after + 1 < boundaries.length) correctVisible(after);
             const previous = before >= 0 ? glyph(before).end : undefined, next = after + 1 < boundaries.length ? glyph(after).start : undefined;
             const a = previous ?? next, b = next ?? previous;
             value = { start: make(start, "after", a?.left ?? bounds!.left, a?.top ?? bounds!.top, a?.height ?? lineHeight), end: make(end, "before", b?.left ?? bounds!.left, b?.top ?? bounds!.top, b?.height ?? lineHeight), rtl: false, nativeStart: false, nativeEnd: false };
         }
         glyphs.set(index, value); return value;
     };
-    const prepare = () => {
-        ensure(); if (prepared) return;
-        const clusters = new Int32Array(text.length), visible: number[] = [], seen = new Set<number>();
-        for (let index = 0; index + 1 < boundaries.length; index++) { clusters.fill(index, boundaries[index]!, boundaries[index + 1]!); if (measured(index).length) glyph(index); }
-        for (const offset of order) { const index = clusters[offset]!; if (!seen.has(index) && measured(index).length) { visible.push(index); seen.add(index); } }
+    const merge = (ai: number, bi: number) => {
         // Two adjacent visible clusters share one insertion position. Native rectangle rounding
         // must not create an extra caret stop; never merge the two edges of a narrow glyph.
-        for (let position = 1; position < visible.length; position++) {
-            const ai = visible[position - 1]!, bi = visible[position]!, a = glyph(ai), b = glyph(bi);
-            const aSide = a.rtl ? "start" : "end", bSide = b.rtl ? "end" : "start", ap = a[aSide], bp = b[bSide];
-            if (Math.abs(ap.left - bp.left) > 1.5 || Math.abs(ap.top - bp.top) > 1) continue;
-            const an = a.rtl ? a.nativeStart : a.nativeEnd, bn = b.rtl ? b.nativeEnd : b.nativeStart;
-            const x = an === bn ? (ap.left + bp.left) / 2 : an ? ap.left : bp.left;
-            glyphs.set(ai, { ...a, [aSide]: Object.freeze({ ...ap, left: x }) }); glyphs.set(bi, { ...b, [bSide]: Object.freeze({ ...bp, left: x }) });
+        const a = glyph(ai), b = glyph(bi), aSide = a.rtl ? "start" : "end", bSide = b.rtl ? "end" : "start", ap = a[aSide], bp = b[bSide];
+        if (Math.abs(ap.left - bp.left) > 1.5 || Math.abs(ap.top - bp.top) > 1) return;
+        const an = a.rtl ? a.nativeStart : a.nativeEnd, bn = b.rtl ? b.nativeEnd : b.nativeStart;
+        const x = an === bn ? (ap.left + bp.left) / 2 : an ? ap.left : bp.left;
+        glyphs.set(ai, { ...a, [aSide]: Object.freeze({ ...ap, left: x }) }); glyphs.set(bi, { ...b, [bSide]: Object.freeze({ ...bp, left: x }) });
+    };
+    function correctVisible(index: number): void {
+        if (prepared || corrected.has(index)) return;
+        // Each pair touches only its facing edges. Other pairs cannot change those edges;
+        // repeating a merge is idempotent, including when full preparation follows a point.
+        const at = positions[index]!;
+        if (at >= 0) for (const direction of [-1, 1]) {
+            let next = at + direction;
+            while (next >= 0 && next < order.length && !measured(order[next]!).length) next += direction;
+            if (next >= 0 && next < order.length) merge(direction < 0 ? order[next]! : index, direction < 0 ? index : order[next]!);
         }
-        for (let index = 0; index + 1 < boundaries.length; index++) glyph(index); prepared = true;
+        corrected.add(index);
+    }
+    const prepare = () => {
+        ensure(); if (prepared) return;
+        const visible: number[] = [];
+        for (let index = 0; index + 1 < boundaries.length; index++) if (measured(index).length) glyph(index);
+        for (const index of order) if (measured(index).length) visible.push(index);
+        for (let position = 1; position < visible.length; position++) merge(visible[position - 1]!, visible[position]!);
+        prepared = true;
+        for (let index = 0; index + 1 < boundaries.length; index++) glyph(index);
     };
     const point = (offset: number, affinity: Affinity = "after"): CaretRectangle | undefined => {
         const local = offset - from; if (local < 0 || local > text.length) return;
@@ -96,10 +117,12 @@ export function rowGeometry(element: HTMLElement, from: number, revision: number
         while (low < high) { const middle = (low + high) >>> 1; if (boundaries[middle]! < local) low = middle + 1; else high = middle; }
         const index = boundaries[low] === local || affinity === "after" ? low : Math.max(0, low - 1);
         if (boundaries.length === 1) return make(0, affinity, bounds!.left, bounds!.top, lineHeight);
-        const selected = index === boundaries.length - 1 || affinity === "before" && index > 0 ? glyph(index - 1).end : glyph(index).start;
+        const end = index === boundaries.length - 1 || affinity === "before" && index > 0, at = end ? index - 1 : index;
+        if (measured(at).length) correctVisible(at);
+        const selected = glyph(at)[end ? "end" : "start"];
         return Object.freeze({ ...selected, affinity });
     };
-    return Object.freeze({ point: (offset: number, affinity: Affinity = "after") => { prepare(); return point(offset, affinity); },
+    return Object.freeze({ point: (offset: number, affinity: Affinity = "after") => { ensure(); return point(offset, affinity); },
         nearest: (clientX: number): CaretRectangle => {
             prepare(); let best: CaretRectangle | undefined, distance = Infinity, underPointer = false;
             for (let index = 0; index + 1 < boundaries.length; index++) {
