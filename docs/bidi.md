@@ -36,6 +36,13 @@ preserves code-point boundaries and follows the resolved level's parity, includi
 overrides. Weak separators and bracket characters retain their individual positions. The
 full conformance data and long surrogate/override cases cover this optimization.
 
+For LTR or automatic direction, paragraphs containing only L, EN, ES, ET, CS, NSM, B, S, WS
+and ON classes resolve directly to level zero and logical code-point order. Classification
+runs during the existing atom pass; resolution and publication remain cooperative. Arabic
+numbers, RTL strong classes, removed characters, explicit/isolate controls and requested RTL
+direction retain the general algorithm. UTF-16 levels, surrogate interiors and paragraph
+boundaries use the same publication path in both cases.
+
 `createBidiIndexController(workspace, tabId, { direction? })` adds resource ownership and a
 stable observable handle. `request({ expectedRevision, from, to })` captures a range and returns
 a generation; a stale expected revision returns `null` without retargeting or disturbing work.

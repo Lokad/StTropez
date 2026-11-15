@@ -27,9 +27,9 @@ function verify(text: string): number {
 
 test("bounded ASCII point queries agree with full-context indexes and a native grapheme oracle", () => {
     assert.equal(verify(""), 1);
-    for (const text of ["x", "xy", "prefix\tword\nend", Array.from({ length: 128 }, (_, code) => String.fromCharCode(code)).join(""), "x".repeat(770)])
-        assert.ok(verify(text) > 0);
-    for (const text of ["\r", "\r\n", "\u0600x", "x\u0301", "x\u200d", "\u093e", "😀"])
+    for (const text of ["x", "xy", "\r", "\r\n", "\r\n\r\n", "\r\r\n", "\n\r", "a\r\nb\rc\n", "prefix\tword\nend", Array.from({ length: 128 }, (_, code) => String.fromCharCode(code)).join(""), "x".repeat(770)])
+        assert.equal(verify(text), text.length + 1);
+    for (const text of ["\u0600x", "x\u0301", "x\u200d", "\u093e", "😀"])
         for (let offset = 0; offset <= text.length; offset++) assert.equal(localAsciiGraphemePoint(TextBuffer.from(text), offset), undefined);
 });
 
@@ -52,5 +52,12 @@ test("huge immutable buffers answer proven points with four units and reject inv
         assert.ok(buffer.readMetrics().sliceUnits - before <= 4);
     }
     for (const offset of [-1, buffer.length + 1, 0.5, NaN, Infinity]) assert.throws(() => localAsciiGraphemePoint(buffer, offset), RangeError);
+    const crlf = buffer.replace(1200000, 1200000, "\r\n");
+    for (const [offset, floor, ceil, preceding, following] of [[1200000, 1200000, 1200000, 1199999, 1200002],
+        [1200001, 1200000, 1200002, 1200000, 1200002], [1200002, 1200002, 1200002, 1200000, 1200003]] as const) {
+        const reads = crlf.readMetrics().sliceUnits;
+        assert.deepEqual(localAsciiGraphemePoint(crlf, offset), { offset, floor, ceil, preceding, following });
+        assert.ok(crlf.readMetrics().sliceUnits - reads <= 4);
+    }
     assert.equal(buffer.readMetrics().textExports, 0);
 });

@@ -68,9 +68,11 @@ test("local ASCII deletion avoids whole-line indexing while nearby Unicode and C
     for (const cluster of ["\u0600a", "a\u0301", "\r\n"]) {
         const original = "x".repeat(5000) + cluster + "b";
         await setup(page, original, 5000 + cluster.length);
+        const beforeCluster = await state(page);
         await page.keyboard.press("Backspace"); await ready(page);
         const removed = await state(page);
-        expect(removed.primary.graphemeScanSteps).toBeGreaterThan(0);
+        const scans = removed.primary.graphemeScanSteps - beforeCluster.primary.graphemeScanSteps;
+        if (cluster === "\r\n") expect(scans).toBe(0); else expect(scans).toBeGreaterThan(0);
         expect(await page.evaluate(n => window.editingFixture.range(0, n), 5001)).toBe("x".repeat(5000) + "b");
         await page.keyboard.press("ControlOrMeta+z"); await ready(page);
         expect(await page.evaluate(n => window.editingFixture.range(0, n), original.length)).toBe(original);

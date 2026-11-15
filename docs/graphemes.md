@@ -20,6 +20,9 @@ records; `floor`/`ceil` include an exact boundary, `preceding`/`following` are s
 null beyond either end. `clusterIndexAt` requires an offset inside the range. `boundaries()`
 explicitly materializes an array. An empty range has one anchor boundary and zero clusters.
 `graphemeBoundaries(string)` synchronously drains the same kernel for bounded row geometry.
+ASCII properties use direct classification; other code points retain the reviewed table lookup.
+Boundary publication uses the cursor's existing suspension points without allocating a nested
+generator for each boundary. Work counters, limits and frozen blocks retain their contracts.
 
 The rules cover CRLF/control separation, Hangul, Extend/ZWJ/SpacingMark/Prepend, contextual
 emoji ZWJ sequences, regional-indicator parity and Indic conjuncts. Unicode 18 GB9c uses a
@@ -27,11 +30,11 @@ Linker followed by zero or more InCB Extend characters before a Consonant; it do
 a preceding consonant. This version change is observable in older native segmenters.
 
 The editing candidate first checks at most four UTF-16 units around the requested offset.
-When this neighborhood contains only ASCII and no CR, each adjacent pair is a proven break:
-ASCII has only Other/Control/CR/LF grapheme properties, and excluding CR removes its only
-joining pair. The two units on each side prove the offset and its strict immediate neighbors,
-including document edges. This answers one point; it creates no clipped-context index and
-does not cache artificial slice boundaries. CR or any non-ASCII neighbor declines the query.
+When this neighborhood contains only ASCII, CR followed by LF is its only joining pair.
+The two units on each side prove the containing cluster and strict immediate neighbors,
+including document edges and positions inside a CRLF pair. This answers one point; it creates
+no clipped-context index and does not cache artificial slice boundaries. Any non-ASCII
+neighbor declines the query and retains full-context segmentation.
 This deliberately small dependency-free query addresses the measured multi-second pilot
 delay for local commands inside a 2.4-million-unit identifier. It reuses the existing full
 segmentation kernel for uncertain context, without adding a segmentation library or changing
