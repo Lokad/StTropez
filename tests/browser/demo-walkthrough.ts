@@ -266,7 +266,9 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     await expect(source).toBeVisible();
     const replace = async (text: string) => { await source.press("Control+Home"); await source.press("Control+a"); await page.keyboard.insertText(text); };
     const menu = async (name: string) => { await page.locator("#code-menu summary").click(); await page.getByRole("button", { name, exact: true }).click(); };
-    await replace("function demo() {}"); await source.press("ArrowLeft"); await source.press("Enter");
+    await replace("function demo() {}"); await source.press("ArrowLeft");
+    await expect(page.locator("#editor .st-matching-bracket")).toHaveText(["{", "}"]);
+    await source.press("Enter");
     await expect(source).toHaveValue("function demo() {\n  \n}");
     await source.pressSequentially('"'); await expect(source).toHaveValue('function demo() {\n  ""\n}');
     await source.pressSequentially('value";'); await source.press("Escape");
@@ -277,9 +279,10 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     await source.press("Control+a"); await source.press("Control+/");
     await expect(source).toHaveValue('// function demo() {\n  // "value";\n// }');
     await source.press("Control+z"); await expect(source).toHaveValue('function demo() {\n  "value";\n}');
-    await replace("/*\ncomment\n*/\n"); await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
-    await source.press("Control+Home"); await source.press("ArrowDown"); await source.press("End"); await source.pressSequentially('"');
-    await expect(source).toHaveValue('/*\ncomment"\n*/\n');
+    await replace("/*\n[comment]\n*/\n"); await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
+    await source.press("Control+Home"); await source.press("ArrowDown"); await source.press("End");
+    await expect(page.locator("#editor .st-matching-bracket")).toHaveCount(0);
+    await source.pressSequentially('"'); await expect(source).toHaveValue('/*\n[comment]"\n*/\n');
     await replace("a\nb\n"); await source.press("Control+a"); await menu("Indent selection");
     await expect(source).toHaveValue("  a\n  b\n"); await source.press("Control+z");
     await page.locator("#code-menu summary").click(); await page.locator("#indentation").selectOption("4"); await page.locator("#code-menu summary").click();

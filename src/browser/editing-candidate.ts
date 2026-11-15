@@ -25,6 +25,10 @@ import { planLanguageEdit, resolveLanguageConfiguration } from "../core/language
 import type { EditingCommand, LanguageConfiguration, ResolvedLanguageConfiguration } from "../core/language-edits.ts";
 import { captureInsertion } from "./captured-insertion.ts";
 import type { CapturedInsertion } from "./captured-insertion.ts";
+import { mountBracketHighlights } from "./bracket-highlights.ts";
+import type { BracketHighlights } from "./bracket-highlights.ts";
+import type { BracketMatchOptions } from "../core/bracket-matching.ts";
+import { bracketMatchLimits } from "../core/bracket-matching.ts";
 
 export type CandidateEdit = Readonly<{ expectedRevision: number; edits: readonly TextEdit[]; selectionSet: SelectionSet; kind: EditKind;
     /** The editor's newline command supplied contextual indentation, rather than literal text. */
@@ -39,6 +43,7 @@ export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTe
     registerEditTransform: (transform: CandidateEditTransform) => () => void;
     configureLanguage: (configuration: LanguageConfiguration) => boolean;
     languageConfiguration: () => ResolvedLanguageConfiguration;
+    bracketMatching: BracketHighlights;
     /** Returns whether the command was accepted; long selections finish asynchronously. */
     runCommand: (command: EditingCommand) => boolean;
     focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
@@ -47,19 +52,26 @@ export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTe
     snapshot: () => EditingActivity & Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number; maxQueuedInputTurnMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; queuedInputUnits: number; wordScanSteps: number; maxWordScanStepMs: number; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number }>;
     destroy: () => void }>;
 let nextMount = 0;
+const emptyDecorations = Object.freeze([]);
 
 /** Experimental bounded-input adapter. Long contextual lines and native IME remain qualification gates. */
 export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, tabId: TabId,
-    options: Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; decorate?: LineDecorator; lineClass?: LineClass; language?: LanguageConfiguration }> = {}): EditingCandidate {
+    options: Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; decorate?: LineDecorator; lineClass?: LineClass; language?: LanguageConfiguration;
+        bracketMatching?: boolean | BracketMatchOptions }> = {}): EditingCandidate {
     let language = resolveLanguageConfiguration(options.language);
+    const bracketOptions = options.bracketMatching === undefined || options.bracketMatching === false ? false
+        : bracketMatchLimits(options.bracketMatching === true ? {} : options.bracketMatching);
     const readOnly = options.readOnly === true;
     const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
     if (!tab || tab.surface.kind !== "text") throw new Error("Expected a text surface.");
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId);
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId);
-    let viewport: TextViewport;
-    try { viewport = mountTextViewport(host, workspace, tabId, { ...options, view }); }
+    let viewport: TextViewport, brackets: ReturnType<typeof mountBracketHighlights> | undefined;
+    try { viewport = mountTextViewport(host, workspace, tabId, { ...options, view, decorate: line => {
+        const own = brackets?.decorate(line), host = options.decorate?.(line);
+        return own?.length ? host?.length ? [...host, ...own] : own : host ?? emptyDecorations;
+    } }); }
     catch (error) { if (!options.view) view.dispose(); throw error; }
     const root = viewport.element;
     root.style.tabSize = String(language.tabSize);
@@ -1045,7 +1057,9 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         return activitySnapshot = Object.freeze({ disposed, composing, pendingInput, pendingCommand, pendingCaret, pendingDragScroll, pendingWord, pendingGrapheme });
     }
     refresh();
-    return Object.freeze({ element: root, input, view, viewport, focus, activity,
+    brackets = mountBracketHighlights(workspace, tabId, view, viewport, input, () => language,
+        () => { const state = activity(); return !state.disposed && !state.composing && !state.pendingInput && !state.pendingCommand; }, bracketOptions);
+    return Object.freeze({ element: root, input, view, viewport, focus, activity, bracketMatching: brackets.handle,
         captureInsertion: (kind = "paste") => {
             if (kind !== "paste" && kind !== "replace") throw new TypeError("Unknown captured insertion kind.");
             hostInsertion?.cancel();
@@ -1065,7 +1079,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             hostInsertion?.cancel();
             const next = resolveLanguageConfiguration(configuration);
             cancelWord(); group = undefined; preferred = undefined; language = next;
-            root.style.tabSize = String(language.tabSize); viewport.invalidate(); refresh(); return true;
+            root.style.tabSize = String(language.tabSize); viewport.invalidate(); refresh(); brackets!.refresh(); return true;
         },
         registerEditTransform: transform => {
             if (disposed || editTransform) throw new Error("Editor is disposed or already owns an edit planner.");
@@ -1077,6 +1091,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             dragScrollFrames, maxDragScrollStepMs, commits, conflicts, queuedInputUnits: ordered?.units ?? 0, wordScanSteps, maxWordScanStepMs, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves }),
         destroy: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; editTransform = undefined;
+            brackets!.dispose();
             hostInsertion?.cancel();
             if (executingInput) recoverInput(executingInput, "pending-input-detached");
             cancelWord();

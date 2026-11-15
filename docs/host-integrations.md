@@ -98,6 +98,21 @@ windows. `next` requires a budget of at least 256 and may overshoot by at most 6
 Host callback time/reads are separate from those counters and are not a wall-clock guarantee.
 Only a `matched` result establishes a pair; budget exhaustion must not be presented as a mismatch.
 
+Enable editor presentation with `bracketMatching: true` (or the limit options) at mount, or
+`editor.bracketMatching.configure(true)`. It is off by default; disabling it removes its
+document/view listeners. The stable `bracketMatching.state` handle reports pending, completed
+and failed results for the captured primary collapsed caret. Matching does not block input,
+and its pending state is separate from the editor's input/navigation activity. Edits, selection,
+configuration, composition, focus and disposal invalidate stale work, including a host callback
+that changes the document during a scan. A shadow-root input uses its own focus root.
+
+Decorations compose with host colors and selections, using `--st-bracket-background` and
+`--st-bracket-border`. Only proven pairs are highlighted. Call `bracketMatching.refresh()` when
+host lexical knowledge changes without a document/configuration change; queue it outside a
+Workspace notification. The demo enables matching for working and reference editors using
+each snapshot's own syntax context. A browser turn checks elapsed time between 256-unit advances
+and stops after 4 ms or 4,096 work units; a single batch or host callback can exceed that target.
+
 Host buttons and keyboard listeners can call `editor.runCommand("line-comment")` or capture
 an insertion. The sample exposes **Code → Paste format**, **Insert example table** and
 **Add source note**. Ctrl+Alt+V changes paste mode; Ctrl+Alt+M adds a note. The example-table

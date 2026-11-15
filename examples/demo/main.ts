@@ -34,10 +34,14 @@ let hostIntegrations: ReturnType<typeof mountHostIntegrations> | undefined;
 const hostLanguage = () => project?.sample.id === "outline" || project?.sample.id === "host";
 let referencePresentation: DemoPresentation | undefined;
 let problemPage = 0, problemBatch: unknown;
-const presentation = new DemoPresentation(() => { editor?.viewport.invalidate(); renderOutput(); renderMetadata(); });
+function refreshBrackets(captured: EditingCandidate | undefined) {
+    // Plain-source notifications may run inside a Workspace publication; retain the owning view.
+    if (captured) queueMicrotask(() => { if (!captured.activity().disposed) captured.bracketMatching.refresh(); });
+}
+const presentation = new DemoPresentation(() => { editor?.viewport.invalidate(); if (presentation.status === "ready") refreshBrackets(editor); renderOutput(); renderMetadata(); });
 const indentation = element("indentation") as HTMLSelectElement;
-function editingConfiguration() {
-    const config = presentation.editing.configuration(indentation.value === "2" ? 2 : 4, indentation.value !== "tabs");
+function editingConfiguration(rules = presentation.editing) {
+    const config = rules.configuration(indentation.value === "2" ? 2 : 4, indentation.value !== "tabs");
     if (project?.sample.id === "host") return hostConfiguration(config.tabSize!, config.insertSpaces!);
     return project?.sample.id === "outline" ? { tabSize: config.tabSize!, insertSpaces: config.insertSpaces!, lineComment: "#", pairs: [], enter: "keep" as const } : config;
 }
@@ -263,10 +267,12 @@ function mountFile(file: DemoFile, focus = false): void {
             referenceFolding?.dispose(); referenceFolding = undefined;
             referencePresentation?.dispose(); referencePresentation = undefined;
             const reference = comparison?.reference.getSnapshot(); if (!reference) return;
-            reference.editor.configureLanguage(editingConfiguration());
             const plain = hostLanguage();
-            const syntax = plain ? undefined : new DemoPresentation(() => { reference.editor.viewport.invalidate(); renderMetadata(); }, { emit: false, folds: true });
+            const syntax: DemoPresentation | undefined = plain ? undefined : new DemoPresentation(() => {
+                reference.editor.viewport.invalidate(); if (syntax?.status === "ready") refreshBrackets(reference.editor); renderMetadata();
+            }, { emit: false, folds: true });
             referencePresentation = syntax;
+            reference.editor.configureLanguage(editingConfiguration(syntax?.editing)); reference.editor.bracketMatching.configure(true);
             syntax?.update(project!.workspace.document(reference.editor.view.documentId));
             referenceFolding = createFoldingController(project!.workspace, reference.target.id, reference.editor,
                 (capture, signal) => plain
@@ -284,6 +290,7 @@ function mountFile(file: DemoFile, focus = false): void {
         renderProblems();
     }
     editor.configureLanguage(editingConfiguration());
+    editor.bracketMatching.configure(true);
     if (savedViews.has(file.view)) editor.restoreView({ ...savedViews.get(file.view)!, ...file.view.getSnapshot().selection,
         selectionSet: file.view.getSnapshot().selectionSet });
     folding = mountDemoFolding(project, file, editor, () => editingConfiguration().tabSize!);
@@ -383,7 +390,7 @@ for (const command of ["line-comment", "block-comment", "indent", "outdent"] as 
 });
 indentation.addEventListener("change", () => {
     editor?.configureLanguage(editingConfiguration());
-    comparison?.referenceEditor()?.configureLanguage(editingConfiguration()); folding?.refresh(); referenceFolding?.refresh(); editor?.focus();
+    comparison?.referenceEditor()?.configureLanguage(editingConfiguration(referencePresentation?.editing)); folding?.refresh(); referenceFolding?.refresh(); editor?.focus();
 }, { signal: listeners.signal });
 on("fold", () => { folding?.runCommand("collapse"); }); on("unfold", () => { folding?.runCommand("expand"); });
 on("fold-group-collapse", () => { folding?.runCommand("collapse-all", (element("fold-group") as HTMLSelectElement).value || undefined); });
