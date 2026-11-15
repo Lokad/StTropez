@@ -13,14 +13,19 @@ async function exact(page: Page, text: string): Promise<void> {
     }, text)).toBe(true);
 }
 
-for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} document boundaries finish before immediate typing`, async ({ page }) => {
+for (const host of ["plain", "react"]) for (const large of [false, true]) for (const journey of ["primary", "comparison", "resize and queued input"] as const)
+test(`${host} ${large ? "100k" : "normal"} ${journey} boundaries finish before immediate typing`, async ({ page }) => {
     test.setTimeout(120000);  await page.goto(`/hosts/${host}/?editor=candidate`);
     const bodyRows = large ? 100000 : 128, rowUnits = "const unchanged = 123;\r\n".length;
     const original = "first é😀\r\n" + "const unchanged = 123;\r\n".repeat(bodyRows) + "last\r", bodyStart = original.indexOf("\n") + 1;
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
     for (const name of ["Open source review", "Capture review acceptance", "Finish review acceptance"]) await page.getByRole("button", { name, exact: true }).click();
     await waitForReview(page);
-    for (const view of ["primary", "comparison"] as const) for (const mode of ["document", "line", "arrow", "vertical", "page"]) for (const key of ["Home", "End"] as const) for (const extend of [false, true]) {
+    // Each editor journey owns its deadline; repeating all review/history waits in one body
+    // exhausted the whole-test budget even while every individual operation kept progressing.
+    if (journey !== "resize and queued input") {
+    const view = journey;
+    for (const mode of ["document", "line", "arrow", "vertical", "page"]) for (const key of ["Home", "End"] as const) for (const extend of [false, true]) {
         const documentBoundary = mode === "document", arrow = mode === "arrow", vertical = mode === "vertical" || mode === "page";
         const commandKey = arrow ? key === "Home" ? "ArrowLeft" : "ArrowRight" : vertical ? mode === "page" ? key === "Home" ? "PageUp" : "PageDown" : key === "Home" ? "ArrowUp" : "ArrowDown" : key;
         const input = page.getByRole("textbox", { name: view === "primary" ? "Primary source" : "Comparison working source", exact: true }); await input.focus();
@@ -63,6 +68,8 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
         expect(set).toEqual(result.selectionSet);
         await input.press("Control+Shift+z"); await waitForReview(page); await exact(page, expected); await input.press("Control+z"); await waitForReview(page);
     }
+    }
+    else {
     // Resize and PageDown occur in one task, before ResizeObserver/RAF can refresh metrics.
     const sourceInput = page.getByRole("textbox", { name: "Primary source", exact: true }), resizeHeads = [31, bodyRows - 33].map(line => bodyStart + line * rowUnits + 6);
     await sourceInput.focus();
@@ -117,5 +124,6 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await waitForReview(page); await exact(page, expected); await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await waitForReview(page); await exact(page, original);
     }
     const primary = page.getByRole("textbox", { name: "Primary source", exact: true }); await primary.press("Control+End"); await primary.pressSequentially("x"); await waitForReview(page); await exact(page, original + "x");
+    }
     await page.evaluate(() => window.hostFixture.dispose()); const end = await snapshot(page); expect(end.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(end.hostSubscriptions).toBe(0);
 });
