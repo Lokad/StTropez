@@ -140,6 +140,11 @@ function* ranges(root: Root, from: number, to: number): Generator<string> {
     if (root.kind === "leaf") { yield root.piece.backing.text.slice(root.piece.from + from, root.piece.from + to); return; }
     for (const value of pieces(root, from, to)) yield value.backing.text.slice(value.from, value.from + value.length);
 }
+function rangeText(root: Root, from: number, to: number): string {
+    if (!root || from === to) return "";
+    if (root.kind === "leaf") return root.piece.backing.text.slice(root.piece.from + from, root.piece.from + to);
+    return [...ranges(root, from, to)].join("");
+}
 
 /** Consume sorted original-coordinate ranges once, retaining untouched subtrees as whole nodes. */
 function batch(root: Root, edits: readonly TextEdit[]): Root {
@@ -216,11 +221,11 @@ export class TextBuffer {
     get longestLineLength(): number { return this.#root?.longest ?? 0; }
     slice(from: number, to: number): string {
         validateRange(this.length, from, to); counters.get(this)!.sliceUnits += to - from;
-        return [...ranges(this.#root, from, to)].join("");
+        return rangeText(this.#root, from, to);
     }
     chunks(from = 0, to = this.length): Iterable<string> { validateRange(this.length, from, to); return ranges(this.#root, from, to); }
     /** Explicit whole-text export. Document/viewport subscribers should use ranges and line indexes. */
-    text(): string { counters.get(this)!.textExports++; return [...ranges(this.#root, 0, this.length)].join(""); }
+    text(): string { counters.get(this)!.textExports++; return rangeText(this.#root, 0, this.length); }
     replace(from: number, to: number, insert: string): TextBuffer { return this.apply([{ from, to, insert }]).buffer; }
     apply(edits: readonly TextEdit[]): BufferChange {
         validateTextEdits(this.length, edits);

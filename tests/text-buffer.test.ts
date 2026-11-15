@@ -86,23 +86,29 @@ test("random replay preserves UTF-16, CRLF and all retained roots against a stri
 
 for (const text of ["", "\n", "\r\n", "a\r\nb\r\n", "\ud800x\udc00", "😀e\u0301\n👩‍💻"]) {
     test(`buffer validates ranges and line indexes without changing ${JSON.stringify(text)}`, () => {
-        const buffer = TextBuffer.from(text);
-        assert.equal(buffer.replace(0, 0, ""), buffer);
-        for (const [from, to] of [[-1, 0], [0, text.length + 1], [1.5, 2], [2, 1], [NaN, 0]] as const) {
-            assert.throws(() => buffer.replace(from, to, "x"), RangeError);
-            assert.throws(() => buffer.slice(from, to), RangeError);
-            assert.throws(() => buffer.chunks(from, to), RangeError);
+        // A surviving suffix is a single leaf whose backing starts before the logical text.
+        const prefix = "padding\r\n";
+        for (const buffer of [TextBuffer.from(text), TextBuffer.from(prefix + text).replace(0, prefix.length, "")]) {
+            assert.equal(buffer.replace(0, 0, ""), buffer);
+            for (const [from, to] of [[-1, 0], [0, text.length + 1], [1.5, 2], [2, 1], [NaN, 0]] as const) {
+                assert.throws(() => buffer.replace(from, to, "x"), RangeError);
+                assert.throws(() => buffer.slice(from, to), RangeError);
+                assert.throws(() => buffer.chunks(from, to), RangeError);
+            }
+            for (const value of [-1, 0.5, NaN, Infinity]) {
+                assert.throws(() => buffer.lineAt(value), RangeError);
+                assert.throws(() => buffer.offsetAt(value), RangeError);
+            }
+            assert.throws(() => buffer.lineAt(text.length + 1), RangeError);
+            assert.throws(() => buffer.offsetAt(buffer.lineCount), RangeError);
+            for (let from = 0; from <= text.length; from++) for (let to = from; to <= text.length; to++) {
+                assert.equal(buffer.slice(from, to), text.slice(from, to));
+            }
+            assert.equal(buffer.text(), text);
+            assert.equal(buffer.lineAt(0), 0); assert.equal(buffer.offsetAt(0), 0);
+            assert.equal(buffer.lineAt(text.length), text.split("\n").length - 1);
+            assert.equal(buffer.offsetAt(buffer.lineCount - 1), text.lastIndexOf("\n") + 1);
         }
-        for (const value of [-1, 0.5, NaN, Infinity]) {
-            assert.throws(() => buffer.lineAt(value), RangeError);
-            assert.throws(() => buffer.offsetAt(value), RangeError);
-        }
-        assert.throws(() => buffer.lineAt(text.length + 1), RangeError);
-        assert.throws(() => buffer.offsetAt(buffer.lineCount), RangeError);
-        assert.equal(buffer.text(), text);
-        assert.equal(buffer.lineAt(0), 0); assert.equal(buffer.offsetAt(0), 0);
-        assert.equal(buffer.lineAt(text.length), text.split("\n").length - 1);
-        assert.equal(buffer.offsetAt(buffer.lineCount - 1), text.lastIndexOf("\n") + 1);
     });
 }
 
