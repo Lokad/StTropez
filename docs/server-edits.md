@@ -4,6 +4,14 @@ The default route below uses the internal worker fixture. The optional `language
 instead qualifies [actual LSP workspace commands and captured server-edit decisions](lsp-server-edits.md)
 over WebSocket. Worker protocol v1 does not establish LSP compatibility.
 
+The example owns one project backend through the shared provider lifecycle. Both existing
+clients expose the same command request/result contract, while retaining synchronous worker
+acceptance and scoped asynchronous LSP review. Provider currentness belongs to the captured
+backend. LSP captures renew after each applied phase; worker commands retain their resource
+guards and permit selection movement. Actions handed to the project reviewer keep their
+external backend ownership and cancellation, independent of the project-owned connection.
+This adapter adds no runtime dependency or public library API.
+
 The plain and React candidate hosts expose a local **Workspace provider** fixture. Focus a
 source or comparison working pane, then choose **Register provider review command**. The
 worker requests registration and receives an explicit host acknowledgement. **Unregister
