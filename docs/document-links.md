@@ -46,7 +46,7 @@ no provider HTML, URL or script executes. Activation uses the host's existing
 captured-resource reveal API and checks current revisions, routes, authority and
 pending input again. Read-only targets can be viewed.
 
-Pending discovery captures the origin's complete selections, fold generation,
+Pending discovery captures the origin's complete selections, visible fold projection,
 tab/view, source/target revisions and authority. Ready results are document-based;
 ordinary selection/fold movement can continue, and Return is an explicit command
 to restore the captured origin. Text changes, target changes, route replacement,
@@ -56,6 +56,11 @@ Resource leases stay owned until dismissal; core notifications latch invalidity
 immediately and defer cleanup. Each reply has a 5-second deadline and the whole
 request has a 30-second deadline. Failure/reconnect discards uncertain transport
 state. Disposal releases fields, sessions, subscriptions, leases and workers.
+
+Discovery and each lazy resolution use `captureViewRequest`. Ready results transfer origin
+retention to resource guards before ending the discovery capture, so selection movement remains
+possible. Lazy resolution captures the current view again and releases it before revealing a
+validated destination. Return preserves the original discovery selection, independent of resolution.
 
 Discovery, paging, activation and Return do not write text or add history. Later
 source/target edits and action undo/redo remain independent. Immutable references
