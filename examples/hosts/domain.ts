@@ -1,6 +1,7 @@
 import { createFoldRegions, createSelectionSet, FoldIndex } from "../../src/index.ts";
-import type { DocumentId, DocumentView, FoldRange, FoldingSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, Workspace } from "../../src/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { DocumentId, DocumentView, FoldRange, FoldingSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
+import { captureViewRequest } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
 import { DomainAnnotationIndex, FixtureDomainProvider, validateDomainResult } from "../probes/domain.ts";
 import type { DomainAnnotation, DomainInput, DomainProvider } from "../probes/domain.ts";
 import type { EditingPresentation } from "../editing/presentation.ts";
@@ -9,7 +10,7 @@ import { HostCell } from "../shared/observable.ts";
 type OwnedFold = { id: string; from: number; to: number };
 type ViewData = { revision: number; owned: Map<string, OwnedFold>; annotations: readonly DomainAnnotation[]; index: DomainAnnotationIndex };
 type Session = { token: string; id: string; editor: EditingCandidate; target: TabTarget; presentation: EditingPresentation; data: ViewData };
-type Job = { session: Session; input: DomainInput; folds: FoldingSnapshot; selections: SelectionSet; authority: string; lease: ResourceLease; abort: AbortController; stop: (() => void)[]; timeout: number; invalid: boolean };
+type Job = { session: Session; input: DomainInput; folds: FoldingSnapshot; capture: CapturedViewRequest | undefined; authority: string; lease: ResourceLease | undefined; abort: AbortController; timeout: number; invalid: boolean };
 export type DomainSnapshot = Readonly<{ available: boolean; editable: boolean; view: string | null; token: string | null; revision: number | null;
     status: "idle" | "running" | "ready" | "applied" | "cancelled" | "failed"; message: string; work: number; total: number; pendingView: string | null;
     annotations: readonly DomainAnnotation[]; annotationCount: number; foldCount: number }>;
@@ -89,11 +90,14 @@ export class HostDomainTools {
         return true;
     }
     private current(job: Job): boolean {
-        return !job.invalid && this.job === job && this.available(job.session) && !job.session.editor.activity().composing
-            && this.canCapture(job.session.editor.view.documentId)
-            && this.workspace.document(job.session.editor.view.documentId).revision === job.input.revision
-            && job.session.editor.view.folding.getSnapshot().generation === job.folds.generation && this.authority(job.session) === job.authority
-            && (job.input.kind !== "import" || job.session.editor.view.getSnapshot().selectionSet === job.selections);
+        if (job.invalid || this.job !== job) return false;
+        try {
+            if (job.capture) return job.capture.isCurrent();
+            // Analysis replaces fold metadata, so it needs the exact fold generation but allows selection movement.
+            return this.available(job.session) && !job.session.editor.activity().composing && this.canCapture(job.session.editor.view.documentId)
+                && this.workspace.document(job.session.editor.view.documentId).revision === job.input.revision
+                && job.session.editor.view.folding.getSnapshot().generation === job.folds.generation && this.authority(job.session) === job.authority;
+        } catch { return false; }
     }
     private invalidate(job: Job): void {
         job.invalid = true;
@@ -102,7 +106,7 @@ export class HostDomainTools {
     }
     private release(job: Job): void {
         if (this.job === job) this.job = undefined;
-        job.invalid = true; job.session.editor.element.ownerDocument.defaultView!.clearTimeout(job.timeout); job.stop.splice(0).forEach(stop => stop()); job.abort.abort(); job.lease.release();
+        job.invalid = true; job.session.editor.element.ownerDocument.defaultView!.clearTimeout(job.timeout); job.abort.abort(); job.capture?.cancel(); job.lease?.release();
     }
     readonly cancel = (): void => {
         const job = this.job; if (!job) return; this.release(job); this.metrics.cancelled++;
@@ -115,11 +119,15 @@ export class HostDomainTools {
         if (kind === "import" && !this.editable(session)) { this.publish({ message: "Import insertion requires an editable source." }); return; }
         this.cancel(); this.sync(session);
         const document = this.workspace.document(session.editor.view.documentId), resource = this.workspace.resourceForDocument(document.id), win = session.editor.element.ownerDocument.defaultView!;
+        const capture = kind === "import" ? captureViewRequest(this.workspace, session.target, session.editor.view, { editOrigin: "human",
+            available: () => this.available(session) && !session.editor.activity().composing && this.canCapture(document.id) }) : undefined;
+        if (kind === "import" && !capture) { this.publish({ message: "The source changed before capture; request a fresh import." }); return; }
         const job: Job = { session, input: { id: ++this.serial, revision: document.revision, buffer: document.buffer, kind, module: "catalogue" }, folds: session.editor.view.folding.getSnapshot(),
-            selections: session.editor.view.getSnapshot().selectionSet, authority: this.authority(session), lease: this.workspace.acquire(resource.id), abort: new AbortController(), stop: [], timeout: 0, invalid: false };
+            capture, authority: this.authority(session), lease: capture ? undefined : this.workspace.acquire(resource.id), abort: new AbortController(), timeout: 0, invalid: false };
         this.job = job; this.metrics.requested++;
         const changed = () => { if (!this.publishing && this.job === job && !this.current(job)) this.invalidate(job); };
-        job.stop.push(this.workspace.observeDocument(document.id).subscribe(changed), session.editor.view.folding.subscribe(changed), session.editor.view.subscribe(changed), resource.metadata.subscribe(changed), this.workspace.tabState.subscribe(changed));
+        // Mounted presentation listeners already observe analysis resource/fold/tab changes.
+        capture?.signal.addEventListener("abort", changed, { once: true });
         job.timeout = win.setTimeout(() => { if (this.job === job) { this.release(job); this.publish({ status: "failed", message: "Domain command timed out; source is unchanged." }); } }, 30000);
         this.publish({ status: "running", message: kind === "analyze" ? `Discovering domain regions in ${session.id}.` : `Preparing a captured import for ${session.id}.`, work: 0, total: document.buffer.length });
         const progress = (units: number) => { if (this.current(job) && Number.isSafeInteger(units) && units >= this.cell.get().work && units <= document.buffer.length) this.publish({ work: units }); };
@@ -130,8 +138,10 @@ export class HostDomainTools {
             if (kind === "import") {
                 this.publishing = true;
                 try {
-                    const applied = this.workspace.edit({ documentId: document.id, expectedRevision: job.input.revision, origin: "human", view: session.editor.view, edits: result.edits, history: { kind: "refactor" } });
-                    if (!applied.applied) throw new Error(`Import rejected: ${applied.reason}.`);
+                    if (!job.capture?.commit(() => {
+                        const applied = this.workspace.edit({ documentId: document.id, expectedRevision: job.input.revision, origin: "human", view: session.editor.view, edits: result.edits, history: { kind: "refactor" } });
+                        if (!applied.applied) throw new Error(`Import rejected: ${applied.reason}.`); return true;
+                    })) throw new Error("Captured import context changed before application.");
                 } finally { this.publishing = false; }
                 this.metrics.applied++; this.release(job);
                 for (const attached of this.sessions.values()) if (attached.editor.view.documentId === document.id) this.sync(attached);

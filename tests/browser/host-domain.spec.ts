@@ -83,8 +83,14 @@ for (const host of ["plain", "react"]) {
         await setup(page, host, text); await button(page, "Open source review").click(); await waitForDomain(page); await input(page).focus();
         await page.evaluate(to => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: to }]); }, text.indexOf("// #region"));
         await button(page, "Fold selected lines").click(); await waitForDomain(page); const before = await snapshot(page);
-        await button(page, "Discover domain regions").click(); await expect(status(page)).toContainText("Discovered 2 domain regions"); await waitForDomain(page);
+        // Analysis is resource/fold-scoped; selection movement during its request must remain usable.
+        expect(await button(page, "Discover domain regions").evaluate((node, head) => {
+            (node as HTMLButtonElement).click(); const f = window.hostFixture, state = f.snapshot();
+            f.selectSourceSet("primary", state.source.revision, [{ anchor: head, head }]); return state.bindings.domain.pending;
+        }, text.length - 1)).toBe(true);
+        await expect(status(page)).toContainText("Discovered 2 domain regions"); await waitForDomain(page);
         let s = await snapshot(page); expect(s.source.revision).toBe(before.source.revision); expect(s.history).toEqual(before.history);
+        expect(s.bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: text.length - 1, head: text.length - 1 });
         expect(s.bindings.domain.provider).toMatchObject({ requested: 1, completed: 1, work: text.length });
         expect(s.bindings.domain.sessions.find(v => v.id === "primary")).toMatchObject({ annotations: 2, folds: 2 });
         expect(s.bindings.views.find(v => v.id === "secondary")!.metrics!.viewport.collapsedFolds).toBe(0); expect(s.bindings.comparison!.workingViewport.collapsedFolds).toBe(0);

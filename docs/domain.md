@@ -39,8 +39,11 @@ source identity and release the inactive workload. These are correctness and bou
 checks, without a new latency-distribution or heap-retention claim.
 
 Commands capture a unique mounted session, tab target, document/revision, immutable
-buffer, fold generation and resource authority. Imports also capture the complete
-selection set. Revision, permission/lease, fold, selection (for imports), unmount,
+buffer and resource authority. Analysis retains the exact fold generation because it replaces
+fold metadata, while allowing selection movement. Its existing mounted presentation listeners
+also invalidate pending analysis; it adds no duplicate per-request subscriptions. Imports use
+`captureViewRequest` to retain the complete selection set and visible fold projection, and consume
+that capture once on application. Revision, permission/lease, fold, selection (for imports), unmount,
 replacement, input or composition invalidation rejects the reply. A later focused
 view never becomes the destination. Same-document pending input/composition in any
 mounted view prevents capture. Cancellation and a 30-second failure deadline release
