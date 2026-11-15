@@ -56,7 +56,8 @@ function outdentLength(prefix: string, tabSize: number): number {
     }
     return units;
 }
-function lineEnding(buffer: TextBuffer, line: number): string {
+/** Internal shared convention: use this LF row's ending, or the preceding ending at EOF. */
+export function lineEnding(buffer: TextBuffer, line: number): "\n" | "\r\n" {
     const end = buffer.offsetAt(line + 1 < buffer.lineCount ? line + 1 : line);
     return end >= 2 && buffer.slice(end - 2, end) === "\r\n" ? "\r\n" : "\n";
 }
