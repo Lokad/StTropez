@@ -88,12 +88,14 @@ IME/reconversion/dead-key qualification remains separate.
 `TextDiff` tokenizes LF-inclusive lines, aligns them with shortest-edit bisection, and trims
 common UTF-16 boundaries within changed blocks. CRLF, LF, tabs, spaces and final newlines
 remain exact. `whitespaceOnly` describes a change; it never suppresses one. Lines of at most
-256 UTF-16 units retain exact strings and rejection hashes. Longer lines retain lengths and
-use cooperative exact range comparisons when equality is needed; they are not hashed eagerly.
-Regions with multiple unmatched lines on both sides compute long-line rejection hashes lazily,
-so disjoint large blocks retain linear scanning rather than an unnecessary quadratic search.
-These numeric signatures are weakly memoized by immutable line metadata and retain no buffers
-on their own. No normalization or hash-only equality is introduced. Adjacent unmatched regions
+256 UTF-16 units retain exact strings and rejection hashes. Each job interns visited lines to
+exact integer identities. Longer lines use ordered sequences of bounded chunks, so no native
+string-key operation compares or hashes an arbitrarily long line. Cold probes keep cooperative
+shared-text comparisons; repeated probes can materialize an identity. A complete literal
+equality scan remembers its inspected chunks without rereading the source. Cached chunks and
+lazy rejection hashes belong weakly to immutable line metadata and retain no buffers on their
+own. Disjoint large blocks retain linear scanning instead of an unnecessary quadratic search.
+No normalization or hash-only equality is introduced. Adjacent unmatched regions
 coalesce before scalar trimming, so optional signatures cannot split a contiguous review hunk.
 
 After 64 frontier distances in a region of at least 64 lines per side, alignment can check for
@@ -114,13 +116,13 @@ not index every intervening line. Long equal text with no applicable ownership p
 require a linear scan. Short periodic-row candidates can use exact bounded text comparisons
 instead of materializing every equal row. Candidate detection never establishes equality;
 the subsequent string checks do. String-equal chunks skip the per-unit mismatch search.
-Already materialized short-row metadata can prove a bounded run of equal rows directly from
-their exact UTF-16 strings and lengths. Each proof stays inside the two existing immutable
+Already materialized metadata can prove a bounded run of equal rows from exact short strings
+or known identities in the current job. Each proof stays inside the two existing immutable
 metadata leaves, with at most 64 rows, and charges cooperative row work before continuing.
 Runs stop at the next ownership checkpoint, including when a partial metadata leaf is traversed
 in reverse, so cached strides cannot skip a proof of shared source storage.
-It neither materializes missing rows nor reads source text. Hashes alone and long rows cannot
-establish this proof; they retain the existing exact fallback. Ownership proofs remain first,
+It neither materializes missing rows nor reads source text. Hashes alone cannot establish this
+proof; unknown identities retain the exact fallback. Ownership proofs remain first,
 so shared source spans can still skip large interiors without walking every metadata block.
 This is a line alignment with trimmed boundaries, rather than a globally minimal character
 alignment or moved-block detection. The original TypeScript implementation reuses the
@@ -155,9 +157,11 @@ index. Metadata blocks of at most 64 rows are built cooperatively when a probe n
 Only completed blocks are memoized. This private memoization changes neither source nor public
 snapshots. Verified unchanged rows reuse sequence subtrees without copying every suffix offset.
 The project already owns the AVL balancing implementation; this original sparse layer adds no
-dependency. Exact candidate matches can decline an unnecessary disjoint-region scan. Short
-string identities remain exact across jobs, without an accumulating token dictionary or reused
-job-local numeric namespace.
+dependency. Exact candidate matches can decline an unnecessary disjoint-region scan.
+Numeric identity dictionaries belong to one job and are cleared on completion, cancellation
+or failure, even when the caller retains that job. Only literal metadata and bounded long-line
+chunks survive for future reuse. IDs from separate jobs or baselines are never compared, and
+no dictionary accumulates historical working revisions.
 
 Working reuse proves whole-line ownership against the preceding working capture. It also
 works when the remote reference has independent backing. There is no working revision chain:

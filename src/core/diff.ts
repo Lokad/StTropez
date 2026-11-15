@@ -1,14 +1,14 @@
 import type { TextBuffer } from "./text-buffer.ts";
 import { validateWorkBudget } from "./kernel-cursor.ts";
-import type { DiffLine } from "./diff-lines.ts";
+import { DiffIdentities, equalLineText, knownLineHash, lineHash } from "./diff-identities.ts";
 import { commonText, getLine, indexLines, lineLength, matchingLines, offsetAt, tick } from "./diff-index.ts";
-import type { DiffStats as Stats, DiffIndex as Index } from "./diff-index.ts";
+import type { DiffStats, DiffIndex as Index } from "./diff-index.ts";
+type Stats = DiffStats & { identities: DiffIdentities };
 export type DiffRange = Readonly<{ from: number; to: number; lineFrom: number; lineTo: number }>;
 export type DiffHunk = Readonly<{ baseline: DiffRange; working: DiffRange; whitespaceOnly: boolean }>;
 export type DiffProgress = Readonly<{ status: "running" | "ready" | "cancelled"; work: number; readUnits: number; lineComparisons: number; lineEdits: number; hunks: readonly DiffHunk[] }>;
 type Cache = { baseline: TextBuffer; serial: number; reference: Index | undefined; working: Index | undefined };
 const referenceCaches = new WeakMap<DiffReferenceCache, { current: Cache | undefined }>();
-const longHashes = new WeakMap<DiffLine, number>();
 
 /** Retains one reference and one current working index. Active jobs own their captures. */
 export class DiffReferenceCache {
@@ -22,11 +22,15 @@ function* equalLine(a: Index, b: Index, ai: number, bi: number, stats: Stats, pr
     const length = lineLength(a, ai); if (length !== lineLength(b, bi)) return false;
     if (prove && (yield* matchingLines(a, b, ai, ai + 1, bi, bi + 1, false, stats)) === 1) return true;
     const left = yield* getLine(a, ai, stats), right = yield* getLine(b, bi, stats);
-    const leftHash = left.hash ?? longHashes.get(left), rightHash = right.hash ?? longHashes.get(right);
+    const identities = stats.identities, leftId = identities.known(left), rightId = identities.known(right);
+    if (leftId !== undefined && rightId !== undefined) return leftId === rightId;
+    const leftHash = knownLineHash(left), rightHash = knownLineHash(right);
     if (leftHash !== undefined && rightHash !== undefined && leftHash !== rightHash) return false;
-    if (left.token !== undefined && right.token !== undefined) return left.token === right.token;
-    const af = offsetAt(a, ai), bf = offsetAt(b, bi);
-    return (yield* commonText(a.buffer, b.buffer, af, af + left.length, bf, bf + right.length, "start", stats)) === left.length;
+    const cached = identities.cached(left) && identities.cached(right);
+    const repeatedLeft = !cached && identities.repeated(left), repeatedRight = !cached && identities.repeated(right);
+    if (cached || repeatedLeft || repeatedRight)
+        return (yield* identities.identify(a, ai, left, stats)) === (yield* identities.identify(b, bi, right, stats));
+    return yield* equalLineText(a, ai, left, b, bi, right, stats);
 }
 function* commonLines(a: Index, b: Index, region: Region, reverse: boolean, stats: Stats): Generator<void, number> {
     let count = 0;
@@ -55,21 +59,11 @@ function* commonLines(a: Index, b: Index, region: Region, reverse: boolean, stat
             // An empty run lets the next loop retry the shared-source proof immediately.
             const end = Math.min(maximum, Math.ceil(count / 64) * 64);
             const known = a.lines.matching(b.lines, reverse ? region.a1 - end : region.a0 + count, reverse ? region.a1 - count : region.a0 + end,
-                reverse ? region.b1 - end : region.b0 + count, reverse ? region.b1 - count : region.b0 + end, reverse);
+                reverse ? region.b1 - end : region.b0 + count, reverse ? region.b1 - count : region.b0 + end, reverse, stats.identities.known);
             count += known; stats.lineComparisons += known; if (tick(stats, known)) yield;
         }
     }
     return count;
-}
-function* lineHash(index: Index, row: number, line: DiffLine, stats: Stats): Generator<void, number> {
-    const known = line.hash ?? longHashes.get(line); if (known !== undefined) return known;
-    const from = offsetAt(index, row); let hash = 2166136261;
-    for (let offset = 0; offset < line.length; offset += 256) {
-        const length = Math.min(256, line.length - offset), text = index.buffer.slice(from + offset, from + offset + length);
-        for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
-        stats.readUnits += length; if (tick(stats, length)) yield;
-    }
-    hash >>>= 0; longHashes.set(line, hash); return hash;
 }
 function* disjoint(left: Index, right: Index, region: Region, stats: Stats): Generator<void, boolean> {
     // A cheap exact match can decline this optional scan without indexing a huge shared interior.
@@ -218,7 +212,7 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
 /** Exact line alignment with bounded cooperative steps and linear-space bisection. */
 export class TextDiff {
     private iterator: Generator<void, readonly DiffHunk[]> | undefined;
-    private readonly stats: Stats = { work: 0, yielded: 0, readUnits: 0, lineComparisons: 0, lineEdits: 0 };
+    private readonly stats: Stats = { work: 0, yielded: 0, readUnits: 0, lineComparisons: 0, lineEdits: 0, identities: new DiffIdentities() };
     private status: DiffProgress["status"] = "running";
     private hunks: readonly DiffHunk[] = Object.freeze([]);
     constructor(baseline: TextBuffer, working: TextBuffer, cache?: DiffReferenceCache) {
@@ -233,10 +227,10 @@ export class TextDiff {
         const start = this.stats.work;
         try {
             while (this.iterator && this.stats.work - start < workBudget) {
-                const step = this.iterator.next(); if (step.done) { this.hunks = step.value; this.status = "ready"; this.iterator = undefined; }
+                const step = this.iterator.next(); if (step.done) { this.hunks = step.value; this.status = "ready"; this.iterator = undefined; this.stats.identities.clear(); }
             }
         } catch (error) { this.dispose(); throw error; }
         return Object.freeze({ status: this.status, work: this.stats.work, readUnits: this.stats.readUnits, lineComparisons: this.stats.lineComparisons, lineEdits: this.stats.lineEdits, hunks: this.hunks });
     }
-    dispose(): void { this.iterator?.return(Object.freeze([])); this.iterator = undefined; this.hunks = Object.freeze([]); this.status = "cancelled"; }
+    dispose(): void { this.iterator?.return(Object.freeze([])); this.iterator = undefined; this.stats.identities.clear(); this.hunks = Object.freeze([]); this.status = "cancelled"; }
 }

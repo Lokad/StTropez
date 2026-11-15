@@ -69,14 +69,33 @@ test("adjacent unmatched regions remain one review hunk with unknown or collidin
 });
 
 test("cold shared 100k-line and long-line point edits avoid document-sized indexing and preserve exact Enter hunks", () => {
-    const sources = [Array.from({ length: 100000 }, (_, i) => `const value${i} = 123;`).join("\n"), "x".repeat(2400000)];
+    const sources = [Array.from({ length: 100000 }, (_, i) => `const value${i} = 123;`).join("\n"), "x".repeat(2400000), "first\n" + "x".repeat(2400000) + "\nlast"];
     for (const source of sources) {
         const baseline = TextBuffer.from(source);
-        for (const at of [0, Math.floor(source.length / 2), source.length]) for (const insert of ["z", "\n", "abc"]) {
-            const working = baseline.replace(at, at, insert), result = finish(baseline, working), expected = source.slice(0, at) + insert + source.slice(at);
+        for (const at of [0, Math.floor(source.length / 2), source.length]) for (const insert of ["z", "\n", "abc"]) for (const remove of at < source.length ? [0, 1] : [0]) {
+            const working = baseline.replace(at, at + remove, insert), result = finish(baseline, working), expected = source.slice(0, at) + insert + source.slice(at + remove);
             reconstruct(result, source, expected); assert.ok(result.readUnits < 4096, `${result.readUnits} units for ${at}/${JSON.stringify(insert)}`);
             assert.ok(result.lineComparisons < 12); assert.equal(baseline.readMetrics().textExports, 0); assert.equal(working.readMetrics().textExports, 0);
         }
+    }
+});
+
+test("long-line review identities bound warm reads across revisions and independent reference storage", () => {
+    for (const length of [300, 1000]) for (const shared of [true, false]) {
+        const source = Array.from({ length: 512 }, (_, i) => String(i).padStart(8, "0") + " " + "x".repeat(length - 9) + "\n").join("");
+        const baseline = TextBuffer.from(source), cache = new DiffReferenceCache(); let working = shared ? baseline : TextBuffer.from(source);
+        const initial = finish(baseline, working, cache); assert.equal(initial.readUnits, shared ? 0 : source.length * 2, "remember inspected equal chunks without a second scan");
+        working = working.apply(Array.from({ length: 32 }, (_, i) => { const at = working.offsetAt(8 + i * 16) + length - 1; return { from: at, to: at + 1, insert: "Y" }; })).buffer;
+        const exact = finish(baseline, working, cache), before = JSON.stringify(exact.hunks), at = working.offsetAt(7) + length - 2;
+        const changed = working.replace(at, at + 1, "Z");
+        for (const capture of [changed, working, changed]) {
+            const reused = finish(baseline, capture, cache), fresh = finish(baseline, capture);
+            assert.deepEqual(reused.hunks, fresh.hunks); assert.equal(reused.lineEdits, fresh.lineEdits);
+            reconstruct(reused, source, capture.slice(0, capture.length));
+            assert.ok(reused.readUnits < source.length / 3, `${length}/${shared}: ${reused.readUnits} warm read units`);
+            assert.equal(JSON.stringify(exact.hunks), before); assert.equal(capture.readMetrics().textExports, 0);
+        }
+        cache.dispose();
     }
 });
 

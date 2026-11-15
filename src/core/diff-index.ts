@@ -24,7 +24,8 @@ function* lineEdges(a: TextBuffer, b: TextBuffer, stats: DiffStats): Generator<v
     }
     return { aFrom, bFrom, aTo, bTo };
 }
-export function* commonText(a: TextBuffer, b: TextBuffer, from: number, to: number, otherFrom: number, otherTo: number, side: "start" | "end", stats: DiffStats): Generator<void, number> {
+export function* commonText(a: TextBuffer, b: TextBuffer, from: number, to: number, otherFrom: number, otherTo: number, side: "start" | "end", stats: DiffStats,
+    inspected?: (text: string, matchedBefore: number) => void): Generator<void, number> {
     let common = yield* ownedEdge(a, b, from, to, otherFrom, otherTo, side, stats);
     const maximum = Math.min(to - from, otherTo - otherFrom);
     while (common < maximum) {
@@ -32,6 +33,7 @@ export function* commonText(a: TextBuffer, b: TextBuffer, from: number, to: numb
         const bf = side === "start" ? otherFrom + common : otherTo - common - length;
         const av = a.slice(af, af + length), bv = b.slice(bf, bf + length); let matched = av === bv ? length : 0;
         while (matched < length && av[side === "start" ? matched : length - matched - 1] === bv[side === "start" ? matched : length - matched - 1]) matched++;
+        if (matched === length) inspected?.(av, common);
         common += matched; stats.readUnits += length * 2; if (tick(stats, length * 2)) yield;
         if (matched < length) break;
     }
