@@ -8,4 +8,5 @@ export default defineConfig({ ...base, testMatch: [
     "comparison-ownership.spec.ts", "save-conflicts.spec.ts", "hosts.spec.ts", "protocol-websocket.spec.ts",
     "viewport-decorations.spec.ts", "viewport-geometry.spec.ts", "viewport-paint.spec.ts",
     "text-geometry.spec.ts", "owner-activity.spec.ts", "caret-placement.spec.ts", "viewport-row-retention.spec.ts", "input-context-reuse.spec.ts",
+    "host-completion-indentation.spec.ts",
 ] });

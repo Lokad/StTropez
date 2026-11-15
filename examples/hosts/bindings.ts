@@ -203,6 +203,10 @@ export class ViewBindings {
         const view = id === "comparison" ? this.review?.working.view : this.mounted.get(id)?.editor.view;
         return view?.setSelections(revision, ranges, primary) ?? false;
     }
+    configureSource(id: "primary" | "secondary" | "comparison", configuration: import("../../src/index.ts").LanguageConfiguration): boolean {
+        const editor = id === "comparison" ? this.review?.working : this.mounted.get(id)?.candidate;
+        return editor?.configureLanguage(configuration) ?? false;
+    }
     constructor(controller: HostController, editor: HostEditor = "native") {
         this.controller = controller; this.editor = editor;
         this.tablePaste = new HostTablePaste(controller.workspace, editor === "candidate");

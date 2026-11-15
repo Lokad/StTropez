@@ -148,8 +148,7 @@ test("completion insertion modes adjust nested context while preserving explicit
         items: [{ label: "tabs", insertTextMode: 2, textEditText: body }] }, capture, at, undefined,
         { indentation: { tabSize: 4, insertSpaces: false } }).items[0]!;
     assert.equal(itemOverride.replace.edits[0]!.insert, "if (ok) {\r\n\t\t\twork();\r\n\t\t}");
-    // The browser capability/default remains mode 1 until its session integration is qualified.
-    assert.equal(decodeLspCompletions([{ label: "default", insertText: body }], capture, at).items[0]!.insertion.mode, 1);
+    assert.equal(decodeLspCompletions([{ label: "default", insertText: body }], capture, at).items[0]!.insertion.mode, 2);
     for (const invalid of [null, 0, 3, "2"]) {
         assert.throws(() => decodeLspCompletions([{ label: "valid" }, { label: "invalid", insertTextMode: invalid }], capture, at));
         assert.throws(() => decodeLspCompletions({ ...response, itemDefaults: { ...response.itemDefaults, insertTextMode: invalid } }, capture, at));

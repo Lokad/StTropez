@@ -1,7 +1,7 @@
 import { anchoredRange } from "../../src/index.ts";
 import type { Observable, ResourceLease, Selection, TabId, Workspace } from "../../src/index.ts";
 import type { JsonValue, LspSession } from "../../src/protocol/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { EditingCandidate, LspEditorSnippet } from "../../src/browser/index.ts";
 import type { ProviderInput, ProviderResult } from "../probes/provider.ts";
 import { validateProviderResult } from "../probes/provider.ts";
 import { HostCell } from "../shared/observable.ts";
@@ -9,7 +9,7 @@ type Pending = Readonly<{ input: ProviderInput; from: number; selection: Selecti
 export type Diagnostic = Readonly<{ from: number; to: number; message: string }>;
 
 export type ProviderSnapshot = Readonly<{ message: string; connected: boolean; pending: boolean; offerText: string | null; diagnostics: readonly Diagnostic[]; diagnosticRevision: number;
-    choices?: readonly string[]; choiceIndex?: number; completionId?: number; completionDetail?: string; resolving?: boolean; unversionedDiagnostics?: readonly string[] }>;
+    choices?: readonly string[]; choiceIndex?: number; completionId?: number; completionDetail?: string; resolving?: boolean; unversionedDiagnostics?: readonly string[]; snippet?: LspEditorSnippet | null }>;
 export type ProviderOptions = Readonly<{ autoConnect?: boolean; canCapture?: () => boolean }>;
 export type ProviderController = Readonly<{ state: Observable<ProviderSnapshot>; request: () => void; apply: (mode: "insert" | "replace", completionId?: number) => boolean;
     cancel: () => void; connect: () => void; disconnect: () => void; selectDiagnostic: (index: number) => boolean; chooseCompletion: (index: number, completionId?: number) => boolean;

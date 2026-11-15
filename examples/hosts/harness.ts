@@ -56,6 +56,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         referenceRange: (from: number, to: number) => bindings.referenceRange(from, to),
         selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => bindings.selectSource(id, revision, selection),
         selectSourceSet: (id: "primary" | "secondary" | "comparison", revision: number, ranges: readonly Selection[], primary = 0) => bindings.selectSourceSet(id, revision, ranges, primary),
+        configureSource: (id: "primary" | "secondary" | "comparison", configuration: import("../../src/index.ts").LanguageConfiguration) => bindings.configureSource(id, configuration),
         setSourceReadOnly: (value: boolean) => controller.workspace.setCapabilities(controller.source.id, { edit: value ? ["host"] : ["human", "host", "agent"], save: true, run: true }),
         cycleSourceEditLease: () => { const lease = controller.workspace.acquireEditLease(controller.source.id, "host-fixture", "host"); lease.release(); },
         openTransferTarget: (text: string) => {
@@ -110,6 +111,7 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; sett
     referenceRange: (from: number, to: number) => string | undefined;
     selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => boolean;
     selectSourceSet: (id: "primary" | "secondary" | "comparison", revision: number, ranges: readonly Selection[], primary?: number) => boolean;
+    configureSource: (id: "primary" | "secondary" | "comparison", configuration: import("../../src/index.ts").LanguageConfiguration) => boolean;
     setSourceReadOnly: (value: boolean) => void;
     cycleSourceEditLease: () => void;
     openTransferTarget: (text: string) => void; transferSnapshot: () => TransferTargetSnapshot;

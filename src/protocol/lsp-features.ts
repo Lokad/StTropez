@@ -278,7 +278,7 @@ export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture
     const insertions = new Map<1 | 2, LspCompletion["insertion"]>();
     const items = values.map((item: unknown): LspCompletion | undefined => {
         if (!record(item) || item.command !== undefined || ![1, 2].includes((item.insertTextFormat ?? defaults.insertTextFormat ?? 1) as number)) invalid();
-        const mode = item.insertTextMode === undefined ? defaults.insertTextMode ?? 1 : item.insertTextMode; if (mode !== 1 && mode !== 2) invalid();
+        const mode = item.insertTextMode === undefined ? defaults.insertTextMode ?? 2 : item.insertTextMode; if (mode !== 1 && mode !== 2) invalid();
         let insertion = insertions.get(mode);
         if (!insertion) { insertion = Object.freeze({ ...indentation, mode }); insertions.set(mode, insertion); }
         const label = text(item.label); if (!label) invalid(); const detail = item.detail === undefined ? "" : text(item.detail);

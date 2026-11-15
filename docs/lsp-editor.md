@@ -101,9 +101,10 @@ The primary text and snippet positions remain in the expanded provider coordinat
 `insert`/`replace` plans add the insertion line's indentation to subsequent lines and
 use that buffer's LF/CRLF convention. Additional edits remain as supplied. Lazy resolution,
 prefix rebasing and commit characters rebuild from the raw text, so indentation is applied
-once. Mode 1 preserves the supplied text. The browser still advertises and defaults to
-mode 1 while configured editor acceptance, multiline choices/mirrors and several-caret
-integration are being completed; decoder tests alone do not qualify those interactions.
+once. Mode 1 preserves the supplied text. The browser advertises both modes and defaults
+to mode 2 when neither an item nor its list supplies a mode. Completion captures the
+editor's immutable `languageConfiguration()`; a later tab/space setting change expires
+the result instead of changing a pending acceptance's formatting.
 
 `lspCompletionPlan(item, mode, commitCharacter?, capturedSelections?)` returns the complete
 edit batch and resulting `selectionSet`. With several carets, the primary must match the
@@ -112,8 +113,10 @@ ranges must stay on each caret's line and contain the same text as the primary r
 Overlaps with other carets or additional edits reject the whole plan. Each insertion uses
 its own captured line context, shared additional edits apply once, and the complete result
 must fit the captured document limit. Applying that batch and selection set through one
-Workspace edit makes acceptance one undo unit. The pure planner does not establish a
-browser snippet session or qualify subsequent editing of differently indented fields.
+Workspace edit makes acceptance one undo unit. Explicit browser requests support several
+collapsed carets; automatic requests and prefix-list rebasing still require one caret.
+An incompatible secondary range rejects the whole acceptance and consumes the completion
+keypress without falling through to ordinary indentation or Enter.
 
 The core snippet planner retains per-occurrence insertion context. `planSnippetEdit` maps
 corresponding field bodies across different indentation and LF/CRLF lengths, while ordinary
@@ -123,13 +126,14 @@ selection/edit batch returns no snippet plan so the editor can apply that user e
 `planSnippetChoice` formats each occurrence, preserves the requested primary occurrence and
 checks the aggregate document limit. `snippetChoiceText` supplies the corresponding display
 value, including the captured first-line placement when indentation crosses a tab boundary.
-These helpers are qualified independently; the browser integration remains pending below.
+The browser passes configured newline intent to the transform, retains the primary caret
+group during snippet traversal and choices, and applies the complete selection plan.
 
 Acceptance selects every occurrence of the first numbered field. Typing, deletion, paste and
 composition commit mirror through the existing input, Workspace validation and history paths.
 Tab/Shift+Tab traverse fields; Alt+Up/Down cycles choices. Hosts render `snapshot.snippet` and use
 `moveSnippet`/`chooseSnippet` with its ID to reject retained controls. Escape keeps text and the
-primary selection, ending mode. Reaching `$0` ends mode at the final caret. Focus loss, selection
+primary selection, ending mode. Reaching `$0` ends mode at the final carets. Focus loss, selection
 outside the active field, authority changes and external/undo/redo edits end mode. Undo/redo
 restore text/selections without recreating a session. Composition remains on the existing adapter;
 its native device behavior is unverified. Ready commit-character acceptance inserts the expanded
@@ -147,8 +151,8 @@ defaults against the session's configured `maxDocumentUnits`. Captures from `Lsp
 that limit. Callers constructing their own capture for the pure decoder should supply it when
 they need an expansion bound; these decoders do not constitute a transport or allocation policy.
 Opaque data still passes immutable JSON validation. Commit characters follow LSP's single-unit
-rule without silently truncating a provider list. Indentation adjustment and follow-up commands
-are not advertised and are refused if supplied. Completion documentation remains literal text;
+rule without silently truncating a provider list. Follow-up commands on completion items are
+not advertised and are refused if supplied. Completion documentation remains literal text;
 hover and signature help separately support the focused [documentation subset](documentation.md).
 
 Pending typing/navigation/table conversion, composition, multiple carets, source revision, selection

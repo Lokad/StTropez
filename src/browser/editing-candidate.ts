@@ -22,11 +22,13 @@ import { mountTextViewport } from "./viewport.ts";
 import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
 import { planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
-import type { EditingCommand, LanguageConfiguration } from "../core/language-edits.ts";
+import type { EditingCommand, LanguageConfiguration, ResolvedLanguageConfiguration } from "../core/language-edits.ts";
 import { captureInsertion } from "./captured-insertion.ts";
 import type { CapturedInsertion } from "./captured-insertion.ts";
 
-export type CandidateEdit = Readonly<{ expectedRevision: number; edits: readonly TextEdit[]; selectionSet: SelectionSet; kind: EditKind }>;
+export type CandidateEdit = Readonly<{ expectedRevision: number; edits: readonly TextEdit[]; selectionSet: SelectionSet; kind: EditKind;
+    /** The editor's newline command supplied contextual indentation, rather than literal text. */
+    adjustNewlines?: boolean }>;
 export type CandidateEditTransform = (edit: CandidateEdit) => Readonly<{ edits: readonly TextEdit[]; selectionSet: SelectionSet; complete?: (applied: boolean) => void }> | undefined;
 export type EditingActivity = Readonly<{ disposed: boolean; composing: boolean; pendingInput: boolean; pendingCommand: boolean;
     pendingCaret: boolean; pendingDragScroll: boolean; pendingWord: boolean; pendingGrapheme: boolean }>;
@@ -36,6 +38,7 @@ export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTe
     /** One synchronous edit planner per view. Its result still passes Workspace validation/history. */
     registerEditTransform: (transform: CandidateEditTransform) => () => void;
     configureLanguage: (configuration: LanguageConfiguration) => boolean;
+    languageConfiguration: () => ResolvedLanguageConfiguration;
     /** Returns whether the command was accepted; long selections finish asynchronously. */
     runCommand: (command: EditingCommand) => boolean;
     focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
@@ -194,7 +197,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     function revealCaret(selected = view.getSnapshot().selection): void {
         viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" });
     }
-    function apply(edits: readonly TextEdit[], selection: Selection | SelectionSet, kind: EditKind, type?: string, expectedRevision = revision, recoveryText?: string): boolean {
+    function apply(edits: readonly TextEdit[], selection: Selection | SelectionSet, kind: EditKind, type?: string, expectedRevision = revision, recoveryText?: string, adjustNewlines = false): boolean {
         if (disposed) return false;
         hostInsertion?.cancel();
         if (readOnly) { conflict("read-only", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
@@ -203,7 +206,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         let key: string | undefined;
         const now = replayTime ?? win.performance.now(), before = view.getSnapshot().selectionSet;
         const transformed = editTransform?.(Object.freeze({ expectedRevision, edits,
-            selectionSet: "ranges" in selection ? selection : createSelectionSet(workspace.document(documentId).buffer.length + edits.reduce((n, edit) => n + edit.insert.length - (edit.to - edit.from), 0), [selection]), kind }));
+            selectionSet: "ranges" in selection ? selection : createSelectionSet(workspace.document(documentId).buffer.length + edits.reduce((n, edit) => n + edit.insert.length - (edit.to - edit.from), 0), [selection]), kind,
+            ...(adjustNewlines ? { adjustNewlines: true } : {}) }));
         if (transformed) { edits = transformed.edits; selection = transformed.selectionSet; }
         if (type) {
             const adjacent = group?.type === type && group.revision === expectedRevision && group.selectionSet === before && now - group.time < 1000;
@@ -636,7 +640,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             rangeCommand = undefined;
             completeCaptured(capture, () => {
                 const plan = result.value;
-                if (plan.edits.length) return apply(plan.edits, plan.selectionSet, typeof command === "object" ? "typing" : "replace", undefined, capture.revision);
+                if (plan.edits.length) return apply(plan.edits, plan.selectionSet, typeof command === "object" ? "typing" : "replace", undefined, capture.revision, undefined, command === "newline" && language.enter !== undefined);
                 group = undefined; view.setSelections(capture.revision, plan.selectionSet.ranges, plan.selectionSet.primary);
                 revealCaret(); refresh(); return true;
             });
@@ -1055,6 +1059,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             hostInsertion = captured; return captured;
         },
         runCommand: languageCommand,
+        languageConfiguration: () => language,
         configureLanguage: configuration => {
             if (disposed || composing) return false;
             hostInsertion?.cancel();
