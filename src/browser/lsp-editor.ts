@@ -1,5 +1,5 @@
 import { codeWordConstituentPattern } from "../core/words.ts";
-import type { ResourceLease, TabId, Workspace } from "../core/workspace.ts";
+import type { ResourceLease, ResourceMetadata, TabId, Workspace } from "../core/workspace.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { createSelectionSet } from "../core/selections.ts";
 import { planSnippetEdit } from "../core/snippets.ts";
@@ -13,7 +13,7 @@ import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import type { JsonValue } from "../protocol/index.ts";
 
-type Job = { id: number; revision: number; buffer: TextBuffer; caret: number; selections: SelectionSet; authority: string; folds: number; foldIndex: FoldIndex; lease: ResourceLease;
+type Job = { id: number; revision: number; buffer: TextBuffer; caret: number; selections: SelectionSet; authority: ResourceMetadata; folds: number; foldIndex: FoldIndex; lease: ResourceLease;
     call?: LspCall<unknown>; capture?: LspDocumentCapture; choices?: LspCompletions; visible: readonly LspCompletion[]; choice: number; cancelled: boolean; pendingList: boolean; requestGeneration: number;
     acceptance?: Readonly<{ id: number; item: LspCompletion; mode: "insert" | "replace" }> | undefined;
     resolution?: { item: LspCompletion; revision: number; call?: LspCall<unknown> } | undefined };
@@ -53,10 +53,11 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
     const counters = { posted: 0, received: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, failed: 0, resolved: 0,
         completionBeforeInputEvents: 0, lastCompletionBeforeInputMs: 0, completionKeydownEvents: 0, lastCompletionKeydownMs: 0 };
     let job: Job | undefined, disposed = false, connecting: Promise<void> | undefined, inputIntent: Input | undefined, autoFrame: number | undefined, autoTurns = 0, applying = false;
-    type SnippetSession = { id: number; stops: readonly SnippetStop[]; active: number; revision: number; authority: string };
+    type SnippetSession = { id: number; stops: readonly SnippetStop[]; active: number; revision: number; authority: ResourceMetadata };
     let snippet: SnippetSession | undefined, snippetChanging = false;
     const owner = editor.element.ownerDocument, clock = owner.defaultView!;
     const emptyDiagnostics: readonly LspEditorDiagnostic[] = Object.freeze([]), emptyMessages: readonly string[] = Object.freeze([]);
+    let labelItems: readonly LspCompletion[] | undefined, labels = emptyMessages;
     let diagnostics = emptyDiagnostics, unversioned = emptyMessages, diagnosticRevision = -1;
     const notifications = workspace.createNotificationScope(error => options.onError?.(error)), observers = new Set<() => void>();
     const cell = new Store<LspEditorSnapshot>(Object.freeze({ message: "LSP provider disconnected; local editing remains available.", connected: false, pending: false, offerText: null, diagnostics, diagnosticRevision, choices: Object.freeze([]), choiceIndex: 0, completionId: 0, completionIncomplete: false, completionDetail: "", resolving: false, unversionedDiagnostics: Object.freeze([]), snippet: null, omittedCompletions: Object.freeze([]) }), notifications);
@@ -67,12 +68,21 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
     const available = () => { const tab = workspace.resolveTab(target); return !disposed && editor.element.isConnected && !editor.activity().disposed && workspace.ownsDocumentView(editor.view)
         && tab?.surface.kind === "text" && tab.surface.documentId === documentId && !!workspace.observeDocument(documentId).getSnapshot(); };
     const idle = () => { const m = editor.activity(); return !m.composing && !m.pendingInput && !m.pendingCommand && !m.pendingWord && !m.pendingGrapheme && !m.disposed && !editor.input.disabled && (options.canCapture?.() ?? true); };
-    const authority = () => { const m = resource.metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); };
+    const authority = resource.metadata.getSnapshot;
+    const authorityCurrent = (before: ResourceMetadata) => {
+        const after = authority(), left = before.capabilities.edit, right = after.capabilities.edit;
+        return before === after || before.state === after.state
+            && (left === right || left.length === right.length && left.every((origin, index) => origin === right[index]))
+            && before.editLock?.owner === after.editLock?.owner && before.editLock?.origin === after.editLock?.origin;
+    };
     const current = (captured: Job) => job === captured && !captured.cancelled && available() && idle() && workspace.document(documentId).revision === captured.revision && workspace.document(documentId).buffer === captured.buffer
-        && editor.view.getSnapshot().selectionSet === captured.selections && captured.foldIndex.sameProjection(editor.view.folding.getSnapshot().index) && authority() === captured.authority && captured.lease.active();
+        && editor.view.getSnapshot().selectionSet === captured.selections && captured.foldIndex.sameProjection(editor.view.folding.getSnapshot().index) && authorityCurrent(captured.authority) && captured.lease.active();
     const bindingCurrent = (captured: Job) => !!captured.capture && (captured.capture.isBindingCurrent?.() ?? captured.capture.isCurrent());
-    const publish = (message: string) => { const selected = job?.visible[job.choice], activeStop = snippet?.stops[snippet.active], range = activeStop?.ranges[0], changed = new Set<Store<unknown>>(); cell.set(Object.freeze({ message, connected: session.state.getSnapshot().phase === "ready", pending: !!job && (job.pendingList || !!job.resolution || !!selected?.resolve),
-        offerText: job?.visible[job.choice]?.label ?? null, choices: Object.freeze(job?.visible.map(item => item.label) ?? []), choiceIndex: job?.choice ?? 0, completionId: job?.id ?? 0,
+    const publish = (message: string) => {
+        const visible = job?.visible;
+        if (visible !== labelItems) { labelItems = visible; labels = visible ? Object.freeze(visible.map(item => item.label)) : emptyMessages; }
+        const selected = job?.visible[job.choice], activeStop = snippet?.stops[snippet.active], range = activeStop?.ranges[0], changed = new Set<Store<unknown>>(); cell.set(Object.freeze({ message, connected: session.state.getSnapshot().phase === "ready", pending: !!job && (job.pendingList || !!job.resolution || !!selected?.resolve),
+        offerText: selected?.label ?? null, choices: labels, choiceIndex: job?.choice ?? 0, completionId: job?.id ?? 0,
         completionIncomplete: job?.choices?.incomplete ?? false, completionDetail: selected ? [selected.detail, selected.documentation].filter(Boolean).join("\n") : "", resolving: !!job?.resolution,
         snippet: snippet ? Object.freeze({ id: snippet.id, stop: snippet.stops[snippet.active]!.index, position: snippet.active + 1,
             count: snippet.stops.length - 1, choices: activeStop!.choices, choiceIndex: activeStop!.choices.findIndex(choice => range!.to - range!.from === choice.length && workspace.document(documentId).buffer.slice(range!.from, range!.to) === choice) }) : null,
@@ -164,7 +174,10 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
             if (!valid() || !capture.isCurrent()) return;
             const resolved = decodeLspResolvedCompletion(value, item, capture), acceptance = captured.acceptance;
             captured.choices = Object.freeze({ ...captured.choices!, items: Object.freeze(captured.choices!.items.map(value => value === item ? resolved : value)) });
-            captured.visible = Object.freeze(captured.visible.map(value => value === item ? resolved : value)); captured.resolution = undefined; counters.resolved++;
+            const previous = captured.visible;
+            captured.visible = Object.freeze(previous.map(value => value === item ? resolved : value)); captured.resolution = undefined; counters.resolved++;
+            // The decoder forbids label changes during resolution; the published labels still apply.
+            if (labelItems === previous) labelItems = captured.visible;
             publish("LSP completion ready.");
             if (acceptance?.item === item) queueMicrotask(() => {
                 if (job === captured && captured.acceptance === acceptance && captured.id === acceptance.id && captured.visible[captured.choice] === resolved && owner.activeElement === editor.input) {
@@ -210,7 +223,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
     const cancel = () => { cancelAuto(); if (job) counters.cancelled++; release();
         if (snippet) { snippet = undefined; if (available() && !editor.activity().composing) editor.view.setSelection(workspace.document(documentId).revision, editor.view.getSnapshot().selection); }
         publish("LSP request or snippet cancelled."); };
-    const snippetCurrent = (captured: SnippetSession) => snippet === captured && available() && !editor.input.readOnly && authority() === captured.authority && workspace.document(documentId).revision === captured.revision;
+    const snippetCurrent = (captured: SnippetSession) => snippet === captured && available() && !editor.input.readOnly && authorityCurrent(captured.authority) && workspace.document(documentId).revision === captured.revision;
     const moveSnippet = (direction: -1 | 1, id?: number): boolean => {
         const captured = snippet;
         if (!captured || direction !== -1 && direction !== 1 || id !== undefined && id !== captured.id || !snippetCurrent(captured) || !idle()) return false;
@@ -316,7 +329,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
         const intent = inputIntent, captured = job, document = workspace.document(documentId), selected = editor.view.getSnapshot().selectionSet, caret = selected.ranges[selected.primary]!;
         if (intent) intent.after = selected;
         if (captured?.choices?.items.length && intent?.word && intent.revision === captured.revision && intent.selections === captured.selections && intent.caret === captured.caret
-            && document.change && authority() === captured.authority && bindingCurrent(captured) && selected.ranges.length === 1 && caret.anchor === caret.head && caret.head === intent.caret + intent.data.length
+            && document.change && authorityCurrent(captured.authority) && bindingCurrent(captured) && selected.ranges.length === 1 && caret.anchor === caret.head && caret.head === intent.caret + intent.data.length
             && document.buffer.slice(intent.caret, caret.head) === intent.data && editor.view.folding.getSnapshot().generation === captured.folds + 1) {
             const source = Object.freeze({ ...captured.choices.items[0]!.source, revision: document.revision, buffer: document.buffer });
             const selectedIndex = captured.choices.items.indexOf(captured.visible[captured.choice]!);
@@ -344,7 +357,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
         if (job.foldIndex.sameProjection(folds.index)) { job.folds = folds.generation; job.foldIndex = folds.index; }
         else expire("LSP completion expired after visible folds changed.");
     }),
-    resource.metadata.subscribe(() => { if (snippet && authority() !== snippet.authority) { snippet = undefined; publish("Snippet ended after authority changed."); } if (job && authority() !== job.authority) expire("LSP completion expired after authority changed."); }),
+    resource.metadata.subscribe(() => { if (snippet && !authorityCurrent(snippet.authority)) { snippet = undefined; publish("Snippet ended after authority changed."); } if (job && !authorityCurrent(job.authority)) expire("LSP completion expired after authority changed."); }),
     workspace.tabState.subscribe(() => { if (!available()) { snippet = undefined; clearDiagnostics(); expire("Captured LSP view is unavailable."); } })];
     editor.input.addEventListener("blur", () => { if (job) job.acceptance = undefined; if (snippet && !editor.activity().composing) { snippet = undefined; publish("Snippet ended after focus changed."); } }, { signal: listeners.signal });
     editor.input.addEventListener("compositionstart", () => { cancelAuto(); expire("Finish composition before completion."); }, { signal: listeners.signal });

@@ -18,7 +18,10 @@ Imports start no network work. Runtime dependencies remain zero.
 The editor controller exposes a stable observable `state`, manual `request()`,
 `chooseCompletion(index)`, `apply("insert" | "replace")`, `cancel()` and
 `selectDiagnostic(index)`. Its immutable snapshots describe choices and diagnostic
-presentation. Hosts render controls through their own UI system. Captured tab/view,
+presentation. The immutable `choices` array retains its identity while the visible
+completion items are unchanged, including selection and diagnostic publications.
+Resolving item details also retains the labels: resolution cannot change them.
+Hosts render controls through their own UI system. Captured tab/view,
 selection, folding, input readiness, document revision, provider generation and authority
 checks stay in the controller. Completion application uses the existing shared history.
 `destroy()` detaches this controller and its subscriptions/requests without disposing

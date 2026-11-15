@@ -42,7 +42,11 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         await field(page).press("Shift+ArrowDown"); await ready(page); await expect(page.getByRole("option")).toHaveCount(0);
         const selected = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection; expect(selected.anchor).not.toBe(selected.head);
         await page.evaluate(() => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: 9, head: 9 }); }); await offer(page);
-        await field(page).press("ArrowDown"); await field(page).press("Enter"); await ready(page);
+        await page.evaluate(() => { const choices = window.hostFixture.providerState()!.choices!; if (!Object.isFrozen(choices)) throw new Error("Completion choices must be immutable."); Reflect.set(window, "retainedCompletionChoices", choices); });
+        await page.evaluate(() => window.hostFixture.providerCustom("fixture/diagnostics", { mode: "clear" }));
+        await field(page).press("ArrowDown");
+        expect(await page.evaluate(() => window.hostFixture.providerState()!.choices === Reflect.get(window, "retainedCompletionChoices"))).toBe(true);
+        await field(page).press("Enter"); await ready(page);
         const expected = "// fixture import\r\nconst sampleValue = 1; // TODO\r\n"; expect(await source(page)).toBe(expected); expect((await snapshot(page)).history.undoDepth).toBe(depth + 1);
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: expected.indexOf("sampleValue") + 11, head: expected.indexOf("sampleValue") + 11 });
         await field(page, "Secondary source").press("Control+z"); expect(await source(page)).toBe(typed); await field(page, "Secondary source").press("Control+Shift+z"); expect(await source(page)).toBe(expected);
@@ -92,7 +96,9 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         await seed(page, "const sMORE = 1;", 7); await expect.poll(async () => (await provider(page)).connected).toBe(true);
         await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "interactive" }));
         await pending();
+        await page.evaluate(() => Reflect.set(window, "retainedCompletionChoices", window.hostFixture.providerState()!.choices));
         await field(page).press("Tab"); await field(page).press("ArrowDown"); await expect(page.getByLabel("Completion detail", { exact: true })).toContainText("Resolved sampleWithImport");
+        expect(await page.evaluate(() => window.hostFixture.providerState()!.choices === Reflect.get(window, "retainedCompletionChoices"))).toBe(true);
         await complete(); await expect(page.getByLabel("Completion detail", { exact: true })).toContainText("Resolved sampleWithImport");
         await field(page).press("Tab"); await ready(page); expect(await source(page)).toBe("// resolved import\r\nconst sampleValueMORE = 1;");
         await seed(page, "const sMORE = 1;", 7);
@@ -177,7 +183,12 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         const original = "const saMORE = 1; // TODO"; await seed(page, original); await offer(page); await button(page, "Cancel request").click();
         await page.evaluate(() => window.hostFixture.setProviderDelay(1000)); await field(page).press("Control+Space"); await expect.poll(async () => (await provider(page)).pending).toBe(true);
         await field(page).press("ArrowRight"); await expect.poll(async () => (await provider(page)).pending).toBe(false); await expect(page.getByRole("option")).toHaveCount(0);
-        await page.evaluate(() => window.hostFixture.setProviderDelay(0)); await offer(page); await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
+        await page.evaluate(() => window.hostFixture.setProviderDelay(0)); await offer(page);
+        const completionId = await page.evaluate(() => window.hostFixture.providerState()!.completionId);
+        await button(page, "Save source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
+        await button(page, "Finish save").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(0);
+        expect(await page.evaluate(() => window.hostFixture.providerState()!.completionId)).toBe(completionId); await expect(page.getByRole("option")).toHaveCount(2);
+        await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
         await expect(page.getByRole("option")).toHaveCount(0); expect(await source(page)).toBe(original); await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));
         await button(page, "Disconnect provider").click(); await field(page).pressSequentially("x"); expect(await source(page)).toBe(original.replace("saMORE", "saMxORE"));
         await button(page, "Reconnect provider").click(); await expect.poll(async () => (await provider(page)).connected).toBe(true); await offer(page);
