@@ -7,6 +7,12 @@ subtrees remain shared; partial leaves contribute only their requested ranges. A
 by height assembles balanced output using the existing join/metadata operations. Same-position
 insertions retain array order, and a net no-op returns the original buffer and identity mapping.
 
+For a single edit inserting at most 64 UTF-16 units, the join packs the insertion with
+each adjacent surviving leaf of at most 64 units. It copies at most 128 unchanged units
+into one new backing, without mutating retained roots or scanning other leaves. A lone
+surviving fragment is reused. Larger insertions retain the ordinary join path. This bounds
+fragment growth during sequential typing; it does not compact unrelated older fragments.
+
 Small insertions share backing runs up to 65,536 UTF-16 units; each larger insertion gets its
 own backing. The output packs consecutive fragments of at most 64 units into runs capped at
 65,536 units. A singleton reuses its leaf/backing instead of copying. Larger ranges and complete
@@ -15,7 +21,7 @@ leaves or query LF indexes. This reduces dense-edit fragmentation while keeping 
 from copying large unchanged regions. Source text can contain CRLF, unpaired surrogates and
 graphemes crossing storage boundaries; storage performs no normalization or shaping.
 
-Packing may copy unchanged units inside a dense edited region and add LF/gap indexes for them.
+Packing may copy unchanged units at an edited seam or inside a dense edited region and add LF/gap indexes for them.
 `changedUnits` still counts semantic deletion/insertion, while `BufferRetention.backingTextUnits`
 counts the full retained storage. The two are different measures. Logical counts are not heap
 bytes. Retained versions share untouched subtrees and preserve their exact original text;

@@ -7,9 +7,10 @@ function all(buffer: TextBuffer, query: string, budget = 3, options?: LiteralSea
     for (;;) { const step = cursor.next(budget, 2); assert.ok(step.readUnits <= budget); matches.push(...step.matches); if (step.done) return matches; }
 }
 test("literal search crosses piece/step boundaries, preserves UTF-16/newlines and does not export", () => {
-    const buffer = TextBuffer.from("a😀\r\néa😀\r\n").replace(1, 1, "_").replace(2, 2, "!");
+    const tail = "x".repeat(128), buffer = TextBuffer.from("a😀\r\néa😀\r\n" + tail).replace(1, 1, "_").replace(2, 2, "!");
+    assert.ok([...buffer.chunks()].length > 1, "Keep the search seam even when small edit fragments coalesce.");
     for (const query of ["_!😀\r\n", "😀", "\r\n", "é", "missing", ""]) {
-        const text = "a_!😀\r\néa😀\r\n", expected = [];
+        const text = "a_!😀\r\néa😀\r\n" + tail, expected = [];
         if (query) for (let from = text.indexOf(query); from >= 0; from = text.indexOf(query, from + query.length)) expected.push({ from, to: from + query.length });
         assert.deepEqual(all(buffer, query), expected);
     }
@@ -90,9 +91,9 @@ test("case-insensitive literals preserve raw spans across pieces and tiny read b
         const expected = [...text.matchAll(new RegExp(quote(query), "giu"))].map(match => ({ from: match.index, to: match.index + match[0].length }));
         for (const budget of [1, 2, 7, 32]) assert.deepEqual(all(buffer, query, budget, { matchCase: false }), expected, `${JSON.stringify(query)} budget ${budget}`);
     }
-    const pair = TextBuffer.from("x\ud801").replace(2, 2, "\udc00x");
+    const prefix = "x".repeat(128), pair = TextBuffer.from(prefix + "\ud801").replace(prefix.length + 1, prefix.length + 1, "\udc00x");
     assert.ok([...pair.chunks()].some(chunk => chunk.endsWith("\ud801")));
-    assert.deepEqual(all(pair, "𐐨", 1, { matchCase: false }), [{ from: 1, to: 3 }]);
+    assert.deepEqual(all(pair, "𐐨", 1, { matchCase: false }), [{ from: prefix.length, to: prefix.length + 2 }]);
     assert.deepEqual(all(TextBuffer.from("AaAAA"), "aa", 1, { matchCase: false }), [{ from: 0, to: 2 }, { from: 2, to: 4 }]);
     assert.deepEqual(all(TextBuffer.from("k K K"), "k"), [{ from: 0, to: 1 }]);
     const pending = new LiteralSearch(TextBuffer.from("𐐀"), "𐐨", { matchCase: false }); pending.next(1); pending.dispose();

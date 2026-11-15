@@ -41,7 +41,9 @@ test("indexed line/range subscribers do not materialize the document and retaine
     assert.equal(buffer.diagnostics().textExports, 0);
     assert.ok(buffer.diagnostics().sliceUnits < 100);
     const retained = TextBuffer.retained(history);
-    assert.equal(retained.versions, 201); assert.equal(retained.backingTextUnits, 2_400_400);
+    assert.equal(retained.versions, 201);
+    // Each retained edit adds its insertion plus at most two 64-unit boundary pieces.
+    assert.ok(retained.backingTextUnits >= 2_400_400 && retained.backingTextUnits <= 2_400_000 + 200 * (2 + 128));
     assert.ok(retained.nodes < 10_000);
     assert.equal(history[0]!.length, 2_400_000);
 });
@@ -117,6 +119,29 @@ test("buffer trees stay balanced under alternating end edits, deletes and retain
     assert.ok(shape.height <= 2 * Math.log2(shape.retention.nodes + 1));
     assert.ok(retained.backingTextUnits < buffer.length * history.length);
     history.forEach(entry => assert.equal(entry.buffer.text(), entry.text));
+});
+
+test("sequential single edits bound fragments while retaining large backings and exact earlier roots", () => {
+    const text = "source\r\n😀x\ud800\n".repeat(4000), original = TextBuffer.from(text), units = ["a", "\r", "\n", "\ud83d", "\ude00", "\ud800", "\udc00"];
+    for (const [from, reverse] of [[0, false], [text.length / 2, false], [text.length, false], [text.length / 2, true]] as const) {
+        let buffer = original; const inserted: string[] = [], retained: { buffer: TextBuffer; text: string }[] = [{ buffer, text }];
+        for (let index = 0; index < 4096; index++) {
+            const unit = units[index % units.length]!, at = from + (reverse ? 0 : index);
+            buffer = buffer.replace(at, at, unit); inserted.push(unit);
+            if (index % 1024 === 1023) retained.push({ buffer, text: text.slice(0, from) + (reverse ? [...inserted].reverse() : inserted).join("") + text.slice(from) });
+        }
+        const shape = buffer.diagnostics(), live = TextBuffer.retained([original, buffer]);
+        assert.ok(shape.retention.nodes < 256, `One-character edits retained ${shape.retention.nodes} nodes.`);
+        assert.ok([...buffer.chunks(from + 1000, from + 1200)].length < 8, "A short read must not visit one piece per typed unit.");
+        assert.ok(live.backingTextUnits <= text.length + inserted.length + 128, "Coalescing must not copy large unchanged ranges.");
+        for (const entry of retained) {
+            assert.equal(entry.buffer.slice(0, entry.buffer.length), entry.text); assert.equal(entry.buffer.lineCount, entry.text.split("\n").length);
+            assert.equal(entry.buffer.readMetrics().textExports, 0); entry.buffer.diagnostics();
+        }
+        // Deleting the inserted run restores exact raw text without changing any retained version.
+        const deleted = buffer.replace(from, from + inserted.length, ""); assert.equal(deleted.slice(0, deleted.length), text);
+        assert.equal(buffer.slice(from, from + inserted.length), (reverse ? [...inserted].reverse() : inserted).join(""));
+    }
 });
 
 test("longest line indexing survives splits, joined lines, CRLF, empty lines and retained roots", () => {

@@ -15,6 +15,7 @@ export type BufferChange = Readonly<{ buffer: TextBuffer; mapping: PositionMap; 
 export type BufferRetention = Readonly<{ versions: number; nodes: number; backingBuffers: number; backingTextUnits: number; lineEntries: number; gapEntries: number }>;
 export type BufferReadMetrics = Readonly<{ textExports: number; sliceUnits: number }>;
 const counters = new WeakMap<TextBuffer, { textExports: number; sliceUnits: number }>();
+const smallPieceUnits = 64;
 
 function lowerBound(values: ArrayLike<number>, target: number): number {
     let low = 0, high = values.length;
@@ -67,6 +68,26 @@ function split(root: Root, offset: number): readonly [Root, Root] {
         const [left, middle] = split(root.left, offset); return [left, join(middle, root.right)];
     }
     const [middle, right] = split(root.right, offset - root.left.length); return [join(root.left, middle), right];
+}
+function leafText(leaf: Leaf | null): string {
+    return leaf ? leaf.piece.backing.text.slice(leaf.piece.from, leaf.piece.from + leaf.length) : "";
+}
+/** Pack only the edited seam; immutable large ranges and all other subtrees stay shared. */
+function joinEdit(left: Root, insert: string, right: Root): Root {
+    if (insert.length <= smallPieceUnits) {
+        let before = left, after = right;
+        while (before?.kind === "branch") before = before.right;
+        while (after?.kind === "branch") after = after.left;
+        const prefix = before && before.length <= smallPieceUnits ? before : null;
+        const suffix = after && after.length <= smallPieceUnits ? after : null;
+        // Do not copy a singleton surviving deletion. At most two existing small pieces join the insertion.
+        if (Number(!!prefix) + Number(!!insert.length) + Number(!!suffix) > 1) {
+            insert = leafText(prefix) + insert + leafText(suffix);
+            if (prefix) [left] = split(left, left!.length - prefix.length);
+            if (suffix) [, right] = split(right, suffix.length);
+        }
+    }
+    return join(join(left, original(insert)), right);
 }
 function validateRange(length: number, from: number, to = from): void {
     if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > length) throw new RangeError("Invalid UTF-16 range.");
@@ -145,7 +166,7 @@ function batch(root: Root, edits: readonly TextEdit[]): Root {
         parts.length = 0; fragments = 0; fragmentUnits = 0; firstBacking = undefined; firstNode = undefined;
     };
     const appendPiece = (value: Backing, from: number, length: number, reuse?: Leaf) => {
-        if (length > 64) { flushFragments(); appendTree(reuse ?? piece(value, from, length)); return; }
+        if (length > smallPieceUnits) { flushFragments(); appendTree(reuse ?? piece(value, from, length)); return; }
         if (fragmentUnits + length > capacity) flushFragments();
         if (!fragments) { firstBacking = value; firstFrom = from; firstLength = length; firstNode = reuse; }
         else {
@@ -209,7 +230,7 @@ export class TextBuffer {
         let root: Root;
         if (effective.length === 1) {
             const edit = effective[0]!, [left, rest] = split(this.#root, edit.from), [, right] = split(rest, edit.to - edit.from);
-            root = join(join(left, original(edit.insert)), right);
+            root = joinEdit(left, edit.insert, right);
         } else root = batch(this.#root, effective);
         const buffer = new TextBuffer(root);
         if (effective.length > 1 && buffer.equals(this)) return Object.freeze({ buffer: this, mapping: new PositionMap(this.length, []), changedUnits: 0 });
