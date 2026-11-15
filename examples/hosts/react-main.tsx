@@ -16,7 +16,8 @@ import { documentColorActions, documentColorDescription, documentColorLabel, col
 import { documentLinkActions, documentLinkDescription, documentLinkLabel, documentLinkDetails } from "./document-links-panel.ts";
 import { actionsControls, actionsDescriptionFor, actionChoiceLabel, actionTarget } from "./actions-panel.ts";
 import { renameActions, renameDescriptionFor, renameTarget } from "./rename-panel.ts";
-import { signatureActions } from "./signature-panel.ts";
+import { signatureActions, mountSignaturePopup } from "./signature-panel.ts";
+import { mountHoverPanel } from "./hover-panel.ts";
 import { HostDraftRecovery } from "./draft-recovery.ts";
 import { createBrowserDraftStore } from "./draft-store.ts";
 import { draftActions } from "./draft-panel.ts";
@@ -29,6 +30,10 @@ const draft = new HostDraftRecovery(controller, createBrowserDraftStore(window))
 const counters = { form: 0, metadata: 0 };
 const formCommitted = () => { counters.form++; };
 const metadataCommitted = () => { counters.metadata++; };
+// Stable refs lend empty subtrees to the shared presenters. Their returned cleanup also
+// handles Strict Mode replay; documentation and fitting never synchronize through effects.
+const hoverPopupRef = (host: HTMLDivElement | null) => host ? mountHoverPanel(host, bindings.hover) : undefined;
+const signaturePopupRef = (host: HTMLDivElement | null) => host ? mountSignaturePopup(host, bindings.signature) : undefined;
 function useObserved<T>(store: Observable<T>): T { return useSyncExternalStore(store.subscribe, store.getSnapshot); }
 
 function Commands() {
@@ -150,17 +155,13 @@ function LanguageTools() {
     </section>;
 }
 function SymbolInfo() {
-    const state = useObserved(bindings.hover.state);
-    return <div className="host-symbol-info" role="tooltip" hidden={!state.visible} style={{ left: state.left, top: state.top }}
-        onPointerEnter={bindings.hover.enterPopup} onPointerLeave={bindings.hover.leavePopup} onPointerDown={event => event.preventDefault()}>
-        <pre>{state.text || state.message}</pre><span>Escape dismisses symbol information.</span></div>;
+    return <div ref={hoverPopupRef} />;
 }
 function SignatureTools() {
     const tools = bindings.signature, s = useObserved(tools.state);
     return <><section className="host-language" aria-label="Signature commands"><h2>Signature help</h2><output aria-label="Signature help status">{s.message}</output>
         <div>{signatureActions(tools).map(action => <button key={action.label} onPointerDown={event => event.preventDefault()} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div></section>
-        <div className="host-symbol-info host-signature" role="tooltip" aria-label="Signature help" hidden={!s.visible} style={{ left: s.left, top: s.top }} onPointerDown={event => event.preventDefault()}>
-            <pre>{s.before || (s.status === "pending" ? s.message : "")}{s.parameter && <mark aria-label="Active signature parameter">{s.parameter}</mark>}{s.after}</pre><p>{s.documentation}</p><p>{s.parameterDocumentation}</p></div></>;
+        <div ref={signaturePopupRef} /></>;
 }
 function TablePasteTools() {
     const tools = bindings.tablePaste, state = useObserved(tools.state);

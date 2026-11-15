@@ -27,6 +27,13 @@ continues after individual failures; repeated or reentrant disposal returns the 
 React mounting still returns after its explicit `flushSync` and ref completion. Fixture resources
 register their captured identities for cleanup instead of supplying application startup.
 
+Hover and signature popups share their observable presentation and DOM presenters across
+plain, React and the static demo. The presenters render structured documentation through
+`mountDocumentation`, then fit its measured dimensions to the viewport. React gives each
+presenter an empty subtree through a stable callback ref; the returned cleanup releases its
+subscription, listeners and documentation on detach, including Strict Mode replay. Signature
+commands remain pure React output using the shared action model. No effect synchronizes state.
+
 A persisted `pagehide` retains the mounted host and its listener for a later final hide. A
 non-persisted hide starts teardown. Browser regressions exercise this policy with synthetic
 page-transition events and fixture installation disabled; they do not establish real
