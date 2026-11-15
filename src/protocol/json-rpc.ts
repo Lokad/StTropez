@@ -29,7 +29,9 @@ export class RpcError extends Error {
 const object = (value: unknown): value is Message => value !== null && typeof value === "object" && !Array.isArray(value);
 const has = (value: Message, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 const idValue = (value: unknown): value is RpcId => value === null || typeof value === "string" || typeof value === "number" && Number.isSafeInteger(value);
-const snapshotNodes = 100000, snapshots = new WeakSet<object>();
+const snapshotNodes = 100000, snapshots = new WeakMap<object, boolean>();
+/** Internal ownership proof for immutable syntax caches; it grants no snapshot-size exemption. */
+export const isCapturedJson = (value: unknown): value is object => !!value && typeof value === "object" && snapshots.has(value);
 function json(value: unknown, depth = 0, budget = { left: snapshotNodes }): value is JsonValue {
     if (depth > 64 || --budget.left < 0) return false;
     if (value === null || typeof value === "string" || typeof value === "boolean") return true;
@@ -46,14 +48,14 @@ function freezeJson(value: JsonValue): number {
     // JSON.stringify normalizes -0; retaining that subtree would change snapshot semantics.
     if (!value || typeof value !== "object") return Object.is(value, -0) ? Infinity : 1;
     let nodes = 1; for (const child of Object.values(value)) nodes += freezeJson(child);
-    Object.freeze(value); if (nodes <= snapshotNodes) snapshots.add(value); return nodes;
+    Object.freeze(value); snapshots.set(value, nodes <= snapshotNodes); return nodes;
 }
 function immutable(value: JsonValue): JsonValue {
     freezeJson(value); return value;
 }
 /** Internal shared validation/capture for host-supplied session options. */
 export function jsonSnapshot(value: unknown): JsonValue {
-    if (value && typeof value === "object" && snapshots.has(value)) return value as JsonValue;
+    if (value && typeof value === "object" && snapshots.get(value) === true) return value as JsonValue;
     if (!json(value)) throw new TypeError("Expected bounded JSON values.");
     return immutable(JSON.parse(JSON.stringify(value)) as JsonValue);
 }

@@ -5,7 +5,7 @@ import type { SnippetStop } from "../core/snippets.ts";
 import type { TextEdit } from "../core/changes.ts";
 import type { DocumentationContent, DocumentationPart } from "../core/documentation.ts";
 import type { DocumentChange } from "../core/workspace.ts";
-import { jsonEqual, jsonSnapshot, RpcError } from "./json-rpc.ts";
+import { isCapturedJson, jsonEqual, jsonSnapshot, RpcError } from "./json-rpc.ts";
 import type { JsonValue } from "./json-rpc.ts";
 import type { LspDocumentCapture, LspDocumentSnapshot } from "./lsp-session.ts";
 import type { LspLineIndex, LspPosition, LspRange } from "./lsp-positions.ts";
@@ -69,7 +69,10 @@ function range(value: unknown): Readonly<{ start: LspPosition; end: LspPosition 
 }
 /** Strict source ranges: edit/diagnostic validation never silently clamps a malformed server position. */
 export function lspRangeOffsets(index: LspLineIndex, value: unknown): Readonly<{ from: number; to: number }> {
-    const { start, end } = range(value), from = index.offsetAt(start), to = index.offsetAt(end), a = index.at(from), b = index.at(to);
+    return rangeOffsets(index, range(value));
+}
+function rangeOffsets(index: LspLineIndex, { start, end }: LspRange): Readonly<{ from: number; to: number }> {
+    const from = index.offsetAt(start), to = index.offsetAt(end), a = index.at(from), b = index.at(to);
     if (a.line !== start.line || a.character !== start.character || b.line !== end.line || b.character !== end.character) invalid();
     return Object.freeze({ from, to });
 }
@@ -125,10 +128,16 @@ export function decodeLspHover(value: unknown, capture: LspDocumentCapture): Lsp
     const range = value.range === undefined ? null : lspRangeOffsets(capture.index, value.range); current(capture);
     return contents ? Object.freeze({ text: contents, content, range }) : null;
 }
+const locations = { definition: new WeakMap<object, ReturnType<typeof parseLocationEntries>>(), references: new WeakMap<object, ReturnType<typeof parseLocationEntries>>() };
 function locationEntries(value: unknown, kind: "definition" | "references") {
+    if (!isCapturedJson(value)) return parseLocationEntries(value, kind);
+    const cache = locations[kind], previous = cache.get(value); if (previous) return previous;
+    const entries = parseLocationEntries(value, kind); cache.set(value, entries); return entries;
+}
+function parseLocationEntries(value: unknown, kind: "definition" | "references") {
     const values = value === null ? [] : Array.isArray(value) ? value : kind === "definition" && record(value) ? [value] : invalid();
     let links: boolean | undefined;
-    return values.map((item: unknown) => {
+    return Object.freeze(values.map((item: unknown) => {
         if (!record(item)) invalid(); const link = "targetUri" in item;
         if (link && (kind !== "definition" || !Array.isArray(value)) || links !== undefined && links !== link) invalid(); links = link;
         const uri = link ? item.targetUri : item.uri;
@@ -136,8 +145,8 @@ function locationEntries(value: unknown, kind: "definition" | "references") {
         const targetRange = range(link ? item.targetRange : item.range), selected = link ? range(item.targetSelectionRange) : targetRange;
         const before = (a: LspPosition, b: LspPosition) => a.line < b.line || a.line === b.line && a.character < b.character;
         if (before(selected.start, targetRange.start) || before(targetRange.end, selected.end)) invalid();
-        return { uri, targetRange, selected, originRange: link && item.originSelectionRange !== undefined ? range(item.originSelectionRange) : null };
-    });
+        return Object.freeze({ uri, targetRange, selected, originRange: link && item.originSelectionRange !== undefined ? range(item.originSelectionRange) : null });
+    }));
 }
 /** Validate every wire entry before asking the host to load missing targets. */
 export const lspLocationUris = (value: unknown, kind: "definition" | "references"): readonly string[] => locationEntries(value, kind).map(item => item.uri);
@@ -149,13 +158,19 @@ export function decodeLspLocations(value: unknown, kind: "definition" | "referen
         const { uri } = item;
         const target = resolve(uri); if (!target || target.document.uri !== uri || target.index.buffer !== target.document.buffer) throw new TypeError("LSP location URI is outside the captured host project.");
         current(target);
-        const targetRange = lspRangeOffsets(target.index, item.targetRange), selected = lspRangeOffsets(target.index, item.selected);
-        const originRange = item.originRange ? lspRangeOffsets(origin.index, item.originRange) : null;
+        const targetRange = rangeOffsets(target.index, item.targetRange), selected = item.selected === item.targetRange ? targetRange : rangeOffsets(target.index, item.selected);
+        const originRange = item.originRange ? rangeOffsets(origin.index, item.originRange) : null;
         return Object.freeze({ target, from: selected.from, to: selected.to, targetRange, originRange });
     });
     current(origin); for (const item of items) current(item.target); return Object.freeze(items);
 }
+const workspaceEdits = new WeakMap<object, ReturnType<typeof parseWorkspaceEditEntries>>();
 function workspaceEditEntries(value: unknown) {
+    if (!isCapturedJson(value)) return parseWorkspaceEditEntries(value);
+    const previous = workspaceEdits.get(value); if (previous) return previous;
+    const entries = parseWorkspaceEditEntries(value); workspaceEdits.set(value, entries); return entries;
+}
+function parseWorkspaceEditEntries(value: unknown) {
     if (!record(value) || value.changeAnnotations !== undefined) invalid();
     const entries: Readonly<{ uri: unknown; version?: unknown; edits: unknown }>[] = [];
     // LSP prefers versioned documentChanges when both representations are supplied.
@@ -171,13 +186,13 @@ function workspaceEditEntries(value: unknown) {
         if (!record(value.changes)) invalid();
         for (const [uri, edits] of Object.entries(value.changes)) entries.push({ uri, edits });
     }
-    return entries.map(({ uri, version, edits: values }) => {
+    return Object.freeze(entries.map(({ uri, version, edits: values }) => {
         if (typeof uri !== "string" || !uri || !Array.isArray(values)) invalid();
-        const edits = values.map((item: unknown) => {
-            if (!record(item) || "annotationId" in item) invalid(); return { range: range(item.range), newText: text(item.newText) };
-        });
-        return { uri, version, edits };
-    });
+        const edits = Object.freeze(values.map((item: unknown) => {
+            if (!record(item) || "annotationId" in item) invalid(); return Object.freeze({ range: range(item.range), newText: text(item.newText) });
+        }));
+        return Object.freeze({ uri, version, edits });
+    }));
 }
 export const lspWorkspaceEditUris = (value: unknown): readonly string[] => workspaceEditEntries(value).map(item => item.uri);
 /** Normalize a complete text-only batch; the host checks edit authority again at application. */
@@ -188,7 +203,7 @@ export function decodeLspWorkspaceEdit(value: unknown, resolve: (uri: string) =>
         if (!target || target.document.uri !== uri || target.index.buffer !== target.document.buffer) throw new TypeError("LSP edit URI is outside the captured host project.");
         current(target); if (identities.has(target.document.documentId)) throw new TypeError("LSP edits must name each captured document once."); identities.add(target.document.documentId);
         if (version !== undefined && version !== null && version !== target.version) throw new RpcError(-32801, "LSP edit refers to another wire document version.");
-        const edits = values.map(item => edit(target.index, item))
+        const edits = values.map(item => Object.freeze({ ...rangeOffsets(target.index, item.range), insert: item.newText }))
             .sort((a, b) => a.from - b.from || a.to - b.to);
         // Stable sorting preserves the server's order for insertions at the same position.
         validateTextEdits(target.document.buffer.length, edits); return Object.freeze({ target, edits: Object.freeze(edits) });

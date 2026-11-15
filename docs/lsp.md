@@ -147,6 +147,10 @@ guard expires on session, registration or binding/revision changes. `decodeLspDi
 pushes against that capture. `decodeLspHover` and `decodeLspLocations` validate documentation and
 captured host URI locations. `decodeLspWorkspaceEdit` normalizes complete text-only batches for
 captured resources; the host rechecks edit authority before its atomic transaction.
+URI discovery and decoding share parsed location/workspace-edit syntax only for JSON
+captured and deeply frozen by the protocol owner. Mutable or frozen host inputs are
+validated afresh. Each decode still resolves captured targets and checks currentness,
+wire versions, buffer bounds and edit overlap; syntax reuse conveys no edit authority.
 `decodeLspCodeActions` and `decodeLspResolvedCodeAction` validate choices and edit resolution.
 `commandNames` and `requestCommand` expose advertised global commands with captured generations;
 the host supplies explicit confirmation and execution policy. With `applyEdit: true`, register a

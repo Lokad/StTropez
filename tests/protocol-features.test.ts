@@ -261,34 +261,52 @@ test("hover accepts standard content shapes and optional ranges as bounded liter
     expire(); assert.throws(() => decodeLspHover({ contents: "late" }, capture), error => error instanceof RpcError && error.code === -32801);
 });
 
-test("definition links/references resolve exact host URI captures and reject whole malformed/stale batches", async () => {
+test("definition links/references resolve exact host URI captures and reject whole malformed/stale batches", async t => {
     const origin = await captured("use 😀\r\n"), destination = await captured("// 😀\r\nconst target = 1;\r\n");
     const target = { ...destination.capture, document: Object.freeze({ ...destination.capture.document, uri: "custom+host:project/%E2%88%86 target", documentId: "destination", resourceId: "target" }) };
     const resolve = (uri: string) => uri === target.document.uri ? target : undefined;
     const location = { uri: target.document.uri, range: range(1, 6, 12) }, link = { targetUri: target.document.uri, targetRange: range(1, 0, 17), targetSelectionRange: range(1, 6, 12), originSelectionRange: range(0, 0, 3) };
     assert.equal(decodeLspLocations(location, "definition", origin.capture, resolve)[0]!.target, target);
-    const linked = decodeLspLocations([link], "definition", origin.capture, resolve)[0]!; assert.equal(target.index.buffer.slice(linked.from, linked.to), "target"); assert.deepEqual(linked.originRange, { from: 0, to: 3 }); assert.equal(Object.isFrozen(linked), true);
+    const wire = await rpcIncoming(t)(JSON.stringify([link]));
+    const linked = decodeLspLocations(wire, "definition", origin.capture, resolve)[0]!; assert.equal(target.index.buffer.slice(linked.from, linked.to), "target"); assert.deepEqual(linked.originRange, { from: 0, to: 3 }); assert.equal(Object.isFrozen(linked), true);
+    assert.deepEqual(decodeLspLocations(wire, "definition", origin.capture, resolve), [linked]);
+    assert.throws(() => decodeLspLocations(wire, "references", origin.capture, resolve));
+    const shorter = await captured("x"), rebound = { ...shorter.capture, document: { ...shorter.capture.document, uri: target.document.uri } };
+    assert.throws(() => decodeLspLocations(wire, "definition", origin.capture, () => rebound));
+    assert.throws(() => decodeLspLocations(wire, "definition", shorter.capture, resolve));
+    const host = Object.freeze([{ ...location, range: range(1, 6, 12) }]);
+    assert.equal(decodeLspLocations(host, "references", origin.capture, resolve)[0]!.to, linked.to);
+    host[0]!.range.end.character = 999; assert.throws(() => decodeLspLocations(host, "references", origin.capture, resolve));
     assert.equal(decodeLspLocations([location], "references", origin.capture, resolve).length, 1); assert.deepEqual(decodeLspLocations(null, "definition", origin.capture, resolve), []);
     for (const bad of [[location, { ...location, uri: "custom+host:unknown" }], [location, { ...location, range: range(1, 0, 999) }], [link, location], [{ ...link, targetSelectionRange: range(1, 0, 18) }], [{ ...link, originSelectionRange: range(0, 0, 999) }], link]) assert.throws(() => decodeLspLocations(bad, "definition", origin.capture, resolve));
     assert.throws(() => decodeLspLocations([link], "references", origin.capture, resolve)); assert.throws(() => decodeLspLocations(location, "references", origin.capture, resolve));
-    destination.expire(); assert.throws(() => decodeLspLocations([location], "definition", origin.capture, resolve), error => error instanceof RpcError && error.code === -32801);
+    destination.expire(); assert.throws(() => decodeLspLocations(wire, "definition", origin.capture, resolve), error => error instanceof RpcError && error.code === -32801);
     origin.expire(); assert.throws(() => decodeLspLocations([], "references", origin.capture, resolve), error => error instanceof RpcError && error.code === -32801);
 });
 
-test("workspace edits normalize versioned or unversioned batches without changing raw text or equal-position insertion order", async () => {
+test("workspace edits normalize versioned or unversioned batches without changing raw text or equal-position insertion order", async t => {
     const a = await captured("😀\r\nabc\rdef\n"), b = await captured("other");
     const target = { ...b.capture, document: { ...b.capture.document, uri: "custom+host:%2F opaque", documentId: "other" } };
     const resolve = (uri: string) => uri === a.capture.document.uri ? a.capture : uri === target.document.uri ? target : undefined;
     const response: WorkspaceEdit = { documentChanges: [{ textDocument: { uri: a.capture.document.uri, version: 3 }, edits: [
         { range: range(2, 0, 3), newText: "D\r\n" }, { range: range(1, 0, 0), newText: "first" }, { range: range(1, 0, 0), newText: "second" }, { range: range(1, 0, 3), newText: "A" }] },
         { textDocument: { uri: target.document.uri, version: null }, edits: [{ range: range(0, 0, 5), newText: "new" }] }] };
-    const plan = decodeLspWorkspaceEdit(response, resolve); assert.equal(plan.documents[0]!.target.document.revision, 70); assert.equal(plan.documents[0]!.target.version, 3);
+    const wire = await rpcIncoming(t)(JSON.stringify(response));
+    const plan = decodeLspWorkspaceEdit(wire, resolve); assert.equal(plan.documents[0]!.target.document.revision, 70); assert.equal(plan.documents[0]!.target.version, 3);
     const result = a.capture.document.buffer.apply(plan.documents[0]!.edits).buffer;
     assert.equal(result.slice(0, result.length), "😀\r\nfirstsecondA\rD\r\n\n"); assert.equal(plan.isCurrent(), true); assert.equal(Object.isFrozen(plan.documents[0]!.edits), true);
     const changes: WorkspaceEdit = { changes: { [target.document.uri]: [{ range: range(0, 0, 5), newText: "literal ${1} 😀\r" }] } };
     assert.equal(decodeLspWorkspaceEdit(changes, resolve).documents[0]!.edits[0]!.insert, "literal ${1} 😀\r");
     assert.equal(decodeLspWorkspaceEdit({ ...changes, documentChanges: [] }, resolve).documents.length, 0); assert.equal(decodeLspWorkspaceEdit({}, resolve).documents.length, 0);
-    b.expire(); assert.equal(plan.isCurrent(), false); assert.throws(() => decodeLspWorkspaceEdit(response, resolve), error => error instanceof RpcError && error.code === -32801);
+    assert.throws(() => decodeLspWorkspaceEdit(wire, uri => uri === a.capture.document.uri ? { ...a.capture, version: 4 } : resolve(uri)), error => error instanceof RpcError && error.code === -32801);
+    const shorter = await captured("x"); assert.throws(() => decodeLspWorkspaceEdit(wire, uri => uri === a.capture.document.uri ? shorter.capture : resolve(uri)));
+    const hostEdit = { range: range(0, 0, 1), newText: "first" }, host = Object.freeze({ documentChanges: [{ textDocument: { uri: target.document.uri, version: 3 }, edits: [hostEdit] }] });
+    assert.deepEqual(decodeLspWorkspaceEdit(wire, resolve).documents, plan.documents);
+    assert.equal(decodeLspWorkspaceEdit(host, resolve).documents[0]!.edits[0]!.insert, "first");
+    hostEdit.newText = "second"; assert.equal(decodeLspWorkspaceEdit(host, resolve).documents[0]!.edits[0]!.insert, "second");
+    host.documentChanges[0]!.textDocument.version = 4; assert.throws(() => decodeLspWorkspaceEdit(host, resolve), error => error instanceof RpcError && error.code === -32801);
+    host.documentChanges[0]!.textDocument.version = 3; hostEdit.range.end.character = 999; assert.throws(() => decodeLspWorkspaceEdit(host, resolve));
+    b.expire(); assert.equal(plan.isCurrent(), false); assert.throws(() => decodeLspWorkspaceEdit(wire, resolve), error => error instanceof RpcError && error.code === -32801);
 });
 
 test("workspace edits reject the complete malformed, stale, aliased or annotated batch", async () => {
