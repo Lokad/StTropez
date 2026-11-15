@@ -12,6 +12,14 @@ settles their replies before the controller finishes waiting for command leases.
 reaching a disposed service settle without writing. Configuration and transfer keep their own
 independent form-save owners.
 
+`HostSourceReview` owns source Save, saved/reference baselines and conflict review. Conflict
+reads and selected-version reads share one latest-request sequence; both retain captured tab
+and reference identity. A reviewed save uses the reviewed server version as its precondition.
+`HostLayout` owns tab placement, presentation and close/modal state. `HostLoadedSource` owns
+the temporary source slot, its generation, pending load and explicit discard revision. It
+rechecks dirty state after detached-view cleanup and releases only after tabs and leases leave.
+The controller composes these owners and exposes their stable observables to both hosts.
+
 Reported errors retain the original thrown value in `HostController.lastError`, including an
 Error's cause and stack, without freezing it into UI state. The fixture debug snapshot includes
 name/message/stack for Error values; opaque thrown values remain available through the controller
