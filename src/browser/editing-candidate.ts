@@ -70,7 +70,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     input.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
     input.setAttribute("autocapitalize", "off");
     root.append(input);
-    let revision = workspace.document(documentId).revision, context: InputContext = inputContext(workspace.document(documentId).buffer, view.getSnapshot().selection);
+    let contextBuffer: TextBuffer | undefined = workspace.document(documentId).buffer, contextSelection = view.getSnapshot().selection;
+    let revision = workspace.document(documentId).revision, context: InputContext = inputContext(contextBuffer, contextSelection);
     let disposed = false, composing = false, selecting = false, committing = false, escaped = false;
     let editTransform: CandidateEditTransform | undefined;
     let hostInsertion: CapturedInsertion | undefined;
@@ -129,6 +130,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     function refresh(): void {
         if (disposed || selecting || committing) return;
         const state = resource.getSnapshot(); input.disabled = !workspace.resolveTab(target) || state.state !== "ready";
+        if (input.disabled) contextBuffer = undefined;
         input.readOnly = readOnly || !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null;
         if (executingInput?.edit && input.readOnly) recoverInput(executingInput, "pending-input-expired");
         if (ordered && (!currentInput(ordered) || ordered.edit && input.readOnly)) cancelWord();
@@ -140,7 +142,10 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             if (capture && (capture.revision !== document.revision || capture.selectionSet !== selectionSet || capture.deleting && input.readOnly)) cancelWord();
             // Projection is refreshed only outside composition. The captured model selection and
             // LF mapping remain together until the native edit is committed or recovered.
-            context = inputContext(document.buffer, selected);
+            // Projection limits are fixed. Only computation is reused; native state and captures still refresh.
+            if (contextBuffer !== document.buffer || contextSelection.anchor !== selected.anchor || contextSelection.head !== selected.head) {
+                context = inputContext(document.buffer, selected); contextBuffer = document.buffer; contextSelection = selected;
+            }
             revision = document.revision;
             projectedSet = selectionSet;
             if (input.value !== context.text) input.value = context.text;
@@ -1072,7 +1077,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             cancelWord();
             nativeOrder = undefined; wordInput = undefined;
             insertion = undefined; composition = undefined;
-            graphemeCache = undefined; preferred = undefined;
+            graphemeCache = undefined; preferred = undefined; contextBuffer = undefined;
             if (composing && input.value !== context.text) conflict("composition-detached");
             composing = false;
             stopDrag();
