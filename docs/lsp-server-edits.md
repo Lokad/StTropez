@@ -33,13 +33,20 @@ The workspace adapter accepts an incoming edit only within its currently confirm
 its status command refuses edits. Confirmed [code-action commands](lsp-code-actions.md) use the same
 session runner and hand their captured intent to this existing review owner and panel. Unsolicited
 edits and overlapping requests are refused.
-The preview retains captured document/buffer/revision, origin tab/view, complete selections, fold
-generation, authority, pending-input, session and registration ownership. A later focus change
+The preview retains captured document/buffer/revision, origin tab/view, complete selections, visible
+fold projection, authority, pending-input, session and registration ownership. The host uses the
+public `captureViewRequest` for origin ownership and retains the other project resources separately.
+A later focus change
 does not retarget it. Typing, selection/fold changes, lost authority, remount or disposal expire
 the decision. Every edited target must allow human and host edits without a lock. Confirmation
 uses the public `applyLspWorkspaceEdit` helper to recheck every target before one
 `Workspace.editDocuments` transaction; a malformed or unavailable
 last target cannot leave an earlier one applied.
+Each applied command phase consumes its origin capture once and acquires a fresh capture before
+releasing the previous origin lease. Later phases use the resulting revisions and selections;
+unrelated changes still expire the command. If the view cannot be recaptured after application,
+remaining work is cancelled; the completed transaction stays undoable and is not reported as a
+refused edit. Transport loss can still prevent delivery of its acknowledgement.
 
 Each live incoming request has one reply. Decline and review timeout return `applied: false`;
 protocol cancellation follows the RPC cancellation response. The review deadline is 90 seconds

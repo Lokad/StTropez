@@ -1,5 +1,6 @@
-import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, Workspace } from "../../src/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
+import { captureViewRequest } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
 import { createNavigationClient, navigationMetrics } from "../editing/navigation-client.ts";
 import { validateProjectCommand } from "../probes/project-commands.ts";
 import type { ProjectCommand, ProjectCommandKind, ProjectOutcome, ProjectServerRequest } from "../probes/project-commands.ts";
@@ -11,7 +12,7 @@ import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../../src/protoc
 import type { LspWorkspaceEditNote } from "../../src/protocol/index.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
 type Job = { origin: Session; input: ProjectCommand; documents: Map<string, DocumentSnapshot>; revisions: Map<string, number>; authority: Map<string, string>;
-    leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; applied: boolean; selections: SelectionSet; folds: number;
+    leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; applied: boolean; capture: CapturedViewRequest | undefined;
     review?: Review; providerCurrent?: () => boolean; externalCancel?: () => void; changes: ProjectSnapshot["changes"] };
 type Review = { token: number; request: LspApplyEdit; context: LspRequestContext; finish: (result: LspApplyEditResult) => void; stop: () => void; timer: number; page: number };
 export type ProjectReview = Readonly<{ token: number; label: string; count: number; page: number; notes: readonly LspWorkspaceEditNote[]; canApply: boolean }>;
@@ -94,16 +95,60 @@ export class HostProjectTools {
         } else this.publish();
     }
     private current(job: Job): boolean {
-        if (this.job !== job || job.invalid || !this.available(job.origin) || job.providerCurrent && !job.providerCurrent()
-            || this.usesLsp && (job.origin.editor.view.getSnapshot().selectionSet !== job.selections || job.origin.editor.view.folding.getSnapshot().generation !== job.folds)) return false;
-        try { for (const [id, doc] of job.documents) if (this.workspace.observeDocument(doc.id).getSnapshot()?.revision !== job.revisions.get(id)
-            || this.authority(doc.id) !== job.authority.get(id) || !this.canCapture(doc.id)) return false; } catch { return false; }
+        if (this.job !== job || job.invalid) return false;
+        try {
+            if ((job.capture ? !job.capture.isCurrent() : !this.available(job.origin)) || job.providerCurrent && !job.providerCurrent()) return false;
+            // The project snapshots also validate the original action handoff and each command phase.
+            for (const [id, doc] of job.documents) if (this.workspace.observeDocument(doc.id).getSnapshot()?.revision !== job.revisions.get(id)
+                || this.authority(doc.id) !== job.authority.get(id) || !this.canCapture(doc.id)) return false;
+        } catch { return false; }
         return true;
+    }
+    private capture(origin: Session): CapturedViewRequest | undefined {
+        return captureViewRequest(this.workspace, origin.target, origin.editor.view,
+            { available: () => this.available(origin) && this.canCapture(origin.editor.view.documentId) });
+    }
+    private changed(job: Job): void {
+        if (!this.publishing && this.job === job && !this.current(job)) {
+            job.invalid = true; queueMicrotask(() => { if (this.job === job) this.cancel(); });
+        }
+    }
+    private watchCapture(job: Job, capture: CapturedViewRequest): void {
+        capture.signal.addEventListener("abort", () => { if (job.capture === capture) this.changed(job); }, { once: true });
+    }
+    private retain(job: Job): void {
+        if (job.capture) this.watchCapture(job, job.capture);
+        const changed = () => this.changed(job);
+        for (const doc of job.documents.values()) if (doc.id !== job.capture?.document.id) {
+            job.leases.push(this.workspace.acquire(doc.resourceId));
+            job.stops.push(this.workspace.observeDocument(doc.id).subscribe(changed), this.workspace.resourceForDocument(doc.id).metadata.subscribe(changed));
+        }
+        // Worker workspace commands are resource-scoped and intentionally permit selection movement.
+        if (!job.capture) job.stops.push(this.workspace.tabState.subscribe(changed));
+    }
+    private commit(job: Job, operation: () => void): void {
+        if (!this.current(job) || !job.capture) throw new Error("Captured command context changed before application.");
+        this.publishing = true;
+        try {
+            if (!job.capture.commit(() => {
+                operation();
+                // Renew before releasing the previous origin lease. Later phases must use the
+                // resulting revisions/selections, while unrelated changes still expire the command.
+                try {
+                    for (const [id, doc] of job.documents) { const current = this.workspace.document(doc.id); job.documents.set(id, current); job.revisions.set(id, current.revision); }
+                    const capture = this.capture(job.origin);
+                    if (capture) { job.capture = capture; this.watchCapture(job, capture); } else job.invalid = true;
+                } catch { job.invalid = true; }
+                // A failed renewal cancels remaining work; it cannot undo an applied phase or
+                // report that phase as refused to the provider.
+                return true;
+            })) throw new Error("Captured command context changed before application.");
+        } finally { this.publishing = false; this.changed(job); }
     }
     private release(job: Job): void {
         if (job.review) this.finishReview(job, job.review, { applied: false, failureReason: "Captured provider work ended or was cancelled." });
         if (this.job === job) this.job = undefined; job.invalid = true;
-        job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.stops.splice(0).forEach(stop => stop()); job.leases.splice(0).forEach(lease => lease.release());
+        job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.stops.splice(0).forEach(stop => stop()); job.capture?.cancel(); job.leases.splice(0).forEach(lease => lease.release());
     }
     readonly cancel = (): void => {
         const job = this.job; if (!job) return; if (job.externalCancel) job.externalCancel(); else this.drop(); this.release(job); this.metrics.cancelled++;
@@ -156,7 +201,7 @@ export class HostProjectTools {
                 || !change.target.isCurrent() || !this.canCapture(document.id)) return Promise.resolve({ applied: false, failureReason: "A resolved edit target changed." });
             job.leases.push(this.workspace.acquire(document.resourceId)); job.documents.set(document.id, document);
             job.revisions.set(document.id, document.revision); job.authority.set(document.id, this.authority(document.id));
-            const changed = () => { if (!this.publishing && this.job === job && !this.current(job)) { job.invalid = true; queueMicrotask(() => { if (this.job === job) this.cancel(); }); } };
+            const changed = () => this.changed(job);
             job.stops.push(this.workspace.observeDocument(document.id).subscribe(changed), this.workspace.resourceForDocument(document.id).metadata.subscribe(changed));
         }
         if (policy) {
@@ -175,8 +220,8 @@ export class HostProjectTools {
     }
     private applyCaptured(job: Job, edit: LspWorkspaceEdit): number {
         if (!this.current(job) || !edit.isCurrent() || edit.documents.some(change => change.edits.length && !this.editable(change.target.document.documentId as DocumentId))) throw new Error("Captured edit revision, authority or provider changed.");
-        this.publishing = true;
-        try {
+        let count = 0;
+        this.commit(job, () => {
             const changed = applyLspWorkspaceEdit(this.workspace, edit, { origin: "host", requiredOrigins: ["human"], view: job.origin.editor.view });
             if (changed.length) {
                 job.applied = true; this.metrics.applied++;
@@ -184,10 +229,9 @@ export class HostProjectTools {
                 for (const document of changed) all.set(document.id, Object.freeze({ document: document.id, title: document.title.slice(0, 128) }));
                 job.changes = this.changes = Object.freeze([...all.values()]);
             }
-            for (const [id, doc] of job.documents) { const current = this.workspace.document(doc.id); job.documents.set(id, current); job.revisions.set(id, current.revision); }
-            job.selections = job.origin.editor.view.getSnapshot().selectionSet; job.folds = job.origin.editor.view.folding.getSnapshot().generation;
-            return changed.length;
-        } finally { this.publishing = false; }
+            count = changed.length;
+        });
+        return count;
     }
     confirmReview(token: number | null): void {
         const job = this.job, review = job?.review; if (!job || !review || token !== review.token) return;
@@ -210,14 +254,13 @@ export class HostProjectTools {
         if (!origin || !this.canRunAction(intent.editor) || !intent.isCurrent()) return undefined;
         const docs = intent.sources.map(source => source.document), win = intent.editor.element.ownerDocument.defaultView!;
         const input = validateProjectCommand({ id: ++this.serial, kind: "review", documents: docs.map(doc => ({ document: doc.id, revision: doc.revision, length: doc.buffer.length })), delay: 0 });
+        const capture = this.capture(origin); if (!capture) return undefined;
         const job: Job = { origin, input, documents: new Map(docs.map(doc => [doc.id, doc])), revisions: new Map(docs.map(doc => [doc.id, doc.revision])), authority: new Map(intent.sources.map(source => [source.document.id, source.authority])),
-            leases: [], stops: [], timer: 0, invalid: false, applied: false, selections: intent.editor.view.getSnapshot().selectionSet, folds: intent.editor.view.folding.getSnapshot().generation,
+            leases: [], stops: [], timer: 0, invalid: false, applied: false, capture,
             externalCancel: intent.cancel, providerCurrent: intent.isCurrent, changes: [] };
         this.job = job;
-        const changed = () => { if (!this.publishing && this.job === job && !this.current(job)) { job.invalid = true; queueMicrotask(() => { if (this.job === job) this.cancel(); }); } };
         try {
-            for (const doc of docs) { job.leases.push(this.workspace.acquire(doc.resourceId)); job.stops.push(this.workspace.observeDocument(doc.id).subscribe(changed), this.workspace.resourceForDocument(doc.id).metadata.subscribe(changed)); }
-            job.stops.push(origin.editor.view.subscribe(changed), origin.editor.view.folding.subscribe(changed), this.workspace.tabState.subscribe(changed), intent.subscribe(changed));
+            this.retain(job); job.stops.push(intent.subscribe(() => this.changed(job)));
             job.timer = win.setTimeout(() => { if (this.job === job) this.cancel(); }, 120000);
             if (!this.current(job)) throw new Error("Captured action intent changed before handoff.");
             this.publish({ status: "pending", message: "Executing the confirmed action under the host's captured edit policy." });
@@ -264,14 +307,13 @@ export class HostProjectTools {
         try { input = validateProjectCommand({ id: ++this.serial, kind, documents: docs.map(d => ({ document: d.id, revision: d.revision, length: d.buffer.length })), delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid provider capture." }); return; }
         this.fault = undefined; const win = origin.editor.element.ownerDocument.defaultView!;
+        const capture = this.usesLsp ? this.capture(origin) : undefined;
+        if (this.usesLsp && !capture) { this.publish({ message: "The source changed before capture; request fresh provider work." }); return; }
         const job: Job = { origin, input, documents: new Map(docs.map(d => [d.id, d])), revisions: new Map(docs.map(d => [d.id, d.revision])), authority: new Map(docs.map(d => [d.id, this.authority(d.id)])), leases: [], stops: [], timer: 0, invalid: false, applied: false,
-            selections: origin.editor.view.getSnapshot().selectionSet, folds: origin.editor.view.folding.getSnapshot().generation, changes: [] };
+            capture, changes: [] };
         this.job = job; this.metrics.requested++;
         try {
-            const changed = () => { if (!this.publishing && this.job === job && !this.current(job)) { job.invalid = true; queueMicrotask(() => { if (this.job === job) this.cancel(); }); } };
-            for (const doc of docs) { job.leases.push(this.workspace.acquire(doc.resourceId)); job.stops.push(this.workspace.observeDocument(doc.id).subscribe(changed), this.workspace.resourceForDocument(doc.id).metadata.subscribe(changed)); }
-            job.stops.push(this.workspace.tabState.subscribe(changed));
-            if (this.usesLsp) job.stops.push(origin.editor.view.subscribe(changed), origin.editor.view.folding.subscribe(changed));
+            this.retain(job);
             job.timer = win.setTimeout(() => { if (this.job === job) { this.cancel(); this.publish({ status: "failed", message: "Workspace provider timed out; any applied edit remains available to undo." }); } }, this.usesLsp ? 120000 : 30000);
             this.publish({ status: "pending", message: `Waiting for captured provider ${kind}.` });
             if (this.backendFactory) {
