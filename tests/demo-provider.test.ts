@@ -9,8 +9,8 @@ import { attachDemoProvider } from "../examples/demo/provider-server.ts";
 import type { DemoProviderBootstrap } from "../examples/demo/provider-contract.ts";
 import { demoSample } from "../examples/demo/samples.ts";
 import { Workspace } from "../src/index.ts";
-import { LspWorkspace, createLspActionClient } from "../src/protocol/index.ts";
-import type { LspSessionAccess } from "../src/protocol/index.ts";
+import { LspWorkspace, createLspActionClient, decodeLspCompletions, decodeLspResolvedCompletion, lspCompletionPlan } from "../src/protocol/index.ts";
+import type { LspDocumentCapture, LspSessionAccess } from "../src/protocol/index.ts";
 import { openWebSocketTransport } from "../src/browser/index.ts";
 
 test("demo capacity reclaims idle workspaces while retaining connected clients and bounding concurrent allocation", { timeout: 15000 }, async () => {
@@ -109,6 +109,40 @@ test("real demo provider uses public workspace capture/sync over WebSocket and r
     } finally {
         owner?.dispose(); await provider.close(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     }
+});
+
+test("real lazy auto-import completion at the first character applies atomically and undoes through workspace history", { timeout: 30000 }, async () => {
+    const server = createServer((request, response) => { void provider.handle(request, response).then(handled => { if (!handled) response.writeHead(404).end(); }); });
+    const provider = attachDemoProvider(server); await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address(); assert.ok(address && typeof address === "object"); const url = `http://127.0.0.1:${address.port}`;
+    let owner: LspWorkspace | undefined;
+    try {
+        const config = await (await fetch(url + "/demo-provider?sample=pricing", { method: "POST" })).json() as DemoProviderBootstrap;
+        const workspace = new Workspace(), files = Object.entries(demoSample("pricing").files).map(([name, value]) => ({ name,
+            resource: workspace.createTextResource({ scope: "completion-test", resource: name, variant: "working" }, name, { value: name === "main.ts" ? "calculateT" : value }) }));
+        owner = new LspWorkspace(workspace, { connect: () => openWebSocketTransport(url.replace("http:", "ws:") + config.endpoint), rootUri: config.rootUri,
+            features: ["textDocument/completion"], documentInfo: document => ({ uri: config.documents[document.key.resource]!.uri, languageId: "typescript" }),
+            schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); } });
+        const scope = owner.createScope(); scope.setDocuments(files.map(file => workspace.document(file.resource.documentId))); await scope.connect();
+        const source = files.find(file => file.name === "main.ts")!, before = workspace.document(source.resource.documentId), binding = scope.attachDocument(before.id);
+        let capture: LspDocumentCapture | undefined;
+        const response = await scope.requestDocument("textDocument/completion", binding, (index, _document, current) => {
+            capture = current; return { position: index.at(before.buffer.length) };
+        }).result;
+        assert.ok(capture); const choices = decodeLspCompletions(response, capture, before.buffer.length,
+            { from: 0, to: before.buffer.length, replaceTo: before.buffer.length }, { resolve: true });
+        const choice = choices.items.find(item => item.label === "calculateTotal"); assert.ok(choice?.resolve); assert.equal(choice.additional.length, 0);
+        const wire = await scope.request("completionItem/resolve", choice.resolve).result;
+        const resolved = decodeLspResolvedCompletion(wire, choice, capture); assert.equal(resolved.additional.length, 1);
+        assert.equal(resolved.additional[0]!.from, 0); assert.equal(resolved.additional[0]!.to, 0);
+        const plan = lspCompletionPlan(resolved, "replace"), view = workspace.createDocumentView(before.id, { anchor: before.buffer.length, head: before.buffer.length });
+        assert.ok(workspace.edit({ documentId: before.id, expectedRevision: before.revision, origin: "human", edits: plan.edits, view, selectionSet: plan.selectionSet, history: { kind: "replace" } }).applied);
+        const after = workspace.document(before.id); assert.equal(after.text, 'import { calculateTotal } from "./pricing";\n\ncalculateTotal');
+        assert.equal(view.getSnapshot().selection.head, after.buffer.length); assert.equal(capture.isCurrent(), false);
+        assert.ok(workspace.undo({ documentId: before.id, expectedRevision: after.revision }).applied); assert.equal(workspace.document(before.id).text, "calculateT");
+        view.dispose(); owner.dispose(); owner = undefined; assert.equal((await fetch(url + config.endpoint, { method: "DELETE" })).status, 204);
+        assert.deepEqual(provider.snapshot(), { projects: 0, connections: 0, processes: 0, removals: 0 });
+    } finally { owner?.dispose(); await provider.close(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
 });
 
 test("real quick fixes use correlated diagnostic context through the public action client and reject stale context", { timeout: 30000 }, async () => {

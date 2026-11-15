@@ -1,5 +1,4 @@
 import { validateTextEdits } from "../core/changes.ts";
-import { PositionMap } from "../core/positions.ts";
 import { parseSnippet, offsetSnippetStops } from "../core/snippets.ts";
 import { adjustInsertionText, insertionContext } from "../core/insertion-text.ts";
 import type { InsertionIndentation } from "../core/insertion-text.ts";
@@ -233,10 +232,24 @@ export function decodeLspApplyEdit(value: unknown, resolve: (uri: string) => Lsp
 function edit(index: LspLineIndex, value: unknown, budget?: { units: number }, maximum = Number.MAX_SAFE_INTEGER): TextEdit {
     if (!record(value)) invalid(); return Object.freeze({ ...lspRangeOffsets(index, value.range), insert: text(value.newText, maximum, budget) });
 }
+function validateCompletionEdits(length: number, edits: readonly TextEdit[]): void {
+    validateTextEdits(length, edits);
+    for (let i = 1; i < edits.length; i++) {
+        const left = edits[i - 1]!, right = edits[i]!;
+        if (left.from === right.from && left.to === left.from && right.to === right.from) throw new RangeError("Completion inserts share a position.");
+    }
+}
+/** Inserted text starts follow the validated batch order, including an import before a replacement
+ * at the same boundary. Source-position affinity alone cannot identify each edit's inserted text. */
+function completionLayout(length: number, edits: readonly TextEdit[]) {
+    validateCompletionEdits(length, edits); const starts = new Map<TextEdit, number>(); let delta = 0;
+    for (const edit of edits) { starts.set(edit, edit.from + delta); delta += edit.insert.length - (edit.to - edit.from); }
+    if (!Number.isSafeInteger(length + delta)) throw new RangeError("Completion exceeds safe positions.");
+    return { starts, length: length + delta };
+}
 function plan(length: number, primary: TextEdit, additional: readonly TextEdit[], stops: readonly SnippetStop[] | null = null): LspCompletionPlan {
-    const edits = [...additional, primary].sort((a, b) => a.from - b.from || a.to - b.to); validateTextEdits(length, edits);
-    for (let i = 1; i < edits.length; i++) if (edits[i]!.from === edits[i - 1]!.from) invalid();
-    const from = new PositionMap(length, additional).map(primary.from, "before").offset;
+    const edits = [...additional, primary].sort((a, b) => a.from - b.from || a.to - b.to);
+    const from = completionLayout(length, edits).starts.get(primary)!;
     const snippet = stops ? offsetSnippetStops(stops, from) : null;
     const head = snippet?.find(stop => stop.index === 0)?.ranges[0]?.from ?? from + primary.insert.length;
     return Object.freeze({ edits: Object.freeze(edits), head, snippet });
@@ -426,20 +439,20 @@ export function lspCompletionPlan(item: LspCompletion, mode: "insert" | "replace
         return { from, to: mode === "insert" ? insertTo : replaceTo, insert: "" };
     });
     const batch = [...item.additional, ...targets].sort((a, b) => a.from - b.from || a.to - b.to);
-    validateTextEdits(buffer.length, batch);
-    for (let i = 1; i < batch.length; i++) if (batch[i]!.from === batch[i - 1]!.from) throw new RangeError("Completion edits overlap a captured caret.");
+    validateCompletionEdits(buffer.length, batch);
     let remaining = item.insertion.maxUnits - buffer.length - batch.reduce((n, edit) => n + edit.insert.length - (edit.to - edit.from), 0);
     if (remaining < 0) throw new RangeError("Completion exceeds the document limit.");
     const formatted = targets.map(target => {
         const result = completionText(source, target.from, inserted, character === undefined ? item.snippet : null, { ...item.insertion, maxUnits: remaining });
         remaining -= result.text.length; if (remaining < 0) throw new RangeError("Completion exceeds the document limit."); return result;
     });
-    const edits = Object.freeze([...item.additional, ...targets.map((target, index) => Object.freeze({ ...target, insert: formatted[index]!.text }))]
+    const primaries = targets.map((target, index) => Object.freeze({ ...target, insert: formatted[index]!.text }));
+    const edits = Object.freeze([...item.additional, ...primaries]
         .sort((a, b) => a.from - b.from || a.to - b.to));
-    const mapping = new PositionMap(buffer.length, edits);
+    const layout = completionLayout(buffer.length, edits);
     let order = 0;
-    const groups = targets.map((target, index) => {
-        const from = mapping.map(target.from, "before").offset, value = formatted[index]!, base = order;
+    const groups = primaries.map((primaryEdit, index) => {
+        const from = layout.starts.get(primaryEdit)!, value = formatted[index]!, base = order;
         const snippet = value.snippet && Object.freeze(value.snippet.map(stop => Object.freeze({ ...stop, ranges: Object.freeze(stop.ranges.map(range => {
             order = Math.max(order, base + range.order + 1); return Object.freeze({ ...range, from: from + range.from, to: from + range.to, order: base + range.order, group: index });
         })) })));
@@ -449,7 +462,7 @@ export function lspCompletionPlan(item: LspCompletion, mode: "insert" | "replace
         ranges: Object.freeze(groups.flatMap(group => group.snippet![index]!.ranges)) })));
     const first = snippet?.[0], ranges = first && first.index !== 0 ? first.ranges.map(range => ({ anchor: range.from, head: range.to })) : groups.map(group => ({ anchor: group.head, head: group.head }));
     const selected = first && first.index !== 0 ? selections.primary * groups[0]!.snippet![0]!.ranges.length : selections.primary;
-    return Object.freeze({ edits, head: groups[selections.primary]!.head, snippet, selectionSet: createSelectionSet(mapping.newLength, ranges, selected) });
+    return Object.freeze({ edits, head: groups[selections.primary]!.head, snippet, selectionSet: createSelectionSet(layout.length, ranges, selected) });
 }
 /** Literal display only; active indices use the protocol's default-to-first policy. */
 export function decodeLspSignatureHelp(value: unknown, capture: LspDocumentCapture): LspSignatureHelp | null {

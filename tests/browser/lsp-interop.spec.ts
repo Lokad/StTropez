@@ -12,6 +12,42 @@ async function seed(page: Page, text: string) {
 }
 async function offer(page: Page) { await field(page).press("Control+Space"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible(); }
 
+test("a first-character import keeps multicaret snippet selection and atomic undo", async ({ page }) => {
+    const prefix = "// import\r\n"; let resolutions = 0;
+    await page.routeWebSocket("**/lsp-fixture", client => {
+        const server = client.connectToServer(); server.onMessage(message => client.send(message));
+        client.onMessage(message => {
+            const value = JSON.parse(message.toString());
+            if (value.method === "textDocument/completion") {
+                const start = { line: 0, character: 0 }, end = { line: 0, character: 2 };
+                client.send(JSON.stringify({ jsonrpc: "2.0", id: value.id, result: [{ label: "sample", insertTextFormat: 2,
+                    textEdit: { newText: "sample(${1:value})$0", insert: { start, end }, replace: { start, end: { line: 0, character: 6 } } } }] })); return;
+            }
+            if (value.method === "completionItem/resolve") {
+                resolutions++;
+                const at = { line: 0, character: 0 };
+                client.send(JSON.stringify({ jsonrpc: "2.0", id: value.id, result: { ...value.params, additionalTextEdits: [{ range: { start: at, end: at }, newText: prefix }] } })); return;
+            }
+            server.send(message);
+        });
+    });
+    await page.goto("/hosts/plain/?editor=candidate&language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
+    const initial = "saMORE\r\nsaMORE"; await seed(page, initial);
+    await expect.poll(async () => (await provider(page)).connected).toBe(true);
+    await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "interactive" }));
+    await page.evaluate(() => { const f = window.hostFixture; if (!f.selectSourceSet("primary", f.snapshot().source.revision,
+        [{ anchor: 2, head: 2 }, { anchor: 10, head: 10 }], 0)) throw new Error("Caret setup failed"); });
+    const before = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet, depth = (await snapshot(page)).history.undoDepth;
+    await offer(page); await field(page).press("Alt+Enter"); await ready(page); expect(resolutions).toBe(1);
+    expect(await source(page)).toBe(prefix + "sample(value)\r\nsample(value)");
+    const selected = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet;
+    expect(selected.ranges).toEqual([{ anchor: prefix.length + 7, head: prefix.length + 12, anchorAffinity: "after", headAffinity: "before" },
+        { anchor: prefix.length + 22, head: prefix.length + 27, anchorAffinity: "after", headAffinity: "before" }]);
+    expect((await snapshot(page)).history.undoDepth).toBe(depth + 1);
+    await field(page).press("Control+z"); await ready(page); expect(await source(page)).toBe(initial);
+    expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before);
+});
+
 test("pending LSP diagnostics remain painted and navigable while server analysis is held", async ({ page }) => {
     let hold = false, held: string | undefined, client: WebSocketRoute | undefined;
     await page.routeWebSocket("**/lsp-fixture", socket => {

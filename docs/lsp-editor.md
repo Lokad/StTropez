@@ -156,6 +156,10 @@ Opaque data still passes immutable JSON validation. Commit characters follow LSP
 rule without silently truncating a provider list. Items requiring a follow-up command are
 omitted individually with a label/reason, preserving supported siblings. Their command data
 and edits are still validated; malformed commands or overlapping edits reject the batch.
+A zero-width additional insertion may sit at a replacement boundary, including an import at
+the start of the first completed word. Inserts precede a replacement at that same boundary;
+caret and snippet positions follow that batch order for every captured caret. Two insertions
+at the same position and intersecting replacement ranges still reject the completion.
 Completion acceptance never executes a command, and lazy resolution cannot add one.
 Diagnostic locations remain visible through mapped local edits while the provider analyzes
 the new source. `diagnosticsPending` distinguishes that presentation from a newly received

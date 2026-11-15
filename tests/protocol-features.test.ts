@@ -93,6 +93,34 @@ test("completion insert/replace plans and additional edits preserve raw text and
     assert.equal(Object.isFrozen(decoded.items[0]!.replace.edits[0]), true); assert.equal(decoded.items.length, 2); assert.equal(capture.document.buffer.readMetrics().textExports, 0);
 });
 
+test("resolved imports at a replacement boundary preserve text, caret and snippet positions", async () => {
+    const { capture } = await captured("saMORE\r\nsaMORE"), extra = "// import 😀\r\n";
+    for (const snippet of [false, true]) {
+        const inserted = snippet ? "sample(value)" : "sample";
+        const wire = { label: "sample", insertTextFormat: snippet ? 2 : 1, data: { key: 1 },
+            textEdit: { newText: snippet ? "sample(${1:value})$0" : inserted, insert: range(0, 0, 2), replace: range(0, 0, 6) } };
+        const initial = decodeLspCompletions([wire], capture, 2, undefined, { resolve: true }).items[0]!;
+        const resolved = decodeLspResolvedCompletion({ ...wire, additionalTextEdits: [{ range: range(0, 0, 0), newText: extra }] }, initial, capture);
+        for (const mode of ["insert", "replace"] as const) for (const multiple of [false, true]) {
+            const carets = createSelectionSet(capture.document.buffer.length, (multiple ? [2, 10] : [2]).map(head => ({ anchor: head, head })));
+            const plan = lspCompletionPlan(resolved, mode, undefined, carets), after = capture.document.buffer.apply(plan.edits).buffer;
+            const suffix = mode === "insert" ? "MORE" : "", second = multiple ? inserted + suffix : "saMORE";
+            assert.equal(after.text(), extra + inserted + suffix + "\r\n" + second); assert.equal(plan.head, extra.length + inserted.length);
+            for (const selection of plan.selectionSet.ranges) {
+                assert.equal(after.slice(selection.anchor, selection.head), snippet ? "value" : "");
+                assert.equal(after.slice(selection.anchor - (snippet ? 7 : 6), selection.anchor), snippet ? "sample(" : "sample");
+            }
+            if (snippet) assert.deepEqual(plan.snippet![0]!.ranges.map(stop => after.slice(stop.from, stop.to)), multiple ? ["value", "value"] : ["value"]);
+        }
+    }
+    const conflict = { label: "x", textEdit: { newText: "x", range: range(0, 0, 0) }, additionalTextEdits: [{ range: range(0, 0, 0), newText: "y" }] };
+    const beforeReplacement = decodeLspCompletions([{ ...conflict, additionalTextEdits: [{ range: range(0, 0, 2), newText: "prefix" }] }], capture, 0).items[0]!.insert;
+    assert.equal(capture.document.buffer.apply(beforeReplacement.edits).buffer.text(), "xprefixMORE\r\nsaMORE"); assert.equal(beforeReplacement.head, 1);
+    assert.throws(() => decodeLspCompletions([conflict], capture, 0));
+    assert.throws(() => decodeLspCompletions([{ ...conflict, textEdit: { newText: "x", range: range(0, 0, 2) },
+        additionalTextEdits: [{ range: range(0, 1, 3), newText: "overlap" }] }], capture, 2));
+});
+
 test("completion defaults, word fallback and whole-list validation refuse unsupported or malformed final items", async () => {
     const { capture } = await captured("const saMORE\r\n"), fallback = { from: 6, to: 8, replaceTo: 12 };
     const response: CompletionList = { isIncomplete: true, itemDefaults: { editRange: { insert: range(0, 6, 8), replace: range(0, 6, 12) }, insertTextFormat: 1, insertTextMode: 1 }, items: [{ label: "label", textEditText: "sample" }] };
