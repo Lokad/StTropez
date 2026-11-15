@@ -27,8 +27,9 @@ export type TextComparison = Readonly<{
 export function mountTextComparison(host: HTMLElement, workspace: Workspace, workingTab: TabId, baseline: ComparisonBaseline,
     options: Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView; scrollLinked?: boolean; rowsAligned?: boolean;
         workingDecorate?: (line: PresentedLine) => readonly InlineDecoration[]; baselineDecorate?: (line: PresentedLine) => readonly InlineDecoration[] }> = {}): TextComparison {
-    const budget = options.workBudget ?? 32768;
-    validateWorkBudget(budget, "Comparison");
+    const requestedBudget = options.workBudget ?? 4096;
+    validateWorkBudget(requestedBudget, "Comparison");
+    const budget = Math.min(requestedBudget, 4096);
     if (options.scrollLinked !== undefined && typeof options.scrollLinked !== "boolean") throw new TypeError("Expected a scroll-link preference.");
     if (options.rowsAligned !== undefined && typeof options.rowsAligned !== "boolean") throw new TypeError("Expected a row-alignment preference.");
     const owner = host.ownerDocument, win = owner.defaultView;

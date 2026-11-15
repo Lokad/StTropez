@@ -52,6 +52,61 @@ type Presentation = {
     capture: () => { status: string; revision: number; hunks: number; paints: readonly { revision: number; text: string; color: string }[]; staleRevert: boolean; currentRevert: boolean };
     release: () => void; dispose: () => void;
 };
+
+test("browser comparison work yields with large requested budgets and cancels its next turn", async ({ page }) => {
+    const results = await page.evaluate(async () => {
+        const path = "/comparison-ownership/";
+        const { Workspace, TextBuffer, TextDiff } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { mountTextComparison } = await import(path + "comparison.js") as typeof import("../../src/browser/comparison.ts");
+        const timeout = window.setTimeout, clear = window.clearTimeout, next = TextDiff.prototype.next;
+        const clock = Object.getOwnPropertyDescriptor(performance, "now"), tasks = new Map<number, () => void>();
+        let serial = 0, now = 0, calls = 0, work = 0;
+        window.setTimeout = ((callback: TimerHandler) => {
+            if (typeof callback !== "function") throw new Error("Expected a scheduled function.");
+            const id = ++serial; tasks.set(id, () => callback()); return id;
+        }) as typeof window.setTimeout;
+        window.clearTimeout = id => { if (typeof id === "number") tasks.delete(id); };
+        Object.defineProperty(performance, "now", { configurable: true, value: () => now });
+        // A controlled cost per work unit exposes whether a large advance can prevent
+        // the browser owner from checking its clock. No machine-speed timing assertion.
+        TextDiff.prototype.next = function(budget = 32768) {
+            now += budget / 1024; calls++; work += budget;
+            return Object.freeze({ status: "running", work, readUnits: 0, lineComparisons: 0, lineEdits: 0, hunks: Object.freeze([]) });
+        };
+        const results: { requested: number | null; calls: number; elapsed: number; work: number; pending: number; cancelled: boolean }[] = [];
+        try {
+            for (const requested of [undefined, 256, Number.MAX_SAFE_INTEGER]) {
+                const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "budget", variant: "working" }, "Working", { value: "working" });
+                const tab = workspace.open({ kind: "text", documentId: source.documentId }, "working"), host = document.createElement("section"); document.body.append(host);
+                const baseline = { buffer: TextBuffer.from("baseline"), version: "one" }, before = workspace.diagnostics();
+                // Clamping must not make invalid public input acceptable or leak a mount.
+                for (const invalid of [255, 256.5, Infinity, NaN]) {
+                    let rejected = false; try { mountTextComparison(host, workspace, tab, baseline, { workBudget: invalid }); } catch (error) { rejected = error instanceof RangeError; }
+                    if (!rejected || host.childElementCount || workspace.diagnostics().leases !== before.leases) throw new Error("Invalid mount budget was accepted or leaked ownership.");
+                }
+                const mounted = mountTextComparison(host, workspace, tab, baseline, requested === undefined ? {} : { workBudget: requested });
+                try {
+                    now = calls = work = 0;
+                    const queued = tasks.entries().next().value; if (!queued) throw new Error("Missing comparison work.");
+                    tasks.delete(queued[0]); queued[1]();
+                    const pending = tasks.size, measured = mounted.snapshot(), prior = calls; mounted.destroy();
+                    for (const run of tasks.values()) run();
+                    results.push({ requested: requested ?? null, calls, elapsed: measured.maxStepMs, work, pending,
+                        cancelled: tasks.size === 0 && calls === prior && workspace.diagnostics().leases === 0 && workspace.diagnostics().subscriptions === 0 });
+                } finally { mounted.destroy(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+            }
+        } finally {
+            window.setTimeout = timeout; window.clearTimeout = clear; TextDiff.prototype.next = next;
+            if (clock) Object.defineProperty(performance, "now", clock); else Reflect.deleteProperty(performance, "now");
+        }
+        return results;
+    });
+    expect(results).toEqual([
+        { requested: null, calls: 1, elapsed: 4, work: 4096, pending: 1, cancelled: true },
+        { requested: 256, calls: 16, elapsed: 4, work: 4096, pending: 1, cancelled: true },
+        { requested: Number.MAX_SAFE_INTEGER, calls: 1, elapsed: 4, work: 4096, pending: 1, cancelled: true },
+    ]);
+});
 declare global { interface Window { comparisonPresentation: Presentation } }
 
 test("review highlights survive every typing paint while exact comparison work is held", async ({ page }) => {
