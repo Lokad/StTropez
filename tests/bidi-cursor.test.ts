@@ -52,3 +52,24 @@ test("weighted L runs expand by resolved parity and preserve surrogate boundarie
     assert.equal(result.offsetAt(result.visualLength - 1), 1); assert.equal(result.indexOf(3), null);
     assert.ok(snapshot.workUnits < text.length * 8); assert.equal(result.levelAt(text.length - 1), null);
 });
+
+test("level-zero paragraphs retain logical code-point order with bounded resolution work", () => {
+    const row = "a漢𐐀😀e\u0301 (12)\t\r\n", text = row.repeat(5000), buffer = TextBuffer.from("prefix " + text + " suffix"), from = 7;
+    for (const direction of ["ltr", "auto"] as const) {
+        const cursor = new BidiCursor(buffer, { from, to: from + text.length, direction });
+        const first = cursor.next(256); assert.equal(first.status, "running"); assert.equal(first.result, null);
+        const { result, snapshot } = finish(cursor, 256);
+        assert.ok(snapshot.workUnits < text.length * 7, `Resolved plain LTR text in ${snapshot.workUnits} work units.`);
+        let visual = 0, offset = from;
+        for (const point of text) {
+            assert.equal(result.offsetAt(visual), offset); assert.equal(result.indexOf(offset), visual++);
+            for (let unit = 0; unit < point.length; unit++) assert.equal(result.levelAt(offset + unit), 0);
+            if (point.length === 2) assert.equal(result.indexOf(offset + 1), null);
+            offset += point.length;
+        }
+        assert.equal(result.visualLength, visual); assert.equal(result.paragraphCount, 5000);
+        assert.deepEqual(result.paragraphAt(4999), { from: from + row.length * 4999, to: from + text.length, level: 0 });
+        cursor.dispose(); assert.equal(cursor.next().result, null);
+    }
+    assert.equal(buffer.readMetrics().textExports, 0);
+});

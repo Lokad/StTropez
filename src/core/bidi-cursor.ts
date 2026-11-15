@@ -24,6 +24,16 @@ const neutral = (type: BidiClass) => type === "B" || type === "S" || type === "W
 const whitespace = (type: BidiClass) => type === "WS" || isolate(type) || type === "PDI";
 type ParagraphResult = { base: number; levels: readonly number[]; order: readonly number[] };
 
+// With base level 0 and only these classes, W1-W7 and N0-N2 resolve every point to L.
+// AN, RTL strong classes, removed characters and explicit/isolate controls need the full path.
+const levelZeroType = (type: BidiClass) => type === "L" || type === "EN" || type === "ES" || type === "ET" || type === "CS"
+    || type === "NSM" || type === "B" || type === "S" || type === "WS" || type === "ON";
+function* levelZeroParagraph(length: number, c: Counters): Generator<void, ParagraphResult> {
+    const levels: number[] = [], order: number[] = [];
+    for (let i = 0; i < length; i++) { levels.push(0); order.push(i); if (spent(c)) yield; }
+    return { base: 0, levels, order };
+}
+
 function* paragraph(points: readonly number[], original: readonly BidiClass[], requested: BidiDirection, c: Counters): Generator<void, ParagraphResult> {
     const n = points.length, types: BidiClass[] = [], levels: number[] = [], matches: number[] = [], nesting: number[] = [];
     for (let i = 0; i < n; i++) {
@@ -173,14 +183,16 @@ function* build(source: TextBuffer | string, from: number, to: number, direction
         if (end !== points.length && !(types[end] === "B" && !(points[end] === 0x0d && points[end + 1] === 0x0a))) continue;
         const last = end === points.length ? end : end + 1; if (last === first && points.length) continue;
         const paraPoints: number[] = [], paraTypes: BidiClass[] = [], atomFrom: number[] = [], atomTo: number[] = [];
+        let levelZero = direction !== "rtl";
         // Consecutive original L characters have identical rule context and resolved level.
         // Keep one weighted atom; parity determines their expansion after L2, including overrides.
         for (let i = first; i < last; i++) {
+            levelZero &&= levelZeroType(types[i]!);
             if (types[i] === "L" && paraTypes.at(-1) === "L") atomTo[atomTo.length - 1] = i + 1;
             else { paraPoints.push(points[i]!); paraTypes.push(types[i]!); atomFrom.push(i); atomTo.push(i + 1); }
             if (spent(c)) yield;
         }
-        const resolved = yield* paragraph(paraPoints, paraTypes, direction, c); c.phase = "publish";
+        const resolved = yield* (levelZero ? levelZeroParagraph(paraPoints.length, c) : paragraph(paraPoints, paraTypes, direction, c)); c.phase = "publish";
         paragraphs.push(Object.freeze({ from: offsets[first] ?? from, to: offsets[last] ?? to, level: resolved.base }));
         for (let atom = 0; atom < atomFrom.length; atom++) for (let i = atomFrom[atom]!; i < atomTo[atom]!; i++) for (let unit = offsets[i]!; unit < (offsets[i + 1] ?? to); unit++) {
             const level = resolved.levels[atom]!; levels.push(level < 0 ? null : level); inverse.push(-1); if (spent(c)) yield;
