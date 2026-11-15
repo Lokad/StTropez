@@ -52,7 +52,7 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
         const notify = (method: string, params: unknown) => peer.sendNotification(method, params).catch(() => { if (socket.readyState === 1) socket.close(1011, "Fixture notification failed"); });
         const documents = new Map<string, TextDocument>(), syncFailures: string[] = [], syncCounts = new Map<string, { open: number; change: number; close: number }>(); let initializeCount = 0;
         const countSync = (uri: string, kind: "open" | "change" | "close") => { const counts = syncCounts.get(uri) ?? { open: 0, change: 0, close: 0 }; counts[kind]++; syncCounts.set(uri, counts); };
-        const pending = new Set<() => void>(); let completionConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, completionStyle = "edits", interactiveCompletion = false;
+        const pending = new Set<() => void>(); let completionConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, completionStyle = "edits", interactiveCompletion = false, hostProfile = false;
         let completionResolveConfig: { delay: number; late?: boolean; fault?: "retarget" | "malformed" } = { delay: 0 };
         let signatureConfig: { delay: number; fault?: "malformed" | "failure" | "markup" } = { delay: 0 };
         let linksConfig: { delay: number; fault?: "malformed" | "failure" | "incomplete" | "markup"; aliases: { module: string; uri: string }[] } = { delay: 0, aliases: [] };
@@ -85,9 +85,10 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
             actionLiterals = params.capabilities.textDocument?.codeAction?.codeActionLiteralSupport !== undefined;
             actionResolve = params.capabilities.textDocument?.codeAction?.dataSupport === true && params.capabilities.textDocument.codeAction.resolveSupport?.properties.includes("edit") === true;
             applyEditSupport = params.capabilities.workspace?.applyEdit === true;
-            return { capabilities: { positionEncoding: "utf-16", textDocumentSync: 2, definitionProvider: true, referencesProvider: true, renameProvider: true,
+            hostProfile = params.initializationOptions?.fixtureHostProfile === true;
+            return { capabilities: { positionEncoding: "utf-16", textDocumentSync: 2, definitionProvider: true, referencesProvider: true, documentHighlightProvider: true, renameProvider: true,
                 codeActionProvider: { resolveProvider: true, codeActionKinds: ["quickfix", "refactor", "source"] }, executeCommandProvider: { commands: ["fixture.status"] },
-                completionProvider: { triggerCharacters: ["."] }, ...(params.initializationOptions?.fixtureDynamicLanguage ? {} : { signatureHelpProvider: { triggerCharacters: ["("], retriggerCharacters: [","] }, documentLinkProvider: { resolveProvider: true }, colorProvider: true }), hoverProvider: params.initializationOptions?.fixtureDynamic !== true }, serverInfo: { name: "Generic protocol fixture" } }; });
+                ...(hostProfile ? {} : { completionProvider: { triggerCharacters: ["."] } }), ...(params.initializationOptions?.fixtureDynamicLanguage ? {} : { signatureHelpProvider: { triggerCharacters: ["("], retriggerCharacters: [","] }, documentLinkProvider: { resolveProvider: true }, colorProvider: true }), hoverProvider: params.initializationOptions?.fixtureDynamic !== true }, serverInfo: { name: "Generic protocol fixture" } }; });
         peer.onNotification(InitializedNotification.type, () => { initialized = true; });
         const sync = (update: () => void) => { try { if (!initialized) throw new Error("Synchronization before initialized"); update(); } catch (error) { syncFailures.push(String(error)); } };
         peer.onNotification("textDocument/didOpen", (params: DidOpenTextDocumentParams) => sync(() => { const doc = params.textDocument;
@@ -213,6 +214,13 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
             }
             if (overflow) throw new ResponseError(-32000, "Fixture result exceeds its declared limit"); return locations;
         };
+        peer.onRequest("textDocument/documentHighlight", async (params: { textDocument: { uri: string }; position: { line: number; character: number } }, token) => {
+            const doc = documents.get(params.textDocument.uri); if (!doc) throw new ResponseError(-32602, "Document not open");
+            const symbol = symbolAt(doc, params.position); if (!symbol.result.range) return [];
+            const name = symbol.text.slice(symbol.from + symbol.result.range.from, symbol.from + symbol.result.range.to);
+            // The lexical fixture proves document-local protocol shape, not read/write semantics.
+            return (await scanLocations([doc], name, "references", true, token)).map(location => ({ range: location.range, kind: 1 }));
+        });
         peer.onRequest("fixture/renameConfig", (params: typeof renameConfig) => {
             if (!params || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure"].includes(params.fault)) throw new ResponseError(-32602, "Invalid rename configuration"); renameConfig = { ...params }; return null;
         });
@@ -269,13 +277,13 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
         peer.onNotification("fixture/cancelApply", () => cancelApply?.());
         peer.onRequest("fixture/lastCommand", () => lastCommand);
         peer.onRequest("workspace/executeCommand", (params: { command: string; arguments?: unknown[] }, token) => {
-            if (!["fixture.status", "fixture.review"].includes(params?.command)) throw new ResponseError(-32602, "Unknown fixture command");
+            if (!["fixture.status", "fixture.review", "fixture.unadvertised"].includes(params?.command)) throw new ResponseError(-32602, "Unknown fixture command");
             const config = projectConfig, project = [...documents.values()], style = projectStyle; projectConfig = { kind: "status", delay: 0 };
             lastCommand = { command: params.command, arguments: params.arguments ?? [], documents: project.map(doc => ({ uri: doc.uri, version: doc.version, prefix: doc.getText().slice(0, 64) })) };
             return deferred(config.delay, token, async () => {
                 if (config.fault === "failure") throw new ResponseError(-32001, "Fixture provider command unavailable");
                 if (params.command === "fixture.status") { if (config.fault === "ack") port.dispose(); return { documents: documents.size }; }
-                if (!projectRegistered || !applyEditSupport) throw new ResponseError(-32601, "Review command needs registration and an edit-review capable client");
+                if ((params.command === "fixture.review" && !projectRegistered) || !applyEditSupport) throw new ResponseError(-32601, "Review command needs authority and an edit-review capable client");
                 const argument = params.arguments?.[0] as { uri?: string; expectedPrefix?: string } | undefined;
                 if (argument?.expectedPrefix && !project.find(doc => doc.uri === argument.uri)?.getText().startsWith(argument.expectedPrefix)) throw new ResponseError(-32602, "The action edit was not synchronized before its command");
                 const changes = new Map<string, TextEdit[]>(); let count = 0;
@@ -319,7 +327,7 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
                     { title: "Edit then provider command", kind: "source", edit: reviewEdit, command: status },
                     { title: "Review provider edits command", command: "fixture.review", arguments: [{ uri: origin.uri, opaque: { note: "😀" } }] },
                     { title: "Edit then provider review command", kind: "source", edit: reviewEdit, command: { title: "Review provider edits", command: "fixture.review", arguments: [{ uri: origin.uri, expectedPrefix: marker, opaque: { note: "😀" } }] } },
-                    { title: "Unadvertised provider command", kind: "source", edit: reviewEdit, command: { title: "Unavailable command", command: "fixture.unadvertised", arguments: [] } }];
+                    { title: "Unadvertised provider command", kind: "source", edit: reviewEdit, command: { title: "Host-authorized review", command: "fixture.unadvertised", arguments: [{ uri: origin.uri, expectedPrefix: marker }] } }];
                 if (config.fault === "malformed") actions.push({ title: "Invalid final choice", edit: workspaceTextEdits(project, new Map([["host+fixture:unknown-target", [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }, newText: "bad" }]]])) });
                 if (config.fault === "incomplete") return { partial: actions } as unknown as (CodeAction | Command)[];
                 return actions;
@@ -344,7 +352,8 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
             if (!params || !["edits", "defaults", "plain", "interactive", "incomplete"].includes(params.style)) throw new ResponseError(-32602, "Invalid completion style");
             const interactive = params.style === "interactive" || params.style === "incomplete";
             if (interactive && !interactiveCompletion) await peer.sendRequest(RegistrationRequest.type, { registrations: [{ id: "fixture-completion", method: "textDocument/completion",
-                registerOptions: { documentSelector: null, resolveProvider: true, triggerCharacters: ["."], allCommitCharacters: [";"] } }] });
+                registerOptions: { documentSelector: hostProfile ? [{ scheme: "host+fixture", language: "fixture" }] : null,
+                    resolveProvider: true, triggerCharacters: hostProfile ? [".", " "] : ["."], allCommitCharacters: [";"] } }] });
             if (!interactive && interactiveCompletion) await peer.sendRequest(UnregistrationRequest.type, { unregisterations: [{ id: "fixture-completion", method: "textDocument/completion" }] });
             interactiveCompletion = interactive; completionStyle = params.style; return null;
         });
@@ -387,7 +396,8 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
                     if (style === "interactive" || style === "incomplete") {
                         resolve({ isIncomplete: style === "incomplete" && params.context?.triggerKind !== 3, itemDefaults: { commitCharacters: [";"], data: { uri: doc.uri } }, items: [
                             { label: "Displayed sibling", filterText: "sibling", sortText: "00", preselect: true, textEdit: { newText: "sibling", insert, replace } },
-                            ...items.map(({ additionalTextEdits: _additional, ...item }, index) => ({ ...item, filterText: index ? "sampleValue" : "sample", sortText: index ? "20" : "10", data: { uri: doc.uri, import: index === 1 } }))] }); return;
+                            ...items.map(({ additionalTextEdits: _additional, ...item }, index) => ({ ...item, filterText: index ? "sampleValue" : "sample", sortText: index ? "20" : "10", data: { uri: doc.uri, import: index === 1 } })),
+                            ...(hostProfile ? [{ label: "sampleSnippet", insertTextFormat: 2 as const, textEdit: { newText: "sample(${1:value})$0", insert, replace }, data: { uri: doc.uri, import: true } }] : [])] }); return;
                     }
                     if (config.fault === "malformed") items.push({ label: "invalid final item", textEdit: { newText: "bad", range: { start: insert.start, end: { line: doc.lineCount + 10, character: 0 } } } });
                     if (style === "edits" || config.fault) resolve({ isIncomplete: false, items });

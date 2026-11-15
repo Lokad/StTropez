@@ -34,6 +34,13 @@ The selected feature routes below use that same public integration. The existing
 | Host URIs/custom messages | Exact opaque URI bindings, replaceable selector path policy and removable custom request/notification handlers. Custom result schemas, authority and service policy belong to the host. |
 
 The supported subset and this matrix must be updated with each qualified session/feature checkpoint.
+The generic peer's opt-in `fixtureHostProfile` initialization option qualifies dynamically
+registered completion for `host+fixture` URIs with language `fixture`, including a space trigger,
+lazy snippet imports and unregistration. Its document highlights reuse the lexical reference
+scanner and report textual occurrences, without claiming language-level read/write semantics.
+The peer also accepts an unadvertised review command: clients refuse it by default, while an
+explicit host command policy can authorize its existing server-edit review route. The joined
+fixture test checks action-edit synchronization and separately undoable command phases.
 No general language semantics, production-provider, native-input or physical-display claim follows
 from a protocol fixture.
 
