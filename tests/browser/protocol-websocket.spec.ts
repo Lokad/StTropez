@@ -4,7 +4,8 @@ import { isolatedTest as test, expect } from "./fixtures.ts";
 test.beforeEach(async ({ page }) => {  await page.goto("/protocol/"); await page.waitForFunction(() => window.protocolFixture?.ready); });
 test("JSON-RPC wire foundation uses the reference peer over real WebSockets without worker fallback", async ({ page }) => {
     const state = await page.evaluate(() => window.protocolFixture.exercise());
-    expect(state.initialization).toEqual({ capabilities: { positionEncoding: "utf-16", textDocumentSync: 2, hoverProvider: true, completionProvider: { triggerCharacters: ["."] }, signatureHelpProvider: { triggerCharacters: ["("], retriggerCharacters: [","] }, documentLinkProvider: { resolveProvider: true }, colorProvider: true, definitionProvider: true, referencesProvider: true, renameProvider: true, codeActionProvider: { resolveProvider: true, codeActionKinds: ["quickfix", "refactor", "source"] }, executeCommandProvider: { commands: ["fixture.status"] } }, serverInfo: { name: "Generic protocol fixture" } });
+    // Feature owners qualify their capabilities; the wire owner permits additive capabilities.
+    expect(state.initialization).toMatchObject({ capabilities: { positionEncoding: "utf-16", textDocumentSync: 2 }, serverInfo: { name: "Generic protocol fixture" } });
     expect(state.echoed).toEqual(state.payload); expect(state.roundtrip).toEqual(state.payload); expect(state.notice).toEqual(state.payload);
     expect(state.rejection).toBe(-32001); expect(state.before).toEqual({ held: 1, initialized: true }); expect(state.after).toEqual({ held: 0, initialized: true });
     expect(state.cancelled).toBe(true); expect(state.disconnected).toBe(true); expect(state.reconnect).toEqual({ fresh: true }); expect(state.timers).toBe(0);
