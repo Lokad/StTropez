@@ -7,6 +7,26 @@ const { createLspHoverClient, createLspNavigationClient, createLspRenameClient, 
 const stale = (error: unknown) => error instanceof RpcError && error.code === -32801;
 const cancelled = (error: unknown) => error instanceof RpcError && error.code === -32800;
 
+test("request validation binds a project once and never replaces a captured URI during a held reply", async t => {
+    let mappings = 0, version = 0;
+    const f = clientFixture(t, undefined, undefined, doc => { mappings++; return { uri: `generic:${version}/${doc.resourceId}`, languageId: "generic" }; }),
+        client = createLspNavigationClient(f.provider); t.after(client.dispose);
+    const resources = [f.source, f.other, ...Array.from({ length: 48 }, (_, i) => f.workspace.createTextResource(
+        { scope: "project", resource: `${i}`, variant: "working" }, `Source ${i}`, { value: "source" }))];
+    const snapshots = () => resources.map(resource => f.workspace.document(resource.documentId));
+    const run = () => client.run(snapshots(), f.source.documentId, 0, "references");
+    f.peer.onRequest("textDocument/references", () => []); await run(); mappings = 0;
+    const result = await run(); assert.equal(mappings, resources.length); assert.equal(result.isCurrent(), true);
+    t.diagnostic(JSON.stringify({ documents: resources.length, requestMappings: mappings }));
+    const entered = latch<void>(), reply = latch<unknown>(); t.after(() => reply.resolve([]));
+    f.peer.onRequest("textDocument/references", () => { entered.resolve(); return reply.promise; });
+    const pending = run(), rejected = assert.rejects(pending, error => stale(error) || cancelled(error)); await entered.promise;
+    version++; const replacement = f.provider.createScope(); t.after(replacement.dispose);
+    const binding = replacement.attachDocument(f.source.documentId); await replacement.flush([binding]); reply.resolve([]); await rejected;
+    assert.equal(result.isCurrent(), false); assert.equal(binding.getSnapshot().uri, `generic:1/${f.source.id}`);
+    assert.equal(f.provider.snapshot().documents, 1, "Validation must not reattach the expired captured project.");
+});
+
 test("actions forward immutable diagnostic metadata only for matching current versions and placed overlapping ranges", async t => {
     const f = clientFixture(t), client = createLspActionClient(f.provider), control = f.provider.createScope(); t.after(() => { client.dispose(); control.dispose(); });
     const binding = control.attachDocument(f.source.documentId); await control.connect();

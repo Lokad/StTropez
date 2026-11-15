@@ -27,8 +27,11 @@ the editor view or the shared provider. Disposed controllers accept no new subsc
 Feature clients take that same owner. Their `state` observes provider capabilities;
 request results are immutable models with currentness guards. `cancel()` or `dispose()`
 expires that client's work. Other clients retain their connection and participation.
-The read clients share one capture/lifetime implementation: caller buffers/revisions and
-project membership are rechecked across connection, preparation and dispatch. An old
+The read clients share one capture/lifetime implementation: they bind the project once and
+check those exact handles and snapshots across connection, preparation and dispatch.
+`scope.isDocumentCurrent(handle, snapshot)` also sees Workspace edits before their deferred
+binding update; it performs no rebinding or URI-policy callback. A provider configuration
+change must explicitly replace the affected participation or provider owner. An old
 position cannot be reinterpreted in newly synchronized text. Supersession invalidates
 earlier results even on unchanged documents and promptly cancels obsolete wire work.
 Cancellation also settles a request waiting on host preparation; it cannot stop arbitrary
@@ -61,6 +64,11 @@ navigation/opening policy and rechecks currentness and resource authority before
 edit decision. Existing `Workspace.editDocuments` applies a complete authorized batch
 as one shared undo transaction. The library supplies validated plans and request lifetime;
 application review controls, resource loading and edit authorization belong to the host.
+
+Aggregate target validation checks the captured project once, then each loaded target's
+own guard. A separately retained loaded-target handle still checks source/provider lifetime
+before its local guard. Loading remains sequential and host-supplied guards retain their
+own costs; no guard result is cached across calls or asynchronous work.
 
 Deferred target release and cancellation callbacks report thrown errors or rejected promises
 through the provider's `onError` callback. Reporting does not interrupt other cleanup. Feature

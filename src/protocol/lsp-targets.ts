@@ -12,11 +12,18 @@ const stale = () => new RpcError(-32801, "Captured LSP target loading expired.")
 
 /** Shared by read results, text edits and server edit requests. No URI I/O occurs here. */
 export function createLspTargets(captured: ReadonlyMap<string, LspEditTarget>, resolve: LspTargetResolver, lifetime: Lifetime) {
-    const targets = new Map(captured), leases = new Set<LspResolvedTarget>(), listeners = new Set<() => void>();
+    const targets = new Map(captured), captures = [...captured.values()], resolved = new Map<string, LspEditTarget>(),
+        leases = new Set<LspResolvedTarget>(), listeners = new Set<() => void>();
     let disposed = false, stop = () => {}, reject!: (error: Error) => void;
     const cancellation = new Promise<never>((_yes, no) => { reject = no; }); void cancellation.catch(() => {});
-    const live = () => !disposed && lifetime.isCurrent();
-    const isCurrent = () => live() && [...targets.values()].every(target => target.isCurrent());
+    const live = () => !disposed && lifetime.isCurrent() && captures.every(target => target.isCurrent());
+    const isCurrent = () => {
+        if (!live()) return false;
+        // Public target handles include the shared lifetime; aggregate checks use only
+        // their local guards so each loaded URI does not recheck the complete project.
+        for (const target of resolved.values()) if (!target.isCurrent()) return false;
+        return true;
+    };
     // A host release may update Workspace retention, which cannot run inside commit observers.
     const release = (lease: LspResolvedTarget) => { void Promise.resolve().then(lease.release).catch(lifetime.reportError); };
     const dispose = () => {
@@ -47,7 +54,7 @@ export function createLspTargets(captured: ReadonlyMap<string, LspEditTarget>, r
                         const target = lease.target;
                         if (target.document.uri !== uri || target.index.buffer !== target.document.buffer) throw new TypeError("Resolved LSP target does not match its URI and buffer.");
                         const guarded = Object.freeze({ ...target, isCurrent: () => live() && target.isCurrent() });
-                        targets.set(uri, guarded); leases.add(lease); retained = true;
+                        resolved.set(uri, target); targets.set(uri, guarded); leases.add(lease); retained = true;
                     } finally { if (!retained) release(lease); }
                 });
                 await Promise.race([loading, cancellation]);

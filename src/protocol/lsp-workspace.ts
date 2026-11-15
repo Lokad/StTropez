@@ -2,7 +2,7 @@ import type { DocumentId, DocumentSnapshot, ResourceLease, Workspace } from "../
 import { NotificationScope, Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import { LspSession } from "./lsp-session.ts";
-import type { LspDocument, LspDocumentCapture, LspRequestContext, LspSessionOptions, LspSessionSnapshot } from "./lsp-session.ts";
+import type { LspDocument, LspDocumentCapture, LspDocumentSnapshot, LspRequestContext, LspSessionOptions, LspSessionSnapshot } from "./lsp-session.ts";
 import { RpcError } from "./json-rpc.ts";
 import type { JsonValue, RpcCall } from "./json-rpc.ts";
 import { decodeLspDiagnostics } from "./lsp-features.ts";
@@ -16,6 +16,8 @@ export type LspWorkspaceScope = Omit<LspSessionAccess, "state"> & Readonly<{
     state: Observable<LspWorkspaceSnapshot>;
     attachDocument: (id: DocumentId) => LspDocument;
     setDocuments: (documents: readonly DocumentSnapshot[]) => ReadonlyMap<string, LspDocument>;
+    /** Read-only handle/snapshot validation, including Workspace edits not yet synchronized. */
+    isDocumentCurrent: (document: LspDocument, snapshot: LspDocumentSnapshot) => boolean;
     captureProject: () => ReadonlyMap<string, LspDocumentCapture>;
     observeDiagnostics: (document: LspDocument) => Observable<LspDiagnosticState>;
     reserveCommand: () => Readonly<{ isCurrent: () => boolean; release: () => void }>;
@@ -27,6 +29,7 @@ export type LspDiagnosticState = Readonly<{ status: "empty" | "current" | "expir
     received: number; stale: number; invalid: number; isCurrent: () => boolean }>;
 export type LspWorkspaceSnapshot = LspSessionSnapshot & Readonly<{ commandAvailable: boolean; commandRequiresReconnect: boolean }>;
 export type LspWorkspaceOptions = LspSessionOptions & Readonly<{
+    /** URI/language policy at participation. Replace bindings explicitly when provider configuration changes. */
     documentInfo: (document: DocumentSnapshot) => Readonly<{ uri: string; languageId: string }> | undefined;
     /** Load an opaque URI on demand, returning a retained immutable target; never open a view here. */
     resolveTarget?: LspTargetResolver;
@@ -254,6 +257,10 @@ export class LspWorkspace {
             reserveCommand: () => { const intent = reserve(); return Object.freeze({ isCurrent: () => this.commandCurrent(intent),
                 release: () => { if (this.command === intent) this.endCommand(intent, intent.sent); } }); },
             attachDocument: attach,
+            isDocumentCurrent: (document, snapshot) => {
+                const entry = handles.get(document);
+                return scope.active && !this.disposed && !!entry?.active && entry.binding.getSnapshot() === snapshot && this.live(entry);
+            },
             observeDiagnostics: document => {
                 writable(); unwrap(document); const store = handles.get(document)!.diagnostics;
                 return Object.freeze({ getSnapshot: store.observable.getSnapshot, subscribe: listener => {

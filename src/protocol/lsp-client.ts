@@ -7,11 +7,9 @@ import { createLspTargets } from "./lsp-targets.ts";
 import type { LspTargetContext } from "./lsp-targets.ts";
 
 type Request = { generation: number; pending: number; cancelled: boolean; reject: (error: Error) => void;
-    cancellation: Promise<never>; cleanups: Set<() => void>; snapshots: readonly DocumentSnapshot[]; identities: ReadonlyMap<string, LspDocumentSnapshot> };
+    cancellation: Promise<never>; cleanups: Set<() => void>; identities: ReadonlyMap<LspDocument, LspDocumentSnapshot> };
 const cancelled = () => new RpcError(-32800, "LSP feature request cancelled.");
 const stale = () => new RpcError(-32801, "Captured LSP documents changed.");
-const matches = (snapshot: DocumentSnapshot, value: LspDocumentSnapshot) => value.documentId === snapshot.id
-    && value.resourceId === snapshot.resourceId && value.revision === snapshot.revision && value.buffer === snapshot.buffer;
 
 /** One feature scope, one latest intent. Decoding and mutation policy remain with the caller. */
 export function createLspClient(provider: LspWorkspace) {
@@ -44,12 +42,8 @@ export function createLspClient(provider: LspWorkspace) {
     const guard = (request: Request) => { if (!current(request)) throw cancelled(); };
     const validate = (request: Request) => {
         guard(request);
-        // Includes an actual Workspace edit not yet flushed to the peer.
-        const bound = scope.setDocuments(request.snapshots);
-        for (const snapshot of request.snapshots) {
-            const value = bound.get(snapshot.id)?.getSnapshot(), identity = request.identities.get(snapshot.id);
-            if (!value || !identity || !matches(snapshot, value) || value.uri !== identity.uri || value.languageId !== identity.languageId) throw stale();
-        }
+        // Validation must not rebind a captured project or miss unflushed Workspace edits.
+        for (const [document, snapshot] of request.identities) if (!scope.isDocumentCurrent(document, snapshot)) throw stale();
     };
     const wait = async <T>(request: Request, work: () => Promise<T>) => {
         guard(request);
@@ -67,11 +61,11 @@ export function createLspClient(provider: LspWorkspace) {
         invalidate(false);
         let reject!: (error: Error) => void;
         const cancellation = new Promise<never>((_resolve, no) => { reject = no; });
-        const op: Request = { generation, snapshots: Object.freeze([...snapshots]), identities: new Map(), pending: 1, cancelled: false, cancellation, reject, cleanups: new Set() };
+        const op: Request = { generation, identities: new Map(), pending: 1, cancelled: false, cancellation, reject, cleanups: new Set() };
         latest = op;
         const work = (async () => {
-            documents = scope.setDocuments(op.snapshots);
-            op.identities = new Map([...documents].map(([id, document]) => [id, document.getSnapshot()]));
+            documents = scope.setDocuments(snapshots);
+            op.identities = new Map([...documents.values()].map(document => [document, document.getSnapshot()]));
             const target = documents.get(origin);
             if (!target) throw new Error("LSP source is outside the captured project.");
             const connection = scope.state.getSnapshot();
@@ -93,8 +87,7 @@ export function createLspClient(provider: LspWorkspace) {
             validate(op);
             const isGenerationCurrent = () => current(op) && scope.state.getSnapshot().phase === "ready"
                 && scope.state.getSnapshot().epoch === capture!.epoch && scope.state.getSnapshot().registrationGeneration === capture!.registrationGeneration;
-            const capturesCurrent = () => isGenerationCurrent() && !!captures && [...captures.values()].every(value => value.isCurrent());
-            const targets = createLspTargets(captures!, scope.resolveTarget, { source: capture!.document, isCurrent: capturesCurrent, reportError: scope.reportError,
+            const targets = createLspTargets(captures!, scope.resolveTarget, { source: capture!.document, isCurrent: isGenerationCurrent, reportError: scope.reportError,
                 onCancel: listener => { op.cleanups.add(listener); return () => { op.cleanups.delete(listener); }; } });
             const isCurrent = targets.isCurrent;
             if (!isCurrent()) throw stale();

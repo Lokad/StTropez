@@ -42,7 +42,7 @@ export function createLspCommandRunner(session: LspWorkspaceScope, notify: () =>
                 onCancel: listener => { let done = false; const invalid = () => { if (!done && !isCurrent()) { done = true; void Promise.resolve().then(listener).catch(session.reportError); } };
                     const stopCancel = context.onCancel(invalid); invalidations.add(invalid); invalid(); return () => { done = true; stopCancel(); invalidations.delete(invalid); }; } });
             targets = createLspTargets(captures, session.resolveTarget, { source: null, reportError: session.reportError,
-                isCurrent: () => capturedContext.isCurrent() && [...captures.values()].every(capture => capture.isCurrent()), onCancel: capturedContext.onCancel });
+                isCurrent: capturedContext.isCurrent, onCancel: capturedContext.onCancel });
             await targets.resolve(lspApplyEditUris(value), "edit");
             const request = decodeLspApplyEdit(value, targets.get);
             const decision = await op.scope.review(request, capturedContext);

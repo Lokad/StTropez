@@ -16,6 +16,27 @@ async function retained(f: ReturnType<typeof clientFixture>, addressed = uri) {
     }), release: () => { released++; lease.release(); } }) satisfies LspResolvedTarget };
 }
 
+test("target checks visit the captured project once per pass and retain independent target guards", async t => {
+    const leases: Awaited<ReturnType<typeof retained>>[] = [];
+    const f = clientFixture(t, undefined, async addressed => { const lease = await retained(f, addressed); leases.push(lease); return lease.value; }),
+        client = createLspNavigationClient(f.provider); t.after(client.dispose);
+    const resources = [f.source, ...Array.from({ length: 19 }, (_, i) => f.workspace.createTextResource(
+        { scope: "project", resource: `${i}`, variant: "working" }, `Source ${i}`, { value: "source" }))];
+    const snapshots = resources.map(resource => f.workspace.document(resource.documentId));
+    f.peer.onRequest("textDocument/references", () => Array.from({ length: 40 }, (_, i) => ({ uri: `${uri}/${i}`, range })));
+    let visits = 0; const observe = f.workspace.observeDocument;
+    Reflect.set(f.workspace, "observeDocument", (...args: Parameters<typeof observe>) => { visits++; return observe.apply(f.workspace, args); });
+    t.after(() => Reflect.set(f.workspace, "observeDocument", observe));
+    const result = await client.run(snapshots, f.source.documentId, 0, "references"), loadingVisits = visits; visits = 0;
+    assert.equal(result.isCurrent(), true); assert.equal(visits, resources.length);
+    assert.ok(loadingVisits < 12 * resources.length * leases.length, `Loading repeatedly visited the whole captured project: ${loadingVisits}`);
+    t.diagnostic(JSON.stringify({ documents: resources.length, targets: leases.length, loadingVisits, currentVisits: visits }));
+    const target = result.locations[0]!.target; assert.equal(target.isCurrent(), true);
+    const before = f.document(); f.edit(); assert.notEqual(f.document().revision, before.revision);
+    assert.equal(result.isCurrent(), false); assert.equal(target.isCurrent(), false);
+    client.cancel(); await settled(); assert.equal(leases.length, 40); assert.ok(leases.every(lease => lease.released === 1));
+});
+
 test("navigation resolves an opaque target once without synchronizing it, and retains its independent revision", async t => {
     let calls = 0, context: LspTargetContext | undefined, lease: Awaited<ReturnType<typeof retained>> | undefined;
     const f = clientFixture(t, undefined, async (addressed, captured) => { calls++; context = captured; assert.equal(addressed, uri); lease = await retained(f);
