@@ -60,7 +60,8 @@ test("document links retain opaque host URIs and resolve only the captured targe
     const { capture, expire } = await captured('import "module";'), wire = { range: range(0, 8, 14), data: { token: 3 }, tooltip: "<b>literal</b>" };
     const links = decodeLspDocumentLinks([wire, { ...wire, target: "host+opaque:%2F resource" }], capture, true); assert.equal(links[0]!.target, null); assert.equal(links[1]!.target, "host+opaque:%2F resource"); assert.ok(Object.isFrozen(links[0]!.resolve));
     const resolved = decodeLspResolvedDocumentLink({ ...wire, target: "custom:unknown", tooltip: "Resolved literal" }, links[0]!, capture); assert.equal(resolved.target, "custom:unknown"); assert.equal(resolved.resolve, null);
-    for (const invalid of [{ ...wire, target: "" }, { ...wire, range: range(0, 8, 99) }, { ...wire, tooltip: 7 }, { ...wire, data: "x".repeat(8193) }]) assert.throws(() => decodeLspDocumentLinks([wire, invalid], capture, true));
+    assert.equal(decodeLspDocumentLinks([{ ...wire, range: range(0, 8, 99) }], capture)[0]!.to, capture.document.buffer.length);
+    for (const invalid of [{ ...wire, target: "" }, { ...wire, range: range(99, 8, 99) }, { ...wire, tooltip: 7 }, { ...wire, data: "x".repeat(8193) }]) assert.throws(() => decodeLspDocumentLinks([wire, invalid], capture, true));
     assert.throws(() => decodeLspResolvedDocumentLink({ ...wire, target: "custom:x", data: { token: 4 } }, links[0]!, capture));
     assert.throws(() => decodeLspResolvedDocumentLink({ ...wire, range: range(0, 0, 2), target: "custom:x" }, links[0]!, capture));
     assert.deepEqual(decodeLspDocumentLinks(null, capture), []); expire(); assert.throws(() => decodeLspResolvedDocumentLink({ ...wire, target: "custom:x" }, links[0]!, capture), error => error instanceof RpcError && error.code === -32801);
@@ -71,7 +72,9 @@ test("document colors and presentations validate channels, fallback text and eve
     const presentations = decodeLspColorPresentations([{ label: "#123" }, { label: "Explicit", textEdit: { range: range(0, 10, 14), newText: "rgba(1,2,3,.5)" }, additionalTextEdits: [{ range: range(0, 0, 0), newText: "// color\r\n" }] }], reference, capture);
     const after = capture.document.buffer.apply(presentations[1]!.edits).buffer; assert.equal(after.slice(0, after.length), "// color\r\nconst c = rgba(1,2,3,.5);"); assert.equal(presentations[0]!.edits[0]!.insert, "#123");
     for (const invalid of [{ ...color, alpha: NaN }, { ...color, red: 2 }, { ...color, blue: "0" }, {}]) assert.throws(() => decodeLspDocumentColors([{ range: range(0, 10, 14), color: invalid }], capture));
-    for (const invalid of [{ label: "bad", additionalTextEdits: [{ range: range(0, 11, 12), newText: "overlap" }] }, { label: "bad", textEdit: { range: range(0, 10, 99), newText: "bad" } }, { label: "x".repeat(4097) }]) assert.throws(() => decodeLspColorPresentations([{ label: "valid" }, invalid], reference, capture));
+    assert.equal(decodeLspDocumentColors([{ range: range(0, 10, 99), color }], capture)[0]!.to, capture.document.buffer.length);
+    assert.equal(decodeLspColorPresentations([{ label: "clamped", textEdit: { range: range(0, 10, 99), newText: "#123;" } }], reference, capture)[0]!.edits[0]!.to, capture.document.buffer.length);
+    for (const invalid of [{ label: "bad", additionalTextEdits: [{ range: range(0, 11, 12), newText: "overlap" }] }, { label: "bad", textEdit: { range: range(99, 10, 99), newText: "bad" } }, { label: "x".repeat(4097) }]) assert.throws(() => decodeLspColorPresentations([{ label: "valid" }, invalid], reference, capture));
     assert.deepEqual(decodeLspColorPresentations([], reference, capture), []); expire(); assert.throws(() => decodeLspDocumentColors([], capture), error => error instanceof RpcError && error.code === -32801);
 });
 const range = (line: number, start: number, end: number) => ({ start: { line, character: start }, end: { line, character: end } });
@@ -100,13 +103,15 @@ test("completion defaults, word fallback and whole-list validation refuse unsupp
     assert.deepEqual(decodeLspCompletions(null, capture, 8), { incomplete: false, items: [], omitted: [] });
     for (const bad of [{ label: "invalid format", insertTextFormat: 3 },
         { label: "overlap", textEdit: { newText: "x", range: range(0, 6, 12) }, additionalTextEdits: [{ range: range(0, 7, 8), newText: "bad" }] },
-        { label: "clamped", textEdit: { newText: "x", range: range(0, 6, 999) } }, { label: "reversed", textEdit: { newText: "x", insert: range(0, 6, 10), replace: range(0, 6, 8) } },
+        { label: "invalid line", textEdit: { newText: "x", range: range(99, 6, 999) } }, { label: "reversed", textEdit: { newText: "x", insert: range(0, 6, 10), replace: range(0, 6, 8) } },
         { label: "duplicate insert", textEdit: { newText: "x", range: range(0, 8, 8) }, additionalTextEdits: [{ range: range(0, 8, 8), newText: "bad" }] }]) {
         assert.throws(() => decodeLspCompletions([{ label: "valid" }, bad], capture, 8, fallback));
     }
     assert.equal(decodeLspCompletions({ ...response, items: Array.from({ length: 257 }, () => ({ label: "x" })) }, capture, 8).items.length, 257);
     assert.throws(() => decodeLspCompletions({ ...response, itemDefaults: { ...response.itemDefaults, unknownBehavior: true } }, capture, 8));
-    assert.throws(() => decodeLspCompletions({ isIncomplete: false, items: [], itemDefaults: { editRange: range(0, 0, 999) } }, capture, 8));
+    assert.deepEqual(decodeLspCompletions({ isIncomplete: false, items: [], itemDefaults: { editRange: range(0, 0, 999) } }, capture, 8).items, []);
+    assert.deepEqual(decodeLspCompletions({ isIncomplete: false, items: [{ label: "sample" }], itemDefaults: { editRange: range(0, 6, 999) } }, capture, 8).items[0]!.replace.edits,
+        [{ from: 6, to: 12, insert: "sample" }]);
     assert.equal(decodeLspCompletions(response, capture, 8, () => { throw new Error("Unused word fallback must not reject explicit ranges"); }).items.length, 1);
 });
 
@@ -146,7 +151,7 @@ test("mixed snippet lists retain supported choices, map stops past additional ed
     const stops = result.items[1]!.replace.snippet!;
     assert.deepEqual(stops[0]!.ranges.map(range => applied.slice(range.from, range.to)), ["😀name", "😀name"]);
     assert.equal(result.items[1]!.replace.head, applied.length);
-    assert.throws(() => decodeLspCompletions([item, { ...omitted, textEdit: { range: range(1, 0, 999), newText: "$TM_FILENAME" } }], capture, offset));
+    assert.throws(() => decodeLspCompletions([item, { ...omitted, textEdit: { range: range(99, 0, 999), newText: "$TM_FILENAME" } }], capture, offset));
 });
 
 test("completion insertion modes adjust nested context while preserving explicit raw overrides and additional edits", async () => {
@@ -343,7 +348,7 @@ test("completion catalogues retain every candidate and reject malformed later ed
         assert.equal(capture.document.buffer.apply(tail.replace.edits).buffer.text(), "const sample1199\r\n");
         assert.deepEqual((tail.resolve as { data: unknown }).data, values[1199]!.data);
     }
-    assert.throws(() => decodeLspCompletions([...values, { label: "bad tail", textEdit: { range: range(0, 0, 999), newText: "invalid" } }], capture, 8, fallback));
+    assert.throws(() => decodeLspCompletions([...values, { label: "bad tail", textEdit: { range: range(99, 0, 999), newText: "invalid" } }], capture, 8, fallback));
 });
 
 test("completion metadata and item defaults retain immutable resolve data with bounded filtering and commit characters", async t => {
@@ -372,7 +377,7 @@ test("completion resolution permits captured display/additional edits but refuse
     const commitItem = { ...resolved, commitCharacters: Object.freeze([";"]) }, committed = lspCompletionPlan(commitItem, "replace", ";"), committedText = capture.document.buffer.apply(committed.edits).buffer;
     assert.equal(committedText.slice(0, committedText.length), "// import\r\nconst sample;"); assert.equal(committed.head, committedText.length); assert.throws(() => lspCompletionPlan(commitItem, "insert", "."));
     for (const invalid of [{ ...reply, label: "other" }, { ...reply, data: { token: 2 } }, { ...reply, textEdit: { newText: "other", range: range(0, 6, 12) } },
-        { ...reply, additionalTextEdits: [{ range: range(0, 7, 8), newText: "overlap" }] }, { ...reply, additionalTextEdits: [{ range: range(0, 0, 999), newText: "outside" }] }]) assert.throws(() => decodeLspResolvedCompletion(invalid, item, capture));
+        { ...reply, additionalTextEdits: [{ range: range(0, 7, 8), newText: "overlap" }] }, { ...reply, additionalTextEdits: [{ range: range(99, 0, 999), newText: "outside" }] }]) assert.throws(() => decodeLspResolvedCompletion(invalid, item, capture));
     assert.throws(() => decodeLspResolvedCompletion(reply, item, { ...capture, document: { ...capture.document, revision: 71 } }));
     expire(); assert.throws(() => decodeLspResolvedCompletion(reply, item, capture), error => error instanceof RpcError && error.code === -32801);
 });
@@ -422,16 +427,27 @@ test("diagnostics separate provider freshness from validated snapshot placement 
     assert.equal(uncertain.items[0]!.from, decoded.items[0]!.from); assert.equal(uncertain.items[0]!.placement, "placed"); assert.deepEqual(uncertain.items[0]!.range, response.diagnostics[0]!.range);
     for (const version of [undefined, 3]) { const outside = decodeLspDiagnostics({ ...response, version, diagnostics: [{ range: range(100, 0, 999), message: "unplaceable" }] }, capture);
         assert.equal(outside.items[0]!.placement, "out-of-bounds"); assert.equal(outside.items[0]!.from, null); assert.deepEqual(outside.items[0]!.range, range(100, 0, 999)); }
+    const clamped = decodeLspDiagnostics({ ...response, diagnostics: [{ range: range(0, 99, 999), message: "line end" }] }, capture).items[0]!;
+    assert.equal(clamped.placement, "placed"); assert.equal(clamped.from, capture.index.offsetAt({ line: 0, character: 99 }));
+    assert.equal(clamped.to, clamped.from); assert.deepEqual(clamped.range, range(0, 99, 999));
     for (const invalid of [{ ...response, version: null }, { ...response, uri: "host+fixture:other" }, { ...response, diagnostics: [...response.diagnostics, { range: range(1, 10, 0), message: "invalid tail" }] }]) assert.throws(() => decodeLspDiagnostics(invalid, capture));
     assert.throws(() => decodeLspDiagnostics({ ...response, version: 2 }, capture), error => error instanceof RpcError && error.code === -32801);
     expire(); assert.throws(() => decodeLspDiagnostics(response, capture), error => error instanceof RpcError && error.code === -32801); assert.throws(() => decodeLspCompletions([], capture, 8), /expired/);
 });
 
-test("strict LSP ranges refuse out-of-document clamping and preserve surrogate/newline boundaries", async () => {
+test("LSP ranges clamp line-end characters while preserving invalid-line and raw UTF-16 boundaries", async () => {
     const { capture } = await captured("😀\r\na\rb\n");
     assert.deepEqual(lspRangeOffsets(capture.index, range(0, 1, 2)), { from: 1, to: 2 });
     assert.deepEqual(lspRangeOffsets(capture.index, { start: { line: 1, character: 1 }, end: { line: 2, character: 1 } }), { from: 5, to: 7 });
-    for (const bad of [range(0, 0, 3), range(100, 0, 0), range(0, 2, 1), range(0, -1, 0), { start: { line: 0, character: .5 }, end: { line: 0, character: 1 } }]) assert.throws(() => lspRangeOffsets(capture.index, bad));
+    for (const [line, from, to] of [[0, 0, 2], [1, 4, 5], [2, 6, 7], [3, 8, 8]]) {
+        assert.deepEqual(lspRangeOffsets(capture.index, range(line!, 0, 0x7fffffff)), { from, to });
+        assert.deepEqual(lspRangeOffsets(capture.index, range(line!, 99, 0x7fffffff)), { from: to, to });
+    }
+    assert.deepEqual(lspRangeOffsets((await captured("")).capture.index, range(0, 4, 99)), { from: 0, to: 0 });
+    for (const bad of [range(100, 0, 0), range(0, 2, 1), range(0, 100, 99), range(0, -1, 0), range(0, 0, 0x80000000),
+        { start: { line: 0, character: .5 }, end: { line: 0, character: 1 } }, { start: { line: 0, character: 0 }, end: { line: 100, character: 0 } }])
+        assert.throws(() => lspRangeOffsets(capture.index, bad));
+    assert.equal(capture.document.buffer.readMetrics().textExports, 0);
 });
 
 test("hover accepts standard content shapes and optional ranges as bounded literal text", async () => {
@@ -445,7 +461,8 @@ test("hover accepts standard content shapes and optional ranges as bounded liter
     assert.deepEqual(mixed, [{ kind: "code", language: "ts", value: "const x = '<img>';" }, { kind: "markdown", value: "**Details**" }]);
     assert.ok(Object.isFrozen(mixed)); assert.ok(mixed.every(Object.isFrozen));
     assert.equal(decodeLspHover(null, capture), null); assert.equal(decodeLspHover({ contents: [] }, capture), null);
-    for (const bad of [{}, { contents: ["valid", { value: "missing language" }] }, { contents: [{ kind: "plaintext", value: "not a MarkedString" }] }, { contents: "valid", range: range(0, 0, 999) }, { contents: "x".repeat(8193) }, { contents: Array(65).fill("x") }]) assert.throws(() => decodeLspHover(bad, capture));
+    assert.deepEqual(decodeLspHover({ contents: "line end", range: range(0, 6, 999) }, capture)!.range, { from: 6, to: 8 });
+    for (const bad of [{}, { contents: ["valid", { value: "missing language" }] }, { contents: [{ kind: "plaintext", value: "not a MarkedString" }] }, { contents: "valid", range: range(99, 0, 999) }, { contents: "x".repeat(8193) }, { contents: Array(65).fill("x") }]) assert.throws(() => decodeLspHover(bad, capture));
     expire(); assert.throws(() => decodeLspHover({ contents: "late" }, capture), error => error instanceof RpcError && error.code === -32801);
 });
 
@@ -461,12 +478,16 @@ test("definition links/references resolve exact host URI captures and reject who
     assert.throws(() => decodeLspLocations(wire, "references", origin.capture, resolve));
     const shorter = await captured("x"), rebound = { ...shorter.capture, document: { ...shorter.capture.document, uri: target.document.uri } };
     assert.throws(() => decodeLspLocations(wire, "definition", origin.capture, () => rebound));
-    assert.throws(() => decodeLspLocations(wire, "definition", shorter.capture, resolve));
+    assert.deepEqual(decodeLspLocations(wire, "definition", shorter.capture, resolve)[0]!.originRange, { from: 0, to: 1 });
     const host = Object.freeze([{ ...location, range: range(1, 6, 12) }]);
     assert.equal(decodeLspLocations(host, "references", origin.capture, resolve)[0]!.to, linked.to);
-    host[0]!.range.end.character = 999; assert.throws(() => decodeLspLocations(host, "references", origin.capture, resolve));
+    host[0]!.range.end.character = 999; assert.equal(decodeLspLocations(host, "references", origin.capture, resolve)[0]!.to, target.index.offsetAt({ line: 1, character: 17 }));
+    host[0]!.range.end.line = 99; assert.throws(() => decodeLspLocations(host, "references", origin.capture, resolve));
     assert.equal(decodeLspLocations([location], "references", origin.capture, resolve).length, 1); assert.deepEqual(decodeLspLocations(null, "definition", origin.capture, resolve), []);
-    for (const bad of [[location, { ...location, uri: "custom+host:unknown" }], [location, { ...location, range: range(1, 0, 999) }], [link, location], [{ ...link, targetSelectionRange: range(1, 0, 18) }], [{ ...link, originSelectionRange: range(0, 0, 999) }], link]) assert.throws(() => decodeLspLocations(bad, "definition", origin.capture, resolve));
+    const clampedLink = decodeLspLocations([{ ...link, targetSelectionRange: range(1, 0, 999), originSelectionRange: range(0, 0, 999) }], "definition", origin.capture, resolve)[0]!;
+    assert.equal(clampedLink.to, clampedLink.targetRange.to); assert.deepEqual(clampedLink.originRange, { from: 0, to: 6 });
+    for (const bad of [[location, { ...location, uri: "custom+host:unknown" }], [location, { ...location, range: range(99, 0, 999) }], [link, location],
+        [{ ...link, targetRange: range(1, 0, 12), targetSelectionRange: range(1, 0, 13) }], [{ ...link, originSelectionRange: range(99, 0, 999) }], link]) assert.throws(() => decodeLspLocations(bad, "definition", origin.capture, resolve));
     assert.throws(() => decodeLspLocations([link], "references", origin.capture, resolve)); assert.throws(() => decodeLspLocations(location, "references", origin.capture, resolve));
     destination.expire(); assert.throws(() => decodeLspLocations(wire, "definition", origin.capture, resolve), error => error instanceof RpcError && error.code === -32801);
     origin.expire(); assert.throws(() => decodeLspLocations([], "references", origin.capture, resolve), error => error instanceof RpcError && error.code === -32801);
@@ -485,6 +506,11 @@ test("workspace edits normalize versioned or unversioned batches without changin
     assert.equal(result.slice(0, result.length), "😀\r\nfirstsecondA\rD\r\n\n"); assert.equal(plan.isCurrent(), true); assert.equal(Object.isFrozen(plan.documents[0]!.edits), true);
     const changes: WorkspaceEdit = { changes: { [target.document.uri]: [{ range: range(0, 0, 5), newText: "literal ${1} 😀\r" }] } };
     assert.equal(decodeLspWorkspaceEdit(changes, resolve).documents[0]!.edits[0]!.insert, "literal ${1} 😀\r");
+    const clamped = decodeLspWorkspaceEdit({ changes: { [target.document.uri]: [
+        { range: range(0, 99, 99), newText: "first" }, { range: range(0, 100, 100), newText: "second" }] } }, resolve);
+    assert.equal(target.document.buffer.apply(clamped.documents[0]!.edits).buffer.text(), "otherfirstsecond");
+    assert.throws(() => decodeLspWorkspaceEdit({ changes: { [target.document.uri]: [
+        { range: range(0, 0, 99), newText: "first" }, { range: range(0, 1, 100), newText: "overlap" }] } }, resolve));
     assert.equal(decodeLspWorkspaceEdit({ ...changes, documentChanges: [] }, resolve).documents.length, 0); assert.equal(decodeLspWorkspaceEdit({}, resolve).documents.length, 0);
     assert.throws(() => decodeLspWorkspaceEdit(wire, uri => uri === a.capture.document.uri ? { ...a.capture, version: 4 } : resolve(uri)), error => error instanceof RpcError && error.code === -32801);
     const shorter = await captured("x"); assert.throws(() => decodeLspWorkspaceEdit(wire, uri => uri === a.capture.document.uri ? shorter.capture : resolve(uri)));
@@ -493,7 +519,9 @@ test("workspace edits normalize versioned or unversioned batches without changin
     assert.equal(decodeLspWorkspaceEdit(host, resolve).documents[0]!.edits[0]!.insert, "first");
     hostEdit.newText = "second"; assert.equal(decodeLspWorkspaceEdit(host, resolve).documents[0]!.edits[0]!.insert, "second");
     host.documentChanges[0]!.textDocument.version = 4; assert.throws(() => decodeLspWorkspaceEdit(host, resolve), error => error instanceof RpcError && error.code === -32801);
-    host.documentChanges[0]!.textDocument.version = 3; hostEdit.range.end.character = 999; assert.throws(() => decodeLspWorkspaceEdit(host, resolve));
+    host.documentChanges[0]!.textDocument.version = 3; hostEdit.range.end.character = 999;
+    assert.equal(decodeLspWorkspaceEdit(host, resolve).documents[0]!.edits[0]!.to, 5);
+    hostEdit.range.end.line = 99; assert.throws(() => decodeLspWorkspaceEdit(host, resolve));
     b.expire(); assert.equal(plan.isCurrent(), false); assert.throws(() => decodeLspWorkspaceEdit(wire, resolve), error => error instanceof RpcError && error.code === -32801);
 });
 
@@ -504,7 +532,7 @@ test("workspace edits reject the complete malformed, stale, aliased or annotated
         { documentChanges: [entry, { ...entry, textDocument: { uri: "alias", version: 3 } }] }, { documentChanges: [{ ...entry, textDocument: { uri, version: 70 } }] },
         { documentChanges: [{ ...entry, textDocument: { uri } }] }, { documentChanges: [entry, { kind: "create", uri: "new" }] }, { changeAnnotations: {}, documentChanges: [entry] },
         { changes: { [uri]: [valid, { ...valid, annotationId: "confirmation" }] } }, { changes: { [uri]: [valid, { range: range(0, 0, 2), newText: "overlap" }] } },
-        { changes: { [uri]: [valid, { range: range(1, 0, 999), newText: "invalid final" }] } }]) assert.throws(() => decodeLspWorkspaceEdit(value, resolve));
+        { changes: { [uri]: [valid, { range: range(99, 0, 999), newText: "invalid final" }] } }]) assert.throws(() => decodeLspWorkspaceEdit(value, resolve));
     assert.equal(capture.document.buffer.slice(0, capture.document.buffer.length), "abc\r\ndef");
 });
 
@@ -528,7 +556,8 @@ test("code actions refuse malformed final metadata/targets and incomplete lists 
     const { capture } = await captured("abc"), resolve = (uri: string) => uri === capture.document.uri ? capture : undefined, edit = { changes: { [capture.document.uri]: [{ range: range(0, 0, 0), newText: "x" }] } };
     for (const bad of [{ title: 1 }, { title: "bad", isPreferred: 1 }, { title: "bad", disabled: {} }, { title: "bad", command: { title: "run", command: "c", arguments: {} } },
         { title: "bad", data: { n: Infinity } }, { title: "bad", edit: { changes: { unknown: [] } } },
-        { title: "disabled", disabled: { reason: "Still validate its edits" }, edit: { changes: { unknown: [] } } }, { title: "bad", diagnostics: [{ range: range(0, 0, 99), message: "invalid" }] }]) assert.throws(() => decodeLspCodeActions([{ title: "valid", edit }, bad], capture, resolve, true));
+        { title: "disabled", disabled: { reason: "Still validate its edits" }, edit: { changes: { unknown: [] } } }, { title: "bad", diagnostics: [{ range: range(99, 0, 99), message: "invalid" }] }]) assert.throws(() => decodeLspCodeActions([{ title: "valid", edit }, bad], capture, resolve, true));
+    assert.equal(decodeLspCodeActions([{ title: "clamped", diagnostics: [{ range: range(0, 0, 99), message: "line end" }] }], capture, resolve)[0]!.diagnostics![0]!.to, 3);
     assert.throws(() => decodeLspCodeActions({ partial: [] }, capture, resolve));
 });
 
@@ -570,7 +599,7 @@ test("large completion content and lazy metadata stay complete while snippet exp
     const snippet = { label: "Repeated declaration", insertTextFormat: 2, insertText: "${1:" + body + "}$1$0" };
     assert.equal(decodeLspCompletions([snippet], { ...capture, maxDocumentUnits: 50000 }, 1).items[0]!.primary.text.length, 40000);
     assert.equal(decodeLspCompletions([snippet], { ...capture, maxDocumentUnits: 30000 }, 1).omitted.length, 1);
-    assert.throws(() => decodeLspCompletions([item, { ...item, additionalTextEdits: [...additionalTextEdits, { range: range(69, 0, 999), newText: "invalid" }] }], capture, 1));
+    assert.throws(() => decodeLspCompletions([item, { ...item, additionalTextEdits: [...additionalTextEdits, { range: range(99, 0, 999), newText: "invalid" }] }], capture, 1));
     const lazy = decodeLspCompletions([{ label: "Lazy", insertTextFormat: 2 }], capture, 1, undefined, { resolve: true }).items[0]!;
     assert.throws(() => decodeLspResolvedCompletion({ ...lazy.resolve as object, insertText: snippet.insertText }, lazy, { ...capture, maxDocumentUnits: 30000 }), UnsupportedLspSnippetError);
 });

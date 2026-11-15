@@ -75,14 +75,13 @@ function range(value: unknown): Readonly<{ start: LspPosition; end: LspPosition 
     if (!record(value)) invalid(); const start = position(value.start), end = position(value.end);
     if (start.line > end.line || start.line === end.line && start.character > end.character) invalid(); return Object.freeze({ start, end });
 }
-/** Strict source ranges: edit/diagnostic validation never silently clamps a malformed server position. */
+/** LSP clamps characters to the line end; nonexistent lines and reversed wire ranges remain invalid. */
 export function lspRangeOffsets(index: LspLineIndex, value: unknown): Readonly<{ from: number; to: number }> {
     return rangeOffsets(index, range(value));
 }
 function rangeOffsets(index: LspLineIndex, { start, end }: LspRange): Readonly<{ from: number; to: number }> {
-    const from = index.offsetAt(start), to = index.offsetAt(end), a = index.at(from), b = index.at(to);
-    if (a.line !== start.line || a.character !== start.character || b.line !== end.line || b.character !== end.character) invalid();
-    return Object.freeze({ from, to });
+    if (start.line >= index.lineCount || end.line >= index.lineCount) invalid();
+    return Object.freeze({ from: index.offsetAt(start), to: index.offsetAt(end) });
 }
 /** Place valid wire ranges against this explicit snapshot without inventing a provider version.
  * Unplaceable ranges retain their message and wire range; malformed structures reject the batch.
@@ -151,12 +150,13 @@ function parseLocationEntries(value: unknown, kind: "definition" | "references")
         const uri = link ? item.targetUri : item.uri;
         if (typeof uri !== "string" || !uri || link && ("uri" in item || "range" in item)) invalid();
         const targetRange = range(link ? item.targetRange : item.range), selected = link ? range(item.targetSelectionRange) : targetRange;
-        const before = (a: LspPosition, b: LspPosition) => a.line < b.line || a.line === b.line && a.character < b.character;
-        if (before(selected.start, targetRange.start) || before(targetRange.end, selected.end)) invalid();
+        // Character containment requires the captured target: different wire columns may clamp
+        // to the same line end. Reject impossible line containment before requesting that target.
+        if (selected.start.line < targetRange.start.line || selected.end.line > targetRange.end.line) invalid();
         return Object.freeze({ uri, targetRange, selected, originRange: link && item.originSelectionRange !== undefined ? range(item.originSelectionRange) : null });
     }));
 }
-/** Validate every wire entry before asking the host to load missing targets. */
+/** Validate wire syntax and line containment before asking the host to load missing targets. */
 export const lspLocationUris = (value: unknown, kind: "definition" | "references"): readonly string[] => locationEntries(value, kind).map(item => item.uri);
 /** Resolve opaque URIs through captured host buffers; never fetch or open a server-supplied URI. */
 export function decodeLspLocations(value: unknown, kind: "definition" | "references", origin: LspDocumentCapture,
@@ -167,6 +167,7 @@ export function decodeLspLocations(value: unknown, kind: "definition" | "referen
         const target = resolve(uri); if (!target || target.document.uri !== uri || target.index.buffer !== target.document.buffer) throw new TypeError("LSP location URI is outside the captured host project.");
         current(target);
         const targetRange = rangeOffsets(target.index, item.targetRange), selected = item.selected === item.targetRange ? targetRange : rangeOffsets(target.index, item.selected);
+        if (selected.from < targetRange.from || selected.to > targetRange.to) invalid();
         const originRange = item.originRange ? rangeOffsets(origin.index, item.originRange) : null;
         return Object.freeze({ target, from: selected.from, to: selected.to, targetRange, originRange });
     });

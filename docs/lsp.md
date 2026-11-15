@@ -95,7 +95,9 @@ Scopes are bounded to 128 by default, in addition to the existing session/docume
 It distinguishes received/current, empty and expired results, rejected stale/invalid batches and
 unknown URIs. A result keeps the provider `version`/`revision` nullable, independently of the explicit
 `snapshotRevision` used to place its validated wire ranges. Unversioned markers have uncertain
-freshness; out-of-bounds ranges retain their message and wire range with null offsets. They grant
+freshness; ranges with nonexistent lines retain their message and wire range with null offsets.
+Character positions past a valid line's end clamp to that end under LSP 3.17; the original wire
+range remains available alongside the placed offsets. These presentation anchors grant
 no edit authority. A local edit, close/URI reuse or reconnect expires associations. Invalid or known
 stale pushes preserve the previous valid batch. An unrelated capability registration does not
 manufacture a new analysis revision or erase still-current diagnostic placement.

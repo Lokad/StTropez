@@ -30,14 +30,16 @@ The optional `sttropez/protocol` entry supplies `LspDocumentCapture`, `lspRangeO
 `decodeLspDiagnostics` and `decodeLspCompletions`. A capture identifies the exact URI/resource/
 document/revision, sent buffer/index, wire version, session and capability generation. It is never
 an assertion that a provider has completed analysis. Its currentness guard must pass again before
-publishing or applying delayed results. Server ranges are checked against exact raw UTF-16 source;
-invalid lines/characters are refused instead of silently clamped.
+publishing or applying delayed results. Server ranges use exact raw UTF-16 source. Character
+positions past a line's end clamp to that end as specified by LSP 3.17; nonexistent lines,
+negative/noninteger positions and reversed wire ranges are refused. CRLF is never split by
+line-end clamping, and a raw position inside a surrogate pair retains its UTF-16 meaning.
 
 Diagnostics share one decoded batch across views. Versioned pushes must match the current wire
 version; a malformed final item preserves the previous valid batch. Unversioned pushes retain
 validated wire ranges and may place navigable markers against an explicit current snapshot while
 their provider version/origin revision remain unknown. The controls label that uncertainty separately.
-An out-of-bounds range retains its wire range and message with an explicit unplaceable status and
+An invalid-line range retains its wire range and message with an explicit unplaceable status and
 no marker. A local edit, reconnect or URI reuse expires the prior associations rather than relocating
 an uncertain analysis. These presentation anchors grant no edit authority. Messages are plain
 text; markup, links and commands are never executed. Complete batches use the host's existing
@@ -145,7 +147,7 @@ limits belong to the host. `completionIncomplete` preserves the provider's parti
 independently of client filtering. The demo keeps at most 16 candidate rows while every matching
 candidate remains reachable. Additional edits, insertion text, detail, documentation and opaque
 resolve data have no separate count/string-length quota. Overlaps, conflicting insertions,
-out-of-document positions and malformed final items refuse the entire result. Snippet support is
+nonexistent lines and malformed final items refuse the entire result. Snippet support is
 advertised for the subset above; expanded insertion length is checked before allocating repeated
 defaults against the session's configured `maxDocumentUnits`. Captures from `LspSession` carry
 that limit. Callers constructing their own capture for the pure decoder should supply it when

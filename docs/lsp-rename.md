@@ -17,9 +17,10 @@ exact captured current working buffers; they do not authorize disk reads or bypa
 An empty edit or null rename response makes no applicable preview and adds no history.
 
 Every opaque URI resolves through a host callback. Unknown URIs, repeated document identities,
-out-of-bounds UTF-16 ranges, overlapping edits and malformed final entries refuse the entire batch.
+nonexistent lines, reversed ranges, overlapping edits and malformed final entries refuse the entire batch.
 The decoder sorts original-coordinate edits stably and retains equal-position insertion order.
-Raw surrogate units and CRLF/LF/bare-CR text are preserved; positions are never silently clamped.
+Raw surrogate units and CRLF/LF/bare-CR text are preserved. Character positions beyond a valid
+line's end clamp to that end under LSP 3.17. Overlap checks run on those normalized offsets.
 There are no extra decoder quotas on document/edit counts or inserted text. The existing session
 document limits and transport message/JSON limits remain host-configurable. Direct decoder
 callers own input-size policy. File creation/rename/deletion and change annotations are explicitly unsupported.

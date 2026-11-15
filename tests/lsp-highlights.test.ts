@@ -15,7 +15,8 @@ test("occurrences negotiate UTF-16 ranges, text/read/write and validate malforme
     assert.deepEqual(f.sent("textDocument/documentHighlight")[0]!.params, { textDocument: { uri: `generic:${f.source.id}` }, position: { line: 1, character: 1 } });
     const init = f.sent("initialize")[0]!.params as { capabilities: { textDocument: { documentHighlight: unknown } } };
     assert.deepEqual(init.capabilities.textDocument.documentHighlight, { dynamicRegistration: true });
-    for (const bad of [{ range: range(1, 0, 99) }, { range: range(1, 4, 1) }, { range: range(7, 0, 1) }, { range: range(1, 0, 1), kind: 4 }, { range: range(1, 0, 1), kind: "read" }, null]) {
+    value = [{ range: range(1, 0, 99) }]; assert.deepEqual((await client.run(f.document(), 6).result).items, [{ from: 5, to: 16, kind: "text" }]);
+    for (const bad of [{ range: range(1, 4, 1) }, { range: range(7, 0, 1) }, { range: range(1, 0, 1), kind: 4 }, { range: range(1, 0, 1), kind: "read" }, null]) {
         value = [{ range: range(1, 0, 5) }, bad]; await assert.rejects(client.run(f.document(), 6).result);
     }
     assert.equal(result.isCurrent(), false);
