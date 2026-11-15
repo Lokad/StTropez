@@ -8,6 +8,14 @@ position, units read, completion flag and frozen matches. The caller supplies sc
 `dispose` ends scanning and releases the piece iterator. Pattern preparation is linear in the
 query length; scan budgets describe work units, rather than hard elapsed-time deadlines.
 
+Case-sensitive scans use native literal search within a piece, bounded by the remaining
+unit budget. Streaming prefix state handles piece seams, short windows and queries larger
+than a step. A failed native search leaves its final possible match prefix for streaming;
+revisited prefixes/tails count against the read budget. No native call scans an unbounded
+backing, and no whole-document string is assembled. `scanned` is the consumed source frontier,
+so it can lag the end of a native lookahead window. Whole-word rejection preserves overlapping
+candidates; accepted matches remain non-overlapping.
+
 `matchCase: false` enables locale-independent Unicode simple-fold comparison over code points.
 For example, `k` matches `K` and `K`, sigma matches final sigma, and supplementary case pairs
 match across pieces. It does not expand `ß` to `ss`, normalize combining sequences, or apply

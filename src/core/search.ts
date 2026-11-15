@@ -69,9 +69,25 @@ export class LiteralSearch {
                     if (next.done) { this.dispose(); break; }
                     this.chunk = next.value; this.index = 0; if (!this.chunk.length) continue;
                 }
-                const unit = this.chunk[this.index++]!; this.offset++; readUnits++;
-                while (this.matched && unit !== this.query[this.matched]) this.matched = this.prefix[this.matched - 1]!;
-                if (unit === this.query[this.matched]) this.matched++;
+                const carry = this.matched, end = Math.min(this.chunk.length, this.index + maxUnits - readUnits - carry);
+                if (carry <= this.index && end - this.index >= this.query.length) {
+                    // The unresolved prefix is in this piece. Bound the native call, including
+                    // rereading that prefix; it cannot search an entire large backing at once.
+                    const from = this.index - carry, found = this.chunk.slice(from, end).indexOf(this.query);
+                    if (found < 0) {
+                        // Only the final query.length - 1 units can start a match in the next
+                        // window/piece. Stream that tail through KMP, charging its reread too.
+                        const skipped = end - this.query.length + 1 - this.index;
+                        this.index += skipped; this.offset += skipped; readUnits += end - from; this.matched = 0;
+                        continue;
+                    }
+                    const consumed = found + this.query.length - carry;
+                    this.index += consumed; this.offset += consumed; readUnits += consumed + carry; this.matched = this.query.length;
+                } else {
+                    const unit = this.chunk[this.index++]!; this.offset++; readUnits++;
+                    while (this.matched && unit !== this.query[this.matched]) this.matched = this.prefix[this.matched - 1]!;
+                    if (unit === this.query[this.matched]) this.matched++;
+                }
                 if (this.matched === this.query.length) {
                     const match = Object.freeze({ from: this.offset - this.query.length, to: this.offset });
                     if (this.boundaryBuffer) this.pending = { match, before: "", after: "" }; else { matches.push(match); this.matched = 0; }

@@ -12,7 +12,7 @@ test("literal search crosses piece/step boundaries, preserves UTF-16/newlines an
     for (const query of ["_!😀\r\n", "😀", "\r\n", "é", "missing", ""]) {
         const text = "a_!😀\r\néa😀\r\n" + tail, expected = [];
         if (query) for (let from = text.indexOf(query); from >= 0; from = text.indexOf(query, from + query.length)) expected.push({ from, to: from + query.length });
-        assert.deepEqual(all(buffer, query), expected);
+        for (const budget of [1, 3, 128, 32768]) assert.deepEqual(all(buffer, query, budget), expected);
     }
     assert.equal(buffer.diagnostics().textExports, 0);
     assert.deepEqual(all(TextBuffer.from("aaaaa"), "aa"), [{ from: 0, to: 2 }, { from: 2, to: 4 }]);
@@ -61,9 +61,15 @@ test("fragmented whole-word scans agree with an independent flat code-point orac
     }
     assert.equal(buffer.readMetrics().textExports, 0);
 });
-test("adversarial prefixes, match/read budgets, ranged scans and disposal stay explicit", () => {
-    const buffer = TextBuffer.from("a".repeat(100_000) + "b"), cursor = new LiteralSearch(buffer, "aaaaab", 4);
+test("adversarial prefixes, match/read budgets, ranged scans and disposal stay explicit", context => {
+    const query = "aaaaab", buffer = TextBuffer.from("a".repeat(100_000) + "b"), cursor = new LiteralSearch(buffer, query, 4);
+    const indexOf = String.prototype.indexOf; let nativeCalls = 0;
+    const probe = context.mock.method(String.prototype, "indexOf", function (this: string, search: string, from = 0) {
+        if (search === query) { nativeCalls++; assert.ok(this.length - from <= 1024, "Native scans must obey the same cooperative span bound."); }
+        return indexOf.call(this, search, from);
+    });
     let step; do { step = cursor.next(1024); assert.ok(step.readUnits <= 1024); } while (!step.done);
+    probe.mock.restore(); assert.ok(nativeCalls > 0, "Exercise the bounded native path as well as the streaming seam path.");
     assert.deepEqual(step.matches, [{ from: 99_995, to: 100_001 }]);
     const many = new LiteralSearch(buffer, "a"); assert.equal(many.next(100, 2).matches.length, 2);
     many.dispose(); assert.deepEqual(many.next(), { done: true, scanned: 2, readUnits: 0, matches: [] });
