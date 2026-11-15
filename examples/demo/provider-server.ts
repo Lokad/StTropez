@@ -49,7 +49,7 @@ function knownDocument(value: unknown, project: Project): Document | undefined {
 const knownPath = (value: unknown, project: Project) => !!knownDocument(value, project);
 
 /** Demo-only process/transport host. Production modules never import Node, a server or a compiler. */
-export function attachDemoProvider(server: Server) {
+export function attachDemoProvider(server: Server, options: Readonly<{ refactoring?: boolean }> = {}) {
     const sockets = new WebSocketServer({ noServer: true, maxPayload: 24 * 1024 * 1024 });
     const projects = new Map<string, Project>(), removals = new Set<Promise<void>>(), requests = new Set<Promise<boolean>>();
     let closing = false, processes = 0, allocating = 0;
@@ -258,7 +258,7 @@ export function attachDemoProvider(server: Server) {
                 if (to < from) { reject(message.id, "Expected an ordered diagnostic range."); return; }
                 const overlapping = [...cached.syntactic, ...cached.semantic].filter(item => from === to ? item.from <= from && item.to >= to
                     : item.from === item.to ? from <= item.from && item.from <= to : item.from < to && item.to > from);
-                params.context = { triggerKind: 1, only: ["quickfix"], diagnostics: overlapping.map(item => item.wire) }; acting.add(message.id);
+                params.context = { triggerKind: 1, only: options.refactoring ? ["quickfix", "refactor"] : ["quickfix"], diagnostics: overlapping.map(item => item.wire) }; acting.add(message.id);
             }
             if (message.method === "textDocument/completion" && object(message.params) && object(message.params.position)
                 && typeof message.params.position.line === "number" && typeof message.params.position.character === "number" && (typeof message.id === "number" || typeof message.id === "string")) {
@@ -272,6 +272,12 @@ export function attachDemoProvider(server: Server) {
             if (message.method === "workspace/executeCommand") {
                 const params = message.params;
                 const args = object(params) ? params.arguments : undefined;
+                if (options.refactoring && object(params) && params.command === "_typescript.applyRefactoring" && Array.isArray(args) && args.length === 1
+                    && object(args[0]) && knownPath(args[0].file, project) && typeof args[0].refactor === "string" && typeof args[0].action === "string") {
+                    // Explicit development-host profile: the client still owns command confirmation
+                    // and every server workspace/applyEdit request must pass its captured review.
+                    void send(message).catch(() => {}); return;
+                }
                 if (!object(params) || params.command !== "typescript.tsserverRequest" || !Array.isArray(args)
                     || !["semanticDiagnosticsSync", "syntacticDiagnosticsSync", "suggestionDiagnosticsSync"].includes(String(args[0]))
                     || !object(args[1]) || !knownPath(args[1].file, project)) {

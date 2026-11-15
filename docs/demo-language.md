@@ -170,6 +170,17 @@ pending; malformed replacement results invalidate that kind. This is a provider 
 not qualification of standard diagnostic pull. Generic metadata passthrough is qualified
 separately through the public push observer and action client against the protocol fixture.
 
+The development host also has an explicit `attachDemoProvider(server, { refactoring: true })`
+profile for real-provider qualification. It includes refactor actions and permits the pinned
+provider's `_typescript.applyRefactoring` command for a known project file. Default demo hosts
+retain their diagnostic-command restriction. The qualification journey uses the public
+`LspCommandPolicy` and captured review handler: declining leaves the source untouched; accepting
+applies the server's `workspace/applyEdit` as one undoable transaction. It acknowledges the
+provider-specific `_typescript.rename` hint through the host custom-request hook, without
+claiming a rename-dialog workflow. The same journey verifies real lazy auto-imports and a
+method-override snippet, including final caret placement and undo. It runs through `npm test`
+on the existing Linux CI route; its Windows execution also checks process/file cleanup.
+
 **Diagnostic details** demonstrates a real TypeScript property error with its related
 declaration and a clearly labeled Demo host warning with a deprecated tag, help URI and opaque
 data. Problems shows severity/source, pages related locations in groups of 16 on demand, and
