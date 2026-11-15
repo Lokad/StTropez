@@ -3,17 +3,15 @@ import type { LspWorkspaceEdit } from "../../src/protocol/index.ts";
 import type { NavigationResult } from "../probes/navigation.ts";
 import type { RenameCapture } from "../probes/rename.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
+import type { ProviderBackend } from "../shared/provider-lane.ts";
 import { createNavigationClient } from "./navigation-client.ts";
 import type { NavigationMetrics } from "./navigation-client.ts";
 import type { LspRenameClient, LspRenameFactory } from "./lsp-rename-client.ts";
 
 type RenameRequest = Readonly<{ documents: readonly DocumentSnapshot[]; capture: RenameCapture; name: string; progress: (work: number) => void }>;
 type RenameResult = Readonly<{ kind: "lexical"; result: NavigationResult }> | Readonly<{ kind: "workspace"; edit: LspWorkspaceEdit }>;
-export type RenameBackend = Readonly<{
-    run: (request: RenameRequest) => Promise<RenameResult>;
-    cancel: () => void; dispose: () => void; faultIdle: () => boolean;
-    snapshot: () => ReturnType<LspRenameClient["snapshot"]> | ReturnType<ReturnType<typeof createNavigationClient>["snapshot"]>;
-}>;
+export type RenameBackend = ProviderBackend<RenameRequest, RenameResult,
+    ReturnType<LspRenameClient["snapshot"]> | ReturnType<ReturnType<typeof createNavigationClient>["snapshot"]>>;
 
 /** Reuse existing transports; preview validation and application remain host policies. */
 export function createRenameBackend(clock: Pick<Window, "setTimeout" | "clearTimeout">, metrics: NavigationMetrics,

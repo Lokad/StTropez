@@ -2,7 +2,15 @@
 
 The default worker route below is a local fixture. The explicit LSP route offers
 [provider action choices and lazy previews](lsp-code-actions.md), with captured multi-resource
-text edits and the same atomic Workspace history. Provider commands remain unavailable there.
+text edits and the same atomic Workspace history. Commands permitted by host policy require
+explicit confirmation and use the shared workspace review owner.
+
+Both routes use the example's shared provider lifecycle and backend contract. Adapters reuse
+the existing worker/LSP clients; the host retains validation, permissions and preview policy.
+An LSP action batch carries its original provider subscription through lazy resolution and
+command handoff. The confirmed execution retains that exact backend until completion or
+cancellation; a late cancellation cannot dispose a replacement backend. Pending requests drop
+uncertain transport state, while ready previews retain the idle client for reuse.
 
 Both candidate hosts expose **Action module**, **Preview module action** and
 **Apply captured action**. Ctrl/Cmd+. from primary, secondary or comparison working
