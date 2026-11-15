@@ -299,7 +299,12 @@ test("subscription diagnostics count independent registrations even after a reso
     let calls = 0; const listener = () => { calls++; };
     const first = form.subscribe(listener), second = form.subscribe(listener);
     assert.equal(workspace.diagnostics().subscriptions, 2);
-    workspace.releaseResource(form.id); assert.equal(calls, 2); assert.equal(workspace.diagnostics().subscriptions, 2);
+    assert.equal(workspace.updateResource(form, { expectedRevision: 0, value: { path: "y" }, origin: "human" }).applied, true);
+    assert.equal(calls, 1);
     first(); first(); assert.equal(workspace.diagnostics().subscriptions, 1);
-    second(); assert.equal(workspace.diagnostics().subscriptions, 0);
+    assert.equal(workspace.updateResource(form, { expectedRevision: 1, value: { path: "z" }, origin: "human" }).applied, true);
+    assert.equal(calls, 2); const third = form.subscribe(listener);
+    workspace.releaseResource(form.id, true); assert.equal(calls, 3); assert.equal(workspace.diagnostics().subscriptions, 2);
+    second(); second(); assert.equal(workspace.diagnostics().subscriptions, 1);
+    third(); assert.equal(workspace.diagnostics().subscriptions, 0);
 });

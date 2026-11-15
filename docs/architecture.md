@@ -123,7 +123,12 @@ Construct persistent controllers at the host composition boundary, outside compo
 
 Resource, document, metadata and tab observables now notify only for their own changes; a coarse
 workspace observable remains for tooling. Unchanged metadata and unrelated form snapshots keep
-their identity through typing. Listener exceptions are reported without stopping other delivery.
+their identity through typing. Within one publication, the same callback runs once even when
+registered on several changed handles or registered more than once. Delivery keeps first-seen
+callback order and captures its callbacks before invoking any; subscriptions added or removed
+during delivery affect later publications. Registration counts and unsubscribe handles remain
+independent. A nested controller publication delivers its own new state separately.
+Listener exceptions are reported without stopping other delivery.
 Reentrant mutations are rejected throughout nested workspace/controller notification delivery;
 a host can queue its next command after delivery. Controllers use `workspace.createNotificationScope`
 to share that write guard while keeping their listener counts and error policies independent.

@@ -1,7 +1,7 @@
 /** Read compatibility only; commands remain explicit and synchronous. */
 export type Observable<T> = Readonly<{ getSnapshot: () => T; subscribe: (listener: () => void) => () => void }>;
 
-/** All stores publish before delivery. Reentrant writes are rejected, so a delivery sees one commit. */
+/** All stores publish before delivery. Each callback runs once per publication; reentrant writes are rejected. */
 export class NotificationScope {
     private readonly delivery: { depth: number };
     private subscriptions = 0;
@@ -15,7 +15,9 @@ export class NotificationScope {
     subscriptionChanged(delta: number): void { this.subscriptions += delta; }
     subscriptionCount(): number { return this.subscriptions; }
     deliver(stores: readonly Store<unknown>[]): void {
-        const listeners = stores.flatMap(store => store.listeners());
+        // Capture all callbacks before delivery: subscription changes affect later publications.
+        const listeners = new Set<() => void>();
+        for (const store of stores) for (const listener of store.listeners()) listeners.add(listener);
         this.delivery.depth++;
         try {
             for (const listener of listeners) {
@@ -29,15 +31,16 @@ export class NotificationScope {
 
 /** Internal publication primitive, not a host reactive library. */
 export class Store<T> {
-    private readonly subscriptions = new Set<() => void>();
+    private readonly subscriptions = new Map<object, () => void>();
     private value: T;
     private readonly scope: NotificationScope | undefined;
     readonly observable: Observable<T>;
     constructor(value: T, scope?: NotificationScope) {
         this.value = value; this.scope = scope;
         this.observable = Object.freeze({ getSnapshot: () => this.value, subscribe: (listener: () => void) => {
-            const subscription = () => listener();
-            this.subscriptions.add(subscription);
+            // Registrations have independent lifetimes even when they share a callback.
+            const subscription = {};
+            this.subscriptions.set(subscription, listener);
             this.scope?.subscriptionChanged(1);
             return () => { if (this.subscriptions.delete(subscription)) this.scope?.subscriptionChanged(-1); };
         } });
@@ -48,5 +51,5 @@ export class Store<T> {
         this.value = value;
         changed.add(this);
     }
-    listeners(): readonly (() => void)[] { return [...this.subscriptions]; }
+    listeners(): Iterable<() => void> { return this.subscriptions.values(); }
 }
