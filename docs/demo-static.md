@@ -13,6 +13,13 @@ The worker uses the public `JsonRpcConnection` for framing, request ownership an
 and TypeScript 5.9.3's language service for actual language intelligence. The local development
 server continues to use the existing TypeScript language server over WebSocket/stdio.
 
+The worker queues requests and document notifications in arrival order, executing one compiler
+action per task. Cancellation removes requests that have not started; it cannot interrupt a
+synchronous compiler call. Disposal releases queued work and the service. The queue holds at
+most 256 actions; overflow or a failed document notification closes the session so Retry can
+resynchronize it, instead of continuing with a missing change. The existing RPC request and
+message-size limits remain separate from this action-count bound.
+
 The browser provider implements initialization with UTF-16 positions, open/change/close,
 completion/resolve, hover, signature help, definition/references, prepare-rename/rename and
 edit-only quick fixes. The existing captured `sttropez/diagnostics` host extension supplies
