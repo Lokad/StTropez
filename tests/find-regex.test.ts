@@ -2,9 +2,51 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Workspace } from "../src/index.ts";
 import { createFindController } from "../src/browser/find.ts";
-import type { FindBackend, FindQueryCapture, FindPlanStep } from "../src/browser/find.ts";
+import type { FindBackend, FindQueryCapture, FindPlanStep, FindSnapshot } from "../src/browser/find.ts";
+import type { SearchStep } from "../src/core/search.ts";
 import type { EditingCandidate } from "../src/browser/index.ts";
 import { regexMatches, regexReplacement } from "../src/core/regex-search.ts";
+
+for (const terminal of ["ready", "failed", "cancelled"] as const)
+test(`unchanged regex transfer steps preserve snapshot identity and accumulated timing through ${terminal}`, async t => {
+    const workspace = new Workspace(), documentId = workspace.createDocument({ scope: "find", resource: "progress", variant: "working" }, "Source", "catcat");
+    const tab = workspace.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>();
+    let serial = 0, now = 0, calls = 0, disposed = false, late: ((step: SearchStep) => void) | undefined;
+    const owner = Object.assign(new EventTarget(), { defaultView: { performance: { now: () => now },
+        setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
+    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), activity: () => ({ composing: false, disposed: false }), viewport: { revealOffset: () => {} }, focus: () => {} } as unknown as EditingCandidate;
+    const backend: FindBackend = { dispose: () => { disposed = true; }, replace: () => { throw new Error("Unexpected replacement."); }, search: () => ({
+        dispose: () => {}, next: () => {
+            calls++; now += calls === 52 ? 80 : calls;
+            if (calls === 51 && terminal === "failed") throw new Error("Held search failure.");
+            if (calls === 51 && terminal === "cancelled") return new Promise<SearchStep>(resolve => { late = resolve; });
+            return Promise.resolve({ done: calls === 53, scanned: calls === 53 ? 6 : calls > 50 ? 3 : 0,
+                readUnits: 1, matches: calls === 51 ? [{ from: 0, to: 3 }] : [] });
+        } }) };
+    const find = createFindController(workspace, tab, editor, { regularExpression: backend, regularExpressionDelayMs: 0 });
+    find.setOptions({ regularExpression: true }); const states: FindSnapshot[] = [], stop = find.state.subscribe(() => states.push(find.state.getSnapshot()));
+    const tick = async () => { const next = tasks.entries().next().value; if (next) { tasks.delete(next[0]); next[1](); } await Promise.resolve(); await Promise.resolve(); };
+    try {
+        find.setQuery("cat"); const initial = find.state.getSnapshot();
+        for (let i = 0; i < 50; i++) await tick();
+        assert.equal(calls, 50); assert.equal(states.length, 1); assert.equal(find.state.getSnapshot(), initial);
+        await tick();
+        if (terminal === "ready") {
+            const progress = find.state.getSnapshot(); assert.equal(progress.count, 1); assert.equal(progress.scanned, 3); assert.equal(progress.maxScanStepMs, 51);
+            await tick(); assert.equal(find.state.getSnapshot(), progress); assert.equal(states.length, 2);
+            await tick(); assert.equal(find.state.getSnapshot().maxScanStepMs, 80); assert.equal(states.length, 3);
+        } else if (terminal === "cancelled") {
+            find.cancel(); const cancelled = find.state.getSnapshot(); assert.equal(cancelled.maxScanStepMs, 50);
+            late!({ done: true, scanned: 6, readUnits: 0, matches: [{ from: 0, to: 3 }] }); await tick(); assert.equal(find.state.getSnapshot(), cancelled);
+            assert.equal(states.length, 2);
+        } else { assert.equal(find.state.getSnapshot().message, "Held search failure."); assert.equal(find.state.getSnapshot().maxScanStepMs, 50); assert.equal(states.length, 2); }
+        assert.equal(find.state.getSnapshot().status, terminal); assert.equal(tasks.size, 0);
+        t.diagnostic(JSON.stringify({ terminal, transferSteps: 50, publishedSnapshots: states.length, maxScanStepMs: find.state.getSnapshot().maxScanStepMs }));
+    } finally {
+        stop(); find.destroy(); view.dispose(); workspace.close(tab); assert.equal(disposed, true); assert.equal(tasks.size, 0);
+        assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0);
+    }
+});
 
 function fixture(text: string, supplied = true) {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "find", resource: "regex", variant: "working" }, "Source", { value: text });

@@ -58,6 +58,11 @@ cursor's defaults or regex-worker delay. These are work limits, not elapsed-time
 The next literal timer is queued before a slice runs so its wait overlaps the work. Completion,
 query changes, cancellation, expiry and destruction clear unused work; captured generations
 prevent an older slice from publishing after replacement. Regex cursors schedule after replies.
+Source-transfer acknowledgements and other steps that leave count/scan position unchanged
+do not publish a new snapshot. Scan/index timing maxima accumulate privately across those
+steps and appear with the next visible progress or terminal state, including cancellation or
+failure. `maxScanStepMs` covers completed dispatch/index spans before publication; it is not
+an input-handler or complete interaction timer.
 The controller retains all matching start/end pairs in 1,024-match pages for binary navigation,
 while `preview` exposes only the first 200 ranges for bounded decorations. The preview cap never
 limits the count, navigation or replacement. Index memory is proportional to match count and
@@ -161,7 +166,11 @@ find.replaceAll("[$<word>]"); // after state.status becomes "ready"
 
 Expressions use `gmu`, adding `i` when **Match case** is cleared. Native matching, captures,
 lookarounds, Unicode properties and replacement tokens (`$$`, `$&`, prefix/suffix, numbered
-and named groups) retain their platform semantics. Line anchors follow the editor's LF rows:
+and named groups) retain their platform semantics. Search publishes frozen ranges directly,
+without making application-owned capture-array or named-group copies. Replacement retains
+those captures. Both paths use the same native iterator and boundary validation; native
+regex result allocations still occur. No alternative matching runtime is introduced.
+Line anchors follow the editor's LF rows:
 `^` matches document start or after LF; `$` matches before LF or a complete CRLF, or at EOF.
 Neither anchor splits CRLF or treats bare CR, U+2028 or U+2029 as a row boundary. Guards around
 native assertions implement these bounds while preserving inline flag groups and captures.

@@ -45,10 +45,14 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     let matches = new FindIndex(), count = 0, navigationTo = 0, observed = initial;
     let literal: { document: DocumentSnapshot; index: FindIndex; query: string; wholeWord: boolean; matchCase: boolean } | undefined;
     let edges: { prefix: number; suffix: number } | undefined;
+    let scanMaximum = 0;
     const sameOwner = (a: DocumentSnapshot, b: DocumentSnapshot) => a.id === b.id && a.resourceId === b.resourceId && a.key === b.key;
     const valid = () => !disposed && lease.active() && workspace.resolveTab(target) !== undefined && workspace.ownsDocumentView(editor.view)
         && workspace.observeDocument(documentId).getSnapshot() !== undefined && !editor.activity().disposed;
-    const publish = (patch: Partial<FindSnapshot>) => { const changed = new Set<Store<unknown>>(); store.set(Object.freeze({ ...store.get(), ...patch }), changed); scope.deliver([...changed]); };
+    const publish = (patch: Partial<FindSnapshot>) => {
+        scanMaximum = patch.maxScanStepMs ?? scanMaximum;
+        const changed = new Set<Store<unknown>>(); store.set(Object.freeze({ ...store.get(), ...patch, maxScanStepMs: scanMaximum }), changed); scope.deliver([...changed]);
+    };
     const stop = () => { generation++; if (timer !== undefined) win.clearTimeout(timer); timer = undefined;
         const active = cursor, plan = planCursor, authority = stopPlanAuthority; cursor = undefined; planCursor = undefined; stopPlanAuthority = undefined;
         navigatedZero = undefined; replacedZero = undefined;
@@ -143,14 +147,18 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
                 if (repair) { count = matches.count; navigationTo = Math.max(navigationTo, count ? endAt(count - 1) : 0); }
                 const previous = store.get().preview, extra = result.matches.slice(0, 200 - previous.length);
                 const preview = repair ? retainedPreview() : previous.length < 200 && extra.length ? Object.freeze([...previous, ...(regularExpression ? extra.map(m => Object.freeze({ from: m.from, to: m.to })) : extra)]) : previous;
-                const maxScanStepMs = Math.max(store.get().maxScanStepMs, dispatchMs, win.performance.now() - began);
+                scanMaximum = Math.max(scanMaximum, dispatchMs, win.performance.now() - began);
                 if (result.done) {
                     if (!regularExpression && timer !== undefined) { win.clearTimeout(timer); timer = undefined; }
                     const finished = cursor; cursor = undefined; finished?.dispose();
                     if (!regularExpression) { literal = { document, index: matches, query, wholeWord, matchCase }; edges = undefined; }
                 }
                 if (token !== generation || !valid()) return;
-                publish({ count, preview, scanned: result.scanned, status: result.done ? "ready" : "searching", retained: !!repair && !result.done, maxScanStepMs });
+                // Transfer acknowledgements can change work/timing without changing visible
+                // progress. Keep their maximum privately until the next real publication.
+                const state = store.get();
+                if (result.done || count !== state.count || result.scanned !== state.scanned)
+                    publish({ count, preview, scanned: result.scanned, status: result.done ? "ready" : "searching", retained: !!repair && !result.done });
                 if (!result.done && token === generation && regularExpression) later(step);
             };
             try { const result = cursor!.next(), dispatchMs = win.performance.now() - started;

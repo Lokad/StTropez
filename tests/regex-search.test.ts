@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { regexMatches, regexReplacement } from "../src/core/regex-search.ts";
+import { regexMatches, regexRanges, regexReplacement } from "../src/core/regex-search.ts";
 import { codeWordConstituentPattern } from "../src/index.ts";
 import { wordConstituent } from "../src/core/words.ts";
 
@@ -13,6 +13,11 @@ test("worker regex kernel retains raw multiline, lookbehind, captures and Unicod
     assert.deepEqual([...regexMatches("😀x", "(?:)")].map(m => [m.from, m.to]), [[0, 0], [2, 2], [3, 3]]);
     assert.deepEqual([...regexMatches("a\r\nb\rc\nd", "^|$")].map(m => m.from), [0, 1, 3, 6, 7, 8]);
     assert.ok(found.every(m => Object.isFrozen(m) && Object.isFrozen(m.captures) && Object.isFrozen(m.groups)));
+    const ranges = [...regexRanges(text, "(?<=^)(?<name>𐐨value) = (\\d+)", false)];
+    assert.deepEqual(ranges, found.map(({ from, to }) => ({ from, to })));
+    assert.ok(ranges.every(m => Object.isFrozen(m) && Object.keys(m).join(",") === "from,to"));
+    assert.deepEqual([...regexRanges(text, "(?<name>𐐨value)", false, true, 25)], [{ from: 25, to: 32 }]);
+    assert.throws(() => [...regexRanges(text, "x", true, false, 1)], RangeError);
     assert.deepEqual([...regexMatches("K k K", "k", false)].map(m => m.from), [0, 2, 4]);
     assert.throws(() => [...regexMatches("text", "(")], SyntaxError);
 });
@@ -34,7 +39,7 @@ test("regex whole words share code-word boundaries and preserve alternatives, ca
 });
 
 test("regex anchors follow LF rows and preserve CRLF, literal syntax and native group semantics", () => {
-    const offsets = (text: string, pattern: string) => [...regexMatches(text, pattern)].map(m => m.from);
+    const offsets = (text: string, pattern: string) => [...regexRanges(text, pattern)].map(m => m.from);
     assert.deepEqual(offsets("a\r\nb\r\n", "^"), [0, 3, 6]);
     assert.deepEqual(offsets("a\r\nb\r\n", "$"), [1, 4, 6]);
     assert.deepEqual(offsets("a\rb\u2028c\u2029d\n", "^|$"), [0, 7, 8]);

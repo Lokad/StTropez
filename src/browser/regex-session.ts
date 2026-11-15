@@ -1,4 +1,5 @@
-import { regexExpression, regexMatches, regexReplacement } from "../core/regex-search.ts";
+import { regexExpression, regexMatches, regexRanges, regexReplacement } from "../core/regex-search.ts";
+import type { RegexMatch } from "../core/regex-search.ts";
 import type { TextEdit } from "../core/changes.ts";
 export const regexProtocolVersion = 2;
 export const regexChunkUnits = 32768;
@@ -72,16 +73,20 @@ export class RegexSession {
             yield this.fail("Captured regex range splits a Unicode character."); return;
         }
         let count = 0, page: RegexRange[] = [], edits: TextEdit[] = [], pageUnits = 0, inserted = 0, outputLength = text.length;
-        for (const match of regexMatches(text, request.pattern, request.matchCase, request.wholeWord, request.range?.from ?? 0)) {
+        const matches: Generator<RegexRange | RegexMatch> = request.replacement === undefined
+            ? regexRanges(text, request.pattern, request.matchCase, request.wholeWord, request.range?.from ?? 0)
+            : regexMatches(text, request.pattern, request.matchCase, request.wholeWord, request.range?.from ?? 0);
+        for (const match of matches) {
             if (this.generation !== generation) return;
             if (request.range && (match.from !== request.range.from || match.to !== request.range.to)) break;
             if (++count > this.matchLimit) { yield this.fail("Regex match limit exceeded; narrow the expression."); return; }
-            if (request.replacement === undefined) {
-                page.push(Object.freeze({ from: match.from, to: match.to }));
+            if (!("captures" in match)) {
+                page.push(match);
                 if (page.length === 512) { yield { operation: "regex-matches", id: request.id, revision: request.revision, matches: Object.freeze(page) }; page = []; }
             } else {
                 let insert: string;
-                try { insert = regexReplacement(text, match, request.replacement, request.maxOutputUnits - inserted); }
+                // Only the replacement iterator produces captured matches.
+                try { insert = regexReplacement(text, match, request.replacement!, request.maxOutputUnits - inserted); }
                 catch (error) { yield this.fail(error instanceof Error ? error.message : "Regex replacement failed."); return; }
                 inserted += insert.length; outputLength += insert.length - (match.to - match.from);
                 if (edits.length && (insert.length > regexChunkUnits - pageUnits || edits.length === 512)) {

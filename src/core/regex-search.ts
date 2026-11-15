@@ -1,4 +1,5 @@
 import { codeWordConstituentPattern } from "./words.ts";
+import type { SearchMatch } from "./search.ts";
 /** Pure matching kernel for a dedicated worker, never a main-thread cooperative cursor.
  * Native matching can take unbounded time in one next() call; the owner must terminate
  * its worker on cancellation/timeout. Raw strings retain exact UTF-16 source offsets. */
@@ -35,14 +36,22 @@ export function regexExpression(pattern: string, matchCase = true, wholeWord = f
     const source = wholeWord ? `(?<!${codeWordConstituentPattern})(?:${lines})(?!${codeWordConstituentPattern})` : lines;
     return source === pattern ? validated : new RegExp(source, flags);
 }
-export function* regexMatches(text: string, pattern: string, matchCase = true, wholeWord = false, from = 0): Generator<RegexMatch> {
+function nativeMatches(text: string, pattern: string, matchCase: boolean, wholeWord: boolean, from: number) {
     if (typeof text !== "string") throw new TypeError("Invalid regex search input.");
     if (!Number.isSafeInteger(from) || from < 0 || from > text.length || from > 0 && from < text.length && /^[\ud800-\udbff][\udc00-\udfff]$/.test(text.slice(from - 1, from + 1))) throw new RangeError("Invalid regex start offset.");
     // The platform iterator handles Unicode zero-width progression, including EOF.
     // Multiline anchors match editor lines; dot still requires an explicit class to cross lines.
     const expression = regexExpression(pattern, matchCase, wholeWord);
     expression.lastIndex = from;
-    for (const match of text.matchAll(expression)) yield Object.freeze({ from: match.index, to: match.index + match[0].length,
+    return text.matchAll(expression);
+}
+/** Search needs only immutable ranges. Native regex results still contain captures;
+ * avoid the additional application-owned capture arrays, group copies and records. */
+export function* regexRanges(text: string, pattern: string, matchCase = true, wholeWord = false, from = 0): Generator<SearchMatch> {
+    for (const match of nativeMatches(text, pattern, matchCase, wholeWord, from)) yield Object.freeze({ from: match.index, to: match.index + match[0].length });
+}
+export function* regexMatches(text: string, pattern: string, matchCase = true, wholeWord = false, from = 0): Generator<RegexMatch> {
+    for (const match of nativeMatches(text, pattern, matchCase, wholeWord, from)) yield Object.freeze({ from: match.index, to: match.index + match[0].length,
         captures: Object.freeze(match.slice(1)), groups: match.groups === undefined ? undefined : Object.freeze({ ...match.groups }) });
 }
 
