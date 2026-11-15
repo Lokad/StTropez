@@ -40,9 +40,15 @@ async function abortOpening() {
     try { await opening; return false; } catch (error) { return error instanceof DOMException && error.name === "AbortError"; }
 }
 async function sessionJourney(large: boolean) {
+    const sent: { count: number; units: number }[] = [];
     const session = new LspSession({ schedule, connect: context => {
         const abort = new AbortController(), stop = context.onCancel(() => abort.abort());
-        return openWebSocketTransport(url.href, { signal: abort.signal }).finally(stop);
+        return openWebSocketTransport(url.href, { signal: abort.signal }).finally(stop).then(transport => ({ ...transport, send(message: string) {
+            const value = JSON.parse(message);
+            if (value.method === "textDocument/didChange") sent.push({ count: value.params.contentChanges.length,
+                units: value.params.contentChanges.reduce((sum: number, change: { text: string }) => sum + change.text.length, 0) });
+            transport.send(message);
+        } }));
     }, features: ["textDocument/hover"], initializationOptions: { fixtureDynamic: true } });
     const uri = "host+fixture://project/scope/Δ%20😀.ts", text = large ? "sample 😀 raw text row\r\n".repeat(100_000) : "a😀\r\nb\rc\n";
     const buffer = TextBuffer.from(text), document = session.bindDocument({ uri, languageId: "fixture", resourceId: "fixture:resource", documentId: "fixture:working", revision: 100, buffer });
@@ -51,10 +57,13 @@ async function sessionJourney(large: boolean) {
     try {
         const opening = performance.now(); await session.connect(); const openMs = performance.now() - opening;
         const before = buffer.readMetrics().sliceUnits, from = large ? buffer.offsetAt(50_000) + 10 : buffer.offsetAt(1) + 1;
-        const next = buffer.replace(from, from, "Q\r\n"), started = performance.now(); document.update(100, 107, next); const enqueueMs = performance.now() - started;
+        const far = large ? buffer.offsetAt(99_998) : 0;
+        const edit = buffer.apply([{ from, to: from, insert: "Q\r\n" }, ...(large ? [{ from: far, to: far, insert: "Z" }] : [])]);
+        const next = edit.buffer, started = performance.now(); document.update(100, 107, next, edit.mapping); const enqueueMs = performance.now() - started;
         await session.flush();
         const remote = await session.request("fixture/document", { uri, from: Math.max(0, from - 8), to: from + 14 }).result, syncMs = performance.now() - started;
         const boundedReads = { before: buffer.readMetrics().sliceUnits - before, after: next.readMetrics().sliceUnits, exports: buffer.readMetrics().textExports + next.readMetrics().textExports };
+        const tail = large ? await session.request("fixture/document", { uri, from: far + 3, to: far + 20 }).result : null;
         await register(); const available = session.canRequest("textDocument/hover", document);
         const hover = await session.requestDocument("textDocument/hover", document, index => ({ position: index.at(from) })).result;
         await session.request("fixture/unregister", { unregisterations: [{ id: "hover", method: "textDocument/hover" }] }).result;
@@ -66,7 +75,8 @@ async function sessionJourney(large: boolean) {
         const reopened = await session.request("fixture/document", { uri, from: 0, to: 20 }).result;
         const fresh = session.state.getSnapshot().registrations.length === 0 && !session.canRequest("textDocument/hover", document);
         await session.shutdown(); session.dispose();
-        return { uri, length: next.length, expectedSample: next.slice(Math.max(0, from - 8), Math.min(next.length, from + 14)), remote, boundedReads, available, hover, withdrawn, custom, fresh, reopened,
+        return { uri, length: next.length, expectedSample: next.slice(Math.max(0, from - 8), Math.min(next.length, from + 14)), remote, boundedReads, sent, tail,
+            expectedTail: large ? next.slice(far + 3, far + 20) : null, available, hover, withdrawn, custom, fresh, reopened,
             expectedReopened: offline.slice(0, 20), ownership: session.snapshotOwnership(), timers: timers.size,
             diagnostic: { openMs, enqueueMs, syncMs, scope: "single document-session action; enqueue is not an input handler or display latency" } };
     } finally { session.dispose(); }

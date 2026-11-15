@@ -162,7 +162,8 @@ export class LspWorkspace {
         if (!entry.active) return; const next = this.workspace.observeDocument(entry.id).getSnapshot();
         if (!next) { this.closeDocument(entry); return; }
         try { const before = entry.binding.getSnapshot();
-            if (before.revision !== next.revision) entry.binding.update(before.revision, next.revision, next.buffer);
+            if (before.revision !== next.revision) entry.binding.update(before.revision, next.revision, next.buffer,
+                next.change?.previousRevision === before.revision ? next.change.mapping : undefined);
             else if (before.buffer !== next.buffer) throw new Error("A provider revision cannot name different buffers.");
         } catch (error) { this.closeDocument(entry); this.report(error); }
     }
@@ -207,7 +208,8 @@ export class LspWorkspace {
                 writable(); if (!active || !entry.active) throw stale(); const latest = this.workspace.document(id), before = entry.binding.getSnapshot();
                 if (latest.revision !== revision || latest.buffer !== buffer) throw stale();
                 if (before.revision === revision && before.buffer === buffer) return;
-                if (before.revision !== expected) throw stale(); entry.binding.update(expected, revision, buffer);
+                if (before.revision !== expected) throw stale(); entry.binding.update(expected, revision, buffer,
+                    latest.change?.previousRevision === expected ? latest.change.mapping : undefined);
             } });
             documents.set(id, document); handles.set(document, entry); entry.users.add(close); return document;
         };

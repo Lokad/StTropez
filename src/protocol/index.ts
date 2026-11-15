@@ -1,7 +1,7 @@
 export { JsonRpcConnection, RpcError } from "./json-rpc.ts";
 export type { JsonValue, RpcId, RpcTransport, RpcScheduler, RpcOptions, RpcCall, RpcRequestContext } from "./json-rpc.ts";
 export { LspLineIndex } from "./lsp-positions.ts";
-export type { LspPosition, LspRange, LspTextChange, LspCooperate } from "./lsp-positions.ts";
+export type { LspPosition, LspRange, LspTextChange, LspCooperate, LspChangeHint } from "./lsp-positions.ts";
 export { LspSession } from "./lsp-session.ts";
 export type { LspFeature, LspDocumentFeature, LspCommandAuthorization, LspCommandCall, LspDocumentSnapshot, LspDocument, LspDocumentCapture, LspCall, LspConnectContext, LspRequestContext, LspRegistration, LspSessionSnapshot, LspSessionOptions } from "./lsp-session.ts";
 export { UnsupportedLspSnippetError, lspRangeOffsets, decodeLspDiagnostics, decodeLspCompletions, decodeLspResolvedCompletion, rebaseLspCompletion, lspCompletionPlan, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, decodeLspApplyEdit } from "./lsp-features.ts";

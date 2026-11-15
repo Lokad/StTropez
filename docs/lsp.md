@@ -18,7 +18,7 @@ The selected feature routes below use that same public integration. The existing
 | WebSocket | Host-owned ordered text messages; real three-engine fixture checks use fresh browser processes. Binary messages are refused. Opening can be cancelled; closure releases pending RPC work. Firefox context deletion remains unqualified. |
 | Initialization/capabilities | Ordered initialize/initialized, UTF-16 negotiation, immutable capabilities and shutdown/exit. Unsupported position encodings and full synchronization are explicitly refused. |
 | Dynamic registration | Atomic register/unregister batches, unique identifiers, exact method matching and immutable snapshots. Text-document selectors cover language, scheme and bounded glob patterns; notebook and file-watcher registration are not advertised. |
-| Incremental synchronization | Captured URI/resource/document/revision bindings, separate wire versions, queued/coalesced open/change/close and exact raw UTF-16/CRLF/LF/bare-CR conversion. Point changes reuse shared buffer edges and LF metadata. |
+| Incremental synchronization | Captured URI/resource/document/revision bindings, separate wire versions, queued/coalesced open/change/close and exact raw UTF-16/CRLF/LF/bare-CR conversion. Proven transaction batches send separated edits in descending order, including inverses and compact typing groups. Unproved or skipped transitions retain a shared-edge replacement fallback. |
 | Shared ownership | One exported `LspWorkspace` per workspace/provider configuration, one connection and one binding/stream per participating document. Feature scopes share versions and diagnostics while cancelling and disposing independently. |
 | Diagnostics/completion | Bounded validation, current versioned or explicitly uncertain unversioned snapshot placement, retained unplaceable ranges/messages and shared diagnostic observation. Completion retains full catalogues, supports ordinary typing, triggers/filtering/incomplete retriggers, captured lazy primary/additional edits and pending keyboard acceptance. Flat numbered/default/choice/mirrored/final snippet fields reuse input and history; unsupported optional syntax has per-item disposition. Both hosts exercise typing, history, comparison, Save/Run and lifecycle guards over WebSocket. [Exact scope](lsp-editor.md). |
 | Hover/navigation | Format-preserving hover content/optional ranges with a focused [documentation renderer](documentation.md), definition Location/LocationLink and references validation. Both actual hosts use WebSocket backends with captured project URIs, complete origin selections, target revision/authority checks, unmounted-resource reveal and stale/cancellation/lifecycle guards. See [navigation scope](lsp-navigation.md). |
@@ -60,6 +60,18 @@ waits for the current eligible captures to reach the wire. This is transport ord
 acknowledgement that a language provider has finished analysis. A later request can supply a peer
 barrier. Disconnect preserves local bindings for reconnect; dispose releases session ownership.
 Handles retained by the host retain their last immutable snapshot.
+
+The optional fourth `document.update` argument supplies the position mapping from that exact
+previous buffer. `LspWorkspace` supplies transaction mappings automatically. Batch ranges are
+accepted only after proving unchanged gaps by shared storage or bounded short-text comparisons;
+they are expanded across newline boundaries and sent in descending original-offset order, so
+each range addresses the text produced by preceding wire changes. Opaque maps, general composed
+history maps, skipped revisions and unproved gaps use the single-replacement fallback. A batch
+rejected during RPC encoding also falls back if its range overhead exceeds the host's message or
+JSON-node limit; transport failures are never retried. Both forms retain those limits. A prepared
+line index may be ahead of the last sent snapshot; wire ranges always use the actual sent base.
+LF metadata is reused; changed regions are scanned and the extra bare-CR index is copied/shifted
+once per transition. Bare-CR-heavy documents can therefore still require linear index copying.
 
 Use `LspWorkspace(workspace, options)` to share that session across features and views. The host
 supplies the transport factory, future-turn scheduler and `documentInfo` mapping from a live

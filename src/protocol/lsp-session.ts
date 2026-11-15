@@ -1,9 +1,11 @@
 import type { TextBuffer } from "../core/text-buffer.ts";
+import type { PositionMapping } from "../core/positions.ts";
 import { NotificationScope, Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import { JsonRpcConnection, RpcError, jsonEqual, jsonSnapshot } from "./json-rpc.ts";
 import type { JsonValue, RpcCall, RpcOptions, RpcRequestContext, RpcScheduler, RpcTransport } from "./json-rpc.ts";
 import { LspLineIndex, lspTextChanges } from "./lsp-positions.ts";
+import type { LspChangeHint, LspTextChange } from "./lsp-positions.ts";
 import { compileLspSelector } from "./lsp-selector.ts";
 import type { LspSelector, LspUriPath } from "./lsp-selector.ts";
 
@@ -19,7 +21,7 @@ export type LspCommandCall<T> = RpcCall<T> & Readonly<{ isCurrent: () => boolean
 export type LspCommandAuthorization = Readonly<{ command: string; arguments: readonly JsonValue[]; isCurrent: () => boolean }>;
 export type LspDocumentSnapshot = Readonly<{ uri: string; languageId: string; resourceId: string; documentId: string; revision: number; buffer: TextBuffer }>;
 export type LspDocument = Readonly<{ getSnapshot: () => LspDocumentSnapshot;
-    update: (expectedRevision: number, revision: number, buffer: TextBuffer) => void; close: () => void }>;
+    update: (expectedRevision: number, revision: number, buffer: TextBuffer, mapping?: PositionMapping) => void; close: () => void }>;
 export type LspCall<T> = Readonly<{ result: Promise<T>; cancel: () => void }>;
 export type LspDocumentCapture = Readonly<{ document: LspDocumentSnapshot; index: LspLineIndex; version: number;
     epoch: number; registrationGeneration: number; isCurrent: () => boolean;
@@ -42,7 +44,7 @@ export type LspSessionOptions = Readonly<{ connect: (context: LspConnectContext)
     /** Declare only features whose results the consuming host validates and presents. */
     features?: readonly LspFeature[]; diagnostics?: boolean; workspaceEdits?: boolean; applyEdit?: boolean; pathForUri?: LspUriPath; maxDocuments?: number; maxDocumentUnits?: number; maxTotalUnits?: number;
     rpc?: Pick<RpcOptions, "timeoutMs" | "maxPending" | "maxMessageUnits" | "maxJsonNodes">; onError?: (error: Error) => void }>;
-type Entry = { snapshot: LspDocumentSnapshot; handle: LspDocument; index?: LspLineIndex;
+type Entry = { snapshot: LspDocumentSnapshot; handle: LspDocument; index?: LspLineIndex; change?: LspChangeHint;
     failure?: Readonly<{ snapshot: LspDocumentSnapshot; generation: number; error: Error }> };
 type Remote = { entry: Entry; snapshot: LspDocumentSnapshot; index: LspLineIndex; version: number };
 type SyncWaiter = { resolve: () => void; reject: (error: Error) => void; ready: (() => boolean) | undefined };
@@ -301,11 +303,13 @@ export class LspSession {
         if (this.documents.has(uri) || this.documents.size >= this.maxDocuments) throw new Error("LSP URI is already bound or document limit exceeded."); this.size(buffer.length, 0);
         const entry: Entry = { snapshot: Object.freeze({ uri, languageId, resourceId, documentId, revision, buffer }), handle: undefined! };
         const handle: LspDocument = Object.freeze({ getSnapshot: () => entry.snapshot,
-            update: (expectedRevision, nextRevision, nextBuffer) => {
+            update: (expectedRevision, nextRevision, nextBuffer, mapping) => {
                 this.writable(); this.entry(handle); if (entry.snapshot.revision !== expectedRevision || !integer(nextRevision) || nextRevision <= expectedRevision) throw stale(); this.size(nextBuffer.length, entry.snapshot.buffer.length);
+                if (mapping) entry.change = Object.freeze({ before: entry.snapshot.buffer, mapping }); else delete entry.change;
                 this.totalUnits += nextBuffer.length - entry.snapshot.buffer.length; entry.snapshot = Object.freeze({ ...entry.snapshot, revision: nextRevision, buffer: nextBuffer }); delete entry.failure; this.kick();
             }, close: () => {
-                if (this.store.get().phase === "disposed") return; this.writable(); if (this.documents.get(uri) !== entry) return; this.documents.delete(uri); this.totalUnits -= entry.snapshot.buffer.length; this.publish(); this.kick();
+                if (this.store.get().phase === "disposed") return; this.writable(); if (this.documents.get(uri) !== entry) return;
+                this.documents.delete(uri); delete entry.change; this.totalUnits -= entry.snapshot.buffer.length; this.publish(); this.kick();
             } });
         entry.handle = handle; this.handles.set(handle, entry); this.documents.set(uri, entry); this.totalUnits += buffer.length; this.publish(); this.kick(); return handle;
     }
@@ -338,7 +342,7 @@ export class LspSession {
                 if (this.failed(entry)) continue;
                 delete entry.failure;
                 try {
-                if (!this.syncs(entry.snapshot)) continue; const snapshot = entry.snapshot, old = this.remote.get(uri);
+                if (!this.syncs(entry.snapshot)) continue; const snapshot = entry.snapshot, old = this.remote.get(uri), hint = entry.change;
                 if (old?.snapshot === snapshot) continue;
                 const expired = {}, retained = () => this.documents.get(uri) === entry;
                 const valid = () => entry.snapshot === snapshot && retained() && this.generation === generation;
@@ -351,20 +355,32 @@ export class LspSession {
                 };
                 const base = entry.index ?? old?.index;
                 let plan;
-                try { plan = base ? await base.change(snapshot.buffer, cooperate) : { index: await LspLineIndex.create(snapshot.buffer, cooperate), changes: [] }; }
+                try { plan = base ? await base.change(snapshot.buffer, cooperate, hint) : { index: await LspLineIndex.create(snapshot.buffer, cooperate), changes: [] }; }
                 catch (error) { if (error !== expired) throw error; this.dirty = true; break; }
                 // Restart ownership cleanup too: replacing a URI during planning must close/open, never change the old resource.
                 this.ready(epoch); if (!retained()) { this.dirty = true; break; }
                 // A revision/capability change does not invalidate useful text indexing work.
                 entry.index = plan.index; if (!valid()) { this.dirty = true; continue; }
-                let changes;
-                try { changes = old && old.index !== base ? await lspTextChanges(old.index, snapshot.buffer, cooperate) : plan.changes; }
+                let changes: readonly LspTextChange[];
+                try { changes = old && old.index !== base ? await lspTextChanges(old.index, snapshot.buffer, cooperate, hint) : plan.changes; }
                 catch (error) { if (error !== expired) throw error; this.dirty = true; break; }
                 this.ready(epoch); if (!valid()) { this.dirty = true; break; }
                 const version = (old?.version ?? 0) + 1; if (version > 0x7fffffff) throw new RangeError("LSP document version exhausted; reconnect required.");
-                if (old) rpc.notify("textDocument/didChange", { textDocument: { uri, version }, contentChanges: changes });
+                if (old) {
+                    const send = () => rpc.notify("textDocument/didChange", { textDocument: { uri, version }, contentChanges: changes });
+                    try { send(); } catch (error) {
+                        // notify validates/encodes before sending; transport failures dispose RPC.
+                        // Range overhead can exceed a host limit even when one replacement fits.
+                        if (changes.length < 2 || rpc.snapshot().disposed || !(error instanceof TypeError || error instanceof RangeError)) throw error;
+                        try { changes = await lspTextChanges(old.index, snapshot.buffer, cooperate); }
+                        catch (error) { if (error !== expired) throw error; this.dirty = true; break; }
+                        this.ready(epoch); if (!valid()) { this.dirty = true; break; }
+                        send();
+                    }
+                }
                 else rpc.notify("textDocument/didOpen", { textDocument: { uri, languageId: snapshot.languageId, version, text: snapshot.buffer.slice(0, snapshot.buffer.length) } });
                 this.ready(epoch); this.remote.set(uri, { entry, snapshot, index: plan.index, version });
+                if (entry.snapshot === snapshot) delete entry.change;
                 } catch (error) { this.failDocument(entry, error, epoch); }
                 finally { this.settle(undefined, true); }
             }
@@ -376,7 +392,7 @@ export class LspSession {
         if (this.remote.get(snapshot.uri)?.entry === entry) {
             rpc.notify("textDocument/didClose", { textDocument: { uri: snapshot.uri } }); this.remote.delete(snapshot.uri);
         }
-        entry.failure = { snapshot, generation: this.generation, error }; this.report(error);
+        delete entry.change; entry.failure = { snapshot, generation: this.generation, error }; this.report(error);
     }
     private settle(error?: Error, documentsOnly = false): void {
         for (const waiter of this.waiters) {
@@ -456,7 +472,7 @@ export class LspSession {
         this.release(this.scheduled); this.scheduled = undefined; for (const pause of this.pauses) { this.release(pause.stop); pause.reject(failure); } this.pauses.clear();
         const rpc = this.rpc; this.rpc = undefined; this.release(() => rpc?.dispose(failure)); this.pumping = false; this.dirty = false; this.settle(failure); this.documentCalls.clear();
         this.remote.clear(); this.registrations.clear(); this.staticSelectors.clear(); this.requestStops.clear(); this.notificationStops.clear(); this.capabilities = empty; this.sync = { openClose: false, change: false }; this.generation++;
-        for (const entry of this.documents.values()) delete entry.failure;
+        for (const entry of this.documents.values()) { delete entry.failure; delete entry.change; }
         if (dispose) { this.documents.clear(); this.totalUnits = 0; this.requests.clear(); this.notifications.clear(); }
         this.publish(dispose ? "disposed" : "disconnected", error.message);
         if (dispose) for (const stop of [...this.subscriptions]) this.release(stop);

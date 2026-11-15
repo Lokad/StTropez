@@ -4,8 +4,9 @@ import { setImmediate } from "node:timers/promises";
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
 import type { DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams } from "vscode-languageserver-protocol/node.js";
 import { referencePeer } from "../examples/protocol/reference-peer.ts";
-import { Workspace } from "../src/core/workspace.ts";
 import type { LspFeature, LspRequestContext, RpcScheduler, RpcTransport } from "../src/protocol/index.ts";
+const { Workspace } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE
+    ? new URL("../index.js", new URL(process.env.STTROPEZ_PROTOCOL_TEST_MODULE, import.meta.url)).href : "../src/index.ts") as typeof import("../src/index.ts");
 const { LspWorkspace, createLspHoverClient, createLspCommandRunner, createLspSignatureClient, createLspLinkClient, createLspColorClient, createLspFoldingClient, createLspHighlightClient, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 const settled = async () => { await setImmediate(); await setImmediate(); };
 const latch = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; };
@@ -104,15 +105,15 @@ function fixture(t: test.TestContext, extra: Readonly<{ maxDocumentUnits?: numbe
         const ports = [0, 1].map(index => ({ send(text: string): void { assert.equal(this, ports[index]); if (closed) throw Error("Closed transport"); queueMicrotask(() => { if (!closed) listeners[1 - index]?.message(text); }); },
             subscribe(listener: Listener): () => void { assert.equal(this, ports[index]); listeners[index] = listener; return () => { if (listeners[index] === listener) listeners[index] = undefined; }; },
             dispose: () => { if (closed) return; closed = true; for (const listener of listeners) listener?.close(Error("Closed")); listeners.fill(undefined); } }));
-        const rpc = referencePeer(ports[1]!), documents = new Map<string, TextDocument>(), events: { method: string; uri?: string }[] = [];
+        const rpc = referencePeer(ports[1]!), documents = new Map<string, TextDocument>(), events: { method: string; uri?: string }[] = [], changes: DidChangeTextDocumentParams[] = [];
         rpc.onRequest("initialize", () => { events.push({ method: "initialize" }); return { capabilities: { positionEncoding: "utf-16", textDocumentSync: 2, hoverProvider: true, definitionProvider: true, executeCommandProvider: { commands: ["test.edit"] } } }; });
         rpc.onNotification("textDocument/didOpen", (p: DidOpenTextDocumentParams) => { assert.ok(!documents.has(p.textDocument.uri)); documents.set(p.textDocument.uri, TextDocument.create(p.textDocument.uri, p.textDocument.languageId, p.textDocument.version, p.textDocument.text)); events.push({ method: "open", uri: p.textDocument.uri }); });
-        rpc.onNotification("textDocument/didChange", (p: DidChangeTextDocumentParams) => { const before = documents.get(p.textDocument.uri)!; let text = before.getText();
+        rpc.onNotification("textDocument/didChange", (p: DidChangeTextDocumentParams) => { changes.push(p); const before = documents.get(p.textDocument.uri)!; let text = before.getText();
             for (const change of p.contentChanges) { assert.ok("range" in change); text = TextDocument.applyEdits(TextDocument.create(before.uri, before.languageId, before.version, text), [{ range: change.range, newText: change.text }]); }
             documents.set(before.uri, TextDocument.create(before.uri, before.languageId, p.textDocument.version, text)); events.push({ method: "change", uri: before.uri }); });
         rpc.onNotification("textDocument/didClose", (p: DidCloseTextDocumentParams) => { assert.ok(documents.delete(p.textDocument.uri)); events.push({ method: "close", uri: p.textDocument.uri }); });
         rpc.onRequest("test/barrier", () => null); rpc.onRequest("textDocument/definition", () => []); rpc.onRequest("textDocument/hover", () => ({ contents: "shared provider" }));
-        rpc.listen(); return { rpc, documents, events, transport: ports[0]! };
+        rpc.listen(); return { rpc, documents, events, changes, transport: ports[0]! };
     }
     const provider = new LspWorkspace(workspace, { ...extra, features: extra.features ?? ["textDocument/hover", "textDocument/definition", "workspace/executeCommand"], applyEdit: true, diagnostics: true, schedule: extra.schedule ?? schedule,
         connect: async () => { const next = peer(); peers.push(next); return next.transport; },
@@ -121,6 +122,33 @@ function fixture(t: test.TestContext, extra: Readonly<{ maxDocumentUnits?: numbe
     const edit = (id = source.documentId, insert = "!") => { const doc = workspace.document(id); assert.equal(workspace.edit({ documentId: id, expectedRevision: doc.revision, edits: [{ from: doc.buffer.length, to: doc.buffer.length, insert }], origin: "human" }).applied, true); };
     return { workspace, provider, source, companion, peers, errors, timers, edit };
 }
+
+test("workspace batches and grouped history retain bounded wire edits; skipped revisions and reconnect stay exact", async t => {
+    const f = fixture(t), id = f.source.documentId, initial = f.workspace.document(id), text = "row 😀\r\n".repeat(100_000);
+    f.workspace.edit({ documentId: id, expectedRevision: initial.revision, edits: [{ from: 0, to: initial.buffer.length, insert: text }], origin: "human" });
+    const scope = f.provider.createScope(), binding = scope.attachDocument(id); await scope.connect();
+    const uri = binding.getSnapshot().uri, peer = f.peers[0]!;
+    const verify = async (bounded: boolean) => {
+        await scope.flush(); await scope.request("test/barrier").result;
+        const doc = f.workspace.document(id), changes = peer.changes.at(-1)!.contentChanges;
+        assert.equal(peer.documents.get(uri)!.getText(), doc.buffer.slice(0, doc.buffer.length));
+        if (bounded) { assert.equal(changes.length, 2); assert.ok(changes.reduce((sum, change) => sum + change.text.length, 0) < 32); }
+    };
+    const type = (insert: string, step: number) => {
+        const doc = f.workspace.document(id), far = doc.buffer.offsetAt(99_998) + 2 + step;
+        assert.equal(f.workspace.edit({ documentId: id, expectedRevision: doc.revision, origin: "human", history: { kind: "typing", group: "batch" },
+            edits: [{ from: 2 + step, to: 2 + step, insert }, { from: far, to: far, insert }] }).applied, true);
+    };
+    type("a", 0); await verify(true); type("b", 1); await verify(true);
+    assert.equal(f.workspace.undo({ documentId: id, expectedRevision: f.workspace.document(id).revision }).applied, true); await verify(true);
+    assert.equal(peer.documents.get(uri)!.getText(), text);
+    assert.equal(f.workspace.redo({ documentId: id, expectedRevision: f.workspace.document(id).revision }).applied, true); await verify(true);
+    const count = peer.changes.length; f.edit(id, "first"); f.edit(id, "second"); await verify(false);
+    assert.equal(peer.changes.length, count + 1, "Skipped local revisions still coalesce into one exact wire update.");
+    f.provider.disconnect(); f.edit(id, "offline"); await f.provider.connect(); await scope.request("test/barrier").result;
+    const reopened = f.peers[1]!, doc = f.workspace.document(id);
+    assert.equal(reopened.changes.length, 0); assert.equal(reopened.documents.get(uri)!.getText(), doc.buffer.slice(0, doc.buffer.length)); assert.deepEqual(f.errors, []);
+});
 
 test("feature scopes wait for their captured project without flushing unrelated bindings", async t => {
     const queued = new Set<() => void>(); let blocked = false;

@@ -4,10 +4,11 @@ import { setImmediate } from "node:timers/promises";
 import { TextDocument, ResponseError, RegistrationRequest, UnregistrationRequest, CancellationTokenSource } from "vscode-languageserver-protocol/node.js";
 import type { InitializeParams, InitializeResult, DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams } from "vscode-languageserver-protocol/node.js";
 import { referencePeer } from "../examples/protocol/reference-peer.ts";
-import { TextBuffer } from "../src/core/text-buffer.ts";
 import type { RpcScheduler, RpcTransport } from "../src/protocol/json-rpc.ts";
 import type { LspSessionOptions, LspRequestContext } from "../src/protocol/index.ts";
 
+const { TextBuffer } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE
+    ? new URL("../index.js", new URL(process.env.STTROPEZ_PROTOCOL_TEST_MODULE, import.meta.url)).href : "../src/index.ts") as typeof import("../src/index.ts");
 const { LspSession, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 const settled = async () => { await setImmediate(); await setImmediate(); };
 function channel() {
@@ -100,6 +101,20 @@ test("an encoded document failure is isolated, reported once and retried after a
     tooLarge.update(40, 41, TextBuffer.from("repaired")); await session.flush(); await settled(); assert.equal(peer.documents.get("fixture:large")!.getText(), "repaired");
     tooLarge.update(41, 42, TextBuffer.from("\u0000".repeat(1000))); await session.flush(); await settled();
     assert.equal(peer.documents.has("fixture:large"), false); assert.equal(errors.length, 2); assert.ok(session.synchronized(small));
+});
+
+test("batch range overhead falls back before sending when the host message or JSON-node limit requires it", async t => {
+    for (const rpc of [{ maxMessageUnits: 4096 }, { maxJsonNodes: 128 }]) {
+        const host = fixture(t), errors: Error[] = [], session = new LspSession({ ...host, rpc, onError: error => errors.push(error) }); t.after(() => session.dispose());
+        const initial = input("abcdefghij\n".repeat(100)), document = session.bindDocument(initial); await session.connect();
+        const edit = initial.buffer.apply(Array.from({ length: 60 }, (_, i) => ({ from: i * 11 + 2, to: i * 11 + 2, insert: "!" })));
+        document.update(40, 41, edit.buffer, edit.mapping); await session.flush(); await settled();
+        const peer = host.peers[0]!, changes = (peer.wire.messages[0] as { method: string; params: DidChangeTextDocumentParams }[]).filter(message => message.method === "textDocument/didChange");
+        assert.equal(changes.length, 1); assert.equal(changes[0]!.params.contentChanges.length, 1);
+        assert.equal(peer.documents.get(initial.uri)!.getText(), edit.buffer.slice(0, edit.buffer.length));
+        assert.deepEqual(peer.events.filter(event => event === "close"), []); assert.deepEqual(errors, []); assert.ok(session.synchronized(document));
+        session.dispose();
+    }
 });
 
 test("released notification methods recover capacity and do not retain installed dispatchers", async t => {
@@ -286,9 +301,9 @@ test("local edits retain useful indexing while URI replacement cancels obsolete 
         const host = fixture(t); let change: (() => void) | undefined, turns = 0, time = 0;
         const session = new LspSession({ ...host, now: () => time += 4, schedule: (ms, callback) => host.schedule(ms, () => { if (change && ms === 0 && ++turns === 2) { const apply = change; change = undefined; apply(); } callback(); }) }); t.after(() => session.dispose());
         const initial = input("small"), original = session.bindDocument(initial); await session.connect(); await settled();
-        const large = TextBuffer.from("line\r\n".repeat(40_000)), latest = large.replace(0, 4, "current"); let current = original;
+        const large = TextBuffer.from("line\r\n".repeat(40_000)), edit = large.apply([{ from: 0, to: 4, insert: "current" }]), latest = edit.buffer; let current = original;
         change = () => { if (replacement) { original.close(); current = session.bindDocument(input("replacement", initial.uri, "other-resource", 0)); }
-            else original.update(41, 42, latest); };
+            else original.update(41, 42, latest, edit.mapping); };
         original.update(40, 41, large); await session.flush(); await settled(); const peer = host.peers[0]!;
         if (replacement) assert.ok(large.readMetrics().sliceUnits < 16500, "A replaced binding stops after its first bounded chunk.");
         else assert.ok(latest.readMetrics().sliceUnits < latest.length + 128, "A newer revision reuses completed indexing and exports only its final wire delta.");

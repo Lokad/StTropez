@@ -20,6 +20,7 @@ type GeometryPair = Readonly<{ forward: MappingGeometry; reverse: MappingGeometr
 const compiledGeometry = Symbol("compiled position geometry");
 const compactUnitChanges = Symbol("compact unit changes");
 const unchangedEdges = Symbol("unchanged text edges");
+const batchChanges = Symbol("batch text changes");
 type UnchangedEdges = Readonly<{ prefix: number; suffix: number }>;
 
 function position(length: number, offset: number): void {
@@ -70,6 +71,7 @@ class ChangePositionMap implements PositionMapping {
     [unchangedEdges](): UnchangedEdges {
         return { prefix: this.changes[0]?.from ?? this.oldLength, suffix: this.oldLength - (this.changes.at(-1)?.to ?? 0) };
     }
+    [batchChanges](): readonly Change[] { return this.changes; }
     map(offset: number, side: Affinity = "after"): MappedPosition {
         position(this.oldLength, offset); affinity(side);
         return this.mapped(offset, side, this.preceding(offset, side));
@@ -207,6 +209,10 @@ function knownMapping(map: PositionMapping): map is ChangePositionMap | Composed
  * An opaque host map has no such proof. Inversion preserves equal edge lengths. */
 export function unchangedPositionEdges(mapping: PositionMapping): UnchangedEdges | undefined {
     return knownMapping(mapping) ? mapping[unchangedEdges]() : undefined;
+}
+/** Internal batch metadata only. Consumers must still prove its relationship to their buffers. */
+export function positionChanges(mapping: PositionMapping): readonly Readonly<{ from: number; to: number; insertedLength: number }>[] | undefined {
+    return knownMapping(mapping) && mapping instanceof ChangePositionMap ? mapping[batchChanges]() : undefined;
 }
 
 /** An immutable indexed map for one batch. Offsets are UTF-16; a replacement consumes its interior. */
