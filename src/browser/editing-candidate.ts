@@ -29,6 +29,10 @@ import { mountBracketHighlights } from "./bracket-highlights.ts";
 import type { BracketHighlights } from "./bracket-highlights.ts";
 import type { BracketMatchOptions } from "../core/bracket-matching.ts";
 import { bracketMatchLimits } from "../core/bracket-matching.ts";
+import { CharacterWarnings } from "../core/character-warnings.ts";
+import type { CharacterWarningOptions } from "../core/character-warnings.ts";
+import { mountCharacterWarnings } from "./character-warnings.ts";
+import type { CharacterWarningHighlights } from "./character-warnings.ts";
 
 export type CandidateEdit = Readonly<{ expectedRevision: number; edits: readonly TextEdit[]; selectionSet: SelectionSet; kind: EditKind;
     /** The editor's newline command supplied contextual indentation, rather than literal text. */
@@ -44,6 +48,7 @@ export type EditingCandidate = Readonly<{ element: HTMLDivElement; input: HTMLTe
     configureLanguage: (configuration: LanguageConfiguration) => boolean;
     languageConfiguration: () => ResolvedLanguageConfiguration;
     bracketMatching: BracketHighlights;
+    characterWarnings: CharacterWarningHighlights;
     /** Returns whether the command was accepted; long selections finish asynchronously. */
     runCommand: (command: EditingCommand) => boolean;
     focus: () => void; captureView: () => ViewState; restoreView: (state: ViewState) => void;
@@ -57,20 +62,22 @@ const emptyDecorations = Object.freeze([]);
 /** Experimental bounded-input adapter. Long contextual lines and native IME remain qualification gates. */
 export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, tabId: TabId,
     options: Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; decorate?: LineDecorator; lineClass?: LineClass; language?: LanguageConfiguration;
-        bracketMatching?: boolean | BracketMatchOptions }> = {}): EditingCandidate {
+        bracketMatching?: boolean | BracketMatchOptions; characterWarnings?: boolean | CharacterWarningOptions }> = {}): EditingCandidate {
     let language = resolveLanguageConfiguration(options.language);
     const bracketOptions = options.bracketMatching === undefined || options.bracketMatching === false ? false
         : bracketMatchLimits(options.bracketMatching === true ? {} : options.bracketMatching);
+    const warningOptions = options.characterWarnings === undefined || options.characterWarnings === false ? undefined
+        : new CharacterWarnings(options.characterWarnings === true ? {} : options.characterWarnings);
     const readOnly = options.readOnly === true;
     const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
     if (!tab || tab.surface.kind !== "text") throw new Error("Expected a text surface.");
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId);
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId);
-    let viewport: TextViewport, brackets: ReturnType<typeof mountBracketHighlights> | undefined;
+    let viewport: TextViewport, brackets: ReturnType<typeof mountBracketHighlights> | undefined, warnings: ReturnType<typeof mountCharacterWarnings> | undefined;
     try { viewport = mountTextViewport(host, workspace, tabId, { ...options, view, decorate: line => {
-        const own = brackets?.decorate(line), host = options.decorate?.(line);
-        return own?.length ? host?.length ? [...host, ...own] : own : host ?? emptyDecorations;
+        const own = brackets?.decorate(line), flagged = warnings?.decorate(line), host = options.decorate?.(line);
+        return own?.length || flagged?.length ? [...(host ?? emptyDecorations), ...(own ?? emptyDecorations), ...(flagged ?? emptyDecorations)] : host ?? emptyDecorations;
     } }); }
     catch (error) { if (!options.view) view.dispose(); throw error; }
     const root = viewport.element;
@@ -1059,7 +1066,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     refresh();
     brackets = mountBracketHighlights(workspace, tabId, view, viewport, input, () => language,
         () => { const state = activity(); return !state.disposed && !state.composing && !state.pendingInput && !state.pendingCommand; }, bracketOptions);
-    return Object.freeze({ element: root, input, view, viewport, focus, activity, bracketMatching: brackets.handle,
+    warnings = mountCharacterWarnings(workspace, tabId, view, viewport, warningOptions);
+    return Object.freeze({ element: root, input, view, viewport, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
         captureInsertion: (kind = "paste") => {
             if (kind !== "paste" && kind !== "replace") throw new TypeError("Unknown captured insertion kind.");
             hostInsertion?.cancel();
@@ -1092,6 +1100,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         destroy: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; editTransform = undefined;
             brackets!.dispose();
+            warnings!.dispose();
             hostInsertion?.cancel();
             if (executingInput) recoverInput(executingInput, "pending-input-detached");
             cancelWord();
