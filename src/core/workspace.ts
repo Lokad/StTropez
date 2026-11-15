@@ -404,7 +404,8 @@ export class Workspace {
         }
     }
     private syncHistory(changed: Set<Store<unknown>>): void {
-        for (const [id, record] of this.documents) {
+        for (const id of this.history.takeChangedDocuments()) {
+            const record = this.documents.get(id as DocumentId); if (!record) continue;
             const previous = record.history.get(), next = this.history.snapshot(id);
             if (previous.undoDepth !== next.undoDepth || previous.redoDepth !== next.redoDepth) record.history.set(next, changed);
         }

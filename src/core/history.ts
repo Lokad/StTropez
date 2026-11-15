@@ -24,6 +24,7 @@ export function validateHistory(kind: EditKind, group: string | undefined): void
 export class TextHistory {
     private readonly past = new Map<string, HistoryEntry[]>();
     private readonly future = new Map<string, HistoryEntry[]>();
+    private readonly changed = new Set<string>();
     private nextId = 0;
     private readonly last = new Map<string, HistoryEntry>();
     private readonly limits: Readonly<{ groups: number; changes: number; units: number; selections: number }>;
@@ -33,6 +34,10 @@ export class TextHistory {
         if (Object.values(this.limits).some(value => !Number.isSafeInteger(value) || value < 0)) throw new RangeError("History limits must be nonnegative safe integers.");
     }
     snapshot(id: string): HistorySnapshot { return Object.freeze({ undoDepth: this.past.get(id)?.length ?? 0, redoDepth: this.future.get(id)?.length ?? 0 }); }
+    /** Drain stack-depth changes, including indirect participants of clearing and eviction. */
+    takeChangedDocuments(): readonly string[] {
+        const ids = Object.freeze([...this.changed]); this.changed.clear(); return ids;
+    }
     diagnostics(): Readonly<{ groups: number; changes: number; changedUnits: number }> {
         const entries = [...new Set([...this.past.values(), ...this.future.values()].flat())];
         return Object.freeze({ groups: entries.length, changes: entries.reduce((sum, entry) => sum + entry.steps, 0), changedUnits: entries.reduce((sum, entry) => sum + entry.units, 0) });
@@ -60,7 +65,7 @@ export class TextHistory {
             this.past.get(first.documentId)![this.past.get(first.documentId)!.length - 1] = entry; this.last.set(first.documentId, entry);
         } else {
             const entry = Object.freeze({ id: ++this.nextId, origin, kind, group: group ?? null, changes: Object.freeze([...changes]), steps: 1, units });
-            for (const change of changes) this.stack(this.past, change.documentId).push(entry);
+            for (const change of changes) { this.stack(this.past, change.documentId).push(entry); this.changed.add(change.documentId); }
             for (const change of changes) this.last.set(change.documentId, entry);
         }
         this.trim();
@@ -68,7 +73,9 @@ export class TextHistory {
     move(entry: HistoryEntry, direction: "undo" | "redo"): void {
         if (!this.available(entry, direction)) throw new Error("History unit is blocked by a later edit in a participating document.");
         const source = direction === "undo" ? this.past : this.future, target = direction === "undo" ? this.future : this.past;
-        for (const change of entry.changes) { source.get(change.documentId)!.pop(); this.stack(target, change.documentId).push(entry); }
+        for (const change of entry.changes) {
+            source.get(change.documentId)!.pop(); this.stack(target, change.documentId).push(entry); this.changed.add(change.documentId);
+        }
         entry.changes.forEach(change => this.seal(change.documentId));
     }
     /** A load/release is an explicit history boundary, including linked multi-document units. */
@@ -80,7 +87,10 @@ export class TextHistory {
                 entry.changes.forEach(change => pending.push(change.documentId));
             }
         }
-        visited.forEach(current => { this.past.delete(current); this.future.delete(current); this.seal(current); });
+        visited.forEach(current => {
+            if (this.past.get(current)?.length || this.future.get(current)?.length) this.changed.add(current);
+            this.past.delete(current); this.future.delete(current); this.seal(current);
+        });
     }
     private stack(map: Map<string, HistoryEntry[]>, id: string): HistoryEntry[] {
         let stack = map.get(id); if (!stack) { stack = []; map.set(id, stack); } return stack;
@@ -89,7 +99,9 @@ export class TextHistory {
         const pending = [...ids], visited = new Set<string>();
         while (pending.length) {
             const id = pending.pop()!; if (visited.has(id)) continue; visited.add(id);
-            for (const entry of this.future.get(id) ?? []) entry.changes.forEach(change => pending.push(change.documentId));
+            const future = this.future.get(id);
+            if (future?.length) this.changed.add(id);
+            for (const entry of future ?? []) entry.changes.forEach(change => pending.push(change.documentId));
             this.future.delete(id);
         }
     }
@@ -102,7 +114,7 @@ export class TextHistory {
             const entry = entries[0]!;
             for (const change of entry.changes) {
                 const stack = this.past.get(change.documentId), index = stack?.indexOf(entry) ?? -1;
-                if (index >= 0) stack!.splice(index, 1);
+                if (index >= 0) { stack!.splice(index, 1); this.changed.add(change.documentId); }
             }
             if (entry.changes.some(change => this.future.get(change.documentId)?.includes(entry))) this.clearFuture(entry.changes.map(change => change.documentId));
             entry.changes.forEach(change => { if (this.last.get(change.documentId) === entry) this.seal(change.documentId); });

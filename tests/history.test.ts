@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { Workspace, WorkspaceCommands, applyTextEdits, anchoredRange } from "../src/index.ts";
 import type { DocumentId, EditKind, HistoryOptions, Selection } from "../src/index.ts";
 import { corpus, editLog } from "./fixtures/workloads.ts";
+import { TextHistory } from "../src/core/history.ts";
 
 function fixture(text = "abc", history?: HistoryOptions) {
     const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => errors.push(error), ...(history ? { history } : {}) });
@@ -164,6 +165,65 @@ test("history bounds count groups, changes and changed units without flattening,
     workspace.edit({ documentId: independent, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 1, insert: "b" }] });
     replace("another oversized".repeat(100));
     assert.equal(workspace.observeHistory(independent).getSnapshot().undoDepth, 1);
+});
+
+test("workspace history snapshots follow changed stack depths rather than all open documents", t => {
+    const workspace = new Workspace(), ids = Array.from({ length: 1000 }, (_, i) => workspace.createDocument(
+        { scope: "many", resource: String(i), variant: "working" }, "Document", "x"));
+    const id = ids[0]!, peer = ids[1]!, view = workspace.createDocumentView(id);
+    const untouched = workspace.observeHistory(ids[999]!).getSnapshot(), snapshots = TextHistory.prototype.snapshot;
+    let calls: string[] = [];
+    const results: { action: string; calls: string[]; expected: string[] }[] = [];
+    TextHistory.prototype.snapshot = function (target) { calls.push(target); return snapshots.call(this, target); };
+    const capture = (action: string, work: () => void, expected: string[]) => {
+        calls = []; work(); results.push({ action, calls: [...calls].sort(), expected: [...expected].sort() });
+    };
+    const edit = () => workspace.edit({ documentId: id, expectedRevision: workspace.document(id).revision,
+        origin: "human", history: { kind: "typing", group: "continuous" }, edits: [{ from: 0, to: 0, insert: "a" }] });
+    try {
+        capture("first edit", () => { assert.equal(edit().applied, true); }, [id]);
+        capture("group extension", () => { assert.equal(edit().applied, true); }, []);
+        capture("selection only", () => { workspace.edit({ documentId: id, expectedRevision: workspace.document(id).revision,
+            origin: "human", edits: [], view, selection: { anchor: 1, head: 1 } }); }, []);
+        capture("undo", () => { assert.equal(workspace.undo({ documentId: id, expectedRevision: workspace.document(id).revision }).applied, true); }, [id]);
+        capture("redo", () => { assert.equal(workspace.redo({ documentId: id, expectedRevision: workspace.document(id).revision }).applied, true); }, [id]);
+        capture("no-op", () => { workspace.edit({ documentId: id, expectedRevision: workspace.document(id).revision, origin: "human", edits: [] }); }, []);
+        for (const canonical of [undefined, "canonical"]) capture(canonical ? "canonical save" : "ordinary save", () => {
+            const ticket = workspace.captureSave(workspace.resourceForDocument(id)); ticket.start();
+            ticket.accept({ serverVersion: "saved", ...(canonical === undefined ? {} : { canonical }) }); ticket.finish();
+        }, canonical ? [id] : []);
+        capture("shared edit", () => { assert.equal(workspace.editDocuments([id, peer].map(documentId => ({ documentId,
+            expectedRevision: workspace.document(documentId).revision, origin: "host" as const, edits: [{ from: 0, to: 0, insert: "!" }] }))).applied, true); }, [id, peer]);
+        assert.equal(workspace.observeHistory(ids[999]!).getSnapshot(), untouched);
+    } finally { TextHistory.prototype.snapshot = snapshots; view.dispose(); }
+    t.diagnostic(JSON.stringify(results.map(({ action, calls }) => ({ action, snapshots: calls.length }))));
+    for (const result of results) assert.deepEqual(result.calls, result.expected, result.action);
+});
+
+test("history publication includes transitive redo clearing, unrelated eviction and oversized linked boundaries", () => {
+    const errors: unknown[] = [], workspace = new Workspace({ history: { maxGroups: 3, maxChangedUnits: 16 }, onListenerError: error => errors.push(error) });
+    const [a, b, c, d] = ["a", "b", "c", "d"].map(resource => workspace.createDocument({ scope: "linked", resource, variant: "working" }, resource, "")) as [DocumentId, DocumentId, DocumentId, DocumentId];
+    const edit = (ids: DocumentId[], insert = "x") => assert.equal(workspace.editDocuments(ids.map(documentId => ({ documentId,
+        expectedRevision: workspace.document(documentId).revision, origin: "human" as const, edits: [{ from: 0, to: 0, insert }] }))).applied, true);
+    const state = (id: DocumentId) => workspace.observeHistory(id).getSnapshot();
+    const undo = (documentId: DocumentId) => assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).applied, true);
+    edit([a, b]); edit([b, c]); edit([d]); undo(c); undo(a);
+    assert.deepEqual([state(a).redoDepth, state(b).redoDepth, state(c).redoDepth], [1, 2, 1]);
+    const unrelated = state(d), notifications = new Map<DocumentId, number>();
+    const stops = [a, b, c, d].map(id => workspace.observeHistory(id).subscribe(() => notifications.set(id, (notifications.get(id) ?? 0) + 1)));
+    let documentCalls = 0;
+    const stopDocument = workspace.observeDocument(a).subscribe(() => {
+        documentCalls++; assert.deepEqual([state(b).redoDepth, state(c).redoDepth], [0, 0]);
+    });
+    edit([a]); stopDocument(); assert.equal(documentCalls, 1);
+    assert.deepEqual([...notifications.keys()].sort(), [a, b, c].sort()); assert.equal(state(d), unrelated);
+    edit([a, b]); notifications.clear(); edit([b, c]);
+    assert.deepEqual(state(d), { undoDepth: 0, redoDepth: 0 }); assert.equal(notifications.get(d), 1);
+    edit([d]); const independent = state(d); notifications.clear();
+    edit([a], "!".repeat(100));
+    for (const id of [a, b, c]) { assert.deepEqual(state(id), { undoDepth: 0, redoDepth: 0 }); assert.equal(notifications.get(id), 1); }
+    assert.equal(state(d), independent); assert.equal(notifications.has(d), false); assert.deepEqual(errors, []);
+    stops.forEach(stop => stop());
 });
 
 test("no-op/malformed/stale edits publish no history or text and reject foreign view identities", () => {

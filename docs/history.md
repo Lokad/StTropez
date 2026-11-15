@@ -52,6 +52,11 @@ Independent background documents do not split a typing group.
 Multi-document edits always form one standalone shared unit. Form/refactor/paste/live commands
 are standalone by default; a host can explicitly group consecutive steps of one logical command.
 
+History synchronization visits documents whose stack depths changed, including indirect participants
+of redo invalidation, eviction and linked history boundaries. Group extension, selection-only work
+and ordinary save settlement do not rebuild unchanged history snapshots. All affected snapshots are
+updated before any document listener runs; unrelated history observables retain their identity.
+
 The native adapter groups adjacent ordinary typing or same-direction deletion within one
 second. Newlines, composition, paste/replacement, focus loss, selection movement, another edit
 origin in the same document and save boundaries separate those actions. The group belongs to the document and
