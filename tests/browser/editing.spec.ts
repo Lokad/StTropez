@@ -16,8 +16,20 @@ test("failed command turns release input and report the cause before later typin
             f.selections(Array.from({ length: failure === "inline-decoration" || failure === "language-policy" ? 1 : 33 }, (_, i) => ({ anchor: i * 11 + 1, head: i * 11 + (failure === "language-policy" ? 2 : 1) })));
         }, { text, failure }); await ready(page); await source.focus();
         const before = await state(page);
-        await source.evaluate((element, failure) => {
+        try { await source.evaluate((element, failure) => {
             const input = element as HTMLTextAreaElement, f = window.editingFixture;
+            if (failure.endsWith("decoration")) {
+                // The fault belongs to a command turn, including deferred commands. Hold native
+                // frame paints until it is caught; otherwise a frame can consume the fault first.
+                const request = window.requestAnimationFrame, cancel = window.cancelAnimationFrame, held = new Map<number, FrameRequestCallback>(); let id = 0;
+                window.requestAnimationFrame = callback => { held.set(--id, callback); return id; };
+                window.cancelAnimationFrame = at => { if (!held.delete(at)) cancel.call(window, at); };
+                (window as typeof window & { releaseFaultFrames?: () => void }).releaseFaultFrames = () => {
+                    window.requestAnimationFrame = request;
+                    try { for (const [at, callback] of held) { held.delete(at); callback(performance.now()); } }
+                    finally { window.cancelAnimationFrame = cancel; held.clear(); delete (window as typeof window & { releaseFaultFrames?: () => void }).releaseFaultFrames; }
+                };
+            }
             if (failure === "language-policy") {
                 f.configureLanguage({ allowPair: () => { throw new Error("Fixture language failure"); } });
                 input.dispatchEvent(new KeyboardEvent("keydown", { key: "(", bubbles: true, cancelable: true })); return;
@@ -31,6 +43,7 @@ test("failed command turns release input and report the cause before later typin
         }, failure);
         await expect.poll(async () => (await state(page)).conflicts.filter(item => item.reason === "command-failed").length).toBe(
             before.conflicts.filter(item => item.reason === "command-failed").length + 1);
+        } finally { await page.evaluate(() => (window as typeof window & { releaseFaultFrames?: () => void }).releaseFaultFrames?.()); }
         await expect.poll(() => page.evaluate(() => { const s = window.editingFixture.snapshot().primary; return !s.pendingWord && !s.pendingGrapheme && !s.pendingInput; })).toBe(true);
         const failed = await state(page);
         expect(failed.document!.revision).toBe(before.document!.revision + (failure === "committed-transform" ? 1 : 0));

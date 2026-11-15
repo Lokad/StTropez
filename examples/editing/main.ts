@@ -43,7 +43,7 @@ const status = () => { const current = workspace.document(source.documentId); pa
 const unsubscribe = workspace.observeDocument(source.documentId).subscribe(status); status();
 const fixture = { ready: true, setText, edit, select, history,
     get settled() { return !disposed && editorSettled(editors.primary) && editorSettled(editors.secondary); },
-    failNextDecoration: () => { failDecoration = true; },
+    failNextDecoration: () => { failDecoration = true; editors.primary.viewport.invalidate(); },
     captureInsertion: () => editors.primary.captureInsertion(),
     registerEditTransform: (transform: CandidateEditTransform) => editors.primary.registerEditTransform(transform),
     discoverFolds: (discover: FoldDiscovery) => { foldingController?.dispose(); foldingController = createFoldingController(workspace, primaryTab, editors.primary, discover, { delayMs: 0 }); },

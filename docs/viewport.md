@@ -25,7 +25,7 @@ clipped rows. Its placement is independent of the bounded native input anchor, s
 anchor inside the viewport cannot shift the visible caret away from its character.
 
 Each frame reads the container/font geometry, obtains only visible/overscan lines and bounded
-horizontal ranges, then writes the DOM. A bounded batch of native row-width reads follows the
+horizontal ranges when its paint capture changes, then writes the DOM. A bounded batch of native row-width reads follows the
 writes; extent/reveal corrections schedule another frame. Rows are reused, kept in document order and removed
 outside the window. The default overscan is four lines and 32 UTF-16 units per horizontal edge.
 Unchanged row text and inline classes retain their text/span nodes, including selection and
@@ -38,6 +38,16 @@ windows. Mounted text and reads scale with viewport dimensions and that per-row 
 rendering, scroll changes nor metadata updates access `DocumentSnapshot.text` or resource value.
 Unrelated resource notifications do not schedule a frame. Multiple changes coalesce into one
 animation frame, while each revision's map updates the retained scroll anchor synchronously.
+
+`flush()` reads current container/font metrics synchronously, so CSS changes and reveals do not
+wait for ResizeObserver. Matching revision, selection set, fold generation, comparison rows,
+scroll, dimensions, typography, extents, placement and invalidation state skip row slicing,
+decorator callbacks, DOM writes and row-width reads. A requested reveal still runs, including
+partial-row placement and later extent correction. Call `invalidate()` when host decoration
+or external style state changes; font completion also invalidates. Consuming a scheduled pass
+still emits `sttropez-render` to release caret/comparison listeners, even if no rows needed paint.
+An idle synchronous flush emits no event. `renders` counts actual paints; `readUnits` and
+`lastRenderMs` describe the last paint. Skipped passes do not replace these measurements.
 
 Native geometry is retained for unchanged mounted rows while the source offset, document
 revision and effective line height match. Each measurement checks the row's client bounds and

@@ -107,6 +107,8 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     let horizontalAnchor: ViewState["horizontalAnchor"];
     let fragmentPlacement: Readonly<{ revision: number; line: number; from: number; to: number; left: number; shift: number }> | undefined;
     let measuredWidth = 0, measuredFont = "", measuredRevision: number | null = null;
+    let paintEpoch = 0;
+    let painted: Readonly<{ key: readonly unknown[]; horizontalAnchor: typeof horizontalAnchor; placement: typeof fragmentPlacement }> | undefined;
     const rows = new Map<number, HTMLDivElement>();
     const paddingRows = new Map<number, HTMLDivElement>();
     type Geometry = Readonly<{ value: ReturnType<typeof rowGeometry>; from: number; revision: number; height: number }>;
@@ -134,10 +136,10 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         }
         return undefined;
     };
-    const schedule = () => { if (!disposed && frame === undefined) frame = win.requestAnimationFrame(render); };
+    const schedule = () => { if (!disposed && frame === undefined) frame = win.requestAnimationFrame(() => render(true)); };
     // Host invalidation and font loading can change inline layout without changing text/classes.
-    const invalidate = () => { geometries.clear(); commandGeometry = undefined; clearPreparedRows(); schedule(); };
-    const flush = () => { if (disposed) return; if (frame !== undefined) { win.cancelAnimationFrame(frame); frame = undefined; } render(); };
+    const invalidate = () => { paintEpoch++; geometries.clear(); commandGeometry = undefined; clearPreparedRows(); schedule(); };
+    const flush = () => { if (disposed) return; const scheduled = frame !== undefined; if (scheduled) win.cancelAnimationFrame(frame!); render(scheduled); };
     const position = (axis: ScrollAxis, value: number): number => Math.min(axis.maximum, Math.max(0, value));
     const gapAt = (index: RowIndex, row: number) => "gapAt" in index ? index.gapAt(row) : undefined;
     function verticalAnchor(): ViewState["verticalAnchor"] {
@@ -313,19 +315,21 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         if (revealRow && !rows.has(line)) { reveal = { revision: document.revision, foldGeneration: view.folding.getSnapshot().generation, offset, horizontal: "nearest", vertical: "nearest", affinity: "after" }; flush(); }
         return withRow(line, left, offset, true, work);
     };
-    function render(): void {
+    function render(scheduled: boolean): void {
         frame = undefined; if (disposed) return;
-        commandGeometry = undefined;
         const started = win.performance.now();
         // Read container metrics before writing rows; bounded shaping reads follow the writes.
         width = root.clientWidth; height = root.clientHeight;
         const zoom = cssZoom(root);
         columnWidth = probe.getBoundingClientRect().width / zoom / 64 || 8.4;
         const style = win.getComputedStyle(root); naturalLineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.6; lineHeight = naturalLineHeight;
-        const font = [style.fontFamily, style.fontSize, style.fontWeight, style.fontStyle, style.letterSpacing, style.tabSize].join("|");
+        const font = [style.fontFamily, style.fontSize, style.fontWeight, style.fontStyle, style.fontStretch, style.letterSpacing, style.wordSpacing,
+            style.tabSize, style.direction, style.getPropertyValue("--st-text-direction"), style.fontVariant, style.fontVariantLigatures, style.fontKerning,
+            style.fontFeatureSettings, style.fontVariationSettings, style.unicodeBidi, style.textAlign, style.textTransform, style.textIndent].join("|");
         if (font !== measuredFont) { measuredWidth = 0; measuredFont = font; }
         const document = workspace.resolveTab(target) ? workspace.observeDocument(documentId).getSnapshot() : undefined;
         if (!document) {
+            painted = undefined; commandGeometry = undefined;
             layer.replaceChildren(); rows.clear(); geometries.clear(); measuredWidth = 0; measuredRevision = null; spacer.style.width = "0px"; spacer.style.height = "0px";
             layer.style.transform = "none"; layer.style.width = "0px"; layer.style.height = "0px";
             root.setAttribute("aria-disabled", "true");
@@ -353,11 +357,23 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         const requested = reveal; if (!deferAnchor || requested) anchor = undefined; reveal = undefined;
         x = scrollAxis(Math.max(document.buffer.longestLineLength * columnWidth, measuredWidth) + padding * 2, width);
         y = scrollAxis(index.visibleLineCount * lineHeight + padding * 2, height);
-        top = position(y, top); left = position(x, left); readUnits = 0;
+        top = position(y, top); left = position(x, left);
+        const { selection: selected, selectionSet } = view.getSnapshot();
+        const key = [document.revision, selectionSet, folds.generation, rowGeneration, comparisonRows?.id,
+            top, left, width, height, zoom, columnWidth, naturalLineHeight, lineHeight, font, x.extent, y.extent, paintEpoch,
+            root.classList.contains("st-composing"), root.hasAttribute("data-st-tab-escape")];
+        if (!requested && painted && painted.horizontalAnchor === horizontalAnchor && painted.placement === fragmentPlacement
+            && key.every((value, index) => value === painted!.key[index])
+            && Math.abs(root.scrollTop - y.toPhysical(top)) <= 1 && Math.abs(root.scrollLeft - x.toPhysical(left)) <= 1) {
+            // Consuming scheduled work still releases caret/alignment/linked-scroll listeners.
+            // An idle synchronous flush needs neither row work nor a new caret frame.
+            if (scheduled) root.dispatchEvent(new CustomEvent("sttropez-render"));
+            return;
+        }
+        commandGeometry = undefined; readUnits = 0;
         const firstRow = Math.min(index.visibleLineCount - 1, Math.max(0, Math.floor((top - padding) / lineHeight) - overscanLines));
         const lastRow = Math.min(index.visibleLineCount, Math.max(firstRow + 1, Math.ceil((top + height) / lineHeight) + overscanLines));
         firstLine = index.lineAt(firstRow); lastLine = index.lineAt(lastRow - 1) + 1;
-        const { selection: selected, selectionSet } = view.getSnapshot();
         const next: Row[] = [], blanks: number[] = [];
         for (let visible = firstRow; visible < lastRow; visible++) { if (gapAt(index, visible)) blanks.push(visible); else next.push(row(document.buffer, index.lineAt(visible))); }
         partialRows = next.filter(row => !row.complete).length;
@@ -456,6 +472,8 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             }
         }
         lastRenderMs = win.performance.now() - started;
+        // Keep the scroll/extent values actually painted; reveal corrections may queue a newer one.
+        painted = { key, horizontalAnchor, placement: fragmentPlacement };
         root.dispatchEvent(new CustomEvent("sttropez-render"));
     }
     const foldButton = (target: EventTarget | null): HTMLButtonElement | undefined => {
@@ -599,7 +617,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         destroy: () => {
             if (disposed) return; disposed = true; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); paddingRows.clear(); comparisonRows = undefined; renderedAlignmentId = null; geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
-            commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove(); clearPreparedRows();
+            painted = undefined; commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove(); clearPreparedRows();
             navigationBatches = 0; maxNavigationBatchRows = 0;
             renderedIndex = emptyIndex; renderedFoldGeneration = -1; foldButtons.clear(); foldLayer.replaceChildren();
             renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; navigationReadUnits = 0; navigationRows = 0; layer.replaceChildren(); root.replaceChildren(); root.remove();
