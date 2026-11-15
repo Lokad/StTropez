@@ -53,7 +53,7 @@ test("seeded code-word navigation agrees with an independent whole-string graphe
     }
 });
 
-test("batched ASCII runs preserve every class transition, interior start and bounded advance", () => {
+test("batched runs preserve ASCII transitions, interior starts and independent bounded Unicode advances", () => {
     const text = Array.from({ length: 128 }, (_, code) => String.fromCharCode(code)).join("") + "x".repeat(769) + " \r\n\t".repeat(130) + "!?".repeat(390) + "_tail";
     let buffer = TextBuffer.from(""); for (let from = 0; from < text.length; from += 17) buffer = buffer.replace(buffer.length, buffer.length, text.slice(from, from + 17));
     const starts = [0]; let previous = "";
@@ -66,10 +66,21 @@ test("batched ASCII runs preserve every class transition, interior start and bou
         assert.equal(next(buffer, offset, 1), starts.find(start => start > offset) ?? text.length, `forward ${offset}`);
         assert.equal(next(buffer, offset, -1), starts.filter(start => start < offset).at(-1) ?? 0, `backward ${offset}`);
     }
-    for (const direction of [-1, 1] as const) for (const budget of [256, 257, 4096]) {
-        const job = new WordCursor(TextBuffer.from("x".repeat(20000)), direction < 0 ? 20000 : 0, direction); let previous = 0, step;
-        do { step = job.next(budget); assert.ok(step.workUnits - previous <= budget + 256); assert.ok(step.readUnits <= step.workUnits + 512); previous = step.workUnits; } while (step.status === "running");
-        assert.equal(step.offset, direction < 0 ? 0 : 20000); job.dispose();
+    for (const token of ["x", "東京", "𐐀", "😀", "\u0301\u200d", " \t\u00a0\u2028"]) for (const budget of [256, 257, 4096]) {
+        const source = TextBuffer.from(token.repeat(10000));
+        const jobs = [new WordCursor(source, 0, 1), new WordCursor(source, source.length, -1)];
+        const prior = [0, 0]; let done;
+        do {
+            done = true;
+            for (const [index, job] of jobs.entries()) {
+                const step = job.next(budget);
+                assert.ok(step.workUnits - prior[index]! <= budget + 256); assert.ok(step.readUnits <= step.workUnits + 512); prior[index] = step.workUnits;
+                if (step.status === "running") { done = false; assert.equal(step.offset, null); }
+                else assert.equal(step.offset, index === 0 ? source.length : 0);
+            }
+        } while (!done);
+        for (const job of jobs) { job.dispose(); assert.equal(job.next().offset, null); }
+        assert.equal(source.readMetrics().textExports, 0);
     }
     assert.equal(buffer.readMetrics().textExports, 0);
 });

@@ -210,9 +210,12 @@ and consumes the preceding run. This is a code-oriented policy, not dictionary s
 a claim of Unicode word-boundary conformance. The browser still snaps destinations to graphemes.
 
 The headless cursor retains bounded 256-unit slices, handles surrogate seams and exposes
-`next(maxWork)` plus explicit disposal. Equal-class ASCII runs share one unit within each
-slice; Unicode marks/joiners and other code points retain their existing classification.
-This reduces per-character allocation without changing code-word endpoints or work bounds.
+`next(maxWork)` plus explicit disposal. Native Unicode expressions batch equal-class runs
+within each slice, keeping marks/joiners with word or symbol bases. Leading marks remain
+separate for attachment across windows and whitespace-control handling. Reverse traversal
+classifies and retains at most one slice (257 units when completing a surrogate pair); work
+counters charge the traversed runs. This reduces per-character allocation without changing
+code-word endpoints or work bounds. Independently suspended cursors own their match iteration.
 Browser commands advance at most 32 4,096-unit scans
 per timer turn, stopping sooner after four milliseconds of elapsed scan time. A single advance, GC and
 the final model transaction can exceed that scheduling threshold. Revision, selection identity

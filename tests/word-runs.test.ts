@@ -16,10 +16,29 @@ test("lexical run boundaries exclude neighboring whitespace and stay inside capt
   for(const options of [{from:-1},{to:buffer.length+1},{from:from+1},{to:from-1}])assert.throws(()=>new WordCursor(buffer,from,1,options),RangeError);
 });
 test("run scans yield over millions of word, symbol and whitespace units and release cancelled captures",()=>{
-  for(const token of ["x","!"," "]){const original=TextBuffer.from(token.repeat(2400000)),buffer=original.replace(255,255,token),cursor=new WordCursor(buffer,1200000,1,{skipWhitespace:false});
+  for(const token of ["x","!"," ","東","\u0301","\u3000"]){const original=TextBuffer.from(token.repeat(2400000)),buffer=original.replace(255,255,token),cursor=new WordCursor(buffer,1200000,1,{skipWhitespace:false});
     const first=cursor.next(256);assert.equal(first.status,"running");assert.ok(first.readUnits<=768);assert.equal(boundary(buffer,1200000,-1),0);assert.equal(boundary(buffer,1200000,1),buffer.length);assert.equal(buffer.readMetrics().textExports,0);
     cursor.dispose();assert.equal(cursor.next().status,"cancelled");assert.equal(cursor.next().offset,null);
   }
+});
+
+test("Unicode runs preserve raw clipped surrogate seams and the final whitespace control",()=>{
+  const buffer=TextBuffer.from("!"+"𐐀".repeat(300)+"?");
+  for(const [offset,direction,from,to,expected] of [[1,1,0,602,601],[601,-1,0,602,1],
+    [2,1,2,600,3],[600,-1,2,600,599],[300,1,0,602,301],[300,-1,0,602,299],
+    [3,1,3,599,599],[599,-1,3,599,3]] as const){
+    assert.equal(boundary(buffer,offset,direction,{from,to}),expected,JSON.stringify({offset,direction,from,to}));
+  }
+  for(const spaces of ["\u00a0 \u2028","\u0085\u2029\t","\u2028\u0085\u00a0"]){
+    const source=TextBuffer.from("東".repeat(260)+spaces+"\u0301".repeat(260)+"𐐀"),control=/[\t\u2028]$/u.test(spaces);
+    assert.equal(boundary(source,0,1),260);
+    assert.equal(boundary(source,260,1),control?263:523);
+    assert.equal(boundary(source,263,1),523);
+    assert.equal(boundary(source,523,-1),control?263:260);
+    assert.equal(boundary(source,525,-1),523);
+    assert.equal(source.readMetrics().textExports,0);
+  }
+  assert.equal(buffer.readMetrics().textExports,0);
 });
 test("Unicode and fragmented run scans match an independent complete grapheme/run table",()=>{
   const segmenter=new Intl.Segmenter(undefined,{granularity:"grapheme"}),tokens=["alpha","βγ","東京","नम","123","_","é","👩‍💻","!?","😀","  ","\t","\r\n","\u0301"];
