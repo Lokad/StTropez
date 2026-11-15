@@ -82,6 +82,22 @@ Use a `LineDecorator` to return source-offset ranges and host CSS classes for pr
 fragments. The demo's tiny single-line lexer colors its own rule syntax and quoted CSV; it is
 not a general language parser. Folding uses the existing indentation discovery API.
 
+`new BracketMatcher(language)` compiles the asymmetric configured pairs for headless matching.
+`createCursor(buffer, caret, options)` captures the immutable buffer; call `next(workBudget)`
+cooperatively and dispose the cursor when its owning revision or selection expires. It prefers
+the character at the caret, then the preceding character when absent or vetoed. Mixed nesting
+is checked, including different openings that share a closing delimiter. A character eligible
+as both opening and closing is reported as `ambiguous`; symmetric quote pairs remain insertion
+and surrounding rules. String/comment eligibility comes from `allowPair`, called for each
+candidate delimiter with `operation: "open" | "close"` and its existing `[from, to)` range.
+
+Results distinguish `matched`, `unmatched`, `none`, `vetoed`, `ambiguous` and `limited`.
+Default limits are 100,000 work units and 1,024 nesting levels (`maxWorkUnits`, `maxDepth`).
+Each examined UTF-16 unit and eligible-pair check consumes work; reads use at most 256-unit
+windows. `next` requires a budget of at least 256 and may overshoot by at most 63 work units.
+Host callback time/reads are separate from those counters and are not a wall-clock guarantee.
+Only a `matched` result establishes a pair; budget exhaustion must not be presented as a mismatch.
+
 Host buttons and keyboard listeners can call `editor.runCommand("line-comment")` or capture
 an insertion. The sample exposes **Code → Paste format**, **Insert example table** and
 **Add source note**. Ctrl+Alt+V changes paste mode; Ctrl+Alt+M adds a note. The example-table

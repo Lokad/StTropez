@@ -36,6 +36,8 @@ export { createSelectionSet, mapSelectionSet, planSelectionEdits } from "./core/
 export type { SelectionSet, SelectionEditPlan } from "./core/selections.ts";
 export { resolveLanguageConfiguration, planLanguageEdit } from "./core/language-edits.ts";
 export type { LanguageConfiguration, ResolvedLanguageConfiguration, EditingCommand, EditingPair, LanguageEditContext, PairingContext, EnterIndent } from "./core/language-edits.ts";
+export { BracketMatcher } from "./core/bracket-matching.ts";
+export type { BracketMatchOptions, BracketMatchResult, BracketMatchProgress, BracketMatchCursor } from "./core/bracket-matching.ts";
 export { parseSnippet, offsetSnippetStops, planSnippetEdit, snippetChoiceText, planSnippetChoice } from "./core/snippets.ts";
 export type { Snippet, SnippetStop, SnippetOccurrence, SnippetParseResult, SnippetEditPlan } from "./core/snippets.ts";
 export { Workspace } from "./core/workspace.ts";
