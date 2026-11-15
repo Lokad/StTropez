@@ -1,7 +1,7 @@
 import { HostCell } from "../shared/observable.ts";
-import { TextBuffer, Workspace, WorkspaceCommands } from "../../src/index.ts";
-import type { AgentRequest, CloseOperation, ComparisonBaseline, DocumentId, DocumentView, Operation, SaveReview, SaveSubmission, TabId, TabTarget, TextEdit, TextResourceHandle } from "../../src/index.ts";
-import { ReviewVariants } from "./variants.ts";
+import { Workspace, WorkspaceCommands } from "../../src/index.ts";
+import type { AgentRequest, CloseOperation, ComparisonBaseline, DocumentId, DocumentView, TabId, TextEdit, TextResourceHandle } from "../../src/index.ts";
+import { HostSourceReview } from "./source-review.ts";
 import { ConfigurationSave } from "./configuration.ts";
 import { HostTransfer } from "./transfers.ts";
 import { RunResources } from "./run-resources.ts";
@@ -11,8 +11,7 @@ import type { Connection, RunSettings, ServiceActivity } from "./fixture-service
 
 export type { Connection } from "./fixture-services.ts";
 type RecoveredInput = Readonly<{ documentId: DocumentId; expectedRevision: number; reason: string; contextFrom: number; attemptedText: string; attemptedEdit: TextEdit | null }>;
-export type SaveConflict = Readonly<{ id: number; submittedRevision: number; expectedVersion: string | null; observedVersion: string;
-    review: "unloaded" | "loading" | "ready" | "expired"; reviewVersion: string | null; message: string }>;
+export type { SaveConflict } from "./source-review.ts";
 export type Layout = Readonly<{ position: "left" | "right"; visible: boolean; formFault: boolean; primarySurface: "text" | "panel" | "loading" | "closed";
     navigation: Readonly<{ kind: "workspace" } | { kind: "review" }>;
     modal: Readonly<{ kind: "none" } | { kind: "error"; message: string } | { kind: "close"; tabId: TabId }> }>;
@@ -31,9 +30,6 @@ export class HostController {
     readonly runResources = new RunResources(this.workspace, this.source, this.connection, this.transfer.resource);
     readonly instruction = new TransferInstruction(this);
     readonly review = this.workspace.agentState(this.source.id);
-    private savedReference: ComparisonBaseline = Object.freeze({ buffer: this.workspace.document(this.source.documentId).buffer, version: "reference:saved-v0" });
-    private readonly referenceCell = new HostCell<Readonly<{ generation: number; baseline: ComparisonBaseline }>>({ generation: 0, baseline: this.savedReference });
-    readonly comparisonReference = this.referenceCell.observable;
     private primaryTab = this.workspace.open({ kind: "text", documentId: this.source.documentId }, "left");
     private readonly secondaryTab = this.workspace.open({ kind: "text", documentId: this.source.documentId }, "right");
     readonly formTab = this.workspace.open({ kind: "panel", resourceId: this.connection.id, panelType: "configuration" }, "right");
@@ -43,17 +39,17 @@ export class HostController {
     readonly layout = this.layoutCell.observable;
     readonly activity = this.activityCell.observable;
     readonly settings = this.settingsCell.observable;
-    private readonly services = new HostFixtureServices(this.savedReference.buffer, activity => this.updateActivity(activity));
+    private readonly services = new HostFixtureServices(this.workspace.document(this.source.documentId).buffer, activity => this.updateActivity(activity));
     private readonly recoveryCell = new HostCell<Readonly<{ visible: boolean; items: readonly RecoveredInput[] }>>({ visible: false, items: [] });
     readonly recovery = this.recoveryCell.observable;
-    private readonly conflictCell = new HostCell<SaveConflict | null>(null);
-    readonly saveConflict = this.conflictCell.observable;
-    private conflictSerial = 0;
-    private conflictReference: ComparisonBaseline | undefined;
-    private conflictPresentation: TabTarget | undefined;
-    private referenceRequest = 0;
-    private readonly conflictReads: { operation: Operation; presentation: TabTarget; conflictId: number; buffer: TextBuffer; version: string;
-        reference: ReturnType<HostController["comparisonReference"]["getSnapshot"]>; currentRequest: () => boolean }[] = [];
+    private readonly sourceReview = new HostSourceReview(this.workspace, this.commands, this.source, {
+        inputReady: () => this.sourceInputReady(), presentation: () => this.workspace.captureTab(this.primaryTab), present: () => this.openReview(),
+        server: () => this.services.server, save: submission => this.services.save(submission), track: task => { void this.track(task); },
+        saved: revision => this.updateActivity({ lastSavedRevision: revision }), reportError: error => this.reportError(error),
+    });
+    readonly comparisonReference = this.sourceReview.comparisonReference;
+    readonly saveConflict = this.sourceReview.saveConflict;
+    readonly variants = this.sourceReview.variants;
     private pendingAgent: AgentRequest<Readonly<{ configurationRevision: number; path: string }>> | undefined;
     private readonly operations = new Set<Promise<unknown>>();
     private disposal: Promise<void> | undefined;
@@ -130,33 +126,15 @@ export class HostController {
         return this.workspace.createTextResource({ scope: "host-fixture", resource: `loaded-${this.workspace.getSnapshot().revision}`, variant: "working" }, "Loaded source",
             ready ? { value: "loaded resource", serverVersion: "loaded-v1" } : undefined);
     }
-    readonly variants = new ReviewVariants(this.workspace, this.source, {
-        presentation: () => this.workspace.captureTab(this.primaryTab), reference: this.comparisonReference,
-        saved: () => this.savedReference, server: () => { const server = this.services.server; return { buffer: server.buffer, version: `reference:server-${server.version}` }; },
-        present: () => this.openReview(), beginReferenceRequest: () => this.beginReferenceRequest(),
-        publish: baseline => this.referenceCell.set({ generation: this.referenceCell.get().generation + 1, baseline }),
-    });
     viewTab(id: "primary" | "secondary"): TabId { return id === "primary" ? this.primaryTab : this.secondaryTab; }
     readonly openReview = (): void => this.safe(() => { this.layoutCell.set({ ...this.layoutCell.get(), navigation: { kind: "review" } }); });
     readonly closeReview = (): void => this.safe(() => {
         // Dismiss pending presentation work permanently; a later reopen starts no old request.
-        this.referenceRequest++;
+        this.sourceReview.dismiss();
         this.layoutCell.set({ ...this.layoutCell.get(), navigation: { kind: "workspace" } });
     });
-    savedComparisonReference(): ComparisonBaseline { return this.savedReference; }
-    private beginReferenceRequest(): () => boolean {
-        // Version and conflict retrieval share the latest request, even if its load is cancelled.
-        const generation = ++this.referenceRequest;
-        const conflict = this.conflictCell.get();
-        if (conflict?.review === "ready") {
-            this.conflictReference = undefined; this.conflictPresentation = undefined;
-            this.conflictCell.set({ ...conflict, review: "expired", message: "The review choice changed. Review the remote source again before saving." });
-        }
-        return () => generation === this.referenceRequest;
-    }
-    retainComparisonReference(baseline: ComparisonBaseline): void {
-        if (!this.disposed) { this.referenceCell.set({ ...this.referenceCell.get(), baseline }); this.variants.referenceChanged(); }
-    }
+    savedComparisonReference(): ComparisonBaseline { return this.sourceReview.savedComparisonReference(); }
+    retainComparisonReference(baseline: ComparisonBaseline): void { this.sourceReview.retainComparisonReference(baseline); }
 
     private updateActivity(patch: Partial<Activity>): void { this.activityCell.set({ ...this.activityCell.get(), ...patch }); }
     readonly reportError = (error: unknown): void => {
@@ -203,11 +181,7 @@ export class HostController {
             const start = performance.now();
             const result = request.accept({ id: request.input.id, revision: 1, edits: [{ from: 0, to: request.input.source.value.length, insert: text }] });
             this.proposalTransactionMs = performance.now() - start;
-            if (result.applied) {
-                this.referenceCell.set({ generation: this.referenceCell.get().generation + 1, baseline });
-                this.variants.referenceChanged();
-                this.openReview();
-            }
+            if (result.applied) this.sourceReview.proposalApplied(baseline);
         }).catch(error => { request.fail(); this.reportError(error); }).finally(() => {
             request.finish(); if (this.pendingAgent === request) this.pendingAgent = undefined;
         }));
@@ -225,36 +199,7 @@ export class HostController {
     });
     readonly interrupt = (): void => this.safe(() => { this.workspace.interruptAgent(this.source.id); });
     readonly detach = (): void => this.safe(() => { this.workspace.detachAgent(this.source.id); });
-    readonly save = (): void => this.safe(() => {
-        const conflict = this.conflictCell.get();
-        if (conflict) { this.conflictCell.set({ ...conflict, message: "Review the remote source before retrying this save." }); return; }
-        this.saveSource();
-    });
-    private saveSource(review?: SaveReview): void {
-        if (!this.sourceInputReady()) return;
-        const conflictId = this.conflictCell.get()?.id;
-        let captured: SaveSubmission<string> | undefined;
-        void this.track(this.commands.save(this.source, { save: submission => {
-            captured = submission;
-            return this.services.save(submission);
-        } }, review)
-            .then(result => {
-                if (!this.disposed && result.kind === "saved") {
-                    this.variants.remember(this.savedReference);
-                    this.savedReference = Object.freeze({ buffer: TextBuffer.from(result.receipt.savedValue), version: `reference:saved-${result.receipt.serverVersion}` });
-                    this.variants.refreshCatalog();
-                    if (this.conflictCell.get()?.id === conflictId) {
-                        this.conflictCell.set(null); this.conflictReference = undefined; this.conflictPresentation = undefined;
-                    }
-                    this.updateActivity({ lastSavedRevision: result.receipt.submission.revision });
-                } else if (!this.disposed && result.kind === "conflict" && captured) {
-                    for (const read of this.conflictReads) read.operation.cancel();
-                    this.conflictReference = undefined; this.conflictPresentation = undefined;
-                    this.conflictCell.set({ id: ++this.conflictSerial, submittedRevision: captured.revision, expectedVersion: captured.expectedServerVersion,
-                        observedVersion: result.serverVersion, review: "unloaded", reviewVersion: null, message: "Local edits are retained. Review the remote source before retrying." });
-                }
-            }).catch(error => this.reportError(error)));
-    }
+    readonly save = (): void => this.safe(this.sourceReview.save);
     /** Synthetic external writer; never updates the local document or its known saved version. */
     externalWrite(text: string): void {
         if (this.disposed) return;
@@ -262,46 +207,10 @@ export class HostController {
         this.variants.refreshCatalog();
     }
     readonly simulateExternalWrite = (): void => { this.externalWrite("external source\r\n"); };
-    readonly reviewSaveConflict = (): void => this.safe(() => {
-        const conflict = this.conflictCell.get(); if (!conflict) return;
-        const presentation = this.workspace.captureTab(this.primaryTab);
-        const operation = this.workspace.beginOperation(this.source.id, "save-conflict-review", presentation);
-        this.conflictReads.push({ operation, presentation, conflictId: conflict.id, ...this.services.server,
-            reference: this.referenceCell.get(), currentRequest: this.beginReferenceRequest() });
-        this.conflictReference = undefined; this.conflictPresentation = undefined;
-        this.conflictCell.set({ ...conflict, review: "loading", reviewVersion: null, message: "Reading a captured remote snapshot; local typing can continue." });
-    });
-    readonly finishConflictReview = (): boolean => {
-        const read = this.conflictReads.shift(); if (!read) return false;
-        try {
-            const conflict = this.conflictCell.get();
-            if (this.disposed || !conflict || conflict.id !== read.conflictId) return false;
-            if (!read.currentRequest() || this.referenceCell.get() !== read.reference || !read.operation.presentationCurrent()) {
-                if (read.operation.isCurrent()) this.conflictCell.set({ ...conflict, review: "expired", message: "The captured source tab or review choice changed. Review the remote source again." });
-                return false;
-            }
-            const baseline = Object.freeze({ buffer: read.buffer, version: `reference:conflict-${read.version}` });
-            this.conflictReference = baseline; this.conflictPresentation = read.presentation;
-            this.referenceCell.set({ generation: this.referenceCell.get().generation + 1, baseline });
-            this.variants.referenceChanged();
-            this.conflictCell.set({ ...conflict, review: "ready", reviewVersion: read.version, message: "Compare and edit the working source, then save the reviewed source." });
-            this.openReview(); return true;
-        } catch (error) { this.reportError(error); return false; } finally { read.operation.finish(); }
-    };
-    canSaveReviewedSource(): boolean {
-        const conflict = this.conflictCell.get(), reference = this.referenceCell.get().baseline, metadata = this.source.metadata.getSnapshot();
-        return !this.disposed && conflict?.review === "ready" && conflict.reviewVersion !== null && this.conflictReference?.buffer === reference.buffer
-            && this.conflictReference.version === reference.version && this.conflictPresentation !== undefined
-            && this.workspace.resolveTab(this.conflictPresentation) !== undefined && metadata.state === "ready" && metadata.capabilities.save
-            && metadata.editLock === null && metadata.saveStatus !== "saving";
-    }
-    readonly saveReviewedSource = (): void => this.safe(() => {
-        const conflict = this.conflictCell.get(); if (!conflict) return;
-        if (!this.canSaveReviewedSource()) {
-            this.conflictCell.set({ ...conflict, review: "expired", message: "The remote review is no longer current. Review again before saving." }); return;
-        }
-        this.saveSource({ target: this.workspace.captureResource(this.source.id), expectedRevision: this.workspace.document(this.source.documentId).revision, expectedServerVersion: conflict.reviewVersion! });
-    });
+    readonly reviewSaveConflict = (): void => this.safe(this.sourceReview.reviewSaveConflict);
+    readonly finishConflictReview = (): boolean => this.sourceReview.finishConflictReview();
+    canSaveReviewedSource(): boolean { return this.sourceReview.canSaveReviewedSource(); }
+    readonly saveReviewedSource = (): void => this.safe(this.sourceReview.saveReviewedSource);
     readonly finishSave = (): void => { this.services.finishSave(); };
     readonly failSave = (): void => { this.services.failSave(); };
     readonly retryAcknowledgement = (): void => this.safe(() => {
@@ -418,28 +327,25 @@ export class HostController {
             source: { id: this.source.id, revision: source.revision, length: source.state === "ready" ? this.workspace.document(this.source.documentId).buffer.length : 0,
                 exports: source.state === "ready" ? this.workspace.document(this.source.documentId).buffer.readMetrics().textExports : 0,
                 serverVersion: source.metadata.serverVersion, dirty: source.metadata.dirty, saveStatus: source.metadata.saveStatus },
-            saveConflict: this.conflictCell.get(), pendingConflictReads: this.conflictReads.length, variants: this.variants.state.getSnapshot(),
+            ...this.sourceReview.debug(),
             transfer: { id: this.transfer.resource.id, revision: this.transfer.resource.getSnapshot().revision, dirty: this.transfer.resource.metadata.getSnapshot().dirty, saveStatus: this.transfer.resource.metadata.getSnapshot().saveStatus, serverVersion: this.transfer.resource.metadata.getSnapshot().serverVersion }, transferSave: this.transfer.save.debug(), runResources: this.runResources.debug(), instruction: this.instruction.debug(),
             ...this.services.debug(),
             lastError: this.reportedError instanceof Error ? { name: this.reportedError.name, message: this.reportedError.message, stack: this.reportedError.stack } : null,
             history: this.workspace.observeHistory(this.source.documentId).getSnapshot(),
             configuration: { id: this.connection.id, revision: form.revision, dirty: form.metadata.dirty, serverVersion: form.metadata.serverVersion, saveStatus: form.metadata.saveStatus }, configurationSave: this.configurationSave.debug(), review: this.review.getSnapshot(),
-            comparisonReference: { generation: this.referenceCell.get().generation, version: this.referenceCell.get().baseline.version,
-                length: this.referenceCell.get().baseline.buffer.length },
             requestInput: this.pendingAgent ? { sourceRevision: this.pendingAgent.input.source.revision,
                 sourceLength: this.pendingAgent.input.source.value.length, configurationRevision: this.pendingAgent.input.context.configurationRevision } : null,
             proposalTransactionMs: this.proposalTransactionMs, pendingCommands: this.operations.size,
             inputRecovery: this.recoveryCell.get().items.map(item => ({ documentId: item.documentId, expectedRevision: item.expectedRevision, reason: item.reason, contextFrom: item.contextFrom, attemptedUnits: item.attemptedText.length })),
-            hostSubscriptions: this.layoutCell.count() + this.activityCell.count() + this.settingsCell.count() + this.loadedCell.count() + this.recoveryCell.count() + this.referenceCell.count() + this.conflictCell.count() + this.configurationSave.debug().subscriptions + this.transfer.save.debug().subscriptions + this.runResources.debug().subscriptions + this.instruction.debug().subscriptions, inputCaptureGuards: this.inputCaptureGuards.size, loadPending: this.pendingLoad !== undefined, disposed: this.disposed };
+            hostSubscriptions: this.layoutCell.count() + this.activityCell.count() + this.settingsCell.count() + this.loadedCell.count() + this.recoveryCell.count() + this.sourceReview.subscriptions() + this.configurationSave.debug().subscriptions + this.transfer.save.debug().subscriptions + this.runResources.debug().subscriptions + this.instruction.debug().subscriptions, inputCaptureGuards: this.inputCaptureGuards.size, loadPending: this.pendingLoad !== undefined, disposed: this.disposed };
     }
     dispose(): Promise<void> {
-        if (this.disposal) return this.disposal; this.disposed = true; this.variants.dispose();
+        if (this.disposal) return this.disposal; this.disposed = true; this.sourceReview.dispose();
         this.configurationSave.dispose(); this.transfer.save.dispose(); this.runResources.dispose(); this.instruction.dispose();
         this.inputCaptureGuards.clear();
         if (this.timer !== undefined) clearInterval(this.timer); this.timer = undefined;
         this.workspace.interruptAgent(this.source.id);
         this.workspace.detachAgent(this.source.id);
-        this.conflictReads.splice(0).forEach(read => { read.operation.cancel(); read.operation.finish(); });
         this.services.dispose();
         this.updateActivity({ pendingRuns: 0 });
         this.closeOperation?.finish(); this.closeOperation = undefined;
