@@ -90,8 +90,9 @@ export function demoSample(id: SampleId): DemoSample {
             + "\n};\n\n// Try catalogue. on the next line, or request completion with Ctrl+Space.\n" } };
     if (id === "large") return { id, title: "Large file", description: "Jump to the end, edit, search and undo in a 100,000-line file.",
         files: { "large.ts": Array.from({ length: 100_000 }, (_, i) => `// Row ${i + 1}: try editing or searching here.`).join("\n") } };
-    if (id === "unicode") return { id, title: "Languages & Unicode", description: "Select and edit accents, emoji and text in different writing systems.", files: {
-        "greetings.ts": `const greetings = ["Bonjour", "日本語", "你好", "مرحبا", "שלום"];
+    if (id === "unicode") return { id, title: "Languages & Unicode", description: "Edit accents, emoji and different writing systems. Amber outlines mark unusual characters, including intentional emoji joiners. Code → Inspect source characters explains those near your cursor; Character warnings turns the outlines on or off.", files: {
+        "greetings.ts": `// Invisible: a\u200bb | Non-breaking: a\u00a0b
+const greetings = ["Bonjour", "日本語", "你好", "مرحبا", "שלום"];
 const accents = "café · cafe\u0301";
 const emoji = "👩‍💻 · 👨‍👩‍👧‍👦 · 🇫🇷";
 

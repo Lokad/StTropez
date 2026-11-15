@@ -2,6 +2,33 @@ import { expect, test } from "./fixtures.ts";
 import { runDemoHostIntegrations } from "./demo-host-integrations.ts";
 import { runDemoDiagnosticRetention } from "./demo-diagnostics.ts";
 
+test("character warnings explain source characters and stay consistent across review panes", async ({ page, baseURL }, info) => {
+    await page.goto(baseURL!); await page.locator("#sample").selectOption("unicode");
+    const source = page.getByRole("textbox", { name: "greetings.ts", exact: true });
+    const warnings = page.locator("#editor .st-viewport-layer .st-character-warning");
+    await expect(warnings.first()).toHaveText("\u200b"); await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
+    await source.press("Control+Home"); await page.locator("#code-menu summary").click();
+    await page.getByRole("button", { name: "Inspect source characters", exact: true }).click();
+    const details = page.locator("#character-warning-details"), invisible = details.getByRole("button", { name: /U\+200B/ });
+    await expect(invisible).toHaveText("Ln 1, Col 16: Invisible character (U+200B)");
+    await expect(details).toContainText("Non-breaking space (U+00A0)");
+    await info.attach("warning-inspector", { body: await page.screenshot(), contentType: "image/png" });
+    await invisible.click(); await source.press("Backspace"); await expect(warnings.first()).toHaveText("\u00a0");
+    await invisible.click(); await expect(details).toHaveText("The source or warning settings changed. Inspect again.");
+    await source.press("Control+z"); await expect(warnings.first()).toHaveText("\u200b");
+    await page.locator("#character-warnings").uncheck(); await expect(warnings).toHaveCount(0);
+    await page.getByRole("button", { name: "Compare", exact: true }).click();
+    await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
+    const panes = page.locator(".st-comparison-panes > section"), left = panes.first(), right = panes.last();
+    const marks = ".st-viewport-layer .st-character-warning";
+    await expect(left.locator(marks)).toHaveCount(0); await expect(right.locator(marks)).toHaveCount(0);
+    await page.locator("#code-menu summary").click(); await page.locator("#character-warnings").check();
+    await expect(left.locator(marks).first()).toHaveText("\u200b"); await expect(right.locator(marks).first()).toHaveText("\u200b");
+    expect(await left.locator(marks).allTextContents()).toEqual(await right.locator(marks).allTextContents());
+    await page.locator("#code-menu summary").click();
+    await info.attach("warning-review", { body: await page.screenshot(), contentType: "image/png" });
+});
+
 test("diagnostics remain mapped while dirty syntax and dependent semantics are rechecked", async ({ page, baseURL }, info) => {
     const requests = await runDemoDiagnosticRetention(page, baseURL!);
     await info.attach("diagnostic-requests", { body: JSON.stringify(requests, null, 2), contentType: "application/json" });

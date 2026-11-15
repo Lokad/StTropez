@@ -24,6 +24,9 @@
                 <button id="indent" title="Tab">Indent selection</button>
                 <button id="outdent" title="Shift+Tab">Outdent selection</button>
                 <label>Indentation <select id="indentation"><option value="2">2 spaces</option><option value="4">4 spaces</option><option value="tabs">Tabs (4 columns)</option></select></label>
+                <label class="menu-check"><input id="character-warnings" type="checkbox" checked> Character warnings</label>
+                <button id="inspect-characters" title="Explain unusual characters near the cursor in the source editor">Inspect source characters</button>
+                <div id="character-warning-details"></div>
                 <button id="fold" title="Ctrl+Shift+[">Collapse block</button>
                 <button id="unfold" title="Ctrl+Shift+]">Expand block</button>
                 <label>Fold group <select id="fold-group"><option value="">All groups</option></select></label>

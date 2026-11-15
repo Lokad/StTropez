@@ -11,6 +11,7 @@ import { mountDemoOutput } from "./output.ts";
 import { mountDemoFolding, outlineFolds } from "./folding.ts";
 import { canOpenDemoHelp } from "./diagnostics.ts";
 import { hostConfiguration, hostDecorations, mountHostIntegrations } from "./host-integrations.ts";
+import { inspectCharacters } from "./character-warnings.ts";
 import "./style.css";
 
 const element = (id: string) => document.getElementById(id)!;
@@ -273,6 +274,7 @@ function mountFile(file: DemoFile, focus = false): void {
             }, { emit: false, folds: true });
             referencePresentation = syntax;
             reference.editor.configureLanguage(editingConfiguration(syntax?.editing)); reference.editor.bracketMatching.configure(true);
+            reference.editor.characterWarnings.configure(field("character-warnings").checked);
             syntax?.update(project!.workspace.document(reference.editor.view.documentId));
             referenceFolding = createFoldingController(project!.workspace, reference.target.id, reference.editor,
                 (capture, signal) => plain
@@ -291,6 +293,7 @@ function mountFile(file: DemoFile, focus = false): void {
     }
     editor.configureLanguage(editingConfiguration());
     editor.bracketMatching.configure(true);
+    editor.characterWarnings.configure(field("character-warnings").checked); element("character-warning-details").replaceChildren();
     if (savedViews.has(file.view)) editor.restoreView({ ...savedViews.get(file.view)!, ...file.view.getSnapshot().selection,
         selectionSet: file.view.getSnapshot().selectionSet });
     folding = mountDemoFolding(project, file, editor, () => editingConfiguration().tabSize!);
@@ -384,6 +387,12 @@ on("complete", () => languageView?.complete());
 on("inspect-type", () => languageView?.inspect()); on("signature", () => languageView?.signature());
 on("definition", () => languageView?.definition()); on("references", () => languageView?.references()); on("rename", () => languageView?.rename());
 on("navigate-back", goBack);
+on("inspect-characters", () => { if (editor && project) inspectCharacters(editor, project.workspace, element("character-warning-details")); });
+field("character-warnings").addEventListener("change", () => {
+    const enabled = field("character-warnings").checked;
+    editor?.characterWarnings.configure(enabled); comparison?.reference.getSnapshot()?.editor.characterWarnings.configure(enabled);
+    element("character-warning-details").replaceChildren();
+}, { signal: listeners.signal });
 on("quickfix", () => languageView?.quickfix());
 for (const command of ["line-comment", "block-comment", "indent", "outdent"] as const) on(command, () => {
     if (editor?.runCommand(command)) editor.focus();
@@ -396,7 +405,12 @@ on("fold", () => { folding?.runCommand("collapse"); }); on("unfold", () => { fol
 on("fold-group-collapse", () => { folding?.runCommand("collapse-all", (element("fold-group") as HTMLSelectElement).value || undefined); });
 on("fold-group-expand", () => { folding?.runCommand("expand-all", (element("fold-group") as HTMLSelectElement).value || undefined); });
 const codeMenu = element("code-menu") as HTMLDetailsElement;
-codeMenu.addEventListener("click", event => { if ((event.target as HTMLElement).closest("button")) codeMenu.open = false; }, { signal: listeners.signal });
+codeMenu.addEventListener("click", event => {
+    const target = event.target as HTMLElement;
+    // Inspection can replace its clicked entry before this bubbling listener runs.
+    const inspection = event.composedPath().some(node => node instanceof HTMLElement && (node.id === "inspect-characters" || node.id === "character-warning-details"));
+    if (target.closest("button") && !inspection) codeMenu.open = false;
+}, { signal: listeners.signal });
 document.addEventListener("pointerdown", event => { if (!codeMenu.contains(event.target as Node)) codeMenu.open = false; }, { signal: listeners.signal });
 codeMenu.addEventListener("keydown", event => {
     if (event.key === "Escape" && codeMenu.open) { event.preventDefault(); codeMenu.open = false; codeMenu.querySelector("summary")!.focus(); }

@@ -145,6 +145,11 @@ Customize `--st-character-warning-background` and `--st-character-warning-border
 inline range fragmentation and fallback-font caret heights can vary when spans are added;
 the browser owner checks row advance, caret positions and hit targets in all three engines.
 
+In the demo, **Code → Character warnings** controls both source/review panes. **Inspect source
+characters** explains characters within a small neighborhood of the working-source cursor;
+selecting a listed range checks its captured revision/policy first. The Languages & Unicode
+sample includes an invisible space, a non-breaking space and intentional emoji joiners.
+
 Host buttons and keyboard listeners can call `editor.runCommand("line-comment")` or capture
 an insertion. The sample exposes **Code → Paste format**, **Insert example table** and
 **Add source note**. Ctrl+Alt+V changes paste mode; Ctrl+Alt+M adds a note. The example-table
