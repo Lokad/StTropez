@@ -9,6 +9,7 @@ import type { ScrollAxis } from "./scroll.ts";
 import { rowGeometry } from "./text-geometry.ts";
 import type { CaretRectangle } from "./text-geometry.ts";
 import type { Affinity } from "../core/positions.ts";
+import { unchangedPositionEdges } from "../core/positions.ts";
 import { createFoldRegions, FoldIndex } from "../core/folding.ts";
 import { sameSelectionSet } from "../core/selections.ts";
 import { decorationParts, validDecorationClass } from "./decoration-parts.ts";
@@ -47,7 +48,7 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     /** Immutable painted identities and scheduled-work state; reused while unchanged. Does not flush or measure layout. */
     activity: () => ViewportActivity;
     revealOffset: (offset: number, options?: RevealOptions) => void; snapshot: () => ViewportSnapshot; destroy: () => void }>;
-type Row = Readonly<{ line: number; from: number; to: number; text: string; left: number; complete: boolean; endsLine: boolean }>;
+type Row = Readonly<{ line: number; start: number; end: number; from: number; to: number; text: string; left: number; complete: boolean; endsLine: boolean }>;
 /** CRLF has two raw positions at one painted line edge. Keep the requested model offset. */
 function rowCaretOffset(buffer: TextBuffer, end: number, offset: number): number | undefined {
     if (offset <= end) return offset;
@@ -114,6 +115,9 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     let paintEpoch = 0;
     let painted: Readonly<{ key: readonly unknown[]; horizontalAnchor: typeof horizontalAnchor; placement: typeof fragmentPlacement }> | undefined;
     const rows = new Map<number, HTMLDivElement>();
+    // Source spans advance through transactions without changing the last painted DOM identities.
+    const rowSources = new Map<HTMLDivElement, Pick<Row, "start" | "end">>();
+    let rowSourceRevision: number | null = null;
     const paddingRows = new Map<number, HTMLDivElement>();
     type Geometry = Readonly<{ value: ReturnType<typeof rowGeometry>; from: number; revision: number; height: number }>;
     const geometries = new Map<number, Geometry>();
@@ -175,9 +179,50 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
         schedule();
     };
+    function mapRowSources(current: DocumentSnapshot | undefined): void {
+        if (current?.revision === rowSourceRevision) return;
+        const change = current?.change;
+        if (!current || !change || change.previousRevision !== rowSourceRevision) rowSources.clear();
+        else {
+            const mapping = change.mapping, edges = unchangedPositionEdges(mapping), delta = mapping.newLength - mapping.oldLength;
+            for (const [element, source] of rowSources) {
+                if (edges && source.start < edges.prefix && source.end <= edges.prefix) continue;
+                if (edges && source.start >= mapping.oldLength - edges.suffix) {
+                    if (delta) rowSources.set(element, { start: source.start + delta, end: source.end + delta });
+                    continue;
+                }
+                // An empty row still owns a terminator; consuming it must not steal a neighboring empty row.
+                const mapped = mapping.mapRange({ from: source.start, to: Math.min(mapping.oldLength, Math.max(source.end, source.start + 1)),
+                    fromAffinity: "after", toAffinity: "before", onDelete: "invalidate" });
+                if (mapped) rowSources.set(element, { start: mapped.from, end: source.start === source.end ? mapped.from : mapped.to });
+                else rowSources.delete(element);
+            }
+        }
+        rowSourceRevision = current?.revision ?? null;
+    }
+    function retainRows(document: DocumentSnapshot, next: readonly Row[]): void {
+        // A host can flush before this viewport's document notification is delivered.
+        mapRowSources(document);
+        if (renderedRevision === document.revision || !rows.size) return;
+        const targets = new Map(next.map(item => [item.start, item])), retained = new Map<number, HTMLDivElement>(), used = new Set<HTMLDivElement>();
+        for (const [element, source] of rowSources) {
+            const item = targets.get(source.start);
+            if (item && item.end === source.end && !retained.has(item.line)) { retained.set(item.line, element); used.add(element); }
+        }
+        // Reserve every mapped row before recycling changed rows at their old line numbers.
+        // The ordinary painter still validates text, decorations and selection parts for every node.
+        for (const item of next) {
+            const element = rows.get(item.line);
+            if (!retained.has(item.line) && element && !used.has(element)) { retained.set(item.line, element); used.add(element); }
+        }
+        for (const element of rows.values()) if (!used.has(element)) { element.remove(); rowSources.delete(element); }
+        rows.clear(); for (const [line, element] of retained) rows.set(line, element);
+        geometries.clear();
+    }
     const documentChanged = () => {
         clearPreparedRows();
         const current = workspace.observeDocument(documentId).getSnapshot();
+        mapRowSources(current);
         if (current && previous && current.revision !== previous.revision) {
             if (!anchor) {
                 const visibleRow = Math.min(renderedIndex.visibleLineCount - 1, Math.max(0, Math.floor((top - padding) / lineHeight))), line = renderedIndex.lineAt(visibleRow);
@@ -224,7 +269,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         // Do not split a surrogate pair at the edges of the bounded text window.
         if (from > start && from < displayEnd) { const pair = readRow(buffer, from - 1, from + 1); if (/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(pair)) from--; }
         if (to > from && to < displayEnd) { const pair = readRow(buffer, to - 1, to + 1); if (/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(pair)) to++; }
-        return { line, from, to, text: readRow(buffer, from, to).replaceAll("\r", "␍"), left: padding + (from - start) * columnWidth - scrollLeft, complete: from === start && to === displayEnd, endsLine: to === displayEnd };
+        return { line, start, end: displayEnd, from, to, text: readRow(buffer, from, to).replaceAll("\r", "␍"), left: padding + (from - start) * columnWidth - scrollLeft, complete: from === start && to === displayEnd, endsLine: to === displayEnd };
     };
     const paintRow = (element: HTMLDivElement, item: Row, document: DocumentSnapshot, selectionSet: SelectionSet): boolean => {
         element.dataset.line = String(item.line); element.dataset.from = String(item.from); element.dataset.to = String(item.to); element.dataset.complete = String(item.complete);
@@ -236,7 +281,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             const range = selectionSet.ranges[index]!, from = Math.max(item.from, Math.min(range.anchor, range.head)), to = Math.min(item.to, Math.max(range.anchor, range.head));
             if (from >= item.to) break; if (from < to) selections.push({ from, to });
         }
-        const presented = { documentId, revision: document.revision, line: item.line, lineStart: document.buffer.offsetAt(item.line), from: item.from, to: item.to, text: item.text };
+        const presented = { documentId, revision: document.revision, line: item.line, lineStart: item.start, from: item.from, to: item.to, text: item.text };
         const lineClass = options.lineClass?.(presented), className = "st-viewport-row" + (lineClass && validDecorationClass(lineClass) ? ` ${lineClass}` : "");
         const changed = element.className !== className; element.className = className;
         const decorations = options.decorate?.(presented);
@@ -334,7 +379,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         const document = workspace.resolveTab(target) ? workspace.observeDocument(documentId).getSnapshot() : undefined;
         if (!document) {
             painted = undefined; commandGeometry = undefined;
-            layer.replaceChildren(); rows.clear(); geometries.clear(); measuredWidth = 0; measuredRevision = null; spacer.style.width = "0px"; spacer.style.height = "0px";
+            layer.replaceChildren(); rows.clear(); rowSources.clear(); rowSourceRevision = null; geometries.clear(); measuredWidth = 0; measuredRevision = null; spacer.style.width = "0px"; spacer.style.height = "0px";
             layer.style.transform = "none"; layer.style.width = "0px"; layer.style.height = "0px";
             root.setAttribute("aria-disabled", "true");
             previous = undefined; anchor = undefined; renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; firstLine = 0; lastLine = 0;
@@ -380,6 +425,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         firstLine = index.lineAt(firstRow); lastLine = index.lineAt(lastRow - 1) + 1;
         const next: Row[] = [], blanks: number[] = [];
         for (let visible = firstRow; visible < lastRow; visible++) { if (gapAt(index, visible)) blanks.push(visible); else next.push(row(document.buffer, index.lineAt(visible))); }
+        retainRows(document, next);
         partialRows = next.filter(row => !row.complete).length;
         // A fitting document must not fill rounded client metrics: a fractional viewport can be
         // slightly smaller, making classic scrollbars repeatedly add/remove each other.
@@ -403,9 +449,10 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             if (hidden) element.dataset.foldedSummary = `… ${hidden} ${hidden === 1 ? "line" : "lines"} hidden`;
             else delete element.dataset.foldedSummary;
             textUnits += item.text.length;
+            rowSources.set(element, item);
         }
         const visibleLines = new Set(next.map(item => item.line));
-        for (const [line, element] of rows) if (!visibleLines.has(line)) { element.remove(); rows.delete(line); geometries.delete(line); }
+        for (const [line, element] of rows) if (!visibleLines.has(line)) { element.remove(); rows.delete(line); rowSources.delete(element); geometries.delete(line); }
         next.forEach((item, index) => { const element = rows.get(item.line)!; if (layer.children.item(index) !== element) layer.insertBefore(element, layer.children.item(index)); });
         const visiblePadding = new Set(blanks);
         for (const [at, element] of paddingRows) if (!visiblePadding.has(at)) { element.remove(); paddingRows.delete(at); }
@@ -414,7 +461,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             element.style.transform = `translate(0px, ${padding + at * lineHeight - top}px)`; element.style.height = `${lineHeight}px`; element.style.width = `${width}px`;
         }
         root.removeAttribute("aria-disabled"); root.dataset.revision = String(document.revision);
-        renderedRevision = document.revision; renderedSelection = selected; renderedSelectionSet = selectionSet; previous = document; renderedIndex = index; renderedFoldGeneration = folds.generation; renderedAlignmentId = comparisonRows?.id ?? null; renders++;
+        renderedRevision = document.revision; rowSourceRevision = document.revision; renderedSelection = selected; renderedSelectionSet = selectionSet; previous = document; renderedIndex = index; renderedFoldGeneration = folds.generation; renderedAlignmentId = comparisonRows?.id ?? null; renders++;
         const visibleFolds = new Set<string>(), orderedButtons: HTMLButtonElement[] = [];
         for (const item of next) {
             const region = index.headerAt(item.line); if (!region) continue; visibleFolds.add(region.id);
@@ -629,7 +676,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent }),
         destroy: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
-            observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); paddingRows.clear(); comparisonRows = undefined; renderedAlignmentId = null; geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
+            observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); rowSources.clear(); rowSourceRevision = null; paddingRows.clear(); comparisonRows = undefined; renderedAlignmentId = null; geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             painted = undefined; commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove(); clearPreparedRows();
             navigationBatches = 0; maxNavigationBatchRows = 0;
             renderedIndex = emptyIndex; renderedFoldGeneration = -1; foldButtons.clear(); foldLayer.replaceChildren();
