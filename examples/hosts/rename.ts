@@ -1,5 +1,6 @@
 import type { DocumentId, DocumentSnapshot, FoldIndex, ResourceLease, SelectionSet, TabId, TabTarget, TextEdit, Workspace } from "../../src/index.ts";
 import type { LspWorkspaceEdit } from "../../src/protocol/index.ts";
+import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../../src/protocol/index.ts";
 import type { EditingCandidate } from "../../src/browser/index.ts";
 import { createNavigationClient, navigationMetrics } from "../editing/navigation-client.ts";
 import { navigationLimits, navigationSymbol, validateNavigationInput } from "../probes/navigation.ts";
@@ -11,7 +12,7 @@ import { HostCell } from "../shared/observable.ts";
 
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
 type Job = { origin: Session; capture: RenameCapture; selections: SelectionSet; folds: FoldIndex; documents: Map<string, DocumentSnapshot>; authority: Map<string, string>;
-    leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; locations: readonly (NavigationLocation & Readonly<{ editIndex?: number }>)[]; workspaceEdit?: LspWorkspaceEdit; name?: string };
+    leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; locations: readonly NavigationLocation[]; workspaceEdit?: LspWorkspaceEdit; name?: string };
 export type RenameNote = Readonly<{ ordinal: number; document: string; resource: string; title: string; revision: number; from: number; to: number; line: number; column: number; context: string; before?: string; after?: string }>;
 export type RenameSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied";
     message: string; name: string; symbol: string; token: number | null; canApply: boolean; work: number; total: number; count: number; page: number; locations: readonly RenameNote[];
@@ -59,11 +60,12 @@ export class HostRenameTools {
         try { for (const doc of job.documents.values()) if (this.workspace.observeDocument(doc.id).getSnapshot()?.revision !== doc.revision || this.authority(doc.id) !== job.authority.get(doc.id) || !this.canCapture(doc.id)) return false; } catch { return false; }
         return true;
     }
+    private editCount(job: Job): number { return job.workspaceEdit?.documents.reduce((count, change) => count + change.edits.length, 0) ?? job.locations.length; }
     private publish(patch: Partial<RenameSnapshot> = {}): void {
         const state = { ...this.cell.get(), ...patch }, job = this.job;
         this.cell.set({ ...state, available: !!this.active && this.available(this.active), connected: this.backend?.snapshot().connected ?? this.client?.snapshot().connected ?? false, disconnected: this.disconnected,
-            pending: !!job && !job.ready, token: job?.capture.input.id ?? null, count: job?.locations.length ?? 0,
-            canApply: !!job?.ready && this.current(job) && this.validName(state.name) && (this.usesLsp ? job.locations.length > 0 : state.name !== job.capture.input.symbol) });
+            pending: !!job && !job.ready, token: job?.capture.input.id ?? null, count: job ? this.editCount(job) : 0,
+            canApply: !!job?.ready && this.current(job) && this.validName(state.name) && (this.usesLsp ? this.editCount(job) > 0 : state.name !== job.capture.input.symbol) });
     }
     private drop(): void { const client = this.client, backend = this.backend; this.client = undefined; this.backend = undefined; client?.dispose(); backend?.dispose(); }
     private release(): void {
@@ -148,8 +150,7 @@ export class HostRenameTools {
                         job.documents.set(document.id, document); job.authority.set(document.id, this.authority(document.id));
                         job.stops.push(this.workspace.observeDocument(document.id).subscribe(changed), this.workspace.resourceForDocument(document.id).metadata.subscribe(changed));
                     }
-                    job.locations = Object.freeze(plan.documents.flatMap(change => change.edits.map((edit, editIndex) => Object.freeze({ document: change.target.document.documentId, revision: change.target.document.revision, from: edit.from, to: edit.to, declaration: false, editIndex }))));
-                    job.ready = true; win.clearTimeout(job.timer); this.showPage(0); this.publish({ status: "ready", message: `Preview ${job.locations.length} provider edits for this new name. Review the captured targets before applying.`, work: total });
+                    job.ready = true; win.clearTimeout(job.timer); this.showPage(0); this.publish({ status: "ready", message: `Preview ${this.editCount(job)} provider edits for this new name. Review the captured targets before applying.`, work: total });
                 }).catch(error => { if (this.job !== job) return; this.release(); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Rename provider failed; source is unchanged.", locations: [] }); });
                 return;
             }
@@ -166,36 +167,43 @@ export class HostRenameTools {
         } catch (error) { this.release(); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Rename unavailable.", locations: [] }); }
     }
     private showPage(page: number): void {
-        const job = this.job; if (!job?.ready || page < 0 || page * navigationLimits.page >= job.locations.length) return;
-        const locations = job.locations.slice(page * navigationLimits.page, (page + 1) * navigationLimits.page).map((at, index) => {
+        const job = this.job; if (!job?.ready || page < 0 || page * navigationLimits.page >= this.editCount(job)) return;
+        const entries = job.workspaceEdit ? previewLspWorkspaceEdit(job.workspaceEdit, id => job.documents.get(id)!.title, page).notes.map(({ insert, insertUnits, ...note }) => ({ ...note,
+            before: note.before + (note.to - note.from > 256 ? ` (${note.to - note.from} UTF-16 units)` : ""),
+            after: insert + (insertUnits > insert.length ? `… (${insertUnits} UTF-16 units)` : "") }))
+            : job.locations.slice(page * navigationLimits.page, (page + 1) * navigationLimits.page).map(at => {
+                const doc = job.documents.get(at.document)!;
+                return { ...at, resource: doc.resourceId, title: doc.title.slice(0, 128), context: doc.buffer.slice(Math.max(0, at.from - 32), Math.min(doc.buffer.length, at.to + 32)) };
+            });
+        const locations = entries.map((at, index) => {
             const doc = job.documents.get(at.document)!, line = doc.buffer.lineAt(at.from);
-            const edit = at.editIndex === undefined ? undefined : job.workspaceEdit?.documents.find(change => change.target.document.documentId === at.document)?.edits[at.editIndex];
-            const bounded = (value: string) => value.length > 256 ? value.slice(0, 256) + `… (${value.length} UTF-16 units)` : value;
-            return Object.freeze({ ...at, ordinal: page * navigationLimits.page + index, resource: doc.resourceId, title: doc.title.slice(0, 128), line, column: at.from - doc.buffer.offsetAt(line),
-                ...(edit ? { before: doc.buffer.slice(at.from, Math.min(at.to, at.from + 256)) + (at.to - at.from > 256 ? `… (${at.to - at.from} UTF-16 units)` : ""), after: bounded(edit.insert) } : {}),
-                context: job.workspaceEdit ? doc.buffer.slice(Math.max(0, at.from - 32), Math.min(at.to, at.from + 128)) + (at.to - at.from > 128 ? "…" : "") + doc.buffer.slice(at.to, Math.min(doc.buffer.length, at.to + 32)) : doc.buffer.slice(Math.max(0, at.from - 32), Math.min(doc.buffer.length, at.to + 32)) });
+            return Object.freeze({ ...at, ordinal: page * navigationLimits.page + index, line, column: at.from - doc.buffer.offsetAt(line) });
         }); this.publish({ page, locations: Object.freeze(locations) });
     }
     readonly nextPage = (): void => this.showPage(this.cell.get().page + 1);
     readonly previousPage = (): void => this.showPage(this.cell.get().page - 1);
     apply(token: number | null): void {
         const job = this.job, name = this.cell.get().name;
-        if (!job?.ready || token !== job.capture.input.id || !this.current(job) || !this.validName(name) || !job.locations.length || !this.usesLsp && name === job.capture.input.symbol) { this.publish({ message: "Use a fresh complete preview and a valid new name." }); return; }
+        if (!job?.ready || token !== job.capture.input.id || !this.current(job) || !this.validName(name) || !this.editCount(job) || !this.usesLsp && name === job.capture.input.symbol) { this.publish({ message: "Use a fresh complete preview and a valid new name." }); return; }
+        this.publishing = true;
         try {
-            const edits = new Map<string, TextEdit[]>();
-            if (job.workspaceEdit) for (const change of job.workspaceEdit.documents) { if (change.edits.length) edits.set(change.target.document.documentId, [...change.edits]); }
-            else for (const at of job.locations) { let batch = edits.get(at.document); if (!batch) { batch = []; edits.set(at.document, batch); } batch.push({ from: at.from, to: at.to, insert: name }); }
-            for (const id of edits.keys()) {
-                const doc = job.documents.get(id)!, m = this.workspace.resourceForDocument(doc.id).metadata.getSnapshot();
-                if (!m.capabilities.edit.includes("human") || !m.capabilities.edit.includes("host") || m.editLock !== null) throw new Error("Every rename target must permit human and host editing without a lock.");
+            let documents: readonly DocumentSnapshot[];
+            if (job.workspaceEdit) documents = applyLspWorkspaceEdit(this.workspace, job.workspaceEdit, { origin: "host", requiredOrigins: ["human"], view: job.origin.editor.view });
+            else {
+                const edits = new Map<string, TextEdit[]>();
+                for (const at of job.locations) { let batch = edits.get(at.document); if (!batch) { batch = []; edits.set(at.document, batch); } batch.push({ from: at.from, to: at.to, insert: name }); }
+                for (const id of edits.keys()) {
+                    const doc = job.documents.get(id)!, m = this.workspace.resourceForDocument(doc.id).metadata.getSnapshot();
+                    if (!m.capabilities.edit.includes("human") || !m.capabilities.edit.includes("host") || m.editLock !== null) throw new Error("Every rename target must permit human and host editing without a lock.");
+                }
+                const result = this.workspace.editDocuments([...edits].map(([id, batch]) => ({ documentId: job.documents.get(id)!.id, expectedRevision: job.documents.get(id)!.revision, edits: batch,
+                    origin: "host" as const, history: { kind: "replace" as const }, ...(id === job.origin.editor.view.documentId ? { view: job.origin.editor.view,
+                        selectionSet: renameSelections(job.documents.get(id)!.buffer.length, job.selections, batch) } : {}) })));
+                if (!result.applied) throw new Error(result.reason);
+                documents = [...edits.keys()].map(id => job.documents.get(id)!);
             }
-            this.publishing = true;
-            const result = this.workspace.editDocuments([...edits].map(([id, batch]) => ({ documentId: job.documents.get(id)!.id, expectedRevision: job.documents.get(id)!.revision, edits: batch,
-                origin: "host" as const, history: { kind: "replace" as const }, ...(id === job.origin.editor.view.documentId ? { view: job.origin.editor.view,
-                    ...(!job.workspaceEdit ? { selectionSet: renameSelections(job.documents.get(id)!.buffer.length, job.selections, batch) } : {}) } : {}) })));
-            if (!result.applied) throw new Error(result.reason);
-            const changes = [...edits.keys()].map(id => ({ document: job.documents.get(id)!.id, title: job.documents.get(id)!.title.slice(0, 128) }));
-            this.metrics.applied++; this.release(); this.publish({ status: "applied", message: job.workspaceEdit ? `Applied ${job.locations.length} captured provider edits in ${changes.length} resources as one undo command.` : `Renamed ${job.locations.length} captured tokens in ${changes.length} resources as one undo command.`, changes, locations: [] });
+            const changes = documents.map(doc => ({ document: doc.id, title: doc.title.slice(0, 128) }));
+            this.metrics.applied++; this.release(); this.publish({ status: "applied", message: job.workspaceEdit ? `Applied ${this.editCount(job)} captured provider edits in ${changes.length} resources as one undo command.` : `Renamed ${job.locations.length} captured tokens in ${changes.length} resources as one undo command.`, changes, locations: [] });
         } catch (error) { this.release(); this.publish({ status: "failed", message: error instanceof Error ? error.message : "Rename rejected; source is unchanged.", locations: [] }); }
         finally { this.publishing = false; }
     }

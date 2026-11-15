@@ -42,9 +42,12 @@ automatically replays a rename. Cancellation during initial synchronization also
 
 The preview shows each provider range and its actual old/new text, including additional edits that
 are not identifier replacements. Display text is abbreviated after 256 units with its full length;
-context is bounded independently of deletion length. Paging keeps 64 edits visible. Application
-uses the exact validated edits, then rechecks human/host permissions, locks and captured revisions
-before one existing `Workspace.editDocuments` transaction. Undo/redo from a participating view
+context is bounded independently of deletion length. `previewLspWorkspaceEdit` builds the visible
+64-edit page directly from the captured batch; the controller does not duplicate every edit into
+a second location list. Application uses `applyLspWorkspaceEdit` to recheck human/host permissions,
+locks and exact captured resource/buffer/revision identities before one existing
+`Workspace.editDocuments` transaction. Changed-resource links omit text-identical targets.
+Undo/redo from a participating view
 restores every affected resource, including unmounted targets, and the source's complete selections.
 Later typing is a separate history command. Immutable comparison baselines and primary Save/Run
 identities stay independent of the preview and whichever target later receives focus.
