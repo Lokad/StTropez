@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { analyzeTypeScript } from "../examples/demo/syntax.ts";
+import { analyzeTypeScript, TypeScriptSyntax } from "../examples/demo/syntax.ts";
+import { DemoSyntaxSession } from "../examples/demo/syntax-session.ts";
+import type { SyntaxRequest } from "../examples/demo/syntax-session.ts";
 
 test("demo compiler classifies multiline syntax and emits actual JavaScript", () => {
     const text = '/* Start\n comment */\nconst label: string = `Hello\n${2 + 3}!`;\n';
@@ -33,4 +35,49 @@ test("saved TypeScript snapshots classify and outline their own imports and bloc
     const changed = analyzeTypeScript(text.replace('import { two } from "./two";\r\n', ""), { emit: false, folds: true });
     assert.equal(changed.folds.some(range => range.group === "imports"), false);
     assert.deepEqual(analyzeTypeScript(text).folds, []); // Ordinary typing does not add outlining work.
+});
+
+test("retained syntax snapshots give exact change ranges and agree with fresh analysis through edits and resets", () => {
+    const syntax = new TypeScriptSyntax(); let text = '/* 😀 */\r\nconst title: string = "hi";\r\nfunction f() {\r\n  return title;\r\n}';
+    syntax.reset(text); const initial = syntax.snapshot;
+    assert.deepEqual(syntax.analyze(), analyzeTypeScript(text));
+    const edits = [{ from: 2, to: 2, insert: "comment " }, { from: 0, to: 2, insert: "//" },
+        { from: 0, to: 3, insert: "/* " }, { from: 14, to: 15, insert: "\r\n" }, { from: 0, to: 0, insert: "const n = 2;\n" }];
+    for (const [index, edit] of edits.entries()) {
+        const before = syntax.snapshot, oldText = text;
+        syntax.replace(edit.from, edit.to, edit.insert); text = text.slice(0, edit.from) + edit.insert + text.slice(edit.to);
+        assert.equal(before.getText(0, before.getLength()), oldText);
+        assert.deepEqual(syntax.snapshot.getChangeRange(before), { span: { start: edit.from, length: edit.to - edit.from }, newLength: edit.insert.length });
+        const options = { emit: index % 2 === 0, folds: true };
+        assert.deepEqual(syntax.analyze(options), analyzeTypeScript(text, options));
+    }
+    assert.equal(syntax.snapshot.getChangeRange(initial), undefined); // Older compiler caches safely reparse.
+    const current = syntax.snapshot; syntax.replace(0, 0, ""); assert.equal(syntax.snapshot, current);
+    assert.throws(() => syntax.replace(0, text.length + 1, ""), RangeError); assert.equal(syntax.snapshot, current);
+    syntax.reset('export const other = "different resource";');
+    assert.equal(syntax.snapshot.getChangeRange(current), undefined);
+    assert.deepEqual(syntax.analyze(), analyzeTypeScript('export const other = "different resource";'));
+    syntax.dispose(); syntax.dispose(); assert.equal(syntax.snapshot.getLength(), 0);
+    assert.throws(() => syntax.analyze(), /disposed/); assert.throws(() => syntax.reset(""), /disposed/);
+});
+
+test("syntax worker commits complete versioned uploads and rejects cancelled or stale replacements", () => {
+    const session = new DemoSyntaxSession();
+    const finish = (job: number, options = { emit: false, folds: true }) => session.accept({ kind: "finish", job, options });
+    const start = (job: number, text: string, change?: Extract<SyntaxRequest, { kind: "start" }>["change"]) => {
+        session.accept({ kind: "start", job, ...(change ? { change } : {}) });
+        for (const part of [text.slice(0, 3), text.slice(3)]) session.accept({ kind: "chunk", job, text: part });
+    };
+    const initial = "const n: number = 1;", changed = "const n: number = 23;";
+    start(1, initial); assert.deepEqual(finish(1), { job: 1, kind: "result", ...analyzeTypeScript(initial, { emit: false, folds: true }) });
+    start(2, "discarded", { base: 1, from: 0, to: 0 }); session.accept({ job: 2, kind: "cancel" }); assert.equal(finish(2), undefined);
+    start(3, "23", { base: 1, from: 18, to: 19 });
+    session.accept({ job: 2, kind: "chunk", text: "stale" });
+    assert.deepEqual(finish(3), { job: 3, kind: "result", ...analyzeTypeScript(changed, { emit: false, folds: true }) });
+    start(2, "late full seed"); assert.equal(finish(2), undefined);
+    start(4, "bad", { base: 1, from: 0, to: 0 }); assert.deepEqual(finish(4), { job: 4, kind: "failed" });
+    start(5, "", { base: 3, from: 0, to: 0 });
+    assert.deepEqual(finish(5, { emit: true, folds: false }), { job: 5, kind: "result", ...analyzeTypeScript(changed) });
+    start(6, "const reset = true;"); assert.deepEqual(finish(6), { job: 6, kind: "result", ...analyzeTypeScript("const reset = true;", { emit: false, folds: true }) });
+    session.dispose(); assert.equal(session.accept({ job: 7, kind: "start" }), undefined);
 });
