@@ -4,6 +4,13 @@ The default worker route below is a local lexical fixture. The explicit LSP rout
 [provider edit preview](lsp-rename.md): enter the new name before requesting its edits;
 changing the name requires a fresh request. Both routes share atomic Workspace history.
 
+The example owns one lazy `RenameBackend` through `ProviderLane`. The adapters reuse the
+existing worker and LSP clients; the host keeps preview validation, captured identities,
+permissions and application policy. Dropping a lane invalidates its callbacks before disposing
+the client, so late notifications cannot affect a replacement. Pending cancellation releases
+uncertain transport state; dismissing a ready preview releases provider targets while retaining
+the idle client for reuse. No public library API or runtime dependency is added.
+
 Both candidate hosts offer **Prepare rename preview** (F2 in a source), a **New
 identifier** field, paged targets and **Apply captured rename**. The origin can be
 primary, secondary or comparison working source. Preparing and editing the name

@@ -3,12 +3,15 @@ import type { LspWorkspaceEdit } from "../../src/protocol/index.ts";
 import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../../src/protocol/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
-import { createNavigationClient, navigationMetrics } from "../editing/navigation-client.ts";
+import { navigationMetrics } from "../editing/navigation-client.ts";
+import { createRenameBackend } from "../editing/rename-backend.ts";
+import type { RenameBackend } from "../editing/rename-backend.ts";
+import { ProviderLane } from "../shared/provider-lane.ts";
 import { navigationLimits, navigationSymbol, validateNavigationInput } from "../probes/navigation.ts";
 import type { NavigationInput, NavigationLocation } from "../probes/navigation.ts";
 import { renameName, renameSelections, validateRenamePreview } from "../probes/rename.ts";
 import type { RenameCapture } from "../probes/rename.ts";
-import type { LspRenameClient, LspRenameFactory } from "../editing/lsp-rename-client.ts";
+import type { LspRenameFactory } from "../editing/lsp-rename-client.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
@@ -27,8 +30,7 @@ export class HostRenameTools {
     private readonly sessions = new Map<number, Session>();
     private active: Session | undefined;
     private job: Job | undefined;
-    private client: ReturnType<typeof createNavigationClient> | undefined;
-    private backend: LspRenameClient | undefined;
+    private readonly lane = new ProviderLane<RenameBackend>(backend => this.connectionChanged(backend));
     private readonly backendFactory: LspRenameFactory | undefined;
     readonly usesLsp: boolean;
     private disposed = false;
@@ -77,20 +79,35 @@ export class HostRenameTools {
     private publish(patch: Partial<RenameSnapshot> = {}): void {
         const state = { ...this.cell.get(), ...patch }, job = this.job;
         const current = !!job?.ready && this.current(job), editable = current && this.editableTargets(job);
-        this.cell.set({ ...state, available: !!this.active && this.available(this.active), connected: this.backend?.snapshot().connected ?? this.client?.snapshot().connected ?? false, disconnected: this.disconnected,
+        this.cell.set({ ...state, available: !!this.active && this.available(this.active), connected: this.lane.value?.snapshot().connected ?? false, disconnected: this.disconnected,
             pending: !!job && !job.ready, token: job?.capture.input.id ?? null, count: job ? this.editCount(job) : 0,
             message: state.status === "ready" && current && !editable ? "A captured source is read-only or locked; this preview cannot be applied." : state.message,
             canApply: editable && this.validName(state.name) && (this.usesLsp ? this.editCount(job) > 0 : state.name !== job.capture.input.symbol) });
     }
-    private drop(): void { const client = this.client, backend = this.backend; this.client = undefined; this.backend = undefined; client?.dispose(); backend?.dispose(); }
+    private changed(job: Job): void {
+        if (!this.publishing && this.job === job && !this.current(job)) {
+            job.invalid = true;
+            queueMicrotask(() => { if (this.job === job) { this.metrics.expired++; this.release(); this.publish({ status: "expired", message: "Captured revision, selection, view or edit authority changed; prepare a fresh preview.", locations: [] }); } });
+        }
+    }
+    private connectionChanged(backend: RenameBackend): void {
+        const state = backend.snapshot(), job = this.job;
+        if (this.usesLsp) {
+            if (!job) return;
+            if (job.ready && !state.connected && !state.busy) this.disconnected = true;
+            this.changed(job); this.publish();
+        } else if (!state.connected && !state.busy) {
+            this.lane.drop(); if (job) this.release(); this.publish({ status: "failed", message: "Rename connection failed; prepare a fresh preview.", locations: [] });
+        } else this.publish();
+    }
     private release(): void {
         const job = this.job; this.job = undefined;
         if (!job) return; job.invalid = true; job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer);
-        job.stops.splice(0).forEach(stop => stop()); job.viewCapture.cancel(); job.leases.splice(0).forEach(lease => lease.release()); if (!job.ready) this.drop(); else this.backend?.cancel();
+        job.stops.splice(0).forEach(stop => stop()); job.viewCapture.cancel(); job.leases.splice(0).forEach(lease => lease.release()); if (!job.ready) this.lane.drop(); else this.lane.value?.cancel();
     }
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.release(); this.publish({ status: "idle", message: "Rename preview dismissed; source is unchanged.", locations: [], work: 0, total: 0, page: 0 }); };
-    readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ message: "Rename provider disconnected; local editing remains available." }); };
-    readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ message: "Prepare a fresh rename preview." }); };
+    readonly disconnect = (): void => { this.cancel(); this.lane.drop(); this.disconnected = true; this.publish({ message: "Rename provider disconnected; local editing remains available." }); };
+    readonly reconnect = (): void => { this.cancel(); this.lane.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ message: "Prepare a fresh rename preview." }); };
     setName(value: string): void { const name = value.slice(0, 256); if (name === this.cell.get().name) return;
         if (this.usesLsp && this.job) { this.metrics.cancelled++; this.release(); this.publish({ status: "idle", locations: [], work: 0, total: 0, page: 0, message: "Name changed; request a fresh provider preview." }); }
         this.publish({ name }); }
@@ -116,7 +133,7 @@ export class HostRenameTools {
         }, { capture: true, signal: events.signal });
         for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.job?.documents.has(editor.view.documentId)) this.cancel(); }, { signal: events.signal });
         let detached = false;
-        return () => { if (detached) return; detached = true; if (this.job?.origin === s) this.cancel(); events.abort(); this.sessions.delete(s.token); if (this.active === s) this.active = undefined; if (!this.sessions.size) this.drop(); this.publish(); };
+        return () => { if (detached) return; detached = true; if (this.job?.origin === s) this.cancel(); events.abort(); this.sessions.delete(s.token); if (this.active === s) this.active = undefined; if (!this.sessions.size) this.lane.drop(); this.publish(); };
     }
     readonly prepare = (): void => this.start(false);
     /** A host command names the mounted source explicitly, including after an async mount. */
@@ -146,21 +163,20 @@ export class HostRenameTools {
             documents: new Map(documents.map(d => [d.id, d])), authority, leases: [], stops: [], timer: 0, invalid: false, ready: false, locations: [], ...(this.usesLsp ? { name: this.cell.get().name } : {}) };
         this.job = job; this.metrics.requested++; const win = origin.editor.element.ownerDocument.defaultView!, total = input.documents.reduce((n, d) => n + d.length, 0);
         try {
-            const changed = () => { if (!this.publishing && this.job === job && !this.current(job)) { job.invalid = true; queueMicrotask(() => { if (this.job === job) { this.metrics.expired++; this.release(); this.publish({ status: "expired", message: "Captured revision, selection, view or edit authority changed; prepare a fresh preview.", locations: [] }); } }); } };
+            const changed = () => this.changed(job);
             viewCapture.signal.addEventListener("abort", changed, { once: true });
             for (const d of documents) if (d.id !== viewCapture.document.id) { job.leases.push(this.workspace.acquire(d.resourceId)); job.stops.push(this.workspace.observeDocument(d.id).subscribe(changed), this.workspace.resourceForDocument(d.id).metadata.subscribe(changed)); }
             job.timer = win.setTimeout(() => { if (this.job === job && !job.ready) { this.release(); this.metrics.failed++; this.publish({ status: "failed", message: "Rename provider timed out; source is unchanged.", locations: [] }); } }, 30000);
             this.publish({ status: "pending", message: this.usesLsp ? "Requesting the provider's complete rename edit preview." : `Preparing all lexical matches of ${symbol} across ${documents.length} captured working resources.`, symbol, ...(keyboard ? { name: symbol } : {}), locations: [], page: 0, work: 0, total });
-            if (this.backendFactory) {
-                this.backend ??= this.backendFactory(); job.stops.push(this.backend.subscribe(() => {
-                    if (job.ready && this.backend && !this.backend.snapshot().connected && !this.backend.snapshot().busy) this.disconnected = true;
-                    changed(); this.publish();
-                }));
-                void this.backend.run(documents, doc.id, selected.selection.head, job.name!, input).then(plan => {
-                    job.workspaceEdit = plan; if (!this.current(job)) { changed(); return; }
+            const backend = this.lane.acquire(notify => createRenameBackend(win, this.worker, this.backendFactory, notify));
+            void backend.run({ documents, capture: job.capture, name: job.name ?? this.cell.get().name,
+                progress: work => { if (this.current(job)) this.publish({ work }); } }).then(result => {
+                if (result.kind === "workspace") job.workspaceEdit = result.edit;
+                if (!this.current(job)) { changed(); return; }
+                if (result.kind === "workspace") {
                     // The provider client may have retained additional host-resolved targets.
                     // Capture those exact workspace identities before presentation or application.
-                    for (const change of plan.documents) {
+                    for (const change of result.edit.documents) {
                         const target = change.target.document; if (job.documents.has(target.documentId)) continue;
                         const document = this.workspace.getSnapshot().documents.find(document => document.id === target.documentId);
                         if (!document || document.resourceId !== target.resourceId || document.revision !== target.revision || document.buffer !== target.buffer
@@ -168,21 +184,14 @@ export class HostRenameTools {
                         job.documents.set(document.id, document); job.authority.set(document.id, this.authority(document.id));
                         job.stops.push(this.workspace.observeDocument(document.id).subscribe(changed), this.workspace.resourceForDocument(document.id).metadata.subscribe(changed));
                     }
-                    job.ready = true; win.clearTimeout(job.timer); this.showPage(0); this.publish({ status: "ready", message: `Preview ${this.editCount(job)} provider edits for this new name. Review the captured targets before applying.`, work: total });
-                }).catch(error => { if (this.job !== job) return; this.release(); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Rename provider failed; source is unchanged.", locations: [] }); });
-                return;
-            }
-            this.client ??= createNavigationClient(win, this.worker, undefined, () => {
-                if (this.client && !this.client.snapshot().connected && !this.client.snapshot().busy) { this.drop(); if (this.job) this.release(); this.publish({ status: "failed", message: "Rename connection failed; prepare a fresh preview.", locations: [] }); } else this.publish();
-            });
-            const buffers = new Map(documents.map(d => [d.id, d.buffer]));
-            void this.client.run(input, buffers, work => { if (this.current(job)) this.publish({ work }); }).then(value => {
-                if (!this.current(job)) { changed(); return; }
-                const result = validateRenamePreview(value, job.capture, buffers); job.locations = result.locations; job.ready = true; win.clearTimeout(job.timer);
-                this.showPage(0); this.publish({ status: "ready", message: `Preview ${result.locations.length} lexical token replacements across captured resources. Review every target before applying; scopes and types are not resolved.`, work: total });
-            }).catch(error => { if (this.job !== job) return; this.release(); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Rename provider failed; source is unchanged.", locations: [] }); });
-            if (keyboard && this.nameInput && this.current(job)) { this.nameInput.value = symbol; this.nameInput.focus(); this.nameInput.select(); }
-        } catch (error) { this.release(); this.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Rename unavailable.", locations: [] }); }
+                } else job.locations = validateRenamePreview(result.result, job.capture, new Map(documents.map(d => [d.id, d.buffer]))).locations;
+                job.ready = true; win.clearTimeout(job.timer); this.showPage(0);
+                this.publish({ status: "ready", message: result.kind === "workspace"
+                    ? `Preview ${this.editCount(job)} provider edits for this new name. Review the captured targets before applying.`
+                    : `Preview ${job.locations.length} lexical token replacements across captured resources. Review every target before applying; scopes and types are not resolved.`, work: total });
+            }).catch(error => { if (this.job !== job) return; this.release(); this.lane.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Rename provider failed; source is unchanged.", locations: [] }); });
+            if (!this.usesLsp && keyboard && this.nameInput && this.current(job)) { this.nameInput.value = symbol; this.nameInput.focus(); this.nameInput.select(); }
+        } catch (error) { this.release(); this.lane.drop(); this.metrics.failed++; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Rename unavailable.", locations: [] }); }
     }
     private showPage(page: number): void {
         const job = this.job; if (!job?.ready || page < 0 || page * navigationLimits.page >= this.editCount(job)) return;
@@ -236,7 +245,7 @@ export class HostRenameTools {
     }
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid rename delay."); this.delay = value; }
     faultNext(value: NonNullable<NavigationInput["fault"]>): void { this.fault = value; }
-    faultIdle(): boolean { return this.backend?.faultIdle() ?? this.client?.faultIdle() ?? false; }
-    debug() { const job = this.job; return { ...this.metrics, worker: { ...this.worker }, state: this.cell.get(), capture: job ? { view: job.origin.id, document: job.capture.document, revision: job.documents.get(job.capture.document)!.revision, selections: job.viewCapture.selectionSet } : null, transport: this.backend?.snapshot() ?? this.client?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
-    dispose(): void { if (this.disposed) return; this.cancel(); this.drop(); this.bindName(null); this.disposed = true; this.active = undefined; this.publish({ changes: [] }); }
+    faultIdle(): boolean { return this.lane.value?.faultIdle() ?? false; }
+    debug() { const job = this.job; return { ...this.metrics, worker: { ...this.worker }, state: this.cell.get(), capture: job ? { view: job.origin.id, document: job.capture.document, revision: job.documents.get(job.capture.document)!.revision, selections: job.viewCapture.selectionSet } : null, transport: this.lane.value?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
+    dispose(): void { if (this.disposed) return; this.cancel(); this.lane.dispose(); this.bindName(null); this.disposed = true; this.active = undefined; this.publish({ changes: [] }); }
 }
