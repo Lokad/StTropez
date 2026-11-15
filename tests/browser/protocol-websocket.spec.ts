@@ -11,8 +11,23 @@ test("JSON-RPC wire foundation uses the reference peer over real WebSockets with
     expect(state.released).toEqual({ disposed: true, pendingRequests: 0, incomingRequests: 0, requestHandlers: 0, notificationHandlers: 0 }); expect(page.workers()).toHaveLength(0);
 });
 test("binary messages close the text transport and release pending requests", async ({ page }) => {
+    let closed = 0; page.on("websocket", socket => socket.on("close", () => { closed++; }));
     const state = await page.evaluate(() => window.protocolFixture.binaryRejection()); expect(state.reason).toContain("text messages");
     expect(state.snapshot).toEqual({ disposed: true, pendingRequests: 0, incomingRequests: 0, requestHandlers: 0, notificationHandlers: 0 }); expect(state.timers).toBe(0);
+    await expect.poll(() => closed).toBe(1);
+});
+test("a host pre-protocol text message precedes initialize on every WebSocket connection", async ({ page }) => {
+    const connections: string[][] = [];
+    page.on("websocket", socket => { const sent: string[] = []; connections.push(sent); socket.on("framesent", frame => sent.push(frame.payload.toString())); });
+    const state = await page.evaluate(() => window.protocolFixture.preProtocolJourney());
+    expect(state.attempts).toBe(2); expect(state.first).toEqual({ held: 0, initialized: true }); expect(state.second).toEqual(state.first);
+    expect(connections).toHaveLength(2);
+    for (const sent of connections) {
+        expect(sent[0]).toBe("fixture pre-protocol message"); expect(sent.filter(text => text === sent[0])).toHaveLength(1);
+        const messages = sent.slice(1).map(text => JSON.parse(text)); expect(messages[0].method).toBe("initialize");
+        expect(messages.filter(message => message.method === "initialize")).toHaveLength(1);
+    }
+    expect(state.timers).toBe(0); expect(state.ownership).toMatchObject({ subscriptions: 0, scheduledTasks: 0, pendingRequests: 0, incomingRequests: 0 });
 });
 test("cancelling socket opening rejects without creating protocol ownership", async ({ page, browserName, browserErrors }) => {
     const endpoint = new URL("/lsp-fixture", page.url()); endpoint.protocol = "ws:";

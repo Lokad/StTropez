@@ -51,6 +51,19 @@ this framing must agree with the peer. WebSocket URL, subprotocols, authenticati
 lifetime belong to the host. TLS/certificate policy follows the browser; the current local fixture
 qualifies `ws`, not a deployment's `wss`/proxy/authentication environment.
 
+For a peer that requires a host message before JSON-RPC, pass `preProtocolMessage` to
+`openWebSocketTransport`. The adapter captures the string at invocation and sends it once
+after the socket opens, before resolving the transport promise. An empty string sends an empty
+text message; omission sends none. It is raw host text, without a JSON-RPC envelope. The host
+supplies the option on every connection attempt and obtains any fresh credentials beforehand.
+Sending uses the same message and queued-buffer limits as protocol traffic. Invalid or oversized
+options reject before creating a socket; send failure, cancellation or opening timeout rejects
+and releases the pending socket. Successful opening means the message was queued, not that
+the server accepted authentication. This option does not wait for or consume a separate handshake
+response; protocols requiring that exchange belong in the host connection factory.
+Transport policy failures close the native socket with application codes `4003` (binary
+message) or `4009` (message/buffer limit), which the browser's `close()` API permits.
+
 `LspSession` consumes a host connection factory and scheduler; constructing it starts no work.
 The scheduler must invoke callbacks on a future turn, including zero-delay cooperative work.
 Bind immutable `TextBuffer` snapshots with `bindDocument`; retain the returned handle to update an

@@ -29,14 +29,22 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
         sockets.handleUpgrade(request, socket, head, connection => sockets.emit("connection", connection, request));
     };
     server.on("upgrade", onUpgrade);
-    sockets.on("connection", socket => {
+    sockets.on("connection", (socket, request) => {
+        let needsPreface = new URL(request.url ?? "/", "http://localhost").searchParams.has("preface");
         let owner: Parameters<RpcTransport["subscribe"]>[0] | undefined, held = 0, initialized = false;
         const port: RpcTransport = {
             send: text => { if (socket.readyState !== 1) throw new Error("Fixture transport closed"); socket.send(text); },
             subscribe: listener => { if (owner) throw new Error("Fixture transport already owned"); owner = listener; return () => { if (owner === listener) owner = undefined; }; },
             dispose: () => socket.close(1000, "Fixture closed"),
         };
-        socket.on("message", (data, binary) => { if (binary) socket.close(1003, "Text only"); else owner?.message(data.toString()); });
+        socket.on("message", (data, binary) => {
+            if (binary) { socket.close(1003, "Text only"); return; }
+            if (needsPreface) {
+                if (data.toString() !== "fixture pre-protocol message") { socket.close(1008, "Expected fixture preface"); return; }
+                needsPreface = false; return;
+            }
+            owner?.message(data.toString());
+        });
         socket.on("error", () => socket.close());
         const peer = referencePeer(port);
         // A queued notification can meet a peer that closed after its last document change.

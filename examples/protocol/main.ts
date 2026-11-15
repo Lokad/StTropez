@@ -39,6 +39,19 @@ async function abortOpening() {
     const abort = new AbortController(); const opening = openWebSocketTransport(url.href, { signal: abort.signal }); abort.abort();
     try { await opening; return false; } catch (error) { return error instanceof DOMException && error.name === "AbortError"; }
 }
+async function preProtocolJourney() {
+    const endpoint = new URL(url); endpoint.searchParams.set("preface", "1"); let attempts = 0;
+    const session = new LspSession({ schedule, connect: context => {
+        attempts++; const abort = new AbortController(), stop = context.onCancel(() => abort.abort());
+        return openWebSocketTransport(endpoint.href, { signal: abort.signal, preProtocolMessage: "fixture pre-protocol message" }).finally(stop);
+    } });
+    try {
+        await session.connect(); const first = await session.request("fixture/state").result;
+        session.disconnect(); await session.connect(); const second = await session.request("fixture/state").result;
+        await session.shutdown(); session.dispose();
+        return { attempts, first, second, ownership: session.snapshotOwnership(), timers: timers.size };
+    } finally { session.dispose(); }
+}
 async function sessionJourney(large: boolean) {
     const sent: { count: number; units: number }[] = [];
     const session = new LspSession({ schedule, connect: context => {
@@ -81,6 +94,6 @@ async function sessionJourney(large: boolean) {
             diagnostic: { openMs, enqueueMs, syncMs, scope: "single document-session action; enqueue is not an input handler or display latency" } };
     } finally { session.dispose(); }
 }
-const fixture = Object.freeze({ ready: true, exercise, binaryRejection, abortOpening, sessionJourney, mountDocumentation });
+const fixture = Object.freeze({ ready: true, exercise, binaryRejection, abortOpening, preProtocolJourney, sessionJourney, mountDocumentation });
 window.protocolFixture = fixture; document.getElementById("state")!.textContent = "Ready";
 declare global { interface Window { protocolFixture: typeof fixture } }
