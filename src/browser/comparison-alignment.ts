@@ -14,7 +14,8 @@ export function createComparisonAlignment(win: Window, working: EditingCandidate
     let enabled = false, disposed = false, timer: number | undefined, cursor: ComparisonRowsCursor | undefined, capture: Capture | undefined, result: ComparisonRows | undefined;
     let status: "idle" | "building" | "waiting" | "ready" | "failed" = "idle", failure: string | undefined, work = 0, installedPitch = 0;
     let oldReference: TextViewport | undefined, referenceEvents: AbortController | undefined, stopReference: (() => void) | undefined;
-    const events = new AbortController(), pointers = new Set<number>();
+    let events: AbortController | undefined, stopWorking: (() => void) | undefined;
+    const pointers = new Set<number>();
     const stableInput = () => { const s = working.snapshot(); return !s.composing && !s.pendingCommand && !s.pendingInput && !s.pendingDragScroll && !pointers.size && !referenceBusy(); };
     const cancel = () => { if (timer !== undefined) win.clearTimeout(timer); timer = undefined; cursor?.dispose(); cursor = undefined; };
     const schedule = () => { if (!disposed && enabled && timer === undefined) timer = win.setTimeout(step, 0); };
@@ -29,21 +30,28 @@ export function createComparisonAlignment(win: Window, working: EditingCandidate
         view.element.addEventListener("pointerdown", e => { if (enabled) pointers.add(e.pointerId); }, { signal, capture: true });
     }
     const releasePointer = (event: PointerEvent) => { if (pointers.delete(event.pointerId)) schedule(); };
-    win.addEventListener("pointerup", releasePointer, { signal: events.signal, capture: true }); win.addEventListener("pointercancel", releasePointer, { signal: events.signal, capture: true });
-    for (const type of ["blur", "dragend", "drop"] as const) win.addEventListener(type, () => { if (pointers.size) { pointers.clear(); schedule(); } }, { signal: events.signal });
-    watch(working.viewport, events.signal);
-    const stopWorking = working.view.folding.subscribe(schedule);
+    function listen(): void {
+        events = new AbortController();
+        win.addEventListener("pointerup", releasePointer, { signal: events.signal, capture: true }); win.addEventListener("pointercancel", releasePointer, { signal: events.signal, capture: true });
+        for (const type of ["blur", "dragend", "drop"] as const) win.addEventListener(type, () => { if (pointers.size) { pointers.clear(); schedule(); } }, { signal: events.signal });
+        watch(working.viewport, events.signal); stopWorking = working.view.folding.subscribe(schedule);
+    }
+    function unlisten(): void {
+        events?.abort(); events = undefined; stopWorking?.(); stopWorking = undefined;
+        referenceEvents?.abort(); referenceEvents = undefined; stopReference?.(); stopReference = undefined;
+        pointers.clear(); oldReference = undefined;
+    }
     function update(): void {
-        if (disposed) return;
+        if (disposed || !enabled) return;
         const next = reference(), state = getComparison();
         if (next !== oldReference) {
             cancel(); oldReference?.setComparisonRows(undefined); referenceEvents?.abort(); stopReference?.(); pointers.clear();
             oldReference = next; referenceEvents = undefined; stopReference = undefined; capture = undefined; result = undefined;
             if (next) { referenceEvents = new AbortController(); watch(next, referenceEvents.signal); stopReference = next.view.folding.subscribe(schedule); }
         }
-        if (!enabled || state.status !== "ready" || !state.baseline || !state.working || !next) {
+        if (state.status !== "ready" || !state.baseline || !state.working || !next) {
             cancel(); clear(); capture = undefined; result = undefined; installedPitch = 0;
-            const nextStatus = enabled && state.status === "running" ? "building" : "idle";
+            const nextStatus = state.status === "running" ? "building" : "idle";
             if (status !== nextStatus) { status = nextStatus; changed(); } return;
         }
         if (!capture || !current(capture)) {
@@ -68,10 +76,11 @@ export function createComparisonAlignment(win: Window, working: EditingCandidate
             update();
             if (timer !== undefined) { win.clearTimeout(timer); timer = undefined; }
             if (!capture || !cursor || !current(capture)) return;
-            const from = win.performance.now(); let batches = 0;
+            const from = win.performance.now(), start = work;
             do { const next = cursor.next(64); work = next.work; if (next.result) { result = next.result; cursor.dispose(); cursor = undefined; publish(capture); break; } }
-            while (++batches < 4 && win.performance.now() - from < 4);
-            if (cursor) { schedule(); changed(); }
+            while (work - start < 4096 && win.performance.now() - from < 4);
+            // Progress is readable from snapshot(); it does not invalidate either pane.
+            if (cursor) schedule();
         } catch (error) { cancel(); clear(); result = undefined; status = "failed"; failure = error instanceof Error ? error.message : "Row alignment failed."; changed(); }
     }
     return Object.freeze({ update,
@@ -81,7 +90,7 @@ export function createComparisonAlignment(win: Window, working: EditingCandidate
             const phase = stale ? "building" : status;
             return Object.freeze({ enabled, status: phase, pending: enabled && target && (phase === "building" || phase === "waiting"), work, runs: result?.runCount ?? 0, failure });
         },
-        setEnabled(value: boolean): void { if (typeof value !== "boolean") throw new TypeError("Expected a row-alignment preference."); if (disposed || value === enabled) return; enabled = value; if (enabled) { failure = undefined; update(); } else { cancel(); clear(); capture = undefined; result = undefined; status = "idle"; installedPitch = 0; } changed(); },
-        dispose(): void { if (disposed) return; disposed = true; cancel(); clear(); events.abort(); referenceEvents?.abort(); stopWorking(); stopReference?.(); pointers.clear(); oldReference = undefined; capture = undefined; result = undefined; status = "idle"; }
+        setEnabled(value: boolean): void { if (typeof value !== "boolean") throw new TypeError("Expected a row-alignment preference."); if (disposed || value === enabled) return; enabled = value; if (enabled) { failure = undefined; listen(); update(); } else { cancel(); clear(); unlisten(); capture = undefined; result = undefined; status = "idle"; installedPitch = 0; } changed(); },
+        dispose(): void { if (disposed) return; disposed = true; cancel(); clear(); unlisten(); capture = undefined; result = undefined; status = "idle"; }
     });
 }

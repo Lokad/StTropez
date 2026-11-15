@@ -179,6 +179,8 @@ export class FoldIndex {
         return this.#hidden[low - 1];
     }
     hiddenBy(line: number): FoldRegion | undefined { const h = this.#at(line); return h && line < h.to ? h.owner : undefined; }
+    /** Visible collapsed headers only; skips expanded regions and nested hidden headers. */
+    *collapsedRegions(): IterableIterator<FoldRegion> { for (const hidden of this.#hidden) yield hidden.owner; }
     rowAt(line: number): number { const h = this.#at(line); return !h ? line : line < h.to ? h.from - h.before - 1 : line - h.before - (h.to - h.from); }
     lineAt(row: number): number {
         if (!integer(row) || row >= this.visibleLineCount) throw new RangeError("Invalid visible row.");

@@ -76,8 +76,8 @@ function bounds(a: TextBuffer, b: TextBuffer, h: DiffHunk): Span {
 }
 function* plan(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af: FoldIndex, bf: FoldIndex): Generator<void, ComparisonRows> {
     const ah: Hidden[] = [], bh: Hidden[] = [];
-    for (const [folds, hidden] of [[af, ah], [bf, bh]] as const) for (const r of folds.regions) {
-        if (r.collapsed && (!hidden.length || r.lineFrom >= hidden.at(-1)!.to)) hidden.push({ from: r.lineFrom + 1, to: r.lineTo, header: r.lineFrom });
+    for (const [folds, hidden] of [[af, ah], [bf, bh]] as const) for (const r of folds.collapsedRegions()) {
+        hidden.push({ from: r.lineFrom + 1, to: r.lineTo, header: r.lineFrom });
         yield;
     }
     const runs: Run[] = [], ar: Run[] = [], br: Run[] = []; let rows = 0, ai = 0, bi = 0, ac = 0, bc = 0;
@@ -125,7 +125,7 @@ function* plan(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af: Fol
     return Object.freeze({ baseline: new ComparisonRowIndex(a, af, runs, ar, "baseline", rows), working: new ComparisonRowIndex(b, bf, runs, br, "working", rows), rowCount: rows, runCount: runs.length });
 }
 
-/** Work depends on hunk/fold boundaries, never on the number of unchanged or padded rows. */
+/** Work depends on hunk/hidden boundaries, never on expanded folds or unchanged/padded rows. */
 export class ComparisonRowsCursor {
     #iterator: Generator<void, ComparisonRows> | undefined;
     #result: ComparisonRows | undefined;

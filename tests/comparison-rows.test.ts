@@ -42,3 +42,19 @@ test("huge inserted spans stay sparse and cancellation or invalid captures publi
     assert.throws(() => new ComparisonRowsCursor(c.baseline, c.working, [...c.hunks])); assert.throws(() => new ComparisonRowsCursor(c.baseline, c.working, c.hunks, new FoldIndex(3, [])));
     const invalid = new ComparisonRowsCursor(c.baseline, c.working, Object.freeze([Object.freeze({ baseline: Object.freeze({ from: -1, to: 0, lineFrom: 0, lineTo: 0 }), working: Object.freeze({ from: 0, to: 0, lineFrom: 0, lineTo: 0 }), whitespaceOnly: false })])); assert.throws(() => invalid.next());
 });
+
+test("alignment reuses indexed hidden boundaries without visiting expanded or hidden nested folds", () => {
+    const buffer = TextBuffer.from("x\n".repeat(100000));
+    const ranges = Array.from({ length: 20000 }, (_, i) => ({ id: `fold-${i}`, from: buffer.offsetAt(i * 5), to: buffer.offsetAt(i * 5 + 4) }));
+    const expanded = new FoldIndex(buffer.lineCount, createFoldRegions(buffer, ranges));
+    assert.deepEqual([...expanded.collapsedRegions()], []);
+    const cursor = new ComparisonRowsCursor(buffer, buffer, Object.freeze([]), expanded, expanded), step = cursor.next(2);
+    assert.equal(step.work, 1); assert.equal(step.result!.runCount, 1); assert.equal(step.result!.rowCount, buffer.lineCount); cursor.dispose();
+    const regions = createFoldRegions(buffer, [...ranges, { id: "nested", from: buffer.offsetAt(1), to: buffer.offsetAt(3), collapsed: true }]
+        .map(r => r.id === "fold-0" || r.id === "fold-19999" ? { ...r, collapsed: true } : r));
+    const collapsed = new FoldIndex(buffer.lineCount, regions);
+    assert.deepEqual([...collapsed.collapsedRegions()].map(r => r.id), ["fold-0", "fold-19999"]);
+    const mixed = new ComparisonRowsCursor(buffer, buffer, Object.freeze([]), collapsed, expanded), result = mixed.next(16);
+    assert.ok(result.work < 10); assert.equal(result.result!.baseline.gapAt(2)!.line, 0);
+    assert.equal(result.result!.baseline.gapAt(99997)!.line, 99995); assert.equal(result.result!.working.lineAt(99997), 99997); mixed.dispose();
+});

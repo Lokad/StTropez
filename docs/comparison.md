@@ -258,6 +258,10 @@ disable and disposal invalidate it. Pending input/navigation or composition in e
 Rendered logical positions are observed as well as native scroll notifications. A scroll consumed
 while navigation is pending retains its initiating pane and resumes when input/viewport work settle. The clamped logical target suppresses delayed programmatic feedback. Resize and
 fold changes reuse bounded frame scheduling; horizontal scrolling does not move the other pane.
+Disabling linking detaches its pane listeners, fold subscriptions and resize observations;
+re-enabling binds the current reference. Alignment owns its listeners independently, so a
+shared grid can remain active with scrolling unlinked. Disabling alignment releases those
+listeners and pending preparation too.
 The host owns refresh/acceptance controls and transport errors. Native IME and
 physical-display qualification remain separate; scroll callback work is not complete interaction
 latency.
@@ -276,8 +280,12 @@ insertions, deleted newlines and EOF boundaries retain real source coordinates. 
 remain independent: a row hidden on one side becomes padding there, and rows hidden on both sides
 are omitted. A common pitch uses the larger measured natural line height; this adds no shaping.
 
-Sparse runs contain source/visual coordinates, with work proportional to diff and fold boundaries
-rather than document or padding row count. A cooperative cursor publishes both layouts together
+Sparse runs contain source/visual coordinates, with work proportional to diff and hidden-fold
+boundaries rather than expanded folds, document or padding row count. `FoldIndex.collapsedRegions()`
+iterates the indexed outer collapsed headers, skipping regions hidden inside them. Preparation
+checks elapsed time every 64 cursor steps, yields after 4ms or 4096 steps, and notifies the view
+when state changes or the result is ready; progress-only steps do not request pane renders.
+The time budget is cooperative, so an individual batch can exceed it. A cursor publishes both layouts together
 against captured reference, working revision and fold snapshots. Edits, refresh, fold changes,
 disable and disposal cancel stale work. Publication waits for pending input, navigation, pointer
 gestures and composition in either pane to settle. Pending state reflects stale captures immediately. Only the
