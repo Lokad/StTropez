@@ -1,13 +1,12 @@
-import type { DocumentId, Observable, Workspace } from "../../src/index.ts";
+import type { Observable, Workspace } from "../../src/index.ts";
 import { LspWorkspace, LspLineIndex, decodeLspDiagnostics, lspRangeOffsets } from "../../src/protocol/index.ts";
-import type { LspWorkspaceScope, RpcCall, LspSessionAccess, LspTargetResolver, LspDiagnostic } from "../../src/protocol/index.ts";
+import type { LspWorkspaceScope, RpcCall, LspSessionAccess, LspTargetResolver } from "../../src/protocol/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { DemoFile } from "./project.ts";
 import { openDemoProvider } from "./provider.ts";
 import type { DemoProvider } from "./provider.ts";
-
-export type DemoDiagnostic = LspDiagnostic & Readonly<{ documentId: DocumentId; name: string; revision: number; from: number; to: number;
-    related: readonly Readonly<{ name: string; message: string; line: number; character: number; target: Readonly<{ documentId: DocumentId; revision: number; from: number; to: number }> | null }>[] }>;
+import { DemoDiagnosticState } from "./diagnostic-state.ts";
+import type { DemoDiagnostic } from "./diagnostic-state.ts";
 type State = Readonly<{ status: "suspended" | "starting" | "ready" | "failed"; checking: boolean; message: string; diagnostics: readonly DemoDiagnostic[] }>;
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 type Inventory = Readonly<{ names: readonly string[]; backing: () => Readonly<Record<string, string>>; load: (name: string, text: string) => DemoFile }>;
@@ -30,7 +29,7 @@ export class DemoLanguage {
     private readonly stopWorkspace: () => void;
     private timer: ReturnType<typeof setTimeout> | undefined;
     private readonly calls = new Set<RpcCall<unknown>>();
-    private buffers;
+    private readonly diagnostics = new DemoDiagnosticState();
     private lifecycle = 0;
     private diagnosticGeneration = 0;
     private active = false;
@@ -38,24 +37,24 @@ export class DemoLanguage {
     private disposal: Promise<void> | undefined;
     constructor(workspace: Workspace, files: readonly DemoFile[] | (() => readonly DemoFile[]), sample: string, inventory?: Inventory) {
         this.workspace = workspace; this.getFiles = typeof files === "function" ? files : () => files; this.sample = sample; this.inventory = inventory;
-        this.buffers = this.files.map(file => workspace.document(file.resource.documentId).buffer);
+        this.diagnostics.update(this.files.map(file => workspace.document(file.resource.documentId)));
         this.stopWorkspace = workspace.subscribe(() => {
-            const next = this.files.map(file => workspace.document(file.resource.documentId).buffer);
-            if (next.length === this.buffers.length && next.every((buffer, i) => buffer === this.buffers[i])) return;
-            this.buffers = next; this.invalidate(); if (this.active) this.schedule();
+            if (!this.diagnostics.update(this.files.map(file => workspace.document(file.resource.documentId)))) return;
+            this.invalidate(); if (this.active) this.schedule();
         });
     }
     filesChanged(): void {
-        this.buffers = this.files.map(file => this.workspace.document(file.resource.documentId).buffer);
+        this.diagnostics.update(this.files.map(file => this.workspace.document(file.resource.documentId)));
         this.scope?.setDocuments(this.files.map(file => this.workspace.document(file.resource.documentId)));
         this.invalidate(); if (this.active) this.schedule();
     }
     documentUri(file: DemoFile): string | undefined { return !this.disposed && this.files.includes(file) ? this.config?.documents[file.name]?.uri : undefined; }
     private publish(patch: Partial<State>): void { if (!this.disposed) this.cell.set({ ...this.cell.get(), ...patch }); }
-    private invalidate(): void {
+    private invalidate(clear = false): void {
         this.diagnosticGeneration++; if (this.timer) clearTimeout(this.timer); this.timer = undefined;
         for (const call of this.calls) call.cancel(); this.calls.clear();
-        this.publish({ checking: this.active, diagnostics: [] });
+        if (clear) this.diagnostics.clear();
+        this.publish({ checking: this.active, diagnostics: this.diagnostics.diagnostics });
     }
     private valid(lifecycle: number): boolean { return !this.disposed && this.active && lifecycle === this.lifecycle; }
     connect(): Promise<LspWorkspace> {
@@ -121,7 +120,7 @@ export class DemoLanguage {
                 this.owner = owner; this.scope = scope; this.config = config;
                 this.stopProvider = owner.state.subscribe(() => {
                     if (owner!.state.getSnapshot().phase === "disconnected" && this.active) {
-                        this.invalidate(); this.publish({ status: "failed", checking: false, message: "TypeScript disconnected. Editing is available; retry to reconnect." });
+                        this.invalidate(true); this.publish({ status: "failed", checking: false, message: "TypeScript disconnected. Editing is available; retry to reconnect." });
                     }
                 });
                 this.publish({ status: "ready", message: "Language service ready." }); this.schedule(); return owner;
@@ -154,18 +153,23 @@ export class DemoLanguage {
         const current = () => this.valid(lifecycle) && generation === this.diagnosticGeneration && scope === this.scope;
         try {
             await scope.flush(); if (!current()) return;
-            const project = scope.captureProject(), results: DemoDiagnostic[] = [];
+            const project = scope.captureProject(), documents = this.files.map(file => this.workspace.document(file.resource.documentId)), results: DemoDiagnostic[] = [];
             const capturesCurrent = () => current() && [...project.values()].every(capture => capture.isCurrent());
             for (const file of this.files) {
                 const uri = this.config!.documents[file.name]!.uri, capture = project.get(uri)!;
+                const document = this.workspace.document(file.resource.documentId), syntax = this.diagnostics.syntax(document);
                 for (const kind of ["syntactic", "semantic"] as const) {
                     if (!capturesCurrent()) return;
+                    if (kind === "syntactic" && syntax) { results.push(...syntax); continue; }
+                    // Semantic diagnostics may change in untouched importers. The demo provider
+                    // supplies no dependency proof, so keep the project-wide semantic fallback.
                     const call = scope.request("sttropez/diagnostics", { uri, kind }); this.calls.add(call);
                     let response: unknown; try { response = await call.result; } finally { this.calls.delete(call); }
                     if (!capturesCurrent()) return;
                     if (!object(response) || response.success !== true || !Array.isArray(response.body)) throw new Error("Invalid TypeScript diagnostics.");
                     // This custom response is correlated to our request/project, but has no provider version.
                     const batch = decodeLspDiagnostics({ uri, diagnostics: response.body }, capture);
+                    const items: DemoDiagnostic[] = [];
                     for (const value of batch.items) {
                         if (value.from === null || value.to === null) throw new Error("TypeScript diagnostic is outside its captured file.");
                         const related = (value.relatedInformation ?? []).map(info => {
@@ -175,19 +179,21 @@ export class DemoLanguage {
                             const name = Object.keys(this.config!.documents).find(name => this.config!.documents[name]!.uri === info.location.uri) ?? info.location.uri;
                             return Object.freeze({ name, message: info.message, line: info.location.range.start.line, character: info.location.range.start.character, target: placed });
                         });
-                        results.push(Object.freeze({ ...value, documentId: file.resource.documentId, name: file.name, revision: capture.document.revision,
+                        items.push(Object.freeze({ ...value, documentId: file.resource.documentId, name: file.name, revision: capture.document.revision,
                             from: value.from, to: value.to, related: Object.freeze(related) }));
                     }
+                    if (kind === "syntactic") this.diagnostics.acceptSyntax(document, items);
+                    results.push(...items);
                 }
             }
-            if (capturesCurrent()) this.publish({ checking: false, status: "ready", message: "Language service ready.", diagnostics: Object.freeze(results) });
+            if (capturesCurrent() && this.diagnostics.accept(documents, results)) this.publish({ checking: false, status: "ready", message: "Language service ready.", diagnostics: this.diagnostics.diagnostics });
         } catch (error) {
             if (current()) this.publish({ checking: false, status: "failed", message: error instanceof Error ? error.message : "Type checking is unavailable." });
         }
     }
     suspend(): void {
         this.active = false; this.lifecycle++; this.abort?.abort(); this.abort = undefined; this.opening = undefined;
-        this.invalidate(); this.owner?.disconnect(); this.publish({ status: "suspended", checking: false, message: "Language service is idle." });
+        this.invalidate(true); this.owner?.disconnect(); this.publish({ status: "suspended", checking: false, message: "Language service is idle." });
     }
     retry(): Promise<LspWorkspace> {
         this.stopProvider?.(); this.stopProvider = undefined; this.scope?.dispose(); this.scope = undefined; this.owner?.dispose(); this.owner = undefined;
@@ -197,7 +203,7 @@ export class DemoLanguage {
     dispose(): Promise<void> {
         if (this.disposal) return this.disposal;
         const opening = this.opening, config = this.config;
-        this.suspend(); this.disposed = true; this.stopWorkspace(); this.stopProvider?.();
+        this.suspend(); this.disposed = true; this.stopWorkspace(); this.stopProvider?.(); this.diagnostics.update([]);
         this.scope?.dispose(); this.owner?.dispose();
         this.scope = undefined; this.owner = undefined; this.config = undefined;
         // Public request/scope cancellation releases retention through microtasks. Finish startup

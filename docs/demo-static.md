@@ -39,6 +39,9 @@ emission follows panel visibility; reopening requests current output without re-
 source. Syntax colors remain active when the output panel is hidden or showing review/problems.
 Cursor, tab, save and recovery metadata paint at most once per animation frame. Document
 captures and provisional color mapping still follow every revision immediately.
+Diagnostic messages and underlines also retain mapped positions while checking; Problems
+navigation waits for current results. Syntax checks reuse unchanged files, while semantic
+checks cover the project to preserve errors caused by changes in imported files.
 
 Reset sample restores only the selected sample's original files as an undoable edit. Saved
 copies and drafts for other samples are retained. Recovery notices name the draft's files:

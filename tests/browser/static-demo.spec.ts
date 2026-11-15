@@ -1,5 +1,11 @@
 import { expect, test } from "./fixtures.ts";
 import { runDemoHostIntegrations } from "./demo-host-integrations.ts";
+import { runDemoDiagnosticRetention } from "./demo-diagnostics.ts";
+
+test("diagnostics remain mapped while dirty syntax and dependent semantics are rechecked", async ({ page, baseURL }, info) => {
+    const requests = await runDemoDiagnosticRetention(page, baseURL!);
+    await info.attach("diagnostic-requests", { body: JSON.stringify(requests, null, 2), contentType: "application/json" });
+});
 
 test("host language, structured/literal insertion and mapped notes share editing and review", async ({ page, baseURL }) => {
     await runDemoHostIntegrations(page, baseURL!);

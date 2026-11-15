@@ -1,6 +1,12 @@
 import { test, expect } from "./fixtures.ts";
 import { runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoHighlights } from "./demo-walkthrough.ts";
 import { holdDemoFolds } from "./demo-folding-gate.ts";
+import { runDemoDiagnosticRetention } from "./demo-diagnostics.ts";
+
+test("diagnostics remain mapped while dirty syntax and dependent semantics are rechecked", async ({ page }, info) => {
+    const requests = await runDemoDiagnosticRetention(page);
+    await info.attach("diagnostic-requests", { body: JSON.stringify(requests, null, 2), contentType: "application/json" });
+});
 
 test("occurrences follow the caret, edits and large virtualized documents", async ({ page }) => { await runDemoHighlights(page); });
 

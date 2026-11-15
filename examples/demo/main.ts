@@ -82,6 +82,7 @@ function renderGutter(): void {
 function renderProblems(): void {
     if (!project || panel !== "problems") return;
     const captured = project, state = captured.language.state.getSnapshot(), host = element("panel-content");
+    const confirmed = state.status === "ready" && !state.checking;
     if (problemBatch !== state.diagnostics) { problemBatch = state.diagnostics; problemPage = 0; }
     const list = document.createElement("div"); list.className = "demo-problems";
     if (!state.diagnostics.length) {
@@ -105,17 +106,18 @@ function renderProblems(): void {
         row.className = "demo-problem"; item.className = "problem-location"; metadata.className = "problem-metadata";
         const code = problem.code === undefined ? "" : `${problem.source === "typescript" ? "TS" : ""}${problem.code}: `;
         item.textContent = `${problem.name} · ${code}${problem.message}`;
-        const current = () => project === captured && captured.language.state.getSnapshot().diagnostics === state.diagnostics;
+        const current = () => project === captured && captured.language.state.getSnapshot() === state;
         const open = (target: { documentId: typeof problem.documentId; revision: number; from: number; to: number }) => {
-            if (!current() || editor?.activity().composing) return;
+            if (!current() || !confirmed || editor?.activity().composing) return;
             const file = captured.files.find(file => file.resource.documentId === target.documentId);
             if (!file || captured.workspace.document(target.documentId).revision !== target.revision) return;
             mountFile(file, true); file.view.setSelection(target.revision, { anchor: target.from, head: target.to });
             editor?.viewport.revealOffset(target.from); editor?.focus();
         };
+        item.disabled = !confirmed;
         item.addEventListener("click", () => open(problem));
         metadata.textContent = [({ 1: "Error", 2: "Warning", 3: "Information", 4: "Hint" } as Record<number, string>)[problem.severity ?? 1],
-            problem.source, ...(problem.tags ?? []).flatMap(tag => tag === 1 ? ["Unnecessary"] : tag === 2 ? ["Deprecated"] : [])].filter(Boolean).join(" · ");
+            problem.source, ...(!confirmed ? ["Awaiting recheck"] : []), ...(problem.tags ?? []).flatMap(tag => tag === 1 ? ["Unnecessary"] : tag === 2 ? ["Deprecated"] : [])].filter(Boolean).join(" · ");
         const href = problem.codeDescription?.href;
         if (href && canOpenDemoHelp(href)) {
             const help = document.createElement("button"); help.textContent = "Diagnostic help"; help.title = href;
@@ -129,7 +131,7 @@ function renderProblems(): void {
                 related.replaceChildren(); if (!details.open) return;
                 for (const info of problem.related.slice(page * 16, (page + 1) * 16)) {
                     const location = document.createElement("button"); location.textContent = `${info.name}:${info.line + 1}:${info.character + 1} · ${info.message}`;
-                    location.disabled = !info.target; if (!info.target) location.title = "This related file is not loaded in the editor, or its range cannot be placed.";
+                    location.disabled = !confirmed || !info.target; if (!info.target) location.title = "This related file is not loaded in the editor, or its range cannot be placed.";
                     location.onclick = () => { if (info.target) open(info.target); }; related.append(location);
                 }
                 if (problem.related.length > 16) {

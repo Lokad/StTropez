@@ -25,6 +25,15 @@ in a worker cannot be interrupted; obsolete replies remain excluded by worker/jo
 The host-language samples release their unused syntax worker. These changes stay in the demo;
 they add no library API or runtime dependency.
 
+Completed diagnostics remain visible at provisionally mapped positions during edits. Deleted
+ranges and missing revision history discard their placement; related locations follow their
+own documents. Problems are labeled “Awaiting recheck” and their navigation is disabled until
+the current project check completes. Quick fixes still request fresh captured diagnostics.
+Unchanged documents reuse syntax results; semantic checks still cover every loaded document,
+because an edited export can change errors in an untouched importer. The current provider
+supplies no dependency graph for narrower invalidation. Mapping traverses retained diagnostic
+items and related locations without scanning document text. Retry/disconnect clear these caches.
+
 The Code menu exposes line/block comments, indentation and two/four-space or tab settings.
 The same public configuration serves the source and comparison views. TypeScript Enter adds
 indentation after opening brackets and separates a matching closer. Quotes/brackets can surround

@@ -1,0 +1,71 @@
+import { anchoredRange } from "../../src/index.ts";
+import type { DocumentId, DocumentSnapshot } from "../../src/index.ts";
+import type { LspDiagnostic } from "../../src/protocol/index.ts";
+
+type Location = Readonly<{ documentId: DocumentId; revision: number; from: number; to: number }>;
+export type DemoDiagnostic = LspDiagnostic & Location & Readonly<{ name: string;
+    related: readonly Readonly<{ name: string; message: string; line: number; character: number; target: Location | null }>[] }>;
+type Entry = { document: DocumentSnapshot; syntax?: readonly DemoDiagnostic[] };
+const same = (a: DocumentSnapshot, b: DocumentSnapshot) => a.id === b.id && a.resourceId === b.resourceId && a.key === b.key
+    && a.revision === b.revision && a.buffer === b.buffer;
+
+/** Example-owned presentation and syntax cache. Mapped messages are not fresh provider authority. */
+export class DemoDiagnosticState {
+    private documents = new Map<DocumentId, Entry>();
+    private items: readonly DemoDiagnostic[] = Object.freeze([]);
+    get diagnostics(): readonly DemoDiagnostic[] { return this.items; }
+    update(documents: readonly DocumentSnapshot[]): boolean {
+        if (documents.length === this.documents.size && documents.every(document => {
+            const old = this.documents.get(document.id); return old && same(old.document, document);
+        })) return false;
+        const next = new Map<DocumentId, Entry>(documents.map(document => [document.id, { document }]));
+        const moved = (target: Location): Location | undefined => {
+            const before = this.documents.get(target.documentId)?.document, after = next.get(target.documentId)?.document;
+            if (!before || !after || before.key !== after.key || before.resourceId !== after.resourceId || before.revision !== target.revision) return;
+            if (same(before, after)) return target;
+            const range = anchoredRange(before.buffer.length, target.from, target.to, { onDelete: "invalidate" });
+            const mapped = before.buffer === after.buffer ? range
+                : after.change?.previousRevision === before.revision ? after.change.mapping.mapRange(range) : undefined;
+            return mapped && Object.freeze({ documentId: target.documentId, revision: after.revision, from: mapped.from, to: mapped.to });
+        };
+        const at = (id: DocumentId, offset: number) => {
+            const buffer = next.get(id)!.document.buffer, line = buffer.lineAt(offset);
+            return Object.freeze({ line, character: offset - buffer.offsetAt(line) });
+        };
+        const items: DemoDiagnostic[] = [];
+        for (const item of this.items) {
+            const location = moved(item); if (!location) continue;
+            let changed = location !== item;
+            const related = item.related.length ? item.related.map(info => {
+                if (!info.target) return info;
+                const target = moved(info.target) ?? null; if (target === info.target) return info;
+                changed = true;
+                return Object.freeze({ ...info, ...(target ? at(target.documentId, target.from) : {}), target });
+            }) : item.related;
+            items.push(changed ? Object.freeze({ ...item, ...location, related: Object.freeze(related),
+                range: Object.freeze({ start: at(item.documentId, location.from), end: at(item.documentId, location.to) }) }) : item);
+        }
+        this.items = Object.freeze(items);
+        for (const [id, entry] of next) {
+            const before = this.documents.get(id);
+            // Syntax is file-local, but any related location must still belong to its capture.
+            if (before?.syntax && same(before.document, entry.document) && before.syntax.every(item => item.related.every(info =>
+                !info.target || moved(info.target) === info.target))) entry.syntax = before.syntax;
+        }
+        this.documents = next; return true;
+    }
+    syntax(document: DocumentSnapshot): readonly DemoDiagnostic[] | undefined {
+        const entry = this.documents.get(document.id); return entry && same(entry.document, document) ? entry.syntax : undefined;
+    }
+    acceptSyntax(document: DocumentSnapshot, items: readonly DemoDiagnostic[]): void {
+        const entry = this.documents.get(document.id);
+        if (entry && same(entry.document, document)) entry.syntax = Object.freeze([...items]);
+    }
+    accept(documents: readonly DocumentSnapshot[], items: readonly DemoDiagnostic[]): boolean {
+        if (documents.length !== this.documents.size || documents.some(document => {
+            const current = this.documents.get(document.id); return !current || !same(current.document, document);
+        })) return false;
+        this.items = Object.freeze([...items]); return true;
+    }
+    clear(): void { this.items = Object.freeze([]); for (const entry of this.documents.values()) delete entry.syntax; }
+}
