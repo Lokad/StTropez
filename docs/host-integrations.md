@@ -113,6 +113,22 @@ Workspace notification. The demo enables matching for working and reference edit
 each snapshot's own syntax context. A browser turn checks elapsed time between 256-unit advances
 and stops after 4 ms or 4,096 work units; a single batch or host callback can exceed that target.
 
+`CharacterWarnings` classifies advisory Unicode18 ranges without changing source text.
+Its `categories` switches independently control `bidi-control`, `invisible` (default-ignorable
+characters), `bom` (U+FEFF after offset zero), `non-breaking-space` and `unusual-space`.
+All categories are enabled by default; `allow` copies an exact list of permitted characters.
+Ordinary space, tab, LF and CR, letters in other writing systems, and ordinary combining marks
+are not warnings. Joiners and variation selectors may be meaningful; hosts choose their policy.
+
+`scan(buffer, from, to, limits)` returns immutable warning ranges, category and code point.
+It reads at most `maxUnits + 5` UTF-16 units, including boundary/lookahead checks; defaults are
+4,096 scanned units and 256 warnings. A limited batch supplies `nextFrom` for continuation
+against the same buffer and original end. Queries include complete code points intersecting
+the requested range, even at a clipped surrogate boundary. `scanText(text, absoluteOffset)`
+handles an already bounded, complete-code-point fragment. `characterWarningLabel` supplies a
+plain-text category/code-point description. These ranges are advisory, not a language-validity
+or security-profile verdict.
+
 Host buttons and keyboard listeners can call `editor.runCommand("line-comment")` or capture
 an insertion. The sample exposes **Code → Paste format**, **Insert example table** and
 **Add source note**. Ctrl+Alt+V changes paste mode; Ctrl+Alt+M adds a note. The example-table

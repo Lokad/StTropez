@@ -2,21 +2,22 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
-import { TextBuffer, createGraphemeCursor, graphemeBoundaries, GraphemeLimitError, graphemeBreakProperty, indicConjunctBreak, extendedPictographic, unicodeGraphemeVersion } from "../src/index.ts";
+import { TextBuffer, createGraphemeCursor, graphemeBoundaries, GraphemeLimitError, graphemeBreakProperty, indicConjunctBreak, extendedPictographic, defaultIgnorable, unicodeGraphemeVersion } from "../src/index.ts";
 import type { GraphemeCursor, GraphemeIndex } from "../src/index.ts";
 const fixture = async (name: string) => gunzipSync(await readFile(new URL(`fixtures/graphemes/${name}.txt.gz`, import.meta.url))).toString("utf8");
 function finish(cursor: GraphemeCursor, budget = 256): GraphemeIndex { let previous = cursor.snapshot(); while (true) { const step = cursor.next(budget); assert.ok(Object.isFrozen(step)); assert.ok(step.workUnits - previous.workUnits <= budget + 256); if (step.status === "ready") return step.result!; assert.equal(step.status, "running"); assert.equal(step.result, null); previous = step; } }
 const records = (text: string) => text.trim().split(/\r?\n/).map(line => line.split(";").map(v => v.trim()));
 const interval = (text: string) => { const values = text.split("..").map(v => parseInt(v, 16)); return [values[0]!, values[1] ?? values[0]!] as const; };
-test("Unicode18 grapheme, conjunct and pictographic properties match every reviewed code point", async () => {
+test("Unicode18 grapheme, conjunct, pictographic and default-ignorable properties match every reviewed code point", async () => {
     const data = await Promise.allSettled(["GraphemeBreakProperty", "DerivedCoreProperties", "emoji-data"].map(fixture)); for (const r of data) if (r.status === "rejected") throw r.reason;
-    const files = data.map(r => (r as PromiseFulfilledResult<string>).value), gcb = Array<string>(0x110000).fill("Other"), incb = Array<string>(0x110000).fill("None"), ep = new Uint8Array(0x110000);
+    const files = data.map(r => (r as PromiseFulfilledResult<string>).value), gcb = Array<string>(0x110000).fill("Other"), incb = Array<string>(0x110000).fill("None"), ep = new Uint8Array(0x110000), di = new Uint8Array(0x110000);
     for (const [text, property] of records(files[0]!)) { const [from, to] = interval(text!); gcb.fill(property!, from, to + 1); }
     for (const [text, property, value] of records(files[1]!)) if (property === "InCB") { const [from, to] = interval(text!); incb.fill(value!, from, to + 1); }
     for (const [text, property] of records(files[2]!)) if (property === "Extended_Pictographic") { const [from, to] = interval(text!); ep.fill(1, from, to + 1); }
-    assert.equal(unicodeGraphemeVersion, "18.0.0"); for (let cp = 0; cp <= 0x10ffff; cp++) { assert.equal(graphemeBreakProperty(cp), gcb[cp], `GCB ${cp}`); assert.equal(indicConjunctBreak(cp), incb[cp], `InCB ${cp}`); assert.equal(extendedPictographic(cp), !!ep[cp], `EP ${cp}`); }
-    for (const cp of [-1, NaN, .5, 0x110000]) { assert.throws(() => graphemeBreakProperty(cp)); assert.throws(() => indicConjunctBreak(cp)); assert.throws(() => extendedPictographic(cp)); }
-    console.log("Grapheme facts: 1114112 code points /3 properties.");
+    for (const [text, property] of records(files[1]!)) if (property === "Default_Ignorable_Code_Point") { const [from, to] = interval(text!); di.fill(1, from, to + 1); }
+    assert.equal(unicodeGraphemeVersion, "18.0.0"); for (let cp = 0; cp <= 0x10ffff; cp++) { assert.equal(graphemeBreakProperty(cp), gcb[cp], `GCB ${cp}`); assert.equal(indicConjunctBreak(cp), incb[cp], `InCB ${cp}`); assert.equal(extendedPictographic(cp), !!ep[cp], `EP ${cp}`); assert.equal(defaultIgnorable(cp), !!di[cp], `DI ${cp}`); }
+    for (const cp of [-1, NaN, .5, 0x110000]) { assert.throws(() => graphemeBreakProperty(cp)); assert.throws(() => indicConjunctBreak(cp)); assert.throws(() => extendedPictographic(cp)); assert.throws(() => defaultIgnorable(cp)); }
+    console.log("Grapheme facts: 1114112 code points /4 properties.");
 });
 test("complete Unicode18 extended-grapheme corpus agrees for strings and ropes", async () => {
     let rows = 0, boundaries = 0; for (const line of (await fixture("GraphemeBreakTest")).trim().split(/\r?\n/)) {

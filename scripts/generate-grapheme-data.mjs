@@ -16,7 +16,8 @@ const kinds = ["Other", "CR", "LF", "Control", "Extend", "ZWJ", "Regional_Indica
 for (const [range, property] of records(files.GraphemeBreakProperty)) { const [from, to] = interval(range), at = kinds.indexOf(property); assert.ok(at >= 0); for (let cp = from; cp <= to; cp++) { assert.equal(packed[cp] & 15, 0); packed[cp] |= at; } }
 for (const [range, property, value] of records(files.DerivedCoreProperties)) if (property === "InCB") { const [from, to] = interval(range), at = conjunct.indexOf(value); assert.ok(at >= 0); for (let cp = from; cp <= to; cp++) { assert.equal(packed[cp] & 48, 0); packed[cp] |= at << 4; } }
 for (const [range, property] of records(files["emoji-data"])) if (property === "Extended_Pictographic") { const [from, to] = interval(range); for (let cp = from; cp <= to; cp++) packed[cp] |= 64; }
-// The direct ASCII lookup must agree with all three reviewed properties.
+for (const [range, property] of records(files.DerivedCoreProperties)) if (property === "Default_Ignorable_Code_Point") { const [from, to] = interval(range); for (let cp = from; cp <= to; cp++) packed[cp] |= 128; }
+// The direct ASCII lookup must agree with all four reviewed properties.
 for (let cp = 0; cp < 128; cp++) assert.equal(packed[cp], cp === 13 ? 1 : cp === 10 ? 2 : cp < 32 || cp === 127 ? 3 : 0);
 // Hangul's regular LV/LVT alternation need not occupy hundreds of interval records.
 for (let cp = 0xac00; cp <= 0xd7a3; cp++) { assert.equal(packed[cp], (cp - 0xac00) % 28 ? 13 : 12); packed[cp] = 0; }
@@ -32,7 +33,7 @@ export type IndicConjunctBreak = typeof conjunct[number];
 const ranges: readonly number[] = [
 ${lines.join("\n")}
 ];
-/** Internal packed properties: GCB bits0..3, InCB bits4..5, Extended_Pictographic bit6. */
+/** Internal packed properties: GCB bits0..3, InCB bits4..5, Extended_Pictographic bit6, Default_Ignorable bit7. */
 export function graphemeProperties(cp: number): number {
     if (!Number.isInteger(cp) || cp < 0 || cp > 0x10ffff) throw new RangeError("Invalid Unicode code point.");
     if (cp < 128) return cp === 13 ? 1 : cp === 10 ? 2 : cp < 32 || cp === 127 ? 3 : 0;
@@ -42,6 +43,7 @@ export function graphemeProperties(cp: number): number {
 export const graphemeBreakProperty = (cp: number): GraphemeBreakProperty => kinds[graphemeProperties(cp) & 15]!;
 export const indicConjunctBreak = (cp: number): IndicConjunctBreak => conjunct[graphemeProperties(cp) >>> 4 & 3]!;
 export const extendedPictographic = (cp: number): boolean => !!(graphemeProperties(cp) & 64);
+export const defaultIgnorable = (cp: number): boolean => !!(graphemeProperties(cp) & 128);
 `;
 await writeFile("src/core/grapheme-data.ts", source); await mkdir("tests/fixtures/graphemes", { recursive: true });
 for (const name of names.filter(n => n !== "ReadMe")) { const text = files[name].split(/\r?\n/).map(line => line.replace(/#.*/, "").trim()).filter(Boolean).join("\n") + "\n"; await writeFile(`tests/fixtures/graphemes/${name}.txt.gz`, gzipSync(text, { level: 9 })); }

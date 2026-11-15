@@ -19,7 +19,7 @@ export { WordCursor, codeWordConstituentPattern } from "./core/words.ts";
 export type { WordStep, WordOptions } from "./core/words.ts";
 export { GraphemeIndex, GraphemeLimitError, createGraphemeCursor, graphemeBoundaries } from "./core/graphemes.ts";
 export type { GraphemeSource, GraphemeRange, GraphemeOptions, GraphemeProgress, GraphemeCursor } from "./core/graphemes.ts";
-export { graphemeUnicodeVersion as unicodeGraphemeVersion, graphemeBreakProperty, indicConjunctBreak, extendedPictographic } from "./core/grapheme-data.ts";
+export { graphemeUnicodeVersion as unicodeGraphemeVersion, graphemeBreakProperty, indicConjunctBreak, extendedPictographic, defaultIgnorable } from "./core/grapheme-data.ts";
 export type { GraphemeBreakProperty, IndicConjunctBreak } from "./core/grapheme-data.ts";
 export { resolveBidi } from "./core/bidi.ts";
 export type { BidiDirection, BidiParagraph, BidiText } from "./core/bidi.ts";
@@ -38,6 +38,8 @@ export { resolveLanguageConfiguration, planLanguageEdit } from "./core/language-
 export type { LanguageConfiguration, ResolvedLanguageConfiguration, EditingCommand, EditingPair, LanguageEditContext, PairingContext, EnterIndent } from "./core/language-edits.ts";
 export { BracketMatcher } from "./core/bracket-matching.ts";
 export type { BracketMatchOptions, BracketMatchResult, BracketMatchProgress, BracketMatchCursor } from "./core/bracket-matching.ts";
+export { CharacterWarnings, characterWarningKinds, characterWarningLabel } from "./core/character-warnings.ts";
+export type { CharacterWarningKind, CharacterWarningOptions, CharacterWarningConfiguration, CharacterWarning, CharacterWarningLimits, CharacterWarningBatch } from "./core/character-warnings.ts";
 export { parseSnippet, offsetSnippetStops, planSnippetEdit, snippetChoiceText, planSnippetChoice } from "./core/snippets.ts";
 export type { Snippet, SnippetStop, SnippetOccurrence, SnippetParseResult, SnippetEditPlan } from "./core/snippets.ts";
 export { Workspace } from "./core/workspace.ts";
