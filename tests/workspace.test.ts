@@ -54,13 +54,50 @@ test("snapshots are immutable, stable between changes and notify subscribers onc
     assert.equal(workspace.getSnapshot(), before);
     let calls = 0;
     const unsubscribe = workspace.subscribe(() => { calls++; });
+    let observed = before;
+    const stopDocument = workspace.observeDocument(documentId).subscribe(() => { observed = workspace.getSnapshot(); });
     workspace.edit({ documentId, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 1, insert: "A" }] });
     assert.equal(calls, 1);
+    assert.equal(observed, workspace.getSnapshot()); assert.equal(observed.documents[0]?.text, "Abc");
     assert.equal(before.documents[0]?.text, "abc");
     assert.ok(Object.isFrozen(workspace.getSnapshot().documents));
-    unsubscribe();
+    unsubscribe(); stopDocument();
     workspace.move(workspace.getSnapshot().tabs[0]!.id, "other");
     assert.equal(calls, 1);
+});
+
+test("scoped publication defers inventory traversal until the coarse snapshot is requested", t => {
+    const workspace = new Workspace(), forms = Array.from({ length: 1000 }, (_, i) => workspace.createResource(
+        { scope: "test", resource: String(i), variant: "form" }, "Form", { value: { field: "before" } }));
+    const before = workspace.getSnapshot(); let after = before, notifications = 0;
+    const stop = workspace.subscribe(() => { notifications++; });
+    // Count synchronous collection visits, not elapsed time on a shared machine.
+    const visits = (work: () => void) => {
+        const values = Map.prototype.values; let count = 0;
+        Map.prototype.values = function () {
+            const iterator = values.call(this), next = iterator.next.bind(iterator);
+            iterator.next = (...args) => { const item = next(...args); if (!item.done) count++; return item; };
+            return iterator;
+        };
+        try { work(); return count; } finally { Map.prototype.values = values; }
+    };
+    try {
+        let applied = false;
+        const publication = visits(() => { applied = workspace.updateResource(forms[0]!, { expectedRevision: 0, value: { field: "after" }, origin: "human" }).applied; });
+        const capture = visits(() => { after = workspace.getSnapshot(); }), repeated = visits(() => { workspace.getSnapshot(); });
+        t.diagnostic(JSON.stringify({ publication, capture, repeated }));
+        assert.equal(applied, true); assert.equal(notifications, 1);
+        // Delivery visits one callback. It must not also traverse the resource inventory.
+        assert.ok(publication <= 1, `Publication visited ${publication} collection values`);
+        assert.ok(capture <= forms.length); assert.equal(repeated, 0); assert.equal(after.resources.length, forms.length);
+        assert.equal(after.revision, before.revision + 1); assert.equal(after, workspace.getSnapshot());
+        assert.equal(before.resources[0]!.dirty, false); assert.equal(after.resources[0]!.dirty, true);
+        assert.equal(after.resources[1], before.resources[1]);
+        for (const value of [after, after.resources, after.documents, after.tabs]) assert.ok(Object.isFrozen(value));
+        workspace.releaseResource(forms[0]!.id, true);
+        assert.equal(notifications, 2); assert.equal(workspace.getSnapshot().resources.length, forms.length - 1);
+        assert.equal(after.resources.length, forms.length); assert.equal(after.resources[0]!.state, "ready");
+    } finally { stop(); }
 });
 
 test("invalid edit batches leave the document untouched", () => {

@@ -122,7 +122,10 @@ must tolerate repeated attachment and cleanup without duplicating views or subsc
 Construct persistent controllers at the host composition boundary, outside component renders.
 
 Resource, document, metadata and tab observables now notify only for their own changes; a coarse
-workspace observable remains for tooling. Unchanged metadata and unrelated form snapshots keep
+workspace observable remains for tooling. Its complete immutable snapshot is built on the first
+`getSnapshot` after a publication and reused until the next publication. Scoped consumers avoid
+that inventory traversal; coarse readers still pay for the inventory they request. Earlier captured
+snapshots remain unchanged after edits and resource release. Unchanged metadata and unrelated form snapshots keep
 their identity through typing. Within one publication, the same callback runs once even when
 registered on several changed handles or registered more than once. Delivery keeps first-seen
 callback order and captures its callbacks before invoking any; subscriptions added or removed

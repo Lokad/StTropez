@@ -144,7 +144,8 @@ export class Workspace {
     private readonly queuedReleases = new Set<ResourceId>();
     private readonly documents = new Map<DocumentId, ResourceRecord>();
     private readonly tabs: Store<readonly TabSnapshot[]>;
-    private readonly state: Store<WorkspaceSnapshot>;
+    private readonly state: Store<number>;
+    private snapshot: WorkspaceSnapshot | undefined;
     readonly getSnapshot: () => WorkspaceSnapshot;
     readonly subscribe: (listener: () => void) => () => void;
     readonly tabState: Observable<readonly TabSnapshot[]>;
@@ -153,10 +154,17 @@ export class Workspace {
         this.history = new TextHistory(options.history);
         this.scope = new NotificationScope(options.onListenerError ?? (() => {}));
         this.tabs = new Store<readonly TabSnapshot[]>(Object.freeze([]), this.scope);
-        this.state = new Store<WorkspaceSnapshot>(Object.freeze({ revision: 0, resources: Object.freeze([]),
-            documents: Object.freeze([]), tabs: this.tabs.get() }), this.scope);
+        this.state = new Store(0, this.scope);
         this.tabState = this.tabs.observable;
-        this.getSnapshot = this.state.observable.getSnapshot;
+        this.getSnapshot = () => {
+            if (!this.snapshot) {
+                const records = [...this.records.values()];
+                this.snapshot = Object.freeze({ revision: this.state.get(),
+                    resources: Object.freeze(records.map(record => record.metadata.get())),
+                    documents: Object.freeze(records.flatMap(record => record.document.get() ? [record.document.get()!] : [])), tabs: this.tabs.get() });
+            }
+            return this.snapshot;
+        };
         this.subscribe = this.state.observable.subscribe;
     }
 
@@ -893,10 +901,10 @@ export class Workspace {
         const changed = new Set<Store<unknown>>(); this.tabs.set(Object.freeze(tabs), changed); this.publish(changed);
     }
     private publish(changed: Set<Store<unknown>>): void {
-        const records = [...this.records.values()];
-        this.state.set(Object.freeze({ revision: this.state.get().revision + 1,
-            resources: Object.freeze(records.map(record => record.metadata.get())),
-            documents: Object.freeze(records.flatMap(record => record.document.get() ? [record.document.get()!] : [])), tabs: this.tabs.get() }), changed);
+        // Scoped consumers need no coarse inventory. A requested snapshot is captured in full,
+        // so held older snapshots stay immutable even after later publications or resource release.
+        this.snapshot = undefined;
+        this.state.set(this.state.get() + 1, changed);
         this.scope.deliver([...changed]);
     }
 }
