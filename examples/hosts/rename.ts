@@ -1,7 +1,8 @@
-import type { DocumentId, DocumentSnapshot, FoldIndex, ResourceLease, SelectionSet, TabId, TabTarget, TextEdit, Workspace } from "../../src/index.ts";
+import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, TextEdit, Workspace } from "../../src/index.ts";
 import type { LspWorkspaceEdit } from "../../src/protocol/index.ts";
 import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../../src/protocol/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import { captureViewRequest } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
 import { createNavigationClient, navigationMetrics } from "../editing/navigation-client.ts";
 import { navigationLimits, navigationSymbol, validateNavigationInput } from "../probes/navigation.ts";
 import type { NavigationInput, NavigationLocation } from "../probes/navigation.ts";
@@ -11,7 +12,7 @@ import type { LspRenameClient, LspRenameFactory } from "../editing/lsp-rename-cl
 import { HostCell } from "../shared/observable.ts";
 
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
-type Job = { origin: Session; capture: RenameCapture; selections: SelectionSet; folds: FoldIndex; documents: Map<string, DocumentSnapshot>; authority: Map<string, string>;
+type Job = { origin: Session; capture: RenameCapture; viewCapture: CapturedViewRequest; documents: Map<string, DocumentSnapshot>; authority: Map<string, string>;
     leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; locations: readonly NavigationLocation[]; workspaceEdit?: LspWorkspaceEdit; name?: string };
 export type RenameNote = Readonly<{ ordinal: number; document: string; resource: string; title: string; revision: number; from: number; to: number; line: number; column: number; context: string; before?: string; after?: string }>;
 export type RenameSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied";
@@ -54,10 +55,12 @@ export class HostRenameTools {
     }
     private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
     private current(job: Job): boolean {
-        if (this.job !== job || job.invalid || !this.available(job.origin) || job.origin.editor.view.getSnapshot().selectionSet !== job.selections
-            || !job.folds.sameProjection(job.origin.editor.view.folding.getSnapshot().index) || job.workspaceEdit && !job.workspaceEdit.isCurrent()
-            || job.name !== undefined && job.name !== this.cell.get().name) return false;
-        try { for (const doc of job.documents.values()) if (this.workspace.observeDocument(doc.id).getSnapshot()?.revision !== doc.revision || this.authority(doc.id) !== job.authority.get(doc.id) || !this.canCapture(doc.id)) return false; } catch { return false; }
+        if (this.job !== job || job.invalid || job.name !== undefined && job.name !== this.cell.get().name) return false;
+        try {
+            if (!job.viewCapture.isCurrent() || job.workspaceEdit && !job.workspaceEdit.isCurrent()) return false;
+            for (const doc of job.documents.values()) if (doc.id !== job.viewCapture.document.id
+                && (this.workspace.observeDocument(doc.id).getSnapshot()?.revision !== doc.revision || this.authority(doc.id) !== job.authority.get(doc.id) || !this.canCapture(doc.id))) return false;
+        } catch { return false; }
         return true;
     }
     private editCount(job: Job): number { return job.workspaceEdit?.documents.reduce((count, change) => count + change.edits.length, 0) ?? job.locations.length; }
@@ -83,7 +86,7 @@ export class HostRenameTools {
     private release(): void {
         const job = this.job; this.job = undefined;
         if (!job) return; job.invalid = true; job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer);
-        job.stops.splice(0).forEach(stop => stop()); job.leases.splice(0).forEach(lease => lease.release()); if (!job.ready) this.drop(); else this.backend?.cancel();
+        job.stops.splice(0).forEach(stop => stop()); job.viewCapture.cancel(); job.leases.splice(0).forEach(lease => lease.release()); if (!job.ready) this.drop(); else this.backend?.cancel();
     }
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.release(); this.publish({ status: "idle", message: "Rename preview dismissed; source is unchanged.", locations: [], work: 0, total: 0, page: 0 }); };
     readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ message: "Rename provider disconnected; local editing remains available." }); };
@@ -136,13 +139,16 @@ export class HostRenameTools {
         try { input = validateNavigationInput({ operation: "navigation-start", id: ++this.serial, kind: "references", includeDeclaration: true, symbol: this.usesLsp ? "position" : symbol, documents: documents.map(d => ({ document: d.id, revision: d.revision, length: d.buffer.length })), delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid rename capture." }); return; }
         this.fault = undefined;
-        const job: Job = { origin, capture: { input, document: doc.id, offset: selected.selection.head }, selections: selected.selectionSet, folds: origin.editor.view.folding.getSnapshot().index,
-            documents: new Map(documents.map(d => [d.id, d])), authority: new Map(documents.map(d => [d.id, this.authority(d.id)])), leases: [], stops: [], timer: 0, invalid: false, ready: false, locations: [], ...(this.usesLsp ? { name: this.cell.get().name } : {}) };
+        const authority = new Map(documents.filter(d => d.id !== doc.id).map(d => [d.id, this.authority(d.id)]));
+        const viewCapture = captureViewRequest(this.workspace, origin.target, origin.editor.view, { available: () => this.available(origin) && this.canCapture(origin.editor.view.documentId) });
+        if (!viewCapture) { this.publish({ message: "The source changed before capture; prepare a fresh rename preview." }); return; }
+        const job: Job = { origin, capture: { input, document: doc.id, offset: selected.selection.head }, viewCapture,
+            documents: new Map(documents.map(d => [d.id, d])), authority, leases: [], stops: [], timer: 0, invalid: false, ready: false, locations: [], ...(this.usesLsp ? { name: this.cell.get().name } : {}) };
         this.job = job; this.metrics.requested++; const win = origin.editor.element.ownerDocument.defaultView!, total = input.documents.reduce((n, d) => n + d.length, 0);
         try {
             const changed = () => { if (!this.publishing && this.job === job && !this.current(job)) { job.invalid = true; queueMicrotask(() => { if (this.job === job) { this.metrics.expired++; this.release(); this.publish({ status: "expired", message: "Captured revision, selection, view or edit authority changed; prepare a fresh preview.", locations: [] }); } }); } };
-            for (const d of documents) { job.leases.push(this.workspace.acquire(d.resourceId)); job.stops.push(this.workspace.observeDocument(d.id).subscribe(changed), this.workspace.resourceForDocument(d.id).metadata.subscribe(changed)); }
-            job.stops.push(origin.editor.view.subscribe(changed), origin.editor.view.folding.subscribe(changed), this.workspace.tabState.subscribe(changed));
+            viewCapture.signal.addEventListener("abort", changed, { once: true });
+            for (const d of documents) if (d.id !== viewCapture.document.id) { job.leases.push(this.workspace.acquire(d.resourceId)); job.stops.push(this.workspace.observeDocument(d.id).subscribe(changed), this.workspace.resourceForDocument(d.id).metadata.subscribe(changed)); }
             job.timer = win.setTimeout(() => { if (this.job === job && !job.ready) { this.release(); this.metrics.failed++; this.publish({ status: "failed", message: "Rename provider timed out; source is unchanged.", locations: [] }); } }, 30000);
             this.publish({ status: "pending", message: this.usesLsp ? "Requesting the provider's complete rename edit preview." : `Preparing all lexical matches of ${symbol} across ${documents.length} captured working resources.`, symbol, ...(keyboard ? { name: symbol } : {}), locations: [], page: 0, work: 0, total });
             if (this.backendFactory) {
@@ -200,21 +206,24 @@ export class HostRenameTools {
         if (!this.editableTargets(job)) { this.publish(); return; }
         this.publishing = true;
         try {
-            let documents: readonly DocumentSnapshot[];
-            if (job.workspaceEdit) documents = applyLspWorkspaceEdit(this.workspace, job.workspaceEdit, { origin: "host", requiredOrigins: ["human"], view: job.origin.editor.view });
-            else {
-                const edits = new Map<string, TextEdit[]>();
-                for (const at of job.locations) { let batch = edits.get(at.document); if (!batch) { batch = []; edits.set(at.document, batch); } batch.push({ from: at.from, to: at.to, insert: name }); }
-                for (const id of edits.keys()) {
-                    const doc = job.documents.get(id)!, m = this.workspace.resourceForDocument(doc.id).metadata.getSnapshot();
-                    if (!m.capabilities.edit.includes("human") || !m.capabilities.edit.includes("host") || m.editLock !== null) throw new Error("Every rename target must permit human and host editing without a lock.");
+            let documents: readonly DocumentSnapshot[] = [];
+            if (!job.viewCapture.commit(() => {
+                if (job.workspaceEdit) documents = applyLspWorkspaceEdit(this.workspace, job.workspaceEdit, { origin: "host", requiredOrigins: ["human"], view: job.origin.editor.view });
+                else {
+                    const edits = new Map<string, TextEdit[]>();
+                    for (const at of job.locations) { let batch = edits.get(at.document); if (!batch) { batch = []; edits.set(at.document, batch); } batch.push({ from: at.from, to: at.to, insert: name }); }
+                    for (const id of edits.keys()) {
+                        const doc = job.documents.get(id)!, m = this.workspace.resourceForDocument(doc.id).metadata.getSnapshot();
+                        if (!m.capabilities.edit.includes("human") || !m.capabilities.edit.includes("host") || m.editLock !== null) throw new Error("Every rename target must permit human and host editing without a lock.");
+                    }
+                    const result = this.workspace.editDocuments([...edits].map(([id, batch]) => ({ documentId: job.documents.get(id)!.id, expectedRevision: job.documents.get(id)!.revision, edits: batch,
+                        origin: "host" as const, history: { kind: "replace" as const }, ...(id === job.origin.editor.view.documentId ? { view: job.origin.editor.view,
+                            selectionSet: renameSelections(job.documents.get(id)!.buffer.length, job.viewCapture.selectionSet, batch) } : {}) })));
+                    if (!result.applied) throw new Error(result.reason);
+                    documents = [...edits.keys()].map(id => job.documents.get(id)!);
                 }
-                const result = this.workspace.editDocuments([...edits].map(([id, batch]) => ({ documentId: job.documents.get(id)!.id, expectedRevision: job.documents.get(id)!.revision, edits: batch,
-                    origin: "host" as const, history: { kind: "replace" as const }, ...(id === job.origin.editor.view.documentId ? { view: job.origin.editor.view,
-                        selectionSet: renameSelections(job.documents.get(id)!.buffer.length, job.selections, batch) } : {}) })));
-                if (!result.applied) throw new Error(result.reason);
-                documents = [...edits.keys()].map(id => job.documents.get(id)!);
-            }
+                return true;
+            })) throw new Error("Captured rename context changed before application.");
             const changes = documents.map(doc => ({ document: doc.id, title: doc.title.slice(0, 128) }));
             this.metrics.applied++; this.release(); this.publish({ status: "applied", message: job.workspaceEdit ? `Applied ${this.editCount(job)} captured provider edits in ${changes.length} resources as one undo command.` : `Renamed ${job.locations.length} captured tokens in ${changes.length} resources as one undo command.`, changes, locations: [] });
         } catch (error) { this.release(); this.publish({ status: "failed", message: error instanceof Error ? error.message : "Rename rejected; source is unchanged.", locations: [] }); }
@@ -228,6 +237,6 @@ export class HostRenameTools {
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid rename delay."); this.delay = value; }
     faultNext(value: NonNullable<NavigationInput["fault"]>): void { this.fault = value; }
     faultIdle(): boolean { return this.backend?.faultIdle() ?? this.client?.faultIdle() ?? false; }
-    debug() { const job = this.job; return { ...this.metrics, worker: { ...this.worker }, state: this.cell.get(), capture: job ? { view: job.origin.id, document: job.capture.document, revision: job.documents.get(job.capture.document)!.revision, selections: job.selections } : null, transport: this.backend?.snapshot() ?? this.client?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
+    debug() { const job = this.job; return { ...this.metrics, worker: { ...this.worker }, state: this.cell.get(), capture: job ? { view: job.origin.id, document: job.capture.document, revision: job.documents.get(job.capture.document)!.revision, selections: job.viewCapture.selectionSet } : null, transport: this.backend?.snapshot() ?? this.client?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
     dispose(): void { if (this.disposed) return; this.cancel(); this.drop(); this.bindName(null); this.disposed = true; this.active = undefined; this.publish({ changes: [] }); }
 }

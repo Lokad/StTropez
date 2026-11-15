@@ -39,6 +39,10 @@ Pending input/composition/table conversion prevents capture. Editing, changed se
 name changes, authority changes, remount and expired session/capability generations cancel or
 expire the preview. Idle disconnection makes a fresh reconnect available; it never applies or
 automatically replays a rename. Cancellation during initial synchronization also releases its work.
+The origin's lease, complete selections, visible fold projection and tab/view validity belong to
+one public `captureViewRequest` read capture. Other project resources retain independent guards;
+late provider-resolved targets remain retained by the provider client. Application consumes the
+origin capture once while keeping its lease through the atomic operation.
 Read-only or locked targets remain inspectable in a fresh preview, with an explicit explanation
 and Apply disabled. Only targets with actual edits affect this availability; unrelated read-only
 project resources do not block it. The controller and transaction both recheck authority on application.
