@@ -4,6 +4,26 @@ import { HostController } from "../examples/hosts/controller.ts";
 
 const settled = () => new Promise<void>(done => setImmediate(done));
 
+test("host errors retain their original cause without mutating the error or document", async () => {
+    const host = new HostController(), cause = { status: 503 }, error = new Error("Service unavailable", { cause });
+    const document = host.workspace.document(host.source.documentId), handles = [host.layout, host.activity, host.settings];
+    try {
+        host.reportError(error);
+        assert.equal(host.lastError, error); assert.equal((host.lastError as Error).cause, cause);
+        assert.equal(Object.isFrozen(error), false); assert.equal(Object.isFrozen(cause), false);
+        assert.deepEqual(host.debug().lastError, { name: error.name, message: error.message, stack: error.stack });
+        assert.deepEqual(host.layout.getSnapshot().modal, { kind: "error", message: "The host operation failed. Your document is retained." });
+        assert.equal(host.activity.getSnapshot().errors, 1); host.clearError(); assert.equal(host.lastError, error);
+        const opaque = { circular: undefined as unknown }; opaque.circular = opaque;
+        host.reportError(opaque); assert.equal(host.lastError, opaque); assert.equal(Object.isFrozen(opaque), false);
+        assert.equal(host.debug().lastError, null); assert.equal(host.activity.getSnapshot().errors, 2);
+        assert.equal(host.workspace.document(host.source.documentId), document);
+        assert.deepEqual([host.layout, host.activity, host.settings], handles);
+        await host.dispose(); host.reportError(new Error("Late failure"));
+        assert.equal(host.lastError, opaque); assert.equal(host.activity.getSnapshot().errors, 2);
+    } finally { await host.dispose(); }
+});
+
 test("clean deferred loads release after switchback without disturbing captured source work", async () => {
     const host = new HostController();
     try {

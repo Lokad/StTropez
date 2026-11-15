@@ -1,21 +1,22 @@
 import { HostCell } from "../shared/observable.ts";
 import { TextBuffer, Workspace, WorkspaceCommands } from "../../src/index.ts";
-import type { AgentRequest, CloseOperation, ComparisonBaseline, DocumentId, DocumentView, Operation, RunSubmission, SaveResponse, SaveReview, SaveSubmission, SnapshotValue, TabId, TabTarget, TextEdit, TextResourceHandle } from "../../src/index.ts";
+import type { AgentRequest, CloseOperation, ComparisonBaseline, DocumentId, DocumentView, Operation, SaveReview, SaveSubmission, TabId, TabTarget, TextEdit, TextResourceHandle } from "../../src/index.ts";
 import { ReviewVariants } from "./variants.ts";
 import { ConfigurationSave } from "./configuration.ts";
 import { HostTransfer } from "./transfers.ts";
 import { RunResources } from "./run-resources.ts";
 import { TransferInstruction } from "./instruction.ts";
+import { HostFixtureServices } from "./fixture-services.ts";
+import type { Connection, RunSettings, ServiceActivity } from "./fixture-services.ts";
 
-export type Connection = Readonly<{ path: string; format: "csv"; [key: string]: SnapshotValue }>;
-type RunSettings = Readonly<{ mode: "preview" | "inspect" }>;
+export type { Connection } from "./fixture-services.ts";
 type RecoveredInput = Readonly<{ documentId: DocumentId; expectedRevision: number; reason: string; contextFrom: number; attemptedText: string; attemptedEdit: TextEdit | null }>;
 export type SaveConflict = Readonly<{ id: number; submittedRevision: number; expectedVersion: string | null; observedVersion: string;
     review: "unloaded" | "loading" | "ready" | "expired"; reviewVersion: string | null; message: string }>;
 export type Layout = Readonly<{ position: "left" | "right"; visible: boolean; formFault: boolean; primarySurface: "text" | "panel" | "loading" | "closed";
     navigation: Readonly<{ kind: "workspace" } | { kind: "review" }>;
     modal: Readonly<{ kind: "none" } | { kind: "error"; message: string } | { kind: "close"; tabId: TabId }> }>;
-export type Activity = Readonly<{ writes: number; acknowledgements: number; ackAttempts: number; pendingRuns: number; completedRuns: number; background: number;
+export type Activity = ServiceActivity & Readonly<{ pendingRuns: number; completedRuns: number; background: number;
     errors: number; lastSavedRevision: number | null; lastRun: Readonly<{ sourceRevision: number; configurationRevision: number; mode: string }> | null;
     ordering: readonly string[] }>;
 
@@ -42,6 +43,7 @@ export class HostController {
     readonly layout = this.layoutCell.observable;
     readonly activity = this.activityCell.observable;
     readonly settings = this.settingsCell.observable;
+    private readonly services = new HostFixtureServices(this.savedReference.buffer, activity => this.updateActivity(activity));
     private readonly recoveryCell = new HostCell<Readonly<{ visible: boolean; items: readonly RecoveredInput[] }>>({ visible: false, items: [] });
     readonly recovery = this.recoveryCell.observable;
     private readonly conflictCell = new HostCell<SaveConflict | null>(null);
@@ -53,9 +55,6 @@ export class HostController {
     private readonly conflictReads: { operation: Operation; presentation: TabTarget; conflictId: number; buffer: TextBuffer; version: string;
         reference: ReturnType<HostController["comparisonReference"]["getSnapshot"]>; currentRequest: () => boolean }[] = [];
     private pendingAgent: AgentRequest<Readonly<{ configurationRevision: number; path: string }>> | undefined;
-    private readonly agentReplies: { request: AgentRequest<Readonly<{ configurationRevision: number; path: string }>>; resolve: (proposal: string) => void; reject: (error: unknown) => void }[] = [];
-    private readonly saves: { submission: SaveSubmission<string>; resolve: (response: SaveResponse<string>) => void; reject: (error: unknown) => void }[] = [];
-    private readonly runs: { submission: RunSubmission<string, Connection, RunSettings>; resolve: () => void; reject: (error: unknown) => void }[] = [];
     private readonly operations = new Set<Promise<unknown>>();
     private disposal: Promise<void> | undefined;
     private proposalTransactionMs = 0;
@@ -70,12 +69,11 @@ export class HostController {
     private discardLoaded: Readonly<{ resource: TextResourceHandle; revision: number }> | undefined;
     private collectingLoaded = false;
     private readonly detachedDocumentCleanup = new Set<(documentId: DocumentId) => void>();
-    private serverVersion = "v0";
-    private serverSerial = 0;
-    private serverBuffer = this.savedReference.buffer;
-    private failNextAck = true;
     private timer: ReturnType<typeof setInterval> | undefined;
     private disposed = false;
+    private reportedError: unknown;
+    /** Original thrown value, including its cause/stack, for host diagnostics. Never frozen into UI state. */
+    get lastError(): unknown { return this.reportedError; }
     private readonly inputCaptureGuards = new Map<() => boolean, ((id: DocumentId) => DocumentView | undefined) | undefined>();
     registerInputCaptureGuard(ready: () => boolean, view?: (id: DocumentId) => DocumentView | undefined): () => void {
         if (this.disposed) return () => {};
@@ -134,7 +132,7 @@ export class HostController {
     }
     readonly variants = new ReviewVariants(this.workspace, this.source, {
         presentation: () => this.workspace.captureTab(this.primaryTab), reference: this.comparisonReference,
-        saved: () => this.savedReference, server: () => ({ buffer: this.serverBuffer, version: `reference:server-${this.serverVersion}` }),
+        saved: () => this.savedReference, server: () => { const server = this.services.server; return { buffer: server.buffer, version: `reference:server-${server.version}` }; },
         present: () => this.openReview(), beginReferenceRequest: () => this.beginReferenceRequest(),
         publish: baseline => this.referenceCell.set({ generation: this.referenceCell.get().generation + 1, baseline }),
     });
@@ -161,8 +159,9 @@ export class HostController {
     }
 
     private updateActivity(patch: Partial<Activity>): void { this.activityCell.set({ ...this.activityCell.get(), ...patch }); }
-    readonly reportError = (_error: unknown): void => {
+    readonly reportError = (error: unknown): void => {
         if (this.disposed) return;
+        this.reportedError = error;
         this.updateActivity({ errors: this.activityCell.get().errors + 1 });
         this.layoutCell.set({ ...this.layoutCell.get(), modal: Object.freeze({ kind: "error", message: "The host operation failed. Your document is retained." }) });
     };
@@ -200,8 +199,7 @@ export class HostController {
         const baseline = Object.freeze({ buffer: before.buffer, version: `reference:before-proposal-r${before.revision}` });
         const request = this.workspace.beginAgentRequest(this.source, { configurationRevision: configuration.revision, path: configuration.value.path });
         this.pendingAgent = request;
-        // Synthetic deferred service deliberately ignores cancellation; the ticket guards late delivery.
-        void this.track(new Promise<string>((resolve, reject) => this.agentReplies.push({ request, resolve, reject })).then(text => {
+        void this.track(this.services.proposal(request).then(text => {
             const start = performance.now();
             const result = request.accept({ id: request.input.id, revision: 1, edits: [{ from: 0, to: request.input.source.value.length, insert: text }] });
             this.proposalTransactionMs = performance.now() - start;
@@ -215,8 +213,8 @@ export class HostController {
         }));
     });
     readonly deliverProposal = (): void => { this.deliverProposalText("agent proposal"); };
-    readonly deliverProposalText = (text: string): void => { this.agentReplies.shift()?.resolve(text); };
-    readonly failAgent = (): void => { this.agentReplies.shift()?.reject(new Error("Synthetic agent service failure")); };
+    readonly deliverProposalText = (text: string): void => { this.services.deliverProposal(text); };
+    readonly failAgent = (): void => { this.services.failAgent(); };
     readonly offerNewerProposal = (): void => this.safe(() => {
         const review = this.review.getSnapshot(), document = this.workspace.document(this.source.documentId);
         if (!review.association || !review.proposal) throw new Error("A proposal is required.");
@@ -238,8 +236,7 @@ export class HostController {
         let captured: SaveSubmission<string> | undefined;
         void this.track(this.commands.save(this.source, { save: submission => {
             captured = submission;
-            return this.disposed ? Promise.resolve({ kind: "conflict", serverVersion: this.serverVersion })
-                : new Promise((resolve, reject) => this.saves.push({ submission, resolve, reject }));
+            return this.services.save(submission);
         } }, review)
             .then(result => {
                 if (!this.disposed && result.kind === "saved") {
@@ -261,7 +258,7 @@ export class HostController {
     /** Synthetic external writer; never updates the local document or its known saved version. */
     externalWrite(text: string): void {
         if (this.disposed) return;
-        this.serverBuffer = TextBuffer.from(text); this.serverVersion = `v${++this.serverSerial}`;
+        this.services.externalWrite(text);
         this.variants.refreshCatalog();
     }
     readonly simulateExternalWrite = (): void => { this.externalWrite("external source\r\n"); };
@@ -269,7 +266,7 @@ export class HostController {
         const conflict = this.conflictCell.get(); if (!conflict) return;
         const presentation = this.workspace.captureTab(this.primaryTab);
         const operation = this.workspace.beginOperation(this.source.id, "save-conflict-review", presentation);
-        this.conflictReads.push({ operation, presentation, conflictId: conflict.id, buffer: this.serverBuffer, version: this.serverVersion,
+        this.conflictReads.push({ operation, presentation, conflictId: conflict.id, ...this.services.server,
             reference: this.referenceCell.get(), currentRequest: this.beginReferenceRequest() });
         this.conflictReference = undefined; this.conflictPresentation = undefined;
         this.conflictCell.set({ ...conflict, review: "loading", reviewVersion: null, message: "Reading a captured remote snapshot; local typing can continue." });
@@ -305,24 +302,12 @@ export class HostController {
         }
         this.saveSource({ target: this.workspace.captureResource(this.source.id), expectedRevision: this.workspace.document(this.source.documentId).revision, expectedServerVersion: conflict.reviewVersion! });
     });
-    readonly finishSave = (): void => {
-        const pending = this.saves.shift(); if (!pending) return;
-        if (pending.submission.expectedServerVersion !== this.serverVersion) {
-            pending.resolve({ kind: "conflict", serverVersion: this.serverVersion }); return;
-        }
-        const writes = this.activityCell.get().writes + 1; this.serverVersion = `v${++this.serverSerial}`; this.updateActivity({ writes });
-        this.serverBuffer = TextBuffer.from(pending.submission.value.trimEnd());
-        pending.resolve({ kind: "saved", serverVersion: this.serverVersion, canonical: pending.submission.value.trimEnd() });
-    };
-    readonly failSave = (): void => { this.saves.shift()?.reject(new Error("Synthetic save transport failure")); };
+    readonly finishSave = (): void => { this.services.finishSave(); };
+    readonly failSave = (): void => { this.services.failSave(); };
     readonly retryAcknowledgement = (): void => this.safe(() => {
         const acknowledgement = this.review.getSnapshot().acknowledgements[0];
         if (!acknowledgement) return;
-        void this.track(this.commands.acknowledge(this.source.id, acknowledgement.id, { acknowledge: async () => {
-            this.updateActivity({ ackAttempts: this.activityCell.get().ackAttempts + 1 });
-            if (this.failNextAck) { this.failNextAck = false; throw new Error("Synthetic acknowledgement failure"); }
-            this.updateActivity({ acknowledgements: this.activityCell.get().acknowledgements + 1 });
-        } }).catch(error => this.reportError(error)));
+        void this.track(this.commands.acknowledge(this.source.id, acknowledgement.id, { acknowledge: this.services.acknowledge }).catch(error => this.reportError(error)));
     });
     readonly run = async (): Promise<void> => {
         if (this.disposed || !this.sourceInputReady()) return;
@@ -330,9 +315,7 @@ export class HostController {
         let started = false;
         await this.track(this.commands.run(this.source, this.connection, this.settingsCell.get(), { run: submission => {
             const id = this.runResources.start(submission);
-            const pending = new Promise<void>((resolve, reject) => this.runs.push({ submission,
-                resolve: () => { this.runResources.finish(id, this.disposed ? "interrupted" : "completed"); resolve(); },
-                reject: error => { this.runResources.finish(id, "failed"); reject(error); } })); started = true;
+            const pending = this.services.run(submission, status => this.runResources.finish(id, status)); started = true;
             this.updateActivity({ pendingRuns: this.activityCell.get().pendingRuns + 1, lastRun: Object.freeze({ sourceRevision: submission.source.revision,
                 configurationRevision: submission.configuration.revision, mode: submission.settings.mode }) });
             return pending;
@@ -340,12 +323,9 @@ export class HostController {
             .catch(error => { if (!this.disposed && started) this.updateActivity({ pendingRuns: this.activityCell.get().pendingRuns - 1 });
                 if (!started) this.reportError(error); }));
     };
-    readonly finishRun = (): void => { this.runs.shift()?.resolve(); };
-    readonly failRun = (): void => { this.runs.shift()?.reject(new Error("Synthetic run failure")); };
-    runCapture(index: number) {
-        const submission = this.runs[index]?.submission;
-        return submission ? { source: submission.source.value, configuration: submission.configuration.value, settings: submission.settings } : null;
-    }
+    readonly finishRun = (): void => { this.services.finishRun(); };
+    readonly failRun = (): void => { this.services.failRun(); };
+    runCapture(index: number) { return this.services.runCapture(index); }
     readonly demonstrateOrdering = (): void => {
         if (this.disposed || !this.sourceInputReady()) return;
         const phases: string[] = [], write = this.settingsCell.enqueue({ mode: "inspect" });
@@ -440,16 +420,12 @@ export class HostController {
                 serverVersion: source.metadata.serverVersion, dirty: source.metadata.dirty, saveStatus: source.metadata.saveStatus },
             saveConflict: this.conflictCell.get(), pendingConflictReads: this.conflictReads.length, variants: this.variants.state.getSnapshot(),
             transfer: { id: this.transfer.resource.id, revision: this.transfer.resource.getSnapshot().revision, dirty: this.transfer.resource.metadata.getSnapshot().dirty, saveStatus: this.transfer.resource.metadata.getSnapshot().saveStatus, serverVersion: this.transfer.resource.metadata.getSnapshot().serverVersion }, transferSave: this.transfer.save.debug(), runResources: this.runResources.debug(), instruction: this.instruction.debug(),
-            server: { version: this.serverVersion, length: this.serverBuffer.length },
+            ...this.services.debug(),
+            lastError: this.reportedError instanceof Error ? { name: this.reportedError.name, message: this.reportedError.message, stack: this.reportedError.stack } : null,
             history: this.workspace.observeHistory(this.source.documentId).getSnapshot(),
             configuration: { id: this.connection.id, revision: form.revision, dirty: form.metadata.dirty, serverVersion: form.metadata.serverVersion, saveStatus: form.metadata.saveStatus }, configurationSave: this.configurationSave.debug(), review: this.review.getSnapshot(),
             comparisonReference: { generation: this.referenceCell.get().generation, version: this.referenceCell.get().baseline.version,
                 length: this.referenceCell.get().baseline.buffer.length },
-            pendingSaves: this.saves.map(save => ({ revision: save.submission.revision, length: save.submission.value.length, expectedServerVersion: save.submission.expectedServerVersion })),
-            pendingRuns: this.runs.map(({ submission }) => ({ sourceId: submission.source.target.id, sourceRevision: submission.source.revision,
-                sourceLength: submission.source.value.length, sourceVersion: submission.source.serverVersion, configurationId: submission.configuration.target.id,
-                configurationRevision: submission.configuration.revision, configurationVersion: submission.configuration.serverVersion, mode: submission.settings.mode })),
-            pendingAgentReplies: this.agentReplies.length,
             requestInput: this.pendingAgent ? { sourceRevision: this.pendingAgent.input.source.revision,
                 sourceLength: this.pendingAgent.input.source.value.length, configurationRevision: this.pendingAgent.input.context.configurationRevision } : null,
             proposalTransactionMs: this.proposalTransactionMs, pendingCommands: this.operations.size,
@@ -463,10 +439,8 @@ export class HostController {
         if (this.timer !== undefined) clearInterval(this.timer); this.timer = undefined;
         this.workspace.interruptAgent(this.source.id);
         this.workspace.detachAgent(this.source.id);
-        this.agentReplies.splice(0).forEach(reply => { reply.request.fail(); reply.resolve(""); });
-        this.saves.splice(0).forEach(save => save.resolve({ kind: "conflict", serverVersion: this.serverVersion }));
         this.conflictReads.splice(0).forEach(read => { read.operation.cancel(); read.operation.finish(); });
-        this.runs.splice(0).forEach(run => run.resolve());
+        this.services.dispose();
         this.updateActivity({ pendingRuns: 0 });
         this.closeOperation?.finish(); this.closeOperation = undefined;
         this.finishLoad();

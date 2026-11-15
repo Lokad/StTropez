@@ -5,6 +5,19 @@ document, tab and view handles. `?editor=native` mounts the native control; `?ed
 mounts the bounded input candidate. The same host protocol tests run against both choices.
 These remain synthetic evaluation hosts. All service responses come from deferred local ports.
 
+`HostFixtureServices` owns the deferred proposal/Save/Run replies, simulated source server and
+acknowledgement failures. The controller retains command capture, review approval, comparison
+publication and stable UI observables. View removal leaves services running; final disposal
+settles their replies before the controller finishes waiting for command leases. Queued saves
+reaching a disposed service settle without writing. Configuration and transfer keep their own
+independent form-save owners.
+
+Reported errors retain the original thrown value in `HostController.lastError`, including an
+Error's cause and stack, without freezing it into UI state. The fixture debug snapshot includes
+name/message/stack for Error values; opaque thrown values remain available through the controller
+getter. Dismissing the recovery message retains the latest diagnostic, and late reports after
+disposal cannot replace it. The user message stays separate from implementation details.
+
 Candidate hosts also offer a [source-backed anchored transfer-instruction form](transfer-instruction.md).
 It patches known JSON string spans, follows source edits/folds/history and keeps explicit copying
 into separate transfer settings independent of Save and Run. The host owns its sibling DOM lane;
