@@ -1,23 +1,29 @@
 import type { Connection, HostController } from "./controller.ts";
 import type { HostDraftRecovery } from "./draft-recovery.ts";
 import type { ViewBindings } from "./bindings.ts";
+import type { HostLifecycle } from "./lifecycle.ts";
 import type { DocumentId, HistorySnapshot, ResourceId, Selection, TabTarget, TextEdit, TextResourceHandle } from "../../src/index.ts";
 import type { JsonValue } from "../../src/protocol/index.ts";
 
 type TransferTargetSnapshot = Readonly<{ documentId: DocumentId; revision: number; text: string; exports: number; history: HistorySnapshot }>;
 
 export function installHostHarness(controller: HostController, bindings: ViewBindings, mode: "plain" | "react",
-    mount: () => void, unmount: () => void, commits: () => Readonly<{ form: number; metadata: number }>, draft?: HostDraftRecovery): void {
-    let disposed = false;
+    lifecycle: HostLifecycle, commits: () => Readonly<{ form: number; metadata: number }>, draft?: HostDraftRecovery): void {
     let transferTarget: TextResourceHandle | undefined;
     const inactive: { resource: TextResourceHandle; tab: TabTarget }[] = [];
     const seedInactiveDocuments = () => {
-        if (disposed || inactive.length) throw new Error("Inactive workload can be created once on a live host.");
+        if (lifecycle.disposed || inactive.length) throw new Error("Inactive workload can be created once on a live host.");
         for (let index = 0; index < 100; index++) {
             const resource = controller.workspace.createTextResource({ scope: "host-workload", resource: `inactive-${index}`, variant: "working" },
                 `Inactive ${index}`, { value: `// inactive ${index}\r\n` + "row Δ😀\r\n".repeat(1000) });
+            let target: TabTarget | undefined;
+            lifecycle.onDispose(() => {
+                const index = inactive.findIndex(owner => owner.resource === resource); if (index >= 0) inactive.splice(index, 1);
+                if (target && controller.workspace.resolveTab(target)) controller.workspace.close(target.id);
+                controller.workspace.releaseResource(resource.id);
+            });
             const id = controller.workspace.open({ kind: "text", documentId: resource.documentId }, "inactive");
-            inactive.push({ resource, tab: controller.workspace.captureTab(id) });
+            target = controller.workspace.captureTab(id); inactive.push({ resource, tab: target });
         }
     };
     const inactiveDocuments = () => Object.freeze(inactive.map(({ resource, tab }) => Object.freeze({ id: resource.id,
@@ -29,20 +35,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         return { documentId: transferTarget.documentId, revision: current.revision, text: current.buffer.slice(0, current.buffer.length),
             exports: current.buffer.readMetrics().textExports, history: controller.workspace.observeHistory(transferTarget.documentId).getSnapshot() };
     };
-    const attach = () => { if (disposed) throw new Error("Host fixture is disposed."); mount(); };
-    const recover = () => { controller.recover(); attach(); };
-    const listeners = new AbortController();
-    document.getElementById("recover")!.addEventListener("click", recover, { signal: listeners.signal });
-    const dispose = async () => { disposed = true; listeners.abort(); unmount(); bindings.dispose();
-        for (const { resource, tab } of inactive.splice(0)) {
-            if (controller.workspace.resolveTab(tab)) controller.workspace.close(tab.id);
-            controller.workspace.releaseResource(resource.id);
-        }
-        if (transferTarget) { controller.workspace.close(controller.viewTab("secondary")); controller.workspace.releaseResource(transferTarget.id, true); transferTarget = undefined; }
-        const draftDisposal = draft?.dispose(), controllerDisposal = controller.dispose(); await Promise.all([draftDisposal, controllerDisposal]); };
-    window.addEventListener("pagehide", () => { void dispose(); }, { once: true, signal: listeners.signal });
-    controller.startBackground(); mount();
-    const fixture = Object.freeze({ ready: true, get settled() { return !disposed && bindings.settled(); }, mode, snapshot: () => { const state = controller.debug(), views = bindings.debug();
+    const fixture = Object.freeze({ ready: true, get settled() { return !lifecycle.disposed && bindings.settled(); }, mode, snapshot: () => { const state = controller.debug(), views = bindings.debug();
         return { ...state, hostSubscriptions: state.hostSubscriptions + views.language.subscriptions + views.hover.subscriptions + views.tablePaste.subscriptions + views.domain.subscriptions + views.navigation.subscriptions + views.project.subscriptions + views.signature.subscriptions + views.rename.subscriptions + views.actions.subscriptions + views.links.subscriptions + views.colors.subscriptions + (draft?.debug().subscriptions ?? 0), draft: draft?.debug() ?? null, bindings: views, commits: commits() }; },
         editSource: (expectedRevision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: controller.source.documentId,
             expectedRevision, edits, origin: "host", history: { kind: "live" } }),
@@ -60,9 +53,16 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         setSourceReadOnly: (value: boolean) => controller.workspace.setCapabilities(controller.source.id, { edit: value ? ["host"] : ["human", "host", "agent"], save: true, run: true }),
         cycleSourceEditLease: () => { const lease = controller.workspace.acquireEditLease(controller.source.id, "host-fixture", "host"); lease.release(); },
         openTransferTarget: (text: string) => {
-            if (disposed || transferTarget) throw new Error("Transfer target cannot be mounted.");
-            unmount(); transferTarget = controller.workspace.createTextResource({ scope: "host-fixture", resource: "transfer-text", variant: "working" }, "Transfer target", { value: text });
-            controller.workspace.replace(controller.viewTab("secondary"), { kind: "text", documentId: transferTarget.documentId }); attach();
+            if (lifecycle.disposed || transferTarget) throw new Error("Transfer target cannot be mounted.");
+            lifecycle.unmount();
+            const resource = controller.workspace.createTextResource({ scope: "host-fixture", resource: "transfer-text", variant: "working" }, "Transfer target", { value: text });
+            transferTarget = resource; let target: TabTarget | undefined;
+            lifecycle.onDispose(() => {
+                if (target && controller.workspace.resolveTab(target)) controller.workspace.close(target.id);
+                controller.workspace.releaseResource(resource.id, true); transferTarget = undefined;
+            });
+            controller.workspace.replace(controller.viewTab("secondary"), { kind: "text", documentId: resource.documentId });
+            target = controller.workspace.captureTab(controller.viewTab("secondary")); lifecycle.mount();
         },
         transferSnapshot,
         editTransferTarget: (expectedRevision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: transferSnapshot().documentId, expectedRevision, edits, origin: "host" }),
@@ -93,7 +93,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         inspectSymbol: (id: "primary" | "secondary" | "comparison") => bindings.hover.inspectCaret(id),
         setHoverDelay: (id: string, value: number) => bindings.hover.setDelay(id, value),
         faultHoverNext: (id: string, value: "malformed" | "failure" | "markup") => bindings.hover.faultNext(id, value),
-        seedInactiveDocuments, inactiveDocuments, unmount, mount: attach, dispose });
+        seedInactiveDocuments, inactiveDocuments, unmount: lifecycle.unmount, mount: lifecycle.mount, dispose: lifecycle.dispose });
     window.hostFixture = fixture;
 }
 declare global { interface Window { hostFixture: Readonly<{ ready: boolean; settled: boolean; mode: string; snapshot: () => ReturnType<HostController["debug"]> &

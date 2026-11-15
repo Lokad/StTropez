@@ -7,6 +7,7 @@ import { HostController } from "./controller.ts";
 import { hostEditor, ViewBindings } from "./bindings.ts";
 import { actions, conflictText, statusText } from "./actions.ts";
 import { installHostHarness } from "./harness.ts";
+import { HostLifecycle } from "./lifecycle.ts";
 import { findText, foldText, languageActions, languageToolsKey } from "./language-panel.ts";
 import { domainActions } from "./domain-panel.ts";
 import { navigationActions } from "./navigation-panel.ts";
@@ -237,11 +238,13 @@ function DomainTools() {
             <button onClick={() => tools.reveal(state.token!, state.revision!, note.id)}>{note.label}</button></li>)}</ul></section>;
 }
 let root: Root | undefined;
-const unmount = () => { root?.unmount(); root = undefined; };
+const unmount = () => { const current = root; root = undefined; current?.unmount(); };
 const mount = () => {
     root ??= createRoot(document.getElementById("host")!, { onUncaughtError: controller.reportError,
         onCaughtError: controller.reportError, onRecoverableError: controller.reportError });
     // The explicit host lifecycle returns after refs and Strict Mode's replay are ready for input.
     flushSync(() => root!.render(<StrictMode><App /></StrictMode>));
 };
-installHostHarness(controller, bindings, "react", mount, unmount, () => ({ ...counters }), draft);
+const lifecycle = new HostLifecycle(window, document.getElementById("recover")!, { controller, bindings, draft, mount, unmount });
+lifecycle.start();
+installHostHarness(controller, bindings, "react", lifecycle, () => ({ ...counters }), draft);

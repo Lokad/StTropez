@@ -284,6 +284,9 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await page.getByRole("button", { name: "Save source", exact: true }).click();
             await page.getByRole("button", { name: "Save source", exact: true }).click();
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().pendingSaves.length)).toBe(1);
+            const beforeFixtures = await page.evaluate(() => window.hostFixture.snapshot().diagnostics);
+            await page.evaluate(() => { window.hostFixture.seedInactiveDocuments(); window.hostFixture.openTransferTarget("temporary target"); });
+            expect(await page.evaluate(() => window.hostFixture.inactiveDocuments().length)).toBe(100);
             await page.evaluate(() => window.hostFixture.dispose());
             const stopped = await page.evaluate(() => window.hostFixture.snapshot());
             await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 120)));
@@ -291,6 +294,9 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect(stopped.bindings.activeViews).toBe(0); expect(stopped.diagnostics.subscriptions).toBe(0); expect(stopped.hostSubscriptions).toBe(0);
             expect(stopped.diagnostics.leases).toBe(0); expect(stopped.pendingCommands).toBe(0);
             expect(stopped.pendingSaves).toEqual([]); expect(stopped.pendingRuns).toEqual([]);
+            expect(stopped.diagnostics.documents).toBe(beforeFixtures.documents);
+            expect(await page.evaluate(() => window.hostFixture.inactiveDocuments())).toEqual([]);
+            expect(await page.evaluate(() => { try { window.hostFixture.transferSnapshot(); return false; } catch { return true; } })).toBe(true);
             expect(await page.evaluate(() => { try { window.hostFixture.mount(); return false; } catch { return true; } })).toBe(true);
         });
 

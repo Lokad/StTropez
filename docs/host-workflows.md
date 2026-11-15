@@ -20,6 +20,18 @@ the temporary source slot, its generation, pending load and explicit discard rev
 rechecks dirty state after detached-view cleanup and releases only after tabs and leases leave.
 The controller composes these owners and exposes their stable observables to both hosts.
 
+Both main modules explicitly start `HostLifecycle` before installing fixture controls. The
+lifecycle owns recovery, page events and ordered teardown: mounted views and bindings release
+before captured fixture resources, then draft storage and tracked commands settle. Cleanup
+continues after individual failures; repeated or reentrant disposal returns the same completion.
+React mounting still returns after its explicit `flushSync` and ref completion. Fixture resources
+register their captured identities for cleanup instead of supplying application startup.
+
+A persisted `pagehide` retains the mounted host and its listener for a later final hide. A
+non-persisted hide starts teardown. Browser regressions exercise this policy with synthetic
+page-transition events and fixture installation disabled; they do not establish real
+back/forward-cache eligibility or restoration across browser/device combinations.
+
 Reported errors retain the original thrown value in `HostController.lastError`, including an
 Error's cause and stack, without freezing it into UI state. The fixture debug snapshot includes
 name/message/stack for Error values; opaque thrown values remain available through the controller
