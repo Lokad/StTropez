@@ -5,6 +5,33 @@ host language, CSV/literal insertion and source notes. No compiler or language s
 for that sample. These policies belong in the consuming application; shipped editor assets
 remain dependency-free. The following pieces can be used independently.
 
+## Captured view requests
+
+`captureViewRequest(workspace, target, view, options?)` from `sttropez/browser` retains one
+tab/view/resource context for asynchronous host work. The immutable handle exposes the captured
+document, complete selection set and folding snapshot, plus `isCurrent()`, `signal`, `cancel()`
+and `commit(operation)`. Use `workspace.captureTab(tabId)` for the target. Foreign views, changed
+tab identities and unavailable documents cannot be captured. The helper never reads whole text.
+
+Omitting `editOrigin` allows read queries on a read-only source. Supplying an origin also requires
+that edit capability and no edit lock; it does not grant authority to a later transaction.
+The optional `available` callback supplies host input/lifecycle constraints. It is a synchronous
+read-only guard; cancel explicitly when host state changes outside the observed workspace/view.
+
+Revision, selection, visible fold projection and resource authority changes latch invalidation.
+New expanded fold metadata, save permissions and focus elsewhere alone do not invalidate the
+capture. `isCurrent()` also latches a failed host guard. Observer invalidation makes the handle
+stale immediately, then releases its lease and aborts its signal in a microtask so host abort
+handlers can safely issue commands. Call `cancel()` outside observer delivery for explicit cleanup.
+Keep the capture while a displayed result depends on it; always cancel on dismissal or disposal.
+
+`commit(operation)` checks currentness, consumes the capture, removes its observers and runs one
+synchronous boolean-returning operation while retaining the resource. It releases retention and
+aborts the signal even if the operation throws. A stale or consumed capture returns `false`
+without calling the operation. The operation still uses normal Workspace permission, revision
+and history checks. Async callbacks are not supported. Captured insertion builds on this primitive;
+the signature host also uses it and retains its displayed result until dismissal or invalidation.
+
 ## Captured asynchronous insertion
 
 `editor.captureInsertion("paste")` returns a `CapturedInsertion`, or `undefined` when the
@@ -43,7 +70,7 @@ Keep conversion cooperative and bounded. The demo's [table converter](table-past
 example of host policy, not a required library dependency.
 
 The capture retains exact tab/view/resource authority, revision, directed selection set and
-fold generation. Revision/selection/fold/authority changes, composition, later editing or
+visible fold projection. Revision/selection/projection/authority changes, composition, later editing or
 navigation keys, language reconfiguration, another capture and view disposal invalidate it.
 Focus moving to surrounding host UI alone does not retarget it. `isCurrent()` becomes false
 immediately; observer-triggered signal abort and lease release occur in a microtask because

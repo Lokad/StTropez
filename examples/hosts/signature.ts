@@ -1,6 +1,7 @@
-import type { DocumentId, DocumentSnapshot, FoldIndex, ResourceLease, SelectionSet, TabId, TabTarget, TextBuffer, Workspace } from "../../src/index.ts";
+import type { DocumentId, DocumentSnapshot, TabId, TabTarget, TextBuffer, Workspace } from "../../src/index.ts";
 import type { LspSignatureContext } from "../../src/protocol/index.ts";
-import type { DocumentationContent, EditingCandidate } from "../../src/browser/index.ts";
+import { captureViewRequest } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, DocumentationContent, EditingCandidate } from "../../src/browser/index.ts";
 import { createNavigationClient, navigationMetrics } from "../editing/navigation-client.ts";
 import { signatureTriggerName, validateSignatureInput } from "../probes/signature.ts";
 import type { SignatureInput, SignatureResult } from "../probes/signature.ts";
@@ -13,7 +14,7 @@ export type SignatureBackend = Readonly<{ signature: (input: SignatureInput, buf
     trigger?: (document: DocumentSnapshot, character: string, retrigger: boolean) => boolean; isCurrent?: () => boolean }>;
 export type SignatureBackendFactory = (clock: Window, changed: () => void) => SignatureBackend;
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate; stop: () => void };
-type Job = { session: Session; input: SignatureInput; selections: SelectionSet; folds: FoldIndex; authority: string; lease: ResourceLease | undefined;
+type Job = { session: Session; input: SignatureInput; capture: CapturedViewRequest;
     timer: number; invalid: boolean; ready: boolean; result?: SignaturePresentation };
 export type SignatureSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; visible: boolean; pending: boolean;
     status: "idle" | "pending" | "ready" | "empty" | "expired" | "failed"; message: string; view: string | null; left: number; top: number;
@@ -51,11 +52,8 @@ export class HostSignatureTools {
         return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
             && tab?.surface.kind === "text" && tab.surface.documentId === s.editor.view.documentId && !!this.workspace.observeDocument(s.editor.view.documentId).getSnapshot();
     }
-    private authority(id: DocumentId): string { const m = this.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
     private current(job: Job): boolean {
-        try { return this.job === job && !job.invalid && this.available(job.session) && this.canCapture(job.session.editor.view.documentId)
-            && this.workspace.document(job.session.editor.view.documentId).revision === job.input.revision && this.authority(job.session.editor.view.documentId) === job.authority
-            && job.session.editor.view.getSnapshot().selectionSet === job.selections && job.folds.sameProjection(job.session.editor.view.folding.getSnapshot().index) && (this.client?.isCurrent?.() ?? true); } catch { return false; }
+        try { return this.job === job && !job.invalid && job.capture.isCurrent() && (this.client?.isCurrent?.() ?? true); } catch { return false; }
     }
     private publish(patch: Partial<SignatureSnapshot> = {}): void {
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active), connected: this.client?.snapshot().connected ?? false,
@@ -78,10 +76,10 @@ export class HostSignatureTools {
         observer.observe(editor.element.closest("#host") ?? editor.element.ownerDocument.body, { childList: true, subtree: true, attributes: true, characterData: true });
     }
     private drop(): void { const old = this.client; this.client = undefined; old?.dispose(); }
-    private releasePending(job: Job): void { job.session.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); job.lease?.release(); job.lease = undefined; }
+    private clearDeadline(job: Job): void { job.session.editor.element.ownerDocument.defaultView!.clearTimeout(job.timer); }
     private stopAuto(): void { if (this.auto) this.auto.session.editor.element.ownerDocument.defaultView!.clearTimeout(this.auto.timer); this.auto = undefined; }
     private clear(status: SignatureSnapshot["status"], message: string): void {
-        const job = this.job; this.job = undefined; if (job) { job.invalid = true; this.releasePending(job); if (!job.ready) this.drop(); }
+        const job = this.job; this.job = undefined; if (job) { job.invalid = true; this.clearDeadline(job); job.capture.cancel(); if (!job.ready) this.drop(); }
         this.stopLayout(); this.publish({ status, message, visible: false, before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", content: emptyContent, parameterContent: emptyContent, activeSignature: 0, signatureCount: 0, argument: null, work: 0, total: 0 });
     }
     readonly dismiss = (): void => { this.armed = false; this.stopAuto(); if (this.job && !this.job.ready) this.counts.cancelled++; this.clear("idle", "Signature help dismissed."); };
@@ -136,24 +134,26 @@ export class HostSignatureTools {
     private request(s: Session, context: LspSignatureContext = { triggerKind: 1, isRetrigger: false }): void {
         if (this.disconnected || !this.available(s) || !this.canCapture(s.editor.view.documentId)) { this.publish({ message: "Finish pending input, navigation, table conversion or composition first." }); return; }
         this.beforeRequest(); this.stopAuto(); this.clear("idle", "Capturing signature context."); this.armed = true;
-        const doc = this.workspace.document(s.editor.view.documentId), selected = s.editor.view.getSnapshot();
-        let input: SignatureInput; try { input = validateSignatureInput({ id: ++this.sequence, document: doc.id, revision: doc.revision, length: doc.buffer.length, offset: selected.selection.head, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
-        catch (error) { this.armed = false; this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid signature context." }); return; } this.fault = undefined;
-        const win = s.editor.element.ownerDocument.defaultView!, job: Job = { session: s, input, selections: selected.selectionSet, folds: s.editor.view.folding.getSnapshot().index, authority: this.authority(doc.id),
-            lease: this.workspace.acquire(doc.resourceId), timer: 0, invalid: false, ready: false }; this.job = job; this.counts.requested++;
+        const capture = captureViewRequest(this.workspace, s.target, s.editor.view, { available: () => this.available(s) && this.canCapture(s.editor.view.documentId) });
+        if (!capture) { this.armed = false; this.publish({ status: "expired", message: "Captured signature context changed." }); return; }
+        const doc = capture.document, selected = capture.selectionSet.ranges[capture.selectionSet.primary]!;
+        let input: SignatureInput; try { input = validateSignatureInput({ id: ++this.sequence, document: doc.id, revision: doc.revision, length: doc.buffer.length, offset: selected.head, delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
+        catch (error) { capture.cancel(); this.armed = false; this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid signature context." }); return; } this.fault = undefined;
+        const win = s.editor.element.ownerDocument.defaultView!, job: Job = { session: s, input, capture, timer: 0, invalid: false, ready: false }; this.job = job; this.counts.requested++;
+        capture.signal.addEventListener("abort", () => { if (this.job === job) this.invalidate(s); }, { once: true });
         this.publish({ status: "pending", visible: true, message: "Reading captured signature context.", total: input.offset, work: 0, ...this.position() }); this.trackLayout();
         try {
             this.ensureClient(win);
             job.timer = win.setTimeout(() => { if (this.job === job && !job.ready) { this.counts.failed++; this.armed = false; this.clear("failed", "Signature help timed out; local editing remains available."); } }, 30000);
             void this.client!.signature(input, doc.buffer, work => { if (this.current(job)) this.publish({ work }); }, context).then(result => {
                 if (this.job !== job) return; if (!this.current(job)) { this.invalidate(s); return; }
-                job.ready = true; job.result = result; this.releasePending(job); this.counts.applied++; this.show(job, result.activeSignature);
+                job.ready = true; job.result = result; this.clearDeadline(job); this.counts.applied++; this.show(job, result.activeSignature);
             }).catch(error => { if (this.job !== job) return; this.counts.failed++; this.armed = false; this.clear("failed", error instanceof Error ? error.message : "Signature provider failed; local editing remains available."); });
         } catch (error) { this.counts.failed++; this.armed = false; this.clear("failed", error instanceof Error ? error.message : "Signature help is unavailable."); }
     }
     attach(id: string, tab: TabId, editor: EditingCandidate): () => void {
         const s: Session = { token: ++sessionSerial, id, target: this.workspace.captureTab(tab), editor, stop: () => {} }, events = new AbortController(), win = editor.element.ownerDocument.defaultView!;
-        this.sessions.set(s.token, s); const stops = [this.workspace.observeDocument(editor.view.documentId).subscribe(() => this.invalidate(s)), editor.view.subscribe(() => this.invalidate(s)), editor.view.folding.subscribe(() => this.invalidate(s)), this.workspace.resourceForDocument(editor.view.documentId).metadata.subscribe(() => this.invalidate(s)), this.workspace.tabState.subscribe(() => this.invalidate(s))];
+        this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { if (this.active !== s) { this.dismiss(); this.active = s; this.publish(); } }, { signal: events.signal });
         editor.input.addEventListener("blur", () => { if (this.active === s) this.dismiss(); }, { signal: events.signal });
         editor.input.addEventListener("keydown", event => {
@@ -171,7 +171,7 @@ export class HostSignatureTools {
         }, { capture: true, signal: events.signal });
         for (const event of ["compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.active === s) this.dismiss(); }, { signal: events.signal });
         win.addEventListener("scroll", () => { if (this.job?.session === s) this.queueLayout(); }, { capture: true, signal: events.signal }); win.addEventListener("resize", () => { if (this.job?.session === s) this.queueLayout(); }, { signal: events.signal });
-        let detached = false; s.stop = () => { if (detached) return; detached = true; if (this.job?.session === s || this.auto?.session === s) this.dismiss(); events.abort(); stops.forEach(stop => stop()); this.sessions.delete(s.token);
+        let detached = false; s.stop = () => { if (detached) return; detached = true; if (this.job?.session === s || this.auto?.session === s) this.dismiss(); events.abort(); this.sessions.delete(s.token);
             if (this.active === s) this.active = undefined; if (!this.sessions.size) this.drop(); this.publish(); }; return s.stop;
     }
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid signature delay."); this.delay = value; }
