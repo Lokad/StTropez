@@ -48,16 +48,18 @@ export async function runDemoPresentationContinuity(page: Page, url: string) {
         await expect(page.locator("#analysis-status")).toContainText("syntax & emit", { timeout: 30000 });
         const viewport = page.locator("#editor .st-viewport");
         await viewport.evaluate(root => { root.scrollTop = root.scrollHeight / 2; });
-        const visible = viewport.locator(".st-viewport-row").filter({ hasText: sample === "large" ? "// Row" : "// Comment" });
-        await expect(visible.first()).toBeAttached();
-        // Pick a painted comment inside the viewport; overscan rows are outside the scrollport.
-        const point = await viewport.evaluate(root => {
+        // Attached rows may still belong to the previous scroll position. Wait for a
+        // painted comment inside the scrollport before capturing its click coordinates.
+        const painted = await page.waitForFunction(() => {
+            const root = document.querySelector("#editor .st-viewport"); if (!root) return;
             const box = root.getBoundingClientRect();
             const row = [...root.querySelectorAll<HTMLElement>(".st-viewport-row")].find(row => row.textContent?.startsWith("//")
-                && row.getBoundingClientRect().top > box.top + 30 && row.getBoundingClientRect().bottom < box.bottom - 30)!;
+                && row.getBoundingClientRect().top > box.top + 30 && row.getBoundingClientRect().bottom < box.bottom - 30);
+            if (!row) return;
             const at = row.getBoundingClientRect(); return { x: at.left + 30, y: at.top + at.height / 2,
                 line: Number(row.dataset.line), text: row.textContent! };
-        });
+        }, undefined, { timeout: 5000 });
+        const point = (await painted.jsonValue())!; await painted.dispose();
         const output = page.getByRole("region", { name: "JavaScript output", exact: true });
         await output.evaluate((root, line) => { root.scrollTop = line * parseFloat(getComputedStyle(root).lineHeight); }, point.line);
         await expect(output).toContainText(point.text);
