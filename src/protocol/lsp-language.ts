@@ -9,15 +9,36 @@ import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
 export type LspSignatureContext = Readonly<{ triggerKind: 1 | 2 | 3; triggerCharacter?: string; isRetrigger: boolean; activeSignatureHelp?: JsonValue }>;
 export function createLspSignatureClient(provider: LspWorkspace) {
     const lane = createLspClient(provider);
-    return Object.freeze({ state: lane.state, subscribe: lane.subscribe, snapshot: lane.snapshot, cancel: lane.cancel, dispose: lane.dispose,
+    // Prior wire context is not fresh range/edit authority. Keep only its binding identities,
+    // never the old buffer/capture, and compare them after the next request has synchronized.
+    let previous: Readonly<{ document: string; resource: string; uri: string; language: string; epoch: number; generation: number; wire: JsonValue }> | undefined;
+    const stop = lane.subscribe(() => { const state = lane.state.getSnapshot();
+        if (state.phase !== "ready" || previous?.epoch !== state.epoch || previous.generation !== state.registrationGeneration) previous = undefined;
+    });
+    return Object.freeze({ state: lane.state, subscribe: lane.subscribe, snapshot: lane.snapshot,
+        cancel: () => { previous = undefined; lane.cancel(); }, dispose: () => { previous = undefined; stop(); lane.dispose(); },
         options: (document: DocumentSnapshot) => lane.options(document, "textDocument/signatureHelp"),
         run: (document: DocumentSnapshot, offset: number, context: LspSignatureContext = { triggerKind: 1, isRetrigger: false }, prepare?: LspPrepare) => {
             const wireContext = jsonSnapshot(context);
             if (![1, 2, 3].includes(context.triggerKind) || typeof context.isRetrigger !== "boolean" || context.triggerCharacter !== undefined && (typeof context.triggerCharacter !== "string" || !context.triggerCharacter.length || context.triggerCharacter.length > 8)
                 || JSON.stringify(wireContext).length > 131072) throw new TypeError("Invalid signature help context.");
-            const call = lane.request([document], document.id, "textDocument/signatureHelp", capture => ({ position: capture.index.at(offset), context: wireContext }), prepare);
+            const retrigger = context.isRetrigger, inherit = context.activeSignatureHelp === undefined;
+            if (!retrigger) previous = undefined;
+            const call = lane.request([document], document.id, "textDocument/signatureHelp", capture => {
+                const doc = capture.document; let active = wireContext;
+                if (previous && (previous.document !== doc.documentId || previous.resource !== doc.resourceId || previous.uri !== doc.uri || previous.language !== doc.languageId
+                    || previous.epoch !== capture.epoch || previous.generation !== capture.registrationGeneration)) previous = undefined;
+                if (retrigger && inherit && previous) {
+                    const inherited = { ...wireContext as Record<string, JsonValue>, activeSignatureHelp: previous.wire };
+                    // Optional inherited context must not make an otherwise bounded request fail.
+                    if (JSON.stringify(inherited).length <= 131072) active = inherited;
+                }
+                return { position: capture.index.at(offset), context: active };
+            }, prepare);
             return Object.freeze({ cancel: call.cancel, result: call.result.then(value => value.decode(() => {
-                const help = decodeLspSignatureHelp(value.response, value.capture); return help && Object.freeze({ ...help, isCurrent: value.isCurrent });
+                const help = decodeLspSignatureHelp(value.response, value.capture), { document: doc, epoch, registrationGeneration } = value.capture;
+                previous = help?.signatures.length ? { document: doc.documentId, resource: doc.resourceId, uri: doc.uri, language: doc.languageId, epoch, generation: registrationGeneration, wire: help.wire } : undefined;
+                return help && Object.freeze({ ...help, isCurrent: value.isCurrent });
             })) });
         } });
 }

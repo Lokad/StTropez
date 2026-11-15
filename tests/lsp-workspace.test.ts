@@ -4,12 +4,50 @@ import { setImmediate } from "node:timers/promises";
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
 import type { DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams } from "vscode-languageserver-protocol/node.js";
 import { referencePeer } from "../examples/protocol/reference-peer.ts";
-import type { LspFeature, LspRequestContext, RpcScheduler, RpcTransport } from "../src/protocol/index.ts";
+import type { LspFeature, LspRequestContext, LspWorkspaceOptions, RpcScheduler, RpcTransport } from "../src/protocol/index.ts";
 const { Workspace } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE
     ? new URL("../index.js", new URL(process.env.STTROPEZ_PROTOCOL_TEST_MODULE, import.meta.url)).href : "../src/index.ts") as typeof import("../src/index.ts");
 const { LspWorkspace, createLspHoverClient, createLspCommandRunner, createLspSignatureClient, createLspLinkClient, createLspColorClient, createLspFoldingClient, createLspHighlightClient, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
 const settled = async () => { await setImmediate(); await setImmediate(); };
 const latch = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; };
+
+test("signature retriggers preserve the last resolved context through a cancelled reply without crossing document or provider authority", async t => {
+    let uriVersion = 0;
+    const f = fixture(t, { features: ["textDocument/signatureHelp"], documentInfo: doc => ({ uri: `fixture:${uriVersion}/${doc.resourceId}`, languageId: "fixture" }) }),
+        client = createLspSignatureClient(f.provider); t.after(client.dispose);
+    await f.provider.connect(); const peer = f.peers[0]!, entered = latch<void>(), held = latch<unknown>(); t.after(() => held.resolve(null));
+    const contexts: { isRetrigger: boolean; activeSignatureHelp?: unknown }[] = []; let pause = false;
+    const help = (label: string) => ({ signatures: [{ label }], activeSignature: 0 }); let response: unknown = help("initial");
+    const register = () => f.peers.at(-1)!.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "signature", method: "textDocument/signatureHelp", registerOptions: { documentSelector: null } }] });
+    const handler = (params: { context: typeof contexts[number] }) => { contexts.push(params.context); if (pause) { pause = false; entered.resolve(); return held.promise; } return response; };
+    peer.rpc.onRequest("textDocument/signatureHelp", handler); await register();
+    const run = (id = f.source.documentId, isRetrigger = true, activeSignatureHelp?: ReturnType<typeof help>) => client.run(f.workspace.document(id), 0,
+        { triggerKind: 3, isRetrigger, ...(activeSignatureHelp ? { activeSignatureHelp } : {}) }).result;
+    await run(f.source.documentId, false); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined);
+    pause = true; f.edit(); const pending = run(), rejected = assert.rejects(pending); await entered.promise;
+    assert.deepEqual(contexts.at(-1)!.activeSignatureHelp, help("initial"));
+    f.edit(); response = help("latest"); await run(); await rejected;
+    assert.deepEqual(contexts.at(-1)!.activeSignatureHelp, help("initial"));
+    held.resolve(help("late")); await settled(); await run(); assert.deepEqual(contexts.at(-1)!.activeSignatureHelp, help("latest"));
+    await run(f.companion.documentId); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined);
+    uriVersion++; const replacement = f.provider.createScope(); replacement.attachDocument(f.companion.documentId);
+    await run(f.companion.documentId); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined); replacement.dispose();
+    await run(f.companion.documentId, true, help("host choice")); assert.deepEqual(contexts.at(-1)!.activeSignatureHelp, help("host choice"));
+    client.cancel(); await run(f.companion.documentId); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined);
+    const context = { triggerKind: 3 as const, isRetrigger: true }, captured = client.run(f.workspace.document(f.companion.documentId), 0, context);
+    context.isRetrigger = false; await captured.result;
+    assert.equal(contexts.at(-1)!.isRetrigger, true); assert.deepEqual(contexts.at(-1)!.activeSignatureHelp, help("latest"));
+    await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "signature", method: "textDocument/signatureHelp" }] }); await register();
+    await run(f.companion.documentId); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined);
+    await f.provider.reconnect(); f.peers[1]!.rpc.onRequest("textDocument/signatureHelp", handler); await register();
+    await run(f.companion.documentId); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined);
+    response = null; await run(f.companion.documentId); response = help("after empty"); await run(f.companion.documentId);
+    assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined);
+    const wide = { ...help("wide"), data: "" }; wide.data = "x".repeat(131072 - JSON.stringify(wide).length); response = wide;
+    await run(f.companion.documentId); response = help("bounded"); await run(f.companion.documentId);
+    assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined, "An optional inherited context must fit the complete advisory bound.");
+    await run(f.companion.documentId, false); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined); assert.deepEqual(f.errors, []);
+});
 test("occurrences require current dynamic authority through withdrawal and reconnect", async t => {
     const f = fixture(t, { features: ["textDocument/documentHighlight"] }), client = createLspHighlightClient(f.provider); t.after(client.dispose);
     await f.provider.connect();
@@ -95,7 +133,7 @@ async function languageFixture(t: test.TestContext) {
     return { f, peer, signature, links, colors, rgba, doc: f.workspace.document(f.source.documentId) };
 }
 
-function fixture(t: test.TestContext, extra: Readonly<{ maxDocumentUnits?: number; features?: readonly LspFeature[]; schedule?: RpcScheduler }> = {}) {
+function fixture(t: test.TestContext, extra: Readonly<{ maxDocumentUnits?: number; features?: readonly LspFeature[]; schedule?: RpcScheduler; documentInfo?: LspWorkspaceOptions["documentInfo"] }> = {}) {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "generic", resource: "source", variant: "working" }, "Source", { value: "a😀\r\nsource" }),
         companion = workspace.createTextResource({ scope: "generic", resource: "companion", variant: "working" }, "Companion", { value: "companion" });
     const timers = new Set<ReturnType<typeof setTimeout>>(), errors: string[] = [], peers: ReturnType<typeof peer>[] = [];
@@ -117,7 +155,7 @@ function fixture(t: test.TestContext, extra: Readonly<{ maxDocumentUnits?: numbe
     }
     const provider = new LspWorkspace(workspace, { ...extra, features: extra.features ?? ["textDocument/hover", "textDocument/definition", "workspace/executeCommand"], applyEdit: true, diagnostics: true, schedule: extra.schedule ?? schedule,
         connect: async () => { const next = peer(); peers.push(next); return next.transport; },
-        documentInfo: doc => ({ uri: `host+opaque:workspace/${encodeURIComponent(doc.resourceId)}`, languageId: "generic-language" }), onError: error => errors.push(error.message) });
+        documentInfo: extra.documentInfo ?? (doc => ({ uri: `host+opaque:workspace/${encodeURIComponent(doc.resourceId)}`, languageId: "generic-language" })), onError: error => errors.push(error.message) });
     t.after(async () => { provider.dispose(); await settled(); for (const peer of peers) peer.rpc.dispose(); for (const timer of timers) clearTimeout(timer); });
     const edit = (id = source.documentId, insert = "!") => { const doc = workspace.document(id); assert.equal(workspace.edit({ documentId: id, expectedRevision: doc.revision, edits: [{ from: doc.buffer.length, to: doc.buffer.length, insert }], origin: "human" }).applied, true); };
     return { workspace, provider, source, companion, peers, errors, timers, edit };

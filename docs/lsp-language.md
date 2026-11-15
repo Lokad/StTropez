@@ -26,6 +26,14 @@ out-of-arity presentation. The bounds are 32 signatures, 64 parameters/signature
 4,096 label units and 65,536 aggregate display units. Raw advisory context is
 bounded separately to 131,072 units and grants no edit authority.
 
+For a retrigger without explicit `activeSignatureHelp`, the client reuses its last accepted
+wire context after checking the newly synchronized document/resource/URI/language, connection
+epoch and registration generation. Starting or superseding a request does not discard that
+context. An empty result, explicit new invocation, client cancellation/disposal or changed
+provider authority clears it. Explicit host context takes precedence (including a selected
+overload); inherited context is omitted if it would exceed the advisory size bound. No old
+document buffer is retained for this purpose, and late cancelled replies cannot replace it.
+
 Hosts can opt into Markdown negotiation and use the public [documentation view](documentation.md)
 for paragraphs, emphasis, flat lists, code and explicitly authorized links. The main demo uses
 that subset; the default negotiation and React fixture remain plaintext. Request lifetime and

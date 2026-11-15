@@ -16,10 +16,10 @@ export function lspSignatureBackend(workspace: Workspace, provider: LspWorkspace
     return Object.freeze({
         trigger: (document, character, retrigger) => client.options(document).some(option => [...Array.isArray(option.triggerCharacters) ? option.triggerCharacters : [], ...retrigger && Array.isArray(option.retriggerCharacters) ? option.retriggerCharacters : []].includes(character)),
         signature: async (input, buffer, _progress, context) => {
-            const token = ++serial, previous = result, doc = workspace.document(input.document as DocumentId); result = null; busy = true;
+            const token = ++serial, doc = workspace.document(input.document as DocumentId); result = null; busy = true;
             try {
                 if (doc.revision !== input.revision || doc.buffer !== buffer) throw new Error("Signature capture changed.");
-                const help = await client.run(doc, input.offset, { ...context ?? { triggerKind: 1, isRetrigger: false }, ...(context?.isRetrigger && previous ? { activeSignatureHelp: previous.wire } : {}) }, prepare?.(input)).result;
+                const help = await client.run(doc, input.offset, context, prepare?.(input)).result;
                 if (disposed || token !== serial || help && !help.isCurrent()) throw new Error("Signature result expired."); result = help;
                 return Object.freeze({ id: input.id, document: input.document, revision: input.revision, reason: help?.signatures.length ? "ready" as const : "no-call" as const,
                     call: null, signatures: help?.signatures ?? Object.freeze([]), activeSignature: help?.activeSignature ?? 0 });
