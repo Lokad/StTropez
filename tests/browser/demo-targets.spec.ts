@@ -12,7 +12,8 @@ test("held target contents cannot load a tab or steal focus after source edits o
         client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "sttropez/readDocument") pending.add(value.id); server.send(message); });
         server.onMessage(message => { const value = JSON.parse(message.toString()); if (!held && pending.has(value.id)) { held = true; release = () => client.send(message); } else client.send(message); });
     });
-    await page.goto("/"); await page.locator("#sample").selectOption("navigation");
+    await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await page.locator("#sample").selectOption("navigation");
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     const request = async () => {
         held = false; await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
@@ -24,6 +25,8 @@ test("held target contents cannot load a tab or steal focus after source edits o
     await expect(page.locator(".demo-symbols")).toBeHidden(); await expect(page.locator("#files button")).toHaveText(["main.ts ●"]); await expect(source).toBeFocused();
     await request(); await page.locator("#sample").selectOption("pricing"); release!();
     await expect(page.locator("#files button")).toHaveText(["main.ts", "pricing.ts"]); await expect(page.locator(".demo-symbols")).toBeHidden();
+    // This test cancels a captured target reply, not an unrelated connecting transport.
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await page.locator("#sample").selectOption("navigation"); await expect(page.locator("#files button")).toHaveText(["main.ts ●"]);
     await expect(page.locator("#editor")).toContainText("// newer source");
 });
@@ -42,7 +45,8 @@ test("an action preview includes a newly resolved module and applies one guarded
             } } }] }));
         });
     });
-    await page.goto("/"); await page.locator("#sample").selectOption("navigation");
+    await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
+    await page.locator("#sample").selectOption("navigation");
     await expect(page.locator("#files button")).toHaveText(["main.ts"]);
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     const main = page.getByRole("textbox", { name: "main.ts", exact: true }); await main.press("Control+Home"); await main.press("Control+.");

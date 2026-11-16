@@ -7,8 +7,9 @@ import { DemoPresentation } from "./presentation.ts";
 import { sampleChoices } from "./samples.ts";
 import type { SampleId } from "./samples.ts";
 import { mountDemoLanguage } from "./language-view.ts";
+import type { DemoSymbolTarget } from "./symbols.ts";
 import { mountDemoOutput } from "./output.ts";
-import { mountDemoFolding, outlineFolds } from "./folding.ts";
+import { initializeDemoFolds, mountDemoFolding, outlineFolds } from "./folding.ts";
 import { canOpenDemoHelp } from "./diagnostics.ts";
 import { hostConfiguration, hostDecorations, mountHostIntegrations } from "./host-integrations.ts";
 import { inspectCharacters } from "./character-warnings.ts";
@@ -239,18 +240,21 @@ function detachView(): void {
     element("editor").replaceChildren(); element("panel-content").replaceChildren();
     if (metadataFrame !== undefined) cancelAnimationFrame(metadataFrame); metadataFrame = undefined;
 }
+function openLocation(capturedProject: DemoProject, file: DemoFile, capturedEditor: EditingCandidate, target: DemoSymbolTarget): void {
+    const state = capturedEditor.activity();
+    if (disposed || project !== capturedProject || editor !== capturedEditor || state.disposed || state.composing || state.pendingInput || state.pendingCommand) return;
+    const destination = capturedProject.files.find(file => file.resource.documentId === target.documentId);
+    if (!destination || capturedProject.workspace.document(target.documentId).revision !== target.revision) return;
+    locations.push({ project: capturedProject, file, revision: capturedProject.workspace.document(file.resource.documentId).revision,
+        selected: file.view.getSnapshot().selectionSet, view: capturedEditor.captureView() });
+    if (locations.length > 100) locations.shift();
+    mountFile(destination, true); destination.view.setSelection(target.revision, { anchor: target.from, head: target.to });
+    editor?.viewport.revealOffset(target.from); editor?.focus();
+}
 function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEditor: EditingCandidate) {
     if (capturedProject.sample.id === "outline" || capturedProject.sample.id === "host") return;
-    return mountDemoLanguage(capturedProject.workspace, () => capturedProject.files, file, capturedEditor, capturedProject.language, target => {
-        if (disposed || project !== capturedProject || editor !== capturedEditor) return;
-        const destination = capturedProject.files.find(file => file.resource.documentId === target.documentId);
-        if (!destination || capturedProject.workspace.document(target.documentId).revision !== target.revision) return;
-        locations.push({ project: capturedProject, file, revision: capturedProject.workspace.document(file.resource.documentId).revision,
-            selected: file.view.getSnapshot().selectionSet, view: capturedEditor.captureView() });
-        if (locations.length > 100) locations.shift();
-        mountFile(destination, true); destination.view.setSelection(target.revision, { anchor: target.from, head: target.to });
-        editor?.viewport.revealOffset(target.from); editor?.focus();
-    });
+    return mountDemoLanguage(capturedProject.workspace, () => capturedProject.files, file, capturedEditor, capturedProject.language,
+        target => openLocation(capturedProject, file, capturedEditor, target));
 }
 function mountFile(file: DemoFile, focus = false): void {
     if (!project || disposed || editor?.activity().composing) return;
@@ -258,6 +262,7 @@ function mountFile(file: DemoFile, focus = false): void {
     const previous = active;
     if (previous && viewState) savedViews.set(previous.view, viewState);
     detachView(); active = file; activeFiles.set(project.sample.id, file.name);
+    initializeDemoFolds(project, file);
     element("workspace").classList.toggle("reviewing", panel === "changes");
     if (panel === "changes") {
         comparison = mountTextComparison(element("panel-content"), project.workspace, file.tab, project.baseline(file),
@@ -329,8 +334,12 @@ function mountFile(file: DemoFile, focus = false): void {
     stopFind = find.state.subscribe(renderFind); if (!element("find-bar").hidden) find.setQuery(field("find-query").value);
     stopView = file.view.subscribe(renderMetadata);
     languageView = attachLanguage(project, file, editor);
-    if (project.sample.id === "host") hostIntegrations = mountHostIntegrations(project, file, editor, {
-        mode: element("host-paste-mode") as HTMLSelectElement, insert: button("host-insert-table"), annotate: button("host-annotate"), status: element("host-status") });
+    if (project.sample.id === "host") {
+        const capturedProject = project, capturedEditor = editor;
+        hostIntegrations = mountHostIntegrations(project, file, editor, {
+            mode: element("host-paste-mode") as HTMLSelectElement, insert: button("host-insert-table"), annotate: button("host-annotate"), status: element("host-status") },
+            target => openLocation(capturedProject, file, capturedEditor, target));
+    }
     renderMetadata(); renderLanguage(); renderOutput(); if (focus) editor.focus();
 }
 // View IDs are local to a Workspace; each sample owns a separate workspace.

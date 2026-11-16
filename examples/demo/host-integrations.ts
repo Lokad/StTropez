@@ -3,6 +3,7 @@ import type { LanguageConfiguration } from "../../src/index.ts";
 import type { DemoFile, DemoProject } from "./project.ts";
 import { HostTablePaste } from "../hosts/table-paste.ts";
 import type { HostSourceNotes } from "../shared/source-notes.ts";
+import type { DemoSymbolTarget } from "./symbols.ts";
 
 export const exampleTable = "sku\tquantity\nA-100\t12\nB-200\t8\n";
 export function hostConfiguration(tabSize: number, insertSpaces: boolean): LanguageConfiguration {
@@ -16,35 +17,58 @@ export function hostDecorations(line: PresentedLine): readonly InlineDecoration[
         className: match[0].startsWith("#") ? "demo-token-comment" : match[0].startsWith('"') ? "demo-token-string" : /^\d/.test(match[0]) ? "demo-token-number" : "demo-token-keyword" }));
 }
 
-function mountNotes(model: HostSourceNotes, project: DemoProject, file: DemoFile, editor: EditingCandidate) {
-    const layer = document.createElement("div"), events = new AbortController(), nodes = new Map<number, HTMLSpanElement>();
-    layer.className = "demo-source-notes"; layer.setAttribute("aria-label", "Host source notes"); document.body.append(layer);
+function mountNotes(model: HostSourceNotes, project: DemoProject, file: DemoFile, editor: EditingCandidate, open: (target: DemoSymbolTarget) => void) {
+    const owner = editor.element.ownerDocument, layer = owner.createElement("div"), events = new AbortController(), nodes = new Map<number, HTMLElement>();
+    const origin = project.workspace.captureTab(file.tab);
+    // Sample-owned linkage: note labels and file names are host policy, not editor syntax.
+    const inventory = file.name === "workflow.rules" ? project.files.find(candidate => candidate.name === "inventory.csv") : undefined;
+    layer.className = "demo-source-notes"; layer.setAttribute("aria-label", "Host source notes"); owner.body.append(layer);
     const render = () => {
         const doc = project.workspace.document(file.resource.documentId), state = model.state.getSnapshot(), box = editor.element.getBoundingClientRect();
         const shown = new Set<number>();
         if (state.revision === doc.revision && editor.element.isConnected) for (const note of state.notes) {
             const point = editor.viewport.coordsAt(note.range.from); if (!point || point.top < box.top || point.top + point.height > box.bottom) continue;
             const folded = editor.view.folding.getSnapshot().index.hiddenBy(doc.buffer.lineAt(note.range.from));
-            const text = note.text + (folded ? " · folded" : ""), node = nodes.get(note.id) ?? document.createElement("span");
-            if (!nodes.has(note.id)) { nodes.set(note.id, node); layer.append(node); }
+            const destination = note.text === "Inventory source" ? inventory : undefined;
+            const text = note.text + (destination ? ` → ${destination.name}` : "") + (folded ? " · folded" : "");
+            let node = nodes.get(note.id);
+            if (!node) {
+                node = owner.createElement(destination ? "button" : "span"); node.className = "demo-source-note";
+                if (destination) {
+                    const link = node as HTMLButtonElement, workspace = project.workspace;
+                    const resource = workspace.captureResource(destination.resource.id), tab = workspace.captureTab(destination.tab);
+                    const document = workspace.document(destination.resource.documentId);
+                    link.type = "button"; link.title = `Open ${destination.name}`;
+                    link.onclick = () => {
+                        const source = workspace.resolveTab(origin), target = workspace.resolveTab(tab);
+                        if (!link.isConnected || !editor.element.isConnected || editor.activity().disposed
+                            || source?.surface.kind !== "text" || source.surface.documentId !== file.resource.documentId
+                            || target?.surface.kind !== "text" || target.surface.documentId !== document.id
+                            || workspace.resolveResource(resource) !== destination.resource
+                            || workspace.observeDocument(document.id).getSnapshot()?.revision !== document.revision) return;
+                        open({ documentId: document.id, revision: document.revision, from: 0, to: 0 });
+                    };
+                }
+                nodes.set(note.id, node); layer.append(node);
+            }
             if (node.textContent !== text) node.textContent = text;
             node.dataset.note = String(note.id); node.dataset.line = String(doc.buffer.lineAt(note.range.from) + 1);
             node.style.top = `${point.top}px`; node.style.right = `${Math.max(12, innerWidth - box.right + 24)}px`; node.style.maxWidth = `${Math.max(80, box.width * .4)}px`;
             shown.add(note.id);
         }
-        for (const [id, node] of nodes) if (!shown.has(id)) { node.remove(); nodes.delete(id); }
+        for (const [id, node] of nodes) if (!shown.has(id)) { node.onclick = null; node.remove(); nodes.delete(id); }
     };
     const stop = model.state.subscribe(render), stopFolds = editor.view.folding.subscribe(render);
     editor.element.addEventListener("sttropez-render", render, { signal: events.signal });
     window.addEventListener("resize", render, { signal: events.signal }); render();
-    return () => { events.abort(); stop(); stopFolds(); layer.remove(); nodes.clear(); };
+    return () => { events.abort(); stop(); stopFolds(); for (const node of nodes.values()) node.onclick = null; layer.remove(); nodes.clear(); };
 }
 
 /** The sample composes the public editor hooks; formatting, UI and note content stay in the host. */
 export function mountHostIntegrations(project: DemoProject, file: DemoFile, editor: EditingCandidate,
-    controls: Readonly<{ mode: HTMLSelectElement; insert: HTMLButtonElement; annotate: HTMLButtonElement; status: HTMLElement }>) {
+    controls: Readonly<{ mode: HTMLSelectElement; insert: HTMLButtonElement; annotate: HTMLButtonElement; status: HTMLElement }>, open: (target: DemoSymbolTarget) => void) {
     const table = new HostTablePaste(project.workspace), events = new AbortController(), model = project.notesFor(file);
-    const stopNotes = mountNotes(model, project, file, editor), detach = table.attach("source", file.tab, editor);
+    const stopNotes = mountNotes(model, project, file, editor, open), detach = table.attach("source", file.tab, editor);
     const mode = () => { table.setEnabled(controls.mode.value === "csv"); };
     const renderStatus = () => { controls.status.textContent = table.state.getSnapshot().message; };
     const stop = table.state.subscribe(renderStatus); mode(); renderStatus();

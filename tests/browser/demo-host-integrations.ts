@@ -13,17 +13,34 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
 
     await page.goto(url); await page.locator("#sample").selectOption("host");
     const source = page.getByRole("textbox", { name: "workflow.rules", exact: true });
-    const notes = page.locator(".demo-source-notes span"), inventory = notes.filter({ hasText: "Inventory source" });
+    const notes = page.locator(".demo-source-note"), inventory = notes.filter({ hasText: "Inventory source" });
     await expect(page.locator("#language-status")).toHaveText("Host language · no language server");
     await expect(page.locator("#editor .demo-token-keyword").first()).toHaveText("dataset");
     await expect(notes).toHaveCount(2); await expect(inventory).toHaveAttribute("data-line", "3");
+    await expect(notes.filter({ hasText: "Review policy" })).toContainText("folded");
+    await expect(page.locator('#editor .st-fold-button[aria-expanded="false"]')).toHaveCount(1);
     const original = await source.inputValue();
+    const group = async (command: "collapse" | "expand") => {
+        await page.locator("#code-menu summary").click(); await page.locator("#fold-group").selectOption("blocks");
+        await page.locator(`#fold-group-${command}`).click();
+        await expect(page.locator('#editor .st-fold-button[aria-expanded="false"]')).toHaveCount(command === "collapse" ? 2 : 0);
+    };
+    await group("expand"); await source.press("Control+Home"); await source.press("ArrowDown"); await source.press("ArrowDown"); await source.press("End");
+    const selection = () => source.evaluate(node => ({ start: (node as HTMLTextAreaElement).selectionStart, end: (node as HTMLTextAreaElement).selectionEnd,
+        direction: (node as HTMLTextAreaElement).selectionDirection }));
+    const inside = await selection(); await group("collapse"); await expect(inventory).toContainText("folded");
+    expect(await selection()).toEqual(inside); await group("expand"); expect(await selection()).toEqual(inside);
     await source.press("Control+Home"); await page.keyboard.insertText("# Prefix\n");
     await expect(inventory).toHaveAttribute("data-line", "4");
     await source.press("Control+z"); await expect(inventory).toHaveAttribute("data-line", "3");
     await page.locator("#editor .st-fold-button").first().click(); await expect(inventory).toContainText("folded");
-    await page.locator('#files [data-file="inventory.csv"]').click(); await expect(notes).toHaveCount(0);
-    await page.locator('#files [data-file="workflow.rules"]').click(); await expect(inventory).toContainText("folded");
+    // The note opens a captured resource and Back retains the source's selection and fold choices.
+    const origin = await selection(), obsoleteNote = await inventory.elementHandle(); expect(obsoleteNote).not.toBeNull();
+    await inventory.click(); await expect(page.getByRole("textbox", { name: "inventory.csv", exact: true })).toBeFocused(); await expect(notes).toHaveCount(0);
+    await page.keyboard.press("Alt+ArrowLeft"); await expect(source).toBeFocused(); await expect(inventory).toContainText("folded");
+    expect(await selection()).toEqual(origin);
+    await obsoleteNote!.evaluate(node => (node as HTMLButtonElement).click()); await obsoleteNote!.dispose();
+    await expect(source).toBeFocused(); await expect(page.getByRole("textbox", { name: "inventory.csv", exact: true })).toHaveCount(0);
     await page.locator("#editor .st-fold-button").first().click(); await expect(inventory).not.toContainText("folded");
 
     await source.press("Control+f"); await page.locator("#find-query").fill("quantity < 10");
@@ -71,6 +88,10 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
     await source.press("Control+Home"); await expect(notes).toHaveCount(0);
     await source.press("Control+End"); await expect(inventory).toHaveAttribute("data-line", "203");
     await source.press("Control+z"); await expect(inventory).toHaveAttribute("data-line", "3");
+    // Initial sample offsets must not be reapplied to edited text restored from storage.
+    const saved = await source.inputValue(); await page.reload(); await page.locator("#sample").selectOption("host");
+    await expect(source).toHaveValue(saved); await expect(page.locator("#folding-status")).toContainText("folds");
+    await expect(page.locator('#editor .st-fold-button[aria-expanded="false"]')).toHaveCount(0);
     await page.locator("#sample").selectOption("pricing"); await expect(page.locator(".demo-source-notes")).toHaveCount(0);
     await expect(page.locator("#host-status")).toBeHidden();
 }

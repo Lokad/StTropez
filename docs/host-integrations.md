@@ -1,7 +1,7 @@
 # Small host integrations
 
 The **Host integrations · paste & notes** demo sample uses public editor APIs for a small
-host language, CSV/literal insertion and source notes. No compiler or language server runs
+host language, initial/group folding, CSV/literal insertion and linked source notes. No compiler or language server runs
 for that sample. These policies belong in the consuming application; shipped editor assets
 remain dependency-free. The following pieces can be used independently.
 
@@ -113,6 +113,13 @@ Do not cache coordinates across scrolling or write inside the editor's DOM subtr
 and remove the overlay when that view is detached; dispose the metadata observer when its
 project/resource is released. The demo retains mapped metadata when switching tabs or Changes.
 
+The Inventory note is a host-owned button that opens `inventory.csv`. Its closure captures
+the source tab, destination resource/tab identities and document revision. Before opening,
+validate those captures and the mounted view; remove the listener with its overlay. A stale
+or detached button cannot use whichever editor happens to be current. The demo's existing
+navigation stack records the source's selection and viewport so Back restores its fold choices.
+After source edits, Back keeps the view's mapped selection rather than restoring old offsets.
+
 ## Language rules, colors and commands
 
 Pass `language` to `mountEditingCandidate`, or call `configureLanguage` for a mounted view.
@@ -128,6 +135,14 @@ logical selection set, including direction, affinities and primary range. A hidd
 caret is drawn at its visible fold header; expanding restores its source position. Typing
 or navigation reveals the retained selection before acting, so input addresses the source
 ranges rather than the header. Each view retains its own fold choices.
+
+Install initial regions with `view.folding.setRanges(view.folding.getSnapshot(), ranges)`
+before mounting the view. The sample starts Reorder collapsed and assigns it to `blocks`,
+the same group used by indentation discovery; reconciliation retains that choice. Sample
+offsets apply only to fresh sample text and an untouched folding snapshot. Saved or edited
+documents need regions derived from their own text. Remounting a retained view must not
+reapply initial choices over the user's folds. The shared demo journey exercises initial
+folding, group commands, linked-note navigation/Back, retained views and saved-file reload.
 
 `new BracketMatcher(language)` compiles the asymmetric configured pairs for headless matching.
 `createCursor(buffer, caret, options)` captures the immutable buffer; call `next(workBudget)`
