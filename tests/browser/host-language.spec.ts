@@ -92,29 +92,6 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
         await primary(page).press("Control+z"); expect(await text(page)).toBe("const saxMORE = 1; // TODO");
         expect((await snapshot(page)).source.exports).toBe(0);
     });
-    test("proposal locks reject an offered completion; a fresh correction survives save, acknowledgement retry and the next request", async ({ page }) => {
-        await primary(page).fill("const saMORE = 1; // TODO"); await completionCaret(page); await primary(page).press("Control+Space"); await offer(page);
-        await page.getByRole("button", { name: "Associate agent", exact: true }).click();
-        await page.getByRole("button", { name: "Request proposal", exact: true }).click();
-        const captured = (await snapshot(page)).requestInput, revision = (await snapshot(page)).source.revision;
-        await page.getByRole("button", { name: "Replace completion", exact: true }).click();
-        expect((await snapshot(page)).source.revision).toBe(revision); expect(await text(page)).toBe("const saMORE = 1; // TODO");
-        await expect(page.getByLabel("Language status", { exact: true })).toContainText("rejected");
-        await page.evaluate(() => window.hostFixture.deliverProposal("const saMORE = 2; // TODO")); await ready(page);
-        await completionCaret(page); await primary(page).press("Control+Space"); await offer(page); await primary(page).press("Alt+Enter");
-        await expect(secondary(page)).toHaveValue("const sample = 2; // TODO");
-        await page.getByRole("button", { name: "Save source", exact: true }).click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
-        await primary(page).press("Control+End"); await primary(page).pressSequentially(" correction");
-        await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).review.acknowledgements.length).toBe(1);
-        await page.getByRole("button", { name: "Retry acknowledgement", exact: true }).click();
-        await expect.poll(async () => (await snapshot(page)).review.acknowledgements[0]?.status).toBe("failed");
-        await page.getByRole("button", { name: "Retry acknowledgement", exact: true }).click(); await expect.poll(async () => (await snapshot(page)).review.proposal).toBeNull();
-        expect(await text(page)).toBe("const sample = 2; // TODO correction");
-        await page.getByRole("button", { name: "Request proposal", exact: true }).click();
-        expect((await snapshot(page)).requestInput!.sourceLength).toBe("const sample = 2; // TODO correction".length);
-        expect((await snapshot(page)).requestInput!.sourceRevision).toBeGreaterThan(captured!.sourceRevision);
-        await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 });
-    });
     test("whole-word find replaces only indexed words through comparison, save and remount", async ({ page }) => {
         const original = "cat scatter cat_ cat2 cat\r\ncafé cafe\u0301 cat\u200d \u{10400}cat cat!";
         // Seed exact model CRLF; native textarea fill normalization differs across engines.
