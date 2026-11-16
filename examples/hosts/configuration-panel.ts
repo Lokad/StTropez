@@ -1,21 +1,29 @@
-import type { HostController } from "./controller.ts";
-import type { ConfigurationSave } from "./configuration.ts";
+import type { HostController, Connection } from "./controller.ts";
+import type { ResourceSnapshot, SnapshotValue } from "../../src/index.ts";
+import { configurationValidation } from "./configuration.ts";
+import type { FormSave, FormSavePresentation } from "./form-save.ts";
 
-export function configurationActions(save: ConfigurationSave) {
-    return formActions(save, "configuration");
+type SaveControls<T extends SnapshotValue> = Pick<FormSave<T>, "save" | "finish" | "fail" | "externalWrite" | "review" | "saveReviewed">;
+export function formSavePanelModel<T extends SnapshotValue>(save: SaveControls<T>, state: FormSavePresentation<T>, statusLabel = `${state.title} save status`) {
+    const noun = state.noun, captured = !state.disposed && state.capture !== null;
+    return { title: `${state.title} save`, status: { label: statusLabel, text: state.status },
+        preview: { hidden: state.preview === null, text: state.preview ?? "" }, actions: [
+        { label: `Save ${noun}`, invoke: save.save, disabled: !state.canSave },
+        { label: `Finish ${noun} save`, invoke: () => save.finish(state.capture), disabled: !captured },
+        { label: `Fail ${noun} save`, invoke: () => save.fail(state.capture), disabled: !captured },
+        { label: `Simulate external ${noun} change`, invoke: () => save.externalWrite(), disabled: state.disposed },
+        { label: `Review remote ${noun}`, invoke: save.review, disabled: !state.canReview },
+        { label: `Save reviewed ${noun}`, invoke: () => save.saveReviewed(state.review), disabled: !state.canSaveReviewed },
+    ] } as const;
 }
-type SaveControls = Pick<ConfigurationSave, "canSave" | "canReview" | "canSaveReviewed" | "save" | "finish" | "fail" | "externalWrite" | "review" | "saveReviewed">
-    & { capture: () => unknown | null; debug: () => Readonly<{ disposed: boolean }> };
-export function formActions(save: SaveControls, noun: string) {
-    const captured = save.capture() !== null;
-    return [
-        { label: `Save ${noun}`, invoke: save.save, disabled: !save.canSave() },
-        { label: `Finish ${noun} save`, invoke: save.finish, disabled: !captured },
-        { label: `Fail ${noun} save`, invoke: save.fail, disabled: !captured },
-        { label: `Simulate external ${noun} change`, invoke: () => save.externalWrite(), disabled: save.debug().disposed },
-        { label: `Review remote ${noun}`, invoke: save.review, disabled: !save.canReview() },
-        { label: `Save reviewed ${noun}`, invoke: save.saveReviewed, disabled: !save.canSaveReviewed() },
-    ];
+
+export function configurationFormModel(controller: Pick<HostController, "setPath">, state: ResourceSnapshot<Connection>) {
+    const validation = state.state === "ready" ? configurationValidation(state.value) : null;
+    return { available: state.state === "ready", status: state.state, validation: validation ?? "", field: {
+        label: "Configuration path", value: state.state === "ready" ? state.value.path : "",
+        readOnly: state.state !== "ready" || !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null,
+        invalid: validation !== null, change: controller.setPath,
+    } } as const;
 }
 
 type SaveKey = Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey" | "repeat" | "defaultPrevented" | "preventDefault" | "stopPropagation">
@@ -31,13 +39,14 @@ export function formSaveKey(event: SaveKey, save: Readonly<{ save: () => void }>
 export function mountConfigurationPanel(host: HTMLElement, controller: HostController): () => void {
     const save = controller.configurationSave, owner = host.ownerDocument, listeners = new AbortController();
     const title = owner.createElement("h2"), status = owner.createElement("output"), nav = owner.createElement("div"), preview = owner.createElement("pre");
-    title.textContent = "Configuration save"; status.setAttribute("aria-label", "Configuration save status");
-    const buttons = configurationActions(save).map(action => { const button = owner.createElement("button"); button.textContent = action.label;
-        button.addEventListener("click", action.invoke, { signal: listeners.signal }); nav.append(button); return button; });
+    const initial = formSavePanelModel(save, save.presentation.getSnapshot());
+    host.setAttribute("aria-label", initial.title); title.textContent = initial.title; status.setAttribute("aria-label", initial.status.label);
+    const buttons = initial.actions.map(action => { const button = owner.createElement("button"); button.textContent = action.label; nav.append(button); return button; });
     host.addEventListener("keydown", event => formSaveKey(event, save), { signal: listeners.signal });
     host.replaceChildren(title, status, nav, preview);
-    const render = () => { status.textContent = save.statusText(); const actions = configurationActions(save);
-        buttons.forEach((button, i) => { button.disabled = actions[i]!.disabled; }); const state = save.state.getSnapshot(); preview.hidden = state.preview === null; preview.textContent = state.preview ?? ""; };
-    const stops = [save.state.subscribe(render), controller.connection.subscribe(render)]; render();
-    return () => { stops.forEach(stop => stop()); listeners.abort(); host.replaceChildren(); };
+    const render = () => { const model = formSavePanelModel(save, save.presentation.getSnapshot()); status.textContent = model.status.text;
+        buttons.forEach((button, i) => { button.disabled = model.actions[i]!.disabled; button.onclick = model.actions[i]!.invoke; });
+        preview.hidden = model.preview.hidden; preview.textContent = model.preview.text; };
+    const stop = save.presentation.subscribe(render); render();
+    return () => { stop(); listeners.abort(); buttons.forEach(button => { button.onclick = null; }); host.replaceChildren(); };
 }

@@ -58,6 +58,15 @@ The plain presenter compares visible annotation members, retaining rows when pub
 the array. Table-paste option and cancellation controls share the controller's policy; clipboard
 capture, conversion and insertion remain owned by `HostTablePaste`.
 
+Configuration fields and configuration/transfer Save panels also share presentation models.
+`FormSave.presentation` supplies a cached immutable snapshot of resource status, validation,
+availability, captured request and remote review through its existing resource/state notifications.
+Both renderers observe this stable handle; the owner still validates every Save and retry.
+Finish/failure callbacks retain the displayed request, and reviewed-save confirmation retains
+the displayed remote review. Older callbacks cannot settle a newer request or silently confirm
+a newer review. Plain views renew callbacks while retaining field/button nodes and clear them
+on detach. Save-key scope and controller-owned input values remain unchanged.
+
 A persisted `pagehide` retains the mounted host and its listener for a later final hide. A
 non-persisted hide starts teardown. Browser regressions exercise this policy with synthetic
 page-transition events and fixture installation disabled; they do not establish real

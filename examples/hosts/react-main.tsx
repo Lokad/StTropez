@@ -22,8 +22,7 @@ import { mountHoverPanel } from "./hover-panel.ts";
 import { HostDraftRecovery } from "./draft-recovery.ts";
 import { createBrowserDraftStore } from "./draft-store.ts";
 import { draftActions } from "./draft-panel.ts";
-import { configurationValidation } from "./configuration.ts";
-import { configurationActions, formActions, formSaveKey } from "./configuration-panel.ts";
+import { configurationFormModel, formSavePanelModel, formSaveKey } from "./configuration-panel.ts";
 import "./style.css";
 
 const controller = new HostController(), bindings = new ViewBindings(controller, hostEditor());
@@ -71,21 +70,22 @@ function DraftRecovery() {
         <pre hidden={s.preview === null}>{s.preview ?? ""}</pre></section>;
 }
 function ConfigurationSavePanel() {
-    const save = controller.configurationSave, state = useObserved(save.state); useObserved(controller.connection);
-    return <section className="host-language" aria-label="Configuration save" onKeyDown={event => formSaveKey(event, save)}><h2>Configuration save</h2>
-        <output aria-label="Configuration save status">{save.statusText()}</output>
-        <div>{configurationActions(save).map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
-        <pre hidden={state.preview === null}>{state.preview ?? ""}</pre></section>;
+    const save = controller.configurationSave, model = formSavePanelModel(save, useObserved(save.presentation));
+    return <section className="host-language" aria-label={model.title} onKeyDown={event => formSaveKey(event, save)}><h2>{model.title}</h2>
+        <output aria-label={model.status.label}>{model.status.text}</output>
+        <div>{model.actions.map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
+        <pre hidden={model.preview.hidden}>{model.preview.text}</pre></section>;
 }
 function TransferWorkspace() {
-    const transfer = controller.transfer, state = useObserved(transfer.resource), save = useObserved(transfer.save.state), runs = useObserved(controller.runResources.state), inspection = controller.runResources.inspect();
+    const transfer = controller.transfer, saved = useObserved(transfer.save.presentation), state = saved.resource, runs = useObserved(controller.runResources.state), inspection = controller.runResources.inspect();
+    const model = formSavePanelModel(transfer.save, saved, "Transfer save status");
     const readOnly = state.state !== "ready" || !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null;
     return <section className="host-language" aria-label="Transfer workspace"><h2>Transfer workspace</h2>
         <div onKeyDown={e => formSaveKey(e, transfer.save)}>{state.state === "ready" ? <>
-            <label>Transfer destination<input value={state.value.destination} readOnly={readOnly} aria-invalid={transfer.save.validation() !== null} onChange={e => transfer.update("destination", e.currentTarget.value)} /></label>
-            <label>Transfer batch size<input value={state.value.batchSize} readOnly={readOnly} inputMode="numeric" aria-invalid={transfer.save.validation() !== null} onChange={e => transfer.update("batchSize", e.currentTarget.value)} /></label></> : <p>{state.state}</p>}
-            <output aria-label="Transfer save status">{transfer.save.statusText()}</output>
-            <div>{formActions(transfer.save, "transfer settings").map(a => <button key={a.label} disabled={a.disabled} onClick={a.invoke}>{a.label}</button>)}</div><pre hidden={save.preview === null}>{save.preview ?? ""}</pre></div>
+            <label>Transfer destination<input value={state.value.destination} readOnly={readOnly} aria-invalid={saved.validation !== null} onChange={e => transfer.update("destination", e.currentTarget.value)} /></label>
+            <label>Transfer batch size<input value={state.value.batchSize} readOnly={readOnly} inputMode="numeric" aria-invalid={saved.validation !== null} onChange={e => transfer.update("batchSize", e.currentTarget.value)} /></label></> : <p>{state.state}</p>}
+            <output aria-label={model.status.label}>{model.status.text}</output>
+            <div>{model.actions.map(a => <button key={a.label} disabled={a.disabled} onClick={a.invoke}>{a.label}</button>)}</div><pre hidden={model.preview.hidden}>{model.preview.text}</pre></div>
         <h3>Captured Runs and logs</h3><ul>{runs.runs.map(run => <li key={run.id}><span>Run {run.number}: {run.status}, {run.progress}% · {run.id} </span>
             <button onClick={() => controller.runResources.open(run.id)}>Inspect Run {run.number}</button>
             <button disabled={run.status !== "running" || run.progress >= 90} onClick={() => controller.runResources.advance(run.id)}>Advance Run {run.number} progress</button>
@@ -97,9 +97,10 @@ function TransferWorkspace() {
 function Form() {
     const state = useObserved(controller.connection), layout = useObserved(controller.layout);
     if (layout.formFault) throw new Error("Synthetic host form render failure");
-    return state.state === "ready" ? <div onKeyDown={event => formSaveKey(event, controller.configurationSave)}><label>Configuration path<input value={state.value.path}
-        readOnly={!state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null} aria-invalid={configurationValidation(state.value) !== null}
-        onChange={event => controller.setPath(event.currentTarget.value)} /></label><p>{configurationValidation(state.value)}</p></div> : <p>{state.state}</p>;
+    const model = configurationFormModel(controller, state);
+    return model.available ? <div onKeyDown={event => formSaveKey(event, controller.configurationSave)}><label>{model.field.label}<input value={model.field.value}
+        readOnly={model.field.readOnly} aria-invalid={model.field.invalid}
+        onChange={event => model.field.change(event.currentTarget.value)} /></label><p>{model.validation}</p></div> : <p>{model.status}</p>;
 }
 function Scene() {
     const layout = useObserved(controller.layout);

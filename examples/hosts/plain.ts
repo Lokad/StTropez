@@ -16,8 +16,7 @@ import { mountRenamePanel } from "./rename-panel.ts";
 import { mountSignaturePanel } from "./signature-panel.ts";
 import type { HostDraftRecovery } from "./draft-recovery.ts";
 import { mountDraftPanel } from "./draft-panel.ts";
-import { configurationValidation } from "./configuration.ts";
-import { formSaveKey, mountConfigurationPanel } from "./configuration-panel.ts";
+import { configurationFormModel, formSaveKey, mountConfigurationPanel } from "./configuration-panel.ts";
 import { mountTransferPanel } from "./transfer-panel.ts";
 
 export function mountPlain(host: HTMLElement, controller: HostController, bindings: ViewBindings, draft: HostDraftRecovery): () => void {
@@ -55,7 +54,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const links = document.createElement("section"); links.className = "host-language";
     const colors = document.createElement("section"); colors.className = "host-language";
     const draftPanel = document.createElement("section"); draftPanel.className = "host-language"; draftPanel.setAttribute("aria-label", "Draft recovery");
-    const configuration = document.createElement("section"); configuration.className = "host-language"; configuration.setAttribute("aria-label", "Configuration save");
+    const configuration = document.createElement("section"); configuration.className = "host-language";
     const transfer = document.createElement("section"); transfer.className = "host-language"; transfer.setAttribute("aria-label", "Transfer workspace");
     host.replaceChildren(nav, status, recovery, conflict, scene, review, configuration, transfer, draftPanel, language, tablePaste, domain, navigation, project, rename, codeActions, links, colors, modal);
     const destroyTransfer = mountTransferPanel(transfer, controller);
@@ -97,15 +96,15 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         const left = document.createElement("section"), right = document.createElement("section");
         left.setAttribute("aria-label", "Left host pane"); right.setAttribute("aria-label", "Right host pane"); scene.append(left, right);
         const form = document.createElement("div"), label = document.createElement("label"), field = document.createElement("input"), validation = document.createElement("p");
-        label.textContent = "Configuration path"; label.append(field); form.append(label, validation); right.append(form);
+        const initialForm = configurationFormModel(controller, controller.connection.getSnapshot());
+        label.textContent = initialForm.field.label; label.append(field); form.append(label, validation); right.append(form);
         const updateForm = () => {
-            const state = controller.connection.getSnapshot();
-            if (state.state === "ready") { if (field.value !== state.value.path) field.value = state.value.path;
-                const error = configurationValidation(state.value); validation.textContent = error ?? ""; field.setAttribute("aria-invalid", String(error !== null));
-                field.readOnly = !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null; }
+            const model = configurationFormModel(controller, controller.connection.getSnapshot());
+            if (field.value !== model.field.value) field.value = model.field.value;
+            validation.textContent = model.validation; field.setAttribute("aria-invalid", String(model.field.invalid)); field.readOnly = model.field.readOnly;
         };
         form.addEventListener("keydown", event => formSaveKey(event, controller.configurationSave), { signal: sceneListeners.signal });
-        field.addEventListener("input", () => controller.setPath(field.value), { signal: sceneListeners.signal });
+        field.addEventListener("input", () => initialForm.field.change(field.value), { signal: sceneListeners.signal });
         unwatchForm = controller.connection.subscribe(updateForm); updateForm();
         if (layout.visible) {
             if (layout.primarySurface === "text") {

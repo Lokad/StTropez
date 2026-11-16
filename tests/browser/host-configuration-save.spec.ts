@@ -23,6 +23,8 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await p.evaluate(() => { const f = window.hostFixture, revision = f.snapshot().source.revision;
         for (const id of ["primary", "secondary", "comparison"] as const) if (!f.selectSourceSet(id, revision, [{ anchor: 4, head: 0 }, { anchor: 6, head: 6 }], 1)) throw new Error("Complete selection rejected"); }); await waitForReview(p);
     const prior = await snapshot(p), reference = await p.evaluate(() => { const f = window.hostFixture; return f.referenceRange(0, f.snapshot().bindings.comparison!.baseline!.length); }); await field.fill(" captured.csv ");
+    await field.evaluate(node => { node.dataset.retained = "configuration-field"; });
+    await button(p, "Finish configuration save").evaluate(node => { node.dataset.retained = "configuration-finish"; });
     // Composition/repeat shortcuts consume the browser Save key without starting a resource write.
     await field.dispatchEvent("keydown", { key: "s", ctrlKey: true, isComposing: true }); await field.dispatchEvent("keydown", { key: "s", ctrlKey: true, repeat: true });
     expect((await snapshot(p)).configurationSave.pending).toBe(false); await field.press("Control+s");
@@ -36,6 +38,9 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     const edited = await snapshot(p); await button(p, "Finish configuration save").click();
     await expect.poll(async () => (await snapshot(p)).configuration.serverVersion).toBe("configuration-v1");
     expect((await snapshot(p)).configuration.dirty).toBe(true); await expect(field).toHaveValue("later.csv"); expect(sets(await snapshot(p))).toEqual(sets(edited)); expect((await snapshot(p)).history).toEqual(edited.history);
+    await expect(field).toHaveAttribute("data-retained", "configuration-field");
+    await expect(button(p, "Finish configuration save")).toHaveAttribute("data-retained", "configuration-finish");
+    await expect(button(p, "Finish configuration save")).toBeDisabled();
     await input.press("Control+z"); await waitForReview(p); await exact(p, original); await input.press("Control+y"); await waitForReview(p); await exact(p, original + "!");
     await button(p, "Save configuration").click(); await expect(button(p, "Fail configuration save")).toBeEnabled();
     await button(p, "Fail configuration save").click(); await expect(p.getByLabel("Configuration save status", { exact: true })).toContainText("failed");

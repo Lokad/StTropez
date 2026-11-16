@@ -1,8 +1,36 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { HostController } from "../examples/hosts/controller.ts";
+import { formSavePanelModel } from "../examples/hosts/configuration-panel.ts";
 
 const settled = () => new Promise<void>(done => setImmediate(done));
+
+test("form presentation caches immutable captures, rejects old request callbacks and releases observers", async () => {
+    const host = new HostController(), save = host.configurationSave, store = save.presentation;
+    const baseline = host.debug().diagnostics.subscriptions, ownerBaseline = save.debug().subscriptions;
+    let notified = store.getSnapshot(), notifications = 0;
+    const stop = store.subscribe(() => { notified = store.getSnapshot(); notifications++; });
+    const model = () => formSavePanelModel(save, store.getSnapshot());
+    try {
+        assert.equal(store.getSnapshot(), notified); assert.ok(Object.isFrozen(notified));
+        assert.equal(host.debug().diagnostics.subscriptions, baseline + 1); assert.equal(save.debug().subscriptions, ownerBaseline + 1);
+        host.setPath("first.csv"); assert.ok(notifications > 0); assert.equal(notified, store.getSnapshot());
+        assert.equal(notified.resource, host.connection.getSnapshot()); assert.equal(notified.canSave, true);
+        save.save(); await settled(); const first = model(), captured = store.getSnapshot(); assert.ok(captured.capture);
+        assert.ok(Object.isFrozen(captured.capture)); assert.equal(store.getSnapshot(), captured);
+        first.actions[1].invoke(); assert.equal(notified.capture, null); assert.equal(model().actions[1].disabled, true); await settled();
+        host.setPath("second.csv"); save.save(); await settled(); const second = store.getSnapshot(); assert.ok(second.capture);
+        first.actions[1].invoke(); first.actions[2].invoke(); assert.equal(store.getSnapshot(), second);
+        assert.equal(save.capture()?.value.path, "second.csv"); model().actions[2].invoke(); assert.equal(notified.capture, null); await settled();
+        assert.equal(host.connection.getSnapshot().metadata.saveStatus, "failed");
+        save.save(); await settled(); const pending = model(); save.dispose();
+        assert.equal(notified.disposed, true); assert.equal(notified.capture, null); assert.equal(notified.canSave, false);
+        pending.actions[1].invoke(); pending.actions[2].invoke(); await settled();
+        assert.equal(store.getSnapshot().resource, host.connection.getSnapshot());
+        stop(); const before = notifications; save.externalWrite(); assert.equal(notifications, before);
+        assert.equal(host.debug().diagnostics.subscriptions, baseline); assert.equal(save.debug().subscriptions, ownerBaseline);
+    } finally { stop(); await host.dispose(); }
+});
 
 test("host errors retain their original cause without mutating the error or document", async () => {
     const host = new HostController(), cause = { status: 503 }, error = new Error("Service unavailable", { cause });
@@ -134,9 +162,12 @@ test("configuration review uses an explicit precondition and retains corrections
     try {
         h.setPath("local.csv"); save.externalWrite("remote-one.csv"); save.save(); await settled(); save.finish(); await settled();
         assert.equal(configuration(h).value.path, "local.csv"); assert.equal(save.canSave(), false); assert.equal(save.canSaveReviewed(), false);
-        save.review(); assert.equal(save.state.getSnapshot().conflict?.value?.path, "remote-one.csv"); h.setPath("merged.csv"); save.externalWrite("remote-two.csv");
+        save.review(); const firstReview = formSavePanelModel(save, save.presentation.getSnapshot());
+        assert.equal(save.state.getSnapshot().conflict?.value?.path, "remote-one.csv"); h.setPath("merged.csv"); save.externalWrite("remote-two.csv");
         save.saveReviewed(); await settled(); assert.equal(save.capture()?.expectedServerVersion, "configuration-v1"); save.finish(); await settled(); assert.equal(configuration(h).metadata.serverVersion, null);
-        save.review(); assert.equal(save.state.getSnapshot().conflict?.value?.path, "remote-two.csv"); save.saveReviewed(); await settled(); save.fail(); await settled(); assert.equal(save.canSaveReviewed(), true);
+        save.review(); assert.equal(save.state.getSnapshot().conflict?.value?.path, "remote-two.csv");
+        const secondReview = save.presentation.getSnapshot(); firstReview.actions[5].invoke(); assert.equal(save.presentation.getSnapshot(), secondReview);
+        formSavePanelModel(save, secondReview).actions[5].invoke(); await settled(); save.fail(); await settled(); assert.equal(save.canSaveReviewed(), true);
         h.setPath("final.csv"); save.saveReviewed(); await settled(); assert.equal(save.capture()?.expectedServerVersion, "configuration-v2"); h.setPath("newer.csv"); save.finish(); await settled();
         assert.equal(configuration(h).value.path, "newer.csv"); assert.equal(configuration(h).metadata.dirty, true); assert.equal(configuration(h).metadata.serverVersion, "configuration-v3");
         save.save(); await settled(); save.finish(); await settled(); assert.equal(configuration(h).metadata.dirty, false); assert.equal(configuration(h).metadata.serverVersion, "configuration-v4");

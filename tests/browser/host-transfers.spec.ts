@@ -20,6 +20,8 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await destination.fill(" captured.csv "); await batch.fill("1e"); await expect(button(p, "Save transfer settings")).toBeDisabled(); await batch.press("Control+s"); await button(p, "Run captured inputs").click();
     expect((await snapshot(p)).activity.pendingRuns).toBe(0); await expect(batch).toHaveValue("1e"); await button(p, "Dismiss message").click(); await batch.fill("2000"); await batch.press("Control+s");
     await expect(button(p, "Finish transfer settings save")).toBeEnabled(); const transferCapture = await p.evaluate(() => window.hostFixture.transferCapture()); expect(transferCapture?.value.destination).toBe(" captured.csv ");
+    await destination.evaluate(node => { node.dataset.retained = "transfer-field"; });
+    await button(p, "Finish transfer settings save").evaluate(node => { node.dataset.retained = "transfer-finish"; });
     await button(p, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(p)).runResources.runs.length).toBe(1); const first = (await snapshot(p)).runResources.runs[0]!;
     const firstInput = await p.evaluate(id => window.hostFixture.runInput(id), first.id); expect(firstInput?.transfer.value).toMatchObject({ destination: " captured.csv ", batchSize: "2000" }); expect(firstInput?.source.value).toBe(original);
     await destination.fill("newer.csv"); await path.fill("connection-later.csv"); await input.press("Control+End"); await input.pressSequentially("!"); await waitForDraft(p); await exact(p, original + "!");
@@ -28,6 +30,9 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     expect(sets(await snapshot(p))).toEqual(sets(edited)); expect((await snapshot(p)).history).toEqual(edited.history); expect((await snapshot(p)).source.exports).toBe(edited.source.exports);
     await button(p, "Inspect Run 1 log 2").click(); await expect(inspector).toContainText("30%"); await button(p, "Inspect captured Run").click(); await expect(inspector).toContainText("captured.csv");
     await button(p, "Finish transfer settings save").click(); await expect.poll(async () => (await snapshot(p)).transfer.serverVersion).toBe("transfer-v1"); await expect(destination).toHaveValue("newer.csv"); expect((await snapshot(p)).transfer.dirty).toBe(true);
+    await expect(destination).toHaveAttribute("data-retained", "transfer-field");
+    await expect(button(p, "Finish transfer settings save")).toHaveAttribute("data-retained", "transfer-finish");
+    await expect(button(p, "Finish transfer settings save")).toBeDisabled();
     await button(p, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(p)).runResources.runs.length).toBe(2); await button(p, "Inspect Run 2").click(); const second = (await snapshot(p)).runResources.runs[1]!;
     await button(p, "Finish run").click(); await expect.poll(async () => (await snapshot(p)).runResources.runs[0]?.status).toBe("completed"); expect((await snapshot(p)).runResources.selected).toBe(second.id); await expect(inspector).toContainText("newer.csv");
     await input.press("Control+z"); await waitForDraft(p); await exact(p, original); await input.press("Control+y"); await waitForDraft(p); await exact(p, original + "!");
