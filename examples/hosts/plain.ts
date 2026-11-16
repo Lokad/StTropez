@@ -1,8 +1,8 @@
 import { actions } from "./actions.ts";
 import { inputRecoveryModel, operationStatusModel, mountSaveConflictPanel } from "./operation-panels.ts";
-import type { HostController, Layout } from "./controller.ts";
+import type { HostController } from "./controller.ts";
 import type { ViewBindings } from "./bindings.ts";
-import type { TabSnapshot } from "../../src/index.ts";
+import { hostSceneModel } from "./scene-model.ts";
 import { mountLanguagePanel } from "./language-panel.ts";
 import { mountHoverPanel } from "./hover-panel.ts";
 import { mountVariantPanel } from "./variant-panel.ts";
@@ -74,19 +74,20 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     };
     let unwatchForm: (() => void) | undefined;
     let sceneListeners: AbortController | undefined;
-    let rendered: Layout | undefined;
-    let renderedTab: TabSnapshot | undefined;
-    const renderScene = () => {
+    const readScene = () => {
         const layout = controller.layout.getSnapshot();
-        const tab = controller.workspace.getSnapshot().tabs.find(tab => tab.id === controller.viewTab("primary"));
-        modal.textContent = layout.modal.kind === "error" ? layout.modal.message : layout.modal.kind === "close" ? "Close the captured tab?" : "";
-        if (rendered && rendered.position === layout.position && rendered.visible === layout.visible
-            && rendered.formFault === layout.formFault && rendered.primarySurface === layout.primarySurface
-            && renderedTab?.id === tab?.id && renderedTab?.generation === tab?.generation) return;
-        rendered = layout; renderedTab = tab;
+        const tab = controller.workspace.tabState.getSnapshot().find(tab => tab.id === controller.viewTab("primary"));
+        const ready = tab?.surface.kind === "text" && controller.workspace.observeDocument(tab.surface.documentId).getSnapshot() !== undefined;
+        return hostSceneModel(layout, tab, ready, controller.source.documentId);
+    };
+    let sceneKey: string | undefined;
+    const renderScene = () => {
+        const model = readScene(); modal.textContent = model.message;
+        if (sceneKey === model.key) return;
+        sceneKey = model.key;
         bindings.unmount(); unwatchForm?.(); unwatchForm = undefined; sceneListeners?.abort(); sceneListeners = new AbortController();
         scene.replaceChildren();
-        if (layout.formFault) { scene.textContent = "Host surface unavailable. Recover views to continue."; return; }
+        if (model.fault) { scene.textContent = "Host surface unavailable. Recover views to continue."; return; }
         const left = document.createElement("section"), right = document.createElement("section");
         left.setAttribute("aria-label", "Left host pane"); right.setAttribute("aria-label", "Right host pane"); scene.append(left, right);
         const form = document.createElement("div"), label = document.createElement("label"), field = document.createElement("input"), validation = document.createElement("p");
@@ -100,22 +101,20 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         form.addEventListener("keydown", event => formSaveKey(event, controller.configurationSave), { signal: sceneListeners.signal });
         field.addEventListener("input", () => initialForm.field.change(field.value), { signal: sceneListeners.signal });
         unwatchForm = controller.connection.subscribe(updateForm); updateForm();
-        if (layout.visible) {
-            if (layout.primarySurface === "text") {
-                const primary = document.createElement("div"); primary.className = "editor-host";
-                (layout.position === "left" ? left : right).append(primary); bindings.primary(primary);
-            } else { const placeholder = document.createElement("p"); placeholder.textContent = layout.primarySurface; left.append(placeholder); }
+        const primaryPane = model.position === "left" ? left : right;
+        if (model.primaryKey !== undefined) {
+            const primary = document.createElement("div"); primary.className = "editor-host"; primaryPane.append(primary); bindings.primary(primary);
+        } else if (model.placeholder !== undefined) {
+            const placeholder = document.createElement("p"); placeholder.textContent = model.placeholder; primaryPane.append(placeholder);
+        }
+        if (model.secondary) {
             const secondary = document.createElement("div"); secondary.className = "editor-host"; right.append(secondary); bindings.secondary(secondary);
         }
     };
     let reviewKey: string | undefined;
     let destroyVariants: (() => void) | undefined;
     const renderReview = () => {
-        const layout = controller.layout.getSnapshot();
-        const tab = controller.workspace.tabState.getSnapshot().find(tab => tab.id === controller.viewTab("primary"));
-        const key = layout.navigation.kind === "review" && layout.visible && !layout.formFault && layout.primarySurface === "text"
-            && tab?.surface.kind === "text" && tab.surface.documentId === controller.source.documentId
-            ? `${tab.id}:${tab.generation}` : undefined;
+        const key = readScene().reviewKey;
         review.hidden = key === undefined;
         if (key === reviewKey) return;
         // Record identity before mounting: the comparison creates its own reference display tab.

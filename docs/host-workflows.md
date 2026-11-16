@@ -150,6 +150,16 @@ working surface. The stable binding owns and disposes its reference subscription
 components keep their pure rendering and explicit ref lifecycle. A reference reply while the
 user types neither drops characters nor splits an otherwise continuous typing transaction.
 
+The hosts share scene eligibility and tab-generation keys from explicit layout, tab and
+document-readiness snapshots. Hidden, failed or unloaded primary surfaces cannot mount a
+source review, and other text resources do not inherit it. Modal and review-navigation updates
+retain the primary scene; moving a pane carries its loading/panel placeholder with it. The
+plain host still waits for the controller's layout publication after workspace mutations before
+mounting comparison resources. React keeps stable refs and its existing render-error handling.
+Review-version controls share captured-version labels, selection and load availability. Both
+renderers observe the variant catalogue and comparison reference, retaining options by version
+choice ID. Version retrieval and reviewed-discard authorization remain with their existing owners.
+
 `bench:host-reference-focus` measures the complete reference callback, all-pane readiness and
 automation action separately, followed by a distinct point-input handler/readiness/action and
 full workflow. Both hosts use normal Unicode/CRLF and 100,000-line sources with comparison or

@@ -7,6 +7,8 @@ import { HostController } from "./controller.ts";
 import { hostEditor, ViewBindings } from "./bindings.ts";
 import { actions } from "./actions.ts";
 import { inputRecoveryModel, operationStatusModel, saveConflictPanelModel } from "./operation-panels.ts";
+import { hostSceneModel } from "./scene-model.ts";
+import { variantPanelModel } from "./variant-panel.ts";
 import { installHostHarness } from "./harness.ts";
 import { HostLifecycle } from "./lifecycle.ts";
 import { languagePanelModel } from "./language-panel.ts";
@@ -104,37 +106,34 @@ function Form() {
         readOnly={model.field.readOnly} aria-invalid={model.field.invalid}
         onChange={event => model.field.change(event.currentTarget.value)} /></label><p>{model.validation}</p></div> : <p>{model.status}</p>;
 }
-function Scene() {
-    const layout = useObserved(controller.layout);
-    const tabs = useObserved(controller.workspace.tabState);
+function useScene() {
+    const layout = useObserved(controller.layout), tabs = useObserved(controller.workspace.tabState);
     const tab = tabs.find(candidate => candidate.id === controller.viewTab("primary"));
     const ready = tab?.surface.kind === "text" && controller.workspace.observeDocument(tab.surface.documentId).getSnapshot() !== undefined;
-    const primary = layout.visible && layout.primarySurface === "text" && ready
-        ? <div key={`primary:${tab.id}:${tab.generation}`} className="editor-host" ref={bindings.primary} /> : <p>{layout.primarySurface}</p>;
-    return <><main><section aria-label="Left host pane">{layout.position === "left" ? primary : null}</section>
+    return hostSceneModel(layout, tab, ready, controller.source.documentId);
+}
+function Scene() {
+    const model = useScene();
+    const primary = model.primaryKey !== undefined ? <div key={model.primaryKey} className="editor-host" ref={bindings.primary} />
+        : model.placeholder !== undefined ? <p>{model.placeholder}</p> : null;
+    return <><main><section aria-label="Left host pane">{model.position === "left" ? primary : null}</section>
         <section aria-label="Right host pane"><Profiler id="form" onRender={formCommitted}><Form /></Profiler>
-            {layout.position === "right" ? primary : null}
-            {layout.visible ? <div key="secondary" className="editor-host" ref={bindings.secondary} /> : null}</section></main>
-        <div role="status" aria-label="Host messages">{layout.modal.kind === "error" ? layout.modal.message : layout.modal.kind === "close" ? "Close the captured tab?" : ""}</div></>;
+            {model.position === "right" ? primary : null}
+            {model.secondary ? <div key="secondary" className="editor-host" ref={bindings.secondary} /> : null}</section></main>
+        <div role="status" aria-label="Host messages">{model.message}</div></>;
 }
 function SourceReview() {
-    const layout = useObserved(controller.layout);
-    const tabs = useObserved(controller.workspace.tabState), tab = tabs.find(tab => tab.id === controller.viewTab("primary"));
-    return layout.navigation.kind === "review" && layout.visible && !layout.formFault && layout.primarySurface === "text"
-        && tab?.surface.kind === "text" && tab.surface.documentId === controller.source.documentId
-        ? <section className="host-review" aria-label="Source review surface"><ReviewVersions /><div key={`${tab.id}:${tab.generation}`} ref={bindings.comparison} /></section> : null;
+    const model = useScene();
+    return model.reviewKey !== undefined
+        ? <section className="host-review" aria-label="Source review surface"><ReviewVersions /><div key={model.reviewKey} ref={bindings.comparison} /></section> : null;
 }
 function ReviewVersions() {
-    const state = useObserved(controller.variants.state), reference = useObserved(controller.comparisonReference), selected = state.requested ?? state.selected,
-        pinned = selected && !state.choices.some(choice => choice.id === selected.id && choice.version === selected.version);
-    return <div><label>Review version <select aria-label="Review version" value={pinned ? "__captured" : selected?.id ?? ""}
-        onChange={event => { if (event.currentTarget.value) controller.variants.review(event.currentTarget.value); }}>
-        <option value="">Choose a version</option><option value="__captured" disabled hidden={!pinned}>{pinned ? `Captured ${selected.label} · ${selected.version}` : ""}</option>
-        {state.choices.map(choice => <option key={choice.id} value={choice.id}>{choice.label} · {choice.version}</option>)}
-    </select></label><output aria-label="Version review status">{state.message} Reference: {reference.baseline.version}.</output>
-        <button onClick={controller.variants.keepDraft}>Keep draft version</button><button onClick={controller.variants.finishNext} disabled={!state.pending}>Finish version load</button>
-        <button onClick={controller.variants.failNext} disabled={!state.pending}>Fail version load</button><button onClick={controller.variants.cancel} disabled={!state.pending}>Cancel version load</button>
-        <button onClick={bindings.beginDiscard}>Discard reviewed changes</button><button onClick={bindings.finishDiscard}>Confirm reviewed discard</button><button onClick={bindings.cancelDiscard}>Cancel reviewed discard</button></div>;
+    const model = variantPanelModel(controller.variants, bindings, useObserved(controller.variants.state), useObserved(controller.comparisonReference));
+    return <div><label>{model.label} <select aria-label={model.label} value={model.value} onChange={event => model.choose(event.currentTarget.value)}>
+        <option value="">{model.empty}</option><option value={model.captured.key} disabled hidden={model.captured.hidden}>{model.captured.label}</option>
+        {model.choices.map(choice => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
+    </select></label><output aria-label={model.status.label}>{model.status.text}</output>
+        {model.actions.map(action => <button key={action.label} onClick={() => action.invoke()} disabled={action.disabled}>{action.label}</button>)}</div>;
 }
 function LanguageTools() {
     const tools = bindings.language, model = languagePanelModel(tools, useObserved(tools.state));

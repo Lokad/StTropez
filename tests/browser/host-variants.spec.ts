@@ -27,6 +27,11 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     test.setTimeout(120000);
     const original = "base alpha\r\nstable beta\r\nlast 😀" + (large ? "\r\n" + "const stable = 1;\r\n".repeat(100000) + "tail" : "");
     await mount(page, host, original); const initial = await snapshot(page), sourceId = initial.source.id;
+    const selector = page.getByRole("combobox", { name: "Review version", exact: true });
+    await selector.locator('option[value="server"]').evaluate(node => { node.setAttribute("data-retained", "server-choice"); });
+    await click(page, "Prompt close");
+    expect((await snapshot(page)).bindings.mounts).toBe(initial.bindings.mounts);
+    await click(page, "Cancel close");
     await click(page, "Keep draft version"); await append(page, " human"); await version(page, "draft"); expect((await snapshot(page)).variants.status).toBe("loading");
     await append(page, " later"); await click(page, "Finish version load"); await ready(page); const changed = original + " human later";
     await exact(page, changed); await exact(page, original, true); expect((await snapshot(page)).source.serverVersion).toBe("v0");
@@ -45,6 +50,8 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await page.evaluate(() => window.hostFixture.externalWrite("newer remote")); await append(page, " live"); await click(page, "Finish version load"); await ready(page);
     await exact(page, "remote\r\ncaptured", true); await exact(page, original + " live"); expect((await snapshot(page)).source.serverVersion).toBe("v1");
     await expect(page.getByRole("combobox", { name: "Review version", exact: true })).toHaveValue("__captured");
+    await expect(selector.locator('option[value="server"]')).toHaveAttribute("data-retained", "server-choice");
+    await expect(page.getByLabel("Version review status", { exact: true })).toContainText(`Reference: ${(await snapshot(page)).comparisonReference.version}.`);
     const historical = (await snapshot(page)).variants.choices.find(choice => choice.kind === "history")!;
     await version(page, historical.id); await click(page, "Finish version load"); await ready(page); await exact(page, "start", true); await exact(page, original + " live");
     await click(page, "Run captured inputs"); await expect.poll(async () => (await snapshot(page)).pendingRuns.length).toBe(1);

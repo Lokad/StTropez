@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { DocumentId } from "../src/index.ts";
+import { TextBuffer, type DocumentId } from "../src/index.ts";
+import { HostController } from "../examples/hosts/controller.ts";
+import { hostSceneModel } from "../examples/hosts/scene-model.ts";
+import { variantPanelModel } from "../examples/hosts/variant-panel.ts";
+import type { VariantReviewSnapshot } from "../examples/hosts/variants.ts";
 import { navigationPanelModel } from "../examples/hosts/navigation-panel.ts";
 import { projectPanelModel } from "../examples/hosts/project-panel.ts";
 import type { NavigationSnapshot } from "../examples/hosts/navigation.ts";
@@ -18,6 +22,51 @@ import { domainPanelModel } from "../examples/hosts/domain-panel.ts";
 import type { DomainSnapshot } from "../examples/hosts/domain.ts";
 
 const noop = () => {};
+
+test("scene identity ignores modal/review traffic while readiness and captured tab generations govern mounting", async () => {
+    const host = new HostController();
+    try {
+        const layout = host.layout.getSnapshot(), tab = host.workspace.resolveTab(host.workspace.captureTab(host.viewTab("primary")))!;
+        const derive = (next = layout, target = tab, ready = true) => hostSceneModel(next, target, ready, host.source.documentId);
+        const initial = derive(), reviewLayout = { ...layout, navigation: { kind: "review" as const } }, review = derive(reviewLayout);
+        assert.equal(review.key, initial.key); assert.equal(review.primaryKey, initial.primaryKey); assert.ok(review.reviewKey);
+        const modal = derive({ ...reviewLayout, modal: { kind: "error", message: "Keep typing" } });
+        assert.equal(modal.key, review.key); assert.equal(modal.reviewKey, review.reviewKey); assert.equal(modal.message, "Keep typing");
+        const moved = derive({ ...reviewLayout, position: "right" });
+        assert.notEqual(moved.key, review.key); assert.equal(moved.reviewKey, review.reviewKey); assert.equal(moved.position, "right");
+        assert.notEqual(derive(reviewLayout, { ...tab, generation: tab.generation + 1 }).primaryKey, review.primaryKey);
+        assert.notEqual(derive(reviewLayout, { ...tab, generation: tab.generation + 1 }).reviewKey, review.reviewKey);
+        for (const unavailable of [derive({ ...reviewLayout, visible: false }), derive({ ...reviewLayout, formFault: true }),
+            derive({ ...reviewLayout, primarySurface: "loading" }), derive(reviewLayout, tab, false),
+            hostSceneModel(reviewLayout, undefined, true, host.source.documentId)]) {
+            assert.equal(unavailable.primaryKey, undefined); assert.equal(unavailable.reviewKey, undefined);
+        }
+        const hidden = derive({ ...reviewLayout, visible: false }); assert.equal(hidden.placeholder, undefined); assert.equal(hidden.secondary, false);
+        const other = derive(reviewLayout, { ...tab, surface: { kind: "text", documentId: "another-source" as DocumentId } });
+        assert.ok(other.primaryKey); assert.equal(other.reviewKey, undefined, "other text resources never inherit source review");
+    } finally { await host.dispose(); }
+});
+
+test("review presentation pins captured versions across catalogue replacement and uses the supplied reference", () => {
+    const chosen: string[] = [];
+    const variants: Parameters<typeof variantPanelModel>[0] = { review: id => { chosen.push(id); return true; }, keepDraft: noop, finishNext: () => false, failNext: noop, cancel: noop };
+    const bindings = { beginDiscard: noop, finishDiscard: noop, cancelDiscard: noop };
+    const captured = Object.freeze({ id: "server", kind: "server" as const, label: "Server version", version: "remote-1" });
+    const state: VariantReviewSnapshot = { generation: 1, choices: [captured], selected: null, requested: captured, status: "loading", pending: 1, message: "Loading" };
+    const reference = { generation: 3, baseline: { version: "old-reference", buffer: TextBuffer.from("old") } };
+    const first = variantPanelModel(variants, bindings, state, reference);
+    const newer = variantPanelModel(variants, bindings, { ...state, choices: [{ ...captured, version: "remote-2" }] }, reference);
+    assert.equal(first.value, "server"); assert.equal(newer.value, "__captured"); assert.match(newer.captured.label, /remote-1/);
+    assert.equal(newer.choices[0]!.key, first.choices[0]!.key); assert.match(newer.choices[0]!.label, /remote-2/);
+    newer.choose(""); newer.choose("__captured"); newer.choose("missing"); assert.deepEqual(chosen, []);
+    newer.choose("server"); assert.deepEqual(chosen, ["server"]);
+    const completed = variantPanelModel(variants, bindings, { ...state, requested: null, selected: captured, pending: 0, status: "ready" },
+        { ...reference, baseline: { ...reference.baseline, version: "remote-1" } });
+    assert.match(first.status.text, /old-reference/); assert.match(completed.status.text, /remote-1/);
+    assert.equal(first.actions.find(action => action.label === "Finish version load")!.disabled, false);
+    assert.equal(completed.actions.find(action => action.label === "Finish version load")!.disabled, true);
+    assert.equal(completed.actions.find(action => action.label === "Confirm reviewed discard")!.invoke, bindings.finishDiscard);
+});
 
 test("domain annotation callbacks retain session and revision when another view reuses the annotation ID", () => {
     const revealed: [string, number, string][] = [];

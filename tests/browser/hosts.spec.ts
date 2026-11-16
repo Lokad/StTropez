@@ -258,7 +258,10 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().activity.writes)).toBe(1);
             await expect(primary).toHaveValue("new human text");
             await page.getByRole("button", { name: "Begin delayed load", exact: true }).click(); await expect(primary).toHaveCount(0);
+            await expect(page.getByLabel("Left host pane", { exact: true }).getByText("loading", { exact: true })).toBeVisible();
             await page.getByRole("button", { name: "Move primary view", exact: true }).click();
+            await expect(page.getByLabel("Right host pane", { exact: true }).getByText("loading", { exact: true })).toBeVisible();
+            await expect(page.getByLabel("Left host pane", { exact: true }).getByText("loading", { exact: true })).toHaveCount(0);
             await page.getByRole("button", { name: "Reopen primary source", exact: true }).click();
             await page.getByRole("button", { name: "Finish delayed load", exact: true }).click();
             await expect(primary).toHaveValue("new human text");
