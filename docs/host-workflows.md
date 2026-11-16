@@ -76,6 +76,14 @@ not rerender the Run list, and inspection-only publications reuse its unchanged 
 Both hosts retain Run/log nodes by resource ID and keep links through refresh of the same
 resource. Detach releases subscriptions and handlers; Run leases and results remain owner-managed.
 
+Draft recovery uses the same snapshot model for controls, status, progress, protection and preview
+in both hosts. Every prepared decision has a distinct confirmation token, including repeated
+preparation of the same action. Confirm/Cancel callbacks retain that token; older callbacks cannot
+restore, discard or dismiss a newer decision. Unrelated preview/status publications retain the
+token. The owner still checks revisions, resource lifetime, authority and stored-copy tokens
+before and after asynchronous work. Plain controls refresh handlers without replacing buttons,
+then clear them on detach; React observes the stable draft handle directly.
+
 A persisted `pagehide` retains the mounted host and its listener for a later final hide. A
 non-persisted hide starts teardown. Browser regressions exercise this policy with synthetic
 page-transition events and fixture installation disabled; they do not establish real

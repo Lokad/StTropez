@@ -164,6 +164,11 @@ for (const host of ["plain", "react"]) test(`${host} draft confirmation, authori
     await p.addInitScript(() => { const open = IDBFactory.prototype.open; let reject = true; IDBFactory.prototype.open = function (...args) { if (args[0] === "sttropez-example-drafts-v1" && reject) { reject = false; throw new DOMException("Injected temporary open rejection", "UnknownError"); } return open.apply(this, args); }; });
     await p.goto(`/hosts/${host}/?editor=candidate`); await waitForDraft(p); await expect(p.getByLabel("Draft recovery status", { exact: true })).toContainText("unavailable");
     await source(p).press("Control+a"); await source(p).pressSequentially("stored draft"); await button(p, "Retry draft storage").click(); await waitForDraft(p); await button(p, "Keep recovery draft").click(); await waitForDraft(p); expect((await snapshot(p)).draft!.valid).toBe(true);
+    await button(p, "Confirm draft action").evaluate(node => { node.dataset.retained = "draft-confirm"; });
+    await button(p, "Restore source draft").click(); const firstDecision = (await snapshot(p)).draft!.confirmationToken; expect(firstDecision).not.toBeNull();
+    await button(p, "Restore source draft").click(); expect((await snapshot(p)).draft!.confirmationToken).not.toBe(firstDecision);
+    await expect(button(p, "Confirm draft action")).toHaveAttribute("data-retained", "draft-confirm");
+    await button(p, "Cancel draft action").click(); expect((await snapshot(p)).draft!.confirmationToken).toBeNull(); await expect(button(p, "Confirm draft action")).toBeDisabled();
     await button(p, "Restore source draft").click(); await source(p).press("Control+End"); await source(p).pressSequentially(" later"); await button(p, "Confirm draft action").click(); await waitForDraft(p); await exact(p, "stored draft later");
     await button(p, "Restore source draft").click(); await p.evaluate(() => { window.hostFixture.setSourceReadOnly(true); window.hostFixture.setSourceReadOnly(false); }); await button(p, "Confirm draft action").click(); await waitForDraft(p); await exact(p, "stored draft later");
     const configuration = p.getByRole("textbox", { name: "Configuration path", exact: true }); await configuration.fill("local.csv"); await button(p, "Restore configuration draft").click();

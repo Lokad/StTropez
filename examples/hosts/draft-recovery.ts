@@ -12,12 +12,12 @@ type Draft = Readonly<{ format: 3; id: string; created: number;
     transfer: Readonly<{ key: ResourceKey; revision: number; serverVersion: string | null; value: TransferSettings }> | null;
     loaded: LoadedDraft | null; input: readonly InputCopy[] }>;
 type Kind = "keep" | "source" | "configuration" | "transfer" | "loaded" | "discard";
-type Capture = Readonly<{ kind: Kind; token: string | null; source: ResourceTarget; configuration: ResourceTarget;
+type Capture = Readonly<{ kind: Kind; confirmationToken: string; token: string | null; source: ResourceTarget; configuration: ResourceTarget;
     sourceRevision: number; configurationRevision: number; sourceVersion: string | null; configurationVersion: string | null;
     sourceAuthority: number; configurationAuthority: number; transfer: ResourceTarget; transferRevision: number; transferVersion: string | null; transferAuthority: number;
     loaded: ResourceTarget | null; loadedGeneration: number; loadedRevision: number | null; loadedVersion: string | null; loadedAuthority: number; view: DocumentView | null }>;
-type DraftState = Readonly<{ busy: boolean; present: boolean; valid: boolean; unprotected: boolean; message: string;
-    confirmation: Kind | null; sourceUnits: number; inputCount: number; hasTransfer: boolean; hasLoaded: boolean; preview: string | null }>;
+export type DraftSnapshot = Readonly<{ busy: boolean; present: boolean; valid: boolean; unprotected: boolean; message: string;
+    confirmation: Kind | null; confirmationToken: string | null; sourceUnits: number; inputCount: number; hasTransfer: boolean; hasLoaded: boolean; preview: string | null }>;
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const integer = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 const version = (value: unknown): value is string | null => value === null || typeof value === "string";
@@ -80,7 +80,7 @@ export class HostDraftRecovery {
     private readonly stops: (() => void)[] = [];
     private detachNavigation: (() => void) | undefined;
     private hasComposition: () => boolean = () => false;
-    private readonly cell = new HostCell<DraftState>({ busy: true, present: false, valid: false, unprotected: false, message: "Loading stored draft…", confirmation: null, sourceUnits: 0, inputCount: 0, hasTransfer: false, hasLoaded: false, preview: null });
+    private readonly cell = new HostCell<DraftSnapshot>({ busy: true, present: false, valid: false, unprotected: false, message: "Loading stored draft…", confirmation: null, confirmationToken: null, sourceUnits: 0, inputCount: 0, hasTransfer: false, hasLoaded: false, preview: null });
     readonly state = this.cell.observable;
     constructor(controller: HostController, store: DraftStore) {
         this.controller = controller; this.store = store;
@@ -115,9 +115,9 @@ export class HostDraftRecovery {
     }
     private publish(message = this.cell.get().message, preview = this.cell.get().preview): void {
         if (this.disposed) return;
-        const next: DraftState = { busy: this.busy, present: this.envelope !== null, valid: !!this.draft, unprotected: this.needsProtection(), message,
-            confirmation: this.confirmation?.kind ?? null, sourceUnits: this.draft?.source.text.length ?? 0, inputCount: this.draft?.input.length ?? 0, hasTransfer: this.draft?.transfer != null, hasLoaded: this.draft?.loaded != null, preview };
-        const old = this.cell.get(); if (Object.keys(next).some(k => next[k as keyof DraftState] !== old[k as keyof DraftState])) this.cell.set(next);
+        const next: DraftSnapshot = { busy: this.busy, present: this.envelope !== null, valid: !!this.draft, unprotected: this.needsProtection(), message,
+            confirmation: this.confirmation?.kind ?? null, confirmationToken: this.confirmation?.confirmationToken ?? null, sourceUnits: this.draft?.source.text.length ?? 0, inputCount: this.draft?.input.length ?? 0, hasTransfer: this.draft?.transfer != null, hasLoaded: this.draft?.loaded != null, preview };
+        const old = this.cell.get(); if (Object.keys(next).some(k => next[k as keyof DraftSnapshot] !== old[k as keyof DraftSnapshot])) this.cell.set(next);
     }
     private track(task: Promise<void>): void { this.jobs.add(task); void task.then(() => this.jobs.delete(task), () => this.jobs.delete(task)); }
     readonly reload = (): void => {
@@ -132,7 +132,7 @@ export class HostDraftRecovery {
     };
     private capture(kind: Kind): Capture {
         const c = this.controller, source = c.source.metadata.getSnapshot(), configuration = c.connection.getSnapshot(), loaded = c.loadedSource.getSnapshot(), metadata = loaded.resource?.metadata.getSnapshot();
-        return Object.freeze({ kind, token: this.envelope?.token ?? null, source: c.workspace.captureResource(c.source.id), configuration: c.workspace.captureResource(c.connection.id),
+        return Object.freeze({ kind, confirmationToken: token(), token: this.envelope?.token ?? null, source: c.workspace.captureResource(c.source.id), configuration: c.workspace.captureResource(c.connection.id),
             sourceRevision: c.workspace.document(c.source.documentId).revision, configurationRevision: configuration.revision,
             sourceVersion: source.serverVersion, configurationVersion: configuration.metadata.serverVersion,
             sourceAuthority: this.sourceAuthority, configurationAuthority: this.configurationAuthority,
@@ -181,10 +181,13 @@ export class HostDraftRecovery {
             : kind === "configuration" ? "Restore the stored configuration over the current configuration?"
             : kind === "loaded" ? "Restore the stored loaded-source draft? Original source inputs stay unchanged." : "Restore the stored transfer settings over the current transfer settings?");
     };
-    readonly cancel = (): void => { this.confirmation = undefined; this.publish("Draft action canceled."); };
+    readonly cancel = (expected: string | null = this.confirmation?.confirmationToken ?? null): void => {
+        if (this.disposed || this.busy || expected !== (this.confirmation?.confirmationToken ?? null)) return;
+        this.confirmation = undefined; this.publish("Draft action canceled."); };
     readonly inspect = (): void => { if (this.draft) this.publish("Stored text previews (up to 4,096 characters each).", this.draft.source.text.slice(0, 4096) + (this.draft.loaded ? "\nLoaded source:\n" + this.draft.loaded.text.slice(0, 4096) : "") + (this.draft.input.length ? "\nRecovered input from an earlier capture:\n" + this.draft.input.at(-1)!.attemptedText.slice(0, 4096) : "")); };
-    readonly confirm = (): void => {
-        const capture = this.confirmation; if (!capture || this.busy || !this.current(capture)) { this.confirmation = undefined; this.publish("Inputs changed. Choose the draft action again."); return; }
+    readonly confirm = (expected: string | null = this.confirmation?.confirmationToken ?? null): void => {
+        if (this.disposed || this.busy || expected !== (this.confirmation?.confirmationToken ?? null)) return;
+        const capture = this.confirmation; if (!capture || !this.current(capture)) { this.confirmation = undefined; this.publish("Inputs changed. Choose the draft action again."); return; }
         const c = this.controller, document = c.workspace.document(c.source.documentId), configuration = c.connection.getSnapshot(), input = c.recovery.getSnapshot().items;
         const transfer = c.transfer.resource.getSnapshot(); if (configuration.state !== "ready" || transfer.state !== "ready") return;
         const loaded = c.loadedSource.getSnapshot().resource, loadedState = loaded?.getSnapshot(), loadedDocument = loadedState?.state === "ready" ? c.workspace.document(loaded!.documentId) : undefined;

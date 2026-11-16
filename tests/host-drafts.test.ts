@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { HostController } from "../examples/hosts/controller.ts";
 import { HostDraftRecovery } from "../examples/hosts/draft-recovery.ts";
+import { draftPanelModel } from "../examples/hosts/draft-panel.ts";
 import type { DraftStore, StoredDraft } from "../examples/hosts/draft-store.ts";
 
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; }
@@ -17,6 +18,28 @@ function text(c: HostController) { const b = c.workspace.document(c.source.docum
 function edit(c: HostController, value: string) { const d = c.workspace.document(c.source.documentId); assert.equal(c.workspace.edit({ documentId: d.id, expectedRevision: d.revision, origin: "human", edits: [{ from: 0, to: d.buffer.length, insert: value }], history: { kind: "replace" } }).applied, true); }
 async function seeded() { const store = storage(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); edit(c, "stored café😀\r\ndraft"); c.setPath("stored.csv"); d.prepare("keep"); await idle(d); await d.dispose(); await c.dispose(); return store; }
 async function close(c: HostController, d: HostDraftRecovery) { const a = d.dispose(), b = c.dispose(); await Promise.all([a, b]); assert.equal(c.workspace.diagnostics().subscriptions, 0); }
+
+test("draft panel decisions cannot confirm or cancel a newer capture of the same action", async () => {
+    const store = await seeded(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d);
+    let notified = d.state.getSnapshot(); const stop = d.state.subscribe(() => { notified = d.state.getSnapshot(); });
+    try {
+        const empty = draftPanelModel(d, notified).actions;
+        edit(c, "first correction"); d.prepare("source"); const firstState = d.state.getSnapshot(), first = draftPanelModel(d, firstState).actions;
+        edit(c, "second correction"); d.prepare("source"); const current = d.state.getSnapshot();
+        assert.notEqual(current.confirmationToken, firstState.confirmationToken); assert.equal(current.message, firstState.message); assert.equal(notified, current);
+        empty[8].invoke(); empty[9].invoke(); assert.equal(d.state.getSnapshot(), current);
+        first[8].invoke(); await idle(d); assert.equal(text(c), "second correction");
+        first[9].invoke(); assert.equal(d.state.getSnapshot(), current);
+        const accepted = draftPanelModel(d, current).actions; d.inspect(); assert.equal(d.state.getSnapshot().confirmationToken, current.confirmationToken);
+        accepted[8].invoke(); await idle(d); assert.equal(text(c), "stored café😀\r\ndraft");
+        d.prepare("discard"); const oldDiscard = draftPanelModel(d, d.state.getSnapshot()).actions;
+        d.prepare("discard"); const latest = d.state.getSnapshot(); oldDiscard[8].invoke(); oldDiscard[9].invoke(); await idle(d);
+        assert.ok(store.shared.value); assert.equal(d.state.getSnapshot(), latest);
+        draftPanelModel(d, latest).actions[9].invoke(); assert.equal(d.state.getSnapshot().confirmationToken, null);
+        d.prepare("discard"); const disposed = draftPanelModel(d, d.state.getSnapshot()).actions; await d.dispose(); const before = d.debug();
+        disposed[8].invoke(); disposed[9].invoke(); assert.deepEqual(d.debug(), before); assert.ok(store.shared.value);
+    } finally { stop(); await close(c, d); }
+});
 
 test("checkpoint includes dirty temporary text after close and reopen", async () => {
     const store = storage(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d);

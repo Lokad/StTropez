@@ -21,7 +21,7 @@ import { signatureCommandsModel, mountSignaturePopup } from "./signature-panel.t
 import { mountHoverPanel } from "./hover-panel.ts";
 import { HostDraftRecovery } from "./draft-recovery.ts";
 import { createBrowserDraftStore } from "./draft-store.ts";
-import { draftActions } from "./draft-panel.ts";
+import { draftPanelModel } from "./draft-panel.ts";
 import { configurationFormModel, formSavePanelModel, formSaveKey } from "./configuration-panel.ts";
 import { transferFormModel, runPanelModel } from "./transfer-panel.ts";
 import "./style.css";
@@ -62,13 +62,13 @@ function InputRecovery() {
         <pre hidden={!state.visible}>{state.visible ? text.slice(0, 4096) + (text.length > 4096 ? "…" : "") : ""}</pre></section>;
 }
 function DraftRecovery() {
-    const s = useObserved(draft.state);
-    return <section className="host-language" aria-label="Draft recovery"><h2>Draft recovery</h2>
-        <output aria-label="Draft recovery status">{s.message}</output>
-        <progress aria-label="Draft storage progress" hidden={!s.busy} />
-        <p>{s.unprotected ? "Current inputs need a recovery checkpoint before leaving." : "Checkpoint copies do not save or run inputs."}</p>
-        <div>{draftActions(draft).map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
-        <pre hidden={s.preview === null}>{s.preview ?? ""}</pre></section>;
+    const model = draftPanelModel(draft, useObserved(draft.state));
+    return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2>
+        <output aria-label={model.status.label}>{model.status.text}</output>
+        <progress aria-label={model.progress.label} hidden={model.progress.hidden} />
+        <p>{model.protection}</p>
+        <div>{model.actions.map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
+        <pre hidden={model.preview.hidden}>{model.preview.text}</pre></section>;
 }
 function ConfigurationSavePanel() {
     const save = controller.configurationSave, model = formSavePanelModel(save, useObserved(save.presentation));
