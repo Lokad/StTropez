@@ -23,6 +23,7 @@ import { HostDraftRecovery } from "./draft-recovery.ts";
 import { createBrowserDraftStore } from "./draft-store.ts";
 import { draftActions } from "./draft-panel.ts";
 import { configurationFormModel, formSavePanelModel, formSaveKey } from "./configuration-panel.ts";
+import { transferFormModel, runPanelModel } from "./transfer-panel.ts";
 import "./style.css";
 
 const controller = new HostController(), bindings = new ViewBindings(controller, hostEditor());
@@ -77,22 +78,25 @@ function ConfigurationSavePanel() {
         <pre hidden={model.preview.hidden}>{model.preview.text}</pre></section>;
 }
 function TransferWorkspace() {
-    const transfer = controller.transfer, saved = useObserved(transfer.save.presentation), state = saved.resource, runs = useObserved(controller.runResources.state), inspection = controller.runResources.inspect();
-    const model = formSavePanelModel(transfer.save, saved, "Transfer save status");
-    const readOnly = state.state !== "ready" || !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null;
-    return <section className="host-language" aria-label="Transfer workspace"><h2>Transfer workspace</h2>
-        <div onKeyDown={e => formSaveKey(e, transfer.save)}>{state.state === "ready" ? <>
-            <label>Transfer destination<input value={state.value.destination} readOnly={readOnly} aria-invalid={saved.validation !== null} onChange={e => transfer.update("destination", e.currentTarget.value)} /></label>
-            <label>Transfer batch size<input value={state.value.batchSize} readOnly={readOnly} inputMode="numeric" aria-invalid={saved.validation !== null} onChange={e => transfer.update("batchSize", e.currentTarget.value)} /></label></> : <p>{state.state}</p>}
-            <output aria-label={model.status.label}>{model.status.text}</output>
-            <div>{model.actions.map(a => <button key={a.label} disabled={a.disabled} onClick={a.invoke}>{a.label}</button>)}</div><pre hidden={model.preview.hidden}>{model.preview.text}</pre></div>
-        <h3>Captured Runs and logs</h3><ul>{runs.runs.map(run => <li key={run.id}><span>Run {run.number}: {run.status}, {run.progress}% · {run.id} </span>
-            <button onClick={() => controller.runResources.open(run.id)}>Inspect Run {run.number}</button>
-            <button disabled={run.status !== "running" || run.progress >= 90} onClick={() => controller.runResources.advance(run.id)}>Advance Run {run.number} progress</button>
-            {run.logs.map((id, i) => <button key={id} onClick={() => controller.runResources.open(id)}>Inspect Run {run.number} log {i + 1}</button>)}</li>)}</ul>
-        <section aria-label="Resource inspection" hidden={inspection === null}><h3>{inspection?.title}</h3><p>{inspection?.text}</p><pre hidden={inspection?.preview == null}>{inspection?.preview ?? ""}</pre>
-            <div>{inspection?.links.map(l => <button key={l.id} onClick={() => controller.runResources.open(l.id)}>{l.label}</button>)}</div>
-            <button onClick={() => { if (runs.selected) controller.runResources.open(runs.selected); }}>Refresh resource inspection</button></section></section>;
+    const transfer = controller.transfer, model = transferFormModel(transfer, useObserved(transfer.save.presentation));
+    return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2>
+        <div onKeyDown={e => formSaveKey(e, transfer.save)}>{model.available ? <div>{model.fields.map(field =>
+            <label key={field.key}>{field.label}<input value={field.value} readOnly={field.readOnly} inputMode={field.inputMode} aria-invalid={field.invalid}
+                onChange={e => field.change(e.currentTarget.value)} /></label>)}</div> : <p>{model.status}</p>}
+            <output aria-label={model.save.status.label}>{model.save.status.text}</output>
+            <div>{model.save.actions.map(a => <button key={a.label} disabled={a.disabled} onClick={a.invoke}>{a.label}</button>)}</div>
+            <pre hidden={model.save.preview.hidden}>{model.save.preview.text}</pre></div><RunPanel /></section>;
+}
+function RunPanel() {
+    const model = runPanelModel(controller.runResources, useObserved(controller.runResources.state)), inspection = model.inspection;
+    return <><h3>{model.title}</h3><ul>{model.rows.items().map(run => <li key={run.key}><span>{run.status}</span>
+        <button onClick={run.inspect.invoke}>{run.inspect.label}</button>
+        <button disabled={run.progress.disabled} onClick={run.progress.invoke}>{run.progress.label}</button>
+        {run.logs().map(log => <button key={log.key} onClick={log.invoke}>{log.label}</button>)}</li>)}</ul>
+        <section aria-label={inspection.label} hidden={inspection.hidden}><h3>{inspection.title}</h3><p>{inspection.text}</p>
+            <pre hidden={inspection.preview.hidden}>{inspection.preview.text}</pre>
+            <div>{inspection.links().map(link => <button key={link.key} onClick={link.invoke}>{link.label}</button>)}</div>
+            <button onClick={inspection.refresh.invoke}>{inspection.refresh.label}</button></section></>;
 }
 function Form() {
     const state = useObserved(controller.connection), layout = useObserved(controller.layout);

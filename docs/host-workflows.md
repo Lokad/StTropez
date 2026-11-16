@@ -67,6 +67,15 @@ the displayed remote review. Older callbacks cannot settle a newer request or si
 a newer review. Plain views renew callbacks while retaining field/button nodes and clear them
 on detach. Save-key scope and controller-owned input values remain unchanged.
 
+Transfer field labels, validation and editability share the same captured form snapshot.
+Run selection and its immutable inspection are published together in `RunResources.state`.
+Both hosts derive Run/log rows, inspection links and Refresh from that supplied snapshot;
+callbacks retain the displayed resource ID even after another resource is selected. Current
+input inspection remains a captured preview until explicit refresh. Plain form publications do
+not rerender the Run list, and inspection-only publications reuse its unchanged row inventory.
+Both hosts retain Run/log nodes by resource ID and keep links through refresh of the same
+resource. Detach releases subscriptions and handlers; Run leases and results remain owner-managed.
+
 A persisted `pagehide` retains the mounted host and its listener for a later final hide. A
 non-persisted hide starts teardown. Browser regressions exercise this policy with synthetic
 page-transition events and fixture installation disabled; they do not establish real

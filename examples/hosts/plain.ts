@@ -55,7 +55,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const colors = document.createElement("section"); colors.className = "host-language";
     const draftPanel = document.createElement("section"); draftPanel.className = "host-language"; draftPanel.setAttribute("aria-label", "Draft recovery");
     const configuration = document.createElement("section"); configuration.className = "host-language";
-    const transfer = document.createElement("section"); transfer.className = "host-language"; transfer.setAttribute("aria-label", "Transfer workspace");
+    const transfer = document.createElement("section"); transfer.className = "host-language";
     host.replaceChildren(nav, status, recovery, conflict, scene, review, configuration, transfer, draftPanel, language, tablePaste, domain, navigation, project, rename, codeActions, links, colors, modal);
     const destroyTransfer = mountTransferPanel(transfer, controller);
     const destroyConfiguration = mountConfigurationPanel(configuration, controller);

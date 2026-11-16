@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { HostController } from "../examples/hosts/controller.ts";
 import { formSavePanelModel } from "../examples/hosts/configuration-panel.ts";
+import { runPanelModel } from "../examples/hosts/transfer-panel.ts";
 
 const settled = () => new Promise<void>(done => setImmediate(done));
 
@@ -114,7 +115,11 @@ test("independent transfer Save retains invalid input, opaque fields, later edit
 });
 
 test("immutable Run/log resources link captured inputs and keep older progress/results separate", async () => {
-    const h = new HostController();
+    const h = new HostController(), outputs = h.runResources;
+    const stop = outputs.state.subscribe(() => { const state = outputs.state.getSnapshot();
+        assert.equal(state.selected, state.inspection?.id ?? null);
+        if (state.inspection) { assert.ok(Object.isFrozen(state.inspection)); assert.ok(Object.isFrozen(state.inspection.links)); }
+    });
     try {
         const first = h.run(); await settled(); const id = h.runResources.state.getSnapshot().runs[0]!.id, input = h.runResources.capture(id)!;
         const sourceId: import("../src/index.ts").ResourceId = input.source.id; assert.equal(sourceId, h.source.id); assert.equal(input.configuration.id, h.connection.id); assert.equal(input.transfer.id, h.transfer.resource.id); assert.equal(input.source.value, "start");
@@ -123,12 +128,20 @@ test("immutable Run/log resources link captured inputs and keep older progress/r
         const initialLog = h.runResources.state.getSnapshot().runs[0]!.logs[0]!, oldLog = h.workspace.resource(initialLog).getSnapshot();
         sourceEdit(h, " later"); h.setPath("later-connection.csv"); h.transfer.update("destination", "later-target.csv"); const second = h.run(); await settled(); const latest = h.debug().activity.lastRun;
         const secondId = h.runResources.state.getSnapshot().runs[1]!.id; h.runResources.open(secondId); const selection = h.runResources.state.getSnapshot().selected, before = h.debug();
+        const capturedInspection = outputs.state.getSnapshot();
         h.runResources.advance(id); h.runResources.advance(id); assert.equal(h.runResources.state.getSnapshot().runs[0]!.progress, 60); assert.deepEqual(h.debug().source, before.source); assert.deepEqual(h.debug().configuration, before.configuration); assert.deepEqual(h.debug().transfer, before.transfer);
+        assert.equal(outputs.state.getSnapshot().inspection, capturedInspection.inspection); assert.equal(capturedInspection.runs[0]!.progress, 0);
         h.finishRun(); await first; assert.equal(h.runResources.state.getSnapshot().runs[0]!.status, "completed"); assert.equal(h.debug().activity.pendingRuns, 1); assert.equal(h.runResources.state.getSnapshot().selected, selection); assert.deepEqual(h.debug().activity.lastRun, latest);
         h.failRun(); await second; assert.equal(h.runResources.state.getSnapshot().runs[1]!.status, "failed"); assert.equal(h.workspace.resource(id).getSnapshot(), snapshot); assert.equal(h.workspace.resource(initialLog).getSnapshot(), oldLog);
-        assert.equal(h.runResources.capture(id), input); h.runResources.open(initialLog); assert.equal(h.runResources.inspect()?.links[0]?.id, id); h.runResources.open(id); assert.equal(h.runResources.inspect()?.preview, "start");
-        h.runResources.open(h.source.id); const preview = h.runResources.inspect(); sourceEdit(h, " newer"); assert.equal(h.runResources.inspect(), preview); h.runResources.open(h.source.id); assert.equal(h.runResources.inspect()?.preview, "start later newer");
-    } finally { await h.dispose(); assert.equal(h.debug().diagnostics.leases, 0); }
+        assert.equal(h.runResources.capture(id), input); h.runResources.open(initialLog); assert.equal(h.runResources.inspect()?.links[0]?.id, id);
+        const logModel = runPanelModel(outputs, outputs.state.getSnapshot()); outputs.open(secondId); logModel.inspection.links()[0]!.invoke();
+        assert.equal(outputs.state.getSnapshot().selected, id); assert.equal(h.runResources.inspect()?.preview, "start");
+        h.runResources.open(h.source.id); const sourceSnapshot = outputs.state.getSnapshot(), sourceModel = runPanelModel(outputs, sourceSnapshot);
+        sourceEdit(h, " newer"); assert.equal(outputs.state.getSnapshot(), sourceSnapshot);
+        outputs.open(secondId); sourceModel.inspection.refresh.invoke(); assert.equal(outputs.state.getSnapshot().selected, h.source.id);
+        assert.equal(h.runResources.inspect()?.preview, "start later newer"); assert.equal(sourceSnapshot.inspection?.preview, "start later");
+        sourceModel.rows.items()[0]!.inspect.invoke(); assert.equal(outputs.state.getSnapshot().selected, id);
+    } finally { stop(); await h.dispose(); assert.equal(h.debug().diagnostics.leases, 0); }
 });
 
 test("disposal interrupts Run resources and pending transfer Save without completing or losing inputs", async () => {

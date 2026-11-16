@@ -11,6 +11,7 @@ export type RunInput = Readonly<{ kind: "run"; number: number; source: Link & Re
 type RunLog = Readonly<{ kind: "log"; runId: ResourceId; ordinal: number; message: string; progress: number }>;
 type RunInfo = Readonly<{ id: ResourceId; number: number; status: Status; progress: number; logs: readonly ResourceId[] }>;
 type Inspection = Readonly<{ id: ResourceId; title: string; text: string; preview: string | null; links: readonly Readonly<{ label: string; id: ResourceId }>[] }>;
+export type RunResourcesSnapshot = Readonly<{ runs: readonly RunInfo[]; selected: ResourceId | null; inspection: Inspection | null }>;
 const inspectionPermissions = Object.freeze({ edit: Object.freeze([]), save: false, run: false });
 
 /** Immutable captured inputs/log entries; transient progress and inspector selection belong to the host. */
@@ -19,13 +20,12 @@ export class RunResources {
     private readonly source: TextResourceHandle;
     private readonly configuration: ResourceHandle<Connection>;
     private readonly transfer: ResourceHandle<TransferSettings>;
-    private readonly cell = new HostCell<Readonly<{ runs: readonly RunInfo[]; selected: ResourceId | null }>>({ runs: [], selected: null });
+    private readonly cell = new HostCell<RunResourcesSnapshot>({ runs: [], selected: null, inspection: null });
     readonly state = this.cell.observable;
     private readonly resources = new Map<ResourceId, ResourceHandle<RunInput> | ResourceHandle<RunLog>>();
     private readonly pending = new Map<ResourceId, ResourceLease>();
     private readonly tabs = new Map<ResourceId, TabId>();
     private serial = 0;
-    private inspection: Inspection | null = null;
     private disposed = false;
     constructor(workspace: Workspace, source: TextResourceHandle, configuration: ResourceHandle<Connection>, transfer: ResourceHandle<TransferSettings>) {
         this.workspace = workspace; this.source = source; this.configuration = configuration; this.transfer = transfer;
@@ -61,11 +61,10 @@ export class RunResources {
     readonly open = (id: ResourceId): void => {
         if (this.disposed || !this.resources.has(id) && ![this.source.id, this.configuration.id, this.transfer.id].includes(id)) return;
         const tab = this.tabs.get(id); if (!tab || !this.workspace.getSnapshot().tabs.some(t => t.id === tab)) this.tabs.set(id, this.workspace.open({ kind: "panel", resourceId: id, panelType: "resource-inspection" }, "right"));
-        const value = this.readInspection(id); this.inspection = value && Object.freeze({ ...value, links: Object.freeze(value.links.map(link => Object.freeze(link))) });
-        this.cell.set({ ...this.cell.get(), selected: id });
+        this.cell.set({ ...this.cell.get(), selected: id, inspection: this.readInspection(id) });
     };
     capture(id: ResourceId): RunInput | null { const s = this.resources.get(id)?.getSnapshot(); return s?.state === "ready" && s.value.kind === "run" ? s.value : null; }
-    inspect(): Inspection | null { return this.inspection; }
+    inspect(): Inspection | null { return this.cell.get().inspection; }
     private readInspection(id: ResourceId): Inspection | null {
         const s = this.resources.get(id)?.getSnapshot();
         if (s?.state === "ready") { const value = s.value;
