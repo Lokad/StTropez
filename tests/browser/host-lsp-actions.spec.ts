@@ -8,6 +8,23 @@ const choices = (page: Page) => page.getByRole("list", { name: "Provider code ac
 const edits = (page: Page) => page.getByRole("list", { name: "Proposed action edits", exact: true }).locator("li");
 const raw = "// 😀 TODO\r\nconst catalogue = 1;\r\ncatalogue;", marker = "// fixture action\r\n";
 const header = "// provider review\r\n", footer = "\r\n// end provider review";
+async function faultCommand(page: Page, fault: "malformed" | "failure" | "ack") {
+    await page.evaluate(fault => {
+        const socket = Reflect.get(window, "actionTestSocket") as WebSocket, send = socket.send;
+        Reflect.set(window, "actionCommandFaultPending", true);
+        socket.send = function(data) {
+            if (typeof data === "string") {
+                const value = JSON.parse(data);
+                if (value.method === "workspace/executeCommand" && value.params.command === "fixture.review") {
+                    socket.send = send; Reflect.set(window, "actionCommandFaultPending", false);
+                    data = JSON.stringify({ ...value, params: { ...value.params, _fixture: { delay: 0, fault } } });
+                }
+            }
+            send.call(this, data);
+        };
+    }, fault);
+    return async () => expect(await page.evaluate(() => Reflect.get(window, "actionCommandFaultPending"))).toBe(false);
+}
 async function control(page: Page, method: string, params?: unknown, expectReply = true): Promise<any> {
     return page.evaluate(({ method, params, expectReply }) => { const socket = Reflect.get(window, "actionTestSocket") as WebSocket;
         if (params === undefined) { socket.send(JSON.stringify({ jsonrpc: "2.0", method })); return null; }
@@ -126,7 +143,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP code actions`,
         await select(page); await preview(page); await choices(page).nth(7).click(); await button(page, "Execute captured action").click(); await review(page); await exact(page, marker + raw); const receipt = await control(page, "fixture/lastCommand", {}); expect(receipt.command).toBe("fixture.review"); expect(receipt.arguments[0]).toMatchObject({ expectedPrefix: marker, opaque: { note: "😀" } }); expect(receipt.documents.find((doc: any) => doc.uri === receipt.arguments[0].uri).prefix).toContain(marker);
         await page.evaluate(token => window.hostFixture.confirmProjectReview(token), token); await exact(page, marker + raw); expect((await snapshot(page)).bindings.project.state.review).not.toBeNull(); await button(page, "Apply captured provider edits").click(); await waitForActions(page); await exact(page, header + marker + raw + footer); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 2);
         await input(page).press("Control+z"); await waitForActions(page); await exact(page, marker + raw); await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw);
-        for (const fault of ["malformed", "failure"] as const) { await select(page); await preview(page); await choices(page).nth(7).click(); await control(page, "fixture/projectConfig", { kind: "review", delay: 0, fault }); await button(page, "Execute captured action").click(); await waitForActions(page); await exact(page, marker + raw); await expect(page.getByLabel("Code action status", { exact: true })).toContainText("undo"); await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw); if ((await snapshot(page)).bindings.actions.state.disconnected || (await snapshot(page)).bindings.actions.state.reconnectRequired) await button(page, "Reconnect action provider").click(); }
+        for (const fault of ["malformed", "failure"] as const) { await select(page); await preview(page); await choices(page).nth(7).click(); const consumed = await faultCommand(page, fault); await button(page, "Execute captured action").click(); await waitForActions(page); await consumed(); await exact(page, marker + raw); await expect(page.getByLabel("Code action status", { exact: true })).toContainText("undo"); await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw); if ((await snapshot(page)).bindings.actions.state.disconnected || (await snapshot(page)).bindings.actions.state.reconnectRequired) await button(page, "Reconnect action provider").click(); }
         await dispose(page);
     });
     test("action-command cancellation, ownership changes and lost acknowledgements never replay a committed phase", async ({ page }) => {
@@ -138,12 +155,12 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP code actions`,
             else if (mode === "authority") await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion);
             else if (mode === "typing") { await input(page).press("Control+End"); await input(page).pressSequentially("x"); }
             else if (mode === "remount") await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
-            else if (mode === "withdraw") await control(page, "fixture/unregister", { unregisterations: [{ id: "fixture-review", method: "workspace/executeCommand" }] }, false);
+            else if (mode === "withdraw") await control(page, "fixture/reviewRegistration", { registered: false }, false);
             else if (mode === "disconnect") await control(page, "fixture/disconnect"); else await button(page, "Dismiss action preview").click();
             await waitForActions(page); await page.evaluate(token => window.hostFixture.confirmProjectReview(token), token); if (mode === "authority") await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
             if (mode === "typing") { await input(page).press("Control+z"); await waitForActions(page); } await exact(page, marker + raw); await expect(page.getByLabel("Code action status", { exact: true })).toContainText("undo"); await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw);
         }
-        if ((await snapshot(page)).bindings.actions.state.disconnected || (await snapshot(page)).bindings.actions.state.reconnectRequired) await button(page, "Reconnect action provider").click(); await select(page); await preview(page); await choices(page).nth(7).click(); await control(page, "fixture/projectConfig", { kind: "review", delay: 0, fault: "ack" }); await button(page, "Execute captured action").click(); await review(page); await button(page, "Apply captured provider edits").click(); await waitForActions(page); await exact(page, header + marker + raw + footer); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 2); await expect(button(page, "Reconnect action provider")).toBeEnabled(); const count = executed;
+        if ((await snapshot(page)).bindings.actions.state.disconnected || (await snapshot(page)).bindings.actions.state.reconnectRequired) await button(page, "Reconnect action provider").click(); await select(page); await preview(page); await choices(page).nth(7).click(); const consumed = await faultCommand(page, "ack"); await button(page, "Execute captured action").click(); await review(page); await button(page, "Apply captured provider edits").click(); await waitForActions(page); await exact(page, header + marker + raw + footer); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 2); await expect(button(page, "Reconnect action provider")).toBeEnabled(); await consumed(); const count = executed;
         await button(page, "Reconnect action provider").click(); await select(page); await preview(page); expect(executed).toBe(count); await button(page, "Dismiss action preview").click(); await input(page).press("Control+z"); await waitForActions(page); await exact(page, marker + raw); await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw); await dispose(page);
     });
     test("100k comparison action commands retain phase history, bounded review and primary Save/Run ownership", async ({ page }) => {

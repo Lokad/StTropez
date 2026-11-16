@@ -65,7 +65,14 @@ limits remain 100 resources, 1,024 edits, 16,384 units per insertion and 65,536 
 
 The generic fixture qualifies registration/withdrawal, explicit decisions, stale tokens,
 cancellation, real disconnect, lost acknowledgement, shared history, comparison and 100k-line
-reviews. It is not a production language provider. Action-menu commands preserve edit-before-command
+reviews. Its `fixture/reviewRegistration` request takes `{ registered }` and optional `_fixture`
+delay/fault policy. It admits at most 64 pending transitions and serializes them through
+acknowledgement, so concurrent requests for the same state do not duplicate registrations.
+Cancelled queued transitions do not dispatch; cancellation after dispatch retains the transition
+until acknowledgement before processing the next owner. Command fault policy travels with the
+actual invocation, separately from its original authorized arguments. These controls belong to
+the development peer, not the public LSP client contract.
+It is not a production language provider. Action-menu commands preserve edit-before-command
 ordering, using separate undoable phases for the initial edit and later confirmed server batches.
 A busy review lane blocks execution before any initial edit. Feature scopes share one provider
 connection and synchronization stream. Cancellation/timeout or capability changes during a command

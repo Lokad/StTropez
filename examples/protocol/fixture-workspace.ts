@@ -1,29 +1,69 @@
 import { LspWorkspace } from "../../src/protocol/index.ts";
-import type { JsonValue, LspDocumentFeature, LspSessionAccess, LspWorkspaceScope } from "../../src/protocol/index.ts";
+import type { JsonValue, LspDocumentFeature, LspSessionAccess, LspWorkspaceOptions, LspWorkspaceScope } from "../../src/protocol/index.ts";
+import type { Workspace } from "../../src/index.ts";
+
+const commandKey = (command: string) => `workspace/executeCommand:${command}`;
 
 /** Development-peer policy travels with its request, never in connection-wide configuration. */
 export class FixtureLspWorkspace extends LspWorkspace {
-    private readonly preparations = new WeakMap<LspSessionAccess, (method: LspDocumentFeature, policy: JsonValue, replacePending: boolean) => void>();
+    private readonly preparations = new WeakMap<LspSessionAccess, (method: string, policy: JsonValue, replacePending: boolean) => void>();
+    private readonly sendCommand: <T>(command: string, policy: JsonValue | undefined, send: () => T) => T;
+
+    constructor(workspace: Workspace, options: LspWorkspaceOptions) {
+        let commandPolicy: { command: string; policy: JsonValue } | undefined;
+        super(workspace, { ...options, connect: async context => {
+            const transport = await options.connect(context);
+            return { subscribe: listener => transport.subscribe(listener), dispose: () => transport.dispose(), send: message => {
+                if (commandPolicy) {
+                    const value = JSON.parse(message);
+                    if (value.method === "workspace/executeCommand" && value.params?.command === commandPolicy.command) {
+                        transport.send(JSON.stringify({ ...value, params: { ...value.params, _fixture: commandPolicy.policy } })); return;
+                    }
+                }
+                transport.send(message);
+            } };
+        } });
+        this.sendCommand = (command, policy, send) => {
+            // requestCommand authorizes and sends synchronously. Preserve its arguments exactly;
+            // decorate only this fixture's wire envelope during that captured invocation.
+            const previous = commandPolicy; commandPolicy = policy === undefined ? undefined : { command, policy };
+            try { return send(); } finally { commandPolicy = previous; }
+        };
+    }
 
     /** Call synchronously inside the feature's preparation hook, before any optional await. */
-    async prepareRequest(scope: LspSessionAccess, method: LspDocumentFeature, policy: Readonly<Record<string, JsonValue>>,
+    prepareRequest(scope: LspSessionAccess, method: LspDocumentFeature | "codeAction/resolve", policy: Readonly<Record<string, JsonValue>>,
         options: Readonly<{ replacePending?: boolean }> = {}): Promise<void> {
+        return this.prepare(scope, method, policy, options.replacePending === true);
+    }
+    prepareCommand(scope: LspSessionAccess, command: string, policy: Readonly<Record<string, JsonValue>>): Promise<void> {
+        return this.prepare(scope, commandKey(command), policy, false);
+    }
+    private async prepare(scope: LspSessionAccess, method: string, policy: Readonly<Record<string, JsonValue>>, replacePending: boolean): Promise<void> {
         const prepare = this.preparations.get(scope);
         if (!prepare) throw new Error("Request policy requires a live scope from this fixture workspace.");
-        prepare(method, structuredClone(policy), options.replacePending === true);
+        prepare(method, structuredClone(policy), replacePending);
     }
 
     override createScope(): LspWorkspaceScope {
         const scope = super.createScope();
-        let pending: { method: LspDocumentFeature; policy: JsonValue } | undefined;
+        let pending: { method: string; policy: JsonValue } | undefined;
+        const take = (method: string) => { if (pending?.method !== method) return undefined; const policy = pending.policy; pending = undefined; return policy; };
         const wrapped: LspWorkspaceScope = Object.freeze({ ...scope,
             requestDocument: (method, document, params) => {
                 // Take the policy before synchronization can yield to another request.
-                const policy = pending?.method === method ? pending.policy : undefined;
-                if (policy !== undefined) pending = undefined;
+                const policy = take(method);
                 return scope.requestDocument(method, document, (index, snapshot, capture) => ({ ...params(index, snapshot, capture),
                     ...(policy === undefined ? {} : { _fixture: policy }) }));
             },
+            request: (method, params) => {
+                const policy = take(method);
+                if (policy === undefined) return scope.request(method, params);
+                if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("Fixture policy requires named request parameters.");
+                return scope.request(method, { ...params, _fixture: policy });
+            },
+            requestCommand: (command, args, timeout, authorization) => this.sendCommand(command, take(commandKey(command)),
+                () => scope.requestCommand(command, args, timeout, authorization)),
             disconnect: () => { pending = undefined; scope.disconnect(); },
             dispose: () => { pending = undefined; this.preparations.delete(wrapped); scope.dispose(); },
         });

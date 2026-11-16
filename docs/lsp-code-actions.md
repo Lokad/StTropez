@@ -2,8 +2,8 @@
 
 The plain and React `?editor=candidate&language=lsp` routes send actual `textDocument/codeAction`
 requests. **Preview module action** or Ctrl+. captures the primary selection's UTF-16 range and
-complete selection set. The module field configures this development fixture's import choice;
-it is not an extra LSP request parameter. The response can offer several choices. Select one,
+complete selection set. The module field configures this development fixture's import choice
+through its private request policy; it is not part of the standard LSP contract. The response can offer several choices. Select one,
 review its captured text edits, then choose **Apply captured action**. A command choice instead
 shows **Execute captured action**, with its literal command title/name and argument count.
 Discovery and selection

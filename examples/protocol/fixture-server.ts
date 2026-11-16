@@ -15,7 +15,6 @@ import { TextBuffer } from "../../src/index.ts";
 import { ModuleActionCursor } from "../probes/actions.ts";
 import { validDomainModule } from "../probes/domain.ts";
 import { reviewHeader, reviewFooter } from "../probes/project-commands.ts";
-import type { ProjectCommand } from "../probes/project-commands.ts";
 import type { ApplyWorkspaceEditResult } from "vscode-languageserver-protocol/node.js";
 import { SignatureScanner } from "../probes/signature.ts";
 import { ModuleLinksCursor } from "../probes/links.ts";
@@ -69,11 +68,11 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
         const pending = new Set<() => void>(); let completionStyle = "edits", interactiveCompletion = false, hostProfile = false;
         let projectModuleUris: ReturnType<typeof moduleUris> = [];
         let definitionLinks = false, versionedEdits = false;
-        type ActionConfig = { module: string; delay: number; fault?: "malformed" | "failure" | "incomplete" | "markup" };
-        let actionConfig: ActionConfig = { module: "sample-utils", delay: 0 }, actionResolveConfig: ActionConfig = { module: "sample-utils", delay: 0 }, actionGeneration = 0, actionLiterals = false, actionResolve = false;
+        let actionGeneration = 0, actionLiterals = false, actionResolve = false;
         const actionResolutions = new Map<number, { source: TextDocument; edit: WorkspaceEdit }>();
         const expireActions = (uri: string) => { for (const [id, action] of actionResolutions) if (action.source.uri === uri) actionResolutions.delete(id); };
-        let projectConfig: Pick<ProjectCommand, "kind" | "delay" | "fault"> = { kind: "status", delay: 0 }, projectRegistered = false, applyEditSupport = false, projectStyle: "markers" | "many" | "wide" = "markers", cancelApply: (() => void) | undefined;
+        let projectRegistered = false, applyEditSupport = false, projectStyle: "markers" | "many" | "wide" = "markers", cancelApply: (() => void) | undefined;
+        let registrationTail = Promise.resolve(), registrationsPending = 0;
         let lastCommand: unknown = null;
         const deferred = <T>(delay: number, token: CancellationToken, compute: () => T | Promise<T>) => new Promise<T>((resolve, reject) => {
             let done = false, stop: { dispose: () => void } | undefined;
@@ -245,30 +244,38 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
                 return kind === "definition" && locations.length === 1 ? locations[0] : locations;
             });
         });
-        const validateActionConfig = (params: ActionConfig) => {
-            if (!params || typeof params.module !== "string" || !validDomainModule(params.module) || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure", "incomplete", "markup"].includes(params.fault)) throw new ResponseError(-32602, "Invalid action configuration"); return { ...params };
-        };
-        peer.onRequest("fixture/actionConfig", async (params: ActionConfig) => { actionConfig = validateActionConfig(params);
-            if (applyEditSupport && !projectRegistered) { await peer.sendRequest(RegistrationRequest.type, { registrations: [{ id: "fixture-review", method: "workspace/executeCommand", registerOptions: { commands: ["fixture.review"] } }] }); projectRegistered = true; }
-            return null;
-        });
-        peer.onRequest("fixture/actionResolveConfig", (params: ActionConfig) => { actionResolveConfig = validateActionConfig(params); return null; });
         const workspaceTextEdits = (project: readonly TextDocument[], changes: ReadonlyMap<string, readonly TextEdit[]>): WorkspaceEdit => versionedEdits
             ? { documentChanges: [...changes].map(([uri, edits]) => ({ textDocument: { uri, version: project.find(doc => doc.uri === uri)?.version ?? null }, edits: [...edits] })) }
             : { changes: Object.fromEntries([...changes].map(([uri, edits]) => [uri, [...edits]])) };
-        peer.onRequest("fixture/projectConfig", async (params: typeof projectConfig) => {
-            if (!params || !["register", "unregister", "review", "status"].includes(params.kind) || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure", "ack"].includes(params.fault)) throw new ResponseError(-32602, "Invalid project configuration");
-            projectConfig = { ...params }; if (params.fault === "failure" && (params.kind === "register" || params.kind === "unregister")) throw new ResponseError(-32001, "Fixture registration unavailable");
-            if (params.kind === "register" && !projectRegistered) { await peer.sendRequest(RegistrationRequest.type, { registrations: [{ id: "fixture-review", method: "workspace/executeCommand", registerOptions: { commands: ["fixture.review"] } }] }); projectRegistered = true; }
-            if (params.kind === "unregister") { await peer.sendRequest(UnregistrationRequest.type, { unregisterations: [{ id: "fixture-review", method: "workspace/executeCommand" }] }); projectRegistered = false; }
-            return null;
+        peer.onRequest("fixture/reviewRegistration", (params: { registered: boolean; _fixture?: unknown }, token) => {
+            if (typeof params?.registered !== "boolean") throw new ResponseError(-32602, "Invalid review registration");
+            const config = requestPolicy(params._fixture, ["malformed", "failure", "ack"]), registered = params.registered;
+            if (registered && !applyEditSupport) throw new ResponseError(-32601, "Review needs an edit-review capable client");
+            if (registrationsPending >= 64) throw new ResponseError(-32000, "Too many pending review registrations");
+            registrationsPending++;
+            const result = registrationTail.then(async () => {
+                if (socket.readyState !== 1) throw new ResponseError(-32800, "Fixture registration cancelled");
+                await deferred(config.delay, token, () => null);
+                if (token.isCancellationRequested) throw new ResponseError(-32800, "Fixture registration cancelled");
+                if (config.fault === "failure") throw new ResponseError(-32001, "Fixture registration unavailable");
+                // Once dispatched, retain this transition until its acknowledgement even if
+                // the initiating request is cancelled. The next owner must see the actual state.
+                if (projectRegistered !== registered) {
+                    if (registered) await peer.sendRequest(RegistrationRequest.type, { registrations: [{ id: "fixture-review", method: "workspace/executeCommand", registerOptions: { commands: ["fixture.review"] } }] });
+                    else await peer.sendRequest(UnregistrationRequest.type, { unregisterations: [{ id: "fixture-review", method: "workspace/executeCommand" }] });
+                    projectRegistered = registered;
+                }
+                return { registered: projectRegistered };
+            });
+            registrationTail = result.then(() => { registrationsPending--; }, () => { registrationsPending--; });
+            return result;
         });
         peer.onRequest("fixture/projectStyle", (params: { style: typeof projectStyle }) => { if (!params || !["markers", "many", "wide"].includes(params.style)) throw new ResponseError(-32602, "Invalid review style"); projectStyle = params.style; return null; });
         peer.onNotification("fixture/cancelApply", () => cancelApply?.());
         peer.onRequest("fixture/lastCommand", () => lastCommand);
-        peer.onRequest("workspace/executeCommand", (params: { command: string; arguments?: unknown[] }, token) => {
+        peer.onRequest("workspace/executeCommand", (params: { command: string; arguments?: unknown[]; _fixture?: unknown }, token) => {
             if (!["fixture.status", "fixture.review", "fixture.unadvertised"].includes(params?.command)) throw new ResponseError(-32602, "Unknown fixture command");
-            const config = projectConfig, project = [...documents.values()], style = projectStyle; projectConfig = { kind: "status", delay: 0 };
+            const config = requestPolicy(params._fixture, ["malformed", "failure", "ack"]), project = [...documents.values()], style = projectStyle;
             lastCommand = { command: params.command, arguments: params.arguments ?? [], documents: project.map(doc => ({ uri: doc.uri, version: doc.version, prefix: doc.getText().slice(0, 64) })) };
             return deferred(config.delay, token, async () => {
                 if (config.fault === "failure") throw new ResponseError(-32001, "Fixture provider command unavailable");
@@ -295,14 +302,16 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
                 finally { if (cancelApply === cancel) cancelApply = undefined; stop.dispose(); cancellation.dispose(); }
             });
         });
-        peer.onRequest("textDocument/codeAction", (params: { textDocument: { uri: string }; range: Location["range"]; context: { diagnostics: unknown[]; triggerKind?: number } }, token) => {
+        peer.onRequest("textDocument/codeAction", (params: { textDocument: { uri: string }; range: Location["range"]; context: { diagnostics: unknown[]; triggerKind?: number }; _fixture?: unknown }, token) => {
             const origin = documents.get(params.textDocument.uri); if (!origin || !Array.isArray(params.context?.diagnostics)) throw new ResponseError(-32602, "Code actions need captured context");
-            const config = actionConfig, project = [...documents.values()], generation = ++actionGeneration; actionConfig = { module: config.module, delay: 0 };
+            const config = requestPolicy(params._fixture, ["malformed", "failure", "incomplete", "markup"]), project = [...documents.values()], generation = ++actionGeneration;
+            const supplied = (params._fixture as { module?: unknown } | undefined)?.module, module = supplied === undefined ? "sample-utils" : supplied;
+            if (typeof module !== "string" || !validDomainModule(module)) throw new ResponseError(-32602, "Invalid action module");
             return deferred(config.delay, token, async (): Promise<(CodeAction | Command)[]> => {
                 if (config.fault === "failure") throw new ResponseError(-32001, "Fixture actions unavailable");
                 const status = { title: "Provider status command", command: "fixture.status", arguments: [] };
                 if (!actionLiterals) return [status];
-                const text = origin.getText(), cursor = new ModuleActionCursor({ operation: "action-start", id: 1, document: origin.uri, revision: origin.version, length: text.length, from: origin.offsetAt(params.range.start), to: origin.offsetAt(params.range.end), module: config.module, delay: 0 }, TextBuffer.from(text));
+                const text = origin.getText(), cursor = new ModuleActionCursor({ operation: "action-start", id: 1, document: origin.uri, revision: origin.version, length: text.length, from: origin.offsetAt(params.range.start), to: origin.offsetAt(params.range.end), module, delay: 0 }, TextBuffer.from(text));
                 let step = cursor.next(), turn = 0; while (!step.result) { if (token.isCancellationRequested) throw new ResponseError(-32800, "Fixture action cancelled"); if (++turn % 4 === 0) await setImmediate(); step = cursor.next(); }
                 const found = step.result.action, importEdit = workspaceTextEdits(project, new Map([[origin.uri, found.edits.flatMap(change => [...change.edits].map(edit => ({ range: { start: origin.positionAt(edit.from), end: origin.positionAt(edit.to) }, newText: edit.insert })))]]));
                 const marker = "// fixture action\r\n", changes = new Map(project.filter(doc => !doc.getText().startsWith(marker)).map(doc => [doc.uri, [{ range: { start: doc.positionAt(0), end: doc.positionAt(0) }, newText: marker }]]));
@@ -328,17 +337,17 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
                 return actions;
             });
         });
-        peer.onRequest("codeAction/resolve", (params: CodeAction, token) => {
-            const config = actionResolveConfig; actionResolveConfig = { module: config.module, delay: 0 };
+        peer.onRequest("codeAction/resolve", (params: CodeAction & { _fixture?: unknown }, token) => {
+            const { _fixture, ...action } = params, config = requestPolicy(_fixture, ["malformed", "failure", "incomplete", "markup"]);
             return deferred(config.delay, token, () => {
                 if (config.fault === "failure") throw new ResponseError(-32001, "Fixture action resolution unavailable");
                 const retained = actionResolutions.get(params.data?.token);
                 if (!retained || documents.get(retained.source.uri) !== retained.source) throw new ResponseError(-32602, "Unknown captured action");
                 const edit = retained.edit;
-                if (config.fault === "incomplete") return params;
-                if (config.fault === "markup") return { ...params, title: "Changed during resolve", edit };
-                if (config.fault === "malformed") return { ...params, edit: { ...edit, documentChanges: [...edit.documentChanges ?? [], { textDocument: { uri: "host+fixture:unknown-target", version: null }, edits: [] }] } };
-                return { ...params, edit };
+                if (config.fault === "incomplete") return action;
+                if (config.fault === "markup") return { ...action, title: "Changed during resolve", edit };
+                if (config.fault === "malformed") return { ...action, edit: { ...edit, documentChanges: [...edit.documentChanges ?? [], { textDocument: { uri: "host+fixture:unknown-target", version: null }, edits: [] }] } };
+                return { ...action, edit };
             });
         });
         peer.onRequest("fixture/completionStyle", async (params: { style: string }) => {

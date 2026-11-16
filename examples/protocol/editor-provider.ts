@@ -55,9 +55,17 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
         rename: () => createLspRenameClient({ provider: connection,
             beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/rename", configuration) }),
         actions: () => createLspActionClient({ provider: connection,
-            beforeRequest: (session, configuration) => session.request("fixture/actionConfig", configuration).result,
-            beforeResolve: (session, configuration) => session.request("fixture/actionResolveConfig", configuration).result }),
+            beforeRequest: async (session, configuration) => {
+                await connection.prepareRequest(session, "textDocument/codeAction", configuration);
+                if (!session.commandNames().includes("fixture.review")) await session.request("fixture/reviewRegistration", { registered: true }).result;
+            },
+            beforeResolve: (session, configuration) => connection.prepareRequest(session, "codeAction/resolve", configuration) }),
         project: () => createLspProjectClient({ provider: connection, reviewCommand: "fixture.review", statusCommand: "fixture.status",
-            beforeRequest: (session, input) => session.request("fixture/projectConfig", input).result }),
+            beforeRequest: (session, input) => {
+                const policy = { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) };
+                return input.kind === "register" || input.kind === "unregister"
+                    ? session.request("fixture/reviewRegistration", { registered: input.kind === "register", _fixture: policy }).result
+                    : connection.prepareCommand(session, input.kind === "review" ? "fixture.review" : "fixture.status", policy);
+            } }),
     });
 }

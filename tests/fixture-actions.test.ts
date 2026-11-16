@@ -53,9 +53,10 @@ test("fixture action retention falls back to eager edits and expires only the ch
     type Action = Record<string, JsonValue>;
     const uri = (index: number) => `host+fixture:source-${index}`;
     const open = (index: number) => rpc.notify("textDocument/didOpen", { textDocument: { uri: uri(index), languageId: "fixture", version: 1, text: "const sample = 1; // TODO" } });
-    const discover = async (index = 0) => {
+    const discover = async (index = 0, policy?: JsonValue) => {
         const actions = await rpc.request<Action[]>("textDocument/codeAction", { textDocument: { uri: uri(index) },
-            range: { start: { line: 0, character: 21 }, end: { line: 0, character: 25 } }, context: { diagnostics: [] } }).result;
+            range: { start: { line: 0, character: 21 }, end: { line: 0, character: 25 } }, context: { diagnostics: [] },
+            ...(policy === undefined ? {} : { _fixture: policy }) }).result;
         return actions[2]!;
     };
     const resolve = (action: Action) => rpc.request<Action>("codeAction/resolve", action).result;
@@ -80,8 +81,7 @@ test("fixture action retention falls back to eager edits and expires only the ch
         assert.ok((await discover()).data);
 
         // A delayed old discovery cannot repopulate the cache after close/reopen.
-        await rpc.request("fixture/actionConfig", { module: "sample-utils", delay: 100 }).result;
-        const delayed = discover(), stale = assert.rejects(delayed, error => error instanceof RpcError && error.code === -32801 && error.message.includes("source changed"));
+        const delayed = discover(0, { delay: 100 }), stale = assert.rejects(delayed, error => error instanceof RpcError && error.code === -32801 && error.message.includes("source changed"));
         rpc.notify("textDocument/didClose", { textDocument: { uri: uri(0) } }); open(0); await stale;
         assert.ok((await resolve(await discover())).edit);
         const synchronization = await rpc.request<{ failures: string[] }>("fixture/synchronization").result;
