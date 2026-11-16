@@ -285,7 +285,9 @@ new save receipt or expired slot generation can invalidate a prepared restore.
 **Inspect stored draft** shows bounded previews; **Discard stored draft** changes storage only.
 Stored-copy tokens guard replacement/discard against peer writes. Uncommitted composition
 blocks capture and restore. The [checkpoint decoder](../examples/hosts/draft-recovery.ts) writes
-format 3 and reads formats 1, 2 and 3; absent fields disable the corresponding restore choice.
+and reads format 3. Transfer data is required; a null loaded-source entry disables loaded-source
+restore. Unsupported records offer no restore choices and leave live inputs and the stored copy
+unchanged until an explicit replacement or discard.
 Records contain inputs and recovery context, not old-session undo, Run/log history, synthetic
 server state or pending requests.
 

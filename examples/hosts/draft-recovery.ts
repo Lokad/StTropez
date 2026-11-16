@@ -9,7 +9,7 @@ type LoadedDraft = Readonly<{ identity: "temporary-loaded-source"; revision: num
 type Draft = Readonly<{ format: 3; id: string; created: number;
     source: Readonly<{ key: ResourceKey; revision: number; serverVersion: string | null; text: string }>;
     configuration: Readonly<{ key: ResourceKey; revision: number; serverVersion: string | null; value: Connection }>;
-    transfer: Readonly<{ key: ResourceKey; revision: number; serverVersion: string | null; value: TransferSettings }> | null;
+    transfer: Readonly<{ key: ResourceKey; revision: number; serverVersion: string | null; value: TransferSettings }>;
     loaded: LoadedDraft | null; input: readonly InputCopy[] }>;
 type Kind = "keep" | "source" | "configuration" | "transfer" | "loaded" | "discard";
 type Capture = Readonly<{ kind: Kind; confirmationToken: string; token: string | null; source: ResourceTarget; configuration: ResourceTarget;
@@ -26,7 +26,7 @@ function token(): string { return [...crypto.getRandomValues(new Uint32Array(4))
 
 function decode(stored: StoredDraft, controller: HostController): Draft {
     const d = stored.value, sourceKey = controller.source.metadata.getSnapshot().key, configurationKey = controller.connection.metadata.getSnapshot().key;
-    if (!object(d) || d.format !== 1 && d.format !== 2 && d.format !== 3 || d.id !== stored.token || !integer(d.created) || !object(d.source) || !object(d.configuration) || !Array.isArray(d.input)
+    if (!object(d) || d.format !== 3 || d.id !== stored.token || !integer(d.created) || !object(d.source) || !object(d.configuration) || !Array.isArray(d.input)
         || !keyEquals(d.source.key, sourceKey) || !keyEquals(d.configuration.key, configurationKey)
         || !integer(d.source.revision) || !integer(d.configuration.revision) || !version(d.source.serverVersion) || !version(d.configuration.serverVersion)
         || typeof d.source.text !== "string" || !object(d.configuration.value) || typeof d.configuration.value.path !== "string" || d.configuration.value.format !== "csv") throw new Error("Unsupported recovery draft.");
@@ -39,12 +39,12 @@ function decode(stored: StoredDraft, controller: HostController): Draft {
             reason: item.reason, attemptedText: item.attemptedText, attemptedEdit: edit === null ? null : Object.freeze({ from: edit.from as number, to: edit.to as number, insert: edit.insert as string }) });
     });
     const transferKey = controller.transfer.resource.metadata.getSnapshot().key, t = d.transfer;
-    if (d.format !== 1 && (!object(t) || !keyEquals(t.key, transferKey) || !integer(t.revision) || !version(t.serverVersion)
-        || !object(t.value) || typeof t.value.destination !== "string" || typeof t.value.batchSize !== "string")) throw new Error("Unsupported transfer recovery draft.");
-    const transfer = d.format !== 1 && object(t) ? Object.freeze({ key: transferKey, revision: t.revision as number, serverVersion: t.serverVersion as string | null, value: Object.freeze(structuredClone(t.value)) as TransferSettings }) : null;
+    if (!object(t) || !keyEquals(t.key, transferKey) || !integer(t.revision) || !version(t.serverVersion)
+        || !object(t.value) || typeof t.value.destination !== "string" || typeof t.value.batchSize !== "string") throw new Error("Unsupported transfer recovery draft.");
+    const transfer = Object.freeze({ key: transferKey, revision: t.revision, serverVersion: t.serverVersion, value: Object.freeze(structuredClone(t.value)) as TransferSettings });
     const l = d.loaded;
-    if (d.format === 3 && l !== null && (!object(l) || l.identity !== "temporary-loaded-source" || !integer(l.revision) || !version(l.serverVersion) || typeof l.text !== "string")) throw new Error("Unsupported loaded-source recovery draft.");
-    const loaded: LoadedDraft | null = d.format === 3 && object(l) ? Object.freeze({ identity: "temporary-loaded-source", revision: l.revision as number, serverVersion: l.serverVersion as string | null, text: l.text as string }) : null;
+    if (l !== null && (!object(l) || l.identity !== "temporary-loaded-source" || !integer(l.revision) || !version(l.serverVersion) || typeof l.text !== "string")) throw new Error("Unsupported loaded-source recovery draft.");
+    const loaded: LoadedDraft | null = l === null ? null : Object.freeze({ identity: "temporary-loaded-source", revision: l.revision as number, serverVersion: l.serverVersion as string | null, text: l.text as string });
     return Object.freeze({ format: 3, id: stored.token, created: d.created, transfer, loaded,
         source: Object.freeze({ key: sourceKey, revision: d.source.revision, serverVersion: d.source.serverVersion, text: d.source.text }),
         configuration: Object.freeze({ key: configurationKey, revision: d.configuration.revision, serverVersion: d.configuration.serverVersion,
@@ -168,8 +168,7 @@ export class HostDraftRecovery {
     readonly prepare = (kind: Kind): void => {
         if (this.disposed || this.busy) return;
         if (!this.loaded) { this.publish("Retry recovery storage before keeping a draft. Current inputs are retained."); return; }
-        if (kind !== "keep" && !this.envelope || (kind === "source" || kind === "configuration") && !this.draft) return;
-        if (kind === "transfer" && !this.draft?.transfer) return;
+        if (kind !== "keep" && !this.envelope || (kind === "source" || kind === "configuration" || kind === "transfer") && !this.draft) return;
         if (kind === "loaded" && !this.draft?.loaded) return;
         let capture: Capture;
         try { capture = this.capture(kind); if (!this.current(capture)) throw new Error("Unavailable inputs."); }
@@ -225,7 +224,7 @@ export class HostDraftRecovery {
                 const result = capture.kind === "source" ? c.workspace.edit({ documentId: c.source.documentId, expectedRevision: capture.sourceRevision, origin: "human",
                     edits: [{ from: 0, to: document.buffer.length, insert: draft.source.text }], history: { kind: "replace" }, ...(capture.view ? { view: capture.view } : {}) })
                     : capture.kind === "configuration" ? c.workspace.updateResource(c.connection, { expectedRevision: capture.configurationRevision, origin: "human", value: draft.configuration.value })
-                    : c.workspace.updateResource(c.transfer.resource, { expectedRevision: capture.transferRevision, origin: "human", value: draft.transfer!.value });
+                    : c.workspace.updateResource(c.transfer.resource, { expectedRevision: capture.transferRevision, origin: "human", value: draft.transfer.value });
                 if (!result.applied) throw new Error("Restore unavailable.");
                 if (capture.kind === "source") this.protectedSource = c.workspace.document(c.source.documentId).buffer;
                 else if (capture.kind === "configuration") { const restored = c.connection.getSnapshot(); this.protectedConfiguration = restored.state === "ready" ? restored.value : undefined; }

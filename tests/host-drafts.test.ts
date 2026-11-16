@@ -109,12 +109,12 @@ for (const change of ["revision", "authority", "slot-generation"] as const) test
         assert.match(d.state.getSnapshot().message, /stale|changed/i); assert.equal(text(c), "start");
     } finally { await close(c, d); }
 });
-test("v2 recovery does not invent loaded text and foreign loaded identities are rejected", async () => {
-    const store = await loadedSeed(), envelope = structuredClone(store.shared.value!); (envelope.value as Record<string, unknown>).format = 2; delete (envelope.value as Record<string, unknown>).loaded;
-    store.shared.value = envelope; let c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d);
-    assert.equal(d.state.getSnapshot().valid, true); assert.equal(d.state.getSnapshot().hasLoaded, false); await close(c, d);
-    (envelope.value as Record<string, unknown>).format = 3; (envelope.value as Record<string, unknown>).loaded = { identity: "another-route", revision: 1, serverVersion: "v1", text: "foreign" };
-    store.shared.value = envelope; c = new HostController(); d = new HostDraftRecovery(c, store.port()); await idle(d); assert.equal(d.state.getSnapshot().valid, false); assert.equal(c.loadedSource.getSnapshot().resource, null); await close(c, d);
+test("foreign loaded identities are rejected", async () => {
+    const store = await loadedSeed(), envelope = structuredClone(store.shared.value!);
+    (envelope.value as Record<string, unknown>).loaded = { identity: "another-route", revision: 1, serverVersion: "v1", text: "foreign" };
+    store.shared.value = envelope; const c = new HostController(), d = new HostDraftRecovery(c, store.port());
+    try { await idle(d); assert.equal(d.state.getSnapshot().valid, false); assert.equal(c.loadedSource.getSnapshot().resource, null); }
+    finally { await close(c, d); }
 });
 
 test("checkpoint transfers captured versions without exporting ordinary later edits", async () => {
@@ -161,10 +161,29 @@ test("transfer checkpoints retain invalid and opaque input, restore independentl
     s = c.transfer.resource.getSnapshot(); assert.equal(s.metadata.serverVersion, "transfer-v1"); assert.equal(s.state === "ready" && s.value.batchSize, "100"); assert.match(d.state.getSnapshot().message, /failed|stale|changed/i); await close(c, d);
 });
 
-test("legacy checkpoints retain source/configuration recovery without inventing a transfer copy", async () => {
-    const store = await seeded(), envelope = structuredClone(store.shared.value!); const payload = envelope.value as Record<string, unknown>; payload.format = 1; delete payload.transfer; store.shared.value = envelope;
-    const c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); assert.equal(d.state.getSnapshot().valid, true); assert.equal(d.state.getSnapshot().hasTransfer, false);
-    c.transfer.update("batchSize", "invalid"); d.prepare("transfer"); assert.equal(d.state.getSnapshot().confirmation, null); d.prepare("configuration"); d.confirm(); await idle(d); const s = c.transfer.resource.getSnapshot(); assert.equal(s.state === "ready" && s.value.batchSize, "invalid"); assert.equal(d.shouldWarnOnLeave(), true); await close(c, d);
+for (const format of [1, 2]) test(`unsupported recovery format ${format} cannot restore any input or rewrite storage`, async () => {
+    const store = await loadedSeed(), envelope = structuredClone(store.shared.value!), payload = envelope.value as Record<string, unknown>;
+    payload.format = format; delete payload.loaded; if (format === 1) delete payload.transfer; store.shared.value = envelope;
+    const c = new HostController(); edit(c, "current source"); c.setPath("current.csv"); c.transfer.update("batchSize", "invalid");
+    c.beginDeferredLoad(); c.finishLoad(); editLoaded(c, "current loaded source");
+    const loaded = c.loadedSource.getSnapshot().resource!, source = c.workspace.document(c.source.documentId),
+        loadedSource = c.workspace.document(loaded.documentId), configuration = c.connection.getSnapshot(), transfer = c.transfer.resource.getSnapshot(),
+        history = c.workspace.observeHistory(c.source.documentId).getSnapshot(), loadedHistory = c.workspace.observeHistory(loaded.documentId).getSnapshot(),
+        baseline = c.savedComparisonReference();
+    const d = new HostDraftRecovery(c, store.port());
+    try {
+        await idle(d); const state = d.state.getSnapshot();
+        assert.equal(state.present, true); assert.equal(state.valid, false); assert.equal(state.hasTransfer, false); assert.equal(state.hasLoaded, false);
+        for (const kind of ["source", "configuration", "transfer", "loaded"] as const) {
+            d.prepare(kind); assert.equal(d.state.getSnapshot().confirmation, null); d.confirm(); await idle(d);
+        }
+        assert.equal(c.workspace.document(c.source.documentId), source); assert.equal(c.workspace.document(loaded.documentId), loadedSource);
+        assert.equal(c.connection.getSnapshot(), configuration); assert.equal(c.transfer.resource.getSnapshot(), transfer);
+        assert.equal(c.loadedSource.getSnapshot().resource, loaded); assert.equal(c.savedComparisonReference(), baseline);
+        assert.deepEqual(c.workspace.observeHistory(c.source.documentId).getSnapshot(), history);
+        assert.deepEqual(c.workspace.observeHistory(loaded.documentId).getSnapshot(), loadedHistory);
+        assert.deepEqual(store.shared.value, envelope); assert.equal(d.shouldWarnOnLeave(), true);
+    } finally { await close(c, d); }
 });
 for (const change of ["revision", "authority"] as const) test(`restore revalidates ${change} after asynchronous storage read`, async () => {
     const store = await seeded(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); const gate = deferred(); store.shared.readGate = gate.promise; d.prepare("source"); d.confirm();
