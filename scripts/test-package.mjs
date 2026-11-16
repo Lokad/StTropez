@@ -299,6 +299,8 @@ try {
     assert.equal(await page.locator("#comparison .consumer-review-token.st-comparison-removed").textContent(), "baseline");
     assert.deepEqual(await page.evaluate(() => window.consumer.diff()), { status: "ready", whitespaceOnly: true });
     await page.getByRole("button", { name: "Next change", exact: true }).click();
+    const selectedComparison = await page.evaluate(() => window.consumer.comparison());
+    assert.equal(selectedComparison.selectedHunk, 0); assert.equal(selectedComparison.canNavigate, true); assert.equal(selectedComparison.canRevert, true);
     await page.getByRole("button", { name: "Use baseline", exact: true }).click();
     await page.waitForFunction(() => window.consumer.comparison().status === "ready" && window.consumer.comparison().count === 0);
     assert.equal(await page.evaluate(() => window.consumer.acceptComparison()), true);

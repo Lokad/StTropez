@@ -25,14 +25,18 @@ test("independent comparison modules share workspace identity and release retain
         const host = document.createElement("section"); document.body.append(host);
         const baseline = { buffer: TextBuffer.from("baseline"), version: "one" };
         const one = first.mountTextComparison(host, workspace, tab, baseline, { view, workBudget: 256 });
-        const two = second.mountTextComparison(host, workspace, tab, baseline, { view });
+        const two = second.mountTextComparison(host, workspace, tab, baseline, { view, controls: false });
         const oldEditor = one.referenceEditor()!, old = workspace.resourceForDocument(oldEditor.view.documentId), oldLease = workspace.acquire(old.id);
         const distinct = old.id !== workspace.resourceForDocument(two.referenceEditor()!.view.documentId).id;
         const changed = new Promise<void>(resolve => {
             const stop = one.reference.subscribe(() => { if (one.reference.getSnapshot()?.version === "two") { stop(); resolve(); } });
         });
-        one.controller.beginRefresh().complete({ buffer: TextBuffer.from("new baseline"), version: "two" }); await changed;
-        const afterRefresh = { old: old.getSnapshot().state, text: workspace.document(old.documentId).text, oldEditorDisposed: oldEditor.snapshot().disposed };
+        one.controller.beginRefresh().complete({ buffer: TextBuffer.from("new baseline"), version: "two" });
+        while (one.controller.getSnapshot().status === "running") one.controller.advance();
+        const retiredRejected = !one.state.getSnapshot().canNavigate && !one.selectHunk(one.controller.getSnapshot().generation, 0);
+        await changed;
+        const afterRefresh = { old: old.getSnapshot().state, text: workspace.document(old.documentId).text, oldEditorDisposed: oldEditor.snapshot().disposed,
+            retiredRejected, currentReady: one.state.getSnapshot().canNavigate };
         const current = workspace.resourceForDocument(one.referenceEditor()!.view.documentId), currentLease = workspace.acquire(current.id);
         one.destroy(); one.destroy(); two.destroy();
         const afterDestroy = { children: host.childElementCount, controllers: [one.controller.getSnapshot().status, two.controller.getSnapshot().status],
@@ -43,7 +47,7 @@ test("independent comparison modules share workspace identity and release retain
         view.dispose(); workspace.close(tab); workspace.releaseResource(source.id); host.remove();
         return { distinct, afterRefresh, afterDestroy, afterRelease, leases: workspace.diagnostics().leases };
     });
-    expect(result).toEqual({ distinct: true, afterRefresh: { old: "ready", text: "baseline", oldEditorDisposed: true },
+    expect(result).toEqual({ distinct: true, afterRefresh: { old: "ready", text: "baseline", oldEditorDisposed: true, retiredRejected: true, currentReady: true },
         afterDestroy: { children: 0, controllers: ["disposed", "disposed"], leases: 3, views: 1, subscriptions: 0, retained: ["ready", "ready"] },
         afterRelease: { resources: 1, retained: ["released", "released"] }, leases: 0 });
 });

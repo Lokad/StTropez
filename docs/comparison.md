@@ -28,7 +28,24 @@ The returned `TextComparison` exposes the working editor, `controller`, referenc
 and presentation commands. Its built-in controls navigate changes, revert a selected change,
 link scrolling and align rows. Supply `view` to retain a host-owned working `DocumentView`
 across mounts. Destroying the comparison disposes only views it creates.
-`ariaLabel` defaults to `"Text comparison"`.
+`ariaLabel` defaults to `"Text comparison"`. Set `controls: false` to mount only the two panes,
+without the default toolbar, headings or whitespace preview. Host controls belong outside the
+comparison's DOM subtree and use the same observable state and commands as the default controls.
+
+```ts
+import type { TextComparison } from "sttropez/browser";
+
+export function bindRestoreButton(button: HTMLButtonElement, review: TextComparison) {
+    const render = () => { button.disabled = !review.state.getSnapshot().canRevert; };
+    const restore = () => {
+        const state = review.state.getSnapshot();
+        if (state.selectedHunk !== null) review.revertHunk(state.comparison.generation, state.selectedHunk);
+    };
+    const stop = review.state.subscribe(render);
+    button.addEventListener("click", restore); render();
+    return () => { stop(); button.removeEventListener("click", restore); };
+}
+```
 
 ## Contract
 
@@ -56,6 +73,21 @@ Working edits start a fresh exact comparison. Prior hunks follow a continuous tr
 for display while that work runs. An unknown revision gap or reference replacement clears the
 provisional hunks. Only a ready result authorizes hunk navigation and reversion. Completion
 replaces the provisional presentation atomically; progress alone does not repaint decorations.
+
+`TextComparison.state` is a stable observable of immutable `TextComparisonSnapshot` values.
+Its `comparison` field is the controller's current snapshot; `selectedHunk` is an index into that
+snapshot's hunks or `null`. Selection clears as soon as the comparison generation changes.
+`canNavigate` and `canRevert` describe current command availability, including pane readiness,
+composition and edit authority. `scrollLinked`, `alignment` (`ComparisonAlignmentSnapshot`) and
+`disposed` expose presentation state. Repeated reads return the same object until a field changes.
+Comparison and permission changes publish synchronously; pane attachment and alignment complete
+cooperatively. Alignment work counters are sampled at publications, not published per cursor step.
+
+Notifications permit reading state and updating host UI; queue workspace or comparison commands
+until after delivery. Unsubscribe host listeners when the attachment ends. Destruction publishes
+a terminal snapshot with no selection and disabled commands. Availability is advisory: commands
+revalidate captures and input state when called, including direct changes to the input's
+`readOnly` or `disabled` properties, which do not themselves publish comparison state.
 
 ### Exact text and scheduling
 
@@ -112,8 +144,10 @@ schedules them automatically. Mutating commands run outside workspace notificati
 
 `selectHunk(generation, index)` on the browser mount selects and reveals both captured ranges,
 including folded bodies. It returns `false` for stale, unavailable or composing targets.
-`controller.revert(generation, index)` replaces that working range with its baseline text in
-one human history transaction. It checks readiness, generation, revision and edit authority;
+`revertHunk(generation, index)` also rejects composing, disabled or read-only browser input,
+then delegates to `controller.revert(generation, index)`. Use this browser command for host UI.
+The headless controller replaces that working range with its baseline text in one human
+history transaction. It checks readiness, generation, revision and edit authority;
 shared undo restores text and selection. A working edit clears the selected hunk.
 
 Hosts use explicit tickets for delayed operations:

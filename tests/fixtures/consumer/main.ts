@@ -4,7 +4,7 @@ import { fontFixture } from "./font-fixture.js";
 import { DiffReferenceCache, WorkspaceCommands } from "sttropez";
 import { createSelectionSet, planSelectionEdits } from "sttropez";
 import type { SaveReview } from "sttropez";
-import type { FindReason, InputConflictDetail, PresentedLine } from "sttropez/browser";
+import type { FindReason, InputConflictDetail, PresentedLine, TextComparisonSnapshot } from "sttropez/browser";
 import { JsonRpcConnection } from "sttropez/protocol";
 import { openWebSocketTransport } from "sttropez/browser";
 const workspace = new Workspace();
@@ -286,7 +286,8 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
             asset.dispose(); return { ...captured, released: document.fonts.size === before };
         } finally { asset.dispose(); }
     },
-    comparison: () => { const s = comparison.controller.getSnapshot(); return { status: s.status, generation: s.generation, count: s.hunks.length, version: s.baseline?.version,
+    comparison: () => { const review: TextComparisonSnapshot = comparison.state.getSnapshot(), s = review.comparison; return { status: s.status, generation: s.generation, count: s.hunks.length, version: s.baseline?.version,
+        selectedHunk: review.selectedHunk, canNavigate: review.canNavigate, canRevert: review.canRevert,
         viewId: comparisonView.id, selection: comparisonView.getSnapshot().selection, reference: comparison.referenceViewport()?.snapshot(), working: comparison.working.viewport.snapshot() }; },
     remountComparison: () => {
         const baseline = comparison.controller.getSnapshot().baseline!, state = comparison.working.captureView();

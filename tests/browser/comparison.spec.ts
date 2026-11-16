@@ -61,6 +61,65 @@ test("a stale selected hunk cannot retarget after typing, and permissions gate r
     await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toHaveAttribute("readonly", "");
 });
 
+test("custom host controls observe captured selection, alignment, authority and teardown", async ({ page }) => {
+    await page.goto("/comparison/?controls=host"); await ready(page);
+    await expect(page.locator(".st-comparison-controls, .st-comparison-preview, .st-comparison h3")).toHaveCount(0);
+    const controls = page.getByRole("navigation", { name: "Custom review commands" });
+    const later = controls.getByRole("button", { name: "Later change", exact: true });
+    const restore = controls.getByRole("button", { name: "Restore selected change", exact: true });
+    await expect(restore).toBeDisabled(); await later.click(); await expect(restore).toBeEnabled();
+    const capture = await page.evaluate(() => {
+        const f = window.comparisonFixture, state = f.review.getSnapshot(); let rejected = false, calls = 0;
+        const stop = f.review.subscribe(() => { calls++; try { f.selectHunk(f.review.getSnapshot().comparison.generation, 0); } catch { rejected = true; } });
+        f.readOnly(true); const locked = !f.review.getSnapshot().canRevert; f.readOnly(false); stop();
+        return { generation: state.comparison.generation, selected: state.selectedHunk, locked, rejected, calls,
+            frozen: Object.isFrozen(state) && Object.isFrozen(state.alignment), retained: state.canRevert,
+            stable: f.review.getSnapshot() === f.review.getSnapshot() };
+    });
+    expect(capture).toMatchObject({ selected: 0, locked: true, rejected: true, calls: 2, frozen: true, retained: true, stable: true });
+    await controls.getByRole("button", { name: "Toggle aligned rows", exact: true }).click(); await ready(page);
+    await expect(controls.locator("output")).toContainText("alignment ready");
+    await expect(controls.getByRole("button", { name: "Toggle linked scrolling", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await controls.getByRole("button", { name: "Toggle linked scrolling", exact: true }).click();
+    await expect(controls.getByRole("button", { name: "Toggle linked scrolling", exact: true })).toHaveAttribute("aria-pressed", "false");
+    // Browser command guards also apply when a host invokes a captured action directly.
+    const input = page.getByRole("textbox", { name: "Comparison working source", exact: true });
+    await input.focus();
+    await input.dispatchEvent("compositionstart", { data: "" });
+    await expect(later).toBeDisabled(); await expect(restore).toBeDisabled();
+    expect(await page.evaluate(g => window.comparisonFixture.revert(g, 0), capture.generation)).toBe(false);
+    await input.dispatchEvent("compositionend", { data: "" }); await ready(page);
+    await page.evaluate(() => window.comparisonFixture.focus());
+    await page.keyboard.type("replacement"); await ready(page);
+    expect(await page.evaluate(g => window.comparisonFixture.revert(g, 0), capture.generation)).toBe(false);
+    expect(await page.evaluate(() => window.comparisonFixture.review.getSnapshot().selectedHunk)).toBeNull();
+    await expect(restore).toBeDisabled();
+    await later.click();
+    const beforeRefresh = await page.evaluate(() => {
+        const f = window.comparisonFixture, state = f.review.getSnapshot(); f.begin("refresh"); f.finish("refresh");
+        return { generation: state.comparison.generation, cleared: f.review.getSnapshot().selectedHunk === null };
+    });
+    expect(beforeRefresh.cleared).toBe(true); await ready(page);
+    expect(await page.evaluate(g => window.comparisonFixture.selectHunk(g, 0), beforeRefresh.generation)).toBe(false);
+    await later.click();
+    expect(await input.evaluate(element => {
+        const f = window.comparisonFixture, state = f.review.getSnapshot(), input = element as HTMLTextAreaElement;
+        input.readOnly = true; const applied = f.revert(state.comparison.generation, state.selectedHunk!); input.readOnly = false; return applied;
+    })).toBe(false);
+    await restore.click(); await ready(page);
+    await page.getByRole("button", { name: "Undo working edit", exact: true }).click(); await ready(page);
+    const terminal = await page.evaluate(() => {
+        const f = window.comparisonFixture; let notified = false;
+        const stop = f.review.subscribe(() => { if (f.review.getSnapshot().disposed) notified = true; });
+        f.dispose(); stop(); const state = f.review.getSnapshot();
+        return { notified, disposed: state.disposed, status: state.comparison.status, selected: state.selectedHunk,
+            navigate: state.canNavigate, revert: state.canRevert, rejected: !f.revert(state.comparison.generation, 0), diagnostics: f.snapshot().diagnostics };
+    });
+    expect(terminal).toMatchObject({ notified: true, disposed: true, status: "disposed", selected: null, navigate: false, revert: false, rejected: true,
+        diagnostics: { resources: 1, tabs: 1, views: 0, leases: 0, subscriptions: 0 } });
+    await expect(controls).toHaveCount(0);
+});
+
 test("tab replacement expires pending work and teardown leaves only host resources", async ({ page }) => {
     await page.evaluate(() => { window.comparisonFixture.begin("refresh"); window.comparisonFixture.begin("accept"); window.comparisonFixture.replaceTab(); });
     await expect.poll(() => page.evaluate(() => window.comparisonFixture.snapshot().status)).toBe("expired");

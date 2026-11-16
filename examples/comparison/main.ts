@@ -2,14 +2,17 @@ import { TextBuffer, Workspace } from "../../src/index.ts";
 import type { ComparisonTicket, Selection } from "../../src/index.ts";
 import { mountTextComparison } from "../../src/browser/index.ts";
 import { comparisonSettled } from "../shared/readiness.ts";
+import { mountReviewControls } from "./controls.ts";
 import "../../src/browser/editor.css";
 import "./style.css";
 
 const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "fixture", resource: "working", variant: "source" }, "Working source",
     { value: "const title = 'Working';\r\n// shared separator\r\nconst count = 2;\r\n// shared boundary\r\n\treturn title;\r\n// working note\r\n", serverVersion: "saved-1" });
 const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "main");
+const customControls = new URL(location.href).searchParams.get("controls") === "host";
 const comparison = mountTextComparison(document.querySelector<HTMLElement>("#comparison")!, workspace, tab,
-    { buffer: TextBuffer.from("const title = 'Baseline';\r\n// shared separator\r\nconst count = 1;\r\n// shared boundary\r\n  return title;\r\n"), version: "reference-1" });
+    { buffer: TextBuffer.from("const title = 'Baseline';\r\n// shared separator\r\nconst count = 1;\r\n// shared boundary\r\n  return title;\r\n"), version: "reference-1" }, { controls: !customControls });
+const stopControls = customControls ? mountReviewControls(document.querySelector<HTMLElement>("#review-controls")!, comparison) : undefined;
 const refreshes: ComparisonTicket[] = [], acceptances: ComparisonTicket[] = []; let serial = 1, result = "Ready", disposed = false;
 function status() { document.querySelector("#host-status")!.textContent = `${result} · ${refreshes.length} refreshes · ${acceptances.length} acceptances`; }
 function begin(kind: "refresh" | "accept") { const ticket = kind === "refresh" ? comparison.controller.beginRefresh() : comparison.controller.beginAcceptance(); (kind === "refresh" ? refreshes : acceptances).push(ticket); result = `Captured ${kind} at revision ${ticket.capture.working.revision}`; status(); }
@@ -20,7 +23,7 @@ function finish(kind: "refresh" | "accept", newest = false) {
 }
 function history(direction: "undo" | "redo") { const current = workspace.document(resource.documentId); workspace[direction]({ documentId: current.id, expectedRevision: current.revision }); }
 function dispose() {
-    if (disposed) return; comparison.destroy(); disposed = true;
+    if (disposed) return; comparison.destroy(); stopControls?.(); disposed = true;
     refreshes.length = acceptances.length = 0;
     for (const button of document.querySelectorAll<HTMLButtonElement>("nav button")) button.disabled = true;
     result = "Disposed"; status();
@@ -41,10 +44,10 @@ function snapshot() {
         hunks: state.hunks, history: workspace.observeHistory(current.id).getSnapshot(), viewId: comparison.working.view.id, editor: { ...comparison.working.snapshot(), viewport: comparison.working.viewport.snapshot() }, reference: comparison.referenceViewport()?.snapshot() ?? null,
         pending: { refreshes: refreshes.length, acceptances: acceptances.length }, comparison: comparison.snapshot(), diagnostics: workspace.diagnostics(), result, disposed };
 }
-const fixture = Object.freeze({ snapshot, setText, begin, finish, dispose, focus: () => comparison.working.focus(),
+const fixture = Object.freeze({ snapshot, setText, begin, finish, dispose, review: comparison.state, focus: () => comparison.working.focus(),
     get settled() { return !disposed && comparisonSettled(comparison); },
     select: (selection: Selection) => comparison.controller.view.setSelection(workspace.document(resource.documentId).revision, selection),
-    selectHunk: (generation: number, index: number) => comparison.selectHunk(generation, index), revert: (generation: number, index: number) => comparison.controller.revert(generation, index),
+    selectHunk: (generation: number, index: number) => comparison.selectHunk(generation, index), revert: (generation: number, index: number) => comparison.revertHunk(generation, index),
     range: (from: number, to: number) => workspace.document(resource.documentId).buffer.slice(from, to),
     baselineRange: (from: number, to: number) => comparison.controller.getSnapshot().baseline?.buffer.slice(from, to),
     readOnly: (value: boolean) => workspace.setCapabilities(resource.id, { edit: value ? [] : ["human", "agent", "host"], save: true, run: true }),
