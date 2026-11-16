@@ -1,5 +1,5 @@
 import type { LspConnectContext, RpcTransport } from "../../src/protocol/index.ts";
-import type { DemoProvider } from "./provider.ts";
+import type { DemoProvider } from "./provider-contract.ts";
 
 /** Browser-only example host; no compiler or worker policy is added to the editor library. */
 export async function openDemoProvider(_sample: string, signal: AbortSignal, names: readonly string[], backing: Readonly<Record<string, string>> = {}): Promise<DemoProvider> {

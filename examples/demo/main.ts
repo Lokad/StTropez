@@ -2,6 +2,7 @@ import { mountEditingCandidate, mountTextComparison, createFindController, creat
 import type { EditingCandidate, FindController, TextComparison, FoldingController } from "../../src/browser/index.ts";
 import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
+import { selectDemoProvider } from "./provider.ts";
 import type { DemoFile } from "./project.ts";
 import { DemoPresentation } from "./presentation.ts";
 import { sampleChoices } from "./samples.ts";
@@ -21,6 +22,7 @@ const field = (id: string) => element(id) as HTMLInputElement;
 const button = (id: string) => element(id) as HTMLButtonElement;
 const projects = new Map<SampleId, DemoProject>(), activeFiles = new Map<SampleId, string>();
 const listeners = new AbortController(), sample = element("sample") as HTMLSelectElement;
+const openProvider = selectDemoProvider(new URL(location.href).searchParams.get("provider") ?? document.documentElement.dataset.demoProvider ?? "browser");
 for (const choice of sampleChoices) { const option = document.createElement("option"); option.value = choice.id; option.textContent = choice.title; sample.append(option); }
 let project: DemoProject | undefined, active: DemoFile | undefined, editor: EditingCandidate | undefined;
 let comparison: TextComparison | undefined, find: FindController | undefined;
@@ -379,7 +381,7 @@ async function openSample(id: SampleId): Promise<void> {
     if (!next) { next = await DemoProject.open(id, () => {
         const state = project?.sample.id === id ? editor?.activity() : undefined;
         return !state || !state.composing && !state.pendingInput && !state.pendingCommand;
-    }); if (disposed) { next.dispose(); return; } projects.set(id, next); }
+    }, openProvider); if (disposed) { next.dispose(); return; } projects.set(id, next); }
     if (disposed || generation !== opening) return;
     // A composition can start in the retained editor during asynchronous preparation.
     if (editor?.activity().composing) { sample.value = project!.sample.id; sample.disabled = false; return; }
@@ -517,8 +519,9 @@ window.addEventListener("keydown", event => {
 window.addEventListener("beforeunload", event => {
     if ([...projects.values()].some(project => project.dirty())) { event.preventDefault(); event.returnValue = ""; }
 }, { signal: listeners.signal });
-window.addEventListener("pagehide", () => {
+window.addEventListener("pagehide", event => {
+    if (event.persisted) return;
     disposed = true; opening++; listeners.abort(); stopWorkspace?.(); stopRecovery?.(); stopLanguage?.(); detachView(); presentation.dispose();
     for (const project of projects.values()) project.dispose(); projects.clear(); savedViews.clear();
-}, { once: true });
+}, { signal: listeners.signal });
 await openSample("pricing");

@@ -7,9 +7,10 @@ The Node host uses vscode-uri 3.1.0 to provide the server's canonical file URIs,
 Windows drive spelling/escaping. These are pinned development dependencies. Shipped modules
 and NuGet assets retain zero third-party runtime dependencies and exclude the provider/compiler.
 
-The [GitHub Pages build](demo-static.md) substitutes an example-owned browser worker provider
-using the same compiler and public LSP clients. It needs no Node service; the local route below
-retains its WebSocket/stdio integration and qualification.
+The [GitHub Pages demo](demo-static.md) defaults to an example-owned browser worker provider
+using the same compiler and public LSP clients. It needs no Node service. The local demo defaults
+to the WebSocket/stdio route below; open `/?provider=browser` to select the published worker at
+runtime. The page retains that choice across sample switches and retries.
 
 The syntax worker retains one language service and versioned snapshots. After the initial
 document upload, the host uses the public `BufferChangeCursor` to send a bounded replacement

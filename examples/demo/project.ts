@@ -1,11 +1,12 @@
 import { TextBuffer, Workspace } from "../../src/index.ts";
-import type { ComparisonBaseline, DocumentView, SaveReview, TabId, TextResourceHandle } from "../../src/index.ts";
+import type { ComparisonBaseline, DocumentView, SaveReview, SaveTicket, TabId, TextResourceHandle } from "../../src/index.ts";
 import { createBrowserDraftStore } from "../hosts/draft-store.ts";
 import type { DraftStore } from "../hosts/draft-store.ts";
 import { demoSample } from "./samples.ts";
 import type { DemoSample, SampleId } from "./samples.ts";
 import { DemoRecovery } from "./recovery.ts";
 import { DemoLanguage } from "./language.ts";
+import type { DemoProviderFactory } from "./provider-contract.ts";
 import { HostSourceNotes } from "../shared/source-notes.ts";
 
 export type DemoFile = Readonly<{ name: string; resource: TextResourceHandle; tab: TabId; view: DocumentView; readOnly?: boolean }>;
@@ -54,15 +55,16 @@ export class DemoProject {
             const from = prefix.indexOf(token!); if (from >= 0) model.add(doc.revision, from, from + token!.length, text!);
         }
     }
-    private constructor(id: SampleId, store: DraftStore, token: string | null, saved: StoredProject | null, inputIdle: () => boolean) {
+    private constructor(id: SampleId, store: DraftStore, token: string | null, saved: StoredProject | null, inputIdle: () => boolean,
+        openProvider: DemoProviderFactory, recoveryStore: DraftStore) {
         this.inputIdle = inputIdle;
         this.sample = demoSample(id); this.store = store; this.token = token;
         this.unloaded = { ...(saved?.files ?? this.sample.files) };
         for (const name of this.sample.initialFiles ?? Object.keys(this.sample.files)) this.load(name);
         if (saved) this.message = "Opened the copy saved in this browser.";
-        this.recovery = new DemoRecovery(this.workspace, () => this.editable, id, () => this.token, inputIdle, undefined,
+        this.recovery = new DemoRecovery(this.workspace, () => this.editable, id, () => this.token, inputIdle, recoveryStore,
             { names: Object.keys(this.sample.files), unloaded: () => this.unloaded, prepare: () => this.prepareEditable() });
-        this.language = new DemoLanguage(this.workspace, () => this.files, id, {
+        this.language = new DemoLanguage(this.workspace, () => this.files, id, openProvider, {
             names: Object.keys({ ...this.sample.files, ...this.sample.declarations }),
             backing: () => ({ ...this.unloaded, ...this.sample.declarations }), load: (name, text) => this.load(name, text),
         });
@@ -87,8 +89,9 @@ export class DemoProject {
         this.recovery?.filesChanged(); this.language?.filesChanged(); return file;
     }
     private prepareEditable(): void { for (const name of Object.keys(this.unloaded)) this.load(name); }
-    static async open(id: SampleId, inputIdle: () => boolean): Promise<DemoProject> {
-        const store = createBrowserDraftStore(window, { name: "sttropez-demo-projects-v1", slot: id });
+    static async open(id: SampleId, inputIdle: () => boolean, openProvider: DemoProviderFactory,
+        createStore: (name: string) => DraftStore = name => createBrowserDraftStore(window, { name, slot: id })): Promise<DemoProject> {
+        const store = createStore("sttropez-demo-projects-v1");
         try {
             const stored = await store.read();
             let saved: StoredProject | null = null;
@@ -96,11 +99,11 @@ export class DemoProject {
                 const names = Object.keys(demoSample(id).files);
                 saved = readProject(stored.value, names);
             }
-            return new DemoProject(id, store, stored?.token ?? null, saved, inputIdle);
+            return new DemoProject(id, store, stored?.token ?? null, saved, inputIdle, openProvider, createStore("sttropez-demo-recovery-v1"));
         } catch (error) {
             await store.close();
             // Storage failure must leave the editor available; saves continue to fail safely.
-            const project = new DemoProject(id, createBrowserDraftStore(window, { name: "sttropez-demo-projects-v1", slot: id }), null, null, inputIdle);
+            const project = new DemoProject(id, createStore("sttropez-demo-projects-v1"), null, null, inputIdle, openProvider, createStore("sttropez-demo-recovery-v1"));
             project.message = error instanceof Error ? error.message : "Local storage is unavailable. You can still edit.";
             return project;
         }
@@ -128,17 +131,23 @@ export class DemoProject {
         if (this.disposed || this.saving) return;
         if (!this.inputIdle()) { this.message = "An edit is still in progress. Save again when it finishes."; changed(); return; }
         if (reviewed && !this.canSaveReviewed()) return;
-        this.prepareEditable();
-        this.saving = true;
         const expected = reviewed ? this.conflict!.token : this.token;
-        const tickets = this.editable.map(file => ({ file, ticket: this.workspace.captureSave(file.resource, reviewed
-            ? { target: this.workspace.captureResource(file.resource.id), expectedRevision: this.workspace.document(file.resource.documentId).revision,
-                expectedServerVersion: expected! } satisfies SaveReview : undefined),
-            buffer: this.workspace.document(file.resource.documentId).buffer }));
-        const token = crypto.randomUUID();
+        const tickets: { file: DemoFile; ticket: SaveTicket<string>; buffer: TextBuffer }[] = [];
+        let writing = false;
+        this.saving = true;
         try {
+            this.prepareEditable();
+            for (const file of this.editable) {
+                const document = this.workspace.document(file.resource.documentId);
+                const ticket = this.workspace.captureSave(file.resource, reviewed
+                    ? { target: this.workspace.captureResource(file.resource.id), expectedRevision: document.revision,
+                        expectedServerVersion: expected! } satisfies SaveReview : undefined);
+                tickets.push({ file, ticket, buffer: document.buffer });
+            }
+            const token = crypto.randomUUID();
             const submissions = tickets.map(({ ticket }) => ticket.start());
             this.message = "Saving locally…"; changed();
+            writing = true;
             await this.store.write({ token, value: { version: 1, files: Object.fromEntries(submissions.map((submission, i) => [tickets[i]!.file.name, submission.value])) } }, expected);
             if (this.disposed) return;
             this.token = token;
@@ -151,7 +160,7 @@ export class DemoProject {
             this.message = "Saved in this browser. Later edits remain unsaved.";
         } catch (error) {
             // The store checks the captured token in one read/write transaction across every file.
-            const remote = await this.store.read().catch(() => null);
+            const remote = writing ? await this.store.read().catch(() => null) : null;
             for (const { ticket } of tickets) { if (remote && remote.token !== expected) ticket.conflict(); else ticket.fail(); }
             this.reviewedRevisions = undefined;
             if (remote && remote.token !== expected) {

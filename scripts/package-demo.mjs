@@ -122,7 +122,9 @@ for (const path of inputs) {
         || within(demoCompiler, input) && /\.js$/.test(input), `Unexpected browser input: ${path}`);
 }
 assert.ok(inputs.some(path => within(assetRoot, resolve(project, path)) && path.endsWith(".js")), "No compiled library assets reached the demo.");
-await copyFile(join(project, "examples/demo/index.html"), join(site, "index.html"));
+// This restored-assets consumer qualifies the WebSocket route; the static demo owns worker qualification.
+await writeFile(join(site, "index.html"), (await readFile(join(project, "examples/demo/index.html"), "utf8"))
+    .replace('data-demo-provider="browser"', 'data-demo-provider="server"'));
 await copyFile(join(assetRoot, assets.entries.regexWorker), join(site, "regex-worker.js"));
 await copyFile(join(assetRoot, "UNICODE-LICENSE.txt"), join(site, "UNICODE-LICENSE.txt"));
 await copyFile(join(assetRoot, "LICENSE.txt"), join(site, "LICENSE.txt"));

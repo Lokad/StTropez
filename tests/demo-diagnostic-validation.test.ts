@@ -19,7 +19,7 @@ async function fixture(count: number) {
             index: await LspLineIndex.create(doc.buffer, async () => {}), version: 1, epoch: 1, registrationGeneration: 1,
             isCurrent: () => { visits++; return valid[i]! && workspace.document(doc.id).revision === doc.revision; } });
     }
-    const language = new DemoLanguage(workspace, files, "test");
+    const language = new DemoLanguage(workspace, files, "test", async () => { throw new Error("This fixture supplies captured replies directly."); });
     Object.assign(language, { active: true, config: { documents: Object.fromEntries(files.map(file => [file.name, { uri: `file:///${file.name}` }])), close: async () => {} },
         scope: { flush: async () => {}, captureProject: () => captures, dispose: () => {},
             request: (_method: string, params: { uri: string; kind: string }) => {

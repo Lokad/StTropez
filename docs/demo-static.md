@@ -7,11 +7,19 @@ for static hosting belong to the example, tests and build/deployment tooling. Th
 
 ## Host boundary
 
-The static build replaces only the example's `provider.ts` connection factory. Its replacement
-owns a Web Worker and supplies the existing public `RpcTransport` interface to `LspWorkspace`.
+The page selects its example-owned connection factory at runtime. The published HTML defaults
+to `browser`; the development HTML defaults to `server`. Append `?provider=browser` to the local
+demo URL to run the published provider without starting a server project. `?provider=server`
+selects the local WebSocket service and requires the development server. The choice is captured
+when the page opens and retained across sample switches and retries; changing it requires a reload.
+There is no build-time provider substitution or silent fallback between providers.
+
+The browser factory owns a Web Worker and supplies the existing public `RpcTransport` interface to `LspWorkspace`.
 The worker uses the public `JsonRpcConnection` for framing, request ownership and cancellation,
 and TypeScript 5.9.3's language service for actual language intelligence. The local development
 server continues to use the existing TypeScript language server over WebSocket/stdio.
+Both builds use the same pinned standard-library catalogue for the browser worker. Static hosting
+includes the small server connection factory, but opening the published page never calls it by default.
 
 The worker queues requests and document notifications in arrival order, executing one compiler
 action per task. Cancellation removes requests that have not started; it cannot interrupt a

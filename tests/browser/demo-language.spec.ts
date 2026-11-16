@@ -1,7 +1,16 @@
 import { test, expect } from "./fixtures.ts";
-import { runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoHighlights } from "./demo-walkthrough.ts";
+import { runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoHighlights, runDemoUnopenedNavigation } from "./demo-walkthrough.ts";
 import { holdDemoFolds } from "./demo-folding-gate.ts";
 import { runDemoDiagnosticRetention } from "./demo-diagnostics.ts";
+
+test("development serves the browser provider without starting a server project", async ({ page }) => {
+    const serverRequests: string[] = [], workers: string[] = [];
+    page.on("request", request => { if (new URL(request.url()).pathname.startsWith("/demo-provider")) serverRequests.push(request.url()); });
+    page.on("worker", worker => workers.push(worker.url()));
+    await runDemoUnopenedNavigation(page, "/?provider=browser");
+    expect(workers.some(url => url.endsWith("/demo-language-worker.js"))).toBe(true);
+    expect(serverRequests).toEqual([]);
+});
 
 test("diagnostics remain mapped while dirty syntax and dependent semantics are rechecked", async ({ page }, info) => {
     const requests = await runDemoDiagnosticRetention(page);

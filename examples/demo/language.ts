@@ -3,8 +3,7 @@ import { LspWorkspace, LspLineIndex, decodeLspDiagnostics, lspRangeOffsets } fro
 import type { LspWorkspaceScope, RpcCall, LspSessionAccess, LspTargetResolver } from "../../src/protocol/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { DemoFile } from "./project.ts";
-import { openDemoProvider } from "./provider.ts";
-import type { DemoProvider } from "./provider.ts";
+import type { DemoProvider, DemoProviderFactory } from "./provider-contract.ts";
 import { DemoDiagnosticState } from "./diagnostic-state.ts";
 import type { DemoDiagnostic } from "./diagnostic-state.ts";
 type State = Readonly<{ status: "suspended" | "starting" | "ready" | "failed"; checking: boolean; message: string; diagnostics: readonly DemoDiagnostic[] }>;
@@ -18,6 +17,7 @@ export class DemoLanguage {
     private get files(): readonly DemoFile[] { return this.getFiles(); }
     private readonly inventory: Inventory | undefined;
     private readonly sample: string;
+    private readonly openProvider: DemoProviderFactory;
     private readonly cell = new HostCell<State>({ status: "suspended", checking: false, message: "Language service is idle.", diagnostics: [] });
     readonly state: Observable<State> = this.cell.observable;
     private owner: LspWorkspace | undefined;
@@ -35,7 +35,8 @@ export class DemoLanguage {
     private active = false;
     private disposed = false;
     private disposal: Promise<void> | undefined;
-    constructor(workspace: Workspace, files: readonly DemoFile[] | (() => readonly DemoFile[]), sample: string, inventory?: Inventory) {
+    constructor(workspace: Workspace, files: readonly DemoFile[] | (() => readonly DemoFile[]), sample: string, openProvider: DemoProviderFactory, inventory?: Inventory) {
+        this.openProvider = openProvider;
         this.workspace = workspace; this.getFiles = typeof files === "function" ? files : () => files; this.sample = sample; this.inventory = inventory;
         this.diagnostics.update(this.files.map(file => workspace.document(file.resource.documentId)));
         this.stopWorkspace = workspace.subscribe(() => {
@@ -75,7 +76,7 @@ export class DemoLanguage {
         const work = (async () => {
             let config: DemoProvider | undefined, owner: LspWorkspace | undefined;
             try {
-                config = await openDemoProvider(this.sample, abort.signal, this.inventory?.names ?? this.files.map(file => file.name), this.inventory?.backing());
+                config = await this.openProvider(this.sample, abort.signal, this.inventory?.names ?? this.files.map(file => file.name), this.inventory?.backing());
                 if (!this.valid(lifecycle)) throw new Error("Language startup was cancelled.");
                 const capturedProvider = config;
                 const resolveTarget: LspTargetResolver = async (uri, context) => {

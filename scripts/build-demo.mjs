@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { demoLibraries } from "./demo-libraries.mjs";
 import { join, relative, resolve } from "node:path";
 import { build } from "esbuild";
 import { within } from "./package-react-host.mjs";
@@ -19,7 +20,6 @@ const result = await build({ absWorkingDir: project,
     plugins: [{ name: "compiled-public-library", setup(builder) {
         builder.onResolve({ filter: /^\./ }, args => {
             const path = resolve(args.resolveDir, args.path), local = relative(project, path).replaceAll("\\", "/");
-            if (local === "examples/demo/provider.ts") return { path: resolve("examples/demo/worker-provider.ts") };
             if (!local.startsWith("src/")) return;
             const entry = entries.get(local); assert.ok(entry, `The demo imported a private library source: ${local}`);
             return { path: join(dist, entry) };
@@ -36,16 +36,11 @@ for (const input of Object.keys(result.metafile.inputs)) {
         || hostPackages.some(name => within(resolve("node_modules", name), path)), `Unexpected static demo input: ${input}`);
 }
 assert.ok(Object.keys(result.metafile.inputs).some(input => within(dist, resolve(input))));
-assert.ok(!Object.keys(result.metafile.inputs).some(input => input.replaceAll("\\", "/").endsWith("/provider.ts")), "Static demo included the server connection.");
 await copyFile("examples/demo/index.html", join(site, "index.html"));
 await copyFile(join(dist, manifest.entries.regexWorker), join(site, "regex-worker.js"));
 await copyFile(join(dist, "UNICODE-LICENSE.txt"), join(site, "UNICODE-LICENSE.txt"));
 await copyFile(join(dist, "LICENSE.txt"), join(site, "LICENSE.txt"));
-const libraries = {};
-for (const name of (await readdir("node_modules/typescript-demo/lib")).filter(name => /^lib[\w.-]*\.d\.ts$/.test(name)).sort()) {
-    libraries[name] = await readFile(join("node_modules/typescript-demo/lib", name), "utf8");
-}
-await writeFile(join(site, "typescript-libs.json"), JSON.stringify(libraries));
+await writeFile(join(site, "typescript-libs.json"), await demoLibraries());
 for (const [name, file] of [["typescript-demo", "LICENSE.txt"], ["typescript-demo", "ThirdPartyNoticeText.txt"],
     ["vscode-languageserver-protocol", "License.txt"], ["vscode-jsonrpc", "License.txt"], ["vscode-languageserver-types", "License.txt"]]) {
     await copyFile(join("node_modules", name, file), join(site, `${name}-${file}`));

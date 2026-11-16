@@ -21,6 +21,15 @@ export async function runDemoMetadataBatching(page: Page, url: string) {
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+Home");
+    const mounted = await source.elementHandle();
+    // Synthetic transitions exercise retention policy, not actual BFCache eligibility.
+    for (let cycle = 0; cycle < 2; cycle++) {
+        await page.evaluate(() => {
+            window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+            window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+        });
+        expect(await mounted!.evaluate(element => element.isConnected)).toBe(true);
+    }
     await page.evaluate(() => { (window as unknown as { demoMetadataProbe: MetadataProbe }).demoMetadataProbe.active = true; });
     await source.pressSequentially("// BATCH\n");
     await expect(page.locator("#cursor")).toHaveText("Ln 2, Col 1");
@@ -35,6 +44,7 @@ export async function runDemoMetadataBatching(page: Page, url: string) {
     const afterDispose = await page.evaluate(async () => {
         const probe = (window as unknown as { demoMetadataProbe: MetadataProbe }).demoMetadataProbe;
         document.querySelector("#editor textarea")!.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+        window.dispatchEvent(new PageTransitionEvent("pagehide"));
         window.dispatchEvent(new PageTransitionEvent("pagehide")); const before = probe.writes.length;
         await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
         probe.active = false; return { before, after: probe.writes.length };
