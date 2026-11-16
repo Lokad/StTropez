@@ -8,11 +8,15 @@ import { demoCommandPolicy } from "./action-commands.ts";
 import { projectReviewNote } from "./action-fixture.ts";
 import type { DemoFile } from "./project.ts";
 import type { DemoLanguage } from "./language.ts";
+import type { CleanupScope } from "../shared/cleanup-scope.ts";
 
 /** Contextual presentation; the existing action controller owns captures, validation and history. */
-export function mountDemoActions(workspace: Workspace, file: DemoFile, editor: EditingCandidate, provider: LspWorkspace,
+export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file: DemoFile, editor: EditingCandidate, provider: LspWorkspace,
     language: DemoLanguage, valid: () => boolean, dismissOther: () => void) {
-    const events = new AbortController(), popup = document.createElement("section"); popup.className = "demo-actions"; popup.hidden = true; popup.setAttribute("aria-label", "Quick fixes");
+    const events = new AbortController(); let disposed = false, commandAction = false;
+    scope.defer(() => { disposed = true; events.abort(); });
+    const popup = document.createElement("section"); scope.defer(() => popup.remove());
+    popup.className = "demo-actions"; popup.hidden = true; popup.setAttribute("aria-label", "Quick fixes");
     const heading = document.createElement("h2"), status = document.createElement("p"), choices = document.createElement("div"), edits = document.createElement("ol"), apply = document.createElement("button"), close = document.createElement("button");
     heading.textContent = `Quick fixes in ${file.name}`; status.setAttribute("aria-label", "Quick-fix status"); edits.setAttribute("aria-label", "Quick-fix edits");
     apply.textContent = "Apply fix"; close.textContent = "Cancel fix"; apply.disabled = true;
@@ -20,16 +24,18 @@ export function mountDemoActions(workspace: Workspace, file: DemoFile, editor: E
     const previousChoices = document.createElement("button"), nextChoices = document.createElement("button"), choicePages = document.createElement("div"), choiceCount = document.createElement("span");
     previousChoices.textContent = "Previous fixes"; nextChoices.textContent = "Next fixes"; choicePages.append(previousChoices, choiceCount, nextChoices);
     popup.append(heading, status, choices, choicePages, edits, pages, apply, close); document.body.append(popup);
-    let disposed = false, commandAction = false;
+    scope.defer(() => { apply.onclick = null; });
     const idle = () => { const state = editor.activity(); return !disposed && valid() && !state.composing && !state.pendingInput && !state.pendingCommand; };
     const present = (id: string) => id === file.resource.documentId && valid() ? editor : undefined;
     const commands = new HostProjectTools(workspace, () => idle(), present, undefined, provider, request =>
         request.edit.documents.length === 1 && request.edit.documents[0]!.target.document.documentId === file.resource.documentId
         && request.edit.documents[0]!.edits.length === 1 && request.edit.documents[0]!.edits.every(edit => edit.insert === projectReviewNote
             && edit.from === edit.to && edit.from === request.edit.documents[0]!.target.document.buffer.length) ? "apply" : "decline");
+    scope.defer(() => commands.dispose());
     const tools = new HostActionsTools(workspace, () => idle(), present,
         () => createLspActionClient({ provider, commandPolicy: demoCommandPolicy(file, () => language.documentUri(file), idle),
             beforeRequest: session => language.prepareActions(session, file) }), commands, provider);
+    scope.defer(() => tools.dispose());
     // Host interaction policy only; all captures, permissions and history still pass through tools.
     const direct = (action: LspCodeAction) => {
         const changes = action.edit?.documents.filter(change => change.edits.length) ?? [];
@@ -48,7 +54,7 @@ export function mountDemoActions(workspace: Workspace, file: DemoFile, editor: E
         commandAction = false; popup.hidden = false; tools.begin("source");
     };
     let oldChoices: unknown, oldChoicePage = -1;
-    const stop = tools.state.subscribe(() => {
+    scope.defer(tools.state.subscribe(() => {
         const state = tools.state.getSnapshot();
         if (state.status === "ready") commandAction = state.command !== null;
         if (!popup.hidden) position();
@@ -73,7 +79,7 @@ export function mountDemoActions(workspace: Workspace, file: DemoFile, editor: E
         apply.disabled = !state.canApply; apply.onclick = () => tools.apply(state.token);
         pages.hidden = state.editCount <= 64; previous.disabled = state.page === 0; next.disabled = (state.page + 1) * 64 >= state.editCount;
         if (state.status === "applied" && !commandAction) queueMicrotask(() => { if (!disposed && tools.state.getSnapshot() === state) { dismiss(); editor.focus(); } });
-    });
+    }));
     editor.element.addEventListener("sttropez-render", () => { if (!popup.hidden) position(); }, { signal: events.signal });
     apply.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
     choices.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
@@ -92,7 +98,7 @@ export function mountDemoActions(workspace: Workspace, file: DemoFile, editor: E
             }
         }
     }, { capture: true, signal: events.signal });
-    const detachCommands = commands.attach("source", file.tab, editor), detach = tools.attach("source", file.tab, editor);
-    return Object.freeze({ request, dismiss, isOpen: () => !popup.hidden,
-        destroy: () => { disposed = true; events.abort(); detach(); detachCommands(); stop(); tools.dispose(); commands.dispose(); apply.onclick = null; popup.remove(); } });
+    scope.defer(commands.attach("source", file.tab, editor));
+    scope.defer(tools.attach("source", file.tab, editor));
+    return Object.freeze({ request, dismiss, isOpen: () => !popup.hidden });
 }

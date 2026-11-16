@@ -31,6 +31,7 @@ let panel: "javascript" | "problems" | "changes" = "javascript", disposed = fals
 let metadataFrame: number | undefined;
 let stopWorkspace: (() => void) | undefined, stopRecovery: (() => void) | undefined, stopView: (() => void) | undefined, stopFind: (() => void) | undefined;
 let stopLanguage: (() => void) | undefined, languageView: ReturnType<typeof mountDemoLanguage> | undefined;
+let languageViewFailure: Readonly<{ error: unknown }> | undefined;
 let stopReference: (() => void) | undefined;
 let folding: FoldingController | undefined, referenceFolding: FoldingController | undefined, stopFolding: (() => void) | undefined;
 let viewListeners: AbortController | undefined;
@@ -168,7 +169,7 @@ function renderLanguage(): void {
     const plain = hostLanguage();
     element("host-controls").hidden = element("host-status").hidden = project.sample.id !== "host";
     for (const id of ["complete", "inspect-type", "signature", "definition", "references", "rename", "quickfix"]) {
-        button(id).disabled = plain; button(id).hidden = plain;
+        button(id).disabled = plain || languageViewFailure !== undefined; button(id).hidden = plain;
     }
     button("block-comment").hidden = plain;
     if (plain) {
@@ -177,10 +178,11 @@ function renderLanguage(): void {
         presentation.diagnostics = undefined; renderProblems(); return;
     }
     const state = project.language.state.getSnapshot();
-    element("language-status").textContent = state.status === "failed" ? "Language service unavailable" : state.status === "starting" ? "Starting language service…"
+    element("language-status").textContent = languageViewFailure ? "Language controls unavailable" : state.status === "failed" ? "Language service unavailable" : state.status === "starting" ? "Starting language service…"
         : state.checking ? "Checking types…" : state.status === "ready" ? "Language ready" : "Language service idle";
-    element("language-retry").hidden = state.status !== "failed";
-    element("language-status").title = state.message;
+    element("language-retry").hidden = !languageViewFailure && state.status !== "failed";
+    element("language-retry").textContent = languageViewFailure ? "Retry language controls" : "Retry language service";
+    element("language-status").title = languageViewFailure ? "The language controls could not open. Your files are retained." : state.message;
     const problems = document.querySelector<HTMLButtonElement>('[data-panel="problems"]')!;
     problems.textContent = state.diagnostics.length ? `Problems (${state.diagnostics.length})` : "Problems";
     if (active) {
@@ -234,7 +236,7 @@ function detachView(): void {
     stopReference?.(); stopReference = undefined;
     referencePresentation?.dispose(); referencePresentation = undefined;
     output?.destroy(); output = undefined;
-    languageView?.destroy(); languageView = undefined;
+    detachLanguage();
     stopView?.(); stopView = undefined; stopFind?.(); stopFind = undefined;
     viewListeners?.abort(); viewListeners = undefined;
     find?.destroy(); find = undefined; presentation.search = undefined;
@@ -255,9 +257,21 @@ function openLocation(capturedProject: DemoProject, file: DemoFile, capturedEdit
     editor?.viewport.revealOffset(target.from); editor?.focus();
 }
 function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEditor: EditingCandidate) {
+    languageViewFailure = undefined;
     if (capturedProject.sample.id === "outline" || capturedProject.sample.id === "host") return;
-    return mountDemoLanguage(capturedProject.workspace, () => capturedProject.files, file, capturedEditor, capturedProject.language,
-        target => openLocation(capturedProject, file, capturedEditor, target));
+    const report = (error: unknown) => {
+        console.error(error);
+        if (disposed || project !== capturedProject || editor !== capturedEditor) return;
+        languageViewFailure = { error }; renderLanguage();
+    };
+    try {
+        return mountDemoLanguage(capturedProject.workspace, () => capturedProject.files, file, capturedEditor, capturedProject.language,
+            target => openLocation(capturedProject, file, capturedEditor, target), report);
+    } catch (error) { report(error); }
+}
+function detachLanguage(): void {
+    const previous = languageView; languageView = undefined; languageViewFailure = undefined;
+    try { previous?.destroy(); } catch (error) { console.error(error); }
 }
 function mountFile(file: DemoFile, focus = false): void {
     if (!project || disposed || editor?.activity().composing) return;
@@ -460,10 +474,12 @@ for (const menu of [codeMenu, element("view-menu") as HTMLDetailsElement]) {
 }
 on("language-retry", () => {
     const captured = project, file = active, view = editor; if (!captured || !file || !view) return;
-    languageView?.destroy(); languageView = undefined;
+    const mountFailed = languageViewFailure !== undefined;
+    detachLanguage();
+    if (mountFailed) { languageView = attachLanguage(captured, file, view); renderLanguage(); return; }
     void captured.language.retry().then(() => {
         if (!disposed && project === captured && editor === view) { languageView = attachLanguage(captured, file, view); folding?.refresh(); }
-    }).catch(() => {});
+    }, () => { /* Connection failure is reported by the captured project. */ });
 });
 on("panel-collapse", () => {
     if (panel === "changes") setPanel("javascript");

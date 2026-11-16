@@ -12,6 +12,13 @@ using the same compiler and public LSP clients. It needs no Node service. The lo
 to the WebSocket/stdio route below; open `/?provider=browser` to select the published worker at
 runtime. The page retains that choice across sample switches and retries.
 
+Connection failures show **Language service unavailable**; its retry starts a fresh provider
+and synchronizes the current documents. If mounting the language controls fails, the demo
+releases their acquired listeners, popups and protocol scopes, reports the original error to
+the console and shows **Language controls unavailable**. **Retry language controls** reuses the
+connected provider. Editing and saving remain available in either case. A connection resolving
+after the view is disposed cannot attach controls to a later view.
+
 The syntax worker retains one language service and versioned snapshots. After the initial
 document upload, the host uses the public `BufferChangeCursor` to send a bounded replacement
 span in chunks; incomplete uploads cannot change the worker's committed document. File/session

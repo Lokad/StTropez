@@ -5,18 +5,22 @@ import type { LspLocation, LspWorkspace } from "../../src/protocol/index.ts";
 import { HostRenameTools } from "../hosts/rename.ts";
 import { createLspRenameClient } from "../editing/lsp-rename-client.ts";
 import type { DemoFile } from "./project.ts";
+import type { CleanupScope } from "../shared/cleanup-scope.ts";
 
 export type DemoSymbolTarget = Readonly<{ documentId: DocumentId; revision: number; from: number; to: number }>;
 
 /** Host presentation around validated public results. Navigation may replace this editor view. */
-export function mountDemoSymbols(workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: EditingCandidate,
+export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: EditingCandidate,
     provider: LspWorkspace, valid: () => boolean, dismissOther: () => void, open: (target: DemoSymbolTarget) => void) {
-    const events = new AbortController(), navigation = createLspNavigationClient(provider);
-    const popup = document.createElement("section"); popup.className = "demo-symbols"; popup.hidden = true; popup.setAttribute("aria-label", "Symbol locations");
-    const renamePopup = document.createElement("section"); renamePopup.className = "demo-rename"; renamePopup.hidden = true;
+    const events = new AbortController(); let disposed = false;
+    scope.defer(() => { disposed = true; events.abort(); });
+    const navigation = createLspNavigationClient(provider); scope.defer(() => navigation.dispose());
+    const popup = document.createElement("section"); scope.defer(() => popup.remove());
+    popup.className = "demo-symbols"; popup.hidden = true; popup.setAttribute("aria-label", "Symbol locations");
+    const renamePopup = document.createElement("section"); scope.defer(() => renamePopup.remove());
+    renamePopup.className = "demo-rename"; renamePopup.hidden = true;
     renamePopup.setAttribute("role", "dialog"); renamePopup.setAttribute("aria-label", "Rename symbol");
     document.body.append(popup, renamePopup);
-    let disposed = false;
     type Query = { choice: number; message: string; current: () => boolean; result?: Awaited<ReturnType<typeof navigation.run>> };
     let query: Query | undefined;
     const idle = () => { const s = editor.activity(); return !disposed && valid() && !s.composing && !s.pendingInput && !s.pendingCommand; };
@@ -78,6 +82,7 @@ export function mountDemoSymbols(workspace: Workspace, files: () => readonly Dem
             error instanceof Error ? `Cannot open this location: ${error.message}` : "This location is unavailable in the sample."); });
     };
     const rename = new HostRenameTools(workspace, () => idle(), id => id === file.resource.documentId && valid() ? editor : undefined, () => createLspRenameClient({ provider }));
+    scope.defer(() => rename.dispose());
     const heading = document.createElement("h2"), status = document.createElement("p"), label = document.createElement("label"), name = document.createElement("input");
     heading.textContent = `Rename in ${file.name}`; status.setAttribute("aria-label", "Rename status"); name.maxLength = 256; label.append("New name ", name);
     const preview = document.createElement("button"), apply = document.createElement("button"), cancel = document.createElement("button"), targets = document.createElement("ol"), pages = document.createElement("div");
@@ -89,8 +94,8 @@ export function mountDemoSymbols(workspace: Workspace, files: () => readonly Dem
     name.addEventListener("input", () => rename.setName(name.value), { signal: events.signal });
     preview.addEventListener("click", rename.prepare, { signal: events.signal }); cancel.addEventListener("click", () => closeRename(true), { signal: events.signal });
     previous.addEventListener("click", rename.previousPage, { signal: events.signal }); next.addEventListener("click", rename.nextPage, { signal: events.signal });
-    rename.bindName(name);
-    const stopRename = rename.state.subscribe(() => {
+    rename.bindName(name); scope.defer(() => rename.bindName(null));
+    scope.defer(rename.state.subscribe(() => {
         const state = rename.state.getSnapshot();
         status.textContent = state.status === "pending" ? "Preparing rename preview…" : state.status === "ready" ? `Review ${state.count} changes before applying.`
             : state.status === "expired" ? "The code or selection changed. Preview again." : state.status === "failed" ? state.message : "Enter a name, then preview its changes.";
@@ -100,7 +105,7 @@ export function mountDemoSymbols(workspace: Workspace, files: () => readonly Dem
             before.textContent = at.before ?? state.symbol; after.textContent = at.after ?? state.name; code.append(before, " → ", after); item.append(`${at.title} · ${at.line + 1}:${at.column + 1} `, code); return item; }));
         pages.hidden = state.count <= 64; previous.disabled = state.page === 0; next.disabled = (state.page + 1) * 64 >= state.count;
         if (state.status === "applied") queueMicrotask(() => { if (!disposed && rename.state.getSnapshot() === state) closeRename(true); });
-    });
+    }));
     popup.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
     renamePopup.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); closeRename(true); } }, { capture: true, signal: events.signal });
     editor.input.addEventListener("keydown", event => {
@@ -117,15 +122,17 @@ export function mountDemoSymbols(workspace: Workspace, files: () => readonly Dem
             } else if (event.key === "Enter") { event.preventDefault(); event.stopImmediatePropagation(); choose(query, query.result.locations[query.choice]!); }
         }
     }, { capture: true, signal: events.signal });
-    const detachRename = rename.attach("source", file.tab, editor);
+    scope.defer(rename.attach("source", file.tab, editor));
     const changed = () => { const captured = query; if (captured && (!captured.current() || captured.result && !captured.result.isCurrent())) {
         query = undefined; popup.hidden = true; queueMicrotask(() => { if (!disposed && !query) navigation.cancel(); });
     } };
     // Expanded discovery metadata does not change the captured source projection.
-    const stops = [editor.view.subscribe(changed), editor.view.folding.subscribe(changed), workspace.tabState.subscribe(changed), provider.state.subscribe(changed),
-        ...files().flatMap(file => [workspace.observeDocument(file.resource.documentId).subscribe(changed), file.resource.metadata.subscribe(changed)])];
+    for (const state of [editor.view, editor.view.folding, workspace.tabState, provider.state]) scope.defer(state.subscribe(changed));
+    for (const file of files()) {
+        scope.defer(workspace.observeDocument(file.resource.documentId).subscribe(changed));
+        scope.defer(file.resource.metadata.subscribe(changed));
+    }
     editor.input.addEventListener("blur", () => queueMicrotask(() => { if (!disposed) changed(); }), { signal: events.signal });
     return Object.freeze({ definition: () => request("definition"), references: () => request("references"), rename: beginRename,
-        dismiss: () => { cancelNavigation(); closeRename(false); }, isOpen: () => !!query || !renamePopup.hidden,
-        destroy: () => { disposed = true; events.abort(); stops.forEach(stop => stop()); detachRename(); stopRename(); rename.bindName(null); rename.dispose(); navigation.dispose(); popup.remove(); renamePopup.remove(); } });
+        dismiss: () => { cancelNavigation(); closeRename(false); }, isOpen: () => !!query || !renamePopup.hidden });
 }

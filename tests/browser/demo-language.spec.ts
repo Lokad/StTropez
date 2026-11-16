@@ -144,8 +144,25 @@ test("late real diagnostic responses cannot annotate a newer project or follow l
     await expect(page.getByRole("textbox", { name: "pricing.ts", exact: true })).toBeVisible();
 });
 
-test("provider startup failure leaves typing and saving usable and retries current documents", async ({ page, baseURL, browserErrors }) => {
+test("connection and partial mount failures preserve editing and retry their own owners", async ({ page, baseURL, browserErrors }) => {
+    await page.addInitScript(() => {
+        const state = { armed: false, reported: 0, failure: new Error("Injected language control mount failure") };
+        Object.assign(window, { demoMountFailure: state });
+        const append = Element.prototype.append, report = console.error;
+        Element.prototype.append = function (...nodes) {
+            append.apply(this, nodes);
+            if (state.armed && this === document.body && nodes.some(node => node instanceof Element && node.classList.contains("demo-actions"))) {
+                state.armed = false; throw state.failure;
+            }
+        };
+        console.error = (...args: unknown[]) => {
+            if (args.length === 1 && args[0] === state.failure) { state.reported++; return; }
+            report(...args);
+        };
+    });
     let attempts = 0;
+    const starts: string[] = [];
+    page.on("request", request => { if (request.method() === "POST" && new URL(request.url()).pathname === "/demo-provider") starts.push(request.url()); });
     browserErrors.allowConsoleError("Failed to load resource: the server responded with a status of 503 (Service Unavailable)", new URL("/demo-provider?sample=pricing", baseURL).href);
     await page.route("**/demo-provider?sample=pricing", route => { attempts++; return route.fulfill({ status: 503, body: "Unavailable" }); });
     await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language service unavailable");
@@ -153,8 +170,18 @@ test("provider startup failure leaves typing and saving usable and retries curre
     await source.press("Control+Home"); await source.pressSequentially("// Offline edit\n"); await source.press("Control+s");
     await expect(page.locator("#status")).toContainText("Saved in this browser");
     await expect(page.locator("#folding-status")).toContainText("retried"); expect(attempts).toBe(1);
-    await page.unroute("**/demo-provider?sample=pricing"); await page.getByRole("button", { name: "Retry language service", exact: true }).click();
+    await page.unroute("**/demo-provider?sample=pricing");
+    await page.evaluate(() => { (window as unknown as { demoMountFailure: { armed: boolean } }).demoMountFailure.armed = true; });
+    await page.getByRole("button", { name: "Retry language service", exact: true }).click();
+    await expect(page.locator("#language-status")).toHaveText("Language controls unavailable");
+    expect(await page.evaluate(() => (window as unknown as { demoMountFailure: { reported: number } }).demoMountFailure.reported)).toBe(1);
+    await expect(page.locator(".demo-completion, .demo-snippet, .demo-language-popups, .demo-symbols, .demo-rename, .demo-actions")).toHaveCount(0);
+    await source.press("Control+Home"); await source.pressSequentially("// Mount recovery\n"); await source.press("Control+s");
+    await expect(page.locator("#status")).toContainText("Saved in this browser");
+    const connectedStarts = starts.length;
+    await page.getByRole("button", { name: "Retry language controls", exact: true }).click();
     await expect(page.locator("#language-status")).toHaveText("Language ready");
+    expect(starts.length).toBe(connectedStarts);
     await expect(page.locator("#editor")).toContainText("// Offline edit");
     await source.press("Control+End"); await source.pressSequentially("\ncart.");
     await expect(page.locator(".demo-completion")).toBeVisible();
