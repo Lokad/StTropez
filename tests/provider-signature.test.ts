@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { SignatureScanner, signatureTriggerName, validateSignatureInput, validateSignatureResult } from "../examples/probes/signature.ts";
-import { ProviderProject } from "../examples/probes/project.ts";
+import { SignatureScanner, signatureTriggerName, validateSignatureInput, validateSignatureResult } from "../fixtures/language/signature.ts";
+import { ProviderProject } from "../fixtures/language/project.ts";
 function scan(text: string, size = 16384) {
     const input = validateSignatureInput({ id: 1, document: "source", revision: 2, length: text.length, offset: text.length, delay: 0 }), scanner = new SignatureScanner();
     for (let from = 0; from < text.length; from += size) scanner.feed(text.slice(from, from + size), from);

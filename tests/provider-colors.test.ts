@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer } from "../src/index.ts";
-import { DocumentColorsCursor, parseColor, hexColor, rgbaColor, sameColor, validateColorsInput, validateColorsResult, validateColorPresentationInput, provideColorPresentations, validateColorPresentationsResult } from "../examples/probes/colors.ts";
-import { ProviderProject } from "../examples/probes/project.ts";
+import { DocumentColorsCursor, parseColor, hexColor, rgbaColor, sameColor, validateColorsInput, validateColorsResult, validateColorPresentationInput, provideColorPresentations, validateColorPresentationsResult } from "../fixtures/language/colors.ts";
+import { ProviderProject } from "../fixtures/language/project.ts";
 const capture = (text: string) => validateColorsInput({ id: 1, document: "source", revision: 4, length: text.length, delay: 0 });
 function scan(text: string) { const input = capture(text), buffer = TextBuffer.from(text), cursor = new DocumentColorsCursor(input, buffer); let work = 0;
     for (;;) { const step = cursor.next(); assert.ok(step.work >= work && step.work - work <= 16384); work = step.work; if (step.result) { assert.equal(work, text.length); return { input, buffer, result: step.result }; } }

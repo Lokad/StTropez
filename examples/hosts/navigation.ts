@@ -4,8 +4,8 @@ import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/in
 import { createNavigationClient } from "../editing/navigation-client.ts";
 import type { NavigationMetrics, SyncFault } from "../editing/navigation-client.ts";
 import type { NavigationService, NavigationServiceFactory } from "../editing/navigation-service.ts";
-import { navigationLimits, navigationSymbol, validateNavigationInput } from "../probes/navigation.ts";
-import type { NavigationInput, NavigationLocation } from "../probes/navigation.ts";
+import { navigationLimits, navigationSymbol, validateNavigationInput } from "../../fixtures/language/navigation.ts";
+import type { NavigationInput, NavigationLocation } from "../../fixtures/language/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };

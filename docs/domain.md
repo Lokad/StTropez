@@ -15,7 +15,7 @@ runtime has no domain parser or service dependency. `createFoldRegions` is publi
 so hosts can validate a complete reply against the same topology rules as per-view
 fold handles before publishing annotations and fold ranges together.
 
-The local cooperative provider in `examples/probes/domain.ts` is a fixture policy:
+The local cooperative provider in `fixtures/language/domain.ts` is a fixture policy:
 
 - A header is `// #region stable-id Label`; its matching closer is
   `// #endregion stable-id`. Identities are unique, nested pairs must match, and

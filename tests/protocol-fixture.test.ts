@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { attachProtocolFixture } from "../fixtures/protocol/fixture-server.ts";
-import { reviewHeader, reviewFooter } from "../examples/probes/project-commands.ts";
+import { reviewHeader, reviewFooter } from "../fixtures/language/project-commands.ts";
 import { Workspace } from "../src/index.ts";
 import { openWebSocketTransport } from "../src/browser/index.ts";
 import { LspWorkspace, RpcError, createLspActionClient, createLspHighlightClient, decodeLspCompletions, decodeLspResolvedCompletion, lspCompletionPlan } from "../src/protocol/index.ts";

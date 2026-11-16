@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createSelectionSet, TextBuffer } from "../src/index.ts";
-import { NavigationSession, validateNavigationInput } from "../examples/probes/navigation.ts";
-import { renameName, renameSelections, validateRenamePreview } from "../examples/probes/rename.ts";
+import { NavigationSession, validateNavigationInput } from "../fixtures/language/navigation.ts";
+import { renameName, renameSelections, validateRenamePreview } from "../fixtures/language/rename.ts";
 function scan(texts: readonly string[], symbol = "café", budget = 16384) {
     const input = validateNavigationInput({ operation: "navigation-start", id: 1, kind: "references", symbol, includeDeclaration: true, delay: 0, documents: texts.map((s, i) => ({ document: "doc" + i, revision: i + 3, length: s.length })) }), s = new NavigationSession(input);
     for (const [i, text] of texts.entries()) {

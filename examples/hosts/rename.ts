@@ -7,10 +7,10 @@ import { navigationMetrics } from "../editing/navigation-client.ts";
 import { createRenameBackend } from "../editing/rename-backend.ts";
 import type { RenameBackend } from "../editing/rename-backend.ts";
 import { ProviderLane } from "../shared/provider-lane.ts";
-import { navigationLimits, navigationSymbol, validateNavigationInput } from "../probes/navigation.ts";
-import type { NavigationInput, NavigationLocation } from "../probes/navigation.ts";
-import { renameName, renameSelections, validateRenamePreview } from "../probes/rename.ts";
-import type { RenameCapture } from "../probes/rename.ts";
+import { navigationLimits, navigationSymbol, validateNavigationInput } from "../../fixtures/language/navigation.ts";
+import type { NavigationInput, NavigationLocation } from "../../fixtures/language/navigation.ts";
+import { renameName, renameSelections, validateRenamePreview } from "../../fixtures/language/rename.ts";
+import type { RenameCapture } from "../../fixtures/language/rename.ts";
 import type { LspRenameFactory } from "../editing/lsp-rename-client.ts";
 import { HostCell } from "../shared/observable.ts";
 

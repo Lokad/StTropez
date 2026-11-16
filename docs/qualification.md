@@ -59,6 +59,10 @@ The coordinator rejects package/source changes during a campaign. `--reuse-consu
 is the lower-level staged-root option; a different package hash or root is rejected before use.
 Evidence is under `artifacts/package/qualification/` and remains local.
 
+When host or fixture source paths change, run the affected staging routes even if emitted
+runtime assets are identical. This checks source allowlists, rewritten public imports and
+erased type imports. Reuse installation/runtime evidence whose inputs are unchanged.
+
 `npm run test:package -- --scenarios=full,lsp,demo` additionally stages the actual TypeScript
 demo host against the same restored public modules, declarations, CSS and regex worker. It
 reuses the source demo's complete walkthrough and concurrent-save conflict helpers, including

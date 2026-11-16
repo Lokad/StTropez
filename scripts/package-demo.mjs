@@ -56,7 +56,7 @@ const entryPoints = { app: "examples/demo/main.ts", "demo-syntax-worker": "examp
 const pending = [...Object.values(entryPoints)];
 while (pending.length) {
     const path = pending.pop(); if (seen.has(path)) continue; seen.add(path);
-    assert.ok(path.startsWith("examples/") && within(project, resolve(project, path)) && /\.(ts|css)$/.test(path), `Unexpected host source: ${path}`);
+    assert.ok((path.startsWith("examples/") || path.startsWith("fixtures/language/")) && within(project, resolve(project, path)) && /\.(ts|css)$/.test(path), `Unexpected host source: ${path}`);
     const original = resolve(project, path), text = await readFile(original, "utf8"), edits = [], imports = [];
     function specifier(value, from, to) {
         if (!value.startsWith(".")) { assert.equal(value, "typescript-demo", `Unexpected host dependency: ${value}`); return; }
@@ -66,7 +66,7 @@ while (pending.length) {
             const replacement = publicImports.get(local);
             assert.ok(replacement, `Host imported a private library module: ${local}`);
             edits.push({ from, to, text: replacement }); imports.push({ original: value, restored: replacement });
-        } else { assert.ok(local.startsWith("examples/")); pending.push(local); }
+        } else { assert.ok(local.startsWith("examples/") || local.startsWith("fixtures/language/")); pending.push(local); }
     }
     if (path.endsWith(".css")) {
         for (const match of text.matchAll(/@import\s+["']([^"']+)["']/g)) {

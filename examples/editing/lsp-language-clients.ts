@@ -2,12 +2,12 @@ import { createLspColorClient, createLspLinkClient, createLspSignatureClient } f
 import type { LspDocumentColor, LspDocumentLink, LspPrepare, LspSignatureHelp, LspWorkspace } from "../../src/protocol/index.ts";
 import type { DocumentId, Workspace } from "../../src/index.ts";
 import type { SignatureBackend } from "../hosts/signature.ts";
-import type { SignatureInput } from "../probes/signature.ts";
+import type { SignatureInput } from "../../fixtures/language/signature.ts";
 import type { HostModuleLink, LinkBackend } from "../hosts/document-links.ts";
-import type { LinksInput, LinkTarget } from "../probes/links.ts";
+import type { LinksInput, LinkTarget } from "../../fixtures/language/links.ts";
 import type { ColorBackend } from "../hosts/document-colors.ts";
-import { rgbaColor } from "../probes/colors.ts";
-import type { ColorPresentationInput, ColorReference, ColorsInput } from "../probes/colors.ts";
+import { rgbaColor } from "../../fixtures/language/colors.ts";
+import type { ColorPresentationInput, ColorReference, ColorsInput } from "../../fixtures/language/colors.ts";
 
 /** Host presentation models with optional, host-owned request preparation. */
 export function lspSignatureBackend(workspace: Workspace, provider: LspWorkspace, changed: () => void, prepare?: (input: SignatureInput) => LspPrepare): SignatureBackend {

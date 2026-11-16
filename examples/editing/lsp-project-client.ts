@@ -1,6 +1,6 @@
 import { RpcError } from "../../src/protocol/index.ts";
 import type { LspSessionAccess, LspWorkspace } from "../../src/protocol/index.ts";
-import type { ProjectCommand } from "../probes/project-commands.ts";
+import type { ProjectCommand } from "../../fixtures/language/project-commands.ts";
 import { createLspCommandRunner } from "../../src/protocol/index.ts";
 import type { LspCommandScope } from "../../src/protocol/index.ts";
 

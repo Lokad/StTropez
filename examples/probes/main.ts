@@ -1,5 +1,5 @@
-import { tokenizeLine } from "./provider.ts";
-import type { ProviderInput, ProviderResult } from "./provider.ts";
+import { tokenizeLine } from "../../fixtures/language/provider.ts";
+import type { ProviderInput, ProviderResult } from "../../fixtures/language/provider.ts";
 import "./probe.css";
 import { mountWorkspaceProbe } from "./workspace.ts";
 
@@ -98,7 +98,7 @@ document.getElementById("start-workspace")!.addEventListener("click", () => {
 });
 document.getElementById("move-workspace")!.addEventListener("click", () => { workspaceProbe?.move(); });
 document.getElementById("dispose-workspace")!.addEventListener("click", () => { workspaceProbe?.dispose(); });
-window.addEventListener("pagehide", () => { worker?.terminate(); workspaceProbe?.dispose(); });
+window.addEventListener("pagehide", event => { if (!event.persisted) { worker?.terminate(); workspaceProbe?.dispose(); } });
 highlight(); connect();
 const probe = { ready: true, events: () => [...events], counters: () => ({ ...counters }),
     setDelay: (value: number) => { if (!Number.isFinite(value) || value < 0 || value > 1_000) throw new RangeError("Invalid delay."); delay = value; },

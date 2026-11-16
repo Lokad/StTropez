@@ -1,8 +1,8 @@
 import type { DocumentId, TextBuffer, Workspace } from "../../src/index.ts";
 import { createLspNavigationClient as createClient } from "../../src/protocol/index.ts";
 import type { LspSessionAccess, LspWorkspace } from "../../src/protocol/index.ts";
-import type { NavigationInput } from "../probes/navigation.ts";
-import { validateNavigationInput } from "../probes/navigation.ts";
+import type { NavigationInput } from "../../fixtures/language/navigation.ts";
+import { validateNavigationInput } from "../../fixtures/language/navigation.ts";
 import type { NavigationMetrics } from "./navigation-client.ts";
 import type { NavigationService, NavigationOrigin } from "./navigation-service.ts";
 export type LspNavigationOptions = Readonly<{ provider: LspWorkspace;

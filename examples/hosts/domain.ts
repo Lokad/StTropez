@@ -2,8 +2,8 @@ import { createFoldRegions, createSelectionSet, FoldIndex } from "../../src/inde
 import type { DocumentId, DocumentView, FoldRange, FoldingSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
-import { DomainAnnotationIndex, FixtureDomainProvider, validateDomainResult } from "../probes/domain.ts";
-import type { DomainAnnotation, DomainInput, DomainProvider } from "../probes/domain.ts";
+import { DomainAnnotationIndex, FixtureDomainProvider, validateDomainResult } from "../../fixtures/language/domain.ts";
+import type { DomainAnnotation, DomainInput, DomainProvider } from "../../fixtures/language/domain.ts";
 import type { EditingPresentation } from "../editing/presentation.ts";
 import { HostCell } from "../shared/observable.ts";
 

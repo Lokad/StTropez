@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { provideHover, validateHoverInput, validateHoverResult } from "../examples/probes/hover.ts";
+import { provideHover, validateHoverInput, validateHoverResult } from "../fixtures/language/hover.ts";
 test("bounded hover contracts retain exact raw Unicode ranges and immutable plain text", () => {
     const text = "😀 const café = 1;\r\n𐐀value", input = { operation: "hover" as const, id: 1, revision: 7, text, offset: 7, delay: 0 };
     const result = validateHoverResult(provideHover(input), input)!;

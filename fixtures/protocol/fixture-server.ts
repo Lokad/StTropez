@@ -5,20 +5,20 @@ import type { CancellationToken, CompletionList, InitializeResult, DidOpenTextDo
 import { setImmediate } from "node:timers/promises";
 import type { RpcTransport } from "../../src/protocol/json-rpc.ts";
 import { referencePeer } from "./reference-peer.ts";
-import { provide } from "../../examples/probes/provider.ts";
-import { provideHover } from "../../examples/probes/hover.ts";
-import { SymbolScanner } from "../../examples/probes/navigation.ts";
-import { renameName } from "../../examples/probes/rename.ts";
+import { provide } from "../language/provider.ts";
+import { provideHover } from "../language/hover.ts";
+import { SymbolScanner } from "../language/navigation.ts";
+import { renameName } from "../language/rename.ts";
 import type { Location, TextEdit, WorkspaceEdit } from "vscode-languageserver-protocol/node.js";
 import type { CodeAction, Command } from "vscode-languageserver-protocol/node.js";
 import { TextBuffer } from "../../src/index.ts";
-import { ModuleActionCursor } from "../../examples/probes/actions.ts";
-import { validDomainModule } from "../../examples/probes/domain.ts";
-import { reviewHeader, reviewFooter } from "../../examples/probes/project-commands.ts";
+import { ModuleActionCursor } from "../language/actions.ts";
+import { validDomainModule } from "../language/domain.ts";
+import { reviewHeader, reviewFooter } from "../language/project-commands.ts";
 import type { ApplyWorkspaceEditResult } from "vscode-languageserver-protocol/node.js";
-import { SignatureScanner } from "../../examples/probes/signature.ts";
-import { ModuleLinksCursor } from "../../examples/probes/links.ts";
-import { DocumentColorsCursor, hexColor, rgbaColor, validateRgba } from "../../examples/probes/colors.ts";
+import { SignatureScanner } from "../language/signature.ts";
+import { ModuleLinksCursor } from "../language/links.ts";
+import { DocumentColorsCursor, hexColor, rgbaColor, validateRgba } from "../language/colors.ts";
 
 type RequestPolicy<Fault extends string> = Readonly<{ delay: number; fault?: Fault }>;
 function requestPolicy<Fault extends string>(value: unknown, faults: readonly Fault[]): RequestPolicy<Fault> {

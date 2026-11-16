@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer } from "../src/index.ts";
-import { ModuleLinksCursor, validateLinksInput, validateLinksResult } from "../examples/probes/links.ts";
-import { ProviderProject } from "../examples/probes/project.ts";
+import { ModuleLinksCursor, validateLinksInput, validateLinksResult } from "../fixtures/language/links.ts";
+import { ProviderProject } from "../fixtures/language/project.ts";
 const alias = { module: "sample-utils", resource: "target-resource", document: "target", revision: 7, length: 25 };
 function scan(text: string) { const input = validateLinksInput({ id: 1, document: "source", resource: "source-resource", revision: 3, length: text.length, aliases: [alias], delay: 0 }), buffer = TextBuffer.from(text), cursor = new ModuleLinksCursor(input, buffer); let work = 0;
     for (;;) { const step = cursor.next(); assert.ok(step.work >= work && step.work - work <= 16384); work = step.work; if (step.result) { assert.equal(work, text.length); return { input, buffer, result: step.result }; } }

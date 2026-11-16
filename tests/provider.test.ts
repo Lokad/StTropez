@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { provide, validateProviderResult } from "../examples/probes/provider.ts";
+import { provide, validateProviderResult } from "../fixtures/language/provider.ts";
 test("provider offers keep separate insertion/replacement ranges and reject the entire malformed payload", () => {
     const input = { id: 1, revision: 7, text: "😀 const saMORE = 1; // TODO", offset: 11, delay: 0 };
     const result = provide(input), validated = validateProviderResult(result, input)!;

@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ProviderProject } from "../examples/probes/project.ts";
-import { reviewCapability, reviewHeader, reviewFooter, validateProjectCommand, validateProjectServerRequest } from "../examples/probes/project-commands.ts";
-import type { ProjectCommand, ProjectCommandKind } from "../examples/probes/project-commands.ts";
+import { ProviderProject } from "../fixtures/language/project.ts";
+import { reviewCapability, reviewHeader, reviewFooter, validateProjectCommand, validateProjectServerRequest } from "../fixtures/language/project-commands.ts";
+import type { ProjectCommand, ProjectCommandKind } from "../fixtures/language/project-commands.ts";
 function fixture(texts: readonly string[] = ["\ufeffconst café = '😀';\r\ncafé", "other\r\n"]) {
     const project = new ProviderProject(9), send = (operation: string, fields: Record<string, unknown> = {}) => project.handle({ version: 1, epoch: 9, sequence: project.snapshot().sequence + 1, operation, ...fields });
     send("project-hello"); const documents = texts.map((text, i) => {

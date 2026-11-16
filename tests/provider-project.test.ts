@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer } from "../src/index.ts";
-import { ProviderProject } from "../examples/probes/project.ts";
+import { ProviderProject } from "../fixtures/language/project.ts";
 import { ProjectChangeCursor } from "../examples/editing/project-change.ts";
-import { navigationLimits } from "../examples/probes/navigation.ts";
+import { navigationLimits } from "../fixtures/language/navigation.ts";
 function fixture() {
     const project = new ProviderProject(7), send = (operation: string, fields: Record<string, unknown> = {}) => project.handle({ version: 1, epoch: 7, sequence: project.snapshot().sequence + 1, operation, ...fields });
     send("project-hello");

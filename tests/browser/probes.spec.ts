@@ -98,14 +98,28 @@ test("pinned workspace workload types in split views during background traffic, 
     expect((await page.evaluate(() => window.probe.workspace()))?.sourceUndoDepth).toBe(2);
     await views.first().press("Control+z"); await expect(views.nth(1)).toHaveValue("shared source");
     await views.first().press("Control+Shift+z"); await expect(views.nth(1)).toHaveValue("shared source typing");
+    await page.evaluate(() => {
+        for (let pass = 0; pass < 2; pass++) window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+    });
+    await expect(views).toHaveCount(2);
+    await views.first().press("End"); await views.first().press("!"); await expect(views.nth(1)).toHaveValue("shared source typing!");
+    await views.first().press("Control+z"); await expect(views.nth(1)).toHaveValue("shared source typing");
+    const provider = page.getByRole("textbox", { name: "Provider source" });
+    await provider.fill("sam"); await provider.press("End"); await page.getByRole("button", { name: "Complete", exact: true }).click();
+    await expect(provider).toHaveValue("sample");
     await page.getByRole("button", { name: "Move workload view" }).click();
     await expect(views.first()).toHaveValue("shared source typing");
     expect(await page.evaluate(() => window.probe.workspace())).toMatchObject({ resources: 100, tabs: 100, activeViews: 2, annotations: 1_000, sourceLength: 20 });
-    await page.getByRole("button", { name: "Dispose workspace workload" }).click();
+    await page.getByRole("button", { name: "Dispose workspace workload" }).click(); await expect(views).toHaveCount(0);
+    await page.getByRole("button", { name: "Start workspace workload" }).click(); await expect(views).toHaveCount(2);
+    await page.evaluate(() => {
+        for (let pass = 0; pass < 2; pass++) window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false }));
+    });
     const stopped = await page.evaluate(() => window.probe.workspace());
     await expect(views).toHaveCount(0);
     // Wait on an independent rendering boundary, then verify no background callbacks survive disposal.
     await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 100)));
     expect(await page.evaluate(() => window.probe.workspace())).toEqual(stopped);
     expect(stopped?.activeViews).toBe(0);
+    await expect.poll(() => page.workers().length).toBe(0);
 });

@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer } from "../src/index.ts";
-import { NavigationSession, navigationLimits, navigationSymbol, validateNavigationInput, validateNavigationResult } from "../examples/probes/navigation.ts";
-import type { NavigationInput } from "../examples/probes/navigation.ts";
+import { NavigationSession, navigationLimits, navigationSymbol, validateNavigationInput, validateNavigationResult } from "../fixtures/language/navigation.ts";
+import type { NavigationInput } from "../fixtures/language/navigation.ts";
 const capture = (texts: readonly string[], kind: NavigationInput["kind"] = "references", includeDeclaration = true) => validateNavigationInput({ operation: "navigation-start", id: 3, kind, symbol: "café", includeDeclaration, delay: 0,
     documents: texts.map((text, i) => ({ document: `doc-${i}`, revision: 7 + i, length: text.length })) });
 function run(texts: readonly string[], kind: NavigationInput["kind"] = "references", includeDeclaration = true, budget = 3, name = "café") {

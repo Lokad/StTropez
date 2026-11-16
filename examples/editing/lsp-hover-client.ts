@@ -1,7 +1,7 @@
 import { createLspHoverClient as createClient } from "../../src/protocol/index.ts";
 import type { LspSessionAccess, LspWorkspace } from "../../src/protocol/index.ts";
 import type { HoverBackend } from "./hover-backend.ts";
-import type { HoverInput } from "../probes/hover.ts";
+import type { HoverInput } from "../../fixtures/language/hover.ts";
 export type LspHoverOptions = Readonly<{ provider: LspWorkspace;
     beforeRequest?: (session: LspSessionAccess, configuration: Pick<HoverInput, "delay" | "fault">) => Promise<unknown> }>;
 

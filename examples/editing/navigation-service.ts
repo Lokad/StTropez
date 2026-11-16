@@ -1,6 +1,6 @@
 import type { TextBuffer } from "../../src/index.ts";
 import type { LspSession } from "../../src/protocol/index.ts";
-import type { NavigationInput, NavigationResult } from "../probes/navigation.ts";
+import type { NavigationInput, NavigationResult } from "../../fixtures/language/navigation.ts";
 import type { NavigationMetrics, SyncFault } from "./navigation-client.ts";
 
 export type NavigationOrigin = Readonly<{ document: string; offset: number }>;

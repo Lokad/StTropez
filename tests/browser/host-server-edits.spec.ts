@@ -1,6 +1,6 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
-import { reviewHeader, reviewFooter } from "../../examples/probes/project-commands.ts";
+import { reviewHeader, reviewFooter } from "../../fixtures/language/project-commands.ts";
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const input = (p: Page, name = "Primary source") => p.getByRole("textbox", { name, exact: true });
 const button = (p: Page, name: string) => p.getByRole("button", { name, exact: true });

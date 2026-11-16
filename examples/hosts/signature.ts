@@ -3,8 +3,8 @@ import type { LspSignatureContext } from "../../src/protocol/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, DocumentationContent, EditingCandidate } from "../../src/browser/index.ts";
 import { createNavigationClient, navigationMetrics } from "../editing/navigation-client.ts";
-import { signatureTriggerName, validateSignatureInput } from "../probes/signature.ts";
-import type { SignatureInput, SignatureResult } from "../probes/signature.ts";
+import { signatureTriggerName, validateSignatureInput } from "../../fixtures/language/signature.ts";
+import type { SignatureInput, SignatureResult } from "../../fixtures/language/signature.ts";
 import { HostCell } from "../shared/observable.ts";
 type SignaturePresentation = Omit<SignatureResult, "signatures"> & Readonly<{ signatures: readonly (Omit<SignatureResult["signatures"][number], "parameters"> & Readonly<{
     activeParameter?: number | null; content?: DocumentationContent;

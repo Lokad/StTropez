@@ -28,7 +28,7 @@ includes that unproved text. Multiple distant edits can therefore include unchan
 them; each transfer stays bounded and exact.
 
 The host owns `examples/editing/navigation-client.ts`; the worker owns
-`examples/probes/project.ts`. This is a narrow local protocol, independent of editor policy and
+`fixtures/language/project.ts`. This is a narrow local protocol, independent of editor policy and
 application services. Every packet and acknowledgement carries protocol version 1, a connection
 epoch and a strictly increasing sequence number. Document operations carry explicit identity
 and target revision; changes require the exact prior acknowledged revision. Target revisions may

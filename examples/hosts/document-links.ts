@@ -2,9 +2,9 @@ import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, 
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
 import { createNavigationClient, navigationMetrics } from "../editing/navigation-client.ts";
-import { linkLimits, validateLinksInput } from "../probes/links.ts";
-import type { LinksInput, LinksResult, ModuleLink } from "../probes/links.ts";
-import { validDomainModule } from "../probes/domain.ts";
+import { linkLimits, validateLinksInput } from "../../fixtures/language/links.ts";
+import type { LinksInput, LinksResult, ModuleLink } from "../../fixtures/language/links.ts";
+import { validDomainModule } from "../../fixtures/language/domain.ts";
 import { HostCell } from "../shared/observable.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
 type Source = { document: DocumentSnapshot; authority: string };

@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { Workspace } from "../src/index.ts";
 import type { EditingCandidate } from "../src/browser/index.ts";
 import { createHoverController } from "../examples/editing/hover-controller.ts";
-import { provideHover } from "../examples/probes/hover.ts";
-import type { HoverInput } from "../examples/probes/hover.ts";
+import { provideHover } from "../fixtures/language/hover.ts";
+import type { HoverInput } from "../fixtures/language/hover.ts";
 import type { AbsoluteHover, HoverBackend } from "../examples/editing/hover-backend.ts";
 class FixtureWorker extends EventTarget {
     readonly sent: HoverInput[] = []; terminated = false;
