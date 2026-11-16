@@ -1,8 +1,8 @@
-import { RpcError } from "../../src/protocol/index.ts";
-import type { LspSessionAccess, LspWorkspace } from "../../src/protocol/index.ts";
-import type { ProjectCommand } from "../../fixtures/language/project-commands.ts";
-import { createLspCommandRunner } from "../../src/protocol/index.ts";
-import type { LspCommandScope } from "../../src/protocol/index.ts";
+import { RpcError } from "../../../src/protocol/index.ts";
+import type { LspSessionAccess, LspWorkspace } from "../../../src/protocol/index.ts";
+import type { ProjectCommand } from "../../../fixtures/language/project-commands.ts";
+import { createLspCommandRunner } from "../../../src/protocol/index.ts";
+import type { LspCommandScope } from "../../../src/protocol/index.ts";
 
 export type LspProjectScope = LspCommandScope;
 export type LspProjectOptions = Readonly<{ provider: LspWorkspace; reviewCommand: string; statusCommand: string;

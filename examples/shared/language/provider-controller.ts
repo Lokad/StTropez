@@ -1,10 +1,10 @@
-import { anchoredRange } from "../../src/index.ts";
-import type { ResourceLease, Selection, TabId, Workspace } from "../../src/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import { anchoredRange } from "../../../src/index.ts";
+import type { ResourceLease, Selection, TabId, Workspace } from "../../../src/index.ts";
+import type { EditingCandidate } from "../../../src/browser/index.ts";
 import type { Diagnostic, ProviderOptions, ProviderSnapshot } from "./provider-contract.ts";
-import type { ProviderInput, ProviderResult } from "../../fixtures/language/provider.ts";
-import { validateProviderResult } from "../../fixtures/language/provider.ts";
-import { HostCell } from "../shared/observable.ts";
+import type { ProviderInput, ProviderResult } from "../../../fixtures/language/provider.ts";
+import { validateProviderResult } from "../../../fixtures/language/provider.ts";
+import { HostCell } from "../observable.ts";
 type Pending = Readonly<{ input: ProviderInput; from: number; selection: Selection; lease: ResourceLease; startsInWord: boolean; endsInWord: boolean }>;
 
 /** Synthetic host service shared by fixtures. No DOM controls or authoritative source mirror. */

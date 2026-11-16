@@ -1,9 +1,9 @@
-import type { DocumentId, DocumentSnapshot } from "../../src/index.ts";
-import type { LspWorkspaceEdit } from "../../src/protocol/index.ts";
-import type { NavigationResult } from "../../fixtures/language/navigation.ts";
-import type { RenameCapture } from "../../fixtures/language/rename.ts";
-import { CleanupScope } from "../shared/cleanup-scope.ts";
-import type { ProviderBackend } from "../shared/provider-lane.ts";
+import type { DocumentId, DocumentSnapshot } from "../../../src/index.ts";
+import type { LspWorkspaceEdit } from "../../../src/protocol/index.ts";
+import type { NavigationResult } from "../../../fixtures/language/navigation.ts";
+import type { RenameCapture } from "../../../fixtures/language/rename.ts";
+import { CleanupScope } from "../cleanup-scope.ts";
+import type { ProviderBackend } from "../provider-lane.ts";
 import { createNavigationClient } from "./navigation-client.ts";
 import type { NavigationMetrics } from "./navigation-service.ts";
 import type { LspRenameClient, LspRenameFactory } from "./lsp-rename-client.ts";

@@ -4,7 +4,7 @@ import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
 import { DomainAnnotationIndex, FixtureDomainProvider, validateDomainResult } from "../../fixtures/language/domain.ts";
 import type { DomainAnnotation, DomainInput, DomainProvider } from "../../fixtures/language/domain.ts";
-import type { EditingPresentation } from "../editing/presentation.ts";
+import type { EditingPresentation } from "../shared/language/presentation.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type OwnedFold = { id: string; from: number; to: number };

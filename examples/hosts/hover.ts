@@ -1,7 +1,7 @@
 import type { Affinity, TabId, Workspace } from "../../src/index.ts";
 import type { DocumentationContent, EditingCandidate } from "../../src/browser/index.ts";
-import { createHoverController } from "../editing/hover-controller.ts";
-import type { HoverSnapshot } from "../editing/hover-controller.ts";
+import { createHoverController } from "../shared/language/hover-controller.ts";
+import type { HoverSnapshot } from "../shared/language/hover-controller.ts";
 import { HostCell } from "../shared/observable.ts";
 type Session = { id: string; editor: EditingCandidate; controller: ReturnType<typeof createHoverController>;
     affinity: Affinity; offset: number; overTarget: boolean; scheduled: boolean; cancelTimers: () => void };

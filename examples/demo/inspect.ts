@@ -1,9 +1,9 @@
 import type { Workspace } from "../../src/index.ts";
 import type { EditingCandidate } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
-import { createLspHoverClient } from "../editing/lsp-hover-client.ts";
-import { createHoverController } from "../editing/hover-controller.ts";
-import { lspSignatureBackend } from "../editing/lsp-language-clients.ts";
+import { createLspHoverClient } from "../shared/language/lsp-hover-client.ts";
+import { createHoverController } from "../shared/language/hover-controller.ts";
+import { lspSignatureBackend } from "../shared/language/lsp-language-clients.ts";
 import { HostHoverTools } from "../hosts/hover.ts";
 import { mountHoverPanel } from "../hosts/hover-panel.ts";
 import { HostSignatureTools } from "../hosts/signature.ts";

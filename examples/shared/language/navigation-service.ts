@@ -1,6 +1,6 @@
-import type { TextBuffer } from "../../src/index.ts";
-import type { LspSession } from "../../src/protocol/index.ts";
-import type { NavigationInput, NavigationResult } from "../../fixtures/language/navigation.ts";
+import type { TextBuffer } from "../../../src/index.ts";
+import type { LspSession } from "../../../src/protocol/index.ts";
+import type { NavigationInput, NavigationResult } from "../../../fixtures/language/navigation.ts";
 
 export type NavigationMetrics = { created: number; posted: number; received: number; transferred: number; maxChunk: number; completed: number; failed: number; terminated: number;
     opened: number; changed: number; closed: number; reused: number; snapshotUnits: number; deltaUnits: number; planningTurns: number; rejected: number };

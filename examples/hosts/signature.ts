@@ -2,8 +2,8 @@ import type { DocumentId, DocumentSnapshot, TabId, TabTarget, TextBuffer, Worksp
 import type { LspSignatureContext } from "../../src/protocol/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, DocumentationContent, EditingCandidate } from "../../src/browser/index.ts";
-import { createNavigationClient } from "../editing/navigation-client.ts";
-import { navigationMetrics } from "../editing/navigation-service.ts";
+import { createNavigationClient } from "../shared/language/navigation-client.ts";
+import { navigationMetrics } from "../shared/language/navigation-service.ts";
 import { signatureTriggerName, validateSignatureInput } from "../../fixtures/language/signature.ts";
 import type { SignatureInput, SignatureResult } from "../../fixtures/language/signature.ts";
 import { HostCell } from "../shared/observable.ts";

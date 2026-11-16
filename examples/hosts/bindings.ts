@@ -2,7 +2,7 @@ import { inputConflictEvent, mountEditingCandidate, mountTextComparison, mountTe
 import type { EditingCandidate, MountedEditor, TextComparison, ViewportSnapshot, ViewState } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId, TabTarget } from "../../src/index.ts";
 import type { HostController } from "./controller.ts";
-import { EditingPresentation } from "../editing/presentation.ts";
+import { EditingPresentation } from "../shared/language/presentation.ts";
 import { comparisonSettled, editorSettled } from "../shared/readiness.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
 import { HostLanguageTools } from "./language.ts";

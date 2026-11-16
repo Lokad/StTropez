@@ -1,9 +1,9 @@
 import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, TextBuffer, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
-import type { EditingPresentation } from "../editing/presentation.ts";
-import { createNavigationClient } from "../editing/navigation-client.ts";
-import { navigationMetrics } from "../editing/navigation-service.ts";
+import type { EditingPresentation } from "../shared/language/presentation.ts";
+import { createNavigationClient } from "../shared/language/navigation-client.ts";
+import { navigationMetrics } from "../shared/language/navigation-service.ts";
 import { colorLimits, parseColor, rgbaColor, sameColor, validateColorsInput, validateColorPresentationInput } from "../../fixtures/language/colors.ts";
 import type { ColorFault, ColorsInput, ColorsResult, ColorReference, ColorPresentationInput, ColorPresentationsResult } from "../../fixtures/language/colors.ts";
 import { DomainAnnotationIndex } from "../../fixtures/language/domain.ts";

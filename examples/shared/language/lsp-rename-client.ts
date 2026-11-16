@@ -1,6 +1,6 @@
-import { createLspRenameClient as createClient } from "../../src/protocol/index.ts";
-import type { LspSessionAccess, LspWorkspace } from "../../src/protocol/index.ts";
-import type { DocumentId, DocumentSnapshot } from "../../src/index.ts";
+import { createLspRenameClient as createClient } from "../../../src/protocol/index.ts";
+import type { LspSessionAccess, LspWorkspace } from "../../../src/protocol/index.ts";
+import type { DocumentId, DocumentSnapshot } from "../../../src/index.ts";
 export type LspRenameConfiguration = Readonly<{ delay: number; fault?: "malformed" | "failure" }>;
 export type LspRenameOptions = Readonly<{ provider: LspWorkspace;
     beforeRequest?: (session: LspSessionAccess, configuration: LspRenameConfiguration) => Promise<unknown> }>;

@@ -3,7 +3,7 @@ import type { EditingCandidate } from "../../src/browser/index.ts";
 import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
 import { HostActionsTools } from "../hosts/code-actions.ts";
 import { HostProjectTools } from "../hosts/project.ts";
-import { createLspActionClient } from "../editing/lsp-action-client.ts";
+import { createLspActionClient } from "../shared/language/lsp-action-client.ts";
 import { demoCommandPolicy } from "./action-commands.ts";
 import { projectReviewNote } from "./action-fixture.ts";
 import type { DemoFile } from "./project.ts";

@@ -1,8 +1,8 @@
-import type { FoldIndex, ResourceLease, SelectionSet, TabId, Workspace } from "../../src/index.ts";
-import type { DocumentationContent, EditingCandidate } from "../../src/browser/index.ts";
-import { HostCell } from "../shared/observable.ts";
-import { validateHoverResult } from "../../fixtures/language/hover.ts";
-import type { HoverInput } from "../../fixtures/language/hover.ts";
+import type { FoldIndex, ResourceLease, SelectionSet, TabId, Workspace } from "../../../src/index.ts";
+import type { DocumentationContent, EditingCandidate } from "../../../src/browser/index.ts";
+import { HostCell } from "../observable.ts";
+import { validateHoverResult } from "../../../fixtures/language/hover.ts";
+import type { HoverInput } from "../../../fixtures/language/hover.ts";
 import type { AbsoluteHover, HoverBackend } from "./hover-backend.ts";
 
 type Capture = Readonly<{ input: HoverInput; from: number; selectionSet: SelectionSet; folds: FoldIndex; startsInWord: boolean; endsInWord: boolean; lease: ResourceLease }>;

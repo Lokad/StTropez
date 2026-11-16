@@ -1,7 +1,7 @@
 import type { TabId, Workspace } from "../../src/index.ts";
 import type { EditingCandidate } from "../../src/browser/index.ts";
-import { createProviderController } from "./provider-controller.ts";
-import type { EditingPresentation } from "./presentation.ts";
+import { createProviderController } from "../shared/language/provider-controller.ts";
+import type { EditingPresentation } from "../shared/language/presentation.ts";
 
 /** The editing playground renders its own controls around the shared host service. */
 export function mountProviderUI(workspace: Workspace, tabId: TabId, editor: EditingCandidate, presentation: EditingPresentation) {

@@ -1,8 +1,8 @@
-import type { InlineDecoration, PresentedLine } from "../../src/browser/index.ts";
-import type { SearchMatch } from "../../src/index.ts";
-import { tokenizeLine } from "../../fixtures/language/provider.ts";
-import type { Token } from "../../fixtures/language/provider.ts";
-import type { DomainAnnotationIndex } from "../../fixtures/language/domain.ts";
+import type { InlineDecoration, PresentedLine } from "../../../src/browser/index.ts";
+import type { SearchMatch } from "../../../src/index.ts";
+import { tokenizeLine } from "../../../fixtures/language/provider.ts";
+import type { Token } from "../../../fixtures/language/provider.ts";
+import type { DomainAnnotationIndex } from "../../../fixtures/language/domain.ts";
 
 /** Bounded development lexer cache: unchanged visible line fragments reuse local token offsets. */
 export class EditingPresentation {

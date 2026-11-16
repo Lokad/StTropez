@@ -1,7 +1,7 @@
 import { createFindController, createRegexFindBackend } from "../../src/browser/index.ts";
 import type { EditingCandidate } from "../../src/browser/index.ts";
 import type { TabId, Workspace } from "../../src/index.ts";
-import type { EditingPresentation } from "./presentation.ts";
+import type { EditingPresentation } from "../shared/language/presentation.ts";
 
 export function mountFindUI(workspace: Workspace, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation) {
     const owner = editor.element.ownerDocument;

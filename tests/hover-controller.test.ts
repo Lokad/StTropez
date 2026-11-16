@@ -2,10 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Workspace } from "../src/index.ts";
 import type { EditingCandidate } from "../src/browser/index.ts";
-import { createHoverController } from "../examples/editing/hover-controller.ts";
+import { createHoverController } from "../examples/shared/language/hover-controller.ts";
 import { provideHover } from "../fixtures/language/hover.ts";
 import type { HoverInput } from "../fixtures/language/hover.ts";
-import type { AbsoluteHover, HoverBackend } from "../examples/editing/hover-backend.ts";
+import type { AbsoluteHover, HoverBackend } from "../examples/shared/language/hover-backend.ts";
 class FixtureWorker extends EventTarget {
     readonly sent: HoverInput[] = []; terminated = false;
     postMessage(text: string): void { this.sent.push(JSON.parse(text) as HoverInput); }

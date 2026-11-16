@@ -1,7 +1,7 @@
-import type { DocumentId, DocumentSnapshot } from "../../src/index.ts";
-import type { ActionInput, ActionResult } from "../../fixtures/language/actions.ts";
-import { CleanupScope } from "../shared/cleanup-scope.ts";
-import type { ProviderBackend } from "../shared/provider-lane.ts";
+import type { DocumentId, DocumentSnapshot } from "../../../src/index.ts";
+import type { ActionInput, ActionResult } from "../../../fixtures/language/actions.ts";
+import { CleanupScope } from "../cleanup-scope.ts";
+import type { ProviderBackend } from "../provider-lane.ts";
 import { createNavigationClient } from "./navigation-client.ts";
 import type { NavigationMetrics } from "./navigation-service.ts";
 import type { LspActionBatch, LspActionClient, LspActionFactory } from "./lsp-action-client.ts";

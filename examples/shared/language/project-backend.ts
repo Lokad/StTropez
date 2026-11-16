@@ -1,8 +1,8 @@
-import type { DocumentSnapshot } from "../../src/index.ts";
-import type { LspCommandScope } from "../../src/protocol/index.ts";
-import type { ProjectCommand, ProjectOutcome, ProjectServerRequest } from "../../fixtures/language/project-commands.ts";
-import { CleanupScope } from "../shared/cleanup-scope.ts";
-import type { ProviderBackend } from "../shared/provider-lane.ts";
+import type { DocumentSnapshot } from "../../../src/index.ts";
+import type { LspCommandScope } from "../../../src/protocol/index.ts";
+import type { ProjectCommand, ProjectOutcome, ProjectServerRequest } from "../../../fixtures/language/project-commands.ts";
+import { CleanupScope } from "../cleanup-scope.ts";
+import type { ProviderBackend } from "../provider-lane.ts";
 import { createNavigationClient } from "./navigation-client.ts";
 import type { NavigationMetrics } from "./navigation-service.ts";
 import type { LspProjectClient, LspProjectFactory } from "./lsp-project-client.ts";

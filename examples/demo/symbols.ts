@@ -3,7 +3,7 @@ import type { EditingCandidate } from "../../src/browser/index.ts";
 import { createLspNavigationClient } from "../../src/protocol/index.ts";
 import type { LspLocation, LspWorkspace } from "../../src/protocol/index.ts";
 import { HostRenameTools } from "../hosts/rename.ts";
-import { createLspRenameClient } from "../editing/lsp-rename-client.ts";
+import { createLspRenameClient } from "../shared/language/lsp-rename-client.ts";
 import type { DemoFile } from "./project.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 

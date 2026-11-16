@@ -1,8 +1,8 @@
 import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, TextBuffer, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
-import { createNavigationClient } from "../editing/navigation-client.ts";
-import { navigationMetrics } from "../editing/navigation-service.ts";
+import { createNavigationClient } from "../shared/language/navigation-client.ts";
+import { navigationMetrics } from "../shared/language/navigation-service.ts";
 import { linkLimits, validateLinksInput } from "../../fixtures/language/links.ts";
 import type { LinksInput, LinksResult, ModuleLink } from "../../fixtures/language/links.ts";
 import { validDomainModule } from "../../fixtures/language/domain.ts";

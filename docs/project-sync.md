@@ -17,7 +17,7 @@ receive versioned close messages. New documents open through bounded snapshots. 
 documents receive a raw UTF-16 replacement followed by its insertion chunks. Metadata-only
 save activity sends no text.
 
-`examples/editing/project-change.ts` reuses `TextBuffer.sharedEdge` to prove common edges by
+`examples/shared/language/project-change.ts` reuses `TextBuffer.sharedEdge` to prove common edges by
 immutable backing identity. Its cursor visits at most 64 proof checkpoints per call and yields
 between calls, without a character scan or complete export. When unchanged edges retain backing
 identity, a small edit sends only inserted text; undo can delete with no insertion payload.
@@ -27,7 +27,7 @@ acknowledged buffer sends only version metadata. If identity cannot prove an edg
 includes that unproved text. Multiple distant edits can therefore include unchanged text between
 them; each transfer stays bounded and exact.
 
-The host owns `examples/editing/navigation-client.ts`; the worker owns
+The host owns `examples/shared/language/navigation-client.ts`; the worker owns
 `fixtures/language/project.ts`. This is a narrow local protocol, independent of editor policy and
 application services. Every packet and acknowledgement carries protocol version 1, a connection
 epoch and a strictly increasing sequence number. Document operations carry explicit identity

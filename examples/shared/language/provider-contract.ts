@@ -1,6 +1,6 @@
-import type { Observable, TabId, Workspace } from "../../src/index.ts";
-import type { JsonValue, LspSession } from "../../src/protocol/index.ts";
-import type { EditingCandidate, LspEditorSnippet } from "../../src/browser/index.ts";
+import type { Observable, TabId, Workspace } from "../../../src/index.ts";
+import type { JsonValue, LspSession } from "../../../src/protocol/index.ts";
+import type { EditingCandidate, LspEditorSnippet } from "../../../src/browser/index.ts";
 
 export type Diagnostic = Readonly<{ from: number; to: number; message: string }>;
 

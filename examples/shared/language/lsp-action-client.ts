@@ -1,6 +1,6 @@
-import { createLspActionClient as createClient } from "../../src/protocol/index.ts";
-import type { LspCommandPolicy, LspSessionAccess, LspWorkspace } from "../../src/protocol/index.ts";
-import type { DocumentId, DocumentSnapshot } from "../../src/index.ts";
+import { createLspActionClient as createClient } from "../../../src/protocol/index.ts";
+import type { LspCommandPolicy, LspSessionAccess, LspWorkspace } from "../../../src/protocol/index.ts";
+import type { DocumentId, DocumentSnapshot } from "../../../src/index.ts";
 export type LspActionConfiguration = Readonly<{ module: string; delay: number; fault?: "malformed" | "failure" | "incomplete" | "markup" }>;
 export type LspActionOptions = Readonly<{ provider: LspWorkspace;
     commandPolicy?: LspCommandPolicy;

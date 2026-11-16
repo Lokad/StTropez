@@ -3,7 +3,7 @@ import type { EditingCommand, LanguageConfiguration, FoldRange, Selection, TextE
 import { inputConflictEvent, mountEditingCandidate, createFoldingController } from "../../src/browser/index.ts";
 import type { CandidateEditTransform, FoldDiscovery, FoldCommand, FoldingController, InputConflictDetail } from "../../src/browser/index.ts";
 import { corpus, corpusIds } from "../../fixtures/workloads.ts";
-import { EditingPresentation } from "./presentation.ts";
+import { EditingPresentation } from "../shared/language/presentation.ts";
 import { editorSettled } from "../shared/readiness.ts";
 import { mountFindUI } from "./find-ui.ts";
 import { mountProviderUI } from "./provider-ui.ts";

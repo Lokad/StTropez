@@ -1,8 +1,8 @@
 import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
-import { createNavigationClient } from "../editing/navigation-client.ts";
-import type { NavigationMetrics, SyncFault, NavigationService, NavigationServiceFactory } from "../editing/navigation-service.ts";
+import { createNavigationClient } from "../shared/language/navigation-client.ts";
+import type { NavigationMetrics, SyncFault, NavigationService, NavigationServiceFactory } from "../shared/language/navigation-service.ts";
 import { navigationLimits, navigationSymbol, validateNavigationInput } from "../../fixtures/language/navigation.ts";
 import type { NavigationInput, NavigationLocation } from "../../fixtures/language/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
