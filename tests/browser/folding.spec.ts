@@ -115,7 +115,11 @@ test("a host generator may invalidate itself without reentrant cancellation or l
         const f = window.editingFixture; f.setText("head\n  child\nend"); let first = true;
         Object.assign(window, { foldIteratorClosed: false });
         f.discoverFolds(function* () {
-            if (first) { first = false; try { f.edit([{ from: 0, to: 0, insert: "prefix\n" }]); yield; } finally { Object.assign(window, { foldIteratorClosed: true }); } }
+            if (first) { first = false; try {
+                // Cross a task boundary before invalidating the running generator.
+                for (let batch = 0; batch < 10; batch++) yield;
+                f.edit([{ from: 0, to: 0, insert: "prefix\n" }]); yield;
+            } finally { Object.assign(window, { foldIteratorClosed: true }); } }
             return [];
         });
     });
