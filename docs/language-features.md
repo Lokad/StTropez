@@ -194,6 +194,8 @@ subtree. `setContent` reuses an unchanged immutable array; `dispose` removes the
 The renderer supports plaintext, paragraphs, emphasis/strong emphasis, flat ordered/unordered
 lists, inline code, fenced code and inline links. Code language labels are metadata. It creates
 text nodes and elements without inserting provider HTML or loading images/embedded content.
+Inline parsing stops at nesting depth 16, leaving the remaining text literal. Link destinations
+are interpreted only when their raw span is at most 8,192 UTF-16 units, before trimming or unescaping.
 
 Links are buttons with opaque destinations. Without `openLink` they are inert. `canOpenLink` is
 checked at rendering and activation, but the host callback must enforce its destination policy
