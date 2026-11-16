@@ -185,8 +185,8 @@ keep Save/Run on their captured resource; later typing survives an earlier Save 
 Both hosts own one exported `LspWorkspace` per workspace/provider configuration, connecting on
 explicit view activation. Feature/view scopes share bindings, synchronization and diagnostics;
 disposing one view cannot close another's document or transport. Custom fixture configuration
-stays in host hooks. Hover, signature, link discovery and color fault/delay policy is copied
-inside the captured preparation hook
+stays in host hooks. Completion, hover, navigation, rename, signature, link discovery and
+color fault/delay policy is copied inside the captured preparation hook
 and attached to that request's `_fixture` parameters by `FixtureLspWorkspace`. Cancelling
 the scope discards unsent policy; independent view scopes cannot overwrite it. This is a
 development-peer extension, not a production LSP requirement. Link resolution accepts policy
@@ -194,8 +194,12 @@ on its own request, independently of discovery. Shared language backends contain
 configuration messages; hosts inject preparation when needed. A fixture's fixed module URI
 catalogue can be supplied as `initializationOptions.fixtureModuleUris`; discovery requests
 may supply their own captured `aliases` in `_fixture`. The packaged consumer uses the fixed
-catalogue and the unchanged public clients. Other fixture feature lanes still use
-connection-wide configuration and await the same migration.
+catalogue and the unchanged public clients. Completion's latest intent may replace its
+abandoned unsent policy: cancelling a completion does not disconnect its feature scope.
+Already dispatched requests keep their own captured policy. Unused completion-resolve
+configuration controls are removed; decoder tests cover malformed/retargeted results and
+browser tests hold responses by request ID to check late-result rejection. Action/command
+fixture policy still uses connection-wide configuration and awaits the same migration.
 The [workspace-provider adapter](lsp-server-edits.md) uses that same connection
 and a shared exclusive command lane for confirmed action/workspace commands and edit decisions. The
 [remaining LSP matrix](lsp.md) describes the selected remaining feature gaps.

@@ -66,11 +66,9 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
         const notify = (method: string, params: unknown) => peer.sendNotification(method, params).catch(() => { if (socket.readyState === 1) socket.close(1011, "Fixture notification failed"); });
         const documents = new Map<string, TextDocument>(), syncFailures: string[] = [], syncCounts = new Map<string, { open: number; change: number; close: number }>(); let initializeCount = 0;
         const countSync = (uri: string, kind: "open" | "change" | "close") => { const counts = syncCounts.get(uri) ?? { open: 0, change: 0, close: 0 }; counts[kind]++; syncCounts.set(uri, counts); };
-        const pending = new Set<() => void>(); let completionConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, completionStyle = "edits", interactiveCompletion = false, hostProfile = false;
-        let completionResolveConfig: { delay: number; late?: boolean; fault?: "retarget" | "malformed" } = { delay: 0 };
+        const pending = new Set<() => void>(); let completionStyle = "edits", interactiveCompletion = false, hostProfile = false;
         let projectModuleUris: ReturnType<typeof moduleUris> = [];
-        let navigationConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, definitionLinks = false;
-        let renameConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, versionedEdits = false;
+        let definitionLinks = false, versionedEdits = false;
         type ActionConfig = { module: string; delay: number; fault?: "malformed" | "failure" | "incomplete" | "markup" };
         let actionConfig: ActionConfig = { module: "sample-utils", delay: 0 }, actionResolveConfig: ActionConfig = { module: "sample-utils", delay: 0 }, actionGeneration = 0, actionLiterals = false, actionResolve = false;
         const actionResolutions = new Map<number, WorkspaceEdit>();
@@ -197,9 +195,6 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
                 return { contents: [{ language: "fixture", value: symbol.text.slice(symbol.from + symbol.result.range.from, symbol.from + symbol.result.range.to) }, symbol.result.text], range: symbol.range };
             });
         });
-        peer.onRequest("fixture/navigationConfig", (params: typeof navigationConfig) => {
-            if (!params || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure"].includes(params.fault)) throw new ResponseError(-32602, "Invalid navigation configuration"); navigationConfig = { ...params }; return null;
-        });
         const scanLocations = async (project: readonly TextDocument[], name: string, kind: "definition" | "references", includeDeclaration: boolean, token: CancellationToken) => {
             const locations: Location[] = []; let overflow = false;
             for (const doc of project) {
@@ -218,12 +213,9 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
             // The lexical fixture proves document-local protocol shape, not read/write semantics.
             return (await scanLocations([doc], name, "references", true, token)).map(location => ({ range: location.range, kind: 1 }));
         });
-        peer.onRequest("fixture/renameConfig", (params: typeof renameConfig) => {
-            if (!params || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure"].includes(params.fault)) throw new ResponseError(-32602, "Invalid rename configuration"); renameConfig = { ...params }; return null;
-        });
-        peer.onRequest("textDocument/rename", (params: { textDocument: { uri: string }; position: { line: number; character: number }; newName: string }, token) => {
+        peer.onRequest("textDocument/rename", (params: { textDocument: { uri: string }; position: { line: number; character: number }; newName: string; _fixture?: unknown }, token) => {
             const origin = documents.get(params.textDocument.uri); if (!origin || typeof params.newName !== "string" || !renameName(params.newName)) throw new ResponseError(-32602, "Fixture rename needs an open source and a supported new identifier");
-            const config = renameConfig, project = [...documents.values()]; renameConfig = { delay: 0 };
+            const config = requestPolicy(params._fixture, ["malformed", "failure"]), project = [...documents.values()];
             return deferred(config.delay, token, async (): Promise<WorkspaceEdit | null> => {
                 if (config.fault === "failure") throw new ResponseError(-32001, "Fixture rename unavailable");
                 const symbol = symbolAt(origin, params.position); if (!symbol.result.range) return null;
@@ -238,10 +230,10 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
                 return versionedEdits ? { documentChanges: [...changes].map(([uri, edits]) => ({ textDocument: { uri, version: project.find(doc => doc.uri === uri)?.version ?? null }, edits: [...edits].reverse() })) } : { changes: Object.fromEntries(changes) };
             });
         });
-        for (const kind of ["definition", "references"] as const) peer.onRequest(`textDocument/${kind}`, (params: { textDocument: { uri: string }; position: { line: number; character: number }; context?: { includeDeclaration: boolean } }, token) => {
+        for (const kind of ["definition", "references"] as const) peer.onRequest(`textDocument/${kind}`, (params: { textDocument: { uri: string }; position: { line: number; character: number }; context?: { includeDeclaration: boolean }; _fixture?: unknown }, token) => {
             const origin = documents.get(params.textDocument.uri); if (!origin) throw new ResponseError(-32602, "Document not open");
             if (kind === "references" && typeof params.context?.includeDeclaration !== "boolean") throw new ResponseError(-32602, "References require declaration context");
-            const config = navigationConfig, project = [...documents.values()]; navigationConfig = { delay: 0 };
+            const config = requestPolicy(params._fixture, ["malformed", "failure"]), project = [...documents.values()];
             return deferred(config.delay, token, async () => {
                 if (config.fault === "failure") throw new ResponseError(-32001, "Fixture navigation unavailable");
                 const symbol = symbolAt(origin, params.position); if (!symbol.result.range) return [];
@@ -341,10 +333,6 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
                 return { ...params, edit };
             });
         });
-        peer.onRequest("fixture/completionConfig", (params: typeof completionConfig) => {
-            if (!params || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure"].includes(params.fault)) throw new ResponseError(-32602, "Invalid fixture configuration");
-            completionConfig = { ...params }; return null;
-        });
         peer.onRequest("fixture/completionStyle", async (params: { style: string }) => {
             if (!params || !["edits", "defaults", "plain", "interactive", "incomplete"].includes(params.style)) throw new ResponseError(-32602, "Invalid completion style");
             const interactive = params.style === "interactive" || params.style === "incomplete";
@@ -354,19 +342,12 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
             if (!interactive && interactiveCompletion) await peer.sendRequest(UnregistrationRequest.type, { unregisterations: [{ id: "fixture-completion", method: "textDocument/completion" }] });
             interactiveCompletion = interactive; completionStyle = params.style; return null;
         });
-        peer.onRequest("fixture/completionResolveConfig", (params: typeof completionResolveConfig) => {
-            if (!params || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.late !== undefined && typeof params.late !== "boolean"
-                || params.fault !== undefined && !["retarget", "malformed"].includes(params.fault)) throw new ResponseError(-32602, "Invalid completion resolve configuration");
-            completionResolveConfig = { ...params }; return null;
-        });
         peer.onRequest("completionItem/resolve", (params: CompletionList["items"][number], token) => {
-            const config = completionResolveConfig; completionResolveConfig = { delay: 0 };
-            return deferred(config.delay, config.late ? { isCancellationRequested: false, onCancellationRequested: () => ({ dispose() {} }) } : token, () => {
+            return deferred(0, token, () => {
                 const data = params.data as { uri?: string; import?: boolean } | undefined, doc = data?.uri ? documents.get(data.uri) : undefined;
                 if (!doc) throw new ResponseError(-32602, "Completion resolve document unavailable");
                 const additionalTextEdits = data?.import ? [{ range: { start: doc.positionAt(0), end: doc.positionAt(0) }, newText: "// resolved import\r\n" }] : [];
-                if (config.fault === "malformed") additionalTextEdits.push({ range: { start: doc.positionAt(0), end: { line: doc.lineCount + 1, character: 0 } }, newText: "bad" });
-                return { ...params, ...(config.fault === "retarget" ? { label: "Retargeted" } : {}), detail: `Resolved ${params.label}`, documentation: "<b>Literal completion detail</b>", additionalTextEdits };
+                return { ...params, detail: `Resolved ${params.label}`, documentation: "<b>Literal completion detail</b>", additionalTextEdits };
             });
         });
         peer.onRequest("fixture/diagnostics", (params: { uri: string; mode: "normal" | "malformed" | "out-of-bounds" | "stale" | "unversioned" | "clear" | "html" }) => {
@@ -378,9 +359,9 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
             if (params.mode === "html") diagnostics.push({ range: { start: doc.positionAt(0), end: doc.positionAt(0) }, message: "<img src=x onerror=unsafe()>", severity: 2 });
             return notify("textDocument/publishDiagnostics", { uri: doc.uri, ...(params.mode === "unversioned" ? {} : { version: params.mode === "stale" ? doc.version - 1 : doc.version }), diagnostics }).then(() => ({ version: doc.version }));
         });
-        peer.onRequest("textDocument/completion", (params: { textDocument: { uri: string }; position: { line: number; character: number }; context?: { triggerKind?: number } }, token) => {
+        peer.onRequest("textDocument/completion", (params: { textDocument: { uri: string }; position: { line: number; character: number }; context?: { triggerKind?: number }; _fixture?: unknown }, token) => {
             const doc = documents.get(params.textDocument.uri); if (!doc) throw new ResponseError(-32602, "Document not open");
-            const config = completionConfig, style = completionStyle; completionConfig = { delay: 0 };
+            const config = requestPolicy(params._fixture, ["malformed", "failure"]), style = completionStyle;
             return new Promise<CompletionList>((resolve, reject) => {
                 let done = false; const finish = () => { if (done) return false; done = true; clearTimeout(timer); stop.dispose(); pending.delete(cancel); return true; };
                 const cancel = () => { if (finish()) reject(new ResponseError(-32800, "Fixture completion cancelled")); };

@@ -183,7 +183,17 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "plain" })); await offer(page); await field(page).press("Alt+Enter"); expect(await source(page)).toBe("const sample = 1; // TODO\r\n");
     });
     test("pending results expire on navigation, authority changes and remount; outage preserves typing", async ({ page }) => {
+        const requests: { _fixture?: { fault?: string } }[] = [];
+        page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "textDocument/completion") requests.push(value.params); }));
         const original = "const saMORE = 1; // TODO"; await seed(page, original); await offer(page); await button(page, "Cancel request").click();
+        const sent = requests.length;
+        await field(page).focus(); await field(page).evaluate(node => {
+            window.hostFixture.faultProviderNext("failure"); window.hostFixture.requestProvider();
+            node.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+        });
+        await expect.poll(async () => (await provider(page)).pending).toBe(false); await offer(page);
+        expect(requests).toHaveLength(sent + 1); expect(requests.at(-1)!._fixture?.fault).toBeUndefined();
+        await button(page, "Cancel request").click();
         await page.evaluate(() => window.hostFixture.setProviderDelay(1000)); await field(page).press("Control+Space"); await expect.poll(async () => (await provider(page)).pending).toBe(true);
         await field(page).press("ArrowRight"); await expect.poll(async () => (await provider(page)).pending).toBe(false); await expect(page.getByRole("option")).toHaveCount(0);
         await page.evaluate(() => window.hostFixture.setProviderDelay(0)); await offer(page);

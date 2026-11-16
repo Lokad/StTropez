@@ -3,13 +3,14 @@ import type { JsonValue, LspDocumentFeature, LspSessionAccess, LspWorkspaceScope
 
 /** Development-peer policy travels with its request, never in connection-wide configuration. */
 export class FixtureLspWorkspace extends LspWorkspace {
-    private readonly preparations = new WeakMap<LspSessionAccess, (method: LspDocumentFeature, policy: JsonValue) => void>();
+    private readonly preparations = new WeakMap<LspSessionAccess, (method: LspDocumentFeature, policy: JsonValue, replacePending: boolean) => void>();
 
     /** Call synchronously inside the feature's preparation hook, before any optional await. */
-    async prepareRequest(scope: LspSessionAccess, method: LspDocumentFeature, policy: Readonly<Record<string, JsonValue>>): Promise<void> {
+    async prepareRequest(scope: LspSessionAccess, method: LspDocumentFeature, policy: Readonly<Record<string, JsonValue>>,
+        options: Readonly<{ replacePending?: boolean }> = {}): Promise<void> {
         const prepare = this.preparations.get(scope);
         if (!prepare) throw new Error("Request policy requires a live scope from this fixture workspace.");
-        prepare(method, structuredClone(policy));
+        prepare(method, structuredClone(policy), options.replacePending === true);
     }
 
     override createScope(): LspWorkspaceScope {
@@ -26,8 +27,10 @@ export class FixtureLspWorkspace extends LspWorkspace {
             disconnect: () => { pending = undefined; scope.disconnect(); },
             dispose: () => { pending = undefined; this.preparations.delete(wrapped); scope.dispose(); },
         });
-        this.preparations.set(wrapped, (method, policy) => {
-            if (pending) throw new Error("A fixture request already owns this scope's pending policy.");
+        this.preparations.set(wrapped, (method, policy, replacePending) => {
+            // Completion invalidates its previous intent without disconnecting this scope.
+            // Only that latest-intent owner may replace an abandoned preparation for the same method.
+            if (pending && (!replacePending || pending.method !== method)) throw new Error("A fixture request already owns this scope's pending policy.");
             pending = { method, policy };
         });
         return wrapped;

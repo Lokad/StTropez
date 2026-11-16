@@ -5,7 +5,7 @@ import { attachProtocolFixture } from "../examples/protocol/fixture-server.ts";
 import { FixtureLspWorkspace } from "../examples/protocol/fixture-workspace.ts";
 import { Workspace } from "../src/index.ts";
 import { openWebSocketTransport } from "../src/browser/index.ts";
-import { RpcError, createLspColorClient, createLspHoverClient, createLspLinkClient, createLspSignatureClient } from "../src/protocol/index.ts";
+import { RpcError, createLspColorClient, createLspHoverClient, createLspLinkClient, createLspNavigationClient, createLspRenameClient, createLspSignatureClient } from "../src/protocol/index.ts";
 import type { JsonValue, LspDocumentFeature, LspPrepare } from "../src/protocol/index.ts";
 
 const gate = () => { let release!: () => void; const promise = new Promise<void>(resolve => { release = resolve; }); return { promise, release }; };
@@ -93,12 +93,14 @@ test("fixture language requests retain their own faults, module aliases and reso
     const owner = new FixtureLspWorkspace(workspace, {
         connect: () => openWebSocketTransport(`ws://127.0.0.1:${address.port}/lsp-fixture`),
         initializationOptions: { fixtureModuleUris: [{ module: "sample-utils", uri: defaultUri }] },
-        features: ["textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor", "textDocument/colorPresentation"],
+        features: ["textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor", "textDocument/colorPresentation", "textDocument/completion", "textDocument/definition", "textDocument/references", "textDocument/rename"], workspaceEdits: true,
         documentInfo: doc => ({ uri: `host+fixture:${doc.resourceId}`, languageId: "fixture" }),
         schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
     });
     const scope = owner.createScope(), signatures = [createLspSignatureClient(owner), createLspSignatureClient(owner)],
-        links = [createLspLinkClient(owner), createLspLinkClient(owner)], colors = [createLspColorClient(owner), createLspColorClient(owner)];
+        links = [createLspLinkClient(owner), createLspLinkClient(owner)], colors = [createLspColorClient(owner), createLspColorClient(owner)],
+        navigation = [createLspNavigationClient(owner), createLspNavigationClient(owner)], renames = [createLspRenameClient(owner), createLspRenameClient(owner)],
+        completion = [owner.createScope(), owner.createScope()];
     type Run = (index: number, prepare: LspPrepare) => Promise<unknown>;
     const overlap = async (method: LspDocumentFeature, run: Run) => {
         const prepared = gate(); let count = 0;
@@ -113,6 +115,13 @@ test("fixture language requests retain their own faults, module aliases and reso
     };
     try {
         scope.setDocuments([document]); await scope.connect();
+        const offset = document.text.indexOf("color") + 2;
+        await overlap("textDocument/completion", async (index, prepare) => {
+            const session = completion[index]!; session.setDocuments([document]); await session.flush(); await prepare(session);
+            return session.requestDocument("textDocument/completion", session.attachDocument(document.id), index => ({ position: index.at(offset) })).result;
+        });
+        for (const kind of ["definition", "references"] as const) await overlap(`textDocument/${kind}`, (index, prepare) => navigation[index]!.run([document], document.id, offset, kind, true, prepare));
+        await overlap("textDocument/rename", (index, prepare) => renames[index]!.run([document], document.id, offset, "shade", prepare));
         await overlap("textDocument/signatureHelp", (index, prepare) => signatures[index]!.run(document, 12, undefined, prepare).result);
         await overlap("textDocument/documentLink", (index, prepare) => links[index]!.run(document, prepare));
         await overlap("textDocument/documentColor", (index, prepare) => colors[index]!.run(document, prepare));
@@ -149,7 +158,7 @@ test("fixture language requests retain their own faults, module aliases and reso
         await assert.rejects(scope.request("documentLink/resolve", { ...values, _fixture: { delay: 0, fault: "failure" } }).result,
             error => error instanceof RpcError && error.code === -32602);
     } finally {
-        for (const client of [...signatures, ...links, ...colors]) client.dispose(); owner.dispose(); detach();
+        for (const client of [...signatures, ...links, ...colors, ...navigation, ...renames, ...completion]) client.dispose(); owner.dispose(); detach();
         await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
         assert.equal(workspace.diagnostics().leases, 0);
     }
