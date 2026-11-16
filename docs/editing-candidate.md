@@ -8,7 +8,7 @@ No production input strategy has been selected.
 `captureInsertion()` provides a one-use, cancelable target for asynchronous host text conversion.
 It retains the captured selections and uses the same edit-transform/history path as ordinary
 input. Pending conversions appear in `activity().pendingInput`; later editing invalidates them.
-See the [public host integration recipe](host-integrations.md) for lifecycle and usage.
+See the [public host integration recipe](host-integration.md) for lifecycle and usage.
 The project had no bounded context/coordinate adapter to reuse. This small original adapter
 uses platform text ranges and segmentation; embedding an external editing runtime would conflict
 with the zero-dependency distribution requirement. No reference implementation is imported.
@@ -94,7 +94,7 @@ Each mount captures tab generation and document identity. Composition retains it
 context/revision until completion. Stale edits, capability changes and expired targets reject
 the attempt and emit `sttropez-conflict` with the attempted text/context range for host recovery.
 The browser entry point exports `inputConflictEvent` and `InputConflictDetail`; see the
-[host recovery contract](host-integrations.md#input-conflict-recovery) for payload and lifecycle rules.
+[host recovery contract](host-integration.md#input-conflict-recovery) for payload and lifecycle rules.
 Hosts must treat this content-bearing event as recovery data, rather than default telemetry.
 Destroying either text adapter during changed, uncommitted composition also emits
 `composition-detached` before removing its DOM. Hosts keep their conflict listener installed
@@ -355,3 +355,36 @@ Snapshots also expose `pendingWord`, `wordScanSteps` and `maxWordScanStepMs` for
 scan-loop elapsed time excludes final boundary normalization, model commit and rendering. The separate
 key-to-frame-ready value includes scheduling/polling and both views, and measures no physical
 input or presentation. Raw samples and provenance stay in ignored `artifacts/bench/navigation/`.
+
+## Bracket matching
+
+`new BracketMatcher(language)` compiles the asymmetric configured pairs for headless matching.
+`createCursor(buffer, caret, options)` captures the immutable buffer; call `next(workBudget)`
+cooperatively and dispose the cursor when its owning revision or selection expires. It prefers
+the character at the caret, then the preceding character when absent or vetoed. Mixed nesting
+is checked, including different openings that share a closing delimiter. A character eligible
+as both opening and closing is reported as `ambiguous`; symmetric quote pairs apply to insertion
+and surrounding. String/comment eligibility comes from `allowPair`, called for each
+delimiter with `operation: "open" | "close"` and its existing `[from, to)` range.
+
+Results distinguish `matched`, `unmatched`, `none`, `vetoed`, `ambiguous` and `limited`.
+Default limits are 100,000 work units and 1,024 nesting levels (`maxWorkUnits`, `maxDepth`).
+Each examined UTF-16 unit and eligible-pair check consumes work; reads use at most 256-unit
+windows. `next` requires a budget of at least 256 and may overshoot by at most 63 work units.
+Host callback time/reads are separate from those counters and are not a wall-clock guarantee.
+Only a `matched` result establishes a pair; budget exhaustion must not be presented as a mismatch.
+
+Enable editor presentation with `bracketMatching: true` (or the limit options) at mount, or
+`editor.bracketMatching.configure(true)`. It is off by default; disabling it removes its
+document/view listeners. The stable `bracketMatching.state` handle reports pending, completed
+and failed results for the captured primary collapsed caret. Matching does not block input,
+and its pending state is separate from the editor's input/navigation activity. Edits, selection,
+configuration, composition, focus and disposal invalidate stale work, including a host callback
+that changes the document during a scan. A shadow-root input uses its own focus root.
+
+Decorations compose with host colors and selections, using `--st-bracket-background` and
+`--st-bracket-border`. Only proven pairs are highlighted. Call `bracketMatching.refresh()` when
+host lexical knowledge changes without a document/configuration change; queue it outside a
+Workspace notification. Each working or reference view requires its own snapshot's syntax context.
+A browser turn checks elapsed time between 256-unit advances and stops after 4 ms or 4,096 work
+units; a single batch or host callback can exceed that target.

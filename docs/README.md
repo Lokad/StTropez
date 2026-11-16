@@ -10,7 +10,7 @@ application owns storage, services, language policy and surrounding controls.
 - [Connect a language server](language-server.md): WebSocket transport, session and workspace.
 - [Save or review documents](workspace.md): resource ownership and captured save operations;
   [comparison](comparison.md) describes reference and working views.
-- [Extend the host](host-integrations.md): custom colors, captured insertion and source notes.
+- [Extend the host](host-integration.md): custom colors, captured insertion and source notes.
 
 ## Subjects
 
@@ -26,7 +26,7 @@ application owns storage, services, language policy and surrounding controls.
 | [Text model](text-model.md) | Buffers, UTF-16 positions, edits, selections and snippets |
 | [Language server](language-server.md) | Protocol subset, synchronization, capabilities and transport |
 | [Language features](language-features.md) | Diagnostics, completion, documentation, navigation and edit/command decisions |
-| [Host integration](host-integrations.md) | Tokenization, insertion, notes and commands |
+| [Host integration](host-integration.md) | Tokenization, insertion, notes and commands |
 | [Unicode](unicode.md) | Grapheme boundaries and Unicode text handling |
 | [Packaging](packaging.md) | Assets, entry points, manifest and consumer integration |
 | [Architecture](architecture.md) | Layering, ownership, identity and dependencies |

@@ -305,7 +305,7 @@ revision, reason, context origin and attempted length. Full attempted text is a 
 recovery API and is excluded from default snapshots.
 
 The public `InputConflictDetail` type, shadow-root subscription and teardown ordering are
-described in [Input conflict recovery](host-integrations.md#input-conflict-recovery). DOM details
+described in [Input conflict recovery](host-integration.md#input-conflict-recovery). DOM details
 remain unknown until the host validates them; the public type does not replace that boundary.
 
 Synthetic composition checks demonstrate an independent form/progress update and Run failure

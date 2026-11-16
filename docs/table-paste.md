@@ -1,59 +1,42 @@
-# Captured table paste
+# Table conversion example
 
-The candidate evaluation hosts offer **Paste tables as CSV**. The main demo's **Host integrations**
-sample exposes the same converter through **Code → Paste format** and **Insert example table**.
-Conversion starts off; ordinary paste
-keeps its literal `text/plain` behavior. When enabled, the host converts one HTML table, or
-tab-separated plain text when HTML contains no table, and replaces every captured selection
-with the same quoted CSV. Copy/cut and the default literal route remain separate commands.
-The library supplies the captured document transaction and shared history; table interpretation
-and controls belong to the host. No service, runtime dependency or language-specific parser is
-added to the editor package.
+The plain and React development hosts expose **Paste tables as CSV**. The main demo's
+**Host integrations · paste & notes** sample exposes the same converter through
+**Code → Paste format** and **Insert example table**. Conversion is off by default;
+ordinary paste uses literal plain text. The example uses the public
+[captured insertion contract](host-integration.md#captured-insertion-and-structured-paste).
 
-Clipboard event capture copies strings before returning. It captures the resource, tab generation,
-mounted view, document revision, complete selection set and fold generation. Conversion yields
-between bounded token batches, shows an indeterminate progress indicator, and keeps text editable.
-Escape in the captured source or **Cancel table paste** cancels. A new paste supersedes the old
-intent. Text/selection/fold changes, composition, detach, replaced tabs and loss of edit authority
-expire that capture; temporary permission/lease loss cannot revive it after authority returns.
-Moving focus to the host form alone does not retarget the command or take focus back.
+## Workflow
 
-The host uses the public `editor.captureInsertion()` hook rather than creating its own history
-transaction. Only a complete validated result reaches the selection planner, the editor's
-existing edit transform and one human `paste` transaction. See [host integrations](host-integrations.md).
-Shared undo/redo restores the complete selection set. No-op/empty clipboard input creates no
-history unit; unsupported empty/nontext literal payloads cannot delete selected source text.
-Save and Run still capture the working resource, while the review reference remains immutable.
-Ordinary conversion uses indexed ranges and never exports the entire source value. Detached
-views dispose pending work and subscriptions. The host policy survives remount on its stable
-controller; no React effect synchronizes editor state.
+Enable conversion, then paste one HTML table or tab-separated text. When HTML contains no
+table, the converter uses the plain-text format. It inserts the same quoted CSV at every
+captured selection. Copy/cut and literal paste have independent routes. The example-table
+button exercises conversion without reading the OS clipboard.
 
-All CSV cells are quoted, internal quotes are doubled, and record separators are CRLF. TSV
-accepts quoted multiline cells and escaped quotes; raw cell contents, including Unicode, tabs,
-CRLF and spaces, are preserved. Rows must have equal widths. HTML uses the browser's detached
-inert template parser; nodes are never inserted into the editor or host document. Text, character
-references, `<br>` and basic paragraph boundaries become cell values. Script/style/template and
-embedded-document content is omitted. Merged cells keep text at the upper-left anchor and use
-empty covered slots; row spans remain within captured row groups. Nested/multiple tables,
-overlapping spans and ragged rows fail visibly without partial edits. This is text-table conversion,
-not a rendering/CSS or arbitrary rich-document import contract.
+Conversion yields between token batches and displays progress. **Cancel table paste**, Escape
+in the source, or a superseding paste cancels it. Editing is available; an expired capture
+cannot apply a delayed result. Focus can move to host forms without changing the target.
+Detach cancels view-owned work; the stable host controller retains the selected paste policy.
 
-The host reuses the native HTML parser rather than introducing an HTML dependency, and uses a
-small cooperative TypeScript TSV/CSV formatter because runtime dependencies are excluded.
-Clipboard strings are limited to 1 Mi UTF-16 units of plain text and 256 Ki of HTML, with at most
-10,000 rows, 1,024 columns and 100,000 cells. Aggregate inserted text across all selections is
-limited to 4 Mi units and the resulting source to 32 Mi units. Format/limit failures leave the
-operation unapplied; literal paste remains available by clearing the option. Native clipboard
-string retrieval, the size-limited native HTML parse, final string assembly and atomic model
-commit remain synchronous. Cooperative token batches do not imply a bounded native parser
-or model-commit time.
+## Formats and limits
 
-Instrumentation keeps the host's clipboard capture-handler span separate from complete event
-dispatch, whole scheduled conversion callbacks, atomic commit, conversion-to-commit wall time,
-all-view review readiness and complete automation actions/workflows. Capture-handler time excludes
-later candidate cleanup, parsing and rendering; conversion-to-commit is not interaction readiness.
-No CPU-time or physical-display latency follows from these clocks.
+All CSV cells are quoted, internal quotes doubled, and record separators CRLF. TSV accepts
+quoted multiline cells and escaped quotes while preserving raw cell text. Rows have equal widths.
 
-Automated ClipboardEvent scenarios and guarded process-local Chromium keyboard clipboard checks
-are distinct evidence. Native OS/application/browser-menu clipboard and IME
-remain unverified. Domain annotations/import commands and the rest of H01 remain required.
+HTML is parsed in a detached inert template. Text, character references, line breaks and basic
+paragraph boundaries become cell values. Script/style/template and embedded-document content
+are omitted. Merged cells put text at the upper-left anchor with empty covered slots; row spans
+stay within their row group. Nested/multiple tables, overlapping spans and ragged rows fail
+without partial insertion. Parsed nodes are never mounted into the host or editor.
+
+| Fixture limit | Maximum |
+| --- | --- |
+| Plain clipboard text | 1,048,576 UTF-16 units |
+| HTML clipboard text | 262,144 UTF-16 units |
+| Rows / columns / cells | 10,000 / 1,024 / 100,000 |
+| Inserted text across selections | 4,194,304 UTF-16 units |
+| Resulting source | 33,554,432 UTF-16 units |
+
+These limits and format choices belong to the example, not the editor package. The formatter
+uses native HTML parsing and cooperative TypeScript conversion. Clearing the option restores
+literal paste. See the [support matrix](README.md#support-matrix) for import and clipboard boundaries.

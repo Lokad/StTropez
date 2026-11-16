@@ -39,7 +39,7 @@ records an explicit deferral with user impact. No such host deferrals have been 
 The main demo additionally exposes **Host integrations · paste & notes**. Its shared
 source/static/restored-assets journey covers host colors/configuration, CSV versus literal
 insertion, one-command undo, pending-save refusal, cancellation, mapped note edit/fold/scroll
-behavior and view disposal. The [integration recipe](host-integrations.md) uses public exports;
+behavior and view disposal. The [integration recipe](host-integration.md) uses public exports;
 conversion and annotation policy remain in the host. This adds automated host evidence without
 closing the separate native-input rows above.
 

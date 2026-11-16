@@ -29,7 +29,7 @@ The root [demo workflow](demo-qualification.md) supplies the smaller user-facing
 surface: TypeScript editing, language actions, Problems, Changes and local save/recovery.
 Extended samples load on demand. **Host integrations · paste & notes** demonstrates public
 configuration, token decoration, captured insertion and mapped host metadata; see the
-[consumer recipe](host-integrations.md). The fuller plain/React workflow below also exercises
+[consumer recipe](host-integration.md). The fuller plain/React workflow below also exercises
 deferred host services and their ownership rules.
 
 After `npm ci` and `npm run dev`, open the
