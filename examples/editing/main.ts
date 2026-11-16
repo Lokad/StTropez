@@ -1,7 +1,7 @@
 import { Workspace } from "../../src/index.ts";
 import type { EditingCommand, LanguageConfiguration, FoldRange, Selection, TextEdit } from "../../src/index.ts";
-import { mountEditingCandidate, createFoldingController } from "../../src/browser/index.ts";
-import type { CandidateEditTransform, FoldDiscovery, FoldCommand, FoldingController } from "../../src/browser/index.ts";
+import { inputConflictEvent, mountEditingCandidate, createFoldingController } from "../../src/browser/index.ts";
+import type { CandidateEditTransform, FoldDiscovery, FoldCommand, FoldingController, InputConflictDetail } from "../../src/browser/index.ts";
 import { corpus, corpusIds } from "../../tests/fixtures/workloads.ts";
 import { EditingPresentation } from "./presentation.ts";
 import { editorSettled } from "../shared/readiness.ts";
@@ -25,8 +25,8 @@ const findUI = mountFindUI(workspace, primaryTab, editors.primary, presentation.
 const paragraph = mountParagraphUI(workspace, primaryTab, editors.primary);
 const listeners = new AbortController(); let disposed = false;
 let foldingController: FoldingController | undefined;
-const conflicts: Readonly<{ reason: string; expectedRevision: number; attemptedText: string; cause?: unknown }>[] = [];
-pane("primary").addEventListener("sttropez-conflict", event => { conflicts.push((event as CustomEvent).detail); }, { signal: listeners.signal });
+const conflicts: InputConflictDetail[] = [];
+pane("primary").addEventListener(inputConflictEvent, event => { conflicts.push((event as CustomEvent<InputConflictDetail>).detail); }, { signal: listeners.signal });
 function edit(edits: readonly TextEdit[]) { return workspace.edit({ documentId: source.documentId, expectedRevision: workspace.document(source.documentId).revision, edits, origin: "host", history: { kind: "live" } }); }
 function setText(text: string) {
     const current = workspace.document(source.documentId); edit([{ from: 0, to: current.buffer.length, insert: text }]);

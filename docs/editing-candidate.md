@@ -93,6 +93,8 @@ views remain independent; remount with the retained view to change this presenta
 Each mount captures tab generation and document identity. Composition retains its original
 context/revision until completion. Stale edits, capability changes and expired targets reject
 the attempt and emit `sttropez-conflict` with the attempted text/context range for host recovery.
+The browser entry point exports `inputConflictEvent` and `InputConflictDetail`; see the
+[host recovery contract](host-integrations.md#input-conflict-recovery) for payload and lifecycle rules.
 Hosts must treat this content-bearing event as recovery data, rather than default telemetry.
 Destroying either text adapter during changed, uncommitted composition also emits
 `composition-detached` before removing its DOM. Hosts keep their conflict listener installed

@@ -18,6 +18,8 @@ import type { GraphemePoint } from "../core/grapheme-point.ts";
 import { captureNativeInsertion, resolveNativeInsertion } from "./input-target.ts";
 import type { NativeInsertionTarget } from "./input-target.ts";
 import type { InputContext } from "./input-context.ts";
+import { inputConflictEvent } from "./input-conflict.ts";
+import type { InputConflictDetail } from "./input-conflict.ts";
 import { mountTextViewport } from "./viewport.ts";
 import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
@@ -194,7 +196,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     }
     const conflict = (reason: string, edit?: TextEdit, expectedRevision = revision, contextFrom = context.from, attemptedText = input.value, cause?: unknown) => {
         conflicts++; group = undefined;
-        input.dispatchEvent(new CustomEvent("sttropez-conflict", { bubbles: true, detail: Object.freeze({ documentId, expectedRevision, reason,
+        input.dispatchEvent(new CustomEvent<InputConflictDetail>(inputConflictEvent, { bubbles: true, detail: Object.freeze({ documentId, expectedRevision, reason,
             attemptedText, contextFrom, ...(edit ? { attemptedEdit: Object.freeze({ ...edit }) } : {}), ...(cause === undefined ? {} : { cause }) }) }));
     };
     // One failure boundary for inline and deferred command work. Detach ownership before

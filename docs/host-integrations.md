@@ -34,6 +34,53 @@ The combined demo qualifies open-root integration. Nested/closed-root focus has 
 tests; this does not establish the entire combined workflow in every shadow configuration.
 Native IME and OS clipboard remain unverified. The host owns surrounding controls, styles and lifecycle.
 
+## Input conflict recovery
+
+`inputConflictEvent` and the readonly `InputConflictDetail` type are exported by
+`sttropez/browser`. Both editors dispatch this event (`sttropez-conflict`) on their native
+input when an input/history/command attempt cannot apply. It bubbles within its root, is
+not cancelable, and does not cross a shadow boundary. Subscribe through the retained
+`editor.input` handle (`editor.element` for `mountTextEditor`), including inside closed roots.
+
+The detail contains `documentId`, `expectedRevision`, `reason` and `attemptedText`.
+The candidate also supplies `contextFrom` and, when available, `attemptedEdit` and `cause`.
+Offsets are model UTF-16 units at the captured revision. `attemptedText` can be the whole
+native value, a bounded input context, or only pending insertion text. Pending insertion
+recovery uses `contextFrom: 0` without implying a replacement at offset zero. Use an available
+`attemptedEdit` to inspect the attempted range; do not infer a replacement from the text alone.
+The detail and attempted edit are frozen. An optional original failure `cause` can be mutable
+or nonserializable and is separate from the text retained for recovery.
+
+The type describes editor emissions; it does not validate arbitrary DOM events. The consuming
+host must check unknown fields and captured document identity, then copy accepted recovery
+data into its own store. An old revision is useful recovery information, not authority to apply
+the attempted text to a newer document. Retention must leave document/history unchanged;
+any later recovery edit or save needs fresh host validation and an explicit user decision.
+
+The existing `examples/hosts/bindings.ts` and `HostController.captureInputConflict` demonstrate
+the checked subscription and validation path shared by plain and React hosts. The essential
+lifecycle is:
+
+```ts
+import { inputConflictEvent } from "sttropez/browser";
+
+const documentId = editor.view.documentId;
+const listeners = new AbortController();
+editor.input.addEventListener(inputConflictEvent, event => {
+    const detail: unknown = (event as CustomEvent<unknown>).detail;
+    captureInputConflict(documentId, detail); // Host-owned validation and recovery store.
+}, { signal: listeners.signal });
+
+function destroyView() {
+    try { editor.destroy(); } // May emit uncommitted composition recovery.
+    finally { listeners.abort(); }
+}
+```
+
+Keep the listener until editor destruction finishes, then remove the surrounding host nodes.
+This event reports input recovery; persistence conflicts use the host's resource/version save
+workflow. Synthetic conflict/composition tests do not establish native IME qualification.
+
 ## Captured view requests
 
 `captureViewRequest(workspace, target, view, options?)` from `sttropez/browser` retains one

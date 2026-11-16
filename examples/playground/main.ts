@@ -1,6 +1,7 @@
 import { Workspace, WorkspaceCommands } from "../../src/index.ts";
 import type { SaveResponse, SaveSubmission } from "../../src/index.ts";
-import { mountTextEditor } from "../../src/browser/index.ts";
+import { inputConflictEvent, mountTextEditor } from "../../src/browser/index.ts";
+import type { InputConflictDetail } from "../../src/browser/index.ts";
 import "./style.css";
 import { corpus, corpusIds } from "../../tests/fixtures/workloads.ts";
 import type { CorpusId } from "../../tests/fixtures/workloads.ts";
@@ -24,8 +25,8 @@ const connection = workspace.createResource<Connection>({ scope: "demo", resourc
 const panelTab = workspace.open({ kind: "panel", resourceId: connection.id, panelType: "connection" }, "right");
 const editor = mountTextEditor(element("left"), workspace, sourceTab);
 const conflicts: { reason: string; attemptedLength: number }[] = [];
-editor.element.addEventListener("sttropez-conflict", event => {
-    const detail = (event as CustomEvent<{ reason: string; attemptedText: string }>).detail;
+editor.element.addEventListener(inputConflictEvent, event => {
+    const detail = (event as CustomEvent<InputConflictDetail>).detail;
     conflicts.push({ reason: detail.reason, attemptedLength: detail.attemptedText.length });
 });
 const panel = document.createElement("div");

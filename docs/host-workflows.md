@@ -296,13 +296,17 @@ captures. A consuming host must declare its durable policy for additional docume
 
 ## Input recovery and disposal
 
-The binding consumes the editor's existing `sttropez-conflict` event and validates its captured
+The binding uses the public `inputConflictEvent` constant (`sttropez-conflict`) and validates its captured
 document/revision and fields. The host retains attempted text, context origin and any attempted
 edit in a separate immutable recovery store. This store survives editor unmount/remount. It
 never reapplies stale text to the source. Explicit inspection displays at most 4,096 characters;
 discarding recovery data is a separate host action. Routine diagnostics expose only document,
 revision, reason, context origin and attempted length. Full attempted text is a content-bearing
 recovery API and is excluded from default snapshots.
+
+The public `InputConflictDetail` type, shadow-root subscription and teardown ordering are
+described in [Input conflict recovery](host-integrations.md#input-conflict-recovery). DOM details
+remain unknown until the host validates them; the public type does not replace that boundary.
 
 Synthetic composition checks demonstrate an independent form/progress update and Run failure
 without losing preedit, plus rejected preedit recovery during an agent takeover or forced

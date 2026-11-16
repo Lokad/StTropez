@@ -1,10 +1,10 @@
 import { Workspace, TextBuffer, TextDiff, WordCursor, BidiCursor, createBidiIndexController, resolveBidi, importText, exportText, anchoredRange, composePositionMaps, createGraphemeCursor } from "sttropez";
-import { createFontAssetController, createFindController, createRegexFindBackend, mountTextComparison, mountTextEditor, mountTextViewport, mountEditingCandidate } from "sttropez/browser";
+import { inputConflictEvent, createFontAssetController, createFindController, createRegexFindBackend, mountTextComparison, mountTextEditor, mountTextViewport, mountEditingCandidate } from "sttropez/browser";
 import { fontFixture } from "./font-fixture.js";
 import { DiffReferenceCache, WorkspaceCommands } from "sttropez";
 import { createSelectionSet, planSelectionEdits } from "sttropez";
 import type { SaveReview } from "sttropez";
-import type { PresentedLine } from "sttropez/browser";
+import type { InputConflictDetail, PresentedLine } from "sttropez/browser";
 import { JsonRpcConnection } from "sttropez/protocol";
 import { openWebSocketTransport } from "sttropez/browser";
 const workspace = new Workspace();
@@ -186,7 +186,7 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
             const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: kind, variant: "working" }, kind, { value: original });
             const tab = model.open({ kind: "text", documentId: source.documentId }, kind), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
             const editor = mountEditingCandidate(host, model, tab, { ariaLabel: "Restored ordered input" }), recovered: string[] = [];
-            editor.input.addEventListener("sttropez-conflict", event => recovered.push((event as CustomEvent<{ attemptedText: string }>).detail.attemptedText));
+            editor.input.addEventListener(inputConflictEvent, event => recovered.push((event as CustomEvent<InputConflictDetail>).detail.attemptedText));
             const ready = async () => { for (let turn = 0; ; turn++) { const s = editor.snapshot();
                 if (!s.pendingInput && !s.pendingWord && !s.pendingGrapheme && !s.pendingCaret && !editor.viewport.snapshot().pending) return;
                 if (turn >= 4000) throw new Error("Compiled ordered input did not settle."); await new Promise<void>(resolve => setTimeout(resolve, 1)); } };

@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import type { Page } from "@playwright/test";
 import type { Workspace, TextResourceHandle, TabId } from "../../src/index.ts";
-import type { EditingCandidate, LspEditorController, LspHighlightController } from "../../src/browser/index.ts";
+import type { EditingCandidate, InputConflictDetail, LspEditorController, LspHighlightController } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 
 type Fixture = { workspace: Workspace; source: TextResourceHandle; tab: TabId; editor: EditingCandidate;
@@ -109,6 +109,35 @@ test("removing a focused fold disclosure inside a shadow root returns typing to 
         await page.evaluate(() => { const f = window.shadowFocus, folds = f.editor.view.folding; folds.setRanges(folds.getSnapshot(), []); f.editor.viewport.flush(); });
         expect(await input.evaluate(node => (node.getRootNode() as ShadowRoot).activeElement === node)).toBe(true);
         await page.keyboard.press("x"); expect(await text(page)).toBe("xsample sample\ns");
+    } finally { await input.dispose(); await page.evaluate(() => window.shadowFocus.dispose()); }
+    expect(await page.evaluate(() => window.shadowFocus.workspace.diagnostics())).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+});
+
+test("public input recovery reaches retained listeners inside a closed root before disposal", async ({ page }) => {
+    const input = await mount(page, false);
+    try {
+        const result = await page.evaluate(async () => {
+            const path = "/shadow-focus/browser.js";
+            const { inputConflictEvent, mountTextEditor } = await import(path) as typeof import("../../src/browser/index.ts");
+            const f = window.shadowFocus, host = f.editor.element.parentElement!, listeners = new AbortController();
+            const native = mountTextEditor(host, f.workspace, f.tab), received: { detail: InputConflictDetail; frozen: boolean; bubbles: boolean; composed: boolean }[] = [];
+            let inside = 0, outside = 0;
+            host.addEventListener(inputConflictEvent, () => inside++, { signal: listeners.signal });
+            document.addEventListener(inputConflictEvent, () => outside++, { signal: listeners.signal });
+            try {
+                for (const [node, destroy] of [[f.editor.input, f.editor.destroy], [native.element, native.destroy]] as const) {
+                    node.addEventListener(inputConflictEvent, event => { const detail = (event as CustomEvent<InputConflictDetail>).detail;
+                        received.push({ detail, frozen: Object.isFrozen(detail), bubbles: event.bubbles, composed: event.composed }); }, { signal: listeners.signal });
+                    node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); node.value = "uncommitted 東京";
+                    destroy();
+                }
+                return { name: inputConflictEvent, received, inside, outside, documentId: f.source.documentId, revision: f.workspace.document(f.source.documentId).revision };
+            } finally { native.destroy(); listeners.abort(); }
+        });
+        expect(result.name).toBe("sttropez-conflict"); expect(result.inside).toBe(2); expect(result.outside).toBe(0);
+        expect(result.revision).toBe(0); expect(await text(page)).toBe("sample sample\ns");
+        expect(result.received).toEqual([0, undefined].map(contextFrom => ({ frozen: true, bubbles: true, composed: false,
+            detail: { documentId: result.documentId, expectedRevision: 0, reason: "composition-detached", attemptedText: "uncommitted 東京", ...(contextFrom === undefined ? {} : { contextFrom }) } })));
     } finally { await input.dispose(); await page.evaluate(() => window.shadowFocus.dispose()); }
     expect(await page.evaluate(() => window.shadowFocus.workspace.diagnostics())).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });

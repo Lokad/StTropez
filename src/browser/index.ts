@@ -9,6 +9,10 @@ import type { SelectionSet } from "../core/selections.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import { captureNativeInsertion, resolveNativeInsertion } from "./input-target.ts";
 import type { NativeInsertionTarget } from "./input-target.ts";
+import { inputConflictEvent } from "./input-conflict.ts";
+import type { InputConflictDetail } from "./input-conflict.ts";
+export { inputConflictEvent } from "./input-conflict.ts";
+export type { InputConflictDetail } from "./input-conflict.ts";
 export { mountTextViewport } from "./viewport.ts";
 export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealOptions, TextViewport, ViewportActivity, ViewportSnapshot, ViewportComparisonRows } from "./viewport.ts";
 export { mountEditingCandidate } from "./editing-candidate.ts";
@@ -110,7 +114,7 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
         }
         input.scrollTop = scrollTop; input.scrollLeft = scrollLeft; revision = document.revision;
     };
-    const conflict = (reason: string, expectedRevision = revision) => input.dispatchEvent(new CustomEvent("sttropez-conflict", { bubbles: true,
+    const conflict = (reason: string, expectedRevision = revision) => input.dispatchEvent(new CustomEvent<InputConflictDetail>(inputConflictEvent, { bubbles: true,
         detail: Object.freeze({ documentId, expectedRevision, reason, attemptedText: input.value }) }));
     const history = (direction: "undo" | "redo") => {
         if (!workspace.resolveTab(target)) { conflict("expired-view"); refresh(); return; }

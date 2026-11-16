@@ -1,4 +1,4 @@
-import { mountEditingCandidate, mountTextComparison, mountTextEditor } from "../../src/browser/index.ts";
+import { inputConflictEvent, mountEditingCandidate, mountTextComparison, mountTextEditor } from "../../src/browser/index.ts";
 import type { EditingCandidate, MountedEditor, TextComparison, ViewportSnapshot, ViewState } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId, TabTarget } from "../../src/index.ts";
 import type { HostController } from "./controller.ts";
@@ -125,7 +125,7 @@ export class ViewBindings {
                 review.referenceEditor()?.restoreView(this.referenceState.state);
             else this.referenceState = undefined;
             const documentId = review.working.view.documentId;
-            review.working.input.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
+            review.working.input.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
             const working = review.working;
             this.bindSaveShortcut(working.input, this.controller.viewTab("primary"), () => working.activity().composing, listeners.signal);
             review.element.addEventListener("keydown", event => {
@@ -315,7 +315,7 @@ export class ViewBindings {
                     scope.defer(() => { if (this.instructionMount === instruction) this.instructionMount = undefined; instruction.dispose(); });
                 }
                 if (candidate) this.attachTools(scope, id, tabId, candidate, presentation);
-                mounted.element.addEventListener("sttropez-conflict", event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
+                mounted.element.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
                 this.bindSaveShortcut(mounted.element, tabId, () => candidate?.activity().composing ?? false, listeners.signal);
                 const editor: BoundEditor = { ...mounted, destroy: scope.dispose };
                 const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView(this.restoreState(state, view));

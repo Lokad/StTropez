@@ -6,6 +6,27 @@ import { runPanelModel } from "../examples/hosts/transfer-panel.ts";
 
 const settled = () => new Promise<void>(done => setImmediate(done));
 
+test("input recovery validates unknown details and retains old attempts without applying them", async () => {
+    const host = new HostController(), documentId = host.source.documentId, initial = host.recovery.getSnapshot();
+    const detail = { documentId, expectedRevision: 0, reason: "stale-revision", attemptedText: "unapplied", contextFrom: 0,
+        attemptedEdit: { from: 0, to: 0, insert: "unapplied" } };
+    try {
+        for (const value of [null, "text", { ...detail, documentId: "foreign" }, { ...detail, expectedRevision: -1 }, { ...detail, expectedRevision: 0.5 },
+            { ...detail, reason: null }, { ...detail, attemptedText: 1 }, { ...detail, contextFrom: -1 }, { ...detail, contextFrom: NaN },
+            { ...detail, attemptedEdit: null }, { ...detail, attemptedEdit: { from: 2, to: 1, insert: "x" } }, { ...detail, attemptedEdit: { from: 0, to: 0, insert: 1 } }]) {
+            host.captureInputConflict(documentId, value); assert.equal(host.recovery.getSnapshot(), initial);
+        }
+        host.workspace.edit({ documentId, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "current " }], origin: "human" });
+        const before = host.workspace.document(documentId), history = host.workspace.observeHistory(documentId).getSnapshot();
+        host.captureInputConflict(documentId, detail); const retained = host.recovery.getSnapshot();
+        detail.attemptedText = "changed outside"; detail.attemptedEdit.insert = "changed outside";
+        assert.equal(retained.items[0]!.attemptedText, "unapplied"); assert.equal(retained.items[0]!.attemptedEdit!.insert, "unapplied");
+        assert.ok(Object.isFrozen(retained.items[0])); assert.ok(Object.isFrozen(retained.items[0]!.attemptedEdit));
+        assert.equal(host.workspace.document(documentId), before); assert.equal(host.workspace.observeHistory(documentId).getSnapshot(), history);
+        await host.dispose(); host.captureInputConflict(documentId, detail); assert.equal(host.recovery.getSnapshot(), retained);
+    } finally { await host.dispose(); }
+});
+
 test("form presentation caches immutable captures, rejects old request callbacks and releases observers", async () => {
     const host = new HostController(), save = host.configurationSave, store = save.presentation;
     const baseline = host.debug().diagnostics.subscriptions, ownerBaseline = save.debug().subscriptions;
