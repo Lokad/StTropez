@@ -55,30 +55,18 @@ for (const host of ["plain", "react"]) {
         const epoch = (await snapshot(p)).bindings.project.transport!.epoch; await button(p, "Disconnect workspace provider").click(); await button(p, "Reconnect workspace provider").click(); await register(p);
         s = await snapshot(p); expect(s.bindings.project.worker.created).toBe(2); expect(s.bindings.project.transport!.epoch).toBeGreaterThan(epoch); expect(s.bindings.comparison!.baseline).toEqual(baseline); await dispose(p);
     });
-    test(`${host} malformed late server edits never partially apply and lost acknowledgement retains one undoable command`, async ({ page: p }) => {
+    test(`${host} worker acknowledgement failure and idle disconnect retain one undoable command`, async ({ page: p }) => {
         const raw = "alpha\r\n😀 beta", expected = reviewHeader + raw + reviewFooter; await setup(p, host, raw); await button(p, "Add navigation companion").click(); await register(p);
-        const before = await snapshot(p); await p.evaluate(() => window.hostFixture.faultProjectNext("malformed")); await review(p); await exact(p, raw);
-        let s = await snapshot(p); expect(s.history.undoDepth).toBe(before.history.undoDepth); expect(s.bindings.project).toMatchObject({ failed: 1, applied: 0, registered: false, transport: null });
-        expect(await p.evaluate(id => window.hostFixture.navigationDocument(id).text, s.bindings.navigation.companion!)).toBe("const catalogue = 1;\r\ncatalogue;\r\n");
-        await button(p, "Reconnect workspace provider").click(); await register(p); await p.evaluate(() => window.hostFixture.faultProjectNext("failure")); await review(p); await exact(p, raw); expect((await snapshot(p)).bindings.project.applied).toBe(0);
-        await button(p, "Reconnect workspace provider").click(); await register(p); await p.evaluate(() => window.hostFixture.faultProjectNext("ack")); await review(p); await exact(p, expected);
-        s = await snapshot(p); expect(s.bindings.project).toMatchObject({ applied: 1, registered: false, transport: null }); expect(s.history.undoDepth).toBe(before.history.undoDepth + 1); await expect(p.getByLabel("Workspace provider status", { exact: true })).toContainText("acknowledgement failed after application");
+        const before = await snapshot(p); await p.evaluate(() => window.hostFixture.faultProjectNext("ack")); await review(p); await exact(p, expected);
+        const s = await snapshot(p); expect(s.bindings.project).toMatchObject({ applied: 1, registered: false, transport: null }); expect(s.history.undoDepth).toBe(before.history.undoDepth + 1); await expect(p.getByLabel("Workspace provider status", { exact: true })).toContainText("acknowledgement failed after application");
         await button(p, "Reconnect workspace provider").click(); await register(p); await review(p); expect((await snapshot(p)).history.undoDepth).toBe(before.history.undoDepth + 1);
         expect(await p.evaluate(() => window.hostFixture.faultIdleProject())).toBe(true); await expect.poll(async () => (await snapshot(p)).bindings.project.registered).toBe(false); expect((await snapshot(p)).bindings.project.transport).toBeNull(); await expect(button(p, "Request provider review edits")).toBeDisabled(); await exact(p, expected);
         await button(p, "Reconnect workspace provider").click(); await register(p);
         await input(p, "Secondary source").press("Control+z"); await waitForProject(p); await exact(p, raw); expect((await snapshot(p)).source.exports).toBe(0); await dispose(p);
     });
-    test(`${host} captured server commands expire on typing, authority and remount while table input and host focus stay protected`, async ({ page: p }) => {
-        test.setTimeout(120000); const raw = "alpha\r\nbeta"; await setup(p, host, raw); let current = raw;
-        for (const mode of ["typing", "authority", "lease", "remount"] as const) {
-            await register(p); await p.evaluate(() => window.hostFixture.setProjectDelay(1000)); await button(p, "Request provider review edits").click(); expect((await snapshot(p)).bindings.project.pending).toBe(true);
-            if (mode === "typing") { await input(p).press("Control+End"); await input(p).pressSequentially("X"); current += "X"; }
-            else if (mode === "authority") await p.evaluate(() => { window.hostFixture.setSourceReadOnly(true); window.hostFixture.setSourceReadOnly(false); });
-            else if (mode === "lease") await p.evaluate(() => window.hostFixture.cycleSourceEditLease());
-            else await p.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
-            await waitForProject(p); await exact(p, current); expect((await snapshot(p)).bindings.project).toMatchObject({ pending: false, registered: false, applied: 0, transport: null });
-        }
-        await register(p); await button(p, "Request provider review edits").click(); const moved = [{ anchor: 4, head: 2 }, { anchor: 8, head: 8 }];
+    test(`${host} resource-scoped worker commands preserve moved selections and guard pending table input`, async ({ page: p }) => {
+        test.setTimeout(120000); const current = "alpha\r\nbeta"; await setup(p, host, current);
+        await register(p); await p.evaluate(() => window.hostFixture.setProjectDelay(1000)); await button(p, "Request provider review edits").click(); const moved = [{ anchor: 4, head: 2 }, { anchor: 8, head: 8 }];
         await p.evaluate(ranges => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, ranges, 1); }, moved);
         const form = p.getByRole("textbox", { name: "Configuration path", exact: true }); await form.fill("during-provider.csv"); await waitForProject(p); await expect(form).toBeFocused(); await exact(p, reviewHeader + current + reviewFooter);
         expect((await snapshot(p)).bindings.views.find(v => v.id === "primary")!.selectionSet.ranges.map(r => ({ anchor: r.anchor, head: r.head }))).toEqual(moved.map(r => ({ anchor: r.anchor + reviewHeader.length, head: r.head + reviewHeader.length })));

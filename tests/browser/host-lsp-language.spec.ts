@@ -133,13 +133,20 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
     });
     test("provider color presentations preview every edit and preserve complete selections through shared history", async ({ page }) => {
         const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));
-        const raw = '\ufeffconst color = "#abc";\r\nvalue;'; await seed(page, raw);
+        const raw = '\ufeffconst color = "#aabbcc";\r\nvalue;'; await seed(page, raw);
         await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 4, head: 1 }, { anchor: 20, head: 20 }], 1); });
         const before = await snapshot(page), proposed = page.getByRole("textbox", { name: "Proposed color", exact: true });
         await button(page, "Discover document colors").click(); await expect.poll(async () => (await snapshot(page)).bindings.colors.state.count).toBe(1);
+        await button(page, "Preview color presentations").click(); await expect(button(page, "Apply captured color")).toBeEnabled();
+        await expect(page.getByRole("combobox", { name: "Color presentation", exact: true })).toHaveValue("provider-0");
+        await button(page, "Apply captured color").click(); await settledColorsAndLinks(page); await exact(page, raw);
+        const unchanged = await snapshot(page); expect(unchanged.source.revision).toBe(before.source.revision); expect(unchanged.history).toEqual(before.history);
+        expect(unchanged.bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);
+        expect(unchanged.bindings.colors).toMatchObject({ unchanged: 1, applied: 0, decoratedViews: 0 });
+        await button(page, "Discover document colors").click(); await settledColorsAndLinks(page);
         await proposed.fill("rgba(1, 2, 3, 0.5)"); await button(page, "Preview color presentations").click(); await expect(button(page, "Apply captured color")).toBeEnabled();
         await expect(page.getByLabel("Proposed color edits", { exact: true }).getByRole("listitem")).toHaveCount(2);
-        await button(page, "Apply captured color").click(); const expected = "// color presentation\r\n" + raw.replace("#abc", "rgba(1, 2, 3, 0.5)");
+        await button(page, "Apply captured color").click(); const expected = "// color presentation\r\n" + raw.replace("#aabbcc", "rgba(1, 2, 3, 0.5)");
         expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(expected); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
         await field(page, "Secondary source").press("Control+z"); expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(raw);
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);

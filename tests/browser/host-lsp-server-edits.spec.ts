@@ -76,12 +76,73 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP server edits`,
         expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth); await dispose(page);
     });
     test("request cancellation, capability withdrawal, disconnect and lost acknowledgement never replay edits", async ({ page }) => {
-        let executions = 0; page.on("websocket", socket => socket.on("framesent", frame => { if (JSON.parse(frame.payload.toString()).method === "workspace/executeCommand") executions++; })); await seed(page); await register(page); const before = await snapshot(page);
+        let executions = 0; const incoming: any[] = []; page.on("websocket", socket => {
+            socket.on("framesent", frame => { if (JSON.parse(frame.payload.toString()).method === "workspace/executeCommand") executions++; });
+            socket.on("framereceived", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "workspace/applyEdit") incoming.push(value); });
+        }); await page.reload(); await seed(page); await button(page, "Add navigation companion").click(); await register(page); const before = await snapshot(page), companion = before.bindings.navigation.companion!;
+        const companionBefore = await page.evaluate(id => window.hostFixture.navigationDocument(id), companion);
+        for (const fault of ["malformed", "failure"] as const) {
+            await page.evaluate(fault => window.hostFixture.faultProjectNext(fault), fault); await button(page, "Request provider review edits").click(); await done(page);
+            await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).bindings.project.applied).toBe(0);
+            expect((await snapshot(page)).bindings.project.state.review).toBeNull(); await expect(button(page, "Apply captured provider edits")).toBeDisabled();
+            expect(await page.evaluate(id => window.hostFixture.navigationDocument(id), companion)).toEqual(companionBefore);
+            if (fault === "malformed") {
+                const changes = incoming.at(-1).params.edit.documentChanges; expect(changes).toHaveLength(3);
+                expect(changes.at(-1).textDocument.uri).toBe("host+fixture:unknown-target");
+                expect((await snapshot(page)).bindings.project).toMatchObject({ state: { status: "rejected" }, transport: { connected: true } });
+            }
+            if ((await snapshot(page)).bindings.project.state.status === "failed") { await button(page, "Reconnect workspace provider").click(); await select(page); await register(page); }
+        }
         await request(page); const token = (await snapshot(page)).bindings.project.state.review!.token; await control(page, "fixture/cancelApply"); await done(page); expect((await snapshot(page)).bindings.project.state.review).toBeNull(); await page.evaluate(token => window.hostFixture.confirmProjectReview(token), token); await exact(page, raw);
         await request(page); await control(page, "fixture/reviewRegistration", { registered: false }); await done(page); await exact(page, raw); expect((await snapshot(page)).bindings.project.registered).toBe(false); await button(page, "Reconnect workspace provider").click(); await select(page); const count = executions; await register(page); expect(executions).toBe(count);
         await request(page); await control(page, "fixture/disconnect"); await done(page); await exact(page, raw); await button(page, "Reconnect workspace provider").click(); await select(page); await register(page);
         await page.evaluate(() => window.hostFixture.faultProjectNext("ack")); await request(page); await button(page, "Apply captured provider edits").click(); await done(page); await exact(page, header + raw + footer); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); await expect(page.getByLabel("Workspace provider status", { exact: true })).toContainText("undo");
         const sent = executions; await button(page, "Reconnect workspace provider").click(); await select(page); await register(page); expect(executions).toBe(sent); await button(page, "Request provider review edits").click(); await done(page); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); await input(page).press("Control+z"); await editors(page); await exact(page, raw); await dispose(page);
+    });
+    test("held server requests cannot revive interrupted command captures and fresh reviews retain form focus", async ({ page }) => {
+        test.setTimeout(60000);
+        let armed = false, commandId: number | undefined, requestId: number | undefined, cancelled = false, response: any, release: (() => void) | undefined;
+        await page.routeWebSocket("**/lsp-fixture", client => {
+            const server = client.connectToServer();
+            client.onMessage(message => { const value = JSON.parse(message.toString());
+                if (armed && value.method === "workspace/executeCommand") commandId = value.id;
+                if (value.method === "$/cancelRequest" && value.params.id === commandId) cancelled = true;
+                if (value.id === requestId && ("result" in value || "error" in value)) response = value;
+                server.send(message);
+            });
+            server.onMessage(message => { const value = JSON.parse(message.toString());
+                if (armed && value.method === "workspace/applyEdit") { armed = false; requestId = value.id; release = () => client.send(message); }
+                else client.send(message);
+            });
+        });
+        await page.reload(); await seed(page); await button(page, "Add navigation companion").click();
+        const companion = (await snapshot(page)).bindings.navigation.companion!, companionText = await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion);
+        let current = raw;
+        const hold = async () => {
+            await select(page); await register(page); armed = true; commandId = requestId = undefined; cancelled = false; response = undefined; release = undefined;
+            await button(page, "Request provider review edits").click(); await expect.poll(() => !!release).toBe(true);
+            expect((await snapshot(page)).bindings.project).toMatchObject({ pending: true, applied: 0, state: { review: null } });
+        };
+        const deliver = async () => { expect(release).toBeDefined(); release!(); release = undefined; await page.evaluate(() => window.hostFixture.providerCustom("fixture/state", {})); };
+        for (const mode of ["typing", "selection", "authority", "lease", "remount"] as const) {
+            await hold();
+            if (mode === "typing") { await input(page).press("Control+End"); await input(page).pressSequentially("X"); current += "X"; }
+            else if (mode === "selection") await select(page, 8);
+            else if (mode === "authority") await page.evaluate(() => { window.hostFixture.setSourceReadOnly(true); window.hostFixture.setSourceReadOnly(false); });
+            else if (mode === "lease") await page.evaluate(() => window.hostFixture.cycleSourceEditLease());
+            else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
+            await done(page); await expect.poll(() => cancelled).toBe(true); const interrupted = await snapshot(page);
+            await deliver(); await expect.poll(() => response?.result?.applied).toBe(false); await done(page); await exact(page, current);
+            const after = await snapshot(page); expect(after.source.revision).toBe(interrupted.source.revision); expect(after.history).toEqual(interrupted.history);
+            expect(after.bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(interrupted.bindings.views.find(view => view.id === "primary")!.selectionSet);
+            expect(after.bindings.project).toMatchObject({ pending: false, applied: 0, state: { review: null } }); await expect(button(page, "Apply captured provider edits")).toBeDisabled();
+            expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(companionText);
+        }
+        await hold(); const before = await snapshot(page), form = input(page, "Configuration path"); await form.fill("during-provider.csv");
+        await deliver(); await expect.poll(async () => !!(await snapshot(page)).bindings.project.state.review).toBe(true); await expect(form).toBeFocused(); await exact(page, current);
+        expect((await snapshot(page)).history).toEqual(before.history); await button(page, "Apply captured provider edits").click(); await done(page);
+        await exact(page, header + current + footer); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
+        expect((await snapshot(page)).bindings.project.worker.created).toBe(0); expect((await snapshot(page)).source.exports).toBe(0); await dispose(page);
     });
     test("comparison review decisions keep immutable baselines and primary Save/Run despite companion focus", async ({ page }) => {
         await seed(page); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await editors(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline; await working.focus(); await register(page); await request(page); await button(page, "Apply captured provider edits").click(); await done(page); const expected = header + raw + footer; await exact(page, expected); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline);
