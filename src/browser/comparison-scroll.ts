@@ -2,17 +2,17 @@ import { comparisonLine } from "../core/comparison-scroll.ts";
 import type { ComparisonSnapshot } from "../core/comparison.ts";
 import { viewportPadding } from "./viewport.ts";
 import type { TextViewport } from "./viewport.ts";
+import type { ComparisonPanes } from "./comparison-panes.ts";
 
 /** Optional view-only coordination; completed comparison identity owns each queued frame. */
-export function createComparisonScroll(win: Window, working: TextViewport, reference: () => TextViewport | undefined,
+export function createComparisonScroll(win: Window, panes: ComparisonPanes,
     snapshot: () => ComparisonSnapshot, canSync: () => boolean) {
+    const working = panes.working.viewport, reference = () => panes.reference()?.viewport;
     let linked = false, disposed = false, paused = false, frame: number | undefined, leader = working, prior: ComparisonSnapshot | undefined;
-    let currentReference: TextViewport | undefined, referenceEvents: AbortController | undefined, stopReference: (() => void) | undefined;
     let workingRows = -1, referenceRows = -1;
-    let events: AbortController | undefined, stopWorking: (() => void) | undefined;
+    let stopObserving: (() => void) | undefined, stopReference: (() => void) | undefined;
     const positions = new Map<TextViewport, number>(), paintedRows = new Map<TextViewport, number>();
     const cancel = () => { if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined; };
-    const observer = new ResizeObserver(() => request(leader));
     function request(source: TextViewport, attempt = 0): void {
         if (!linked || disposed) return;
         const capture = snapshot(), baseline = reference();
@@ -69,32 +69,17 @@ export function createComparisonScroll(win: Window, working: TextViewport, refer
         } else scrolled(view);
         resume();
     };
-    function watch(view: TextViewport, signal: AbortSignal): void {
+    function remember(view: TextViewport): void {
         const state = view.snapshot(); positions.set(view, state.scrollTop); paintedRows.set(view, state.rowGeneration);
-        view.element.addEventListener("sttropez-render", () => rendered(view), { signal });
-        view.element.addEventListener("scroll", () => scrolled(view), { signal, passive: true });
-        // Capture the event's actual view before navigation or an edit changes the grid.
-        for (const type of ["keydown", "beforeinput", "pointerdown"] as const)
-            view.element.addEventListener(type, () => request(view), { signal, capture: true });
     }
     function unlisten(): void {
-        observer.disconnect(); events?.abort(); events = undefined; stopWorking?.(); stopWorking = undefined;
-        referenceEvents?.abort(); referenceEvents = undefined; stopReference?.(); stopReference = undefined;
-        positions.clear(); paintedRows.clear(); currentReference = undefined; prior = undefined; leader = working;
+        stopObserving?.(); stopObserving = undefined; stopReference?.(); stopReference = undefined;
+        positions.clear(); paintedRows.clear(); prior = undefined; leader = working;
         workingRows = referenceRows = -1;
     }
     function update(): void {
         if (disposed || !linked) return;
         const next = reference(), state = snapshot();
-        if (next !== currentReference) {
-            cancel(); paused = false; referenceEvents?.abort(); stopReference?.();
-            if (currentReference) { observer.unobserve(currentReference.element); positions.delete(currentReference); paintedRows.delete(currentReference); }
-            currentReference = next; referenceEvents = undefined; stopReference = undefined; leader = working;
-            if (next) {
-                referenceEvents = new AbortController(); watch(next, referenceEvents.signal);
-                stopReference = next.view.folding.subscribe(() => request(leader)); observer.observe(next.element);
-            }
-        }
         const aRows = working.activity().rowGeneration, bRows = next?.activity().rowGeneration ?? -1;
         if (state !== prior || aRows !== workingRows || bRows !== referenceRows) { cancel(); prior = state; workingRows = aRows; referenceRows = bRows; request(leader); }
         else if (paused && state.status === "ready" && canSync()) request(leader);
@@ -104,8 +89,15 @@ export function createComparisonScroll(win: Window, working: TextViewport, refer
             if (typeof value !== "boolean") throw new TypeError("Expected a scroll-link preference.");
             if (disposed || value === linked) return; cancel(); paused = false; linked = value;
             if (linked) {
-                events = new AbortController(); watch(working, events.signal);
-                stopWorking = working.view.folding.subscribe(() => request(leader)); observer.observe(working.element); update();
+                remember(working); const baseline = reference(); if (baseline) remember(baseline);
+                stopObserving = panes.observe({ render: rendered, scroll: scrolled, fold: () => request(leader), resize: () => request(leader),
+                    input: view => request(view), pointerdown: view => request(view) });
+                stopReference = panes.onReferenceChange(previous => {
+                    cancel(); paused = false; leader = working;
+                    if (previous) { positions.delete(previous.viewport); paintedRows.delete(previous.viewport); }
+                    const next = reference(); if (next) remember(next); update();
+                });
+                update();
             } else unlisten();
         },
         dispose(): void { if (disposed) return; disposed = true; cancel(); paused = false; unlisten(); }

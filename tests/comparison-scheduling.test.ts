@@ -5,6 +5,7 @@ import { Workspace, TextBuffer } from "../src/index.ts";
 import type { ComparisonSnapshot, DocumentView } from "../src/index.ts";
 import { createComparisonAlignment } from "../src/browser/comparison-alignment.ts";
 import { createComparisonScroll } from "../src/browser/comparison-scroll.ts";
+import { createComparisonPanes } from "../src/browser/comparison-panes.ts";
 import type { EditingCandidate } from "../src/browser/editing-candidate.ts";
 import type { TextViewport, ViewportComparisonRows } from "../src/browser/viewport.ts";
 
@@ -34,16 +35,20 @@ function fixture(count = 5000) {
             scrollTo: ({ top: next }: { top?: number }) => { if (next !== undefined) top = next; }, flush: () => {} } as unknown as TextViewport;
         return { value, element, installed: () => installed, scroll: (to: number) => { top = to; element.dispatchEvent(new Event("scroll")); } };
     }
-    const working = viewport(view), reference = viewport(refView); let target: TextViewport | undefined = reference.value;
-    const editor = { view, viewport: working.value, activity: () => ({ composing, pendingInput: false, pendingCommand: false, pendingDragScroll: false }) } as unknown as EditingCandidate;
-    const alignment = createComparisonAlignment(win, editor, () => target, () => state, () => notifications++, () => false);
+    const working = viewport(view), reference = viewport(refView);
+    const editor = { view, viewport: working.value, input: new EventTarget(), activity: () => ({ composing, pendingInput: false, pendingCommand: false, pendingDragScroll: false }) } as unknown as EditingCandidate;
+    let compositions = 0, focuses = 0;
+    const baselineEditor = { view: refView, viewport: reference.value, input: new EventTarget(), focus: () => { focuses++; } } as unknown as EditingCandidate;
+    const panes = createComparisonPanes(editor, () => { compositions++; }); panes.setReference(baselineEditor);
+    const alignment = createComparisonAlignment(win, panes, () => state, () => notifications++, () => false);
     const step = () => { const entry = tasks.entries().next().value; assert.ok(entry, "Expected scheduled work"); tasks.delete(entry[0]); entry[1](); };
     const drain = () => { let turns = 0; while (tasks.size) { assert.ok(++turns < 1000, "Scheduler failed to settle"); step(); } return turns; };
-    return { workspace, view, refView, win, working, reference, alignment, tasks, step, drain, state: () => state,
-        counters: () => ({ reads, notifications }), setClockStep: (value: number) => { clockStep = value; },
-        setComposing: (value: boolean) => { composing = value; }, setReference: (value: TextViewport | undefined) => { target = value; }, referenceValue: () => target,
+    return { workspace, view, refView, win, working, reference, editor, baselineEditor, panes, alignment, tasks, step, drain, state: () => state,
+        counters: () => ({ reads, notifications, compositions, focuses }), setClockStep: (value: number) => { clockStep = value; },
+        setComposing: (value: boolean) => { composing = value; }, setReference: (value: TextViewport | undefined) => { panes.setReference(value ? baselineEditor : undefined); },
         refresh: () => { state = Object.freeze({ ...state, generation: state.generation + 1 }); },
-        dispose: () => { alignment.dispose(); view.dispose(); refView.dispose(); assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().subscriptions, 0); } };
+        dispose: () => { alignment.dispose(); panes.dispose(); view.dispose(); refView.dispose(); assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().subscriptions, 0);
+            for (const input of [editor.input, baselineEditor.input]) for (const type of ["compositionstart", "compositionend"]) assert.equal(getEventListeners(input, type).length, 0); } };
 }
 
 test("alignment bounds each turn by elapsed time and work, publishes once, and cancels stale captures", () => {
@@ -70,7 +75,7 @@ test("optional comparison listeners detach, rebind current references and cancel
     Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: class {
         observe(element: Element) { observed.add(element); } unobserve(element: Element) { observed.delete(element); } disconnect() { observed.clear(); }
     } });
-    const f = fixture(10), scroll = createComparisonScroll(f.win, f.working.value, f.referenceValue, f.state, () => true);
+    const f = fixture(10), scroll = createComparisonScroll(f.win, f.panes, f.state, () => true);
     const listeners = () => [f.working.element, f.reference.element].flatMap(element => ["sttropez-render", "scroll", "keydown", "beforeinput", "pointerdown", "compositionend"].map(type => getEventListeners(element, type).length));
     const idle = () => {
         assert.ok(listeners().every(n => n === 0)); assert.equal(f.workspace.diagnostics().subscriptions, 0); assert.equal(observed.size, 0);
@@ -80,17 +85,31 @@ test("optional comparison listeners detach, rebind current references and cancel
     };
     try {
         idle();
+        f.baselineEditor.input.dispatchEvent(new Event("compositionstart")); f.reference.element.dispatchEvent(new Event("focus"));
+        assert.equal(f.counters().compositions, 1); assert.equal(f.counters().focuses, 1);
         for (let pass = 0; pass < 2; pass++) {
             f.alignment.setEnabled(true); scroll.setLinked(true); f.drain(); assert.equal(observed.size, 2);
-            assert.equal(getEventListeners(f.working.element, "sttropez-render").length, 2);
+            assert.equal(getEventListeners(f.working.element, "sttropez-render").length, 1);
+            assert.equal(getEventListeners(f.working.element, "pointerdown").length, 1);
+            assert.equal(f.workspace.diagnostics().subscriptions, 2);
             f.working.scroll(212 + pass * 20); assert.ok(scroll.snapshot().pending); scroll.setLinked(false);
             assert.equal(scroll.snapshot().pending, false); assert.equal(getEventListeners(f.working.element, "scroll").length, 0);
             assert.equal(getEventListeners(f.working.element, "sttropez-render").length, 1); assert.equal(observed.size, 0);
             f.alignment.setEnabled(false); idle();
         }
-        f.alignment.setEnabled(true); scroll.setLinked(true); f.drain(); f.setReference(undefined); f.alignment.update(); scroll.update(); f.drain();
+        f.alignment.setEnabled(true); scroll.setLinked(true); f.drain(); f.working.scroll(312); assert.ok(scroll.snapshot().pending);
+        f.setReference(undefined); assert.equal(scroll.snapshot().pending, false); f.drain();
         assert.equal(getEventListeners(f.reference.element, "sttropez-render").length, 0); assert.equal(observed.size, 1);
-        f.setReference(f.reference.value); f.alignment.update(); scroll.update(); f.drain();
+        assert.equal(f.reference.installed(), undefined); assert.equal(f.working.installed(), undefined);
+        f.baselineEditor.input.dispatchEvent(new Event("compositionend")); f.reference.element.dispatchEvent(new Event("focus"));
+        assert.equal(f.counters().compositions, 1); assert.equal(f.counters().focuses, 1);
+        const before = f.counters().reads; f.reference.element.dispatchEvent(new Event("sttropez-render")); f.reference.element.dispatchEvent(new Event("scroll"));
+        assert.equal(f.counters().reads, before); assert.equal(f.tasks.size, 0);
+        f.setReference(f.reference.value); f.drain();
+        f.baselineEditor.input.dispatchEvent(new Event("compositionend")); assert.equal(f.counters().compositions, 2);
+        f.alignment.setEnabled(false); assert.equal(getEventListeners(f.working.element, "sttropez-render").length, 1);
+        assert.equal(getEventListeners(f.working.element, "compositionend").length, 0); assert.equal(f.workspace.diagnostics().subscriptions, 2);
+        f.drain();
         f.working.scroll(412); assert.ok(scroll.snapshot().pending); scroll.dispose(); f.alignment.dispose(); idle();
     } finally { scroll.dispose(); f.dispose(); if (previous) Object.defineProperty(globalThis, "ResizeObserver", previous); else Reflect.deleteProperty(globalThis, "ResizeObserver"); }
 });

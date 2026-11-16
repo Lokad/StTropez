@@ -12,6 +12,7 @@ import { createComparisonScroll } from "./comparison-scroll.ts";
 import { createComparisonAlignment } from "./comparison-alignment.ts";
 import type { ComparisonAlignmentSnapshot } from "./comparison-alignment.ts";
 import { mountComparisonControls } from "./comparison-controls.ts";
+import { createComparisonPanes } from "./comparison-panes.ts";
 
 export type ComparisonReferenceView = Readonly<{ editor: EditingCandidate; target: TabTarget; epoch: number; version: string }>;
 export type TextComparisonSnapshot = Readonly<{
@@ -55,12 +56,11 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     };
     const referencePane = pane(), workingPane = pane();
     root.append(panes); host.append(root);
-    let state = controller.getSnapshot(), reference: TextViewport | undefined, display: TextResourceHandle | undefined, displayTab: TabId | undefined;
-    let displayTarget: TabTarget | undefined, referenceInput: EditingCandidate | undefined, referenceEvents: AbortController | undefined;
+    let state = controller.getSnapshot(), display: TextResourceHandle | undefined, displayTab: TabId | undefined;
+    let displayTarget: TabTarget | undefined;
     let epoch = -1, selected = -1, selectedGeneration = -1, timer: number | undefined, disposed = false;
     let measuredGeneration = -1, steps = 0, advances = 0, maxStepMs = 0, totalStepMs = 0;
     let decoratedGeneration = -1, decoratedStatus: string | undefined;
-    const listeners = new AbortController();
     const referenceScope = workspace.createNotificationScope(), referenceStore = new Store<ComparisonReferenceView | undefined>(undefined, referenceScope);
     const publishReference = (value: ComparisonReferenceView | undefined) => { const changed = new Set<Store<unknown>>(); referenceStore.set(value, changed); referenceScope.deliver([...changed]); };
     function rangeAt(side: "baseline" | "working", line: number): DiffRange | undefined {
@@ -80,19 +80,20 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     let working: EditingCandidate;
     try { working = mountEditingCandidate(workingPane.content, workspace, workingTab, { view: controller.view, ariaLabel: "Comparison working source", decorate: decorate("working"), lineClass: lineClass("working") }); }
     catch (error) { root.remove(); controller.dispose(); throw error; }
+    const pair = createComparisonPanes(working, changed), referenceEditor = pair.reference, referenceViewport = () => referenceEditor()?.viewport;
     const busy = (editor: EditingCandidate | undefined) => { const input = editor?.activity(); return !!input && (input.composing || input.pendingInput || input.pendingCommand); };
-    const composing = () => working.activity().composing || referenceInput?.activity().composing === true;
-    const alignment = createComparisonAlignment(win, working, () => reference, controller.getSnapshot, changed,
-        () => busy(referenceInput) || referenceInput?.activity().pendingDragScroll === true);
-    const scroll = createComparisonScroll(win, working.viewport, () => reference, controller.getSnapshot, () => {
-        return !busy(working) && !busy(referenceInput) && !alignment.snapshot().pending;
+    const composing = () => working.activity().composing || referenceEditor()?.activity().composing === true;
+    const alignment = createComparisonAlignment(win, pair, controller.getSnapshot, changed,
+        () => busy(referenceEditor()) || referenceEditor()?.activity().pendingDragScroll === true);
+    const scroll = createComparisonScroll(win, pair, controller.getSnapshot, () => {
+        return !busy(working) && !busy(referenceEditor()) && !alignment.snapshot().pending;
     });
     const stateScope = workspace.createNotificationScope(), stateStore = new Store(captureState(), stateScope);
     let stopControls: (() => void) | undefined;
     function captureState(): TextComparisonSnapshot {
         const comparison = controller.getSnapshot(), ready = !disposed && comparison.status === "ready";
         const selectedHunk = selectedGeneration === comparison.generation && comparison.hunks[selected] ? selected : null;
-        const canNavigate = ready && comparison.hunks.length > 0 && !!reference && epoch === comparison.baseline?.epoch && !composing();
+        const canNavigate = ready && comparison.hunks.length > 0 && !!referenceViewport() && epoch === comparison.baseline?.epoch && !composing();
         const metadata = comparison.working ? workspace.resource(comparison.working.resourceId).metadata.getSnapshot() : undefined;
         const canRevert = canNavigate && selectedHunk !== null && !working.input.readOnly && !working.input.disabled
             && metadata?.capabilities.edit.includes("human") === true && metadata.editLock === null;
@@ -115,7 +116,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     };
     function clearReference(): void {
         publishReference(undefined);
-        referenceEvents?.abort(); referenceEvents = undefined; referenceInput?.destroy(); referenceInput = undefined; reference = undefined;
+        const retiredEditor = referenceEditor(); try { pair.setReference(undefined); } finally { retiredEditor?.destroy(); }
         if (displayTarget && workspace.resolveTab(displayTarget)) workspace.close(displayTarget.id);
         displayTab = undefined; displayTarget = undefined;
         if (display) { const retired = display; display = undefined; workspace.releaseResourceWhenUnowned(retired.id); }
@@ -128,14 +129,10 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
                 { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false, run: false }, { visibility: "internal" });
             displayTab = workspace.open({ kind: "text", documentId: display.documentId }, display.id);
             displayTarget = workspace.captureTab(displayTab);
-            referenceInput = mountEditingCandidate(referencePane.content, workspace, displayTab, { ariaLabel: "Comparison baseline source", decorate: decorate("baseline"), lineClass: lineClass("baseline") });
-            reference = referenceInput.viewport; referenceEvents = new AbortController();
-            // Preserve the viewport focus entry point while exposing the read-only input to Tab.
-            reference.element.addEventListener("focus", () => referenceInput?.focus(), { signal: referenceEvents.signal });
-            referenceInput.input.addEventListener("compositionstart", changed, { signal: referenceEvents.signal });
-            referenceInput.input.addEventListener("compositionend", changed, { signal: referenceEvents.signal });
-            publishReference(Object.freeze({ editor: referenceInput, target: displayTarget, epoch, version: state.baseline.version }));
-        } else if (!state.baseline && reference) clearReference();
+            const editor = mountEditingCandidate(referencePane.content, workspace, displayTab, { ariaLabel: "Comparison baseline source", decorate: decorate("baseline"), lineClass: lineClass("baseline") });
+            try { pair.setReference(editor); } catch (error) { editor.destroy(); throw error; }
+            publishReference(Object.freeze({ editor, target: displayTarget, epoch, version: state.baseline.version }));
+        } else if (!state.baseline && referenceViewport()) clearReference();
         if (root.dataset.status !== state.status) root.dataset.status = state.status;
         alignment.update(); scroll.update();
         const generation = String(state.generation); if (root.dataset.generation !== generation) root.dataset.generation = generation;
@@ -144,7 +141,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
         // their own viewports; redraw hunks once on restart, completion or expiration.
         if (state.generation !== decoratedGeneration || state.status !== decoratedStatus) {
             decoratedGeneration = state.generation; decoratedStatus = state.status;
-            reference?.invalidate(); working.viewport.invalidate();
+            referenceViewport()?.invalidate(); working.viewport.invalidate();
         }
     }
     function schedule(): void { if (!disposed && timer === undefined) timer = win!.setTimeout(step, 0); }
@@ -164,7 +161,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     }
     function selectHunk(generation: number, index: number): boolean {
         referenceScope.assertWritable();
-        const current = controller.getSnapshot();
+        const current = controller.getSnapshot(), reference = referenceViewport();
         if (disposed || composing() || current.status !== "ready" || current.generation !== generation || !Number.isSafeInteger(index)) return false;
         const hunk = current.hunks[index]; if (!hunk || !current.working || !reference || epoch !== current.baseline?.epoch) return false;
         selected = index; selectedGeneration = generation; const document = reference.view.getSnapshot();
@@ -179,7 +176,6 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
         if (disposed || composing() || working.input.readOnly || working.input.disabled) return false;
         return controller.revert(generation, index);
     }
-    working.input.addEventListener("compositionstart", changed, { signal: listeners.signal }); working.input.addEventListener("compositionend", changed, { signal: listeners.signal });
     // A document notification can paint the working viewport before the scheduled controls.
     // Decoration queries must already see the mapped capture for that same revision.
     const unsubscribe = controller.subscribe(() => { state = controller.getSnapshot(); changed(); }),
@@ -187,8 +183,8 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     function destroy(): void {
         if (disposed) return; referenceScope.assertWritable(); disposed = true; if (timer !== undefined) win!.clearTimeout(timer);
         try {
-            unsubscribe(); stopMetadata(); listeners.abort(); scroll.dispose(); alignment.dispose();
-            try { working.destroy(); } finally { clearReference(); }
+            unsubscribe(); stopMetadata(); scroll.dispose(); alignment.dispose();
+            try { clearReference(); } finally { pair.dispose(); working.destroy(); }
         } finally {
             try { controller.dispose(); } finally { state = controller.getSnapshot(); selected = -1; publishState(); stopControls?.(); root.remove(); }
         }
@@ -198,6 +194,6 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
         if (options.controls !== false) stopControls = mountComparisonControls({ element: root, state: stateStore.observable, selectHunk, revertHunk, setScrollLinked, setRowsAligned }, referencePane.section, workingPane.section);
         schedule();
     } catch (error) { destroy(); throw error; }
-    return Object.freeze({ element: root, controller, working, referenceViewport: () => reference, referenceEditor: () => referenceInput, reference: referenceStore.observable, state: stateStore.observable, selectHunk, revertHunk, setScrollLinked, setRowsAligned,
+    return Object.freeze({ element: root, controller, working, referenceViewport, referenceEditor, reference: referenceStore.observable, state: stateStore.observable, selectHunk, revertHunk, setScrollLinked, setRowsAligned,
         snapshot: () => Object.freeze({ generation: measuredGeneration, steps, advances, maxStepMs, totalStepMs, scrollLinked: scroll.snapshot().linked, pendingScroll: scroll.snapshot().pending, rowsAligned: alignment.snapshot().enabled, alignment: alignment.snapshot(), referenceSubscriptions: referenceScope.subscriptionCount(), disposed }), destroy });
 }

@@ -237,8 +237,11 @@ an adjacent source boundary; arrows skip it and Page commands follow the visual 
 
 Both features wait for current comparison/view captures and settled input/navigation. Alignment
 also waits for pointer gestures. Edits, reference/fold changes, disable and disposal cancel stale
-work. Disabling either feature releases its listeners and pending work independently. Only the
-visible row window creates DOM. `snapshot()` exposes `scrollLinked`, `pendingScroll`, `rowsAligned`
+work. Disabling either feature releases its subscriptions and pending work independently.
+The active features share pane render/fold observation; disabling both releases that optional
+observation. Reference replacement detaches the old pane before disposal and binds the new pane
+once. Composition and reference focus handling follow the pane's lifetime.
+Only the visible row window creates DOM. `snapshot()` exposes `scrollLinked`, `pendingScroll`, `rowsAligned`
 and alignment phase/work/failure; controller readiness alone does not establish settled panes.
 
 ## Host responsibilities

@@ -2,53 +2,45 @@ import { ComparisonRowsCursor } from "../core/comparison-rows.ts";
 import type { ComparisonRows } from "../core/comparison-rows.ts";
 import type { ComparisonSnapshot } from "../core/comparison.ts";
 import type { FoldingSnapshot } from "../core/folding.ts";
-import type { EditingCandidate } from "./editing-candidate.ts";
 import type { TextViewport } from "./viewport.ts";
+import type { ComparisonPanes } from "./comparison-panes.ts";
 type Capture = { state: ComparisonSnapshot; reference: TextViewport; a: FoldingSnapshot; b: FoldingSnapshot };
 export type ComparisonAlignmentSnapshot = Readonly<{ enabled: boolean; status: "idle" | "building" | "waiting" | "ready" | "failed"; pending: boolean; work: number; runs: number; failure: string | undefined }>;
 let serial = 0;
 
 /** Cooperative, view-only publication against one immutable comparison/fold capture. */
-export function createComparisonAlignment(win: Window, working: EditingCandidate, reference: () => TextViewport | undefined,
+export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
     getComparison: () => ComparisonSnapshot, changed: () => void, referenceBusy: () => boolean) {
+    const working = panes.working, reference = () => panes.reference()?.viewport;
     let enabled = false, disposed = false, timer: number | undefined, cursor: ComparisonRowsCursor | undefined, capture: Capture | undefined, result: ComparisonRows | undefined;
     let status: "idle" | "building" | "waiting" | "ready" | "failed" = "idle", failure: string | undefined, work = 0, installedPitch = 0;
-    let oldReference: TextViewport | undefined, referenceEvents: AbortController | undefined, stopReference: (() => void) | undefined;
-    let events: AbortController | undefined, stopWorking: (() => void) | undefined;
+    let events: AbortController | undefined, stopObserving: (() => void) | undefined, stopReference: (() => void) | undefined;
     const pointers = new Set<number>();
     const stableInput = () => { const s = working.activity(); return !s.composing && !s.pendingCommand && !s.pendingInput && !s.pendingDragScroll && !pointers.size && !referenceBusy(); };
     const cancel = () => { if (timer !== undefined) win.clearTimeout(timer); timer = undefined; cursor?.dispose(); cursor = undefined; };
     const schedule = () => { if (!disposed && enabled && timer === undefined) timer = win.setTimeout(step, 0); };
-    const clear = () => { working.viewport.setComparisonRows(undefined); oldReference?.setComparisonRows(undefined); };
+    const clear = () => { working.viewport.setComparisonRows(undefined); reference()?.setComparisonRows(undefined); };
     const current = (c: Capture) => getComparison() === c.state && reference() === c.reference && working.view.folding.getSnapshot() === c.b && c.reference.view.folding.getSnapshot() === c.a;
     const pitch = (c: Capture) => Math.max(working.viewport.snapshot().naturalLineHeight, c.reference.snapshot().naturalLineHeight);
-    function watch(view: TextViewport, signal: AbortSignal): void {
-        view.element.addEventListener("sttropez-render", () => {
-            if (enabled && (!capture || !current(capture) || result && (status === "waiting" && stableInput() || pitch(capture) !== installedPitch))) schedule();
-        }, { signal });
-        view.element.addEventListener("compositionend", schedule, { signal, capture: true });
-        view.element.addEventListener("pointerdown", e => { if (enabled) pointers.add(e.pointerId); }, { signal, capture: true });
-    }
-    const releasePointer = (event: PointerEvent) => { if (pointers.delete(event.pointerId)) schedule(); };
     function listen(): void {
+        stopObserving = panes.observe({ render: () => {
+            if (enabled && (!capture || !current(capture) || result && (status === "waiting" && stableInput() || pitch(capture) !== installedPitch))) schedule();
+        }, fold: schedule, compositionend: schedule, pointerdown: (_view, event) => { if (enabled) pointers.add((event as PointerEvent).pointerId); } });
+        stopReference = panes.onReferenceChange(previous => {
+            cancel(); previous?.viewport.setComparisonRows(undefined); clear(); pointers.clear(); capture = undefined; result = undefined; installedPitch = 0; update();
+        });
         events = new AbortController();
+        const releasePointer = (event: PointerEvent) => { if (pointers.delete(event.pointerId)) schedule(); };
         win.addEventListener("pointerup", releasePointer, { signal: events.signal, capture: true }); win.addEventListener("pointercancel", releasePointer, { signal: events.signal, capture: true });
         for (const type of ["blur", "dragend", "drop"] as const) win.addEventListener(type, () => { if (pointers.size) { pointers.clear(); schedule(); } }, { signal: events.signal });
-        watch(working.viewport, events.signal); stopWorking = working.view.folding.subscribe(schedule);
     }
     function unlisten(): void {
-        events?.abort(); events = undefined; stopWorking?.(); stopWorking = undefined;
-        referenceEvents?.abort(); referenceEvents = undefined; stopReference?.(); stopReference = undefined;
-        pointers.clear(); oldReference = undefined;
+        events?.abort(); events = undefined; stopObserving?.(); stopObserving = undefined; stopReference?.(); stopReference = undefined;
+        pointers.clear();
     }
     function update(): void {
         if (disposed || !enabled) return;
         const next = reference(), state = getComparison();
-        if (next !== oldReference) {
-            cancel(); oldReference?.setComparisonRows(undefined); referenceEvents?.abort(); stopReference?.(); pointers.clear();
-            oldReference = next; referenceEvents = undefined; stopReference = undefined; capture = undefined; result = undefined;
-            if (next) { referenceEvents = new AbortController(); watch(next, referenceEvents.signal); stopReference = next.view.folding.subscribe(schedule); }
-        }
         if (state.status !== "ready" || !state.baseline || !state.working || !next) {
             cancel(); clear(); capture = undefined; result = undefined; installedPitch = 0;
             const nextStatus = state.status === "running" ? "building" : "idle";
