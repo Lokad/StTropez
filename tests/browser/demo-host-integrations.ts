@@ -10,7 +10,44 @@ async function paste(source: Locator, plain: string) {
 
 /** One visible workflow shared by source, static and restored-assets hosts. No OS clipboard access. */
 export async function runDemoHostIntegrations(page: Page, url = "/") {
-
+    await page.addInitScript(() => {
+        const attempts: string[] = [], observed: string[] = [], semanticWorkers = new WeakSet<Worker>();
+        Reflect.set(window, "hostLanguageTransport", { attempts, observed });
+        const record = (kind: string, capturedHost = false) => {
+            observed.push(kind);
+            // The picker changes before asynchronous stylesheet/project preparation detaches
+            // the previous sample. Attribute activity to the mounted sample, not that intent.
+            if (capturedHost || document.querySelector("#language-status")?.textContent === "Host language · no language server") attempts.push(kind);
+        };
+        const semantic = (url: string | URL) => /\/(?:demo-language-worker|provider-worker)\.js$/.test(new URL(url, document.baseURI).pathname);
+        window.Worker = new Proxy(window.Worker, { construct(target, args) {
+            const worker = Reflect.construct(target, args) as Worker;
+            if (semantic(args[0])) { semanticWorkers.add(worker); record("worker:create"); } return worker;
+        } });
+        Worker.prototype.postMessage = new Proxy(Worker.prototype.postMessage, { apply(target, worker: Worker, args) {
+            if (semanticWorkers.has(worker)) record("worker:send", args[0]?.start === true && args[0]?.names?.includes("workflow.rules"));
+            return Reflect.apply(target, worker, args);
+        } });
+        window.fetch = new Proxy(window.fetch, { apply(target, receiver, args) {
+            const input = args[0] as RequestInfo | URL, request = input instanceof Request ? input : undefined;
+            const path = new URL(request?.url ?? String(input), document.baseURI);
+            if (path.pathname.endsWith("/demo-provider") && (args[1]?.method ?? request?.method ?? "GET").toUpperCase() === "POST") record("server:start", path.searchParams.get("sample") === "host");
+            return Reflect.apply(target, receiver, args);
+        } });
+        WebSocket.prototype.send = new Proxy(WebSocket.prototype.send, { apply(target, socket, args) {
+            if (typeof args[0] === "string") {
+                const message = JSON.parse(args[0]) as { method?: string };
+                // A suspended previous sample may still finish protocol teardown.
+                if (message.method && !["$/cancelRequest", "textDocument/didClose", "shutdown", "exit"].includes(message.method)) record(message.method);
+            }
+            return Reflect.apply(target, socket, args);
+        } });
+    });
+    const providerFree = async () => {
+        const transport = await page.evaluate(() => Reflect.get(window, "hostLanguageTransport") as { attempts: string[]; observed: string[] });
+        // The initial TypeScript sample establishes that the observer saw the real provider route.
+        expect(transport.observed.length).toBeGreaterThan(0); expect(transport.attempts).toEqual([]);
+    };
     await page.goto(url);
     const normalRow = page.locator("#editor .st-viewport-row").first(); await expect(normalRow).toBeVisible();
     const typography = await normalRow.evaluate(node => Object.fromEntries(["font-family", "font-size", "line-height"].map(name => [name, getComputedStyle(node).getPropertyValue(name)])));
@@ -107,10 +144,10 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
     await source.press("Control+End"); await expect(inventory).toHaveAttribute("data-line", "203");
     await source.press("Control+z"); await expect(inventory).toHaveAttribute("data-line", "3");
     // Initial sample offsets must not be reapplied to edited text restored from storage.
-    const saved = await source.inputValue(); await page.reload(); await page.locator("#sample").selectOption("host");
+    const saved = await source.inputValue(); await providerFree(); await page.reload(); await page.locator("#sample").selectOption("host");
     await expect(source).toHaveValue(saved); await expect(page.locator("#folding-status")).toContainText("folds");
     await expect(page.locator('#editor .st-fold-button[aria-expanded="false"]')).toHaveCount(0);
-    await page.locator("#sample").selectOption("pricing"); await expect(page.locator(".demo-source-notes")).toHaveCount(0);
+    await providerFree(); await page.locator("#sample").selectOption("pricing"); await expect(page.locator(".demo-source-notes")).toHaveCount(0);
     await expect(page.locator(".demo-shadow-surface")).toHaveCount(0);
     await expect(page.locator("#host-status")).toBeHidden();
 }
