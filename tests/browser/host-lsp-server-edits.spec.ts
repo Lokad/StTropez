@@ -35,6 +35,34 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP server edits`,
         await expect(button(page, "Open provider changes in Navigation companion")).toHaveAttribute("data-retained", "changed-resource");
         const depth = (await snapshot(page)).history.undoDepth; await button(page, "Request provider review edits").click(); await done(page); expect((await snapshot(page)).history.undoDepth).toBe(depth); await button(page, "Unregister provider review command").click(); await done(page); await expect(button(page, "Request provider review edits")).toBeDisabled(); expect((await snapshot(page)).source.exports).toBe(0); await dispose(page); await expect.poll(() => closed).toBe(opened);
     });
+    test("edits to only an unmounted companion preserve primary revision, review, Save and Run", async ({ page }) => {
+        await seed(page); await button(page, "Open source review").click(); await register(page); await request(page);
+        await button(page, "Apply captured provider edits").click(); await done(page); const expected = header + raw + footer; await exact(page, expected);
+        const baseline = (await snapshot(page)).bindings.comparison!.baseline; await button(page, "Add navigation companion").click(); await editors(page);
+        const before = await snapshot(page), companion = before.bindings.navigation.companion!;
+        const companionText = await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion);
+        expect(before.bindings.views.every(view => view.documentId !== companion)).toBe(true);
+        await request(page); await expect(notes(page)).toHaveCount(2); await exact(page, expected); expect((await snapshot(page)).history).toEqual(before.history);
+        await button(page, "Apply captured provider edits").click(); await done(page);
+        const after = await snapshot(page); expect(after.source.revision).toBe(before.source.revision); expect(after.history).toEqual(before.history);
+        expect(after.bindings.views.every(view => view.documentId !== companion)).toBe(true);
+        const changed = page.getByRole("list", { name: "Provider changed resources", exact: true }).getByRole("button");
+        await expect(changed).toHaveCount(1); await expect(changed).toHaveText("Open provider changes in Navigation companion"); await changed.click(); await editors(page);
+        await expect(input(page, "Secondary source")).toBeFocused(); expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")!.documentId).toBe(companion);
+        expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(header + companionText + footer);
+        await input(page, "Secondary source").press("Control+z"); await editors(page); await exact(page, expected);
+        expect((await snapshot(page)).source.revision).toBe(before.source.revision); expect((await snapshot(page)).history).toEqual(before.history);
+        expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(companionText);
+        await input(page, "Secondary source").press("Control+Shift+z"); await editors(page); await exact(page, expected);
+        expect((await snapshot(page)).source.revision).toBe(before.source.revision); expect((await snapshot(page)).history).toEqual(before.history);
+        expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(header + companionText + footer);
+        expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline); expect((await snapshot(page)).source.exports).toBe(0);
+        expect(await page.evaluate(() => window.hostFixture.releaseNavigationCompanion())).toBe(false);
+        await button(page, "Run captured inputs").click(); expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id);
+        expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(expected); await page.evaluate(() => window.hostFixture.finishRun());
+        await button(page, "Save source").click(); await page.evaluate(() => window.hostFixture.finishSave()); await done(page);
+        expect((await snapshot(page)).source.dirty).toBe(false); await exact(page, expected); expect((await snapshot(page)).bindings.project.worker.created).toBe(0); await dispose(page);
+    });
     test("decline, stale decision tokens and project authority or view changes cannot apply a partial batch", async ({ page }) => {
         await seed(page); await button(page, "Add navigation companion").click(); await register(page); const before = await snapshot(page), companion = before.bindings.navigation.companion!;
         await page.evaluate(() => window.hostFixture.setProjectDelay(200)); await button(page, "Request provider review edits").click(); await input(page, "Configuration path").focus(); await expect.poll(async () => !!(await snapshot(page)).bindings.project.state.review).toBe(true); await expect(input(page, "Configuration path")).toBeFocused(); const old = (await snapshot(page)).bindings.project.state.review!.token; await button(page, "Decline captured provider edits").click(); await done(page); await exact(page, raw);

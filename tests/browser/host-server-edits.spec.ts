@@ -25,18 +25,6 @@ async function dispose(p: Page): Promise<void> {
     expect(s.bindings.project.worker.created).toBe(s.bindings.project.worker.terminated); await expect.poll(() => p.workers().length).toBe(0);
 }
 for (const host of ["plain", "react"]) {
-    test(`${host} a batch affecting only an unmounted resource exposes captured reveal and participating undo without retargeting primary commands`, async ({ page: p }, info) => {
-        const raw = "alpha", expected = reviewHeader + raw + reviewFooter; await setup(p, host, raw); await button(p, "Open source review").click(); await register(p); await review(p); await exact(p, expected);
-        const baseline = (await snapshot(p)).bindings.comparison!.baseline; await button(p, "Add navigation companion").click(); const before = await snapshot(p); await review(p);
-        const after = await snapshot(p), companion = after.bindings.navigation.companion!; expect(after.source.revision).toBe(before.source.revision); expect(after.bindings.views.every(v => v.documentId !== companion)).toBe(true);
-        const changed = p.getByRole("list", { name: "Provider changed resources", exact: true }).getByRole("button"); await expect(changed).toHaveCount(1); await expect(changed.first()).toHaveText("Open provider changes in Navigation companion"); await changed.first().click(); await waitForProject(p);
-        expect((await snapshot(p)).bindings.views.find(v => v.id === "secondary")!.documentId).toBe(companion); await expect(input(p, "Secondary source")).toBeFocused(); expect(await p.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(reviewHeader + "const catalogue = 1;\r\ncatalogue;\r\n" + reviewFooter);
-        if (info.project.name === "chromium") await p.screenshot({ path: `artifacts/server-edits-reveal-images/host-${host}-server-edits-reveal.png`, fullPage: true });
-        await input(p, "Secondary source").press("Control+z"); await waitForProject(p); await exact(p, expected); expect(await p.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("const catalogue = 1;\r\ncatalogue;\r\n");
-        await input(p, "Secondary source").press("Control+Shift+z"); await waitForProject(p); await exact(p, expected); expect((await snapshot(p)).bindings.comparison!.baseline).toEqual(baseline); expect((await snapshot(p)).source.exports).toBe(0);
-        expect(await p.evaluate(() => window.hostFixture.releaseNavigationCompanion())).toBe(false);
-        await button(p, "Run captured inputs").click(); expect(await p.evaluate(text => window.hostFixture.runCapture(0)!.source === text, expected)).toBe(true); await p.evaluate(() => window.hostFixture.finishRun()); await button(p, "Save source").click(); await p.evaluate(() => window.hostFixture.finishSave()); await waitForProject(p); expect((await snapshot(p)).source.dirty).toBe(false); await exact(p, expected); await dispose(p);
-    });
     for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} actual server batch has atomic shared history, immutable review and primary Save/Run identity`, async ({ page: p }) => {
         test.setTimeout(120000); const raw = "\ufeffconst café = '😀';\r\n" + (large ? "const unchanged = 123;\r\n".repeat(100000) : "") + "café;", expected = reviewHeader + raw + reviewFooter;
         await setup(p, host, raw); await button(p, "Open source review").click(); await button(p, "Add navigation companion").click(); await waitForProject(p);

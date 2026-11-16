@@ -74,7 +74,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await button(page, "Save source").click(); await page.evaluate(() => window.hostFixture.finishSave()); await settledColorsAndLinks(page);
         await exact(page, text); expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(expected); await disposeColorsAndLinks(page);
     });
-    test("provider color presentations preview every edit and preserve shared history while cancelled requests leave text intact", async ({ page }) => {
+    test("provider color presentations preview every edit and preserve complete selections through shared history", async ({ page }) => {
         const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));
         const raw = '\ufeffconst color = "#abc";\r\nvalue;'; await seed(page, raw);
         await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 4, head: 1 }, { anchor: 20, head: 20 }], 1); });
@@ -86,12 +86,43 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(expected); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
         await field(page, "Secondary source").press("Control+z"); expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(raw);
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);
-        await field(page).focus(); await button(page, "Discover document colors").click(); await expect.poll(async () => (await snapshot(page)).bindings.colors.state.count).toBe(1);
-        await proposed.fill("#112233"); await page.evaluate(() => window.hostFixture.setColorsDelay(650)); await button(page, "Preview color presentations").click();
-        await expect.poll(async () => (await snapshot(page)).bindings.colors.state.pending).toBe(true); await proposed.fill("#445566"); await page.waitForTimeout(700);
-        await expect(button(page, "Apply captured color")).toBeDisabled(); expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(raw);
-        expect((await snapshot(page)).bindings.colors.state.pending).toBe(false); expect((await snapshot(page)).bindings.colors.worker.created).toBe(0); expect((await snapshot(page)).source.exports).toBe(0);
         expect(methods).toContain("textDocument/documentColor"); expect(methods).toContain("textDocument/colorPresentation");
+        expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
+    });
+    test("completed color previews and old activation tokens cannot overwrite changed captures", async ({ page }) => {
+        test.setTimeout(60000); const replies = await holdLspReplies(page, "textDocument/colorPresentation"); await page.reload();
+        const raw = 'const color = "#abc";\r\nvalue;'; await seed(page, raw); let current = raw;
+        const proposed = field(page, "Proposed color"), apply = button(page, "Apply captured color");
+        const discover = async () => {
+            await field(page).focus(); await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 16, head: 16 }]); });
+            await button(page, "Discover document colors").click(); await settledColorsAndLinks(page);
+        };
+        const preview = async (value: string) => { await proposed.fill(value); await button(page, "Preview color presentations").click(); await settledColorsAndLinks(page); return (await snapshot(page)).bindings.colors.state; };
+        await discover(); const valid = await preview("#112233"); await expect(apply).toBeEnabled(); expect(valid.presentation).not.toBe("");
+        for (const mode of ["selection", "value", "typing", "authority", "remount"] as const) {
+            await discover(); await proposed.fill("#112233"); replies.hold(); await button(page, "Preview color presentations").click(); await expect.poll(replies.waiting).toBe(true);
+            const captured = (await snapshot(page)).bindings.colors.state; expect(captured.pending).toBe(true); expect(captured.previewToken).not.toBeNull();
+            if (mode === "selection") await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 17, head: 17 }]); });
+            else if (mode === "value") { await proposed.press("Home"); await proposed.press("ArrowRight"); await page.keyboard.type("ff"); await expect(proposed).toHaveValue("#ff112233"); }
+            else if (mode === "typing") { await field(page).press("Control+End"); await field(page).pressSequentially("H"); current += "H"; }
+            else if (mode === "authority") await page.evaluate(() => window.hostFixture.cycleSourceEditLease());
+            else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
+            await settledColorsAndLinks(page); await expect.poll(replies.cancelled).toBe(true); const invalidated = await snapshot(page);
+            await replies.release(); await page.evaluate(({ captured, id }) => window.hostFixture.applyColor(captured.token, captured.previewToken, id), { captured, id: valid.presentation });
+            await settledColorsAndLinks(page); const after = await snapshot(page);
+            expect(after.bindings.colors.state).toMatchObject({ pending: false, canApply: false, choices: [] }); expect(after.bindings.colors.applied).toBe(0);
+            expect(after.history).toEqual(invalidated.history); expect(after.bindings.views.map(view => view.selectionSet)).toEqual(invalidated.bindings.views.map(view => view.selectionSet)); await exact(page, current);
+        }
+        await discover(); const old = await preview("#112233"); await expect(apply).toBeEnabled(); const fresh = await preview("#445566"), beforeOld = await snapshot(page);
+        expect(fresh.previewToken).not.toBe(old.previewToken); await page.evaluate(state => window.hostFixture.applyColor(state.token, state.previewToken, state.presentation), old);
+        await exact(page, current); expect((await snapshot(page)).history).toEqual(beforeOld.history); await expect(apply).toBeEnabled();
+        await page.evaluate(() => window.hostFixture.setSourceReadOnly(true)); await settledColorsAndLinks(page); await expect(apply).toBeDisabled();
+        await discover(); const readOnly = await preview("#445566"), beforeReadOnly = await snapshot(page); await expect(apply).toBeDisabled();
+        await page.evaluate(state => window.hostFixture.applyColor(state.token, state.previewToken, state.presentation), readOnly);
+        await exact(page, current); expect((await snapshot(page)).history).toEqual(beforeReadOnly.history);
+        await page.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await discover(); await preview("#445566"); await expect(apply).toBeEnabled();
+        await apply.click(); await settledColorsAndLinks(page); await exact(page, current.replace("#abc", "#445566")); expect((await snapshot(page)).bindings.colors.applied).toBe(1);
+        expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
     });
     test("provider links resolve to captured host resources and late or outside destinations do not steal focus", async ({ page }) => {
         const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));
