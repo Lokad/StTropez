@@ -1,125 +1,14 @@
-# Document transactions, history and views
+# Editor selections and view lifetime
 
-Reviewed 2026-11-08. Workspace documents use the immutable `TextBuffer` piece tree. A document
-owns its text, revision, saved baseline and bounded history. Each `DocumentView` owns a separate
-selection; the browser or host owns its scroll position. Tabs and view mounts do not own history.
+[Workspace](workspace.md#transactions-and-history) defines document transactions, shared history
+and persistence contracts. This page describes retained view state and editor selection commands.
 
-## Reading and changing a document
+## Typing groups
 
-`DocumentSnapshot.buffer` supports indexed line lookup and bounded range reads. The `text`
-property and a ready text resource's `value` remain string export boundaries for native views
-and host services. Their getter is lazy and shared within that revision's snapshots. Metadata
-commits preserve the getter without invoking it. History holds buffers, not snapshot getters
-or their optional exported strings. The native projection cache uses weak values so retained
-undo buffers do not keep every rendered whole-text string alive.
-When a resource snapshot already holds the chosen metadata object, publication reuses that snapshot
-and freezes it if needed. Replacing metadata preserves the lazy value descriptor without exporting text.
-
-`edit` checks document identity, expected revision, edit capability and exclusive lease, then
-validates every original-coordinate range before committing. `editDocuments` performs the same
-checks for every participant before any publication. Each document appears once, and the batch
-has one origin and history kind/group policy. Edits are sorted, non-overlapping UTF-16 ranges.
-Equal-content edits, including a batch whose combined result is unchanged, publish nothing and
-preserve buffer/revision/history identity. A selection-only request can still update its view.
-
-Each changed document advances its revision monotonically, including undo/redo. Its `change`
-records the preceding revision, transaction ID, origin, kind and position map. All documents in
-one transaction share the transaction ID. Subscribers see all text, metadata, history and view
-snapshots after publication, even when listening to the first participant. A stale revision,
-missing target, permission change, lock, invalid view, malformed range or invalid second
-document cannot partially apply an edit. Local atomicity does not promise remote atomic saves.
-
-```ts
-const current = workspace.document(source.documentId);
-workspace.edit({
-    documentId: source.documentId, expectedRevision: current.revision, origin: "human",
-    edits: [{ from: 10, to: 10, insert: "text" }],
-    history: { kind: "typing", group: "one-contiguous-action" },
-});
-```
-
-## History policy and bounds
-
-Every content edit is undoable within the configured limits. Origins remain `human`, `agent`
-or `host`; history kinds distinguish typing, deletion, paste, composition, form generation,
-refactoring, proposals, live updates, replacement and canonical responses. An omitted policy
-creates a standalone `replace` unit. Proposals and canonical replies enter the same document
-history and remain separate units. Typed non-text resources retain their own host data contract;
-this text history does not fabricate a buffer for them.
-
-An explicit group joins only consecutive edits in its document with the same origin, kind,
-group and initiating view. Core grouping has no hidden clock. Selection movement, undo/redo
-and that document's save capture/settlement seal a group; a later command cannot reopen it by reusing its name.
-Independent background documents do not split a typing group.
-Multi-document edits always form one standalone shared unit. Form/refactor/paste/live commands
-are standalone by default; a host can explicitly group consecutive steps of one logical command.
-
-History synchronization visits documents whose stack depths changed, including indirect participants
-of redo invalidation, eviction and linked history boundaries. Group extension, selection-only work
-and ordinary save settlement do not rebuild unchanged history snapshots. All affected snapshots are
-updated before any document listener runs; unrelated history observables retain their identity.
-
-The native adapter groups adjacent ordinary typing or same-direction deletion within one
-second. Newlines, composition, paste/replacement, focus loss, selection movement, another edit
-origin in the same document and save boundaries separate those actions. The group belongs to the document and
-initiating view, independently of which view invokes undo later.
-
-A group retains one immutable position summary for its document, in both directions.
-Extending it composes that summary with the new transaction instead of copying a growing
-list of step maps. Undo/redo restore the exact retained buffers and use the summary for
-other views and anchors. Coalescing preserves each step's affinity and deletion semantics,
-including transient inserted text; it is not a net-text diff. Mapping cost follows retained
-boundary geometry, which can still grow for edits with distinct deletion histories. History
-limits continue to count original transactions and changed units, regardless of compression.
-
-`undo` and `redo` take a document ID and expected current revision. `observeHistory` exposes
-immutable per-document undo/redo depths. A depth counts entries; a linked entry may be blocked.
-Undo/redo validate every participating document and capability before moving the shared unit.
-If another participant has a later edit, the command returns `history-blocked`; undo that edit
-first. Each participant must have the same shared unit at the top of its corresponding stack.
-Undo/redo never choose a focused document or silently cascade through unrelated work.
-
-Editing after undo invalidates redo for that document and every dependent linked redo unit.
-Reload and explicit release clear history for the affected document and all documents connected
-through retained shared units, preserving consistent boundaries in those participants. Closing/moving/replacing a
-tab or detaching a view leaves document history intact. Capability changes do not erase it.
-
-Workspace history defaults to at most 100 distinct groups, 1,000 recorded transactions and
-8,388,608 changed UTF-16 units (inserted plus removed content after no-op filtering). A separate
-`maxSelectionRanges` limit defaults to 1,000,000 ranges across captured before/after view sets.
-It bounds selection metadata even when a command changes little text. Shared
-units count once across the workspace. Set `WorkspaceOptions.history` to change these limits;
-zero disables the corresponding capacity. Least recently extended units are evicted as a whole. A group rolls
-over before exceeding a per-group change/unit limit. An oversized transaction still applies,
-but clears undo/redo for its affected/linked documents because it cannot be retained safely;
-unrelated document histories remain. `diagnostics().history` reports groups, transactions and
-changed units without content.
-
-Retention totals and eviction order are maintained when entries are added, extended or removed.
-Undo/redo movement retains the same entry and totals. Admission without eviction and history
-diagnostics do not traverse unrelated entries. Eviction still visits affected document stacks;
-linked clearing follows the connected units it removes.
-
-These are operation/text-unit bounds, not a byte-accurate heap limit. A surviving piece can
-reference a larger backing; current content, saved baselines, pending operations and snapshots
-retained by a host have their own lifetimes. Long-session compaction, GC/DOM measurements and
-host recovery remain qualification work. History is in memory, not persisted across reloads
-of the browser or transferred into a different editing implementation.
-
-## Saved content and review
-
-Dirty state compares the current buffer with the exact saved buffer, skipping shared ranges
-without materializing text. Undo to saved content clears dirty even though the document revision
-has increased. A save captures its buffer/string/revision at invocation, then its server version
-precondition at serialized submission. Later typing, undo or redo cannot alter that capture.
-An older successful receipt updates the saved baseline without overwriting newer content.
-
-A canonical response applies only under the existing revision, capability, lock and proposal
-guards. Its minimal range change is a separate history unit. Undoing canonicalization becomes
-dirty; redoing it returns to the saved content. Acknowledgement still uses the immutable save
-receipt and proposal identity. Undoing text does not resurrect or retire proposal protocol state,
-undo a remote save, or repeat an acknowledgement. Core and browser fixtures exercise exact
-proposal/correction/save/undo/redo/acknowledgement/next-request contents.
+The editor groups adjacent ordinary typing or same-direction deletion within one second.
+Newlines, composition, paste/replacement, focus loss, selection movement and other-origin
+edits separate those actions. The workspace's save and undo boundaries also seal groups.
+The group belongs to the document and initiating view, independently of which view invokes undo.
 
 ## Selection and view lifetime
 

@@ -84,7 +84,7 @@ identity before awaiting storage or service work; do not use the currently focus
 the completion target. Treat saving as a captured operation, not a read of whichever text is
 current when a server reply arrives.
 
-For the next integration step, use [resource and save contracts](resources.md),
+For the next integration step, use [resource and save contracts](workspace.md),
 [language-server integration](lsp-integration.md), [host extension points](host-integrations.md)
 or [editor commands and configuration](editing-candidate.md).
 

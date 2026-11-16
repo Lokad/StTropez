@@ -136,7 +136,7 @@ integration files. `npm run pack:nuget` builds a local evaluation package under
 contents and restores an isolated consumer with an explicit frontend resolution bridge.
 See [packaging](docs/packaging.md) for the artifact and consumer build contract.
 The development hosts are `/hosts/plain/` and `/hosts/react/`; their
-[adapter contract](docs/host-adapter.md) and [agent protocol](docs/agent-review.md) describe the
+[adapter contract](docs/host-adapter.md) and [agent protocol](docs/workspace.md#agent-review) describe the
 synthetic fixtures and the consuming host's remaining integration responsibilities.
 
 The [acceptance inventory](docs/acceptance.md) defines pilot/replacement workflows, workload
@@ -148,7 +148,7 @@ renderer or language client; native IME checks remain pending.
 See [the architecture](docs/architecture.md), [performance assessment](docs/performance.md), and
 [instrumentation guide](docs/instrumentation.md). [Text model](docs/text-model.md) describes
 buffers, position mapping, selections and newline conversion. The local roadmap is `PLAN.md`.
-See [document history and view lifetime](docs/history.md) for transaction, grouping and undo policy.
+See [workspace transactions and history](docs/workspace.md#transactions-and-history) for transaction, grouping and undo policy.
 The [viewport layer](docs/viewport.md) and `/viewport/` fixture record bounded-rendering evidence.
 The [editing candidate](docs/editing-candidate.md) and `/editing/` fixture exercise bounded native
 context, measured pointer selection, shared history and composition guards. Long contextual-line

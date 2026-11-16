@@ -3,7 +3,7 @@
 StTropez represents text as immutable UTF-16 buffers. Range edits produce a new buffer and a
 position map; selections, anchors and snippet plans use those coordinates. These headless
 primitives do not own document revisions, persistence or view lifetime. Use the
-[workspace](resources.md) to apply them to a live document.
+[workspace](workspace.md) to apply them to a live document.
 
 ## Use
 

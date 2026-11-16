@@ -12,7 +12,7 @@ Documents use an immutable indexed piece tree with bounded shared history. Snaps
 buffer for range reads and a lazy string export for host services/native views. The native input
 adapter derives range changes from whole values and maps independent view selections, including
 LF display coordinates over preserved CRLF. It still performs document-sized rendering/diff work.
-See [the text model](text-model.md) and [history/view contracts](history.md); this baseline
+See [the text model](text-model.md) and [workspace transactions](workspace.md#transactions-and-history); this baseline
 does not qualify the production renderer or native-device input.
 The separate [bounded editing candidate](editing-candidate.md) maps a small native context to
 range transactions and uses local native glyph rectangles over the [viewport](viewport.md).
@@ -52,7 +52,7 @@ Text and typed non-text handles share loading/ready/failed/released states, meta
 capabilities and revision checks. A panel refers to a resource ID and requires no text document.
 The host supplies plain typed form snapshots, schemas and validation; the workspace copies and
 freezes the supplied values without interpreting them. Related connection, transfer and
-historical-run resources may have independent IDs. See [resource contracts](resources.md).
+historical-run resources may have independent IDs. See [resource contracts](workspace.md).
 
 An operation captures the target before awaiting. On completion it resolves the original
 tab and generation, then checks the exact document revision relevant to the operation.
@@ -69,37 +69,9 @@ original work settles and is finished. Releasing dirty work additionally require
 
 ## Transactions, saves and agent proposals
 
-Edits use UTF-16 offsets in the original document, half-open ranges, and an expected
-revision. A sorted batch validates before publication. No-op edits do not advance the
-revision. Separate buffer transactions now provide position maps, affinities and anchored
-ranges. Newline preservation/conversion is an explicit import/export choice. Workspace
-transactions preflight all participants before publication, with shared undo units, explicit
-history kinds/grouping and per-view selection mapping. Language providers still need their own
-revision checks and cancellation at the adapter boundary.
-
-Saved baseline/server version and current local revision are separate. A save captures the
-submitted revision and immutable contents at invocation. `WorkspaceCommands` serializes writes
-per resource and supplies the current saved server-version precondition at submission. The host
-service must enforce that precondition. Receipts preserve exact submitted content; later typing
-remains dirty. Proposal targets and acknowledgement receipts use their own versions and queues;
-see [agent review](agent-review.md).
-
-Dirty state follows divergence from the saved baseline, including undo back to saved content;
-a monotonically increasing revision alone cannot determine it. Canonical save responses must
-not overwrite later edits. A failed proposal acknowledgement can be retried independently of
-the successful product save, before the host submits a subsequent agent request.
-
-Agent changes enter the same transaction path. Capture immutable request inputs at a turn
-boundary. Subsequent proposals name their base document and proposal revision. A host may
-choose its editing policy. The initial policy uses an exclusive lease during an executing
-request; concurrent editing/merging remains deferred. Switching the agent association is a visible
-host action. Never overwrite human corrections because a delayed operation finished.
-
-Save and Run are separate host commands with explicit resource/variant targets. A run captures
-the source/configuration revisions and settings it requires; the host owns save-before-run
-policy. Read-only and editing-lease transitions apply to human and programmatic changes under
-explicit capabilities. A disabled view alone is insufficient; service authorization stays
-with the host. Local atomic workspace edits do not imply atomic remote persistence.
+Workspace owns transactional resource state and shared history. The [workspace contract](workspace.md)
+defines atomic edits, captured save/Run commands, leases, proposal review and acknowledgement.
+Hosts supply services and authorization; browser views present those immutable snapshots.
 
 ## Frameworks and structured surfaces
 

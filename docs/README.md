@@ -8,7 +8,7 @@ application owns storage, services, language policy and surrounding controls.
 - [Embed an editor](getting-started.md): obtain the assets, create a document, mount and dispose.
 - [Configure editing](editing-candidate.md): keyboard commands, selections and language rules.
 - [Connect a language server](lsp-integration.md): WebSocket transport, session and workspace.
-- [Save or review documents](resources.md): resource ownership and captured save operations;
+- [Save or review documents](workspace.md): resource ownership and captured save operations;
   [comparison](comparison.md) describes reference and working views.
 - [Extend the host](host-integrations.md): custom colors, captured insertion and source notes.
 
@@ -22,7 +22,7 @@ application owns storage, services, language policy and surrounding controls.
 | [Folding](folding.md) | Fold ranges, discovery, groups and commands |
 | [Search](search.md) | Literal/regular-expression search and replacement |
 | [Comparison](comparison.md) | Baselines, hunks, navigation, refresh and acceptance |
-| [Workspace](resources.md) | Resources, tabs, leases, loading and saving |
+| [Workspace](workspace.md) | Resources, tabs, leases, loading and saving |
 | [Text model](text-model.md) | Buffers, UTF-16 positions, edits, selections and snippets |
 | [Language server](lsp.md) | Protocol subset, synchronization, capabilities and transport |
 | [Language features](lsp-editor.md) | Completion and editor-language integration |
