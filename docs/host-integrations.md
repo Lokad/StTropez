@@ -5,7 +5,23 @@ host language, initial/group folding, CSV/literal insertion and linked source no
 for that sample. These policies belong in the consuming application; shipped editor assets
 remain dependency-free. The following pieces can be used independently.
 
-## Focus inside a shadow root
+## Shadow-root host sample
+
+The sample mounts source and both review panes inside open shadow roots. Its shared browser
+journey exercises colors, initial/group folding, linked notes/navigation and Back, host shortcuts,
+literal/structured insertion, typing/undo, independent review folds, saved reload and disposal.
+Surrounding controls and source-note overlays remain host-owned document elements; they use
+the retained editor handles and viewport coordinates across the shadow boundary.
+
+`examples/demo/shadow-surface.ts` fetches the demo's bundled stylesheet text once and installs
+it inside each root before mounting. It retains the original CSS because CSSOM serialization
+can drop variable-based shorthand declarations. The current editor stays available while
+loading; superseded sample requests cannot mount a late result, and failed loads can be retried.
+Composition begun during preparation keeps the current editor mounted; the user can select
+the host sample again after composition ends. This lifecycle check uses synthetic events in tests.
+This example assumes one static, same-origin stylesheet; a consuming host should supply its
+own stylesheet lifecycle for dynamic or cross-origin CSS. Destroy editor/controllers before
+removing their shadow host.
 
 Mount the editor into an element inside the shadow root and supply the editor stylesheet in
 that same root. Caret display and resize reveal, fold-button focus recovery, LSP occurrences,
@@ -14,8 +30,9 @@ also applies inside nested or closed roots; the host does not need to expose its
 Moving focus to surrounding UI still cancels deferred acceptance and hides focus-dependent
 decorations. Composition keeps an active snippet only while its input retains focus.
 
-These focus guarantees do not establish complete shadow-host integration or native IME and
-OS clipboard qualification. The host still owns surrounding controls, styles and lifecycle.
+The combined demo qualifies open-root integration. Nested/closed-root focus has separate owner
+tests; this does not establish the entire combined workflow in every shadow configuration.
+Native IME and OS clipboard remain unverified. The host owns surrounding controls, styles and lifecycle.
 
 ## Captured view requests
 

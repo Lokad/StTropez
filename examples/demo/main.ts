@@ -13,6 +13,7 @@ import { initializeDemoFolds, mountDemoFolding, outlineFolds } from "./folding.t
 import { canOpenDemoHelp } from "./diagnostics.ts";
 import { hostConfiguration, hostDecorations, mountHostIntegrations } from "./host-integrations.ts";
 import { inspectCharacters } from "./character-warnings.ts";
+import { demoSurface, DemoStylesUnavailable, prepareDemoShadowStyles } from "./shadow-surface.ts";
 import "./style.css";
 
 const element = (id: string) => document.getElementById(id)!;
@@ -264,8 +265,9 @@ function mountFile(file: DemoFile, focus = false): void {
     detachView(); active = file; activeFiles.set(project.sample.id, file.name);
     initializeDemoFolds(project, file);
     element("workspace").classList.toggle("reviewing", panel === "changes");
+    const surface = demoSurface(element(panel === "changes" ? "panel-content" : "editor"), project.sample.id === "host");
     if (panel === "changes") {
-        comparison = mountTextComparison(element("panel-content"), project.workspace, file.tab, project.baseline(file),
+        comparison = mountTextComparison(surface, project.workspace, file.tab, project.baseline(file),
             { view: file.view, workingDecorate: line => [...(project?.sample.id === "host" ? hostDecorations(line) : presentation.decorate(line)), ...(languageView?.decorate(line) ?? [])],
                 baselineDecorate: line => project?.sample.id === "host" ? hostDecorations(line) : referencePresentation?.decorate(line) ?? [], scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
         const labels = document.createElement("div"); labels.className = "demo-review-labels";
@@ -274,7 +276,7 @@ function mountFile(file: DemoFile, focus = false): void {
         savedLabel.textContent = project.isReviewingConflict() ? "Other page's saved copy" : "Saved copy"; workingLabel.textContent = "Your changes";
         const hint = document.createElement("span"); hint.className = "demo-review-hint";
         hint.textContent = "Fold each pane independently. Shaded gaps keep matching lines aligned.";
-        labels.append(savedLabel, workingLabel, hint); element("panel-content").prepend(labels);
+        labels.append(savedLabel, workingLabel, hint); surface.prepend(labels);
         editor = comparison.working;
         const configureReference = () => {
             referenceFolding?.dispose(); referenceFolding = undefined;
@@ -300,7 +302,7 @@ function mountFile(file: DemoFile, focus = false): void {
         });
         stopReference = () => { referenceSyncActive = false; unsubscribeReference(); }; configureReference();
     } else {
-        editor = mountEditingCandidate(element("editor"), project.workspace, file.tab,
+        editor = mountEditingCandidate(surface, project.workspace, file.tab,
             { view: file.view, ariaLabel: file.name, decorate: line => [...(project?.sample.id === "host" ? hostDecorations(line) : presentation.decorate(line)), ...(languageView?.decorate(line) ?? [])] });
         renderProblems();
     }
@@ -359,12 +361,28 @@ function goBack(): void {
 async function openSample(id: SampleId): Promise<void> {
     if (editor?.activity().composing) { sample.value = project!.sample.id; return; }
     const generation = ++opening; sample.disabled = true;
+    if (id === "host") {
+        // Keep the current editor and sample picker usable while the shared stylesheet loads.
+        sample.disabled = false;
+        try { await prepareDemoShadowStyles(document, listeners.signal); }
+        catch (error) {
+            if (!(error instanceof DemoStylesUnavailable)) throw error;
+            if (disposed || generation !== opening) return;
+            sample.value = project?.sample.id ?? "pricing";
+            if (project) { project.message = error.message; renderMetadata(); }
+            return;
+        }
+        if (disposed || generation !== opening) return;
+        sample.disabled = true;
+    }
     let next = projects.get(id);
     if (!next) { next = await DemoProject.open(id, () => {
         const state = project?.sample.id === id ? editor?.activity() : undefined;
         return !state || !state.composing && !state.pendingInput && !state.pendingCommand;
     }); if (disposed) { next.dispose(); return; } projects.set(id, next); }
     if (disposed || generation !== opening) return;
+    // A composition can start in the retained editor during asynchronous preparation.
+    if (editor?.activity().composing) { sample.value = project!.sample.id; sample.disabled = false; return; }
     stopWorkspace?.(); stopWorkspace = undefined;
     stopRecovery?.(); stopRecovery = undefined;
     stopLanguage?.(); stopLanguage = undefined;

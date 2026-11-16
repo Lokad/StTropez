@@ -11,11 +11,17 @@ async function paste(source: Locator, plain: string) {
 /** One visible workflow shared by source, static and restored-assets hosts. No OS clipboard access. */
 export async function runDemoHostIntegrations(page: Page, url = "/") {
 
-    await page.goto(url); await page.locator("#sample").selectOption("host");
+    await page.goto(url);
+    const normalRow = page.locator("#editor .st-viewport-row").first(); await expect(normalRow).toBeVisible();
+    const typography = await normalRow.evaluate(node => Object.fromEntries(["font-family", "font-size", "line-height"].map(name => [name, getComputedStyle(node).getPropertyValue(name)])));
+    await page.locator("#sample").selectOption("host");
     const source = page.getByRole("textbox", { name: "workflow.rules", exact: true });
     const notes = page.locator(".demo-source-note"), inventory = notes.filter({ hasText: "Inventory source" });
     await expect(page.locator("#language-status")).toHaveText("Host language · no language server");
     await expect(page.locator("#editor .demo-token-keyword").first()).toHaveText("dataset");
+    expect(await source.evaluate(node => node.getRootNode() instanceof ShadowRoot)).toBe(true);
+    await expect(page.locator("#editor .demo-token-keyword").first()).toHaveCSS("color", "rgb(196, 167, 250)");
+    for (const [name, value] of Object.entries(typography)) await expect(page.locator("#editor .st-viewport-row").first()).toHaveCSS(name, value);
     await expect(notes).toHaveCount(2); await expect(inventory).toHaveAttribute("data-line", "3");
     await expect(notes.filter({ hasText: "Review policy" })).toContainText("folded");
     await expect(page.locator('#editor .st-fold-button[aria-expanded="false"]')).toHaveCount(1);
@@ -81,6 +87,18 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
     const panes = page.locator(".st-comparison-panes > section");
     await expect(panes.first().locator(".demo-token-keyword").first()).toHaveText("dataset");
     await expect(panes.last().locator(".demo-token-keyword").first()).toHaveText("dataset");
+    const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });
+    const baseline = page.getByRole("textbox", { name: "Comparison baseline source", exact: true });
+    for (const input of [working, baseline]) expect(await input.evaluate(node => node.getRootNode() instanceof ShadowRoot)).toBe(true);
+    for (const pane of [panes.first(), panes.last()]) await expect(pane.locator(".demo-token-keyword").first()).toHaveCSS("color", "rgb(196, 167, 250)");
+    for (const pane of [panes.first(), panes.last()]) for (const [name, value] of Object.entries(typography)) await expect(pane.locator(".st-viewport-row").first()).toHaveCSS(name, value);
+    const reviewed = await working.inputValue();
+    await working.press("Control+End"); await page.keyboard.type("# review"); await expect(working).toHaveValue(reviewed + "# review");
+    await expect(baseline).toHaveValue(reviewed); await working.press("Control+z"); await expect(working).toHaveValue(reviewed);
+    await panes.first().locator(".st-fold-button").first().click();
+    await expect(panes.first().locator('.st-fold-button[aria-expanded="false"]')).toHaveCount(1);
+    await expect(panes.last().locator('.st-fold-button[aria-expanded="false"]')).toHaveCount(0);
+    await panes.last().locator(".st-fold-button").first().click(); await expect(inventory).toContainText("folded");
     await expect(notes).toHaveCount(2); await page.locator('[data-panel="javascript"]').click();
 
     // Offscreen notes disappear and reappear at mapped positions without entering source text.
@@ -93,5 +111,6 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
     await expect(source).toHaveValue(saved); await expect(page.locator("#folding-status")).toContainText("folds");
     await expect(page.locator('#editor .st-fold-button[aria-expanded="false"]')).toHaveCount(0);
     await page.locator("#sample").selectOption("pricing"); await expect(page.locator(".demo-source-notes")).toHaveCount(0);
+    await expect(page.locator(".demo-shadow-surface")).toHaveCount(0);
     await expect(page.locator("#host-status")).toBeHidden();
 }
