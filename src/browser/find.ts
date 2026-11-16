@@ -1,25 +1,16 @@
 import { LiteralSearch } from "../core/search.ts";
-import type { DocumentId, DocumentSnapshot, EditResult, TabId, Workspace } from "../core/workspace.ts";
+import type { DocumentSnapshot, EditResult, TabId, Workspace } from "../core/workspace.ts";
 import { unchangedPositionEdges } from "../core/positions.ts";
 import { FindIndex } from "../core/find-index.ts";
 import { LiteralFindRepair } from "./find-index.ts";
-import { createLiteralFindBackend } from "./find-literal.ts";
+import { createLiteralFindBackend, createFindReplacementPlan } from "../core/find.ts";
+import type { FindBackend, FindQueryCapture, FindSearchCursor, FindPlanCursor, FindPlanStep } from "../core/find.ts";
 import type { Observable } from "../core/observable.ts";
 import type { SearchMatch, SearchStep } from "../core/search.ts";
 import type { SelectionSet } from "../core/selections.ts";
-import type { TextBuffer } from "../core/text-buffer.ts";
-import type { TextEdit } from "../core/changes.ts";
 import { Store } from "../core/observable.ts";
 import type { EditingCandidate } from "./editing-candidate.ts";
 export type FindOptions = Readonly<{ wholeWord?: boolean; matchCase?: boolean; regularExpression?: boolean }>;
-export type FindQueryCapture = Readonly<{ documentId: DocumentId; revision: number; buffer: TextBuffer; query: string; wholeWord: boolean; matchCase: boolean }>;
-export type FindSearchCursor = Readonly<{ next: () => SearchStep | PromiseLike<SearchStep>; dispose: () => void }>;
-export type FindPlanStep = Readonly<{ done: boolean; edits: readonly TextEdit[] }>;
-export type FindPlanCursor = Readonly<{ next: () => FindPlanStep | PromiseLike<FindPlanStep>; dispose: () => void }>;
-/** One controller owns the backend until expiry/destruction. Disposal must be idempotent.
- * The backend produces one edit per indexed match, including no-ops. Only this controller commits. */
-export type FindBackend = Readonly<{ search: (capture: FindQueryCapture) => FindSearchCursor;
-    replace: (capture: FindQueryCapture, replacement: string, range?: SearchMatch) => FindPlanCursor; dispose: () => void }>;
 export type FindConfiguration = Readonly<{ regularExpression?: FindBackend; regularExpressionDelayMs?: number }>;
 /** Stable cause of the last published notice, independent of its display message. */
 export type FindReason = "editing-unavailable" | "composition-active" | "backend-unavailable" | "search-failed"
@@ -222,7 +213,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         if (!canEdit()) { publish({ reason: "editing-unavailable", message: "read-only" }); return false; }
         if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before replacing." }); return false; }
         const request = capture(state.query, state.wholeWord, state.matchCase), positions = matches, total = range ? 1 : count;
-        const selectionSet = editor.view.getSnapshot().selectionSet, edits: TextEdit[] = [];
+        const selectionSet = editor.view.getSnapshot().selectionSet, acceptPlan = createFindReplacementPlan(positions, total, range);
         // A synchronous literal replacement must leave an in-progress repair alive on a no-op.
         // Yielding plans cancel scans and retain authority until their captured commit.
         if (!immediate) stop();
@@ -240,16 +231,8 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         };
         const receive = (result: FindPlanStep) => {
             if (!current()) return;
-            if (!result || typeof result.done !== "boolean" || !Array.isArray(result.edits) || result.edits.length > 1024) throw new Error("Invalid replacement plan step.");
-            for (const edit of result.edits) {
-                const index = edits.length;
-                if (index >= total || typeof edit.insert !== "string") throw new Error("Invalid replacement plan.");
-                const at = range ?? positions.at(index);
-                if (edit.from !== at.from || edit.to !== at.to) throw new Error("Replacement plan does not match the captured search.");
-                edits.push(Object.freeze({ from: edit.from, to: edit.to, insert: edit.insert }));
-            }
-            if (!result.done) { later(step); return; }
-            if (edits.length !== total) throw new Error("Incomplete replacement plan.");
+            const edits = acceptPlan(result);
+            if (!edits) { later(step); return; }
             const finished = planCursor; planCursor = undefined; finished?.dispose(); if (!current()) return;
             const head = range ? range.from + edits[0]!.insert.length : undefined, started = win.performance.now();
             const applied = workspace.edit({ documentId, expectedRevision: state.revision, origin: "human", edits, view: editor.view,

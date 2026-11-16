@@ -170,6 +170,8 @@ guard replacement independently of search availability.
 Literal current-match replacement completes synchronously, including while confirmed matches
 remain available during repair. A no-op replacement leaves that repair running. Literal planning
 reuses the captured match index; it neither rescans the source nor builds another index.
+Headless plan assembly copies each accepted edit, validates its exact captured match range
+and exposes a complete immutable edit list only after the backend supplies every match.
 
 Replace-all planning yields every 1,024 edits and captures document revision, the complete
 selection set and tab generation. Each plan step rechecks the editor's read-only state and

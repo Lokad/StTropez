@@ -1,5 +1,5 @@
 import { createRegexClient } from "./regex-client.ts";
-import type { FindBackend, FindQueryCapture } from "./find.ts";
+import type { FindBackend, FindQueryCapture } from "../core/find.ts";
 import type { SearchMatch } from "../core/search.ts";
 export type RegexFindBackendOptions = Readonly<{ clock: Pick<Window, "setTimeout" | "clearTimeout">; createWorker: () => Worker;
     timeoutMs?: number; maxOutputUnits?: number }>;

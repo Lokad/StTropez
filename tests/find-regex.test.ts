@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Workspace } from "../src/index.ts";
 import { createFindController } from "../src/browser/find.ts";
-import type { FindBackend, FindQueryCapture, FindPlanStep, FindSnapshot } from "../src/browser/find.ts";
+import type { FindBackend, FindQueryCapture, FindPlanStep, FindSnapshot } from "../src/browser/index.ts";
 import type { SearchStep } from "../src/core/search.ts";
 import type { EditingCandidate } from "../src/browser/index.ts";
 import { regexMatches, regexReplacement } from "../src/core/regex-search.ts";
