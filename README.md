@@ -101,7 +101,7 @@ shared `ready` helper. It covers queued editing/navigation, caret work, each vie
 revision/selection/folds, and comparison alignment/scrolling. Service replies, native controls
 and required mounts remain assertions in the owning specs. An active composition session alone
 does not prevent settling; an ongoing drag can keep scrolling pending until the test releases it.
-See [runtime ownership](docs/editor-ownership.md) for composition, caret and delayed work.
+See [runtime ownership](docs/architecture.md#mutable-state-and-lifetime) for composition, caret and delayed work.
 
 Pushes to the main branches and pull requests run all model tests, strict type checking,
 the library build, `test:ci` and the Chromium static-demo suite. Pages publishes the same

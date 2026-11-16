@@ -8,29 +8,9 @@ available for native input and clipboard checks; its background activity may aff
 Record that load and keep Windows observations labelled separately. Native correctness checks
 do not require a quiet benchmark machine.
 
-## Likely bottlenecks and design consequences
+## Architecture constraints
 
-| Work | Scaling hazard | Design and measurement |
-| --- | --- | --- |
-| Native editing, DOM layout and text measurement | Layout across a large document or a single enormous line; repeated read/write cycles; wrapping and variable-height widgets | Virtualize vertically and horizontally where needed; group measurements; reuse DOM; trace style, layout and paint separately. A single textarea element does not imply bounded browser layout work. |
-| Document edits and position mapping | Full text serialization, line-array rebuilds, copying every annotation or selection per keystroke | Range transactions, indexed text storage and mapped positions; measure edit cost at start/middle/end while document size grows. Do not flatten a tree in routine subscribers. |
-| Workspace and host updates | Every editor, tab, form or host component reacts to every character | Subscribe by document and field; keep stable snapshots for unchanged resources; batch unrelated progress updates; test many inactive tabs and two active views. |
-| Highlighting and diagnostics | Reparsing everything, large decoration arrays, stale responses, worker messages containing the entire document | Incremental changes, revision checks, cancellation, viewport-prioritized decoration and explicit work budgets. A large lexical invalidation must yield rather than block input. |
-| Search, diff and agent proposals | Large synchronous scans, adversarial diff inputs, thousands of small incoming updates | Bounded/cancellable jobs; coalesce updates; evaluate workers before WASM; measure result freshness and interaction latency during background work. |
-| Allocation and retention | Full snapshots in undo, stale promises retaining documents, detached views and listeners | Shared text/history structure, bounded caches, explicit disposal; measure GC pauses and retained memory after repeated open/edit/close cycles. |
-| Startup | JS download, parse/compile, initialization, worker/WASM startup | Measure compressed production bytes and cold first-edit readiness separately from warm typing. |
-
-The governing goal is for an ordinary local edit to depend mainly on the changed range and
-visible content, with indexed lookup costs, rather than total file length or workspace size.
-This is not a universal complexity promise: global search, large paste and lexical invalidation
-have different costs and need separate scheduling policies.
-
-The native view still reads/renders its whole `value` and derives a single range replacement
-by scanning common text. The workspace now uses indexed piece storage, bounded history and
-mapped views, but its coarse snapshot still rebuilds resource/document arrays. Scoped
-document/resource/metadata subscriptions keep edits out of unrelated form and tab listeners.
-Two native views can still incur browser layout for the whole text.
-The remaining costs are measurable prototype limitations, not final engine contracts.
+See [performance invariants and cost boundaries](architecture.md#performance-invariants-and-cost-boundaries) for implementation ownership and scaling constraints.
 
 ## Local diagnostic experiment
 
