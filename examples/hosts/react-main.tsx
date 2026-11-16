@@ -12,8 +12,8 @@ import { findText, foldText, languageActions, languageToolsKey } from "./languag
 import { domainActions } from "./domain-panel.ts";
 import { navigationPanelModel } from "./navigation-panel.ts";
 import { projectPanelModel } from "./project-panel.ts";
-import { documentColorActions, documentColorDescription, documentColorLabel, colorEditLabel } from "./document-colors-panel.ts";
-import { documentLinkActions, documentLinkDescription, documentLinkLabel, documentLinkDetails } from "./document-links-panel.ts";
+import { documentColorsPanelModel } from "./document-colors-panel.ts";
+import { documentLinksPanelModel } from "./document-links-panel.ts";
 import { actionsPanelModel } from "./actions-panel.ts";
 import { renamePanelModel } from "./rename-panel.ts";
 import { signatureActions, mountSignaturePopup } from "./signature-panel.ts";
@@ -175,21 +175,21 @@ function App() {
     return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><ConfigurationSavePanel /><TransferWorkspace /><DraftRecovery /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentLinksTools /><DocumentColorsTools /><SignatureTools /><SymbolInfo /></>;
 }
 function DocumentColorsTools() {
-    const tools = bindings.colors, s = useObserved(tools.state);
-    return <section className="host-language" aria-label="Document colors"><h2>Document colors</h2><p>{documentColorDescription}</p>
-        <output aria-label="Document color status">{s.message}</output><div>{documentColorActions(tools).map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
-        <ul ref={tools.bindList} tabIndex={-1} aria-label="Document color results">{s.colors.map(color => <li key={color.from}><span className="host-color-swatch" aria-hidden="true" style={{backgroundColor: color.css}} /><button disabled={s.pending} aria-pressed={s.selected === color.ordinal} onClick={() => tools.inspect(s.token, color.ordinal)}>{documentColorLabel(color)}</button></li>)}</ul>
-        <label>Proposed color <input ref={tools.bindValue} type="text" maxLength={96} value={s.value} onChange={event => tools.setValue(event.currentTarget.value)} /></label><span className="host-color-swatch" aria-hidden="true" style={{backgroundColor: s.css ?? "transparent"}} />
-        <button disabled={!s.canPreview || s.pending} onClick={tools.preview}>Preview color presentations</button><label>Color presentation <select disabled={!s.choices.length || s.pending} value={s.presentation} onChange={event => tools.setPresentation(event.currentTarget.value)}>{s.choices.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
-        <button disabled={!s.canApply || s.pending} onClick={() => tools.apply(s.token, s.previewToken, s.presentation)}>Apply captured color</button><ol aria-label="Proposed color edits">{s.edits.map((at,i) => <li key={i}><pre>{colorEditLabel(at)}</pre></li>)}</ol>
-        {s.changed && <button disabled={s.pending || s.token !== null} onClick={tools.openChanged}>Open color changes in {s.changed.title}</button>}</section>;
+    const tools = bindings.colors, model = documentColorsPanelModel(tools, useObserved(tools.state));
+    return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
+        <output aria-label={model.status.label}>{model.status.text}</output><div>{model.actions.map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
+        <ul ref={model.results.bind} tabIndex={-1} aria-label={model.results.label}>{model.results.items().map(color => <li key={color.key}><span className="host-color-swatch" aria-hidden="true" style={{backgroundColor: color.css}} /><button disabled={model.results.disabled} aria-pressed={model.results.isSelected(color.ordinal)} onClick={color.invoke}>{color.label}</button></li>)}</ul>
+        <label>{model.value.label}<input ref={model.value.bind} type="text" maxLength={model.value.maxLength} value={model.value.value} onChange={event => model.value.change(event.currentTarget.value)} /></label><span className="host-color-swatch" aria-hidden="true" style={{backgroundColor: model.value.css}} />
+        <button disabled={model.preview.disabled} onClick={model.preview.invoke}>{model.preview.label}</button><label>{model.presentation.label}<select disabled={model.presentation.disabled} value={model.presentation.value} onChange={event => model.presentation.change(event.currentTarget.value)}>{model.presentation.items().map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
+        <button disabled={model.apply.disabled} onClick={model.apply.invoke}>{model.apply.label}</button><ol aria-label={model.edits.label}>{model.edits.items().map((text,i) => <li key={i}><pre>{text}</pre></li>)}</ol>
+        {model.changed.visible && <button disabled={model.changed.disabled} onClick={model.changed.invoke}>{model.changed.label}</button>}</section>;
 }
 function DocumentLinksTools() {
-    const tools = bindings.links, s = useObserved(tools.state);
-    return <section className="host-language" aria-label="Module document links"><h2>Module document links</h2><p>{documentLinkDescription}</p>
-        <output aria-label="Module link status">{s.message}</output>
-        <div>{documentLinkActions(tools).map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
-        <ul ref={tools.bindList} tabIndex={-1} aria-label="Module link results">{s.links.map(link => <li key={link.from}><button disabled={!link.target && !link.resolvable || s.status !== "ready"} onClick={() => tools.open(s.token, link.ordinal)}>{documentLinkLabel(link)}</button><p>{documentLinkDetails(link)}</p></li>)}</ul></section>;
+    const tools = bindings.links, model = documentLinksPanelModel(tools, useObserved(tools.state));
+    return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
+        <output aria-label={model.status.label}>{model.status.text}</output>
+        <div>{model.actions.map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
+        <ul ref={model.results.bind} tabIndex={-1} aria-label={model.results.label}>{model.results.items().map(link => <li key={link.key}><button disabled={model.results.disabled || !link.available} onClick={link.invoke}>{link.label}</button><p>{link.details}</p></li>)}</ul></section>;
 }
 function ActionsTools() {
     const tools = bindings.actions, model = actionsPanelModel(tools, useObserved(tools.state));

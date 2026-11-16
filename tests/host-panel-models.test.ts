@@ -9,8 +9,50 @@ import { renamePanelModel } from "../examples/hosts/rename-panel.ts";
 import { actionsPanelModel } from "../examples/hosts/actions-panel.ts";
 import type { RenameSnapshot } from "../examples/hosts/rename.ts";
 import type { ActionsSnapshot } from "../examples/hosts/code-actions.ts";
+import { documentColorsPanelModel } from "../examples/hosts/document-colors-panel.ts";
+import { documentLinksPanelModel } from "../examples/hosts/document-links-panel.ts";
+import type { DocumentColorsSnapshot } from "../examples/hosts/document-colors.ts";
+import type { DocumentLinksSnapshot } from "../examples/hosts/document-links.ts";
 
 const noop = () => {};
+
+test("color presentation retains its confirmation tuple and resource while equivalent rows keep their identity", () => {
+    const inspected: [number | null, number][] = [], applied: [number | null, number | null, string][] = [], opened: DocumentId[] = [];
+    const firstId = "first" as DocumentId, secondId = "second" as DocumentId;
+    const tools: Parameters<typeof documentColorsPanelModel>[0] = { discover: noop, cancel: noop, previousPage: noop, nextPage: noop, disconnect: noop, reconnect: noop,
+        bindList: noop, bindValue: noop, setValue: noop, preview: noop, setPresentation: noop,
+        inspect: (token, ordinal) => { inspected.push([token, ordinal]); }, apply: (token, preview, id) => { applied.push([token, preview, id]); }, openChanged: id => { opened.push(id); } };
+    const state: DocumentColorsSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, pending: false, token: 3, previewToken: 4, view: "primary",
+        status: "presentations", message: "Captured color", work: 1, total: 1, count: 1, page: 0, selected: 0, value: "#abc", css: "rgb(170, 187, 204)", presentation: "hex", canPreview: true, canApply: true,
+        colors: Object.freeze([Object.freeze({ from: 1, to: 5, text: "#abc", label: "#abc", color: Object.freeze({ red: 170 / 255, green: 187 / 255, blue: 204 / 255, alpha: 1 }), ordinal: 0, line: 1, column: 2, css: "rgb(170, 187, 204)" })]),
+        choices: Object.freeze([Object.freeze({ id: "hex", label: "Hex" })]), edits: Object.freeze([]), changed: Object.freeze({ document: firstId, title: "First" }) });
+    const first = documentColorsPanelModel(tools, state), pending = documentColorsPanelModel(tools, { ...state, pending: true, selected: -1, colors: state.colors.map(color => ({ ...color })) });
+    assert.equal(first.results.retentionKey(), pending.results.retentionKey()); assert.equal(first.results.disabled, false); assert.equal(pending.results.disabled, true);
+    assert.equal(first.results.isSelected(0), true); assert.equal(pending.results.isSelected(0), false);
+    const newer = documentColorsPanelModel(tools, { ...state, token: 5, previewToken: 6, presentation: "rgba", changed: { document: secondId, title: "Second" } });
+    assert.notEqual(first.results.retentionKey(), newer.results.retentionKey());
+    newer.results.items()[0]!.invoke(); first.results.items()[0]!.invoke(); newer.apply.invoke(); first.apply.invoke(); newer.changed.invoke(); first.changed.invoke();
+    assert.deepEqual(inspected, [[5, 0], [3, 0]]); assert.deepEqual(applied, [[5, 6, "rgba"], [3, 4, "hex"]]); assert.deepEqual(opened, [secondId, firstId]);
+    assert.equal(first.results.bind, tools.bindList); assert.equal(first.value.bind, tools.bindValue);
+});
+
+test("link presentation retains captured ordinals while status updates do not replace equivalent result rows", () => {
+    const opened: [number | null, number][] = [];
+    const tools: Parameters<typeof documentLinksPanelModel>[0] = { discover: noop, returnToOrigin: noop, cancel: noop, previousPage: noop, nextPage: noop, addCompanion: noop,
+        disconnect: noop, reconnect: noop, bindList: noop, open: (token, ordinal) => { opened.push([token, ordinal]); } };
+    let formatted = 0;
+    const state: DocumentLinksSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, pending: false, token: 7, requestView: "primary",
+        status: "ready", message: "Captured links", work: 1, total: 1, count: 1, page: 0, canReturn: false,
+        links: Object.freeze([Object.freeze({ from: 8, to: 20, module: "module", tooltip: "Resolve module", target: null, resolvable: true, ordinal: 0, line: 1, column: 9,
+            get title() { formatted++; return "First"; }, targetTitle: null })]) });
+    const first = documentLinksPanelModel(tools, state); assert.equal(formatted, 0, "formatting and retention keys are lazy");
+    const resolving = documentLinksPanelModel(tools, { ...state, status: "resolving", pending: true, links: state.links.map(link => ({ ...link })) });
+    assert.equal(first.results.retentionKey(), resolving.results.retentionKey()); assert.equal(first.results.disabled, false); assert.equal(resolving.results.disabled, true);
+    const newer = documentLinksPanelModel(tools, { ...state, token: 8, page: 1, links: [{ ...state.links[0]!, ordinal: 64 }] });
+    assert.notEqual(first.results.retentionKey(), newer.results.retentionKey());
+    newer.results.items()[0]!.invoke(); first.results.items()[0]!.invoke(); assert.deepEqual(opened, [[8, 64], [7, 0]]);
+    assert.equal(first.results.items()[0]!.available, true); assert.equal(first.results.bind, tools.bindList);
+});
 
 test("rename presentation retains its preview name, confirmation token and changed resource", () => {
     const applied: (number | null)[] = [], opened: DocumentId[] = [], firstId = "first" as DocumentId, secondId = "second" as DocumentId;

@@ -162,7 +162,7 @@ export class HostDocumentColors {
         } catch (error) { this.release(); this.publish({ status: "failed", message: error instanceof Error ? error.message : "Color edit rejected; source is unchanged." }); }
         finally { this.publishing = false; }
     }
-    readonly openChanged = (): void => { const changed = this.cell.get().changed; if (this.disposed || this.job || !changed || !this.canCapture(changed.document)) return; try { const editor = [...this.sessions.values()].find(s => s.editor.view.documentId === changed.document && this.available(s))?.editor ?? this.present(changed.document); editor?.focus(); } catch { this.publish({ message: "The changed color resource is no longer available." }); } };
+    readonly openChanged = (document: DocumentId): void => { if (this.disposed || this.job || this.cell.get().changed?.document !== document || !this.canCapture(document)) return; try { const editor = [...this.sessions.values()].find(s => s.editor.view.documentId === document && this.available(s))?.editor ?? this.present(document); editor?.focus(); } catch { this.publish({ message: "The changed color resource is no longer available." }); } };
     readonly nextPage = (): void => { const s = this.cell.get(); if ((s.page + 1) * colorLimits.page < s.count) this.publish({ page: s.page + 1 }); };
     readonly previousPage = (): void => { const s = this.cell.get(); if (s.page) this.publish({ page: s.page - 1 }); };
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid color delay."); this.delay = value; }

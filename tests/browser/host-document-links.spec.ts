@@ -29,8 +29,11 @@ for (const host of ["plain", "react"]) {
         const raw = '\ufeffimport "sample-utils";\r\nconst café = "😀";'; await setup(p, host, raw); await button(p, "Open source review").click(); await button(p, "Add module companion").click(); await waitForLinks(p);
         for (const origin of ["secondary", "comparison"] as const) {
             const name = origin === "comparison" ? "Comparison working source" : "Secondary source", source = input(p, name); await source.focus(); await p.evaluate(origin => { const f = window.hostFixture; f.selectSourceSet(origin, f.snapshot().source.revision, [{ anchor: 20, head: 9 }, { anchor: f.snapshot().source.length, head: f.snapshot().source.length }]); }, origin); const before = await snapshot(p);
-            await source.press("F4"); await waitForLinks(p); await expect(results(p)).toBeFocused(); await p.keyboard.press("Tab"); await expect(results(p).getByRole("button").first()).toBeFocused(); await p.keyboard.press("Enter"); await waitForLinks(p); await expect(input(p, "Secondary source")).toBeFocused();
+            await source.press("F4"); await waitForLinks(p); await expect(results(p)).toBeFocused();
+            await results(p).getByRole("button").first().evaluate(node => { node.dataset.retained = "module-link"; });
+            await p.keyboard.press("Tab"); await expect(results(p).getByRole("button").first()).toBeFocused(); await p.keyboard.press("Enter"); await waitForLinks(p); await expect(input(p, "Secondary source")).toBeFocused();
             await input(p, "Secondary source").press("Shift+F4"); await waitForLinks(p); await expect(input(p, name)).toBeFocused(); const after = await snapshot(p);
+            await expect(results(p).getByRole("button").first()).toHaveAttribute("data-retained", "module-link");
             if (origin === "comparison") expect(after.bindings.comparison!.selectionSet).toEqual(before.bindings.comparison!.selectionSet); else expect(after.bindings.views.find(v => v.id === "secondary")!.selectionSet).toEqual(before.bindings.views.find(v => v.id === "secondary")!.selectionSet);
             expect(after.history).toEqual(before.history); await button(p, "Dismiss module links").click();
         }
