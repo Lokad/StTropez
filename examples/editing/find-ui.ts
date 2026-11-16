@@ -13,8 +13,8 @@ export function mountFindUI(workspace: Workspace, tab: TabId, editor: EditingCan
     const regularExpression = owner.getElementById("find-regex") as HTMLInputElement;
     const controls = ["find-next", "find-previous", "replace-current", "replace-all"].map(id => owner.getElementById(id) as HTMLButtonElement);
     const render = () => {
-        const state = find.state.getSnapshot(), changed = presentation.search?.revision !== state.revision || presentation.search.ranges !== state.preview;
-        presentation.search = { revision: state.revision, ranges: state.preview };
+        const state = find.state.getSnapshot(), changed = presentation.search?.revision !== state.revision || presentation.search.version !== state.matchesVersion;
+        presentation.search = { revision: state.revision, version: state.matchesVersion, matchesIn: (from, to) => find.matchesIn(from, to, state) };
         owner.getElementById("find-status")!.textContent = state.message || (state.status === "searching" ? `Searching… ${state.count} matches` : `${state.count} matches · ${state.status}`);
         for (const control of controls) control.disabled = !state.count || !(state.status === "ready" || control.id !== "replace-all" && state.status === "searching" && state.retained);
         wholeWord.checked = state.wholeWord; matchCase.checked = state.matchCase; regularExpression.checked = state.regularExpression;

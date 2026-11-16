@@ -9,7 +9,7 @@ export class EditingPresentation {
     private readonly cache = new Map<number, Readonly<{ text: string; tokens: readonly Token[] }>>();
     private lexedLines = 0;
     private lexedUnits = 0;
-    search: Readonly<{ revision: number; ranges: readonly SearchMatch[] }> | undefined;
+    search: Readonly<{ revision: number; version: number; matchesIn: (from: number, to: number) => readonly SearchMatch[] }> | undefined;
     diagnostics: Readonly<{ revision: number; ranges: readonly SearchMatch[] }> | undefined;
     domain: Readonly<{ revision: number; index: DomainAnnotationIndex }> | undefined;
     colors: Readonly<{ revision: number; index: DomainAnnotationIndex }> | undefined;
@@ -19,8 +19,11 @@ export class EditingPresentation {
         this.cache.delete(line.line); this.cache.set(line.line, cached);
         if (this.cache.size > 128) this.cache.delete(this.cache.keys().next().value!);
         const decorations: InlineDecoration[] = cached.tokens.map(token => ({ from: line.from + token.from, to: line.from + token.to, className: `st-token-${token.kind}` }));
-        for (const [snapshot, className] of [[this.search, "st-search-match"], [this.diagnostics, "st-diagnostic"]] as const) {
-            if (snapshot?.revision === line.revision) for (const range of snapshot.ranges) if (range.from < line.to && range.to > line.from) decorations.push({ ...range, className });
+        if (this.search?.revision === line.revision) for (const range of this.search.matchesIn(line.from, line.to)) {
+            if (range.to > range.from) decorations.push({ ...range, className: "st-search-match" });
+        }
+        if (this.diagnostics?.revision === line.revision) for (const range of this.diagnostics.ranges) {
+            if (range.from < line.to && range.to > line.from) decorations.push({ ...range, className: "st-diagnostic" });
         }
         if (this.domain?.revision === line.revision) for (const range of this.domain.index.query(line.from, line.to)) decorations.push({ from: range.from, to: range.to, className: "st-domain-note" });
         if (this.colors?.revision === line.revision) for (const range of this.colors.index.query(line.from, line.to)) decorations.push({ from: range.from, to: range.to, className: "st-document-color" });

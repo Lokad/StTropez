@@ -344,10 +344,12 @@ function mountFile(file: DemoFile, focus = false): void {
     }, { signal: viewListeners.signal });
     find = createFindController(project.workspace, file.tab, editor);
     find.setOptions({ matchCase: false });
+    const capturedFind = find;
     const renderFind = () => {
-        const snapshot = find!.state.getSnapshot(); presentation.search = { revision: snapshot.revision, ranges: snapshot.preview };
+        const snapshot = capturedFind.state.getSnapshot(), previous = presentation.search;
+        presentation.search = { revision: snapshot.revision, version: snapshot.matchesVersion, matchesIn: (from, to) => capturedFind.matchesIn(from, to, snapshot) };
         element("find-status").textContent = snapshot.message || `${snapshot.status === "searching" ? "Searching… " : ""}${snapshot.count} matches`;
-        editor?.viewport.invalidate();
+        if (previous?.revision !== snapshot.revision || previous.version !== snapshot.matchesVersion) editor?.viewport.invalidate();
     };
     stopFind = find.state.subscribe(renderFind); if (!element("find-bar").hidden) find.setQuery(field("find-query").value);
     stopView = file.view.subscribe(renderMetadata);

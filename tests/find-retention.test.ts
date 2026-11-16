@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { TextBuffer, Workspace } from "../src/index.ts";
 import { LiteralSearch } from "../src/core/search.ts";
 import { unchangedPositionEdges } from "../src/core/positions.ts";
-import { FindIndex, LiteralFindRepair } from "../src/browser/find-index.ts";
+import { FindIndex } from "../src/core/find-index.ts";
+import { LiteralFindRepair } from "../src/browser/find-index.ts";
 import { createFindController } from "../src/browser/find.ts";
 import type { EditingCandidate } from "../src/browser/editing-candidate.ts";
 
@@ -22,7 +23,7 @@ const all = (index: FindIndex) => Array.from({ length: index.count }, (_, i) => 
 
 test("find index slices keep captured pages immutable through shifts, appends and repeated joins", () => {
     const original = new FindIndex(); for (let i = 0; i < 5000; i++) original.append({ from: i * 4, to: i * 4 + 2 });
-    const captured = all(original), preview = original.preview(); let index = original;
+    const captured = all(original), ranges = original.matchesIn(0, 800); let index = original;
     for (let turn = 0; turn < 40; turn++) {
         const next = new FindIndex(); next.appendRange(index, 0, 2049); next.appendRange(index, 2049, index.count, 1);
         next.append({ from: 30000 + turn * 4, to: 30002 + turn * 4 }); index = next;
@@ -31,8 +32,28 @@ test("find index slices keep captured pages immutable through shifts, appends an
     assert.deepEqual(all(original).slice(0, 5000), captured); assert.equal(index.count, 5040);
     assert.deepEqual(index.at(2048), captured[2048]); assert.deepEqual(index.at(2049), { from: 8236, to: 8238 });
     assert.equal(index.lowerBound(8236), 2049); assert.equal(index.lowerBound(8237), 2050);
-    assert.equal(index.at(5039).from, 30156); assert.deepEqual(preview, captured.slice(0, 200));
-    assert.ok(Object.isFrozen(preview) && preview.every(Object.isFrozen)); assert.throws(() => index.at(index.count), RangeError);
+    assert.equal(index.at(5039).from, 30156); assert.deepEqual(ranges, captured.slice(0, 200));
+    assert.ok(Object.isFrozen(ranges) && ranges.every(Object.isFrozen)); assert.throws(() => index.at(index.count), RangeError);
+});
+
+test("range queries include crossing matches and UTF-16 point boundaries across shared pages", () => {
+    const index = new FindIndex(), expected: { from: number; to: number }[] = [];
+    for (let i = 0; i < 5000; i++) {
+        const from = i * 5;
+        for (const match of [{ from, to: from }, { from, to: from + 4 }]) { expected.push(match); index.append(match); }
+    }
+    const shifted = new FindIndex(); shifted.appendRange(index, 0, index.count, 3);
+    const values = expected.map(m => ({ from: m.from + 3, to: m.to + 3 }));
+    for (let from = 0; from <= 25004; from += 7) for (const width of [0, 1, 13]) {
+        const to = from + width;
+        assert.deepEqual(shifted.matchesIn(from, to), values.filter(m => m.from === m.to
+            ? m.from >= from && (from === to ? m.from === to : m.from < to)
+            : from < to && m.from < to && m.to > from));
+    }
+    const unicode = scan(TextBuffer.from("a𐐀𐐨z"), "𐐀", { matchCase: false, wholeWord: false }).index;
+    assert.deepEqual(unicode.matchesIn(2, 4), [{ from: 1, to: 3 }, { from: 3, to: 5 }]);
+    assert.deepEqual(unicode.matchesIn(3, 3), []);
+    for (const [from, to] of [[-1, 0], [2, 1], [0, Infinity], [0.5, 1]]) assert.throws(() => index.matchesIn(from!, to!), RangeError);
 });
 
 test("local literal repair reuses a large suffix but repeated-pattern phase changes scan to the end", t => {
@@ -98,15 +119,15 @@ function fixture(text: string) {
 test("confirmed matches remain navigable and replaceable during repair without wrapping over unknown matches", () => {
     const f = fixture("cat ".repeat(20000));
     try {
-        f.find.setQuery("cat"); f.drain(); const previous = f.find.state.getSnapshot().preview;
+        f.find.setQuery("cat"); f.drain(); const previous = f.find.matchesIn(0, f.document().buffer.length);
         f.edit(40000, 40003, "dog"); const state = f.find.state.getSnapshot();
-        assert.equal(state.status, "searching"); assert.equal(state.retained, true); assert.ok(state.count > 9000); assert.equal(state.preview, previous);
+        assert.equal(state.status, "searching"); assert.equal(state.retained, true); assert.ok(state.count > 9000); assert.deepEqual(f.find.matchesIn(0, 400), previous.filter(m => m.from < 400));
         f.select(0); assert.equal(f.find.next(-1), false); assert.equal(f.find.next(), true); assert.equal(f.view.getSnapshot().selection.anchor, 0); assert.equal(f.view.getSnapshot().selection.head, 3);
         f.select(60000); assert.equal(f.find.next(-1), false); assert.equal(f.find.next(), false);
         const revision = f.document().revision; f.find.replaceAll("wrong"); assert.equal(f.document().revision, revision);
         f.select(4, 7); assert.equal(f.find.replaceCurrent("kitten"), true); assert.equal(f.find.state.getSnapshot().retained, true);
         f.drain(); assert.equal(f.find.state.getSnapshot().count, 19998); assert.equal(f.find.state.getSnapshot().status, "ready");
-        assert.deepEqual(f.find.state.getSnapshot().preview, all(scan(f.document().buffer, "cat").index).slice(0, 200));
+        assert.deepEqual(f.find.matchesIn(0, f.document().buffer.length), all(scan(f.document().buffer, "cat").index));
         f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.state.getSnapshot().count, 19999);
         f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.state.getSnapshot().count, 20000);
         f.workspace.redo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.state.getSnapshot().count, 19999);
@@ -117,14 +138,36 @@ test("rapid edits accumulate safe bounds and undo to the completed capture reuse
     const f = fixture("K k cat\n".repeat(2000));
     try {
         f.find.setOptions({ matchCase: false, wholeWord: true }); f.find.setQuery("k"); f.drain();
-        const original = f.document().buffer, preview = f.find.state.getSnapshot().preview;
+        const original = f.document().buffer, ranges = f.find.matchesIn(0, f.document().buffer.length);
         f.edit(8000, 8001, "x"); f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision });
-        assert.equal(f.document().buffer, original); assert.equal(f.find.state.getSnapshot().status, "ready"); assert.equal(f.find.state.getSnapshot().preview, preview);
+        assert.equal(f.document().buffer, original); assert.equal(f.find.state.getSnapshot().status, "ready"); assert.deepEqual(f.find.matchesIn(0, f.document().buffer.length), ranges);
         f.edit(12000, 12000, "long "); f.edit(2000, 2001, "k_"); f.edit(14000, 14002, "K "); f.drain();
         const expected = scan(f.document().buffer, "k", { wholeWord: true, matchCase: false }).index;
-        assert.equal(f.find.state.getSnapshot().count, expected.count); assert.deepEqual(f.find.state.getSnapshot().preview, expected.preview());
+        assert.equal(f.find.state.getSnapshot().count, expected.count); assert.deepEqual(f.find.matchesIn(0, f.document().buffer.length), all(expected));
         f.edit(10000, 10000, "k "); f.find.setQuery("cat"); assert.equal(f.find.state.getSnapshot().retained, false); assert.equal(f.find.state.getSnapshot().count, 0); f.drain();
         assert.equal(f.find.state.getSnapshot().count, scan(f.document().buffer, "cat", { wholeWord: true, matchCase: false }).index.count);
         f.edit(10000, 10000, "cat "); f.find.cancel(); f.edit(10000, 10000, "cat "); f.drain(); assert.equal(f.find.state.getSnapshot().status, "cancelled"); assert.equal(f.find.state.getSnapshot().count, 0);
+    } finally { f.dispose(); }
+});
+
+test("range captures reject old queries, revisions and disposed views while returned matches stay immutable", () => {
+    const f = fixture("cat dog ".repeat(400));
+    try {
+        f.find.setQuery("cat"); f.drain();
+        const initial = f.find.state.getSnapshot(), captured = f.find.matchesIn(3192, 3200, initial);
+        assert.deepEqual(captured, [{ from: 3192, to: 3195 }]); assert.ok(Object.isFrozen(captured) && captured.every(Object.isFrozen));
+        f.find.setOptions({ matchCase: true }); f.select(3192); f.find.next();
+        assert.equal(f.find.state.getSnapshot().matchesVersion, initial.matchesVersion);
+        assert.deepEqual(f.find.matchesIn(3192, 3200, initial), captured);
+        f.find.setQuery("dog"); f.drain();
+        const changed = f.find.state.getSnapshot(); assert.equal(changed.count, initial.count);
+        assert.ok(changed.matchesVersion > initial.matchesVersion); assert.deepEqual(f.find.matchesIn(3192, 3200, initial), []);
+        assert.deepEqual(f.find.matchesIn(3192, 3200, changed), [{ from: 3196, to: 3199 }]);
+        f.edit(0, 8, ""); assert.deepEqual(f.find.matchesIn(3192, 3200, changed), []); f.drain();
+        assert.deepEqual(f.find.matchesIn(3184, 3192), [{ from: 3188, to: 3191 }]);
+        assert.deepEqual(captured, [{ from: 3192, to: 3195 }]);
+        assert.throws(() => f.find.matchesIn(0, 3200), RangeError);
+        f.find.cancel(); assert.deepEqual(f.find.matchesIn(0, 10), []);
+        f.find.destroy(); assert.deepEqual(f.find.matchesIn(0, 3200, initial), []);
     } finally { f.dispose(); }
 });

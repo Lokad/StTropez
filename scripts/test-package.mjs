@@ -245,6 +245,7 @@ try {
     await page.evaluate(() => { window.consumer.findOptions({ wholeWord: true, matchCase: false }); window.consumer.find("RESTORED"); });
     await page.waitForFunction(() => window.consumer.findState().status === "ready");
     const caseFind = await page.evaluate(() => window.consumer.findState()); assert.equal(caseFind.count, 1); assert.equal(caseFind.matchCase, false); assert.equal(caseFind.wholeWord, true);
+    assert.deepEqual(await page.evaluate(() => window.consumer.findMatches(8, 10, window.consumer.findState())), [{ from: 7, to: 15 }]);
     const regex = await page.evaluate(() => window.consumer.regexPilot());
     assert.equal(regex.actualWorker, true); assert.equal(regex.zeroCompleteExports, true); assert.deepEqual(regex.released, { views: 0, leases: 0, subscriptions: 0 });
     const folding = await page.evaluate(() => window.consumer.foldingPilot());

@@ -326,7 +326,7 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
         candidate.viewport.revealOffset(candidate.view.getSnapshot().selection.head, { horizontal: "nearest", vertical: "nearest" });
         return { offset: step.offset, advances, runOffset, runAdvances, exports: buffer.readMetrics().textExports };
     },
-    find: find.setQuery, findOptions: find.setOptions, findState: find.state.getSnapshot, replaceAll: find.replaceAll,
+    find: find.setQuery, findOptions: find.setOptions, findState: find.state.getSnapshot, findMatches: find.matchesIn, replaceAll: find.replaceAll,
     history: () => workspace.observeHistory(documentId).getSnapshot(),
     selectionSets: () => {
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "sets", variant: "working" }, "Sets", { value: "abcd" });

@@ -44,7 +44,7 @@ destroying its editor.
 `createFindController` requires the workspace, tab and editor to identify the same live text view. It captures
 the tab generation and retains a resource lease; focus changes never redirect its commands.
 `FindSnapshot` is immutable and includes query/options, revision, status, count, scan frontier,
-source length, current match index, preview, message and component timings.
+source length, current match index, match version, message and component timings.
 
 | Option or command | Behavior |
 | --- | --- |
@@ -59,9 +59,22 @@ source length, current match index, preview, message and component timings.
 | `cancel()` | Clears the index; later typing does not resume the cancelled search |
 | `destroy()` | Releases work, subscriptions, focus tracking, backend and resource lease |
 
-The full index supports navigation beyond the first 200 matches exposed by `preview`. Index
-memory grows with match count. A completed index wraps. During literal repair,
-`status: "searching"` with `retained: true` exposes a confirmed prefix: counts and previews are
+`matchesIn(from, to, capture?)` returns frozen UTF-16 match ranges intersecting `[from, to)`.
+It includes matches crossing either boundary without clipping their offsets. Point matches
+are included at `from` but excluded at `to`; an empty interval returns only a point match at
+that offset, including end of document. Hosts can omit point matches when painting text spans.
+Bounds must be ordered, nonnegative safe integers within the current document.
+
+Range queries search the paged index and visit only intersecting matches, with no prefix cap
+or full-document paint scan. Index memory grows with match count. Pass the `FindSnapshot`
+captured by the presentation callback to reject obsolete results: a changed revision or
+`matchesVersion`, unavailable view, or a document revision not yet observed by find returns
+an empty array. Returned arrays remain immutable after further work. Subscribe to state and
+invalidate presentation when revision or `matchesVersion` changes; navigation and scan-only
+progress do not change the match version. Query changes, resets, repairs and new matches do.
+
+A completed index wraps. During literal repair,
+`status: "searching"` with `retained: true` exposes a confirmed prefix: counts and range results are
 partial, navigation cannot wrap or skip an unsearched region, and current replacement can use
 only confirmed matches. Initial and regular-expression searches wait for completion.
 

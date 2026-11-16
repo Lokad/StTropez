@@ -269,6 +269,11 @@ test("large browser-only sample keeps scroll content, editing/history and langua
     await output.evaluate(root => { root.scrollTop = root.scrollHeight; });
     await expect(output).toContainText("// Row 100000: try editing or searching here.");
     expect(await viewport.evaluate(root => root.scrollTop)).toBe(sourceTop);
+    await page.locator("#find-toggle").click(); await page.locator("#find-query").fill("Row");
+    await expect(page.locator("#find-status")).toHaveText("100000 matches");
+    await expect.poll(() => page.locator("#editor .demo-search").count()).toBeGreaterThan(0);
+    expect(await viewport.evaluate(root => root.scrollTop)).toBe(sourceTop);
+    await page.locator("#find-close").click(); await expect(page.locator("#editor .demo-search")).toHaveCount(0);
     await source.press("Control+End"); await source.pressSequentially("\nMath.ma");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await source.press("Escape"); await source.press("Control+Space"); await expect(page.getByRole("option", { name: "max", exact: true })).toBeVisible();

@@ -31,11 +31,11 @@ try {
                 const start = performance.now(); window.editingFixture.find(query);
                 const check = () => { const s = window.editingFixture.snapshot(); if (s.find.status !== "ready") { requestAnimationFrame(check); return; }
                     clearTimeout(timeout); resolve({ wallFrameProxyMs: performance.now() - start, maxScanStepMs: s.find.maxScanStepMs, count: s.find.count, scanned: s.find.scanned,
-                        preview: s.find.previewCount, exports: s.document.exports, length: s.document.length }); }; requestAnimationFrame(check);
+                        exports: s.document.exports, length: s.document.length }); }; requestAnimationFrame(check);
             }), query);
             assert.equal((await harness.page.evaluate(() => window.editingFixture.snapshot())).find.matchCase, matchCase);
             assert.equal((await harness.page.evaluate(() => window.editingFixture.snapshot())).find.regularExpression, regularExpression);
-            assert.equal(sample.count, expected); assert.equal(sample.scanned, text.length); assert.equal(sample.exports, 0); assert.ok(sample.preview <= 200);
+            assert.equal(sample.count, expected); assert.equal(sample.scanned, text.length); assert.equal(sample.exports, 0);
             assert.equal((await harness.page.evaluate(() => window.editingFixture.snapshot())).find.wholeWord, wholeWord);
             if (index >= 3) samples.push(sample);
         }

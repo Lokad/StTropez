@@ -92,6 +92,8 @@ test("async regex find advances empty matches, accepts manual overlaps and prese
     const f = fixture("😀x");
     try {
         f.find.setOptions({ regularExpression: true }); f.find.setQuery("(?:)"); await f.drain(); assert.equal(f.find.state.getSnapshot().count, 3);
+        assert.deepEqual(f.find.matchesIn(1, 3), [{ from: 2, to: 2 }]);
+        assert.deepEqual(f.find.matchesIn(3, 3), [{ from: 3, to: 3 }]);
         for (const expected of [0, 2, 3, 0]) { assert.equal(f.find.next(), true); assert.equal(f.view.getSnapshot().selection.head, expected); }
         f.view.setSelections(0, [{ anchor: 0, head: 0 }, { anchor: 3, head: 3 }]); const selected = f.view.getSnapshot().selectionSet;
         assert.equal(f.find.replaceCurrent("<>"), true); await f.drain(); assert.equal(f.text(), "<>😀x"); assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 1);
@@ -155,7 +157,7 @@ test("missing backend, syntax errors and failed or mismatched plans cannot publi
         f.find.setOptions({ regularExpression: true }); f.find.setQuery("("); await f.drain(); assert.equal(f.find.state.getSnapshot().status, "failed");
         f.find.setQuery("cat"); await f.drain(); f.fail(); f.find.replaceAll("dog"); await f.drain(); assert.equal(f.text(), "cat cat"); assert.equal(f.find.state.getSnapshot().status, "ready"); assert.match(f.find.state.getSnapshot().message, /failure/);
         assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 0); assert.equal(f.plans[0]!.disposed, true);
-        assert.ok(Object.isFrozen(f.find.state.getSnapshot().preview));
+        assert.ok(Object.isFrozen(f.find.matchesIn(0, 7)));
     } finally { f.finish(); }
     const wrong = fixture("cat cat");
     try {

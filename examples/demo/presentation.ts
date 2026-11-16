@@ -22,7 +22,7 @@ export class DemoPresentation {
     private readonly colors = new DemoSyntaxColors();
     readonly editing = new DemoEditingRules();
     private disposed = false;
-    search: Readonly<{ revision: number; ranges: readonly Readonly<{ from: number; to: number }>[] }> | undefined;
+    search: Readonly<{ revision: number; version: number; matchesIn: (from: number, to: number) => readonly Readonly<{ from: number; to: number }>[] }> | undefined;
     diagnostics: Readonly<{ documentId: string; revision: number; ranges: readonly Readonly<{ from: number; to: number }>[] }> | undefined;
     javascript = "";
     status: "starting" | "pending" | "ready" | "failed" = "starting";
@@ -144,7 +144,7 @@ export class DemoPresentation {
     }
     readonly decorate = (line: PresentedLine): readonly InlineDecoration[] => {
         const result = this.colors.decorate(line);
-        if (this.search?.revision === line.revision) for (const range of this.search.ranges) {
+        if (this.search?.revision === line.revision) for (const range of this.search.matchesIn(line.from, line.to)) {
             if (range.from < line.to && range.to > line.from) result.push({ ...range, className: "demo-search" });
         }
         if (this.diagnostics?.documentId === line.documentId && this.diagnostics.revision === line.revision) for (const range of this.diagnostics.ranges) {

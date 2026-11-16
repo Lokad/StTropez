@@ -1,7 +1,8 @@
 import { LiteralSearch } from "../core/search.ts";
 import type { DocumentId, DocumentSnapshot, TabId, Workspace } from "../core/workspace.ts";
 import { unchangedPositionEdges } from "../core/positions.ts";
-import { FindIndex, LiteralFindRepair } from "./find-index.ts";
+import { FindIndex } from "../core/find-index.ts";
+import { LiteralFindRepair } from "./find-index.ts";
 import type { Observable } from "../core/observable.ts";
 import type { SearchMatch, SearchStep } from "../core/search.ts";
 import type { SelectionSet } from "../core/selections.ts";
@@ -20,8 +21,8 @@ export type FindBackend = Readonly<{ search: (capture: FindQueryCapture) => Find
     replace: (capture: FindQueryCapture, replacement: string, range?: SearchMatch) => FindPlanCursor; dispose: () => void }>;
 export type FindConfiguration = Readonly<{ regularExpression?: FindBackend; regularExpressionDelayMs?: number }>;
 export type FindSnapshot = Readonly<{ query: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean; revision: number; status: "idle" | "searching" | "ready" | "replacing" | "failed" | "cancelled" | "expired" | "disposed";
-    count: number; scanned: number; length: number; retained: boolean; current: number | null; preview: readonly SearchMatch[]; message: string; maxScanStepMs: number; replaceTransactionMs: number }>;
-export type FindController = Readonly<{ state: Observable<FindSnapshot>; setQuery: (query: string) => void; setOptions: (options: FindOptions) => void; next: (direction?: 1 | -1) => boolean;
+    count: number; scanned: number; length: number; retained: boolean; current: number | null; matchesVersion: number; message: string; maxScanStepMs: number; replaceTransactionMs: number }>;
+export type FindController = Readonly<{ state: Observable<FindSnapshot>; matchesIn: (from: number, to: number, capture?: FindSnapshot) => readonly SearchMatch[]; setQuery: (query: string) => void; setOptions: (options: FindOptions) => void; next: (direction?: 1 | -1) => boolean;
     replaceCurrent: (replacement: string) => boolean; replaceAll: (replacement: string) => void; cancel: () => void; destroy: () => void }>;
 function isAsync<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
     return value !== null && (typeof value === "object" || typeof value === "function") && typeof (value as PromiseLike<T>).then === "function";
@@ -37,7 +38,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId), lease = workspace.acquire(resource.id), owner = editor.element.ownerDocument, win = owner.defaultView!;
     const scope = workspace.createNotificationScope(), initial = workspace.document(documentId);
     const store = new Store<FindSnapshot>(Object.freeze({ query: "", wholeWord: false, matchCase: true, regularExpression: false, revision: initial.revision, status: "idle", count: 0, scanned: 0, length: initial.buffer.length,
-        retained: false, current: null, preview: Object.freeze([]), message: "", maxScanStepMs: 0, replaceTransactionMs: 0 }), scope);
+        retained: false, current: null, matchesVersion: 0, message: "", maxScanStepMs: 0, replaceTransactionMs: 0 }), scope);
     let disposed = false, timer: number | undefined, cursor: FindSearchCursor | undefined, planCursor: FindPlanCursor | undefined, generation = 0, focusGeneration = 0;
     let navigatedZero: Readonly<{ index: number; selectionSet: SelectionSet }> | undefined;
     let replacedZero: Readonly<{ revision: number; head: number; selectionSet: SelectionSet }> | undefined;
@@ -59,15 +60,20 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         active?.dispose(); plan?.dispose(); authority?.(); };
     const reset = (patch: Partial<FindSnapshot>) => {
         matches = new FindIndex(); count = 0; literal = undefined; edges = undefined; navigationTo = 0;
-        publish({ ...patch, retained: false, count: 0, scanned: 0, current: null, preview: Object.freeze([]) });
+        publish({ ...patch, retained: false, count: 0, scanned: 0, current: null, matchesVersion: store.get().matchesVersion + 1 });
     };
     const later = (work: () => void, delay = 0) => { timer = win.setTimeout(() => { timer = undefined; work(); }, delay); };
     const offsetAt = (index: number) => matches.at(index).from;
     const endAt = (index: number) => matches.at(index).to;
     const indexAt = (offset: number) => matches.lowerBound(offset);
-    const retainedPreview = () => {
-        const previous = store.get().preview, preview = matches.preview();
-        return previous.length === preview.length && previous.every((m, i) => m.from === preview[i]!.from && m.to === preview[i]!.to) ? previous : preview;
+    const emptyMatches: readonly SearchMatch[] = Object.freeze([]);
+    const matchesIn = (from: number, to: number, capture = store.get()): readonly SearchMatch[] => {
+        if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from) throw new RangeError("Invalid match range.");
+        const state = store.get();
+        if (!valid() || capture.revision !== state.revision || capture.matchesVersion !== state.matchesVersion
+            || workspace.document(documentId).revision !== state.revision) return emptyMatches;
+        if (to > state.length) throw new RangeError("Match range exceeds document length.");
+        return matches.matchesIn(from, to);
     };
     const canEdit = () => { const state = resource.getSnapshot(); return !editor.input.readOnly && state.state === "ready" && state.metadata.capabilities.edit.includes("human") && state.metadata.editLock === null; };
     const observePlanAuthority = (token: number) => { stopPlanAuthority = resource.metadata.subscribe(() => {
@@ -97,7 +103,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
                 if (document.buffer === literal.document.buffer) {
                     matches = literal.index; count = matches.count; literal.document = document; edges = undefined; observed = document; navigationTo = document.buffer.length;
                     publish({ revision: document.revision, length: document.buffer.length, retained: false, status: "ready", count, scanned: document.buffer.length,
-                        preview: retainedPreview(), current: null, message: "", maxScanStepMs: 0 }); return;
+                        matchesVersion: store.get().matchesVersion + 1, current: null, message: "", maxScanStepMs: 0 }); return;
                 }
                 const prefix = Math.min(edges?.prefix ?? proof.prefix, proof.prefix, literal.document.buffer.length, document.buffer.length);
                 edges = { prefix, suffix: Math.min(edges?.suffix ?? proof.suffix, proof.suffix, literal.document.buffer.length - prefix, document.buffer.length - prefix) };
@@ -108,7 +114,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         const patch = { query, wholeWord, matchCase, regularExpression, revision: document.revision, length: document.buffer.length, message: "", maxScanStepMs: 0 };
         if (repair) {
             matches = repair.index; count = matches.count; navigationTo = repair.start;
-            publish({ ...patch, status: "searching", retained: true, count, scanned: repair.start, current: null, preview: retainedPreview() });
+            publish({ ...patch, status: "searching", retained: true, count, scanned: repair.start, current: null, matchesVersion: store.get().matchesVersion + 1 });
         } else reset({ ...patch, status: query ? "searching" : "idle" });
         if (!query) return;
         try {
@@ -145,8 +151,6 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
                     matches.append(match); count++;
                 }
                 if (repair) { count = matches.count; navigationTo = Math.max(navigationTo, count ? endAt(count - 1) : 0); }
-                const previous = store.get().preview, extra = result.matches.slice(0, 200 - previous.length);
-                const preview = repair ? retainedPreview() : previous.length < 200 && extra.length ? Object.freeze([...previous, ...(regularExpression ? extra.map(m => Object.freeze({ from: m.from, to: m.to })) : extra)]) : previous;
                 scanMaximum = Math.max(scanMaximum, dispatchMs, win.performance.now() - began);
                 if (result.done) {
                     if (!regularExpression && timer !== undefined) { win.clearTimeout(timer); timer = undefined; }
@@ -158,7 +162,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
                 // progress. Keep their maximum privately until the next real publication.
                 const state = store.get();
                 if (result.done || count !== state.count || result.scanned !== state.scanned)
-                    publish({ count, preview, scanned: result.scanned, status: result.done ? "ready" : "searching", retained: !!repair && !result.done });
+                    publish({ count, matchesVersion: state.matchesVersion + (count !== state.count ? 1 : 0), scanned: result.scanned, status: result.done ? "ready" : "searching", retained: !!repair && !result.done });
                 if (!result.done && token === generation && regularExpression) later(step);
             };
             try { const result = cursor!.next(), dispatchMs = win.performance.now() - started;
@@ -310,7 +314,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         if (store.get().status === "cancelled" && valid()) { observed = workspace.document(documentId); publish({ revision: observed.revision, length: observed.buffer.length }); }
         else { const state = store.get(); restart(state.query, state.wholeWord, state.matchCase, state.regularExpression, true); }
     }), workspace.tabState.subscribe(() => { if (!valid()) { stop(); backend?.dispose(); reset({ status: "expired", message: "View is unavailable." }); } })];
-    return Object.freeze({ state: store.observable, setQuery: (query: string) => { scope.assertWritable(); if (typeof query !== "string") throw new TypeError("Expected a search string."); if (!disposed) restart(query); },
+    return Object.freeze({ state: store.observable, matchesIn, setQuery: (query: string) => { scope.assertWritable(); if (typeof query !== "string") throw new TypeError("Expected a search string."); if (!disposed) restart(query); },
         setOptions: (options: FindOptions) => {
             scope.assertWritable(); if (options === null || typeof options !== "object" || (options.wholeWord !== undefined && typeof options.wholeWord !== "boolean" || options.matchCase !== undefined && typeof options.matchCase !== "boolean" || options.regularExpression !== undefined && typeof options.regularExpression !== "boolean")) throw new TypeError("Expected find options.");
             const state = store.get(), wholeWord = options.wholeWord ?? state.wholeWord, matchCase = options.matchCase ?? state.matchCase, regularExpression = options.regularExpression ?? state.regularExpression;

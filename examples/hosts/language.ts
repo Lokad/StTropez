@@ -216,9 +216,10 @@ export class HostLanguageTools {
             const clock = session.editor.element.ownerDocument.defaultView!;
             session.find = createFindController(this.workspace, session.tab, session.editor, { regularExpression: createRegexFindBackend({ clock,
                 createWorker: () => new Worker("/regex-worker.js", { type: "module" }) }) });
-            const update = () => { const state = session.find!.state.getSnapshot(), previous = session.presentation.search;
-                session.presentation.search = { revision: state.revision, ranges: state.preview };
-                if (previous?.revision !== state.revision || previous.ranges !== state.preview) session.editor.viewport.invalidate();
+            const find = session.find;
+            const update = () => { const state = find.state.getSnapshot(), previous = session.presentation.search;
+                session.presentation.search = { revision: state.revision, version: state.matchesVersion, matchesIn: (from, to) => find.matchesIn(from, to, state) };
+                if (previous?.revision !== state.revision || previous.version !== state.matchesVersion) session.editor.viewport.invalidate();
                 if (this.active === session) this.publish(); };
             session.stopFind = session.find.state.subscribe(update);
         }

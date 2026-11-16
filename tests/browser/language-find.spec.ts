@@ -31,6 +31,27 @@ test("literal find wraps Unicode ranges and replacement is one shared undoable t
     expect((await snapshot(page)).document!.exports).toBe(0);
 });
 
+test("visible search highlights follow scrolling, equal-count queries and edits beyond 200 matches", async ({ page }) => {
+    const text = Array.from({ length: 400 }, (_, i) => `const needle_${i} = needle_${i};`).join("\n");
+    await page.evaluate(text => window.editingFixture.setText(text), text); await ready(page);
+    const query = page.getByRole("textbox", { name: "Find", exact: true }), input = page.getByRole("textbox", { name: "Primary source", exact: true });
+    const highlights = page.locator("#primary .st-search-match");
+    await query.fill("needle"); await found(page, 800);
+    await expect.poll(() => highlights.count()).toBeGreaterThan(0);
+    await input.press("Control+End"); await ready(page);
+    await expect(page.locator("#primary")).toContainText("needle_399");
+    await expect.poll(() => highlights.count()).toBeGreaterThan(0);
+    await expect.poll(() => highlights.allTextContents()).toContain("needle");
+    await query.fill("_399"); await found(page, 2); await expect(highlights).toHaveCount(2);
+    await query.fill("_398"); await found(page, 2); await expect(highlights).toHaveText(["_398", "_398"]);
+    await query.fill("needle"); await found(page, 800);
+    await input.press("Control+End"); await input.press("Home"); await input.press("Shift+End"); await input.press("Backspace");
+    await found(page, 798); await ready(page); await expect.poll(() => highlights.count()).toBeGreaterThan(0);
+    await input.press("ControlOrMeta+z"); await found(page, 800); await ready(page);
+    await expect(page.locator("#primary")).toContainText("needle_399"); await expect.poll(() => highlights.count()).toBeGreaterThan(0);
+    await query.fill("absent"); await found(page, 0); await expect(highlights).toHaveCount(0);
+});
+
 test("keyboard find routing, read-only replacement and a pilot-sized replace-all retain exact history", async ({ page }) => {
     await page.evaluate(() => { window.editingFixture.load("lines-10000"); window.editingFixture.focus("primary"); });
     await page.keyboard.press("ControlOrMeta+f"); await expect(page.getByRole("textbox", { name: "Find", exact: true })).toBeFocused();
@@ -47,7 +68,7 @@ test("keyboard find routing, read-only replacement and a pilot-sized replace-all
     await page.keyboard.press("ControlOrMeta+z"); await found(page, 10_000); expect((await snapshot(page)).document!.length).toBe(240_000);
 });
 
-test("100k-line search yields, caps only its preview and rejects stale replace-all planning", async ({ page }) => {
+test("100k-line search yields, retains confirmed matches and rejects stale replace-all planning", async ({ page }) => {
     const progress = await page.evaluate(() => new Promise<{
         before: ReturnType<typeof window.editingFixture.snapshot>;
         partial: ReturnType<typeof window.editingFixture.snapshot>;
@@ -64,14 +85,14 @@ test("100k-line search yields, caps only its preview and rejects stale replace-a
     expect(progress.cancelled.history).toEqual(progress.before.history);
     expect(progress.cancelled.document).toEqual(progress.before.document);
     await page.evaluate(() => window.editingFixture.find("const")); await found(page, 100_000);
-    expect((await snapshot(page)).find.previewCount).toBe(200); expect((await snapshot(page)).document!.exports).toBe(0);
+    expect((await snapshot(page)).document!.exports).toBe(0);
     const retained = await page.evaluate(() => {
         const f = window.editingFixture; f.edit([{ from: 1200000, to: 1200005, insert: "let" }]);
         return { find: f.snapshot().find, next: (document.getElementById("find-next") as HTMLButtonElement).disabled,
             all: (document.getElementById("replace-all") as HTMLButtonElement).disabled };
     });
     expect(retained.find.status).toBe("searching"); expect(retained.find.count).toBeGreaterThan(49000);
-    expect(retained.find.previewCount).toBe(200); expect(retained.next).toBe(false); expect(retained.all).toBe(true);
+    expect(retained.next).toBe(false); expect(retained.all).toBe(true);
     await found(page, 99999); await page.getByRole("textbox", { name: "Primary source", exact: true }).press("ControlOrMeta+z"); await found(page, 100000);
     await page.evaluate(() => { window.editingFixture.replaceAll("let"); window.editingFixture.edit([{ from: 0, to: 0, insert: "later " }]); }); await found(page, 100_000);
     expect(await page.evaluate(() => window.editingFixture.range(0, 11))).toBe("later const");
