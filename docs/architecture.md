@@ -101,6 +101,10 @@ Their computation can use headless cursors without creating an independent mutab
 Editing commands and fold discovery share a private runner for bounded iteration and timer
 continuations. Their owners retain capture validation, iterator disposal, failure handling and
 commit authority. Range navigation keeps its callback continuation with the input owner.
+The private ordered-input queue owns retained actions, event-time replay, bounded draining,
+recovery accounting and its scheduled continuation. The editor owns command interpretation,
+capture validation, native-input reconciliation and document commits. Successful commits release
+their recovery text before presentation callbacks; cancellation recovers only unconsumed input.
 Caret presentation reads this state; the editor disposes it before destroying its viewport.
 
 Workspace publishes atomic content/history/view changes. Save, Run and proposal policy use

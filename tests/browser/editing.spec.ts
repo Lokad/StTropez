@@ -9,8 +9,8 @@ test.beforeEach(async ({ page }) => {
 
 test("failed command turns release input and report the cause before later typing", async ({ page }) => {
     const text = "abcdefghij\n".repeat(80), source = page.getByRole("textbox", { name: "Primary source", exact: true });
-    for (const failure of ["inline-decoration", "deferred-decoration", "queued-transform", "committed-transform", "language-policy"] as const) {
-        const immediate = failure === "inline-decoration" || failure === "language-policy";
+    for (const failure of ["inline-decoration", "deferred-decoration", "queued-transform", "committed-transform", "committed-tail", "language-policy"] as const) {
+        const immediate = failure === "inline-decoration" || failure === "language-policy", committed = failure.startsWith("committed-");
         await page.evaluate(({ text, failure }) => {
             const f = window.editingFixture; f.setText(text);
             f.selections(Array.from({ length: failure === "inline-decoration" || failure === "language-policy" ? 1 : 33 }, (_, i) => ({ anchor: i * 11 + 1, head: i * 11 + (failure === "language-policy" ? 2 : 1) })));
@@ -35,22 +35,27 @@ test("failed command turns release input and report the cause before later typin
                 input.dispatchEvent(new KeyboardEvent("keydown", { key: "(", bubbles: true, cancelable: true })); return;
             } else if (failure === "queued-transform") {
                 const release = f.registerEditTransform(() => { release(); throw new Error("Fixture transform failure"); });
-            } else if (failure === "committed-transform") {
+            } else if (failure.startsWith("committed-")) {
                 const release = f.registerEditTransform(edit => ({ ...edit, complete: () => { release(); throw new Error("Fixture completion failure"); } }));
             } else f.failNextDecoration();
             input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
             if (failure !== "inline-decoration" && input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "queued", bubbles: true, cancelable: true }))) throw new Error("Expected queued input");
+            if (failure === "committed-tail") {
+                input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+                input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "remaining😀", bubbles: true, cancelable: true }));
+            }
         }, failure);
         await expect.poll(async () => (await state(page)).conflicts.filter(item => item.reason === "command-failed").length).toBe(
             before.conflicts.filter(item => item.reason === "command-failed").length + 1);
         } finally { await page.evaluate(() => (window as typeof window & { releaseFaultFrames?: () => void }).releaseFaultFrames?.()); }
         await expect.poll(() => page.evaluate(() => { const s = window.editingFixture.snapshot().primary; return !s.pendingWord && !s.pendingGrapheme && !s.pendingInput; })).toBe(true);
         const failed = await state(page);
-        expect(failed.document!.revision).toBe(before.document!.revision + (failure === "committed-transform" ? 1 : 0));
-        const error = failure === "language-policy" ? "Fixture language failure" : failure === "queued-transform" ? "Fixture transform failure" : failure === "committed-transform" ? "Fixture completion failure" : "Fixture decoration failure";
+        expect(failed.document!.revision).toBe(before.document!.revision + (committed ? 1 : 0));
+        const error = failure === "language-policy" ? "Fixture language failure" : failure === "queued-transform" ? "Fixture transform failure" : committed ? "Fixture completion failure" : "Fixture decoration failure";
         expect(failed.conflicts.at(-1)).toMatchObject({ reason: "command-failed", error });
-        expect(await page.evaluate(index => window.editingFixture.conflictText(index), before.conflicts.length)).toBe(failure === "language-policy" ? "(" : !immediate && failure !== "committed-transform" ? "queued" : "");
-        if (failure === "committed-transform") expect(failed.document!.length).toBe(text.length + 33 * "queued".length);
+        expect(await page.evaluate(index => window.editingFixture.conflictText(index), before.conflicts.length)).toBe(failure === "language-policy" ? "(" : failure === "committed-tail" ? "remaining😀" : !immediate && !committed ? "queued" : "");
+        if (committed) expect(failed.document!.length).toBe(text.length + 33 * "queued".length);
+        if (failure === "committed-tail") expect(failed.conflicts.length).toBe(before.conflicts.length + 2);
         await page.evaluate(() => { window.editingFixture.configureLanguage({}); window.editingFixture.select("primary", { anchor: 0, head: 0 }); }); await ready(page);
         await source.pressSequentially("after"); await ready(page);
         expect(await page.evaluate(() => window.editingFixture.range(0, 5))).toBe("after");

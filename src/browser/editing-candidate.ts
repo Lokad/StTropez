@@ -39,6 +39,8 @@ import { classifyEditingKey } from "./editing-keys.ts";
 import type { KeyBinding, KeyStroke } from "./editing-keys.ts";
 import { commandBudget, createCooperativeRunner } from "./cooperative-runner.ts";
 import { createEdgeAutoscroll, edgeVelocity } from "./edge-autoscroll.ts";
+import { createOrderedInputQueue } from "./ordered-input.ts";
+import type { InputKey, InputIntent, OrderedInput } from "./ordered-input.ts";
 
 export type CandidateEdit = Readonly<{ expectedRevision: number; edits: readonly TextEdit[]; selectionSet: SelectionSet; kind: EditKind;
     /** The editor's newline command supplied contextual indentation, rather than literal text. */
@@ -131,11 +133,21 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     let insertion: InputCapture | undefined, composition: InputCapture | undefined;
     let projectedSet = view.getSnapshot().selectionSet;
     let rangeCommand: Readonly<{ capture: CommandCapture; purpose: "word" | "grapheme"; release: () => void }> | undefined, cancelRangeTask: (() => void) | undefined;
-    type InputKey = KeyStroke & KeyBinding & { kind: "key" };
-    type InputIntent = (InputKey | { kind: "text"; text: string; type: string; literal?: true }) & { at?: number };
-    type OrderedInput = { capture: CommandCapture; purpose: "word" | "grapheme"; actions: InputIntent[]; units: number; edit: boolean; native: boolean; running?: InputIntent; cancelled?: boolean };
-    let ordered: OrderedInput | undefined, executingInput: OrderedInput | undefined, cancelInputTask: (() => void) | undefined, drainingInput = false, replayTime: number | undefined;
-    let nativeOrder: { order: OrderedInput; capture: InputCapture; type: string; data: string | null; action?: InputKey; invalid: boolean; reported: boolean } | undefined;
+    let nativeOrder: { order: OrderedInput<CommandCapture>; capture: InputCapture; type: string; data: string | null; action?: InputKey; invalid: boolean; reported: boolean } | undefined;
+    const inputQueue = createOrderedInputQueue<CommandCapture>(win.performance, commandRunner, {
+        command: () => rangeCommand, capture: () => commandCapture(false), disposed: () => disposed,
+        validCommand: capture => validCommand(capture),
+        valid: (capture, editing) => validCommand(capture) && root.isConnected && workspace.ownsDocumentView(view) && !(editing && input.readOnly),
+        committed: capture => committing && workspace.observeDocument(documentId).getSnapshot()?.revision !== capture.revision,
+        pairKey: text => pairKey(text), replay: replayInput, commandTurn,
+        recover: (pending, text, reason) => {
+            if (nativeOrder?.order === pending) { nativeOrder.invalid = true;
+                if (!nativeOrder.reported && nativeOrder.data !== null) { text += nativeOrder.data; nativeOrder.reported = true; } }
+            if (text.length) conflict(reason, undefined, pending.capture.revision, 0, text);
+        },
+        deferredTurn: work => { const began = win.performance.now();
+            try { work(); } finally { maxQueuedInputTurnMs = Math.max(maxQueuedInputTurnMs, win.performance.now() - began); } },
+    });
     const apple = /Mac|iPhone|iPad|iPod/.test(win.navigator.platform);
     function cancelScans(): void {
         wordJob?.cursor.dispose(); wordJob = undefined;
@@ -146,9 +158,9 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     function cancelWord(): void {
         const command = rangeCommand; rangeCommand = undefined;
         cancelRangeTask?.(); cancelRangeTask = undefined;
-        const pending = takeInput();
+        const pending = inputQueue.take();
         try { cancelScans(); command?.release(); }
-        finally { if (pending) recoverInput(pending, "pending-input-cancelled"); }
+        finally { if (pending) inputQueue.recover(pending, "pending-input-cancelled"); }
     }
     const caretLayer = mountInputCaret(root, input, view, viewport,
         () => workspace.observeDocument(documentId).getSnapshot(), () => composing);
@@ -158,8 +170,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const state = resource.getSnapshot(); input.disabled = !workspace.resolveTab(target) || state.state !== "ready";
         if (input.disabled) contextBuffer = undefined;
         input.readOnly = readOnly || !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null;
-        if (executingInput?.edit && input.readOnly) recoverInput(executingInput, "pending-input-expired");
-        if (ordered && (!currentInput(ordered) || ordered.edit && input.readOnly)) cancelWord();
+        if (inputQueue.executing?.edit && input.readOnly) inputQueue.recover(inputQueue.executing, "pending-input-expired");
+        if (inputQueue.pending && (!inputQueue.current(inputQueue.pending) || inputQueue.pending.edit && input.readOnly)) cancelWord();
 
         if (!input.disabled && !composing) {
             const document = workspace.document(documentId), { selection: selected, selectionSet } = view.getSnapshot();
@@ -203,16 +215,16 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     // One failure boundary for inline and deferred command work. Detach ownership before
     // notifying the host; reporting must not leave a failed job blocking later input.
     function commandTurn(work: () => void, attemptedText = ""): void {
-        const expectedRevision = rangeCommand?.capture.revision ?? executingInput?.capture.revision ?? revision;
+        const expectedRevision = rangeCommand?.capture.revision ?? inputQueue.executing?.capture.revision ?? revision;
         try { work(); }
         catch (error) {
-            const pending = takeInput(), executing = executingInput;
+            const pending = inputQueue.take(), executing = inputQueue.executing;
             let cause = error;
             try { cancelWord(); refresh(); }
             catch (cleanupError) { cause = new AggregateError([error, cleanupError], "Command and cleanup failed."); }
             finally { commandRunner.cancel(); }
-            if (pending) recoverInput(pending, "pending-input-failed");
-            if (executing && executing !== pending) recoverInput(executing, "pending-input-failed");
+            if (pending) inputQueue.recover(pending, "pending-input-failed");
+            if (executing && executing !== pending) inputQueue.recover(executing, "pending-input-failed");
             const unapplied = !executing && workspace.observeDocument(documentId).getSnapshot()?.revision === expectedRevision ? attemptedText : "";
             conflict("command-failed", undefined, expectedRevision, 0, unapplied, cause);
         }
@@ -227,7 +239,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         cancelWord(); preferred = undefined;
         if (!workspace.resolveTab(target)) { conflict("expired-view", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
         let key: string | undefined;
-        const now = replayTime ?? win.performance.now(), before = view.getSnapshot().selectionSet;
+        const now = inputQueue.time ?? win.performance.now(), before = view.getSnapshot().selectionSet;
         const transformed = editTransform?.(Object.freeze({ expectedRevision, edits,
             selectionSet: "ranges" in selection ? selection : createSelectionSet(workspace.document(documentId).buffer.length + edits.reduce((n, edit) => n + edit.insert.length - (edit.to - edit.from), 0), [selection]), kind,
             ...(adjustNewlines ? { adjustNewlines: true } : {}) }));
@@ -243,7 +255,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                 history: { kind, ...(key ? { group: key } : {}) } });
             applied = result.applied;
             if (result.applied) { // A later presentation/completion failure must not recover this text twice.
-                if (executingInput) delete executingInput.running;
+                inputQueue.consumeRunning();
                 commits++; const after = view.getSnapshot(); revealCaret(after.selection);
                 if (type && key) group = { type, revision: result.revision, selectionSet: after.selectionSet, time: now, key }; }
             else conflict(result.reason, edits[0], expectedRevision, context.from, recoveryText);
@@ -364,17 +376,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     }
     function completeCaptured(capture: CommandCapture, work: () => boolean): boolean {
         if (!validCommand(capture)) { cancelWord(); return false; }
-        const pending = ordered?.capture === capture ? takeInput() : undefined;
-        if (pending) executingInput = pending;
-        let applied = false;
-        try { applied = work(); return applied; }
-        finally {
-            if (pending && !pending.cancelled) {
-                if (applied && !disposed) { pending.capture = commandCapture(false); ordered = pending; scheduleInput(); }
-                else recoverInput(pending, "pending-input-expired");
-            }
-            if (executingInput === pending) executingInput = undefined;
-        }
+        return inputQueue.complete(capture, work);
     }
     function finishRanges(capture: CommandCapture, ranges: readonly Selection[], type?: string): SelectionSet | undefined {
         if (!validCommand(capture)) return;
@@ -669,84 +671,26 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (type === "insertLineBreak") return languageCommand("newline");
         return type === "insertText" && text !== null && pairKey(text) && languageCommand({ character: text });
     }
-    function takeInput(): OrderedInput | undefined {
-        cancelInputTask?.(); cancelInputTask = undefined;
-        const pending = ordered; ordered = undefined; return pending;
-    }
-    function recoverInput(pending: OrderedInput, reason: string): void {
-        if (pending.cancelled) return; pending.cancelled = true;
-        const committed = committing && workspace.observeDocument(documentId).getSnapshot()?.revision !== pending.capture.revision;
-        let text = (committed ? "" : pending.running?.text ?? "") + pending.actions.map(action => action.text).join(""); delete pending.running; pending.actions = []; pending.units = 0;
-        if (nativeOrder?.order === pending) { nativeOrder.invalid = true;
-            if (!nativeOrder.reported && nativeOrder.data !== null) { text += nativeOrder.data; nativeOrder.reported = true; } }
-        if (text.length) conflict(reason, undefined, pending.capture.revision, 0, text);
-
-    }
-    function currentInput(pending: OrderedInput): boolean {
-        return !pending.cancelled && validCommand(pending.capture) && root.isConnected && workspace.ownsDocumentView(view) && !(pending.edit && input.readOnly);
-    }
-    function inputOrder(): OrderedInput | undefined {
-        if (ordered) return ordered;
-        if (!rangeCommand || !validCommand(rangeCommand.capture)) return;
-        return ordered = { capture: rangeCommand.capture, purpose: rangeCommand.purpose, actions: [], units: 0, edit: rangeCommand.capture.deleting, native: false };
-    }
     function appendInput(action: InputIntent): void {
-        const pending = inputOrder(); if (!pending) return;
-        action.at = win.performance.now();
-        if (!currentInput(pending) || pending.actions.length >= commandBudget.queuedActions || pending.units + action.text.length > commandBudget.queuedUnits) {
-            const capture = pending.capture; cancelWord();
-            if (action.text.length) conflict("pending-input-limit-or-expiry", undefined, capture.revision, 0, action.text); return;
+        const rejected = inputQueue.append(action); if (!rejected) return;
+        const capture = rejected.capture; cancelWord();
+        if (action.text.length) conflict("pending-input-limit-or-expiry", undefined, capture.revision, 0, action.text);
+    }
+    function replayInput(action: InputIntent): boolean | "reported" {
+        const beforeConflicts = conflicts;
+        if (action.kind === "text" && !action.literal && configuredInput(action.type, action.text)) {
+            // The same captured command path serves keyboard and cancellable native input.
+        } else if (action.kind === "text") {
+            const document = workspace.document(documentId), plan = planSelectionEdits(document.buffer.length, view.getSnapshot().selectionSet, action.text);
+            const typing = action.type === "insertText" && !action.text.includes("\n");
+            if (!apply(plan.edits, plan.selectionSet, typing ? "typing" : action.type === "insertFromPaste" ? "paste" : "replace", typing ? "insertText" : undefined, document.revision, action.text)) {
+                return "reported";
+            }
+        } else {
+            const event = new win.KeyboardEvent("keydown", { ...action, cancelable: true }); keydown(event, action);
+            if (action.fallback && action.text && !event.defaultPrevented) replaceSelection(action.text, "typing", "insertText");
         }
-        const last = pending.actions.at(-1);
-        if (last?.kind === "text" && action.kind === "text" && last.type === "insertText" && action.type === "insertText" && last.literal === action.literal && !pairKey(last.text) && !pairKey(action.text) && action.at - (last.at ?? action.at) < 1000) { last.text += action.text; last.at = action.at; }
-        else pending.actions.push(action);
-        pending.units += action.text.length; pending.edit ||= action.kind === "text" || action.edit;
-        scheduleInput();
-    }
-    function scheduleInput(): void {
-        if (!ordered || rangeCommand || ordered.native || cancelInputTask !== undefined) return;
-        const cancel = commandRunner.schedule(() => { if (cancelInputTask === cancel) cancelInputTask = undefined; drainInput(); }, 0, work => {
-            const began = win.performance.now();
-            try { work(); }
-            finally { const elapsed = win.performance.now() - began; maxQueuedInputTurnMs = Math.max(maxQueuedInputTurnMs, elapsed); }
-        });
-        cancelInputTask = cancel;
-    }
-    function drainInput(): void {
-        const pending = takeInput(); if (!pending) return;
-        if (!currentInput(pending)) { recoverInput(pending, "pending-input-expired"); return; }
-        const began = win.performance.now(); let count = 0; drainingInput = true; executingInput = pending;
-        try { commandTurn(() => {
-            while (pending.actions.length && count++ < commandBudget.queuedCalls && win.performance.now() - began < commandBudget.sliceMs) {
-                const action = pending.actions.shift()!; pending.running = action;
-                const beforeConflicts = conflicts;
-                replayTime = action.at;
-                if (action.kind === "text" && !action.literal && configuredInput(action.type, action.text)) {
-                    // The same captured command path serves keyboard and cancellable native input.
-                } else if (action.kind === "text") {
-                    const document = workspace.document(documentId), plan = planSelectionEdits(document.buffer.length, view.getSnapshot().selectionSet, action.text);
-                    const typing = action.type === "insertText" && !action.text.includes("\n");
-                    if (!apply(plan.edits, plan.selectionSet, typing ? "typing" : action.type === "insertFromPaste" ? "paste" : "replace", typing ? "insertText" : undefined, document.revision, action.text)) {
-                        delete pending.running; recoverInput(pending, "pending-input-rejected"); return;
-                    }
-                } else {
-                    const event = new win.KeyboardEvent("keydown", { ...action, cancelable: true }); keydown(event, action);
-                    if (action.fallback && action.text && !event.defaultPrevented) replaceSelection(action.text, "typing", "insertText");
-                }
-                if (conflicts !== beforeConflicts) { recoverInput(pending, "pending-input-rejected"); return; }
-                replayTime = undefined; delete pending.running; pending.units -= action.text.length;
-                if (pending.cancelled || disposed) return;
-                if (rangeCommand) {
-                    if (pending.actions.length || pending.native || rangeCommand.capture.deleting) { pending.capture = rangeCommand.capture; pending.purpose = rangeCommand.purpose; ordered = pending; }
-                    return;
-                }
-                pending.capture = commandCapture(false);
-                if (!currentInput(pending)) { recoverInput(pending, "pending-input-expired"); return; }
-            }
-            if (pending.actions.length || pending.native) { ordered = pending; scheduleInput(); }
-        }); }
-        finally { replayTime = undefined; if (executingInput === pending) executingInput = undefined; drainingInput = false;
-            }
+        return conflicts === beforeConflicts;
     }
     function captureKey(event: KeyStroke, binding: KeyBinding): InputKey {
         return { kind: "key", key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, shiftKey: event.shiftKey, ...binding };
@@ -761,36 +705,36 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         const binding = classifyEditingKey(stroke, apple, escaped, pairKey); return typeof binding === "object" ? captureKey(stroke, binding) : undefined;
     }
     function captureOrderedInput(event: InputEvent): boolean {
-        if (composing || event.isComposing || input.disabled || input.readOnly || !ordered && !rangeCommand) return false;
+        if (composing || event.isComposing || input.disabled || input.readOnly || !inputQueue.pending && !rangeCommand) return false;
         const text = event.inputType === "insertText" || event.inputType === "insertLineBreak", action = nativeIntent(event.inputType);
         if (!text && !action) return false;
-        const pending = inputOrder(); if (!pending) return false;
+        const pending = inputQueue.ensure(); if (!pending) return false;
         const data = event.inputType === "insertLineBreak" ? "\n" : event.data;
         if (event.cancelable && (action || data !== null)) { event.preventDefault(); appendInput(action ?? { kind: "text", text: data!, type: event.inputType }); return true; }
-        pending.native = true; pending.edit = true;
+        inputQueue.waitNative(pending);
         nativeOrder = { order: pending, capture: captureInput(event.inputType, event.data), type: event.inputType, data, ...(action ? { action } : {}), invalid: false, reported: false };
         return true;
     }
     function commitOrderedInput(event: InputEvent): boolean {
         let pendingNative = nativeOrder; nativeOrder = undefined;
-        if (!pendingNative && !composing && !event.isComposing && (ordered || rangeCommand) && ["insertText", "insertLineBreak"].includes(event.inputType)) {
-            const pending = inputOrder(); if (!pending) return false;
+        if (!pendingNative && !composing && !event.isComposing && (inputQueue.pending || rangeCommand) && ["insertText", "insertLineBreak"].includes(event.inputType)) {
+            const pending = inputQueue.ensure(); if (!pending) return false;
             pendingNative = { order: pending, capture: { revision, selectionSet: projectedSet, context, target: { type: event.inputType, before: context.text,
                 from: Math.min(context.nativeAnchor, context.nativeHead), to: Math.max(context.nativeAnchor, context.nativeHead), data: event.data } }, type: event.inputType, data: event.data, invalid: false, reported: false };
         }
         if (!pendingNative) return false;
-        const native = pendingNative, pending = native.order; pending.native = false;
-        if (native.invalid || ordered !== pending || !currentInput(pending) || event.inputType !== native.type) {
+        const native = pendingNative, pending = native.order; inputQueue.finishNative(pending);
+        if (native.invalid || inputQueue.pending !== pending || !inputQueue.current(pending) || event.inputType !== native.type) {
             const text = event.data ?? native.data ?? input.value;
             if (!native.reported || text !== native.data) conflict("pending-native-input-expired", undefined, native.capture.revision, 0, text);
-            if (ordered === pending) cancelWord(); refresh(); return true;
+            if (inputQueue.pending === pending) cancelWord(); refresh(); return true;
         }
         const projection = native.capture.context, edit = native.capture.target && resolveNativeInsertion(native.capture.target, input, event.inputType);
         if (native.action) appendInput(native.action);
         else if (edit && edit.from === Math.min(projection.nativeAnchor, projection.nativeHead) && edit.to === Math.max(projection.nativeAnchor, projection.nativeHead))
             appendInput({ kind: "text", text: edit.insert, type: event.inputType, literal: true });
         else { cancelWord(); conflict("pending-native-input-target", undefined, native.capture.revision, 0, event.data ?? native.data ?? input.value); }
-        refresh(); scheduleInput(); return true;
+        refresh(); inputQueue.schedule(); return true;
     }
     function beforeInput(event: InputEvent): void {
         hostInsertion?.cancel();
@@ -872,7 +816,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         if (["Shift", "Control", "Meta", "Alt"].includes(event.key)) return;
         if (hostInsertion) { hostInsertion.cancel(); if (event.key === "Escape") { event.preventDefault(); return; } }
         const binding = captured ?? classifyEditingKey(event, apple, escaped, pairKey);
-        if (!drainingInput && (ordered || rangeCommand) && event.key !== "Escape") {
+        if (!inputQueue.draining && (inputQueue.pending || rangeCommand) && event.key !== "Escape") {
             if (typeof binding === "object" && (!binding.edit || !input.readOnly)) { event.preventDefault(); appendInput(captureKey(event, binding)); return; }
             if (!(event.ctrlKey || event.metaKey || event.altKey)) return;
         }
@@ -976,7 +920,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     for (const type of ["copy", "cut", "paste"] as const) input.addEventListener(type, event => {
         if (event.defaultPrevented) { cancelWord(); group = undefined; if (type !== "copy") stopDrag(); return; }
         if (composing || !event.clipboardData) return;
-        if (type === "paste" && (ordered || rangeCommand) && !input.disabled && !input.readOnly) {
+        if (type === "paste" && (inputQueue.pending || rangeCommand) && !input.disabled && !input.readOnly) {
             event.preventDefault(); stopDrag();
             const text = event.clipboardData.getData("text/plain");
             if (text.length) appendInput({ kind: "text", text, type: "insertFromPaste" });
@@ -1007,11 +951,11 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh), workspace.tabState.subscribe(refresh)];
     let activitySnapshot: EditingActivity | undefined;
     function activity(): EditingActivity {
-        const pendingInput = hostInsertion !== undefined || ordered !== undefined || executingInput !== undefined || rangeCommand?.capture.deleting === true;
+        const pendingInput = hostInsertion !== undefined || inputQueue.pending !== undefined || inputQueue.executing !== undefined || rangeCommand?.capture.deleting === true;
         const pendingCommand = rangeCommand !== undefined || wordJob !== undefined || graphemeJob !== undefined;
         const pendingCaret = caretLayer.pending(), pendingDragScroll = dragScrolling.pending();
-        const pendingWord = rangeCommand?.purpose === "word" || wordJob !== undefined || graphemeJob?.purpose === "word" || graphemeJob?.purpose === "word-selection" || ordered?.purpose === "word";
-        const pendingGrapheme = rangeCommand?.purpose === "grapheme" || graphemeJob !== undefined || ordered?.purpose === "grapheme";
+        const pendingWord = rangeCommand?.purpose === "word" || wordJob !== undefined || graphemeJob?.purpose === "word" || graphemeJob?.purpose === "word-selection" || inputQueue.pending?.purpose === "word";
+        const pendingGrapheme = rangeCommand?.purpose === "grapheme" || graphemeJob !== undefined || inputQueue.pending?.purpose === "grapheme";
         if (activitySnapshot && activitySnapshot.disposed === disposed && activitySnapshot.composing === composing
             && activitySnapshot.pendingInput === pendingInput && activitySnapshot.pendingCommand === pendingCommand
             && activitySnapshot.pendingCaret === pendingCaret && activitySnapshot.pendingDragScroll === pendingDragScroll
@@ -1027,7 +971,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             if (kind !== "paste" && kind !== "replace") throw new TypeError("Unknown captured insertion kind.");
             hostInsertion?.cancel();
             const available = () => !disposed && root.isConnected && !readOnly && !input.disabled && !input.readOnly && !composing
-                && !ordered && !executingInput && !rangeCommand && !wordJob && !graphemeJob && !insertion && !drag;
+                && !inputQueue.pending && !inputQueue.executing && !rangeCommand && !wordJob && !graphemeJob && !insertion && !drag;
             if (!available()) return;
             syncSelection(); view.folding.revealSelection(view.folding.getSnapshot());
             let captured: CapturedInsertion | undefined;
@@ -1051,13 +995,13 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state: ViewState) => { viewport.restoreView(state); refresh(); },
         snapshot: () => Object.freeze({ ...activity(), inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs,
-            dragScrollFrames, maxDragScrollStepMs, commits, conflicts, queuedInputUnits: ordered?.units ?? 0, wordScanSteps, maxWordScanStepMs, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves }),
+            dragScrollFrames, maxDragScrollStepMs, commits, conflicts, queuedInputUnits: inputQueue.pending?.units ?? 0, wordScanSteps, maxWordScanStepMs, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves }),
         destroy: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; editTransform = undefined;
             brackets!.dispose();
             warnings!.dispose();
             hostInsertion?.cancel();
-            if (executingInput) recoverInput(executingInput, "pending-input-detached");
+            if (inputQueue.executing) inputQueue.recover(inputQueue.executing, "pending-input-detached");
             cancelWord();
             nativeOrder = undefined; wordInput = undefined;
             insertion = undefined; composition = undefined;
