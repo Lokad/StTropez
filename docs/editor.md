@@ -95,7 +95,9 @@ revision, selection, capability or target rejects stale input for host recovery.
 
 Navigation, deletion, word selection and language planning can yield. Subsequent supported
 editing/navigation keys and literal text are retained in order and use the completed destination
-selection. Adjacent text retains event-time history grouping; paste and structural commands
+selection. Immediate and queued keys share command interpretation; queued replay retains that
+interpretation along with the key and modifiers, and rechecks the captured editing authority.
+Adjacent text retains event-time history grouping; paste and structural commands
 keep their own boundaries. Short navigation cases can complete synchronously. A command's
 acceptance does not imply that its deferred work or rendering has finished.
 

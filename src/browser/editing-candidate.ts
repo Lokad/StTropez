@@ -35,6 +35,8 @@ import { CharacterWarnings } from "../core/character-warnings.ts";
 import type { CharacterWarningOptions } from "../core/character-warnings.ts";
 import { mountCharacterWarnings } from "./character-warnings.ts";
 import type { CharacterWarningHighlights } from "./character-warnings.ts";
+import { classifyEditingKey } from "./editing-keys.ts";
+import type { KeyBinding, KeyStroke } from "./editing-keys.ts";
 
 export type CandidateEdit = Readonly<{ expectedRevision: number; edits: readonly TextEdit[]; selectionSet: SelectionSet; kind: EditKind;
     /** The editor's newline command supplied contextual indentation, rather than literal text. */
@@ -127,7 +129,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     let insertion: InputCapture | undefined, composition: InputCapture | undefined;
     let projectedSet = view.getSnapshot().selectionSet;
     let rangeCommand: Readonly<{ capture: CommandCapture; purpose: "word" | "grapheme"; release: () => void }> | undefined, rangeTimer: number | undefined;
-    type InputKey = { kind: "key"; key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; text: string; edit: boolean };
+    type InputKey = KeyStroke & KeyBinding & { kind: "key" };
     type InputIntent = (InputKey | { kind: "text"; text: string; type: string; literal?: true }) & { at?: number };
     type OrderedInput = { capture: CommandCapture; purpose: "word" | "grapheme"; actions: InputIntent[]; units: number; edit: boolean; native: boolean; running?: InputIntent; cancelled?: boolean };
     let ordered: OrderedInput | undefined, executingInput: OrderedInput | undefined, orderedTimer: number | undefined, drainingInput = false, replayTime: number | undefined;
@@ -734,8 +736,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
                         delete pending.running; recoverInput(pending, "pending-input-rejected"); return;
                     }
                 } else {
-                    const event = new win.KeyboardEvent("keydown", { ...action, cancelable: true }); keydown(event);
-                    if (action.text && action.key !== "Tab" && !event.defaultPrevented) replaceSelection(action.text, "typing", "insertText");
+                    const event = new win.KeyboardEvent("keydown", { ...action, cancelable: true }); keydown(event, action);
+                    if (action.fallback && action.text && !event.defaultPrevented) replaceSelection(action.text, "typing", "insertText");
                 }
                 if (conflicts !== beforeConflicts) { recoverInput(pending, "pending-input-rejected"); return; }
                 replayTime = undefined; delete pending.running; pending.units -= action.text.length;
@@ -752,30 +754,17 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         finally { replayTime = undefined; if (executingInput === pending) executingInput = undefined; drainingInput = false;
             }
     }
-    function caretChord(event: KeyboardEvent): Readonly<{ edge: "Home" | "End"; document: boolean }> | undefined {
-        if (!apple || !event.metaKey || event.ctrlKey || event.altKey) return;
-        if (event.key === "ArrowLeft" || event.key === "ArrowRight") return { edge: event.key === "ArrowLeft" ? "Home" : "End", document: false };
-        if (event.key === "ArrowUp" || event.key === "ArrowDown") return { edge: event.key === "ArrowUp" ? "Home" : "End", document: true };
-        return;
-    }
-    function inputKey(event: KeyboardEvent): InputKey | undefined {
-        const command = (event.ctrlKey || event.metaKey) && !event.altKey, key = event.key.toLowerCase();
-        const word = !event.metaKey && (event.ctrlKey && !event.altKey || apple && event.altKey && !event.ctrlKey);
-        const navigation = !!caretChord(event) || command && ["a", "home", "end"].includes(key) || word && ["ArrowLeft", "ArrowRight"].includes(event.key)
-            || !command && !event.altKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key);
-        const historyKey = command && (key === "z" || event.ctrlKey && key === "y"), deletion = (!command && !event.altKey || word) && ["Backspace", "Delete"].includes(event.key);
-        const tab = event.key === "Tab" && !escaped && !command && !event.altKey, bracketKey = !command && !event.altKey && pairKey(event.key);
-        const enter = event.key === "Enter" && !command && !event.altKey, comment = command && (key === "/" || key === "?" && event.shiftKey);
-        if (!navigation && !historyKey && !deletion && !tab && !bracketKey && !enter && !comment) return;
-        return { kind: "key", key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, shiftKey: event.shiftKey,
-            text: tab ? "\t" : enter ? "\n" : bracketKey ? event.key : "", edit: !navigation };
+    function captureKey(event: KeyStroke, binding: KeyBinding): InputKey {
+        return { kind: "key", key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, shiftKey: event.shiftKey, ...binding };
     }
     function nativeIntent(type: string): InputKey | undefined {
         const word = type.startsWith("deleteWord"), backward = type.endsWith("Backward");
+        let stroke: KeyStroke;
         if (["deleteWordBackward", "deleteWordForward", "deleteContentBackward", "deleteContentForward"].includes(type))
-            return { kind: "key", key: backward ? "Backspace" : "Delete", ctrlKey: word, metaKey: false, altKey: false, shiftKey: false, text: "", edit: true };
-        if (type === "historyUndo" || type === "historyRedo") return { kind: "key", key: "z", ctrlKey: true, metaKey: false, altKey: false, shiftKey: type === "historyRedo", text: "", edit: true };
-        return;
+            stroke = { key: backward ? "Backspace" : "Delete", ctrlKey: word, metaKey: false, altKey: false, shiftKey: false };
+        else if (type === "historyUndo" || type === "historyRedo") stroke = { key: "z", ctrlKey: true, metaKey: false, altKey: false, shiftKey: type === "historyRedo" };
+        else return;
+        const binding = classifyEditingKey(stroke, apple, escaped, pairKey); return typeof binding === "object" ? captureKey(stroke, binding) : undefined;
     }
     function captureOrderedInput(event: InputEvent): boolean {
         if (composing || event.isComposing || input.disabled || input.readOnly || !ordered && !rangeCommand) return false;
@@ -884,52 +873,42 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     input.addEventListener("blur", () => { syncSelection(); group = undefined; scheduleCaret();
         // Restore disclosure tab stops after the browser has completed focus traversal.
         if (escaped) queueMicrotask(() => { if (!disposed) escapeState(false); }); }, { signal: listeners.signal });
-    function keydown(event: KeyboardEvent): void {
+    function keydown(event: KeyboardEvent, captured?: KeyBinding): void {
         if (event.defaultPrevented || composing || event.isComposing || event.keyCode === 229) return;
         if (["Shift", "Control", "Meta", "Alt"].includes(event.key)) return;
         if (hostInsertion) { hostInsertion.cancel(); if (event.key === "Escape") { event.preventDefault(); return; } }
+        const binding = captured ?? classifyEditingKey(event, apple, escaped, pairKey);
         if (!drainingInput && (ordered || rangeCommand) && event.key !== "Escape") {
-            const action = inputKey(event);
-            if (action && (!action.edit || !input.readOnly)) { event.preventDefault(); appendInput(action); return; }
+            if (typeof binding === "object" && (!binding.edit || !input.readOnly)) { event.preventDefault(); appendInput(captureKey(event, binding)); return; }
             if (!(event.ctrlKey || event.metaKey || event.altKey)) return;
         }
         if (escaped && event.key !== "Escape" && event.key !== "Tab") escapeState(false);
         view.folding.revealSelection(view.folding.getSnapshot());
-        const command = (event.ctrlKey || event.metaKey) && !event.altKey, key = event.key.toLowerCase();
-        if (command && (key === "z" || (event.ctrlKey && key === "y"))) { event.preventDefault(); history(event.shiftKey || key === "y" ? "redo" : "undo"); return; }
-        if (command && key === "a") { event.preventDefault(); cancelWord(); preferred = undefined; const length = workspace.document(documentId).buffer.length; view.setSelection(revision, { anchor: 0, head: length }); refresh(); return; }
-        if (command && (event.key === "Home" || event.key === "End")) { event.preventDefault(); syncSelection(); horizontal(event.key, event.shiftKey, true); return; }
-        const chord = caretChord(event);
-        if (chord) { event.preventDefault(); syncSelection(); horizontal(chord.edge, event.shiftKey, chord.document); return; }
-        if (event.key === "Escape") {
+        const command = typeof binding === "object" ? binding.command : undefined;
+        if (command?.kind === "history") { event.preventDefault(); history(command.direction); return; }
+        if (command?.kind === "select-all") { event.preventDefault(); cancelWord(); preferred = undefined; const length = workspace.document(documentId).buffer.length; view.setSelection(revision, { anchor: 0, head: length }); refresh(); return; }
+        if (binding === "escape") {
             cancelWord(); cancelCommandTimers(); preferred = undefined;
             const state = view.getSnapshot();
             if (state.selectionSet.ranges.length > 1) { event.preventDefault(); view.setSelection(revision, state.selection); refresh(); }
             escapeState(true); return;
         }
-        // Backward focus traversal presses Shift before Tab.
-        if (escaped && event.key === "Shift") return;
-        if (event.key === "Tab" && escaped) return;
+        if (binding === "tab-escape") return;
         escapeState(false); syncSelection();
-        const wordModifier = !event.metaKey && (event.ctrlKey && !event.altKey || apple && event.altKey && !event.ctrlKey);
-        if (wordModifier && ["ArrowLeft", "ArrowRight", "Backspace", "Delete"].includes(event.key)) {
-            event.preventDefault(); word(event.key === "ArrowLeft" || event.key === "Backspace" ? -1 : 1, event.key === "Backspace" || event.key === "Delete", event.shiftKey); return;
+        if (command?.kind === "word") {
+            event.preventDefault(); word(command.direction, command.deleting, command.extend); return;
         }
-        if (!event.altKey && !command && ["ArrowUp", "ArrowDown", "PageUp", "PageDown"].includes(event.key)) {
-            event.preventDefault(); vertical(event.key === "ArrowUp" || event.key === "PageUp" ? -1 : 1, event.key.startsWith("Page"), event.shiftKey); return;
+        if (command?.kind === "vertical") {
+            event.preventDefault(); vertical(command.direction, command.page, command.extend); return;
         }
-        if (!event.altKey && !command && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
-            event.preventDefault(); horizontal(event.key, event.shiftKey); return;
+        if (command?.kind === "horizontal") {
+            event.preventDefault(); horizontal(command.key, command.extend, command.document); return;
         }
         preferred = undefined;
-        if (!command && !event.altKey && (event.key === "Backspace" || event.key === "Delete")) {
-            event.preventDefault(); grapheme(event.key === "Backspace" ? -1 : 1, true);
-        } else if (event.key === "Tab" && !command && !event.altKey) { if (languageCommand(event.shiftKey ? "outdent" : "indent")) event.preventDefault(); }
-        else if (command && (key === "/" || key === "?" && event.shiftKey) && languageCommand(event.shiftKey ? "block-comment" : "line-comment")) event.preventDefault();
-        else if (!command && !event.altKey && event.key === "Enter" && languageCommand("newline")) event.preventDefault();
-        else if (!command && !event.altKey && pairKey(event.key) && languageCommand({ character: event.key })) event.preventDefault();
+        if (command?.kind === "delete") { event.preventDefault(); grapheme(command.direction, true); }
+        else if (command?.kind === "language" && languageCommand(command.command)) event.preventDefault();
         // Unhandled command-navigation must not move inside the bounded textarea context.
-        else if (command && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown"].includes(event.key)) event.preventDefault();
+        else if (binding === "prevent-navigation") event.preventDefault();
     }
     input.addEventListener("keydown", event => {
         const started = win.performance.now(); keydownEvents++;

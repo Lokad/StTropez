@@ -6,6 +6,32 @@ const snapshot=(page:Page)=>page.evaluate(()=>window.hostFixture.snapshot());
 async function exact(page:Page,text:string):Promise<void>{expect(await page.evaluate(text=>{const f=window.hostFixture,length=f.snapshot().source.length;if(length!==text.length)return {length,expectedLength:text.length,start:f.range(0,Math.min(length,80))};for(let from=0;from<text.length;from+=32768)if(f.range(from,Math.min(text.length,from+32768))!==text.slice(from,from+32768))return {from};return null;},text)).toBeNull();}
 const insert=(text:string,heads:readonly number[],data:string):string=>{const parts:string[]=[];let from=0;for(const head of heads){parts.push(text.slice(from,head),data);from=head;}parts.push(text.slice(from));return parts.join("");};
 
+test("queued Apple caret chords and native history keep their captured selection and command order", async ({ page }) => {
+    await page.addInitScript(() => Object.defineProperty(navigator, "platform", { value: "MacIntel" }));
+    await page.goto("/hosts/plain/?editor=candidate");
+    const prefix = "a" + " ".repeat(1000000) + "next\r\n", original = prefix + "last";
+    await page.evaluate(text => { const f = window.hostFixture;
+        f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]);
+        f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 0 }]);
+    }, original); await ready(page);
+    const input = page.getByRole("textbox", { name: "Primary source", exact: true }); await input.focus(); const before = await snapshot(page);
+    const captured = await input.evaluate(node => {
+        const key = (key: string, modifiers: KeyboardEventInit) => node.dispatchEvent(new KeyboardEvent("keydown", { key, ...modifiers, bubbles: true, cancelable: true }));
+        const prevented = [!key("ArrowRight", { ctrlKey: true }), !key("ArrowDown", { metaKey: true }), !key("ArrowLeft", { metaKey: true, shiftKey: true })];
+        for (const [inputType, data] of [["insertText", "R"], ["historyUndo", null], ["historyRedo", null]] as const)
+            prevented.push(!node.dispatchEvent(new InputEvent("beforeinput", { inputType, data, bubbles: true, cancelable: true })));
+        const state = window.hostFixture.snapshot();
+        return { prevented, revision: state.source.revision, pending: state.bindings.views.find(view => view.id === "primary")!.metrics!.pendingInput };
+    });
+    expect(captured.prevented.every(Boolean)).toBe(true); expect(captured.pending).toBe(true); expect(captured.revision).toBe(before.source.revision);
+    await ready(page, 30000); await exact(page, prefix + "R"); const after = await snapshot(page);
+    expect(after.source.revision).toBe(before.source.revision + 3); expect(after.history.undoDepth).toBe(before.history.undoDepth + 1);
+    expect(after.bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: prefix.length + 1, head: prefix.length + 1 });
+    expect(after.inputRecovery).toHaveLength(0); expect(after.source.exports).toBe(0);
+    await input.pressSequentially("!"); await ready(page); await exact(page, prefix + "R!");
+    await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+});
+
 for(const host of ["plain","react"])for(const kind of ["many-carets","long-word"])test(`${host} ${kind} preserves typing behind captured navigation and shared history`,async({page})=>{
     test.setTimeout(180000);
     const original=kind==="many-carets"?Array<string>(100000).fill("0123456789").join("\r\n"):"a"+" ".repeat(1000000)+"next";
