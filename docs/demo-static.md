@@ -68,6 +68,12 @@ Peer draft notices identify the changed sample, so unrelated cached samples do n
 their records. Token checks remain authoritative when peer notifications are unavailable.
 Caret/scroll snapshots belong to the actual document view, independently of workspace-local IDs.
 
+An unavailable or unreadable saved project opens an editable sample and leaves the stored copy
+untouched; saving still checks the captured storage token. Project construction failures instead
+release acquired files, subscriptions and stores and report the original error. A failed sample
+switch keeps the current editor and its history usable; the sample picker stays available for
+another attempt. Recovery disposal waits for outstanding storage work before closing its store.
+
 The completion catalogue sample offers 1,200 fields from a real TypeScript object. Every matching
 candidate remains reachable through typing or arrow keys, while the popup renders at most 16 rows.
 Its position/count and partial-list indicator distinguish the visible window from provider results.

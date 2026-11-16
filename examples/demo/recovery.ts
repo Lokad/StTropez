@@ -4,6 +4,7 @@ import { HostCell } from "../shared/observable.ts";
 import { createBrowserDraftStore } from "../hosts/draft-store.ts";
 import type { DraftStore, StoredDraft } from "../hosts/draft-store.ts";
 import type { DemoFile } from "./project.ts";
+import { CleanupScope } from "../shared/cleanup-scope.ts";
 
 type Draft = Readonly<{ version: 1; sample: string; baseVersion: string | null; files: Readonly<Record<string, string>> }>;
 type Capture = readonly Readonly<{ file: DemoFile; document: DocumentSnapshot; metadata: ResourceMetadata; target: ResourceTarget; tab: TabTarget }>[];
@@ -57,16 +58,18 @@ export class DemoRecovery {
     private refreshRequested = false;
     private generation = 0;
     private observed: Capture;
-    private readonly stopWorkspace: () => void;
-    private readonly stopStore: () => void;
+    private readonly owners = new CleanupScope();
+    private disposal: Promise<void> | undefined;
 
     constructor(workspace: Workspace, files: readonly DemoFile[] | (() => readonly DemoFile[]), sample: string, baseVersion: () => string | null,
         inputIdle: () => boolean, store = createBrowserDraftStore(window, { name: "sttropez-demo-recovery-v1", slot: sample }), inventory?: Inventory) {
         this.workspace = workspace; this.getFiles = typeof files === "function" ? files : () => files; this.inventory = inventory; this.sample = sample; this.baseVersion = baseVersion;
         this.inputIdle = inputIdle; this.store = store; this.observed = this.capture();
-        this.stopWorkspace = workspace.subscribe(() => this.filesChanged());
-        this.stopStore = store.watch(() => { void this.refresh(); });
-        void this.refresh();
+        try {
+            this.owners.defer(workspace.subscribe(() => this.filesChanged()));
+            this.owners.defer(store.watch(() => { void this.refresh(); }));
+            void this.refresh();
+        } catch (error) { this.disposed = true; this.owners.rollback(error); }
     }
     filesChanged(): void {
         const next = this.capture();
@@ -113,7 +116,7 @@ export class DemoRecovery {
             this.publish("failed", error instanceof Error ? error.message : "Recovery is unavailable. Your edits are intact.");
         }).finally(() => {
             this.running = undefined;
-            if (this.disposed) { void this.store.close(); return; }
+            if (this.disposed) return;
             this.cell.set({ ...this.cell.get(), busy: false });
             if (this.refreshRequested) { this.refreshRequested = false; void this.refresh(); }
             else if (generation !== this.generation) this.schedule();
@@ -164,7 +167,7 @@ export class DemoRecovery {
                 this.offer = { envelope, draft, capture }; this.token = envelope.token;
                 this.publish("offer", this.offerMessage());
             } else { this.token = null; this.publish("idle", "Recovery is ready."); }
-        }).then(() => { if (!this.offer && this.dirty() && !this.running) this.schedule(); });
+        }).then(() => { if (!this.disposed && !this.offer && this.dirty() && !this.running) this.schedule(); });
     }
     private dirty(): boolean { return this.files.some(file => file.resource.metadata.getSnapshot().dirty); }
     /** Save completion must not leave this page's older draft behind a deferred cleanup timer. */
@@ -224,8 +227,18 @@ export class DemoRecovery {
             this.token = null; this.offer = undefined; this.checkpointed = undefined; this.publish("idle", "Kept your current files."); this.generation++;
         });
     }
-    dispose(): void {
-        if (this.disposed) return; this.disposed = true; this.cancelTimer(); this.stopWorkspace(); this.stopStore();
-        if (!this.running) void this.store.close();
+    dispose(): Promise<void> {
+        if (this.disposal) return this.disposal;
+        this.disposed = true; this.cancelTimer();
+        const errors: unknown[] = [], running = this.running;
+        // Publish completion before callbacks so repeated/reentrant disposal shares ownership.
+        this.disposal = Promise.resolve().then(async () => {
+            try { await running; } catch (error) { errors.push(error); }
+            try { await this.store.close(); } catch (error) { errors.push(error); }
+            if (errors.length === 1) throw errors[0];
+            if (errors.length) throw new AggregateError(errors, "Recovery cleanup failed.");
+        });
+        try { this.owners.dispose(); } catch (error) { errors.push(error); }
+        return this.disposal;
     }
 }

@@ -155,9 +155,10 @@ test("stale restore and discard cannot replace or delete another page's newer dr
 test("disposal during a pending claim prevents late application after resources are released", async () => {
     const f = fixture(); await ready(f.recovery);
     let finish!: () => void; f.store.beforeWrite = () => new Promise<void>(resolve => { finish = resolve; });
-    const restoring = f.recovery.restore(); await Promise.resolve(); f.recovery.dispose();
+    const restoring = f.recovery.restore(); await Promise.resolve(); const disposal = f.recovery.dispose();
+    assert.equal(f.recovery.dispose(), disposal); assert.equal(f.store.closed, false);
     for (const file of f.files) { file.view.dispose(); f.workspace.close(file.tab); f.workspace.releaseResource(file.resource.id, true); }
-    finish(); await restoring; await f.recovery.refresh();
+    finish(); await restoring; await disposal; await f.recovery.refresh();
     assert.equal(f.store.closed, true);
     assert.equal(f.workspace.getSnapshot().documents.length, 0);
 });

@@ -392,10 +392,22 @@ async function openSample(id: SampleId): Promise<void> {
         sample.disabled = true;
     }
     let next = projects.get(id);
-    if (!next) { next = await DemoProject.open(id, () => {
-        const state = project?.sample.id === id ? editor?.activity() : undefined;
-        return !state || !state.composing && !state.pendingInput && !state.pendingCommand;
-    }, openProvider); if (disposed) { next.dispose(); return; } projects.set(id, next); }
+    if (!next) {
+        try {
+            next = await DemoProject.open(id, () => {
+                const state = project?.sample.id === id ? editor?.activity() : undefined;
+                return !state || !state.composing && !state.pendingInput && !state.pendingCommand;
+            }, openProvider);
+        } catch (error) {
+            console.error(error);
+            if (disposed || generation !== opening) return;
+            sample.disabled = false; sample.value = project?.sample.id ?? id;
+            const message = "Could not open this sample. Choose a sample to try again.";
+            if (project) { project.message = message; renderMetadata(); } else element("status").textContent = message;
+            return;
+        }
+        if (disposed) { next.dispose(); return; } projects.set(id, next);
+    }
     if (disposed || generation !== opening) return;
     // A composition can start in the retained editor during asynchronous preparation.
     if (editor?.activity().composing) { sample.value = project!.sample.id; sample.disabled = false; return; }

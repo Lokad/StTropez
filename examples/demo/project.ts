@@ -8,6 +8,7 @@ import { DemoRecovery } from "./recovery.ts";
 import { DemoLanguage } from "./language.ts";
 import type { DemoProviderFactory } from "./provider-contract.ts";
 import { HostSourceNotes } from "../shared/source-notes.ts";
+import { CleanupScope } from "../shared/cleanup-scope.ts";
 
 export type DemoFile = Readonly<{ name: string; resource: TextResourceHandle; tab: TabId; view: DocumentView; readOnly?: boolean }>;
 type StoredProject = Readonly<{ version: 1; files: Readonly<Record<string, string>> }>;
@@ -30,8 +31,11 @@ export class DemoProject {
     private get editable(): readonly DemoFile[] { return this.loaded.filter(file => !file.readOnly); }
     private readonly unloaded: Record<string, string>;
     readonly sample: DemoSample;
-    readonly recovery: DemoRecovery;
-    readonly language: DemoLanguage;
+    // Only open() publishes a project, after both services have been acquired.
+    private services!: Readonly<{ recovery: DemoRecovery; language: DemoLanguage }>;
+    get recovery(): DemoRecovery { return this.services.recovery; }
+    get language(): DemoLanguage { return this.services.language; }
+    private readonly fileOwners = new CleanupScope();
     private readonly store: DraftStore;
     private token: string | null = null;
     private readonly baselines = new Map<string, ComparisonBaseline>();
@@ -55,19 +59,11 @@ export class DemoProject {
             const from = prefix.indexOf(token!); if (from >= 0) model.add(doc.revision, from, from + token!.length, text!);
         }
     }
-    private constructor(id: SampleId, store: DraftStore, token: string | null, saved: StoredProject | null, inputIdle: () => boolean,
-        openProvider: DemoProviderFactory, recoveryStore: DraftStore) {
+    private constructor(id: SampleId, store: DraftStore, token: string | null, saved: StoredProject | null, inputIdle: () => boolean) {
         this.inputIdle = inputIdle;
         this.sample = demoSample(id); this.store = store; this.token = token;
         this.unloaded = { ...(saved?.files ?? this.sample.files) };
-        for (const name of this.sample.initialFiles ?? Object.keys(this.sample.files)) this.load(name);
         if (saved) this.message = "Opened the copy saved in this browser.";
-        this.recovery = new DemoRecovery(this.workspace, () => this.editable, id, () => this.token, inputIdle, recoveryStore,
-            { names: Object.keys(this.sample.files), unloaded: () => this.unloaded, prepare: () => this.prepareEditable() });
-        this.language = new DemoLanguage(this.workspace, () => this.files, id, openProvider, {
-            names: Object.keys({ ...this.sample.files, ...this.sample.declarations }),
-            backing: () => ({ ...this.unloaded, ...this.sample.declarations }), load: (name, text) => this.load(name, text),
-        });
     }
     private load(name: string, text?: string): DemoFile {
         if (this.disposed) throw new Error("The sample is closed.");
@@ -80,32 +76,58 @@ export class DemoProject {
         if (!readOnly && !Object.hasOwn(this.unloaded, name)) throw new Error("Unknown sample file.");
         const value = readOnly ? this.sample.declarations![name]! : this.unloaded[name]!;
         if (text !== undefined && text !== value) throw new Error("The loaded file differs from the captured sample inventory.");
-        const resource = this.workspace.createTextResource({ scope: `demo:${this.sample.id}`, resource: name, variant: "working" }, name,
-            { value, serverVersion: this.token }, readOnly ? { edit: [], save: false, run: false } : undefined);
-        const tab = this.workspace.open({ kind: "text", documentId: resource.documentId }, "editor"), view = this.workspace.createDocumentView(resource.documentId);
-        const file = Object.freeze({ name, resource, tab, view, readOnly });
-        this.baselines.set(name, { buffer: this.workspace.document(resource.documentId).buffer, version: this.token ?? "sample" });
-        this.loaded = Object.freeze([...this.loaded, file]); if (!readOnly) delete this.unloaded[name];
-        this.recovery?.filesChanged(); this.language?.filesChanged(); return file;
+        const owners = new CleanupScope(); let file: DemoFile;
+        try {
+            const resource = this.workspace.createTextResource({ scope: `demo:${this.sample.id}`, resource: name, variant: "working" }, name,
+                { value, serverVersion: this.token }, readOnly ? { edit: [], save: false, run: false } : undefined);
+            owners.defer(() => { this.workspace.releaseResource(resource.id, true); });
+            const tab = this.workspace.open({ kind: "text", documentId: resource.documentId }, "editor");
+            owners.defer(() => { this.workspace.close(tab); });
+            const view = this.workspace.createDocumentView(resource.documentId); owners.defer(() => view.dispose());
+            file = Object.freeze({ name, resource, tab, view, readOnly });
+            this.baselines.set(name, { buffer: this.workspace.document(resource.documentId).buffer, version: this.token ?? "sample" });
+            this.loaded = Object.freeze([...this.loaded, file]); if (!readOnly) delete this.unloaded[name];
+            this.fileOwners.defer(owners.dispose);
+        } catch (error) { return owners.rollback(error); }
+        this.services?.recovery.filesChanged(); this.services?.language.filesChanged(); return file;
     }
     private prepareEditable(): void { for (const name of Object.keys(this.unloaded)) this.load(name); }
     static async open(id: SampleId, inputIdle: () => boolean, openProvider: DemoProviderFactory,
         createStore: (name: string) => DraftStore = name => createBrowserDraftStore(window, { name, slot: id })): Promise<DemoProject> {
         const store = createStore("sttropez-demo-projects-v1");
+        let project: DemoProject | undefined, recoveryStore: DraftStore | undefined, recovery: DemoRecovery | undefined;
         try {
-            const stored = await store.read();
-            let saved: StoredProject | null = null;
-            if (stored) {
-                const names = Object.keys(demoSample(id).files);
-                saved = readProject(stored.value, names);
+            let saved: StoredProject | null = null, token: string | null = null, message: string | undefined;
+            try {
+                const stored = await store.read();
+                if (stored) { saved = readProject(stored.value, Object.keys(demoSample(id).files)); token = stored.token; }
+            } catch (error) {
+                // Only unavailable/unreadable storage selects the editable sample fallback.
+                // Retain a null token so saving cannot overwrite an unreadable stored copy.
+                message = error instanceof Error ? error.message : "Local storage is unavailable. You can still edit.";
             }
-            return new DemoProject(id, store, stored?.token ?? null, saved, inputIdle, openProvider, createStore("sttropez-demo-recovery-v1"));
+            recoveryStore = createStore("sttropez-demo-recovery-v1");
+            const next = project = new DemoProject(id, store, token, saved, inputIdle);
+            for (const name of next.sample.initialFiles ?? Object.keys(next.sample.files)) next.load(name);
+            recovery = new DemoRecovery(next.workspace, () => next.editable, id, () => next.token, inputIdle, recoveryStore,
+                { names: Object.keys(next.sample.files), unloaded: () => next.unloaded, prepare: () => next.prepareEditable() });
+            const language = new DemoLanguage(next.workspace, () => next.files, id, openProvider, {
+                names: Object.keys({ ...next.sample.files, ...next.sample.declarations }),
+                backing: () => ({ ...next.unloaded, ...next.sample.declarations }), load: (name, text) => next.load(name, text),
+            });
+            next.services = { recovery, language };
+            if (message !== undefined) next.message = message;
+            return next;
         } catch (error) {
-            await store.close();
-            // Storage failure must leave the editor available; saves continue to fail safely.
-            const project = new DemoProject(id, createStore("sttropez-demo-projects-v1"), null, null, inputIdle, openProvider, createStore("sttropez-demo-recovery-v1"));
-            project.message = error instanceof Error ? error.message : "Local storage is unavailable. You can still edit.";
-            return project;
+            const errors = [error];
+            if (project) project.disposed = true;
+            // Recovery owns its store only after construction; settle its work before releasing files.
+            try { if (recovery) await recovery.dispose(); else await recoveryStore?.close(); }
+            catch (cleanupError) { errors.push(cleanupError); }
+            try { project?.fileOwners.dispose(); } catch (cleanupError) { errors.push(cleanupError); }
+            try { await store.close(); } catch (cleanupError) { errors.push(cleanupError); }
+            if (errors.length > 1) throw new AggregateError(errors, "Project startup and cleanup failed.");
+            throw error;
         }
     }
     baseline(file: DemoFile): ComparisonBaseline {
@@ -189,12 +211,11 @@ export class DemoProject {
     }
     dispose(): void {
         if (this.disposed) return; this.disposed = true;
-        this.recovery.dispose();
+        void this.recovery.dispose();
         for (const model of this.noteModels.values()) model.dispose(); this.noteModels.clear();
         void this.language.dispose().then(() => { this.languageDisposed = true; if (!this.saving) this.release(); });
     }
     private release(): void {
-        this.files.forEach(file => { file.view.dispose(); this.workspace.close(file.tab); this.workspace.releaseResource(file.resource.id, true); });
-        void this.store.close();
+        try { this.fileOwners.dispose(); } finally { void this.store.close(); }
     }
 }
