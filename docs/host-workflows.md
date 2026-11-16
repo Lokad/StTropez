@@ -84,6 +84,14 @@ token. The owner still checks revisions, resource lifetime, authority and stored
 before and after asynchronous work. Plain controls refresh handlers without replacing buttons,
 then clear them on detach; React observes the stable draft handle directly.
 
+Source save-conflict controls share one cached owner presentation of the conflict and current
+save availability. It observes conflict, reference, source metadata and tab state, including direct
+tab replacement. Review/Finish/Save callbacks retain the displayed conflict snapshot; older
+controls cannot start or finish another review or save a newer reviewed version. The owner still
+validates the captured reference, tab generation, save authority and pending input at invocation.
+Operation status and bounded input-recovery previews also share pure models over the snapshots
+observed by each renderer. Presentation owns no persistent background subscription.
+
 A persisted `pagehide` retains the mounted host and its listener for a later final hide. A
 non-persisted hide starts teardown. Browser regressions exercise this policy with synthetic
 page-transition events and fixture installation disabled; they do not establish real

@@ -1,7 +1,7 @@
 import { HostCell } from "../shared/observable.ts";
 import { Workspace, WorkspaceCommands } from "../../src/index.ts";
 import type { AgentRequest, ComparisonBaseline, DocumentId, DocumentView, TabId, TextEdit, TextResourceHandle } from "../../src/index.ts";
-import { HostSourceReview } from "./source-review.ts";
+import { HostSourceReview, type SaveConflict } from "./source-review.ts";
 import { HostLayout } from "./layout.ts";
 import { HostLoadedSource } from "./loaded-source.ts";
 import { ConfigurationSave } from "./configuration.ts";
@@ -47,6 +47,7 @@ export class HostController {
     });
     readonly comparisonReference = this.sourceReview.comparisonReference;
     readonly saveConflict = this.sourceReview.saveConflict;
+    readonly saveConflictPresentation = this.sourceReview.saveConflictPresentation;
     readonly variants = this.sourceReview.variants;
     private pendingAgent: AgentRequest<Readonly<{ configurationRevision: number; path: string }>> | undefined;
     private readonly operations = new Set<Promise<unknown>>();
@@ -159,10 +160,10 @@ export class HostController {
         this.variants.refreshCatalog();
     }
     readonly simulateExternalWrite = (): void => { this.externalWrite("external source\r\n"); };
-    readonly reviewSaveConflict = (): void => this.safe(this.sourceReview.reviewSaveConflict);
-    readonly finishConflictReview = (): boolean => this.sourceReview.finishConflictReview();
+    readonly reviewSaveConflict = (expected: SaveConflict | null = this.saveConflict.getSnapshot()): void => this.safe(() => this.sourceReview.reviewSaveConflict(expected));
+    readonly finishConflictReview = (expected: SaveConflict | null = this.saveConflict.getSnapshot()): boolean => this.sourceReview.finishConflictReview(expected);
     canSaveReviewedSource(): boolean { return this.sourceReview.canSaveReviewedSource(); }
-    readonly saveReviewedSource = (): void => this.safe(this.sourceReview.saveReviewedSource);
+    readonly saveReviewedSource = (expected: SaveConflict | null = this.saveConflict.getSnapshot()): void => this.safe(() => this.sourceReview.saveReviewedSource(expected));
     readonly finishSave = (): void => { this.services.finishSave(); };
     readonly failSave = (): void => { this.services.failSave(); };
     readonly retryAcknowledgement = (): void => this.safe(() => {

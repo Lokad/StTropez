@@ -53,8 +53,10 @@ for (const host of ["plain", "react"] as const) for (const reply of ["unchanged"
                 expectedRevision: before.source.revision, reason: "stale-revision", contextFrom: 0, attemptedUnits: nativeAttempt.length }]);
             expect(await page.evaluate(() => window.hostFixture.recoveryText())).toBe(nativeAttempt);
             expect(JSON.stringify(after)).not.toContain("東京");
+            const preview = page.locator('section[aria-label="Input recovery"] pre');
+            await preview.evaluate(node => { node.dataset.retained = "input-recovery"; });
             await button("Inspect recovered input").click();
-            await expect(page.locator('section[aria-label="Input recovery"] pre')).toHaveText(nativeAttempt);
+            await expect(preview).toHaveText(nativeAttempt); await expect(preview).toHaveAttribute("data-retained", "input-recovery");
         } else {
             expect(await source(page)).toBe(attempted); expect(after.source.dirty).toBe(true); expect(after.inputRecovery).toEqual([]);
             expect(after.history.undoDepth).toBe(before.history.undoDepth + 1);

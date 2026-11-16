@@ -30,11 +30,3 @@ export function actions(controller: HostController, bindings: ViewBindings): rea
         { label: "Discard loaded source", invoke: controller.discardLoadedSource }, { label: "Inject form error", invoke: controller.injectFormError },
     ];
 }
-export function statusText(controller: HostController): string {
-    const review = controller.review.getSnapshot(), activity = controller.activity.getSnapshot(), metadata = controller.source.metadata.getSnapshot();
-    return `Association: ${review.association?.id ?? "detached"} · Request: ${review.request ? "running" : "idle"} · Proposal: ${review.proposal?.target.revision ?? "none"} · Acknowledgement: ${review.acknowledgements[0]?.status ?? "none"} · ${metadata.dirty ? "Unsaved" : "Saved"} · Save status: ${metadata.saveStatus} · Saves: ${activity.writes} · Runs: ${activity.pendingRuns} pending, ${activity.completedRuns} completed${activity.lastRun ? ` · Captured run: source revision ${activity.lastRun.sourceRevision}, configuration revision ${activity.lastRun.configurationRevision}, ${activity.lastRun.mode}` : ""} · Background: ${activity.background}`;
-}
-export function conflictText(controller: HostController): string {
-    const conflict = controller.saveConflict.getSnapshot();
-    return conflict ? `Save conflict at local revision ${conflict.submittedRevision}. Expected server ${conflict.expectedVersion ?? "none"}; observed ${conflict.observedVersion}.${conflict.reviewVersion ? ` Reviewing remote ${conflict.reviewVersion}.` : ""} ${conflict.message}` : "";
-}

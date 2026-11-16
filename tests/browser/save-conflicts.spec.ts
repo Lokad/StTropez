@@ -18,6 +18,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await primary.press("End"); await primary.pressSequentially(" later"); await page.evaluate(() => window.hostFixture.finishSave());
             const panel = page.getByRole("region", { name: "Save conflict", exact: true });
             await expect(panel).toContainText("Expected server v0; observed v1");
+            await button("Save reviewed source").evaluate(node => { node.dataset.retained = "reviewed-save"; });
             const failed = await page.evaluate(() => window.hostFixture.snapshot());
             expect(failed.source).toMatchObject({ serverVersion: "v0", dirty: true, saveStatus: "conflict" });
             expect(failed.review.acknowledgements).toEqual([]); expect(failed.activity.writes).toBe(0);
@@ -27,8 +28,10 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await expect(primary).toBeFocused(); await expect(primary).toHaveAttribute("data-retained", "yes");
             await expect(primary).toHaveValue("agent proposal corrected later reading");
             expect(await page.evaluate(() => window.hostFixture.referenceRange(0, 15))).toBe("remote source\r\n");
+            await expect(button("Save reviewed source")).toHaveAttribute("data-retained", "reviewed-save");
             await primary.press("Control+a"); await primary.pressSequentially("merged"); await button("Save reviewed source").click();
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().pendingSaves[0]?.expectedServerVersion)).toBe("v1");
+            await expect(button("Save reviewed source")).toBeDisabled();
             await primary.press("End"); await primary.pressSequentially(" during save"); await page.evaluate(() => window.hostFixture.finishSave());
             await expect(panel).toBeHidden();
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().source.serverVersion)).toBe("v2");

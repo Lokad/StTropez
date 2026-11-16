@@ -1,4 +1,5 @@
-import { actions, conflictText, statusText } from "./actions.ts";
+import { actions } from "./actions.ts";
+import { inputRecoveryModel, operationStatusModel, mountSaveConflictPanel } from "./operation-panels.ts";
 import type { HostController, Layout } from "./controller.ts";
 import type { ViewBindings } from "./bindings.ts";
 import type { TabSnapshot } from "../../src/index.ts";
@@ -26,24 +27,16 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         const button = document.createElement("button"); button.textContent = action.label;
         button.addEventListener("click", action.invoke, { signal: listeners.signal }); nav.append(button);
     }
-    const status = document.createElement("output"); status.setAttribute("aria-label", "Host operation status");
+    const readStatus = () => operationStatusModel(controller.review.getSnapshot(), controller.activity.getSnapshot(), controller.source.metadata.getSnapshot());
+    const status = document.createElement("output"); status.setAttribute("aria-label", readStatus().label);
     const scene = document.createElement("main"), modal = document.createElement("div"); modal.setAttribute("role", "status"); modal.setAttribute("aria-label", "Host messages");
     const recovery = document.createElement("section"), recoveryNotice = document.createElement("output"), recoveryPreview = document.createElement("pre");
-    recovery.setAttribute("aria-label", "Input recovery"); recovery.append(recoveryNotice, recoveryPreview);
-    const updateRecovery = () => { const state = controller.recovery.getSnapshot(), text = state.items.at(-1)?.attemptedText ?? "";
-        recovery.hidden = state.items.length === 0; recoveryNotice.textContent = `${state.items.length} input ${state.items.length === 1 ? "change" : "changes"} retained for recovery.`;
-        recoveryPreview.hidden = !state.visible; recoveryPreview.textContent = state.visible ? text.slice(0, 4096) + (text.length > 4096 ? "…" : "") : ""; };
+    recovery.setAttribute("aria-label", inputRecoveryModel(controller.recovery.getSnapshot()).label); recovery.append(recoveryNotice, recoveryPreview);
+    const updateRecovery = () => { const model = inputRecoveryModel(controller.recovery.getSnapshot());
+        recovery.hidden = model.hidden; recoveryNotice.textContent = model.status;
+        recoveryPreview.hidden = model.preview.hidden; recoveryPreview.textContent = model.preview.text; };
     const review = document.createElement("section"); review.setAttribute("aria-label", "Source review surface"); review.className = "host-review";
-    const conflict = document.createElement("section"), conflictStatus = document.createElement("output");
-    conflict.setAttribute("aria-label", "Save conflict"); conflict.append(conflictStatus);
-    const reviewRemote = document.createElement("button"), finishRemote = document.createElement("button"), retry = document.createElement("button");
-    reviewRemote.textContent = "Review remote source"; finishRemote.textContent = "Finish remote review"; retry.textContent = "Save reviewed source";
-    reviewRemote.addEventListener("click", controller.reviewSaveConflict, { signal: listeners.signal });
-    finishRemote.addEventListener("click", controller.finishConflictReview, { signal: listeners.signal });
-    retry.addEventListener("click", controller.saveReviewedSource, { signal: listeners.signal }); conflict.append(reviewRemote, finishRemote, retry);
-    const updateConflict = () => { const state = controller.saveConflict.getSnapshot(); conflict.hidden = state === null;
-        conflictStatus.textContent = conflictText(controller); finishRemote.disabled = state?.review !== "loading";
-        retry.disabled = !controller.canSaveReviewedSource(); };
+    const conflict = document.createElement("section");
     const language = document.createElement("section"); language.className = "host-language";
     const tablePaste = document.createElement("section"); tablePaste.className = "host-language";
     const domain = document.createElement("section"); domain.className = "host-language";
@@ -57,6 +50,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const configuration = document.createElement("section"); configuration.className = "host-language";
     const transfer = document.createElement("section"); transfer.className = "host-language";
     host.replaceChildren(nav, status, recovery, conflict, scene, review, configuration, transfer, draftPanel, language, tablePaste, domain, navigation, project, rename, codeActions, links, colors, modal);
+    const destroyConflict = mountSaveConflictPanel(conflict, controller);
     const destroyTransfer = mountTransferPanel(transfer, controller);
     const destroyConfiguration = mountConfigurationPanel(configuration, controller);
     const destroyDraft = mountDraftPanel(draftPanel, draft);
@@ -72,7 +66,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const destroyHover = mountHoverPanel(host, bindings.hover);
     const destroySignature = mountSignaturePanel(host, bindings.signature);
     const updateStatus = () => {
-        const text = statusText(controller); if (status.textContent === text) return;
+        const text = readStatus().text; if (status.textContent === text) return;
         // Native form reset can replace an output's children; use its current text node.
         const value = status.firstChild;
         if (value?.nodeType === Node.TEXT_NODE && value.nextSibling === null) value.nodeValue = text;
@@ -133,9 +127,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     // notification itself cannot synchronously mount/release the comparison's display resources.
     subscriptions.push(controller.layout.subscribe(renderScene), controller.source.metadata.subscribe(updateStatus),
         controller.review.subscribe(updateStatus), controller.activity.subscribe(updateStatus), controller.recovery.subscribe(updateRecovery),
-        controller.layout.subscribe(renderReview),
-        controller.saveConflict.subscribe(updateConflict), controller.source.metadata.subscribe(updateConflict),
-        controller.layout.subscribe(updateConflict), controller.comparisonReference.subscribe(updateConflict));
-    renderScene(); renderReview(); updateStatus(); updateRecovery(); updateConflict();
-    return () => { destroyTransfer(); destroyConfiguration(); destroyDraft(); destroyColors(); destroyLinks(); destroyActions(); destroyRename(); destroySignature(); destroyProject(); destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
+        controller.layout.subscribe(renderReview));
+    renderScene(); renderReview(); updateStatus(); updateRecovery();
+    return () => { destroyConflict(); destroyTransfer(); destroyConfiguration(); destroyDraft(); destroyColors(); destroyLinks(); destroyActions(); destroyRename(); destroySignature(); destroyProject(); destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
 }

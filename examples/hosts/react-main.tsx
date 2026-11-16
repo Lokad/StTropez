@@ -5,7 +5,8 @@ import type { Root } from "react-dom/client";
 import type { Observable } from "../../src/index.ts";
 import { HostController } from "./controller.ts";
 import { hostEditor, ViewBindings } from "./bindings.ts";
-import { actions, conflictText, statusText } from "./actions.ts";
+import { actions } from "./actions.ts";
+import { inputRecoveryModel, operationStatusModel, saveConflictPanelModel } from "./operation-panels.ts";
 import { installHostHarness } from "./harness.ts";
 import { HostLifecycle } from "./lifecycle.ts";
 import { languagePanelModel } from "./language-panel.ts";
@@ -41,25 +42,22 @@ function Commands() {
     return <nav aria-label="Host commands">{actions(controller, bindings).map(action => <button key={action.label} onClick={action.invoke}>{action.label}</button>)}</nav>;
 }
 function Status() {
-    useObserved(controller.review); useObserved(controller.activity); useObserved(controller.source.metadata);
-    return <output aria-label="Host operation status">{statusText(controller)}</output>;
+    const model = operationStatusModel(useObserved(controller.review), useObserved(controller.activity), useObserved(controller.source.metadata));
+    return <output aria-label={model.label}>{model.text}</output>;
 }
 function SourceMetadata() {
     const metadata = useObserved(controller.source.metadata);
     return <p>{metadata.title} · {metadata.dirty ? "Unsaved" : "Saved"}</p>;
 }
 function SaveConflict() {
-    const conflict = useObserved(controller.saveConflict);
-    useObserved(controller.source.metadata); useObserved(controller.comparisonReference); useObserved(controller.layout); useObserved(controller.workspace.tabState);
-    return conflict ? <section aria-label="Save conflict"><output>{conflictText(controller)}</output>
-        <button onClick={controller.reviewSaveConflict}>Review remote source</button>
-        <button onClick={controller.finishConflictReview} disabled={conflict.review !== "loading"}>Finish remote review</button>
-        <button onClick={controller.saveReviewedSource} disabled={!controller.canSaveReviewedSource()}>Save reviewed source</button></section> : null;
+    const model = saveConflictPanelModel(controller, useObserved(controller.saveConflictPresentation));
+    return model.hidden ? null : <section aria-label={model.label}><output>{model.status}</output>
+        {model.actions.map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</section>;
 }
 function InputRecovery() {
-    const state = useObserved(controller.recovery), text = state.items.at(-1)?.attemptedText ?? "";
-    return <section hidden={state.items.length === 0} aria-label="Input recovery"><output>{state.items.length} input {state.items.length === 1 ? "change" : "changes"} retained for recovery.</output>
-        <pre hidden={!state.visible}>{state.visible ? text.slice(0, 4096) + (text.length > 4096 ? "…" : "") : ""}</pre></section>;
+    const model = inputRecoveryModel(useObserved(controller.recovery));
+    return <section hidden={model.hidden} aria-label={model.label}><output>{model.status}</output>
+        <pre hidden={model.preview.hidden}>{model.preview.text}</pre></section>;
 }
 function DraftRecovery() {
     const model = draftPanelModel(draft, useObserved(draft.state));

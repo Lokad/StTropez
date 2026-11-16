@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { HostController } from "../examples/hosts/controller.ts";
+import { saveConflictPanelModel } from "../examples/hosts/operation-panels.ts";
 const settled = () => new Promise<void>(resolve => setImmediate(resolve));
 function edit(host: HostController, text: string): void {
     const current = host.workspace.document(host.source.documentId);
@@ -10,6 +11,39 @@ async function conflict(host: HostController): Promise<void> {
     edit(host, "local"); host.save(); await settled(); host.externalWrite("remote one"); host.finishSave(); await settled();
     assert.equal(host.debug().source.saveStatus, "conflict"); assert.equal(host.debug().source.serverVersion, "v0");
 }
+
+test("conflict presentation observes authority and keeps old controls out of newer reviews", async () => {
+    const host = new HostController(), store = host.saveConflictPresentation, before = host.debug();
+    let notified = store.getSnapshot(); const stop = store.subscribe(() => { notified = store.getSnapshot(); });
+    const model = () => saveConflictPanelModel(host, store.getSnapshot());
+    try {
+        assert.equal(store.getSnapshot(), notified); assert.ok(Object.isFrozen(notified));
+        assert.equal(host.debug().diagnostics.subscriptions, before.diagnostics.subscriptions + 2);
+        assert.equal(host.debug().hostSubscriptions, before.hostSubscriptions + 2);
+        const empty = model(); await conflict(host); empty.actions[0].invoke(); assert.equal(host.debug().pendingConflictReads, 0);
+        model().actions[0].invoke(); const loading = model(); loading.actions[1].invoke(); const first = model();
+        assert.equal(notified.canSaveReviewed, true); assert.equal(notified.conflict?.reviewVersion, "v1");
+        host.externalWrite("remote two"); first.actions[0].invoke(); loading.actions[1].invoke(); assert.equal(host.debug().pendingConflictReads, 1);
+        model().actions[1].invoke(); const second = model(), current = store.getSnapshot(); assert.equal(current.conflict?.reviewVersion, "v2");
+        first.actions[0].invoke(); first.actions[2].invoke(); await settled(); assert.equal(host.debug().pendingConflictReads, 0); assert.equal(host.debug().pendingSaves.length, 0);
+        edit(host, "current correction"); assert.equal(store.getSnapshot(), current);
+        const capabilities = host.source.metadata.getSnapshot().capabilities;
+        host.workspace.setCapabilities(host.source.id, { ...capabilities, save: false }); assert.equal(notified.canSaveReviewed, false);
+        host.workspace.setCapabilities(host.source.id, capabilities); assert.equal(notified.canSaveReviewed, true);
+        const layout = host.layout.getSnapshot();
+        host.workspace.replace(host.viewTab("primary"), { kind: "panel", resourceId: host.connection.id, panelType: "configuration" });
+        assert.equal(host.layout.getSnapshot(), layout); assert.equal(notified.canSaveReviewed, false);
+        host.reopenPrimary(); model().actions[0].invoke(); model().actions[1].invoke(); const latest = model();
+        second.actions[2].invoke(); await settled(); assert.equal(host.debug().pendingSaves.length, 0);
+        const release = host.registerInputCaptureGuard(() => false);
+        try { latest.actions[2].invoke(); await settled(); assert.equal(host.debug().pendingSaves.length, 0); } finally { release(); }
+        latest.actions[2].invoke(); await settled(); assert.equal(host.debug().pendingSaves[0]?.expectedServerVersion, "v2"); assert.equal(notified.canSaveReviewed, false);
+        host.finishSave(); await settled(); assert.equal(notified.conflict, null);
+        await host.dispose(); assert.equal(notified.disposed, true); const disposed = host.debug();
+        first.actions[2].invoke(); second.actions[1].invoke(); assert.deepEqual(host.debug(), disposed);
+        stop(); assert.equal(host.debug().diagnostics.subscriptions, 0); assert.equal(host.debug().hostSubscriptions, 0);
+    } finally { stop(); await host.dispose(); }
+});
 
 test("host conflict review captures remote data while later edits and another external writer remain independent", async () => {
     const host = new HostController();
