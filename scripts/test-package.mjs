@@ -165,7 +165,7 @@ const server = createServer(async (request, response) => {
     response.setHeader("Content-Type", file.endsWith("js") ? "text/javascript" : file.endsWith("css") ? "text/css" : file.endsWith("txt") ? "text/plain" : "text/html");
     response.end(await readFile(join(consumer, "site", file)));
 });
-const stopFixture = lspOnly ? (await import("../examples/protocol/fixture-server.ts")).attachProtocolFixture(server) : () => {};
+const stopFixture = lspOnly ? (await import("../fixtures/protocol/fixture-server.ts")).attachProtocolFixture(server) : () => {};
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 let browser;
 try {

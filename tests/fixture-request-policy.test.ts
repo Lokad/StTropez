@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { attachProtocolFixture } from "../examples/protocol/fixture-server.ts";
-import { FixtureLspWorkspace } from "../examples/protocol/fixture-workspace.ts";
+import { attachProtocolFixture } from "../fixtures/protocol/fixture-server.ts";
+import { FixtureLspWorkspace } from "../fixtures/protocol/fixture-workspace.ts";
 import { Workspace } from "../src/index.ts";
 import { openWebSocketTransport } from "../src/browser/index.ts";
 import { RpcError, createLspActionClient, createLspColorClient, createLspHoverClient, createLspLinkClient, createLspNavigationClient, createLspRenameClient, createLspSignatureClient } from "../src/protocol/index.ts";

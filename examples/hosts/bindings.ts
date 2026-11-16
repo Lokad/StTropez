@@ -6,7 +6,7 @@ import { EditingPresentation } from "../editing/presentation.ts";
 import { comparisonSettled, editorSettled } from "../shared/readiness.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
 import { HostLanguageTools } from "./language.ts";
-import { hostLspFactories } from "../protocol/editor-provider.ts";
+import { hostLspFactories } from "../../fixtures/protocol/editor-provider.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import { HostHoverTools } from "./hover.ts";
 import { HostTablePaste } from "./table-paste.ts";

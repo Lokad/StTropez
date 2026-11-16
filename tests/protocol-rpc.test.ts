@@ -4,7 +4,7 @@ import { setImmediate } from "node:timers/promises";
 import { CancellationTokenSource, InitializeRequest, InitializedNotification, RegistrationRequest, ResponseError } from "vscode-languageserver-protocol/node.js";
 import type { InitializeParams, InitializeResult } from "vscode-languageserver-protocol/node.js";
 import type { JsonValue, RpcTransport } from "../src/protocol/json-rpc.ts";
-import { referencePeer } from "../examples/protocol/reference-peer.ts";
+import { referencePeer } from "../fixtures/protocol/reference-peer.ts";
 
 // The same interoperability assertions can exercise an isolated restored compiled protocol entry.
 const { JsonRpcConnection, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/json-rpc.ts") as typeof import("../src/protocol/json-rpc.ts");

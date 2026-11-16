@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
 import { setImmediate } from "node:timers/promises";
-import { referencePeer } from "../../examples/protocol/reference-peer.ts";
+import { referencePeer } from "../../fixtures/protocol/reference-peer.ts";
 import type { LspTargetResolver, LspWorkspaceOptions, RpcTransport } from "../../src/protocol/index.ts";
 
 const { Workspace } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import { TextDocument, ResponseError, RegistrationRequest, UnregistrationRequest, CancellationTokenSource } from "vscode-languageserver-protocol/node.js";
 import type { InitializeParams, InitializeResult, DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams } from "vscode-languageserver-protocol/node.js";
-import { referencePeer } from "../examples/protocol/reference-peer.ts";
+import { referencePeer } from "../fixtures/protocol/reference-peer.ts";
 import type { RpcScheduler, RpcTransport } from "../src/protocol/json-rpc.ts";
 import type { LspSessionOptions, LspRequestContext } from "../src/protocol/index.ts";
 

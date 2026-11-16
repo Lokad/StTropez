@@ -5,20 +5,20 @@ import type { CancellationToken, CompletionList, InitializeResult, DidOpenTextDo
 import { setImmediate } from "node:timers/promises";
 import type { RpcTransport } from "../../src/protocol/json-rpc.ts";
 import { referencePeer } from "./reference-peer.ts";
-import { provide } from "../probes/provider.ts";
-import { provideHover } from "../probes/hover.ts";
-import { SymbolScanner } from "../probes/navigation.ts";
-import { renameName } from "../probes/rename.ts";
+import { provide } from "../../examples/probes/provider.ts";
+import { provideHover } from "../../examples/probes/hover.ts";
+import { SymbolScanner } from "../../examples/probes/navigation.ts";
+import { renameName } from "../../examples/probes/rename.ts";
 import type { Location, TextEdit, WorkspaceEdit } from "vscode-languageserver-protocol/node.js";
 import type { CodeAction, Command } from "vscode-languageserver-protocol/node.js";
 import { TextBuffer } from "../../src/index.ts";
-import { ModuleActionCursor } from "../probes/actions.ts";
-import { validDomainModule } from "../probes/domain.ts";
-import { reviewHeader, reviewFooter } from "../probes/project-commands.ts";
+import { ModuleActionCursor } from "../../examples/probes/actions.ts";
+import { validDomainModule } from "../../examples/probes/domain.ts";
+import { reviewHeader, reviewFooter } from "../../examples/probes/project-commands.ts";
 import type { ApplyWorkspaceEditResult } from "vscode-languageserver-protocol/node.js";
-import { SignatureScanner } from "../probes/signature.ts";
-import { ModuleLinksCursor } from "../probes/links.ts";
-import { DocumentColorsCursor, hexColor, rgbaColor, validateRgba } from "../probes/colors.ts";
+import { SignatureScanner } from "../../examples/probes/signature.ts";
+import { ModuleLinksCursor } from "../../examples/probes/links.ts";
+import { DocumentColorsCursor, hexColor, rgbaColor, validateRgba } from "../../examples/probes/colors.ts";
 
 type RequestPolicy<Fault extends string> = Readonly<{ delay: number; fault?: Fault }>;
 function requestPolicy<Fault extends string>(value: unknown, faults: readonly Fault[]): RequestPolicy<Fault> {

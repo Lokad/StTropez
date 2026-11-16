@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { fixtureDocumentUri } from "../../examples/protocol/document-uri.ts";
+import { fixtureDocumentUri } from "../../fixtures/protocol/document-uri.ts";
 
 /** Capture the primary document's identity before issuing a diagnostic injection. */
 export async function sourceDiagnosticUri(page: Page): Promise<string> {

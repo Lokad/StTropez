@@ -7,6 +7,10 @@ dependencies. A production language provider is not required for fixture qualifi
 The wire engine is implemented in TypeScript because importing the reference implementation
 would add runtime dependencies; JSON encoding and WebSocket I/O use platform APIs.
 
+`fixtures/protocol/` owns the synthetic server, reference peer, request-policy workspace,
+host provider wiring and URI policy. The protocol example directory contains its page only.
+Development and restored-package runners use the same fixture server.
+
 The protocol entry provides a wire engine, host-driven client session, shared Workspace provider
 ownership and validated feature/edit models. Both development hosts have an explicit [LSP editor adapter](lsp-editor.md).
 The selected feature routes below use that same public integration. The existing

@@ -3,7 +3,7 @@ import { mkdir, copyFile, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { attachProtocolFixture } from "../examples/protocol/fixture-server.ts";
+import { attachProtocolFixture } from "../fixtures/protocol/fixture-server.ts";
 import { attachDemoProvider } from "../examples/demo/provider-server.ts";
 import { demoLibraries } from "./demo-libraries.mjs";
 
