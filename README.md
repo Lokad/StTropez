@@ -164,8 +164,8 @@ The [comparison controller](docs/comparison.md) and `/comparison/` fixture add a
 baseline, editable working side, undoable hunk reversion and captured refresh/acceptance.
 The [host workflows](docs/host-workflows.md) run proposal/correction/save/acknowledgement and
 captured Run through both editor modes in the plain and React hosts, including input recovery.
-The [bidi resolver and caret geometry](docs/bidi.md) combine Unicode conformance tests with
+The [bidi resolver and caret geometry](docs/unicode.md) combine Unicode conformance tests with
 native shaping on complete bounded rows; contextual long-line layout remains open.
-The editor preserves [Unicode 18 graphemes](docs/graphemes.md) and cooperatively indexes long
-logical lines for whole-cluster commands. [Native font registration](docs/fonts.md) owns loaded
+The editor preserves [Unicode 18 graphemes](docs/unicode.md) and cooperatively indexes long
+logical lines for whole-cluster commands. [Native font registration](docs/unicode.md) owns loaded
 faces and generations; text shaping and measurement use browser APIs.

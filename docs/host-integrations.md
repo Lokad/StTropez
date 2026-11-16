@@ -239,42 +239,7 @@ Workspace notification. The demo enables matching for working and reference edit
 each snapshot's own syntax context. A browser turn checks elapsed time between 256-unit advances
 and stops after 4 ms or 4,096 work units; a single batch or host callback can exceed that target.
 
-`CharacterWarnings` classifies advisory Unicode18 ranges without changing source text.
-Its `categories` switches independently control `bidi-control`, `invisible` (default-ignorable
-characters), `bom` (U+FEFF after offset zero), `non-breaking-space` and `unusual-space`.
-All categories are enabled by default; `allow` copies an exact list of permitted characters.
-Ordinary space, tab, LF and CR, letters in other writing systems, and ordinary combining marks
-are not warnings. Joiners and variation selectors may be meaningful; hosts choose their policy.
-
-`scan(buffer, from, to, limits)` returns immutable warning ranges, category and code point.
-It reads at most `maxUnits + 5` UTF-16 units, including boundary/lookahead checks; defaults are
-4,096 scanned units and 256 warnings. A limited batch supplies `nextFrom` for continuation
-against the same buffer and original end. Queries include complete code points intersecting
-the requested range, even at a clipped surrogate boundary. `scanText(text, absoluteOffset)`
-handles an already bounded, complete-code-point fragment. `characterWarningLabel` supplies a
-plain-text category/code-point description. These ranges are advisory, not a language-validity
-or security-profile verdict.
-
-Enable viewport markers with `characterWarnings: true` (or policy options) at mount, or
-`editor.characterWarnings.configure(options)`. This is off by default. `false` clears the
-policy and markers. `configuration()` returns the immutable policy or `null`.
-`query(from, to, limits)` returns the bounded source batch with its document/revision and
-`isCurrent()` guard, or `null` when disabled/unavailable. Check that guard before acting on
-retained ranges: edits, policy replacement, closed views and disposal expire a capture.
-Configure outside Workspace notifications; invalid policies leave the existing policy intact.
-
-Markers classify only presented row fragments and retain at most 128 fragments; there is no
-document scan, listener or background job. A marker surrounds the containing grapheme so
-joiners/variation selectors do not split a shaped cluster. Query ranges still identify the
-exact code point. Source text, syntax foreground and selection backgrounds are preserved.
-Customize `--st-character-warning-background` and `--st-character-warning-border`. Native
-inline range fragmentation and fallback-font caret heights can vary when spans are added;
-the browser owner checks row advance, caret positions and hit targets in all three engines.
-
-In the demo, **Code → Character warnings** controls both source/review panes. **Inspect source
-characters** explains characters within a small neighborhood of the working-source cursor;
-selecting a listed range checks its captured revision/policy first. The Languages & Unicode
-sample includes an invisible space, a non-breaking space and intentional emoji joiners.
+See [Unicode character warnings](unicode.md#character-warnings) for source inspection and viewport marker policy.
 
 Host buttons and keyboard listeners can call `editor.runCommand("line-comment")` or capture
 an insertion. The sample exposes **Code → Paste format**, **Insert example table** and

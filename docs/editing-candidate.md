@@ -305,11 +305,11 @@ workflow automation clocks. The callback and handler targets are 16ms; release a
 targets are 100ms normal/250ms large. Whole gestures include the imposed hold and have no point
 action budget. These are measurements and targets, not native-device or display qualification.
 
-Complete rows support [visual bidi navigation and dual affinities](bidi.md). Current limits include
+Complete rows support [visual bidi navigation and dual affinities](unicode.md). Current limits include
 long contextual-line geometry/navigation, wrapping,
 touch/mobile selection, native undo/menu behavior, OS clipboard,
 and additional platform modifier bindings. [Literal search/replace](search.md) and the host-owned
-[provider/highlighting fixture](providers.md) now exercise the view. [Grapheme navigation](graphemes.md) first attempts an exact local ASCII boundary query; uncertain context cooperatively indexes the full captured logical line using Unicode 18 facts. A one-line cache uses immutable buffer identity and range; long clusters and RI parity retain full context. Delayed commands check captured revision, selection, tab generation, composition, permission and disposal. Complete-row visual movement still requires measured geometry.
+[provider/highlighting fixture](providers.md) now exercise the view. [Grapheme navigation](unicode.md) first attempts an exact local ASCII boundary query; uncertain context cooperatively indexes the full captured logical line using Unicode 18 facts. A one-line cache uses immutable buffer identity and range; long clusters and RI parity retain full context. Delayed commands check captured revision, selection, tab generation, composition, permission and disposal. Complete-row visual movement still requires measured geometry.
 The textarea's value is an internal context, so setting it is not a full-document edit API.
 Hosts use revision-checked model edits for that operation.
 

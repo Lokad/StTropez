@@ -60,7 +60,7 @@ It also advances a compiled `BidiCursor` over a large buffer and queries the imm
 after disposal. The restored index controller validates expected revisions and releases its lease.
 The browser font controller registers copied host-supplied bytes and releases only its owned
 face. The consumer measures the registered face and queries compiled grapheme boundaries;
-no custom font parser or shaping engine is shipped. See [native font registration](fonts.md).
+no custom font parser or shaping engine is shipped. See [native font registration](unicode.md).
 The consumer also supplies a visible decoration callback and performs literal search/replace
 plus undo through the restored find controller. Language service workers remain host-owned.
 The restored comparison also uses buffer-based resource creation and exact line alignment,

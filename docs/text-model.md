@@ -30,7 +30,7 @@ and revision. Equal lengths or equal text do not establish that a delayed operat
 `TextBuffer.from(text)` preserves exact JavaScript string contents, including BOM, CRLF,
 unpaired surrogates and combining sequences. Offsets and half-open ranges count UTF-16 code
 units. Storage permits boundaries inside surrogate pairs and grapheme clusters; user-facing
-navigation applies the [Unicode boundary rules](graphemes.md).
+navigation applies the [Unicode boundary rules](unicode.md).
 
 | Member | Contract |
 | --- | --- |

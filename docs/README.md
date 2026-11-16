@@ -27,7 +27,7 @@ application owns storage, services, language policy and surrounding controls.
 | [Language server](language-server.md) | Protocol subset, synchronization, capabilities and transport |
 | [Language features](language-features.md) | Diagnostics, completion, documentation, navigation and edit/command decisions |
 | [Host integration](host-integrations.md) | Tokenization, insertion, notes and commands |
-| [Unicode](graphemes.md) | Grapheme boundaries and Unicode text handling |
+| [Unicode](unicode.md) | Grapheme boundaries and Unicode text handling |
 | [Packaging](packaging.md) | Assets, entry points, manifest and consumer integration |
 | [Architecture](architecture.md) | Layering, ownership, identity and dependencies |
 | [Testing](qualification.md) | Test layers and integration checks |
