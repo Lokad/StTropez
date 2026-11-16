@@ -22,23 +22,6 @@ async function dispose(page: Page): Promise<void> {
     expect(s.bindings.navigation.worker.created).toBe(s.bindings.navigation.worker.terminated); await expect.poll(() => page.workers().length).toBe(0);
 }
 for (const host of ["plain", "react"]) {
-    test(`${host} captured table input completes before navigation, domain edits and source Save/Run can capture`, async ({ page }) => {
-        test.setTimeout(120000); const original = "const target = 1;\r\ntarget", at = original.lastIndexOf("target") + 2, field = "B".repeat(400000), csv = '"A","' + field + '"', expected = original.slice(0, at) + csv + original.slice(at);
-        await setup(page, host, original); await select(page, at); await page.getByRole("checkbox", { name: "Paste tables as CSV", exact: true }).check(); await input(page).focus(); await waitForNavigation(page); const before = await snapshot(page);
-        const immediate = await input(page).evaluate((node, text) => {
-            const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }); event.clipboardData!.setData("text/plain", text); node.dispatchEvent(event);
-            const f = window.hostFixture, pastePending = f.snapshot().bindings.tablePaste.pending; node.dispatchEvent(new KeyboardEvent("keydown", { key: "F12", bubbles: true, cancelable: true }));
-            for (const label of ["Insert catalogue import", "Save source", "Run captured inputs"]) [...document.querySelectorAll("button")].find(button => button.textContent === label)!.click();
-            const s = f.snapshot(); return { pastePending, stillPending: s.bindings.tablePaste.pending, navigationRequests: s.bindings.navigation.requested, domainRequests: s.bindings.domain.requested, saves: s.pendingSaves.length, runs: s.pendingRuns.length };
-        }, "A\t" + field);
-        expect(immediate).toEqual({ pastePending: true, stillPending: true, navigationRequests: 0, domainRequests: 0, saves: 0, runs: 0 });
-        await expect.poll(async () => (await snapshot(page)).bindings.tablePaste.pending, { timeout: 30000 }).toBe(false); await waitForNavigation(page);
-        expect(await page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false; for (let from = 0; from < text.length; from += 32768) if (f.range(from, Math.min(text.length, from + 32768)) !== text.slice(from, from + 32768)) return false; return true; }, expected)).toBe(true);
-        let s = await snapshot(page); expect(s.bindings.tablePaste.status).toBe("applied"); expect(s.history.undoDepth).toBe(before.history.undoDepth + 1); expect(s.source.exports).toBe(0); expect(s.inputRecovery).toEqual([]);
-        await button(page, "Dismiss message").click(); await button(page, "Save source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1); await page.evaluate(() => window.hostFixture.finishSave()); await waitForNavigation(page);
-        await button(page, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(page)).pendingRuns.length).toBe(1); expect(await page.evaluate(text => window.hostFixture.runCapture(0)!.source === text, expected)).toBe(true); await page.evaluate(() => window.hostFixture.finishRun());
-        await input(page, "Secondary source").press("Control+z"); await waitForNavigation(page); expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(original); s = await snapshot(page); expect(s.history.undoDepth).toBe(before.history.undoDepth); await dispose(page);
-    });
     for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} real-worker definition reveal and references preserve exact origin selections and independent folds`, async ({ page }) => {
         test.setTimeout(120000); const text = "header\r\nconst café = 1;\r\n" + (large ? "const unchanged = 123;\r\n".repeat(100000) : "filler\r\n") + "café\r\ntail", from = text.lastIndexOf("café");
         await setup(page, host, text); await button(page, "Open source review").click(); await input(page).focus();

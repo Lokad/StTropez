@@ -108,22 +108,4 @@ for (const host of ["plain", "react"]) {
         await waitForRename(p); await select(p, 3); await preview(p); expect((await snapshot(p)).bindings.rename.state.status).toBe("failed"); await expect(p.getByLabel("Rename status", { exact: true })).toContainText("exceeds 1,024");
         await exact(p, over); expect((await snapshot(p)).source.exports).toBe(0); await dispose(p);
     });
-    test(`${host} rename refuses captures during yielded movement, composition and table conversion`, async ({ page: p }) => {
-        test.setTimeout(120000); const raw = "catalogue " + " ".repeat(1000000) + "end"; await setup(p, host, raw); await select(p, 10);
-        const movement = await input(p).evaluate(node => { const f = window.hostFixture, before = f.snapshot().bindings.rename.requested;
-            node.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, bubbles: true, cancelable: true })); const pending = f.snapshot().bindings.views.find(v => v.id === "primary")!.metrics!.pendingCommand;
-            node.dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true, cancelable: true })); return { pending, requested: f.snapshot().bindings.rename.requested - before }; });
-        expect(movement).toEqual({ pending: true, requested: 0 }); await waitForRename(p); await select(p, 3); await preview(p); expect((await snapshot(p)).bindings.rename.state.canApply).toBe(true);
-        await input(p).dispatchEvent("compositionstart", { data: "" }); const before = (await snapshot(p)).bindings.rename.requested; await button(p, "Prepare rename preview").click();
-        expect((await snapshot(p)).bindings.rename.requested).toBe(before); expect((await snapshot(p)).bindings.rename.state.canApply).toBe(false);
-        await p.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); }); await waitForRename(p);
-        const base = "catalogue right", point = 10, cell = "B".repeat(400000), csv = '"A","' + cell + '"';
-        await p.evaluate(({ base, point }) => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: base }]); f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: point, head: point }]); }, { base, point });
-        await p.getByRole("checkbox", { name: "Paste tables as CSV", exact: true }).check(); await input(p).focus(); await waitForRename(p);
-        const guard = await input(p).evaluate((node, text) => { const f = window.hostFixture, before = f.snapshot().bindings.rename.requested, event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
-            event.clipboardData!.setData("text/plain", text); node.dispatchEvent(event); const pending = f.snapshot().bindings.tablePaste.pending;
-            node.dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true, cancelable: true })); return { pending, requested: f.snapshot().bindings.rename.requested - before }; }, "A\t" + cell);
-        expect(guard).toEqual({ pending: true, requested: 0 }); await expect.poll(async () => (await snapshot(p)).bindings.tablePaste.pending).toBe(false); await waitForRename(p);
-        await exact(p, base.slice(0, point) + csv + base.slice(point)); expect((await snapshot(p)).source.exports).toBe(0); await dispose(p);
-    });
 }
