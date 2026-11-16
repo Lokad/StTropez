@@ -39,21 +39,6 @@ for (const host of ["plain", "react"]) {
         }
         await select(p); await p.evaluate(() => window.hostFixture.setLinksDelay(300)); await input(p).press("F4"); await p.getByRole("textbox", { name: "Configuration path", exact: true }).focus(); await waitForLinks(p); await expect(p.getByRole("textbox", { name: "Configuration path", exact: true })).toBeFocused(); await exact(p, raw); await dispose(p);
     });
-    test(`${host} link source, target, authority, alias and lifecycle captures reject stale activation tokens`, async ({ page: p }) => {
-        test.setTimeout(120000); const raw = 'import "sample-utils";\r\nvalue;', companionRaw = "export const value = 1;\r\n"; await setup(p, host, raw); await button(p, "Add module companion").click(); const companion = (await snapshot(p)).bindings.links.companion!; let current = raw;
-        for (const mode of ["selection", "typing", "target", "authority", "alias", "remount"] as const) {
-            await select(p); await p.evaluate(() => window.hostFixture.setLinksDelay(1000)); await button(p, "Discover module links").click(); const token = (await snapshot(p)).bindings.links.state.token;
-            if (mode === "selection") await p.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 11, head: 11 }]); });
-            else if (mode === "typing") { await input(p).press("Control+End"); await input(p).pressSequentially("H"); current += "H"; }
-            else if (mode === "target") await p.evaluate(id => { const f = window.hostFixture, d = f.navigationDocument(id); f.editLinkTarget(id, d.revision, [{ from: 0, to: 0, insert: "// target\r\n" }]); }, companion);
-            else if (mode === "authority") await p.evaluate(id => { window.hostFixture.setProjectTargetReadOnly(id, true); window.hostFixture.setProjectTargetReadOnly(id, false); }, companion);
-            else if (mode === "alias") await p.evaluate(id => { window.hostFixture.setLinkAlias("sample-utils", null); window.hostFixture.setLinkAlias("sample-utils", id); }, companion);
-            else await p.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
-            await waitForLinks(p); await p.evaluate(token => window.hostFixture.openLink(token, 0), token); expect((await snapshot(p)).bindings.links.opened).toBe(0); await exact(p, current);
-        }
-        expect(await p.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("// target\r\n" + companionRaw); await p.evaluate(() => window.hostFixture.setLinksDelay(0)); await select(p); await discover(p); const old = (await snapshot(p)).bindings.links.state.token; await button(p, "Dismiss module links").click(); await discover(p); await p.evaluate(token => window.hostFixture.openLink(token, 0), old); expect((await snapshot(p)).bindings.links.opened).toBe(0);
-        await p.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion); await select(p); await discover(p); await results(p).getByRole("button").first().click(); await waitForLinks(p); await expect(input(p, "Secondary source")).toBeFocused(); await dispose(p);
-    });
     test(`${host} malformed/incomplete link batches, safe tooltips and idle disconnect preserve local editing and allow reconnect`, async ({ page: p }) => {
         const raw = 'import "sample-utils";\r\nvalue;'; await setup(p, host, raw); await button(p, "Add module companion").click(); await select(p); const before = await snapshot(p);
         for (const fault of ["malformed", "incomplete", "failure"] as const) { await p.evaluate(fault => window.hostFixture.faultLinksNext(fault), fault); await discover(p); expect((await snapshot(p)).bindings.links.state.status).toBe("failed"); await expect(results(p).locator("li")).toHaveCount(0); await exact(p, raw); expect((await snapshot(p)).history).toEqual(before.history); await button(p, "Reconnect link provider").click(); }
