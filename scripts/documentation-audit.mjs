@@ -66,9 +66,13 @@ export function parseDocumentation(path, markdown) {
         const raw = markdown.slice(node.position.start.offset, node.position.end.offset);
         const marker = /^(`{3,}|~{3,})/.exec(raw)?.[1];
         if (!marker) return; // Indented code has no declared TypeScript language.
-        const last = raw.split(/\r?\n/).at(-1);
+        const lines = raw.split(/\r\n|\r|\n/), last = lines.at(-1);
         const close = new RegExp(`^[ >\\t]*${marker[0]}{${marker.length},}\\s*$`);
-        if (!raw.includes("\n") || !close.test(last)) page.diagnostics.push(diagnostic(page, node, "fence", "Unclosed code fence."));
+        // A fence-looking line indented as code is retained in the parsed value.
+        // A real closing fence consumes a source line without adding a value line.
+        const closed = lines.length > 1 && close.test(last)
+            && (!node.value || node.value.split(/\r\n|\r|\n/).length < lines.length - 1);
+        if (!closed) page.diagnostics.push(diagnostic(page, node, "fence", "Unclosed code fence."));
         if (["ts", "typescript", "tsx"].includes(node.lang)) page.examples.push({ path, line: node.position.start.line + 1, language: node.lang, code: node.value });
     });
     let contract = false;

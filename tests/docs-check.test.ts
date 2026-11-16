@@ -34,6 +34,8 @@ test("documentation examples preserve source lines and fence boundaries", () => 
         { path: "nested.md", line: 8, language: "ts", code: "export const listed = 2;" }
     ]);
     assert.throws(() => documentationExamples("nested.md", "> ```ts\n> const x = 1;"), /nested.md:1: Unclosed/);
+    assert.throws(() => documentationExamples("indented.md", "```sh\nvalue\n    ```"), /indented.md:1: Unclosed/);
+    assert.deepEqual(documentationExamples("outer.md", "````sh\n    ````\n````"), []);
 });
 
 test("documentation links resolve rendered headings, references and repository paths without interpreting example assets", async () => {
