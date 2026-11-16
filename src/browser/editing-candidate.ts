@@ -576,8 +576,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             }
             const direction = key === "ArrowLeft" ? -1 : 1;
             const point = !extend && range.anchor !== range.head
-                ? viewport.collapseVisual(Math.min(range.anchor, range.head), Math.max(range.anchor, range.head), direction, false)
-                : viewport.moveVisual(range.head, range.headAffinity ?? "after", direction, false);
+                ? viewport.collapseVisual(Math.min(range.anchor, range.head), Math.max(range.anchor, range.head), direction)
+                : viewport.moveVisual(range.head, range.headAffinity ?? "after", direction);
             if (point) { visualMoves++; done(moved(range, point.offset, extend, point.affinity)); return; }
             if (!extend && range.anchor !== range.head) { done(moved(range, direction < 0 ? Math.min(range.anchor, range.head) : Math.max(range.anchor, range.head), false)); return; }
             withGraphemes(capture, range.head, direction, "grapheme", at => done(moved(range, direction < 0 ? at.preceding ?? range.head : at.following ?? range.head, extend)), navigationTurn);

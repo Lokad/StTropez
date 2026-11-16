@@ -19,6 +19,7 @@ import type { ComparisonRowIndex } from "../core/comparison-rows.ts";
 import { mountColumnRulers, resolveColumnRulers } from "./column-rulers.ts";
 type RowIndex = FoldIndex | ComparisonRowIndex;
 const emptyIndex = new FoldIndex(1, []);
+const overscanLines = 4, overscanUnits = 32;
 /** Shared by view-only scroll coordination; this is independent of source coordinates. */
 export const viewportPadding = 12;
 export type ViewportComparisonRows = Readonly<{ documentId: DocumentId; revision: number; foldGeneration: number; id: number; lineHeight: number; index: ComparisonRowIndex }>;
@@ -54,8 +55,8 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     coordsAt: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
     rowBounds: (line: number) => RenderedRowBounds | undefined;
     hitTest: (clientX: number, clientY: number) => CaretRectangle | undefined;
-    moveVisual: (offset: number, affinity: Affinity, direction: -1 | 1, reveal?: boolean) => CaretRectangle | undefined;
-    collapseVisual: (from: number, to: number, direction: -1 | 1, reveal?: boolean) => CaretRectangle | undefined;
+    moveVisual: (offset: number, affinity: Affinity, direction: -1 | 1) => CaretRectangle | undefined;
+    collapseVisual: (from: number, to: number, direction: -1 | 1) => CaretRectangle | undefined;
     columnAt: (offset: number, affinity?: Affinity) => number | undefined;
     caretAtColumn: (line: number, column: number) => Readonly<Pick<CaretRectangle, "offset" | "affinity" | "revision">> | undefined;
     prepareNavigationRows: (lines: readonly number[]) => () => void;
@@ -91,7 +92,7 @@ export type RevealOptions = Readonly<{ horizontal?: "center" | "nearest"; vertic
 
 /** Bounded DOM view layer with local native text geometry. Native-device qualification remains separate. */
 export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId: TabId,
-    options: Readonly<{ ariaLabel?: string; view?: DocumentView; overscanLines?: number; overscanUnits?: number; decorate?: LineDecorator; lineClass?: LineClass;
+    options: Readonly<{ ariaLabel?: string; view?: DocumentView; decorate?: LineDecorator; lineClass?: LineClass;
         columnRulers?: readonly number[]; highlightCurrentLine?: boolean; fontLigatures?: boolean; scrollBeyondLastLine?: boolean }> = {}): TextViewport {
     let columns = resolveColumnRulers(options.columnRulers);
     let highlightCurrentLine = options.highlightCurrentLine === undefined ? false : options.highlightCurrentLine;
@@ -104,8 +105,6 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     if (!tab || tab.surface.kind !== "text") throw new Error("Expected a text surface.");
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId);
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
-    const overscanLines = options.overscanLines ?? 4, overscanUnits = options.overscanUnits ?? 32;
-    if (![overscanLines, overscanUnits].every(value => Number.isSafeInteger(value) && value >= 0 && value <= 256)) throw new RangeError("Invalid viewport overscan.");
     const view = options.view ?? workspace.createDocumentView(documentId), owner = host.ownerDocument, browserWindow = owner.defaultView;
     if (!browserWindow) { if (!options.view) view.dispose(); throw new Error("Viewport requires an attached browser document."); }
     const win = browserWindow;
@@ -404,13 +403,11 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             return work(measuredRow({ item, element: commandRow, geometry: commandGeometry }, document.revision, rectangle));
         } finally { commandMeasure.remove(); }
     }
-    const rowForOffset = <T>(offset: number, revealRow: boolean, work: (row: MeasuredRow) => T): T | undefined => {
+    const rowForOffset = <T>(offset: number, work: (row: MeasuredRow) => T): T | undefined => {
         if (disposed || !workspace.resolveTab(target)) return;
-        if (revealRow) { view.folding.reveal(view.folding.getSnapshot(), offset); if (view.folding.getSnapshot().generation !== renderedFoldGeneration) flush(); }
         const document = workspace.observeDocument(documentId).getSnapshot();
         if (disposed || !workspace.resolveTab(target) || document?.revision !== renderedRevision) return;
         const line = document.buffer.lineAt(offset);
-        if (revealRow && !rows.has(line)) { reveal = { revision: document.revision, foldGeneration: view.folding.getSnapshot().generation, offset, horizontal: "nearest", vertical: "nearest", affinity: "after" }; flush(); }
         return withRow(line, left, offset, true, work);
     };
     function render(scheduled: boolean): void {
@@ -708,17 +705,17 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             }
             return element ? geometry(element).nearest(clientX) : undefined;
         },
-        moveVisual: (offset: number, affinity: Affinity, direction: -1 | 1, revealRow = true) => rowForOffset(offset, revealRow, measured => {
+        moveVisual: (offset: number, affinity: Affinity, direction: -1 | 1) => rowForOffset(offset, measured => {
             const before = measured.point(offset, "before"), after = measured.point(offset, "after"); if (!before || !after) return;
             if (before.offset !== offset && after.offset !== offset) return direction * before.left > direction * after.left ? before : after;
             const next = measured.visual(offset, affinity, direction); if (next) return next;
             const buffer = workspace.document(documentId).buffer, source = view.folding.getSnapshot().index, at = source.rowAt(buffer.lineAt(offset)) + direction * measured.flow;
             if (at < 0 || at >= source.visibleLineCount) return measured.edge(direction);
             const line = source.lineAt(at);
-            return rowForOffset(buffer.offsetAt(line), revealRow, neighbor => neighbor.edge(direction < 0 ? 1 : -1));
+            return rowForOffset(buffer.offsetAt(line), neighbor => neighbor.edge(direction < 0 ? 1 : -1));
         }),
-        collapseVisual: (from: number, to: number, direction: -1 | 1, revealRow = true) => rowForOffset(from, revealRow, first => direction * first.flow < 0
-            ? first.edge(direction, from, to) : rowForOffset(to, revealRow, last => last.edge(direction, from, to))),
+        collapseVisual: (from: number, to: number, direction: -1 | 1) => rowForOffset(from, first => direction * first.flow < 0
+            ? first.edge(direction, from, to) : rowForOffset(to, last => last.edge(direction, from, to))),
         columnAt: (offset: number, affinity: Affinity = "after") => {
             if (disposed || !workspace.resolveTab(target)) return;
             const document = workspace.observeDocument(documentId).getSnapshot();

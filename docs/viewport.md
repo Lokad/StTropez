@@ -40,8 +40,6 @@ instead of redirecting it to the replacement document.
 | --- | --- |
 | `ariaLabel` | Document title when omitted |
 | `view` | A new independent document view when omitted |
-| `overscanLines` | 4; integer from 0 through 256 |
-| `overscanUnits` | 32 UTF-16 units per horizontal edge; integer from 0 through 256 |
 | `decorate`, `lineClass` | No host decoration or row class when omitted |
 | `columnRulers` | Empty; at most 128 positive safe integers, copied, sorted and deduplicated |
 | `highlightCurrentLine` | `false`; boolean |
@@ -94,6 +92,11 @@ inherited CSS zoom. Returned positions carry their document revision. Unmounted 
 stale projections can return `undefined`; `coordsAt` snaps a grapheme interior by affinity.
 Scrolling and navigation columns use local CSS units.
 
+`moveVisual(offset, affinity, direction)` finds the next visual caret position;
+`collapseVisual(from, to, direction)` finds the visual edge of a selection. Direction is `-1`
+or `1`. These geometry queries do not scroll or expand folds. Use `revealOffset` to reveal the
+result after applying a selection change. Stale projections can return `undefined`.
+
 `columnAt(offset, affinity?)` obtains a logical horizontal column independent of scrolling;
 `caretAtColumn(line, column)` returns the closest measured offset, affinity and revision. Stale
 projections return `undefined`; a hidden destination line has no caret-at-column result.
@@ -139,7 +142,7 @@ viewport; rendering stops when that callback invalidates the mount.
 
 | Area | Contract or limit |
 | --- | --- |
-| Document reads | Visible/overscan rows and bounded horizontal fragments; no whole-document text export |
+| Document reads | Visible rows plus four surrounding rows per edge; horizontal fragments add 32 UTF-16 units per edge, with short-row and surrogate-boundary adjustments; no whole-document text export |
 | Short lines | Lines up to 512 UTF-16 units render with their complete shaping context |
 | Long lines | Horizontal windows estimate position from UTF-16 units and measured monospace cell width |
 | Line endings | LF creates a row; CR before LF is omitted from display; lone CR is displayed as a control symbol |
