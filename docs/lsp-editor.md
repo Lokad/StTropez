@@ -88,10 +88,7 @@ are applied with the completion in one transaction, suppressing duplicate native
 Each published list ID also changes after prefix filtering; retained controls can pass
 `completionId` to `chooseCompletion`/`accept`/`apply` to reject an obsolete list or another view's choices.
 
-Numbered snippet stops (`$1`, `${1}`), literal defaults (`${1:name}`), choices
-(`${2|draft,ready|}`), escapes, repeated occurrences and final `$0` are supported. Missing `$0`
-means the end of the expansion. Forward references use the same default; conflicting explicit
-defaults are refused. Variables, nested placeholders and transforms are outside this subset.
+Completion uses the [core snippet subset](text-model.md#snippet-planning).
 Unsupported snippet choices are omitted individually with label/reason in `omittedCompletions`;
 ordinary and supported choices remain usable. The pure decoder returns `omitted`, and lazy
 decoding reports `UnsupportedLspSnippetError`. Every edit is validated before that disposition,
@@ -120,15 +117,8 @@ collapsed carets; automatic requests and prefix-list rebasing still require one 
 An incompatible secondary range rejects the whole acceptance and consumes the completion
 keypress without falling through to ordinary indentation or Enter.
 
-The core snippet planner retains per-occurrence insertion context. `planSnippetEdit` maps
-corresponding field bodies across different indentation and LF/CRLF lengths, while ordinary
-paste/composition text remains literal. Its optional final `adjustNewlines` argument is for
-editor-generated newline indentation; it uses the current local line context. An incompatible
-selection/edit batch returns no snippet plan so the editor can apply that user edit normally.
-`planSnippetChoice` formats each occurrence, preserves the requested primary occurrence and
-checks the aggregate document limit. `snippetChoiceText` supplies the corresponding display
-value, including the captured first-line placement when indentation crosses a tab boundary.
-The browser passes configured newline intent to the transform, retains the primary caret
+The browser uses the [contextual snippet planners](text-model.md#snippet-planning), passes
+configured newline intent to the transform, retains the primary caret
 group during snippet traversal and choices, and applies the complete selection plan.
 
 Acceptance selects every occurrence of the first numbered field. Typing, deletion, paste and

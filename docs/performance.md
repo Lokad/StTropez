@@ -128,8 +128,8 @@ captures export their exact snapshots; routine candidate rendering stays bounded
 
 `bench:storage` separately compares immutable flat, chunk and piece storage with edit,
 first-lookup, local-read, snapshot, export and GC retention boundaries. The selected runtime
-piece tree is exercised through its own adapter. See [the storage decision](text-storage.md)
-for the repeated quiet-machine measurements, source identity and tradeoffs. Current workspace
+piece tree is exercised through its own adapter. See [the text model](text-model.md)
+for buffer operations and their scaling boundaries. Current workspace
 measurements include the selected piece tree, bounded shared history and mapped selections;
 the native-control report retains whole-value rendering. Viewport and bounded-input reports
 exercise their separate paths. All remain diagnostics.

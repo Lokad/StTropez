@@ -12,7 +12,7 @@ Documents use an immutable indexed piece tree with bounded shared history. Snaps
 buffer for range reads and a lazy string export for host services/native views. The native input
 adapter derives range changes from whole values and maps independent view selections, including
 LF display coordinates over preserved CRLF. It still performs document-sized rendering/diff work.
-See [the storage decision](text-storage.md) and [history/view contracts](history.md); this baseline
+See [the text model](text-model.md) and [history/view contracts](history.md); this baseline
 does not qualify the production renderer or native-device input.
 The separate [bounded editing candidate](editing-candidate.md) maps a small native context to
 range transactions and uses local native glyph rectangles over the [viewport](viewport.md).

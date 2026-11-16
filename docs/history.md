@@ -146,10 +146,8 @@ An unchanged selection is a no-op. Never synchronize editor state in React effec
 ### Multiple-selection model
 
 Each view snapshot also contains `selectionSet: { ranges, primary }`. `selection` is the exact
-primary range object, preserving single-selection readers. `createSelectionSet(length, ranges,
-primary?)` clones/freezes inputs, sorts by source range and merges overlaps, duplicate carets
-and carets on an occupied range. Adjacent nonempty ranges stay distinct. A merged range keeps
-the primary member's direction/affinities, or the first supplied member's if it is secondary.
+primary range object, preserving single-selection readers. The
+[selection-set primitives](text-model.md#selection-sets) define normalization, direction and affinities.
 `primary` is an index into that immutable normalized set, not a durable identity for later work.
 Capture the view, revision and whole set when scheduling a command.
 
@@ -160,9 +158,8 @@ including inside a batch that changes another document. Mapping uses every range
 and coalesces ranges that overlap after an edit. Mapping deleted positions is lossy; other views
 do not acquire the initiating view's captured selection history.
 
-`planSelectionEdits(length, normalizedSet, textOrTexts)` returns frozen original-coordinate
-edits and resulting caret positions. Per-range replacement text follows normalized range order.
-Apply both through `edit({ ...capturedTarget, view, ...plan })`; planning alone changes nothing.
+Apply a [selection edit plan](text-model.md#selection-sets) through
+`edit({ ...capturedTarget, view, ...plan })`; planning alone changes nothing.
 An edit may supply `selectionSet` or `selection`, with a live initiating view. Every document,
 range and result set is validated before a multi-document transaction publishes. Undo/redo
 restore the initiating view's complete captured set and map other retained views independently.

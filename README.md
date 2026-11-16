@@ -146,8 +146,8 @@ through a real development worker. These experiments do not select or qualify a 
 renderer or language client; native IME checks remain pending.
 
 See [the architecture](docs/architecture.md), [performance assessment](docs/performance.md), and
-[instrumentation guide](docs/instrumentation.md). [Text storage](docs/text-storage.md) records
-the measured storage choice and mapping/newline contracts. The local roadmap is `PLAN.md`.
+[instrumentation guide](docs/instrumentation.md). [Text model](docs/text-model.md) describes
+buffers, position mapping, selections and newline conversion. The local roadmap is `PLAN.md`.
 See [document history and view lifetime](docs/history.md) for transaction, grouping and undo policy.
 The [viewport layer](docs/viewport.md) and `/viewport/` fixture record bounded-rendering evidence.
 The [editing candidate](docs/editing-candidate.md) and `/editing/` fixture exercise bounded native

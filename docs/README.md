@@ -23,7 +23,7 @@ application owns storage, services, language policy and surrounding controls.
 | [Search](search.md) | Literal/regular-expression search and replacement |
 | [Comparison](comparison.md) | Baselines, hunks, navigation, refresh and acceptance |
 | [Workspace](resources.md) | Resources, tabs, leases, loading and saving |
-| [Text model](text-storage.md) | Indexed buffers, UTF-16 positions and edits |
+| [Text model](text-model.md) | Buffers, UTF-16 positions, edits, selections and snippets |
 | [Language server](lsp.md) | Protocol subset, synchronization, capabilities and transport |
 | [Language features](lsp-editor.md) | Completion and editor-language integration |
 | [Host integration](host-integrations.md) | Tokenization, insertion, notes and commands |
