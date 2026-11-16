@@ -2,7 +2,7 @@ import { openWebSocketTransport } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import { FixtureLspWorkspace } from "./fixture-workspace.ts";
 import { createLspProviderController } from "../../examples/editing/lsp-provider-controller.ts";
-import type { ProviderFactory } from "../../examples/editing/provider-controller.ts";
+import type { ProviderFactory } from "../../examples/editing/provider-contract.ts";
 import { createHoverController } from "../../examples/editing/hover-controller.ts";
 import { createLspHoverClient } from "../../examples/editing/lsp-hover-client.ts";
 import { createLspNavigationClient } from "../../examples/editing/lsp-navigation-client.ts";

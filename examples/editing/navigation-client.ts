@@ -13,11 +13,7 @@ import { validateLinksInput, validateLinksResult } from "../../fixtures/language
 import type { LinksInput } from "../../fixtures/language/links.ts";
 import { validateColorsInput, validateColorsResult, validateColorPresentationInput, validateColorPresentationsResult } from "../../fixtures/language/colors.ts";
 import type { ColorsInput, ColorPresentationInput } from "../../fixtures/language/colors.ts";
-export type NavigationMetrics = { created: number; posted: number; received: number; transferred: number; maxChunk: number; completed: number; failed: number; terminated: number;
-    opened: number; changed: number; closed: number; reused: number; snapshotUnits: number; deltaUnits: number; planningTurns: number; rejected: number };
-export type SyncFault = "version" | "epoch" | "sequence" | "revision";
-export function navigationMetrics(): NavigationMetrics { return { created: 0, posted: 0, received: 0, transferred: 0, maxChunk: 0, completed: 0, failed: 0, terminated: 0,
-    opened: 0, changed: 0, closed: 0, reused: 0, snapshotUnits: 0, deltaUnits: 0, planningTurns: 0, rejected: 0 }; }
+import type { NavigationMetrics, SyncFault } from "./navigation-service.ts";
 type Reply = Readonly<Record<string, unknown>>;
 type Cached = { revision: number; buffer: TextBuffer };
 let connectionSerial = 0;

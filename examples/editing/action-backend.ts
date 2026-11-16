@@ -3,7 +3,7 @@ import type { ActionInput, ActionResult } from "../../fixtures/language/actions.
 import { CleanupScope } from "../shared/cleanup-scope.ts";
 import type { ProviderBackend } from "../shared/provider-lane.ts";
 import { createNavigationClient } from "./navigation-client.ts";
-import type { NavigationMetrics } from "./navigation-client.ts";
+import type { NavigationMetrics } from "./navigation-service.ts";
 import type { LspActionBatch, LspActionClient, LspActionFactory } from "./lsp-action-client.ts";
 
 type ActionRequest = Readonly<{ documents: readonly DocumentSnapshot[]; document: DocumentSnapshot; input: ActionInput; progress: (work: number) => void }>;

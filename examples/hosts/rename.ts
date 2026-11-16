@@ -3,7 +3,7 @@ import type { LspWorkspaceEdit } from "../../src/protocol/index.ts";
 import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../../src/protocol/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
-import { navigationMetrics } from "../editing/navigation-client.ts";
+import { navigationMetrics } from "../editing/navigation-service.ts";
 import { createRenameBackend } from "../editing/rename-backend.ts";
 import type { RenameBackend } from "../editing/rename-backend.ts";
 import { ProviderLane } from "../shared/provider-lane.ts";

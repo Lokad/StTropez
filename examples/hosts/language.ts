@@ -2,7 +2,7 @@ import { createFindController, createRegexFindBackend } from "../../src/browser/
 import type { EditingCandidate, FindController, FindSnapshot } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, DocumentId, FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { createProviderController } from "../editing/provider-controller.ts";
-import type { ProviderController, ProviderFactory, ProviderSnapshot } from "../editing/provider-controller.ts";
+import type { ProviderController, ProviderFactory, ProviderSnapshot } from "../editing/provider-contract.ts";
 import type { JsonValue } from "../../src/protocol/index.ts";
 import { EditingPresentation } from "../editing/presentation.ts";
 import { HostCell } from "../shared/observable.ts";

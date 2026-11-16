@@ -5,7 +5,7 @@ import type { RenameCapture } from "../../fixtures/language/rename.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
 import type { ProviderBackend } from "../shared/provider-lane.ts";
 import { createNavigationClient } from "./navigation-client.ts";
-import type { NavigationMetrics } from "./navigation-client.ts";
+import type { NavigationMetrics } from "./navigation-service.ts";
 import type { LspRenameClient, LspRenameFactory } from "./lsp-rename-client.ts";
 
 type RenameRequest = Readonly<{ documents: readonly DocumentSnapshot[]; capture: RenameCapture; name: string; progress: (work: number) => void }>;

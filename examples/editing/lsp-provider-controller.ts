@@ -2,7 +2,7 @@ import { createLspEditor } from "../../src/browser/index.ts";
 import type { EditingCandidate } from "../../src/browser/index.ts";
 import type { TabId, Workspace } from "../../src/index.ts";
 import type { LspSessionAccess, LspWorkspace } from "../../src/protocol/index.ts";
-import type { ProviderController, ProviderOptions } from "./provider-controller.ts";
+import type { ProviderController, ProviderOptions } from "./provider-contract.ts";
 
 export type LspProviderOptions = ProviderOptions & Readonly<{ provider: LspWorkspace;
     beforeRequest?: (session: LspSessionAccess, configuration: Readonly<{ delay: number; fault?: "malformed" | "failure" }>) => Promise<unknown> }>;

@@ -1,7 +1,7 @@
 import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
-import { navigationMetrics } from "../editing/navigation-client.ts";
+import { navigationMetrics } from "../editing/navigation-service.ts";
 import { createActionBackend } from "../editing/action-backend.ts";
 import type { ActionBackend, ActionProviderBatch } from "../editing/action-backend.ts";
 import { ProviderLane } from "../shared/provider-lane.ts";

@@ -3,8 +3,7 @@ import { createLspNavigationClient as createClient } from "../../src/protocol/in
 import type { LspSessionAccess, LspWorkspace } from "../../src/protocol/index.ts";
 import type { NavigationInput } from "../../fixtures/language/navigation.ts";
 import { validateNavigationInput } from "../../fixtures/language/navigation.ts";
-import type { NavigationMetrics } from "./navigation-client.ts";
-import type { NavigationService, NavigationOrigin } from "./navigation-service.ts";
+import type { NavigationMetrics, NavigationService, NavigationOrigin } from "./navigation-service.ts";
 export type LspNavigationOptions = Readonly<{ provider: LspWorkspace;
     beforeRequest?: (session: LspSessionAccess, input: NavigationInput) => Promise<unknown> }>;
 

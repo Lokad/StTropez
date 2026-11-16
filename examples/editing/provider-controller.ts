@@ -1,24 +1,11 @@
 import { anchoredRange } from "../../src/index.ts";
-import type { Observable, ResourceLease, Selection, TabId, Workspace } from "../../src/index.ts";
-import type { JsonValue, LspSession } from "../../src/protocol/index.ts";
-import type { EditingCandidate, LspEditorSnippet } from "../../src/browser/index.ts";
+import type { ResourceLease, Selection, TabId, Workspace } from "../../src/index.ts";
+import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { Diagnostic, ProviderOptions, ProviderSnapshot } from "./provider-contract.ts";
 import type { ProviderInput, ProviderResult } from "../../fixtures/language/provider.ts";
 import { validateProviderResult } from "../../fixtures/language/provider.ts";
 import { HostCell } from "../shared/observable.ts";
 type Pending = Readonly<{ input: ProviderInput; from: number; selection: Selection; lease: ResourceLease; startsInWord: boolean; endsInWord: boolean }>;
-export type Diagnostic = Readonly<{ from: number; to: number; message: string }>;
-
-export type ProviderSnapshot = Readonly<{ message: string; connected: boolean; pending: boolean; offerText: string | null; diagnostics: readonly Diagnostic[]; diagnosticRevision: number; diagnosticsPending?: boolean;
-    choices?: readonly string[]; choiceIndex?: number; completionId?: number; completionDetail?: string; resolving?: boolean; unversionedDiagnostics?: readonly string[]; snippet?: LspEditorSnippet | null }>;
-export type ProviderOptions = Readonly<{ autoConnect?: boolean; canCapture?: () => boolean }>;
-export type ProviderController = Readonly<{ state: Observable<ProviderSnapshot>; request: () => void; apply: (mode: "insert" | "replace", completionId?: number) => boolean;
-    cancel: () => void; connect: () => void; disconnect: () => void; selectDiagnostic: (index: number) => boolean; chooseCompletion: (index: number, completionId?: number) => boolean;
-    setDelay: (value: number) => void; faultNext: (value: "malformed" | "failure") => void; destroy: () => void;
-    customRequest?: (method: string, params: JsonValue) => Promise<JsonValue>;
-    snapshot: () => Readonly<{ posted: number; received: number; applied: number; stale: number; cancelled: number; invalid: number; outOfScope?: number; failed: number; postedUnits?: number;
-        completionBeforeInputEvents?: number; lastCompletionBeforeInputMs?: number; completionKeydownEvents?: number; lastCompletionKeydownMs?: number;
-        connected: boolean; pending: boolean; offer: boolean; diagnostics: number; diagnosticRevision: number; diagnosticsPending?: boolean; transport?: "worker-v1" | "lsp3.17"; protocol?: ReturnType<LspSession["snapshotOwnership"]> }> }>;
-export type ProviderFactory = (workspace: Workspace, tabId: TabId, editor: EditingCandidate, options: ProviderOptions) => ProviderController;
 
 /** Synthetic host service shared by fixtures. No DOM controls or authoritative source mirror. */
 export function createProviderController(workspace: Workspace, tabId: TabId, editor: EditingCandidate, options: ProviderOptions = {}) {
