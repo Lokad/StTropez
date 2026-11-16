@@ -1,5 +1,5 @@
 import type { TextBuffer } from "../core/text-buffer.ts";
-import { ProjectChangeCursor } from "../core/buffer-change.ts";
+import { BufferChangeCursor } from "../core/buffer-change.ts";
 import { positionChanges } from "../core/positions.ts";
 import type { PositionMapping } from "../core/positions.ts";
 
@@ -27,7 +27,7 @@ async function scan(buffer: TextBuffer, from: number, to: number, cooperate: Lsp
     return Uint32Array.from(bare);
 }
 async function replacement(before: TextBuffer, after: TextBuffer, cooperate: LspCooperate) {
-    const cursor = new ProjectChangeCursor(before, after); let from = 0, to = 0, end = 0;
+    const cursor = new BufferChangeCursor(before, after); let from = 0, to = 0, end = 0;
     try { for (;;) { const step = cursor.next(); if (step.done) {
                 const span = step.result!; from = Math.max(0, span.from - 1); to = Math.min(before.length, span.to + 1); end = span.insertTo + to - span.to; break;
             } await cooperate(); } } finally { cursor.dispose(); }

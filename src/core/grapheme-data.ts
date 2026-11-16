@@ -1,6 +1,6 @@
 // Generated Unicode18 grapheme/property facts. See licenses/Unicode-3.0.txt.
 // Regenerate offline with scripts/generate-grapheme-data.mjs from reviewed data.
-export const graphemeUnicodeVersion = "18.0.0";
+export const unicodeGraphemeVersion = "18.0.0";
 const kinds = ["Other","CR","LF","Control","Extend","ZWJ","Regional_Indicator","Prepend","SpacingMark","L","V","T","LV","LVT"] as const;
 const conjunct = ["None","Consonant","Extend","Linker"] as const;
 export type GraphemeBreakProperty = typeof kinds[number];

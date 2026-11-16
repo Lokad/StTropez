@@ -1,5 +1,5 @@
 import type { TextBuffer } from "./text-buffer.ts";
-import { graphemeProperties, graphemeUnicodeVersion } from "./grapheme-data.ts";
+import { graphemeProperties, unicodeGraphemeVersion } from "./grapheme-data.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import { utf16CodePointAt } from "./utf16.ts";
 
@@ -20,7 +20,7 @@ const range = (length: number, from: number, to: number) => { if (![from, to].ev
 
 /** Immutable extended-grapheme boundaries. Coordinates are absolute UTF-16 offsets. */
 export class GraphemeIndex {
-    readonly source: GraphemeSource; readonly from: number; readonly to: number; readonly clusterCount: number; readonly boundaryCount: number; readonly unicodeVersion = graphemeUnicodeVersion;
+    readonly source: GraphemeSource; readonly from: number; readonly to: number; readonly clusterCount: number; readonly boundaryCount: number; readonly unicodeVersion = unicodeGraphemeVersion;
     readonly #blocks: readonly (readonly number[])[];
     private constructor(source: GraphemeSource, from: number, to: number, blocks: readonly (readonly number[])[], count: number) {
         this.source = source; this.from = from; this.to = to; this.#blocks = blocks; this.boundaryCount = count; this.clusterCount = count - 1; owned.add(this); Object.freeze(this);

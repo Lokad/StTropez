@@ -25,7 +25,7 @@ const ranges = []; for (let cp = 0; cp < packed.length; cp++) if (cp === 0 || pa
 const lines = []; for (let i = 0; i < ranges.length; i += 24) lines.push("    " + ranges.slice(i, i + 24).join(", ") + ",");
 const source = `// Generated Unicode18 grapheme/property facts. See licenses/Unicode-3.0.txt.
 // Regenerate offline with scripts/generate-grapheme-data.mjs from reviewed data.
-export const graphemeUnicodeVersion = "18.0.0";
+export const unicodeGraphemeVersion = "18.0.0";
 const kinds = ${JSON.stringify(kinds)} as const;
 const conjunct = ${JSON.stringify(conjunct)} as const;
 export type GraphemeBreakProperty = typeof kinds[number];

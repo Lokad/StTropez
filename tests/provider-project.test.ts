@@ -1,8 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { TextBuffer } from "../src/index.ts";
+import { BufferChangeCursor, TextBuffer } from "../src/index.ts";
 import { ProviderProject } from "../fixtures/language/project.ts";
-import { ProjectChangeCursor } from "../examples/shared/language/project-change.ts";
 import { navigationLimits } from "../fixtures/language/navigation.ts";
 function fixture() {
     const project = new ProviderProject(7), send = (operation: string, fields: Record<string, unknown> = {}) => project.handle({ version: 1, epoch: 7, sequence: project.snapshot().sequence + 1, operation, ...fields });
@@ -12,7 +11,7 @@ function fixture() {
     return { project, send, open, chunk };
 }
 function delta(before: TextBuffer, after: TextBuffer, budget = 2) {
-    const cursor = new ProjectChangeCursor(before, after);
+    const cursor = new BufferChangeCursor(before, after);
     try { for (;;) { const step = cursor.next(budget); assert.ok(step.steps <= budget); if (step.done) return step.result!; } } finally { cursor.dispose(); }
 }
 test("provider document snapshots/changes commit atomically with exact raw BOM/CRLF and split supplementary units", () => {
@@ -49,7 +48,7 @@ test("shared-edge planning transfers only a small edit in a 100k-line buffer and
     assert.deepEqual(delta(after, before), { from: 123456, to: 123460, insertFrom: 123456, insertTo: 123456 });
     assert.deepEqual(delta(before, before), { from: before.length, to: before.length, insertFrom: before.length, insertTo: before.length });
     assert.deepEqual(delta(TextBuffer.from("abc"), TextBuffer.from("abc")), { from: 0, to: 3, insertFrom: 0, insertTo: 3 });
-    const cursor = new ProjectChangeCursor(before, after); cursor.dispose(); assert.throws(() => cursor.next(), /disposed/); assert.equal(before.readMetrics().textExports, 0); assert.equal(after.readMetrics().textExports, 0);
+    const cursor = new BufferChangeCursor(before, after); cursor.dispose(); assert.throws(() => cursor.next(), /disposed/); assert.equal(before.readMetrics().textExports, 0); assert.equal(after.readMetrics().textExports, 0);
 });
 test("generated raw incremental edits, batched changes and older immutable versions remain exactly equivalent", () => {
     const f = fixture(); let buffer = TextBuffer.from("\ufeffhead\r\n😀 café\ntail"); f.open("source", buffer.slice(0, buffer.length)); const history = [buffer]; let seed = 17;

@@ -1,4 +1,4 @@
-import type { TextBuffer } from "../../../src/index.ts";
+import { BufferChangeCursor, type TextBuffer } from "../../../src/index.ts";
 import { navigationLimits, validateNavigationResult } from "../../../fixtures/language/navigation.ts";
 import type { NavigationDocument, NavigationInput, NavigationResult } from "../../../fixtures/language/navigation.ts";
 import { projectProtocolVersion } from "../../../fixtures/language/project.ts";
@@ -6,7 +6,6 @@ import { validateProjectCommand, validateProjectServerRequest } from "../../../f
 import type { ProjectCommand, ProjectOutcome, ProjectServerRequest } from "../../../fixtures/language/project-commands.ts";
 import { validateSignatureInput, validateSignatureResult } from "../../../fixtures/language/signature.ts";
 import type { SignatureInput } from "../../../fixtures/language/signature.ts";
-import { ProjectChangeCursor } from "./project-change.ts";
 import { validateActionInput, validateActionResult } from "../../../fixtures/language/actions.ts";
 import type { ActionInput } from "../../../fixtures/language/actions.ts";
 import { validateLinksInput, validateLinksResult } from "../../../fixtures/language/links.ts";
@@ -66,7 +65,7 @@ export function createNavigationClient(clock: Pick<Window, "setTimeout" | "clear
                 let from = 0, to = old?.buffer.length ?? 0, insertFrom = 0, insertTo = buffer.length;
                 if (old) {
                     if (doc.revision <= old.revision) throw new Error("Provider document versions must increase.");
-                    const cursor = new ProjectChangeCursor(old.buffer, buffer);
+                    const cursor = new BufferChangeCursor(old.buffer, buffer);
                     try { for (;;) { const step = cursor.next(); counts.planningTurns++; if (step.done) { ({ from, to, insertFrom, insertTo } = step.result!); break; } await yieldPlanning(); } } finally { cursor.dispose(); }
                 }
                 const units = insertTo - insertFrom;
