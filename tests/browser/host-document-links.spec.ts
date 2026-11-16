@@ -25,20 +25,6 @@ for (const host of ["plain", "react"]) {
         await input(p, "Secondary source").press("Control+End"); await input(p, "Secondary source").pressSequentially("H"); await waitForLinks(p); await exact(p, expected); await button(p, "Open action changes in Primary source").click(); await input(p).press("Control+z"); await waitForLinks(p); await exact(p, raw); await input(p).press("Control+Shift+z"); await waitForLinks(p); await exact(p, expected);
         await button(p, "Run captured inputs").click(); expect(await p.evaluate(text => window.hostFixture.runCapture(0)!.source === text, expected)).toBe(true); await p.evaluate(() => window.hostFixture.finishRun()); await button(p, "Save source").click(); await p.evaluate(() => window.hostFixture.finishSave()); await waitForLinks(p); expect((await snapshot(p)).source.dirty).toBe(false); expect((await snapshot(p)).bindings.views.every(v => v.metrics!.viewport.rows < 100)).toBe(true); await dispose(p);
     });
-    test(`${host} F4 links navigate from comparison and remounted secondary while delayed discovery preserves host focus`, async ({ page: p }) => {
-        const raw = '\ufeffimport "sample-utils";\r\nconst café = "😀";'; await setup(p, host, raw); await button(p, "Open source review").click(); await button(p, "Add module companion").click(); await waitForLinks(p);
-        for (const origin of ["secondary", "comparison"] as const) {
-            const name = origin === "comparison" ? "Comparison working source" : "Secondary source", source = input(p, name); await source.focus(); await p.evaluate(origin => { const f = window.hostFixture; f.selectSourceSet(origin, f.snapshot().source.revision, [{ anchor: 20, head: 9 }, { anchor: f.snapshot().source.length, head: f.snapshot().source.length }]); }, origin); const before = await snapshot(p);
-            await source.press("F4"); await waitForLinks(p); await expect(results(p)).toBeFocused();
-            await results(p).getByRole("button").first().evaluate(node => { node.dataset.retained = "module-link"; });
-            await p.keyboard.press("Tab"); await expect(results(p).getByRole("button").first()).toBeFocused(); await p.keyboard.press("Enter"); await waitForLinks(p); await expect(input(p, "Secondary source")).toBeFocused();
-            await input(p, "Secondary source").press("Shift+F4"); await waitForLinks(p); await expect(input(p, name)).toBeFocused(); const after = await snapshot(p);
-            await expect(results(p).getByRole("button").first()).toHaveAttribute("data-retained", "module-link");
-            if (origin === "comparison") expect(after.bindings.comparison!.selectionSet).toEqual(before.bindings.comparison!.selectionSet); else expect(after.bindings.views.find(v => v.id === "secondary")!.selectionSet).toEqual(before.bindings.views.find(v => v.id === "secondary")!.selectionSet);
-            expect(after.history).toEqual(before.history); await button(p, "Dismiss module links").click();
-        }
-        await select(p); await p.evaluate(() => window.hostFixture.setLinksDelay(300)); await input(p).press("F4"); await p.getByRole("textbox", { name: "Configuration path", exact: true }).focus(); await waitForLinks(p); await expect(p.getByRole("textbox", { name: "Configuration path", exact: true })).toBeFocused(); await exact(p, raw); await dispose(p);
-    });
     test(`${host} malformed/incomplete link batches, safe tooltips and idle disconnect preserve local editing and allow reconnect`, async ({ page: p }) => {
         const raw = 'import "sample-utils";\r\nvalue;'; await setup(p, host, raw); await button(p, "Add module companion").click(); await select(p); const before = await snapshot(p);
         for (const fault of ["malformed", "incomplete", "failure"] as const) { await p.evaluate(fault => window.hostFixture.faultLinksNext(fault), fault); await discover(p); expect((await snapshot(p)).bindings.links.state.status).toBe("failed"); await expect(results(p).locator("li")).toHaveCount(0); await exact(p, raw); expect((await snapshot(p)).history).toEqual(before.history); await button(p, "Reconnect link provider").click(); }

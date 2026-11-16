@@ -125,6 +125,54 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await expect(field(page, "Configuration path")).toBeFocused(); expect((await snapshot(page)).bindings.links.opened).toBe(1);
         expect(methods).toContain("textDocument/documentLink"); expect(methods).toContain("documentLink/resolve"); expect((await snapshot(page)).source.exports).toBe(0);
     });
+    test("F4 links restore complete comparison and secondary selections without taking later form focus", async ({ page }) => {
+        const replies = await holdLspReplies(page, "textDocument/documentLink"); await page.reload();
+        const raw = '\ufeffimport "sample-utils";\r\nconst café = "😀";'; await seed(page, raw);
+        await button(page, "Open source review").click(); await button(page, "Add module companion").click(); await settledColorsAndLinks(page);
+        const list = page.getByLabel("Module link results", { exact: true }), row = list.getByRole("button").first();
+        for (const origin of ["secondary", "comparison"] as const) {
+            const source = field(page, origin === "comparison" ? "Comparison working source" : "Secondary source"); await source.focus();
+            await page.evaluate(origin => { const f = window.hostFixture; f.selectSourceSet(origin, f.snapshot().source.revision, [{ anchor: 20, head: 9 }, { anchor: f.snapshot().source.length, head: f.snapshot().source.length }]); }, origin);
+            const before = await snapshot(page); await source.press("F4"); await settledColorsAndLinks(page); await expect(list).toBeFocused();
+            await page.keyboard.press("Tab"); await expect(row).toBeFocused(); await page.keyboard.press("Enter"); await settledColorsAndLinks(page);
+            await expect(field(page, "Secondary source")).toBeFocused();
+            expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")!.documentId).toBe(before.bindings.links.companion);
+            // Resolution changes row contents. Subsequent focus/navigation publications retain that resolved row.
+            await row.evaluate(node => { node.dataset.retained = "module-link"; });
+            await field(page, "Secondary source").press("Shift+F4"); await settledColorsAndLinks(page); await expect(source).toBeFocused();
+            await row.click(); await settledColorsAndLinks(page); await expect(field(page, "Secondary source")).toBeFocused();
+            await field(page, "Secondary source").press("Shift+F4"); await settledColorsAndLinks(page); await expect(source).toBeFocused();
+            const after = await snapshot(page); await expect(row).toHaveAttribute("data-retained", "module-link");
+            if (origin === "comparison") expect(after.bindings.comparison!.selectionSet).toEqual(before.bindings.comparison!.selectionSet);
+            else expect(after.bindings.views.find(view => view.id === "secondary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "secondary")!.selectionSet);
+            expect(after.bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline); expect(after.history).toEqual(before.history);
+            await button(page, "Dismiss module links").click();
+        }
+        await field(page).focus(); replies.hold(); await field(page).press("F4"); await expect.poll(replies.waiting).toBe(true);
+        const form = field(page, "Configuration path"); await form.focus(); await replies.release(); await settledColorsAndLinks(page);
+        await expect(form).toBeFocused(); await expect(row).toBeEnabled(); await exact(page, raw);
+        expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
+    });
+    test("F6 comparison colors retain alpha and controls until explicit keyboard confirmation", async ({ page }) => {
+        const raw = '\ufeffconst color = "#abc";\r\nvalue;', expected = "// color presentation\r\n" + raw.replace("#abc", "rgba(1, 2, 3, 0.5)");
+        await seed(page, raw); await button(page, "Open source review").click(); await settledColorsAndLinks(page);
+        const working = field(page, "Comparison working source"), colors = page.getByLabel("Document color results", { exact: true }), value = field(page, "Proposed color");
+        await working.focus(); await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: 18, head: 16 }, { anchor: f.snapshot().source.length, head: f.snapshot().source.length }]); });
+        const before = await snapshot(page); await working.press("F6"); await settledColorsAndLinks(page); await expect(colors).toBeFocused();
+        const row = colors.getByRole("button").first(); await row.evaluate(node => { node.dataset.retained = "color-result"; }); await value.evaluate(node => { node.dataset.retained = "color-value"; });
+        await page.keyboard.press("Tab"); await page.keyboard.press("Enter"); await expect(value).toBeFocused(); await page.keyboard.type("rgba(1,2,3,.5)");
+        await expect(value).toHaveValue("rgba(1,2,3,.5)"); await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
+        await expect(row).toHaveAttribute("data-retained", "color-result"); await expect(value).toHaveAttribute("data-retained", "color-value");
+        await page.keyboard.press("Enter"); await settledColorsAndLinks(page); await expect(row).toHaveAttribute("data-retained", "color-result");
+        await expect(page.getByRole("combobox", { name: "Color presentation", exact: true }).getByRole("option")).toHaveText(["rgba(1, 2, 3, 0.5)"]);
+        await page.keyboard.press("Tab"); await expect(button(page, "Preview color presentations")).toBeFocused();
+        await page.keyboard.press("Tab"); await expect(page.getByRole("combobox", { name: "Color presentation", exact: true })).toBeFocused();
+        await page.keyboard.press("Tab"); await expect(button(page, "Apply captured color")).toBeFocused(); await exact(page, raw);
+        await page.keyboard.press("Enter"); await settledColorsAndLinks(page); await exact(page, expected); await expect(working).toBeFocused();
+        expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
+        await working.press("F6"); await settledColorsAndLinks(page); await page.keyboard.press("Escape"); await expect(working).toBeFocused();
+        expect((await snapshot(page)).bindings.colors.capture).toBeNull(); expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
+    });
     test("completed link replies cannot revive changed source, target, authority, alias or attachment captures", async ({ page }) => {
         test.setTimeout(60000); const replies = await holdLspReplies(page, "textDocument/documentLink");
         await page.reload(); await expect(field(page)).toBeVisible();
@@ -175,6 +223,36 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await page.evaluate(() => window.hostFixture.setSignatureDelay(1000)); await field(page).press("Control+Shift+Space"); await expect.poll(async () => (await snapshot(page)).bindings.signature.pending).toBe(true);
         await field(page, "Configuration path").fill("while-signature.csv"); await expect.poll(async () => (await snapshot(page)).bindings.signature.pending).toBe(false);
         await expect(field(page, "Configuration path")).toBeFocused(); expect((await snapshot(page)).source.exports).toBe(0);
+    });
+    test("read-only manual signature help keeps complete selections and yields only to explicit hover", async ({ page }) => {
+        const raw = "lookup('a', )\r\nformat(1, )"; await seed(page, raw);
+        const popup = page.getByRole("tooltip", { name: "Signature help", exact: true });
+        await page.evaluate(at => { const f = window.hostFixture; f.setSourceReadOnly(true); f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 2, head: 2 }, { anchor: at, head: at }], 1); }, raw.indexOf(")"));
+        await ready(page); const before = await snapshot(page), complete = before.bindings.views.find(view => view.id === "primary")!.selectionSet;
+        await field(page).press("Control+Shift+Space"); await expect(popup.getByLabel("Active signature parameter", { exact: true })).toHaveText("fallback?: string");
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(complete);
+        await popup.click(); await expect(field(page)).toBeFocused(); await expect(popup).toBeVisible(); await popup.dispatchEvent("scroll");
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(complete);
+        const at = await page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"]) .st-viewport-row').first().evaluate(row => {
+            const node = document.createTreeWalker(row, NodeFilter.SHOW_TEXT).nextNode()!, range = document.createRange(); range.setStart(node, 1); range.setEnd(node, 2);
+            const box = range.getBoundingClientRect(); return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+        });
+        const posted = (await snapshot(page)).bindings.hover.sessions.find(session => session.id === "primary")!.counters.posted;
+        await page.mouse.move(at.x, at.y); await page.waitForTimeout(350); await expect(popup).toBeVisible();
+        expect((await snapshot(page)).bindings.hover.sessions.find(session => session.id === "primary")!.counters.posted).toBe(posted);
+        await page.evaluate(set => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, set.ranges, 0); }, complete);
+        const hoverSelection = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet;
+        await field(page).press("Control+k"); await field(page).press("Control+i"); await expect(popup).toBeHidden(); await expect(page.getByRole("tooltip")).toContainText("Symbol");
+        await field(page).press("Escape"); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(hoverSelection);
+        await page.evaluate(set => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, set.ranges, set.primary); }, complete);
+        await page.evaluate(() => window.hostFixture.faultSignatureNext("markup")); await field(page).press("Control+Shift+Space");
+        await expect(popup).toContainText("<b>Literal signature documentation</b>"); await expect(popup.locator("b,img,script")).toHaveCount(0);
+        await field(page).press("Escape"); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(complete);
+        await field(page).press("Escape"); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet.ranges).toHaveLength(1);
+        expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).source.exports).toBe(0); await exact(page, raw);
+        await disposeColorsAndLinks(page); const final = await snapshot(page);
+        expect(final.bindings.signature).toMatchObject({ pending: false, scheduled: false, sessions: 0, subscriptions: 0, layoutObserver: false, layoutFramePending: false, capture: null, worker: { created: 0 } });
+        expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
     });
     if (host === "react") test("100k-line signature, link resolution and a selected color presentation use bounded source controls", async ({ page }) => {
         const prefix = "const unchanged = 123;\r\n".repeat(100_000), tail = 'lookup("a", )\r\nimport "sample-utils";\r\nconst color = "#abc";', raw = prefix + tail;
