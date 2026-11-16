@@ -1,136 +1,151 @@
-# Per-view folding
+# Folding
 
-`DocumentView.folding` is a stable observable handle. The host supplies raw UTF-16 ranges;
-StTropez owns their view state, mapping, visible-row index and disclosure controls. This small
-TypeScript implementation reuses the text buffer, position maps and viewport rather than adding
-a runtime dependency. Language parsing stays in a provider. The optional indentation/marker
-discovery below is a generic host policy over immutable text, with no parser dependency.
-The [host-domain fixture](domain.md) demonstrates captured asynchronous discovery
-and annotations outside the runtime. Hosts can call public `createFoldRegions`
-to validate a complete response and preserve prior identity/collapse state before
-publishing it through the view's fold handle.
+Folding hides body rows within one document view while preserving raw document coordinates.
+The host supplies ranges or a discovery policy; StTropez owns validated fold state, its
+visible-row projection and disclosure controls. Views of the same document fold independently.
 
-`discoverIndentationFolds(buffer, options)` is a yielding headless planner. Hosts choose tab
-width, indentation group, and paired line-prefix region markers. Nested indentation includes
-interior blank lines and excludes trailing blank lines. Unclosed markers remain expanded.
-`reconcileFoldRanges` chooses one outer range per header, discards crossing discoveries, and
-matches mapped header/group pairs to previous identities. It returns the complete range set;
-a host combining several sources must combine them before reconciliation.
-Indentation discovery carries its known row coordinates through reconciliation and installation.
-Validated immutable ranges can be reused on the same buffer; foreign input is still validated,
-and installation preserves the latest view collapse choices when state is omitted.
+## Use
 
-`createFoldingController(workspace, tabId, editor, discover, { delayMs })` owns discovery for
-one retained view. The callback receives the captured document and an AbortSignal. It may
-return ranges, a yielding generator, or `{ ranges, isCurrent }`, synchronously or asynchronously.
-Old results cannot publish after editing, target replacement or disposal. Publication waits
-for composition and queued editing to settle, and reconciles the latest view choices rather
-than the choices at request time. Failures retain mapped folds and expose an explicit status.
-Hosts should make synchronous discovery steps bounded; scheduling does not preempt a callback.
+Attach indentation and marker discovery to an existing editor:
 
 ```ts
-const controller = createFoldingController(workspace, tab, editor, document =>
-    discoverIndentationFolds(document.buffer, {
-        tabSize: 2, group: "blocks",
-        markers: [{ start: "#region", end: "#endregion", group: "regions" }],
-    }));
-controller.runCommand("collapse-all", "regions");
-// On host policy/provider changes: controller.refresh(); on unmount: controller.dispose().
+import { discoverIndentationFolds } from "sttropez";
+import type { TabId, Workspace } from "sttropez";
+import { createFoldingController } from "sttropez/browser";
+import type { EditingCandidate } from "sttropez/browser";
+
+export function attachFolding(
+    workspace: Workspace, tab: TabId, editor: EditingCandidate
+) {
+    return createFoldingController(workspace, tab, editor, document =>
+        discoverIndentationFolds(document.buffer, {
+            tabSize: 2,
+            group: "blocks",
+            markers: [{ start: "#region", end: "#endregion", group: "regions" }]
+        }));
+}
 ```
 
-Commands are `collapse`, `expand`, `collapse-all` and `expand-all`, optionally restricted to a
-group. Ctrl/Cmd+Shift+[ / ] collapses/expands at the caret. Collapse commands move hidden
-selection endpoints to their visible header before publication. Explicit disclosure buttons
-retain the existing raw-selection behavior below. Groups are optional, nonempty host strings.
+Render controls from the returned `FoldingController.state` observable. Invoke
+`runCommand("collapse-all", "regions")` to collapse a group, `refresh()` when host discovery
+policy changes, and `dispose()` before destroying the editor.
 
-`createLspFoldingClient(provider).run(document, prepare?)` supplies a cancellable captured
-`textDocument/foldingRange` result with revision, ranges and an `isCurrent` guard. Enable that
-feature on the provider. Static/dynamic capability authority and reconnect use the shared
-session. The client advertises complete-line folds, converts inclusive LSP end lines to raw
-exclusive offsets, ignores out-of-document/degenerate line ranges and rejects malformed
-response shapes atomically. Optional character positions and collapsed text are not used.
-Conversion uses the captured LSP line index, including bare CR. A range that covers no complete
-body row in the editor's LF-based projection is ignored. Expired captures reject with RPC code
-`-32801`, consistently with other language features.
-Provider kinds become groups, including custom kinds; discovery policy remains separate.
-
-The main demo uses TypeScript outlining for both working files and immutable saved snapshots.
-The saved snapshot shares the host's syntax-color worker; it never borrows live-document ranges
-or a provider version. Each pane keeps independent fold choices, and the working pane retains
-the source view's choices when entering/leaving review. Both panes offer the same language-based
-controls; alignment gaps reflect hidden rows without implying a source deletion.
-**Host outline · indentation folding** demonstrates nested blocks,
-blank lines and region groups without requesting a language provider. The Code menu exposes
-individual and grouped commands. Find, editing and shared undo use the same fold projection.
+A host with its own captured outline can publish directly through `DocumentView.folding`:
 
 ```ts
-const folds = view.folding;
-folds.setRanges(folds.getSnapshot(), [
-    { id: "section", from: headerOffset, to: nextSectionOffset, collapsed: true },
-]);
-folds.setCollapsed(folds.getSnapshot(), "section", false);
+import type { DocumentView, FoldVersion } from "sttropez";
+
+export function publishSection(
+    view: DocumentView, expected: FoldVersion, from: number, to: number
+) {
+    return view.folding.setRanges(expected, [
+        { id: "section", from, to, group: "sections", collapsed: true }
+    ]);
+}
 ```
 
-Commands capture both document `revision` and fold `generation`, scoped to this view handle.
-Stale or disposed commands return `false`; invalid ranges throw before publication. Each range
-has a unique nonempty identity, a visible header and at least one body row. `from` locates the
-header; `to` is exclusive. A range ending at the next row's start leaves that row visible. Ranges
-may nest or remain disjoint, with one identity per header; crossing ranges are rejected. Omitting
-`collapsed` preserves an existing identity's state. Public snapshots and indexes are immutable.
+Capture `expected` from `view.folding.getSnapshot()` before asynchronous work, together with
+the document snapshot used to produce the offsets. `setRanges` replaces the complete range
+set, so combine all outline sources before publication.
 
-Folding changes neither text, dirty state nor document history. Views of the same document fold
-independently. Raw anchors map through edits and shared undo/redo. Deleted boundaries expand
-their region; degenerate, merged or crossing definitions are invalidated. Undo restores text
-exactly, but does not recreate invalidated view metadata: the host must supply fresh definitions.
+## Contract
 
-The sparse `FoldIndex` stores outer collapsed intervals. Source-line/visible-row queries use
-binary search; it allocates no array proportional to document line count. It shares validated
-immutable regions, and unchanged region sets retain their projection index. Native position
-maps prove unchanged text edges: edits after every fold reuse the region set, while regions
-after the changed span shift by offset and line deltas without resolving each line again.
-Same-length newline replacements still update row metadata. Edits affecting folds can still
-allocate and visit the supplied region array; arbitrary updates are not constant time. Opaque
-custom maps use full endpoint resolution. DOM and native text contexts stay limited to visible
-rows and existing input bounds.
+### Ranges, versions and projection
 
-Arrow/Page commands and visual-line edge traversal skip hidden rows. An intentionally collapsed
-existing raw caret projects onto the visible header without changing its raw offset. Explicit
-selections, typing, Find and reveal commands expand hidden targets before acting. Secondary
-carets hidden by the same header do not create duplicate painted carets. Comparison panes keep
-independent state; hunk navigation expands the entire target hunk, including a hidden body whose
-first changed line is the visible header. Raw diff and Save/Run inputs remain unchanged.
+`DocumentFolding` is a stable observable. Its immutable `FoldingSnapshot` contains document
+`revision`, fold `generation`, validated `FoldRegion` values and a `FoldIndex`.
 
-Visible headers expose native disclosure buttons with `aria-expanded` and line-range labels.
-Collapsed headers also show an inline hidden-line count at the visible end of the header.
-This generated presentation is outside source text nodes, clipboard data and caret offsets;
-partially rendered long headers show it only when their actual line ending is in the fragment.
-Enter/Space toggles; Escape returns to the source. Source Escape followed by Tab or Shift+Tab
-leaves the editor for host controls. Buttons capture tab, revision and fold generation, so delayed
-clicks cannot act on a new target. Folding is guarded during composition; synthetic checks do
-not qualify native IME behavior. Those device checks remain unverified.
+| Input | Validation and behavior |
+| --- | --- |
+| `FoldRange.id` | Unique, nonempty string of at most 256 UTF-16 units |
+| `from`, `to` | Safe integer UTF-16 offsets within the document; `to` is exclusive |
+| Rows | One visible header and at least one body row; one identity per header |
+| Relationships | Nested or disjoint ranges; crossing ranges are rejected |
+| `group` | Optional nonempty host string |
+| `collapsed` | Optional boolean; omission preserves the same identity's state, otherwise defaults to expanded |
+| `FoldVersion` | Both revision and generation must match this view |
 
-Retained view handles preserve folds through remount. `captureView()` includes fold metadata;
-`restoreView()` may initialize a new empty view of the same document and revision, and never
-overwrites newer fold state. Disposal releases subscriptions, disclosure DOM and queued work.
+`setRanges`, `setCollapsed`, `reveal` and `revealSelection` return `false` for stale or
+unavailable targets. Invalid public ranges throw before publication. `createFoldRegions`
+validates a complete set against a buffer and optional prior regions without publishing it.
+A range ending at the next row's start leaves that row visible.
 
-Both evaluation hosts expose **Fold selected lines**, **Expand all folds** and
-Ctrl/Cmd+Shift+[ / ]. Multiline selections create folds; a single-line selection inside an
-existing region collapses that region. These are host commands, separate from language parsing.
+Folding changes neither text nor dirty state nor document history. Fold anchors follow edits
+and undo/redo. Deleted boundaries expand their region; degenerate, merged or crossing definitions
+are invalidated. Undo restores the text but does not recreate invalidated fold definitions.
+Supply fresh definitions through discovery or a captured host publication.
 
-`npm run bench:host-folding` is the affected interaction experiment: normal/100k-line sources,
-one/1,000 folds, one active caret, independent source/review views and background host traffic.
-It retains raw warmups and observations. Adapter key/input-handler durations are separate from
-key/beforeinput-to-review readiness, complete automation actions and full workflows. Readiness
-requires exact complete selections, current fold generations, all working views, immutable
-reference/comparison settlement and two animation frames. Later language replies are outside
-that gate; a real worker reply is required before each pair of points. No physical-display,
-CPU-time, OS input or blanket responsiveness qualification follows from this experiment.
+`FoldIndex` maps source lines to visible rows and back through `rowAt` and `lineAt`.
+`hiddenBy` identifies the covering collapsed region; `headerAt` identifies a fold header.
+It stores collapsed intervals rather than one entry per source line. `sameProjection(other)`
+compares hidden rows independently of expanded metadata. Use that distinction when display
+intent depends on visible rows, while retaining separate document/selection/provider guards.
+Updates can visit the supplied region array; arbitrary fold changes are not constant-time.
 
-`FoldIndex.sameProjection(other)` compares hidden row intervals, independently of expanded
-range metadata. Captured completion, navigation, rename, quick-fix, hover and signature UI use
-this distinction: discovery of expanded folds must not dismiss a valid result. Changes to
-visible folded rows still expire display captures; document, selection and provider guards
-remain separate. Consumers that key display intent to every metadata generation should use
-projection equality when adding automatic discovery.
-Expanded discovery metadata also preserves continuous typing undo groups; a changed visible
-fold projection still seals the current group.
+### Discovery
+
+`discoverIndentationFolds(buffer, IndentationFoldingOptions)` returns a yielding generator of
+`DiscoveredFold` ranges. Indentation discovery defaults to enabled, tab size 4 and group
+`"indentation"`. Tab size must be an integer from 1 through 256. Optional paired markers match
+line prefixes after indentation and a whitespace/end boundary. Marker prefixes and groups
+must be nonempty; prefixes cannot contain line endings. Nested blocks include interior blank
+lines and exclude trailing blank lines. Unclosed markers produce no collapsed region.
+
+`reconcileFoldRanges(buffer, discovered, previous)` chooses one outer range per header,
+discards crossings and preserves identity for a matching mapped header/group. It returns a
+complete range set. Reconciliation does not merge independent publications for the host.
+
+`createFoldingController` captures a tab and retained editor view. Its `FoldDiscovery` callback
+receives an immutable document and `AbortSignal`. A `FoldDiscoveryResult` may be ranges, a
+yielding generator, or a `FoldDiscoveryBatch` with `ranges` and an optional `isCurrent` guard;
+the callback may return a promise. `delayMs` defaults to 100 and must be finite and nonnegative.
+Synchronous callback/generator work must be bounded: scheduling cannot preempt a callback.
+
+The controller rejects stale edits, tab replacements, expired authority and disposal. Publication
+waits for composition and queued editing, then reconciles the latest view collapse choices.
+Failures retain mapped folds and publish a `FoldingStatus` message. States are `pending`,
+`ready`, `failed` and `disposed`; snapshots include revision, counts and available groups.
+
+### Language-server discovery
+
+`createLspFoldingClient(provider).run(document, prepare?)` from `sttropez/protocol` supplies a
+cancellable captured result with revision, ranges and an `isCurrent` guard. Enable
+`textDocument/foldingRange` in the [provider configuration](lsp-integration.md), and preserve
+the guard when returning a batch to the folding controller. Dispose the client with its host
+attachment. Capability registration and reconnect use the shared provider session.
+
+The client advertises complete-line folds. `decodeLspFoldingRanges` converts inclusive LSP end
+lines to exclusive raw offsets using the captured LSP line index. Optional character positions
+and collapsed text are ignored. Out-of-document or degenerate ranges are skipped; malformed
+response shapes reject the whole batch. Bare CR is an LSP line break, but a range covering no
+complete body row in the editor's LF projection is skipped. Expired captures reject with RPC
+code `-32801`. Provider kinds become groups, including custom kinds; the host chooses discovery
+and collapse policy.
+
+### Commands and interaction
+
+`FoldCommand` supports `collapse`, `expand`, `collapse-all` and `expand-all`, with an optional
+group filter. The controller handles Ctrl/Cmd+Shift+[ and Ctrl/Cmd+Shift+] at the caret.
+Commands reject busy or unavailable views. Collapsing preserves the logical selection and
+reveals its visible header edge; it does not replace hidden selection endpoints.
+
+A collapsed logical caret paints at its header. Arrow/Page traversal skips hidden rows.
+Explicit selection, typing, Find and reveal expand hidden targets. Disclosure buttons toggle
+with Enter/Space; Escape returns focus to the source. Buttons capture tab, revision and fold
+generation. Inline hidden-line counts add no source text, clipboard data or caret offsets.
+Comparison panes retain independent fold choices; hunk reveal expands the entire target range.
+
+Retained view handles preserve folds through remount. The [viewport view-state contract](viewport.md#scrolling-and-saved-views)
+describes initialization of fold metadata in a new view without overwriting newer state.
+
+## Host responsibilities
+
+Choose discovery, groups and initial collapse state. Combine multiple sources into one result,
+retain captured identities across asynchronous work, and stop obsolete providers on abort.
+Call mutation commands outside workspace notification callbacks. Dispose the controller and
+its state subscriptions with the attachment; dispose a host-owned view only at the end of that
+view's lifetime. Discovery ownership does not transfer storage or resource ownership.
+
+## Not covered
+
+See the [support matrix](README.md#support-matrix) for unsupported features and device checks.

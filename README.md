@@ -71,7 +71,8 @@ Browser qualification uses up to four workers and a 30-minute suite limit; indiv
 assertion limits are separate. Pass `--workers=1` to Playwright for a serial focused control.
 
 ```sh
-npm run check          # Type checking, model tests, build, Chromium tests
+npm run check          # Type checking, documentation examples, model tests, build, Chromium tests
+npm run check:docs     # Compile examples in getting-started, viewport, folding and search
 npm run test:ci        # Representative Chromium owner journeys used in CI
 npm run test:browsers  # Chromium, Firefox and WebKit
 npm run inspect        # Screenshot and machine-readable state
