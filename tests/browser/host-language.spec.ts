@@ -26,9 +26,11 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
         await secondary(page).press("Control+z"); expect(await text(page)).toBe(original);
         await secondary(page).press("Control+Shift+z"); expect(await text(page)).toBe(original.replace("saMORE", "sample"));
         await primary(page).press("Control+f"); const query = page.getByRole("textbox", { name: "Find source", exact: true });
+        await query.evaluate(node => { node.dataset.retained = "find-query"; });
         await expect(query).toBeFocused(); await query.fill("TODO"); await expect(page.getByLabel("Find status", { exact: true })).toContainText("1 matches · ready");
         await query.press("Enter"); await expect(primary(page)).toBeFocused();
         await primary(page).press("Control+h"); const replacement = page.getByRole("textbox", { name: "Replacement", exact: true });
+        await expect(query).toHaveAttribute("data-retained", "find-query");
         await expect(replacement).toBeFocused(); await replacement.fill("DONE"); await replacement.press("Enter");
         const corrected = original.replace("saMORE", "sample").replace("TODO", "DONE"); expect(await text(page)).toBe(corrected);
         await page.evaluate(() => window.hostFixture.externalWrite("const remote = 9; // TODO"));

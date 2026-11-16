@@ -8,7 +8,7 @@ import { hostEditor, ViewBindings } from "./bindings.ts";
 import { actions, conflictText, statusText } from "./actions.ts";
 import { installHostHarness } from "./harness.ts";
 import { HostLifecycle } from "./lifecycle.ts";
-import { findText, foldText, languageActions, languageToolsKey } from "./language-panel.ts";
+import { languagePanelModel } from "./language-panel.ts";
 import { domainActions } from "./domain-panel.ts";
 import { navigationPanelModel } from "./navigation-panel.ts";
 import { projectPanelModel } from "./project-panel.ts";
@@ -16,7 +16,7 @@ import { documentColorsPanelModel } from "./document-colors-panel.ts";
 import { documentLinksPanelModel } from "./document-links-panel.ts";
 import { actionsPanelModel } from "./actions-panel.ts";
 import { renamePanelModel } from "./rename-panel.ts";
-import { signatureActions, mountSignaturePopup } from "./signature-panel.ts";
+import { signatureCommandsModel, mountSignaturePopup } from "./signature-panel.ts";
 import { mountHoverPanel } from "./hover-panel.ts";
 import { HostDraftRecovery } from "./draft-recovery.ts";
 import { createBrowserDraftStore } from "./draft-store.ts";
@@ -133,34 +133,27 @@ function ReviewVersions() {
         <button onClick={bindings.beginDiscard}>Discard reviewed changes</button><button onClick={bindings.finishDiscard}>Confirm reviewed discard</button><button onClick={bindings.cancelDiscard}>Cancel reviewed discard</button></div>;
 }
 function LanguageTools() {
-    const tools = bindings.language, state = useObserved(tools.state);
-    const choices = state.provider?.choices ?? (state.provider?.offerText != null ? [state.provider.offerText] : []);
-    return <section ref={tools.toolsRef} onKeyDown={event => languageToolsKey(event.nativeEvent, tools)} className="host-language" aria-label="Language and find tools"><h2>Language and find</h2>
-        <p>Ctrl+Space requests completion; Alt+Enter replaces it. Ctrl+F finds, Ctrl+H replaces, F3 moves to the next match, and Escape returns to source. Ctrl+S saves the working source.</p>
-        <output aria-label="Language status">{state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider?.message ?? "Focus a source view to use language actions."}</output>
-        <ul role="listbox" aria-label="Completion choices">{choices.map((label, index) => <li key={`${state.provider?.completionId}:${index}:${label}`} role="option" aria-selected={index === (state.provider?.choiceIndex ?? 0)}><button onClick={() => tools.chooseCompletion(index, state.provider?.completionId)}>{label}</button></li>)}</ul>
-        <pre aria-label="Completion detail">{state.provider?.completionDetail ?? ""}</pre>
-        <output aria-label="Diagnostic status">{state.provider?.diagnosticsPending ? "Diagnostics pending analysis." : ""}</output>
-        <ul aria-label="Source diagnostics">{state.provider?.diagnostics.map((diagnostic, index) => <li key={`${diagnostic.from}:${diagnostic.to}:${index}`}>
-            <button onClick={() => tools.selectDiagnostic(index)}>{diagnostic.from}: {diagnostic.message}</button></li>)}</ul>
-        <ul aria-label="Unversioned diagnostics">{state.provider?.unversionedDiagnostics?.map((message, index) => <li key={index}>{message}</li>)}</ul>
-        <label>Find source<input ref={tools.queryRef} value={state.query} onChange={event => tools.setQuery(event.currentTarget.value)} /></label>
-        <label>Replacement<input ref={tools.replacementRef} disabled={state.readOnlyReference} value={state.replacement} onChange={event => tools.setReplacement(event.currentTarget.value)} /></label>
-        <label><input type="checkbox" checked={state.wholeWord} onChange={event => tools.setWholeWord(event.currentTarget.checked)} />Whole word</label>
-        <label><input type="checkbox" checked={state.matchCase} onChange={event => tools.setMatchCase(event.currentTarget.checked)} />Match case</label>
-        <label><input type="checkbox" checked={state.regularExpression} onChange={event => tools.setRegularExpression(event.currentTarget.checked)} />Regular expression</label>
-        <output aria-label="Find status">{findText(tools)}</output>
-        <output aria-label="Fold status">{foldText(tools)}</output>
-        <div>{languageActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+    const tools = bindings.language, model = languagePanelModel(tools, useObserved(tools.state));
+    return <section ref={model.bind} onKeyDown={event => model.key(event.nativeEvent)} className="host-language" aria-label={model.label}><h2>{model.title}</h2>
+        <p>{model.help}</p><output aria-label={model.status.label}>{model.status.text}</output>
+        <ul role="listbox" aria-label={model.choices.label}>{model.choices.items().map((row, index) => <li key={row.key} role="option" aria-selected={index === model.choices.selected}><button onClick={row.invoke}>{row.label}</button></li>)}</ul>
+        <pre aria-label={model.detail.label}>{model.detail.text}</pre><output aria-label={model.diagnosticStatus.label}>{model.diagnosticStatus.text}</output>
+        <ul aria-label={model.diagnostics.label}>{model.diagnostics.items().map(row => <li key={row.key}><button onClick={row.invoke}>{row.label}</button></li>)}</ul>
+        <ul aria-label={model.uncertain.label}>{model.uncertain.items().map((message, index) => <li key={index}>{message}</li>)}</ul>
+        <label>{model.query.label}<input ref={model.query.bind} value={model.query.value} onChange={event => model.query.change(event.currentTarget.value)} /></label>
+        <label>{model.replacement.label}<input ref={model.replacement.bind} disabled={model.replacement.disabled} value={model.replacement.value} onChange={event => model.replacement.change(event.currentTarget.value)} /></label>
+        {model.options.map(option => <label key={option.label}><input type="checkbox" checked={option.checked} onChange={event => option.change(event.currentTarget.checked)} />{option.label}</label>)}
+        <output aria-label={model.find.label}>{model.find.text}</output><output aria-label={model.folds.label}>{model.folds.text}</output>
+        <div>{model.actions.map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
     </section>;
 }
 function SymbolInfo() {
     return <div ref={hoverPopupRef} />;
 }
 function SignatureTools() {
-    const tools = bindings.signature, s = useObserved(tools.state);
-    return <><section className="host-language" aria-label="Signature commands"><h2>Signature help</h2><output aria-label="Signature help status">{s.message}</output>
-        <div>{signatureActions(tools).map(action => <button key={action.label} onPointerDown={event => event.preventDefault()} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div></section>
+    const tools = bindings.signature, model = signatureCommandsModel(tools, useObserved(tools.state));
+    return <><section className="host-language" aria-label={model.label}><h2>{model.title}</h2><output aria-label={model.status.label}>{model.status.text}</output>
+        <div>{model.actions.map(action => <button key={action.label} onPointerDown={event => event.preventDefault()} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div></section>
         <div ref={signaturePopupRef} /></>;
 }
 function TablePasteTools() {

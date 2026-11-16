@@ -165,11 +165,13 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
     test("diagnostic pushes preserve uncertain markers, reject malformed/stale batches and retain unplaceable messages", async ({ page }) => {
         await seed(page, "const saMORE = 1; // TODO\r\n"); await offer(page); await button(page, "Cancel request").click();
         const diagnostics = page.getByLabel("Source diagnostics", { exact: true }); await expect(diagnostics.getByRole("button")).toHaveCount(1);
+        await diagnostics.getByRole("button").evaluate(node => { node.dataset.retained = "diagnostic"; });
         const before = await provider(page); await page.evaluate(() => window.hostFixture.providerCustom("fixture/diagnostics", { mode: "malformed" }));
         await expect.poll(async () => (await provider(page)).invalid).toBe(before.invalid + 1); await expect(diagnostics.getByRole("button")).toHaveCount(1);
         await page.evaluate(() => window.hostFixture.providerCustom("fixture/diagnostics", { mode: "stale" })); await expect.poll(async () => (await provider(page)).stale).toBe(before.stale + 1);
         await page.evaluate(() => window.hostFixture.providerCustom("fixture/diagnostics", { mode: "unversioned" })); await expect(diagnostics.getByRole("button")).toHaveCount(1);
         await expect(page.getByLabel("Unversioned diagnostics", { exact: true })).toContainText("Resolve this placeholder.");
+        await expect(diagnostics.getByRole("button")).toHaveAttribute("data-retained", "diagnostic");
         await diagnostics.getByRole("button").click(); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: 21, head: 25 });
         await page.evaluate(() => window.hostFixture.providerCustom("fixture/diagnostics", { mode: "out-of-bounds" })); await expect(diagnostics.getByRole("button")).toHaveCount(1);
         await expect(page.getByLabel("Unversioned diagnostics", { exact: true })).toContainText("Unplaceable diagnostic (range outside the current snapshot)");

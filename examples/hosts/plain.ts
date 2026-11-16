@@ -45,7 +45,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const updateConflict = () => { const state = controller.saveConflict.getSnapshot(); conflict.hidden = state === null;
         conflictStatus.textContent = conflictText(controller); finishRemote.disabled = state?.review !== "loading";
         retry.disabled = !controller.canSaveReviewedSource(); };
-    const language = document.createElement("section"); language.setAttribute("aria-label", "Language and find tools"); language.className = "host-language";
+    const language = document.createElement("section"); language.className = "host-language";
     const tablePaste = document.createElement("section"); tablePaste.className = "host-language"; tablePaste.setAttribute("aria-label", "Table paste tools");
     const domain = document.createElement("section"); domain.className = "host-language"; domain.setAttribute("aria-label", "Domain tools");
     const navigation = document.createElement("section"); navigation.className = "host-language";

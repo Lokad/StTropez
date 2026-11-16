@@ -1,12 +1,17 @@
 import type { HostLanguageTools } from "./language.ts";
+type LanguageSnapshot = ReturnType<HostLanguageTools["state"]["getSnapshot"]>;
+type LanguagePanelTools = Pick<HostLanguageTools, "state" | "toolsRef" | "queryRef" | "replacementRef" | "keyFromTools" | "request" | "insert" | "replace" | "cancel" | "disconnect" | "reconnect" | "next" | "previous" | "replaceCurrent" | "replaceAll" | "cancelFind" | "foldSelection" | "expandFolds" | "focusEditor" | "chooseCompletion" | "selectDiagnostic" | "setQuery" | "setReplacement" | "setWholeWord" | "setMatchCase" | "setRegularExpression">;
+const capturedCommand = (tools: Pick<LanguagePanelTools, "state">, state: LanguageSnapshot, invoke: () => void) => () => {
+    if (tools.state.getSnapshot() === state) invoke();
+};
 
-export function languageActions(tools: HostLanguageTools) {
-    const state = tools.state.getSnapshot(), available = state.view !== null, providerAvailable = state.provider !== null, offered = state.provider?.offerText != null;
+function languageActions(tools: LanguagePanelTools, state: LanguageSnapshot) {
+    const available = state.view !== null, providerAvailable = state.provider !== null, offered = state.provider?.offerText != null;
     const found = !!state.find?.count && (state.find.status === "ready" || state.find.status === "searching" && state.find.retained);
     return [
         { label: "Request completion", invoke: tools.request, disabled: !providerAvailable },
-        { label: "Insert completion", invoke: () => tools.insert(state.provider?.completionId), disabled: !offered || !!state.provider?.pending },
-        { label: "Replace completion", invoke: () => tools.replace(state.provider?.completionId), disabled: !offered || !!state.provider?.pending },
+        { label: "Insert completion", invoke: capturedCommand(tools, state, () => tools.insert(state.provider?.completionId)), disabled: !offered || !!state.provider?.pending },
+        { label: "Replace completion", invoke: capturedCommand(tools, state, () => tools.replace(state.provider?.completionId)), disabled: !offered || !!state.provider?.pending },
         { label: "Cancel request", invoke: tools.cancel, disabled: !providerAvailable },
         { label: "Disconnect provider", invoke: tools.disconnect, disabled: !state.provider?.connected },
         { label: "Reconnect provider", invoke: tools.reconnect, disabled: !providerAvailable },
@@ -20,81 +25,84 @@ export function languageActions(tools: HostLanguageTools) {
         { label: "Return to source", invoke: tools.focusEditor, disabled: !available }
     ] as const;
 }
-export function findText(tools: HostLanguageTools): string {
-    const active = tools.state.getSnapshot(), state = active.find;
+function findText(active: LanguageSnapshot): string {
+    const state = active.find;
     return state ? state.message || `${active.readOnlyReference ? "Read-only reference · " : ""}${state.count} matches · ${state.status}` : "Find in the active source view.";
 }
-export function foldText(tools: HostLanguageTools): string {
-    const state = tools.state.getSnapshot(), count = state.folds?.index.collapsedCount ?? 0;
+function foldText(state: LanguageSnapshot): string {
+    const count = state.folds?.index.collapsedCount ?? 0;
     return state.foldMessage || `${count} folded ${count === 1 ? "region" : "regions"}.`;
 }
-export function languageToolsKey(event: KeyboardEvent, tools: HostLanguageTools): void {
-    tools.keyFromTools(event);
+/** Rendering only observes the supplied snapshot; result activation checks that it is still current. */
+export function languagePanelModel(tools: LanguagePanelTools, state: LanguageSnapshot) {
+    const offered = state.provider?.offerText, labels = state.provider?.choices ?? (offered != null ? [offered] : []), completionId = state.provider?.completionId;
+    return {
+        label: "Language and find tools", title: "Language and find", bind: tools.toolsRef, key: tools.keyFromTools,
+        help: "Ctrl+Space requests completion; Alt+Enter replaces it. Ctrl+F finds, Ctrl+H replaces, F3 moves to the next match, and Escape returns to source. Ctrl+S saves the working source.",
+        status: { label: "Language status", text: state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider?.message ?? "Focus a source view to use language actions." },
+        choices: { label: "Completion choices", identity: String(completionId), selected: state.provider?.choiceIndex ?? 0,
+            items: () => labels.map((label, index) => ({ key: `${completionId}:${index}:${label}`, label,
+                invoke: capturedCommand(tools, state, () => tools.chooseCompletion(index, completionId)) } as const)) },
+        detail: { label: "Completion detail", text: state.provider?.completionDetail ?? "" },
+        diagnosticStatus: { label: "Diagnostic status", text: state.provider?.diagnosticsPending ? "Diagnostics pending analysis." : "" },
+        diagnostics: { label: "Source diagnostics", items: () => (state.provider?.diagnostics ?? []).map((diagnostic, index) => ({ key: `${diagnostic.from}:${diagnostic.to}:${index}`,
+            label: `${diagnostic.from}: ${diagnostic.message}`, invoke: capturedCommand(tools, state, () => tools.selectDiagnostic(index)) } as const)) },
+        uncertain: { label: "Unversioned diagnostics", items: () => state.provider?.unversionedDiagnostics ?? [] },
+        query: { label: "Find source", value: state.query, bind: tools.queryRef, change: tools.setQuery, disabled: false },
+        replacement: { label: "Replacement", value: state.replacement, bind: tools.replacementRef, change: tools.setReplacement, disabled: state.readOnlyReference },
+        options: [{ label: "Whole word", checked: state.wholeWord, change: tools.setWholeWord },
+            { label: "Match case", checked: state.matchCase, change: tools.setMatchCase },
+            { label: "Regular expression", checked: state.regularExpression, change: tools.setRegularExpression }],
+        find: { label: "Find status", text: findText(state) }, folds: { label: "Fold status", text: foldText(state) }, actions: languageActions(tools, state),
+    } as const;
 }
 
 /** Plain host's own controls; editor descendants are mounted by ViewBindings. */
 export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools): () => void {
-    const owner = host.ownerDocument, listeners = new AbortController(), heading = owner.createElement("h2"), status = owner.createElement("output");
-    tools.toolsRef(host);
-    host.addEventListener("keydown", event => languageToolsKey(event, tools), { signal: listeners.signal });
-    heading.textContent = "Language and find"; status.setAttribute("aria-label", "Language status");
-    const help = owner.createElement("p"); help.textContent = "Ctrl+Space requests completion; Alt+Enter replaces it. Ctrl+F finds, Ctrl+H replaces, F3 moves to the next match, and Escape returns to source. Ctrl+S saves the working source.";
-    const choices = owner.createElement("ul"), detail = owner.createElement("pre"), diagnostics = owner.createElement("ul"), uncertain = owner.createElement("ul"), nav = owner.createElement("div"), findStatus = owner.createElement("output");
-    detail.setAttribute("aria-label", "Completion detail");
-    const diagnosticStatus = owner.createElement("output"); diagnosticStatus.setAttribute("aria-label", "Diagnostic status");
-    uncertain.setAttribute("aria-label", "Unversioned diagnostics");
-    choices.setAttribute("role", "listbox"); choices.setAttribute("aria-label", "Completion choices"); diagnostics.setAttribute("aria-label", "Source diagnostics"); findStatus.setAttribute("aria-label", "Find status");
-    const fields = ["Find source", "Replacement"].map((name, index) => {
-        const label = owner.createElement("label"), field = owner.createElement("input"); label.textContent = name; label.append(field);
-        field.addEventListener("input", () => index ? tools.setReplacement(field.value) : tools.setQuery(field.value), { signal: listeners.signal });
-        return { label, field };
+    const initial = languagePanelModel(tools, tools.state.getSnapshot()), owner = host.ownerDocument, listeners = new AbortController();
+    initial.bind(host); host.setAttribute("aria-label", initial.label); host.addEventListener("keydown", initial.key, { signal: listeners.signal });
+    const heading = owner.createElement("h2"), help = owner.createElement("p"), status = owner.createElement("output"), detail = owner.createElement("pre"), diagnosticStatus = owner.createElement("output"), findStatus = owner.createElement("output"), foldStatus = owner.createElement("output");
+    heading.textContent = initial.title; help.textContent = initial.help;
+    for (const [element, model] of [[status, initial.status], [detail, initial.detail], [diagnosticStatus, initial.diagnosticStatus], [findStatus, initial.find], [foldStatus, initial.folds]] as const) element.setAttribute("aria-label", model.label);
+    const choices = owner.createElement("ul"), diagnostics = owner.createElement("ul"), uncertain = owner.createElement("ul"), nav = owner.createElement("div");
+    choices.setAttribute("role", "listbox"); choices.setAttribute("aria-label", initial.choices.label); diagnostics.setAttribute("aria-label", initial.diagnostics.label); uncertain.setAttribute("aria-label", initial.uncertain.label);
+    const fields = [initial.query, initial.replacement].map(model => {
+        const label = owner.createElement("label"), field = owner.createElement("input"); label.append(model.label, field); model.bind(field);
+        field.addEventListener("input", () => model.change(field.value), { signal: listeners.signal }); return { label, field };
     });
-    tools.queryRef(fields[0]!.field); tools.replacementRef(fields[1]!.field);
-    const wholeLabel = owner.createElement("label"), wholeWord = owner.createElement("input");
-    wholeWord.type = "checkbox"; wholeLabel.append(wholeWord, "Whole word");
-    wholeWord.addEventListener("change", () => tools.setWholeWord(wholeWord.checked), { signal: listeners.signal });
-    const caseLabel = owner.createElement("label"), matchCase = owner.createElement("input");
-    matchCase.type = "checkbox"; caseLabel.append(matchCase, "Match case");
-    matchCase.addEventListener("change", () => tools.setMatchCase(matchCase.checked), { signal: listeners.signal });
-    const regexLabel = owner.createElement("label"), regularExpression = owner.createElement("input");
-    regularExpression.type = "checkbox"; regexLabel.append(regularExpression, "Regular expression");
-    regularExpression.addEventListener("change", () => tools.setRegularExpression(regularExpression.checked), { signal: listeners.signal });
-    const buttons = languageActions(tools).map(action => { const button = owner.createElement("button"); button.textContent = action.label;
-        nav.append(button); return button; });
-    const foldStatus = owner.createElement("output"); foldStatus.setAttribute("aria-label", "Fold status");
-    host.append(heading, help, status, choices, detail, diagnosticStatus, diagnostics, uncertain, ...fields.map(f => f.label), wholeLabel, caseLabel, regexLabel, findStatus, foldStatus, nav);
+    const options = initial.options.map(model => {
+        const label = owner.createElement("label"), field = owner.createElement("input"); field.type = "checkbox"; label.append(field, model.label);
+        field.addEventListener("change", () => model.change(field.checked), { signal: listeners.signal }); return { label, field };
+    });
+    const buttons = initial.actions.map(action => { const button = owner.createElement("button"); button.textContent = action.label; nav.append(button); return button; });
+    host.append(heading, help, status, choices, detail, diagnosticStatus, diagnostics, uncertain, ...fields.map(f => f.label), ...options.map(f => f.label), findStatus, foldStatus, nav);
     const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
+    let choiceButtons: HTMLButtonElement[] = [], diagnosticButtons: HTMLButtonElement[] = [];
     const render = () => {
-        const state = tools.state.getSnapshot(); setText(status, state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider?.message ?? "Focus a source view to use language actions.");
-        const offered = state.provider?.offerText;
-        const labels = state.provider?.choices ?? (offered != null ? [offered] : []);
-        const completionId = state.provider?.completionId;
-        setText(detail, state.provider?.completionDetail ?? "");
-        if (choices.dataset.completionId !== String(completionId) || choices.childElementCount !== labels.length || labels.some((label, index) => choices.children.item(index)?.textContent !== label)) {
-            choices.dataset.completionId = String(completionId);
-            choices.replaceChildren(...labels.map((label, index) => { const item = owner.createElement("li"), button = owner.createElement("button");
-                item.setAttribute("role", "option"); button.textContent = label; button.addEventListener("click", () => tools.chooseCompletion(index, completionId), { signal: listeners.signal }); item.append(button); return item; }));
+        const model = languagePanelModel(tools, tools.state.getSnapshot());
+        for (const [element, value] of [[status, model.status], [detail, model.detail], [diagnosticStatus, model.diagnosticStatus], [findStatus, model.find], [foldStatus, model.folds]] as const) setText(element, value.text);
+        const offered = model.choices.items();
+        if (choices.dataset.completionId !== model.choices.identity || choices.childElementCount !== offered.length || offered.some((row, index) => choices.children.item(index)?.textContent !== row.label)) {
+            choices.dataset.completionId = model.choices.identity; for (const button of choiceButtons) button.onclick = null; choiceButtons = [];
+            choices.replaceChildren(...offered.map(row => { const item = owner.createElement("li"), button = owner.createElement("button");
+                item.setAttribute("role", "option"); button.textContent = row.label; choiceButtons.push(button); item.append(button); return item; }));
         }
-        [...choices.children].forEach((item, index) => item.setAttribute("aria-selected", String(index === (state.provider?.choiceIndex ?? 0))));
-        const messages = state.provider?.unversionedDiagnostics ?? [];
+        for (const [index, row] of offered.entries()) { choiceButtons[index]!.onclick = row.invoke; choices.children.item(index)!.setAttribute("aria-selected", String(index === model.choices.selected)); }
+        const messages = model.uncertain.items();
         if (uncertain.childElementCount !== messages.length || messages.some((message, index) => uncertain.children.item(index)?.textContent !== message)) {
             uncertain.replaceChildren(...messages.map(message => { const item = owner.createElement("li"); item.textContent = message; return item; }));
         }
-        const currentDiagnostics = state.provider?.diagnostics ?? [];
-        setText(diagnosticStatus, state.provider?.diagnosticsPending ? "Diagnostics pending analysis." : "");
-        if (diagnostics.childElementCount !== currentDiagnostics.length || currentDiagnostics.some((diagnostic, index) => diagnostics.children.item(index)?.textContent !== `${diagnostic.from}: ${diagnostic.message}`)) {
-            const items = currentDiagnostics.map((diagnostic, index) => { const item = owner.createElement("li"), button = owner.createElement("button"); button.textContent = `${diagnostic.from}: ${diagnostic.message}`;
-                button.onclick = () => tools.selectDiagnostic(index); item.append(button); return item; });
-            diagnostics.replaceChildren(...items);
+        const currentDiagnostics = model.diagnostics.items();
+        if (diagnostics.childElementCount !== currentDiagnostics.length || currentDiagnostics.some((row, index) => diagnostics.children.item(index)?.textContent !== row.label)) {
+            for (const button of diagnosticButtons) button.onclick = null; diagnosticButtons = [];
+            diagnostics.replaceChildren(...currentDiagnostics.map(row => { const item = owner.createElement("li"), button = owner.createElement("button"); button.textContent = row.label; diagnosticButtons.push(button); item.append(button); return item; }));
         }
-        for (const [index, action] of languageActions(tools).entries()) { const button = buttons[index]!; button.onclick = action.invoke; if (button.disabled !== action.disabled) button.disabled = action.disabled; }
-        setText(findStatus, findText(tools));
-        setText(foldStatus, foldText(tools));
-        if (fields[0]!.field.value !== state.query) fields[0]!.field.value = state.query;
-        if (fields[1]!.field.value !== state.replacement) fields[1]!.field.value = state.replacement;
-        fields[1]!.field.disabled = state.readOnlyReference;
-        wholeWord.checked = state.wholeWord; matchCase.checked = state.matchCase; regularExpression.checked = state.regularExpression;
+        // Retaining a row must still renew its captured activation snapshot.
+        for (const [index, row] of currentDiagnostics.entries()) diagnosticButtons[index]!.onclick = row.invoke;
+        for (const [index, action] of model.actions.entries()) { const button = buttons[index]!; button.onclick = action.invoke; if (button.disabled !== action.disabled) button.disabled = action.disabled; }
+        for (const [index, value] of [model.query, model.replacement].entries()) { const field = fields[index]!.field; if (field.value !== value.value) field.value = value.value; field.disabled = value.disabled; }
+        for (const [index, option] of model.options.entries()) options[index]!.field.checked = option.checked;
     };
     const unsubscribe = tools.state.subscribe(render); render();
-    return () => { unsubscribe(); listeners.abort(); tools.queryRef(null); tools.replacementRef(null); tools.toolsRef(null); host.replaceChildren(); };
+    return () => { unsubscribe(); listeners.abort(); for (const button of [...buttons, ...choiceButtons, ...diagnosticButtons]) button.onclick = null; initial.query.bind(null); initial.replacement.bind(null); initial.bind(null); host.replaceChildren(); };
 }
