@@ -195,6 +195,11 @@ inserts literally at the accepted offset; HTML is not interpreted and unsupporte
 do not navigate. Preview text is capped at 160 UTF-16 units. Cancellation/disposal removes the
 drop caret, preview and edge-scrolling work.
 
+Selection and text-drag autoscroll share frame ownership and bounded movement. Selection starts
+scrolling outside the viewport; a drop target uses an interior edge zone. Viewport callbacks
+recheck the captured gesture before updating it, and expired frames leave replacement targets
+and their scheduled scrolling intact.
+
 ### Language configuration
 
 `LanguageConfiguration` defines editing rules without requiring a parser or language service.

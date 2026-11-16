@@ -51,6 +51,33 @@ async function edgeScrollAndCancel(page: Page): Promise<void> {
     await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollTop).toBe(0); await ready(page);
 }
 
+test("a replacement drop target survives a render callback during edge scrolling", async ({ page }) => {
+    const original = "row abcdefghij\n".repeat(1000), payload = "inserted";
+    await mount(page, "plain", original); const before = await snapshot(page);
+    await root(page).evaluate((element, payload) => {
+        const data = new DataTransfer(); data.setData("text/plain", payload); Object.defineProperty(data, "effectAllowed", { value: "copy" });
+        window.textDragStore = data;
+        const over = (x: number, y: number) => element.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: data, clientX: x, clientY: y }));
+        const retarget = () => {
+            if (!element.scrollTop) return; element.removeEventListener("sttropez-render", retarget);
+            const box = element.getBoundingClientRect();
+            const row = [...element.querySelectorAll<HTMLElement>(".st-viewport-row")].find(row => { const r = row.getBoundingClientRect(); return r.top > box.top && r.bottom < box.bottom; })!;
+            const node = document.createTreeWalker(row, NodeFilter.SHOW_TEXT).nextNode()!;
+            const range = document.createRange(); range.setStart(node, 1); range.setEnd(node, 2); const r = range.getBoundingClientRect();
+            element.dataset.retargetAt = String(Number(row.dataset.from) + 1); over(r.left + r.width * .1, r.top + r.height * .5);
+        };
+        element.addEventListener("sttropez-render", retarget);
+        const box = element.getBoundingClientRect(); over(box.left + element.clientWidth / 2, box.top + element.clientHeight - 10);
+    }, payload);
+    await expect(root(page)).toHaveAttribute("data-retarget-at", /\d+/);
+    await expect(root(page).locator(".st-text-drop-caret")).toHaveCount(1);
+    const at = Number(await root(page).getAttribute("data-retarget-at"));
+    await root(page).evaluate(element => element.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: window.textDragStore })));
+    await ready(page); await exact(page, original.slice(0, at) + payload + original.slice(at));
+    expect((await snapshot(page)).source.revision).toBe(before.source.revision + 1);
+    await page.evaluate(() => window.hostFixture.dispose());
+});
+
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} native text drag preserves captured identity through history and lifecycle`, async ({ page }, info) => {
     test.setTimeout(60000);
     const header = "alpha bravo\r\ncharlie delta\r\ntarget here", original = header + (large ? "\r\n" + "row value\r\n".repeat(100000) + "tail" : "");

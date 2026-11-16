@@ -5,6 +5,7 @@ import type { SelectionSet } from "../core/selections.ts";
 import { applyTextDrop, captureTextTransfer, isCurrentTextTransfer } from "./text-transfer.ts";
 import type { TextTransferCapture } from "./text-transfer.ts";
 import type { TextViewport } from "./viewport.ts";
+import { createEdgeAutoscroll, edgeVelocity } from "./edge-autoscroll.ts";
 
 const transferType = "application/x-sttropez-text";
 type ActiveDrag = { token: string; owner: symbol; source?: TextTransferCapture };
@@ -22,7 +23,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
     preview.className = "st-text-drag-preview"; preview.setAttribute("aria-hidden", "true");
     type Arm = Readonly<{ revision: number; selectionSet: SelectionSet; pointer: number; offset: number; affinity: Affinity }>;
     type Aim = Readonly<{ revision: number; offset: number; affinity: Affinity; token: string | null; copy: boolean; x: number; y: number }>;
-    let armed: Arm | undefined, aim: Aim | undefined, frame: number | undefined, previewFrame: number | undefined, previousTime: number | undefined;
+    let armed: Arm | undefined, aim: Aim | undefined, previewFrame: number | undefined;
     let disposed = false, expired = false;
     function current() {
         if (disposed || !options.available() || !root.isConnected || !workspace.resolveTab(tab) || !workspace.ownsDocumentView(view)) return;
@@ -30,7 +31,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
     }
     function clearAim(): void {
         aim = undefined; marker.remove();
-        if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined; previousTime = undefined;
+        scrolling.stop();
     }
     function clearArm(): void { armed = undefined; root.draggable = false; }
     function clearPreview(): void {
@@ -66,37 +67,22 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
         marker.style.left = `${root.scrollLeft + (point.left - box.left) / box.zoom}px`;
         marker.style.top = `${root.scrollTop + (point.top - box.top) / box.zoom}px`; marker.style.height = `${point.height / box.zoom}px`; root.append(marker);
     }
-    function bounds() {
-        return clientBox(root);
-    }
-    function velocity() {
-        if (!aim) return { x: 0, y: 0 }; const box = bounds(), metrics = viewport.snapshot();
-        const speed = (point: number, low: number, high: number, unit: number) => {
-            const zone = Math.min(24, (high - low) / 4), distance = point < low + zone ? point - low - zone : point >= high - zone ? point - high + zone : 0;
-            return Math.sign(distance) * Math.min((high - low) / box.zoom * 3, Math.max(unit * 5, Math.abs(distance) / box.zoom * 20));
-        };
-        return { x: speed(aim.x, box.left, box.right, metrics.columnWidth), y: speed(aim.y, box.top, box.bottom, metrics.lineHeight) };
-    }
-    function scheduleScroll(): void {
-        const speed = velocity();
-        if (!speed.x && !speed.y) { if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined; previousTime = undefined; }
-        else if (frame === undefined) frame = win.requestAnimationFrame(scroll);
-    }
-    function scroll(time: number): void {
-        frame = undefined; const captured = aim, state = current(); invalidateSource();
-        if (!captured || !state || state.revision !== captured.revision || input.readOnly || expired
-            || captured.token !== null && !activeDrags.get(document)?.source) { clearAim(); return; }
-        const hit = document.elementFromPoint(captured.x, captured.y);
-        if (!hit || !root.contains(hit)) { clearAim(); return; }
-        const speed = velocity(), elapsed = previousTime === undefined ? 1000 / 60 : Math.max(0, Math.min(32, time - previousTime)); previousTime = time;
-        const before = viewport.snapshot();
-        viewport.scrollTo({ left: before.scrollLeft + speed.x * elapsed / 1000, top: before.scrollTop + speed.y * elapsed / 1000 }); viewport.flush();
-        if (aim !== captured || current()?.revision !== captured.revision) { clearAim(); return; }
-        const point = viewport.hitTest(captured.x, captured.y);
-        if (point) aim = { ...captured, offset: point.offset, affinity: point.affinity }; paint();
-        const after = viewport.snapshot();
-        if (after.scrollLeft !== before.scrollLeft || after.scrollTop !== before.scrollTop) scheduleScroll(); else previousTime = undefined;
-    }
+    const scrolling = createEdgeAutoscroll(win, viewport, {
+        capture: () => aim,
+        valid: captured => {
+            const state = current(); invalidateSource();
+            if (!state || state.revision !== captured.revision || input.readOnly || expired
+                || captured.token !== null && !activeDrags.get(document)?.source) return false;
+            const hit = document.elementFromPoint(captured.x, captured.y); return !!hit && root.contains(hit);
+        },
+        velocity: captured => edgeVelocity(captured, clientBox(root), viewport.snapshot(), "inside"),
+        update: captured => {
+            const point = viewport.hitTest(captured.x, captured.y);
+            if (aim !== captured) return;
+            if (point) aim = { ...captured, offset: point.offset, affinity: point.affinity }; paint();
+        },
+        cancel: clearAim, updateAtRest: true, recheckAfterUpdate: true,
+    });
     root.addEventListener("dragstart", event => {
         const intent = armed;
         if (!intent || event.target === input || !event.dataTransfer || current()?.revision !== intent.revision || view.getSnapshot().selectionSet !== intent.selectionSet) {
@@ -131,7 +117,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
         if (!point || point.revision !== state.revision) { clearAim(); return; }
         event.preventDefault(); data.dropEffect = copy ? "copy" : "move";
         aim = { revision: state.revision, offset: point.offset, affinity: point.affinity, token: active?.token ?? null, copy, x: event.clientX, y: event.clientY };
-        paint(); scheduleScroll();
+        paint(); scrolling.schedule();
     }, { signal: listeners.signal });
     root.addEventListener("dragleave", event => {
         if (!(event.relatedTarget instanceof win.Node) || !root.contains(event.relatedTarget)) clearAim();

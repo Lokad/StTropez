@@ -38,6 +38,7 @@ import type { CharacterWarningHighlights } from "./character-warnings.ts";
 import { classifyEditingKey } from "./editing-keys.ts";
 import type { KeyBinding, KeyStroke } from "./editing-keys.ts";
 import { commandBudget, createCooperativeRunner } from "./cooperative-runner.ts";
+import { createEdgeAutoscroll, edgeVelocity } from "./edge-autoscroll.ts";
 
 export type CandidateEdit = Readonly<{ expectedRevision: number; edits: readonly TextEdit[]; selectionSet: SelectionSet; kind: EditKind;
     /** The editor's newline command supplied contextual indentation, rather than literal text. */
@@ -119,7 +120,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     let visualMoves = 0;
     let group: Readonly<{ type: string; revision: number; selectionSet: SelectionSet; time: number; key: string }> | undefined;
     let drag: Readonly<{ pointer: number; anchor: number; anchorAffinity: Affinity; revision: number; x: number; y: number; selectionSet: SelectionSet; baseRanges: readonly Selection[]; padding: boolean }> | undefined;
-    let dragFrame: number | undefined, dragTime: number | undefined, dragScrollFrames = 0, maxDragScrollStepMs = 0;
+    let dragScrollFrames = 0, maxDragScrollStepMs = 0;
     const commandRunner = createCooperativeRunner(win);
     let wordJob: Readonly<{ cursor: WordCursor; revision: number }> | undefined, cancelWordTask: (() => void) | undefined;
     type CommandCapture = Readonly<{ buffer: TextBuffer; revision: number; selection: Selection; selectionSet: SelectionSet; deleting: boolean }>;
@@ -937,7 +938,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     root.addEventListener("pointermove", event => {
         if (drag?.pointer !== event.pointerId) return;
         if (!(event.buttons & 1) || !validDrag()) { stopDrag(); return; }
-        drag = { ...drag, x: event.clientX, y: event.clientY }; updateDragHead(); scheduleDragScroll();
+        drag = { ...drag, x: event.clientX, y: event.clientY }; updateDragHead(); dragScrolling.schedule();
     }, { signal: listeners.signal });
     function validDrag(): boolean {
         return !!drag && !disposed && !composing && !input.disabled && root.isConnected && root.clientWidth > 0 && root.clientHeight > 0
@@ -949,41 +950,20 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     function updateDragHead(): void {
         const current = drag; if (!current) return; const bounds = dragBounds();
         const point = viewport.hitTest(Math.max(bounds.left, Math.min(bounds.right - 1, current.x)), Math.max(bounds.top, Math.min(bounds.bottom - 1, current.y)));
-        if (!point) return;
+        if (!point || drag !== current) return;
         view.setSelections(current.revision, [...current.baseRanges, { anchor: current.anchor, head: point.offset, anchorAffinity: current.anchorAffinity, headAffinity: point.affinity }], current.baseRanges.length);
         if (drag === current) drag = { ...current, selectionSet: view.getSnapshot().selectionSet, padding: point.padding === true }; refresh();
     }
-    function dragVelocity(): Readonly<{ x: number; y: number }> {
-        if (!drag) return { x: 0, y: 0 }; const bounds = dragBounds(), metrics = viewport.snapshot();
-        const speed = (point: number, low: number, high: number, unit: number) => {
-            const outside = point < low ? point - low : point >= high ? point - high + 1 : 0;
-            return Math.sign(outside) * Math.min((high - low) / bounds.zoom * 3, Math.max(unit * 5, Math.abs(outside) / bounds.zoom * 20));
-        };
-        return { x: speed(drag.x, bounds.left, bounds.right, metrics.columnWidth), y: speed(drag.y, bounds.top, bounds.bottom, metrics.lineHeight) };
-    }
-    function scheduleDragScroll(): void {
-        const velocity = dragVelocity();
-        if (!velocity.x && !velocity.y) { if (dragFrame !== undefined) win.cancelAnimationFrame(dragFrame); dragFrame = undefined; dragTime = undefined; }
-        else if (dragFrame === undefined) dragFrame = win.requestAnimationFrame(scrollDrag);
-    }
-    function scrollDrag(time: number): void {
-        const started = win.performance.now();
-        try {
-            dragFrame = undefined; if (!validDrag()) { stopDrag(); return; }
-            const velocity = dragVelocity(); if (!velocity.x && !velocity.y) { dragTime = undefined; return; }
-            const elapsed = dragTime === undefined ? 1000 / 60 : Math.max(0, Math.min(32, time - dragTime)); dragTime = time;
-            const before = viewport.snapshot();
-            viewport.scrollTo({ left: before.scrollLeft + velocity.x * elapsed / 1000, top: before.scrollTop + velocity.y * elapsed / 1000 }); viewport.flush();
-            if (!validDrag()) { stopDrag(); return; } updateDragHead();
-            dragScrollFrames++;
-            const after = viewport.snapshot();
-            if (drag && (after.scrollLeft !== before.scrollLeft || after.scrollTop !== before.scrollTop)) dragFrame = win.requestAnimationFrame(scrollDrag);
-            else dragTime = undefined;
-        } finally { maxDragScrollStepMs = Math.max(maxDragScrollStepMs, win.performance.now() - started); }
-    }
+    const dragScrolling = createEdgeAutoscroll(win, viewport, {
+        capture: () => drag, valid: () => validDrag(),
+        velocity: captured => edgeVelocity(captured, dragBounds(), viewport.snapshot(), "outside"),
+        update: () => { updateDragHead(); dragScrollFrames++; }, cancel: () => stopDrag(),
+        turn: work => { const started = win.performance.now();
+            try { work(); } finally { maxDragScrollStepMs = Math.max(maxDragScrollStepMs, win.performance.now() - started); } },
+    });
     const stopDrag = (event?: PointerEvent) => {
         if (event && event.pointerId !== drag?.pointer) return;
-        if (dragFrame !== undefined) win.cancelAnimationFrame(dragFrame); dragFrame = undefined; dragTime = undefined;
+        dragScrolling.stop();
         const pointer = drag?.pointer, padding = drag?.padding; drag = undefined;
         if (pointer !== undefined && root.hasPointerCapture(pointer)) root.releasePointerCapture(pointer);
         if (event?.type === "pointerup" && padding && !disposed && workspace.resolveTab(target)) {
@@ -1029,7 +1009,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     function activity(): EditingActivity {
         const pendingInput = hostInsertion !== undefined || ordered !== undefined || executingInput !== undefined || rangeCommand?.capture.deleting === true;
         const pendingCommand = rangeCommand !== undefined || wordJob !== undefined || graphemeJob !== undefined;
-        const pendingCaret = caretLayer.pending(), pendingDragScroll = dragFrame !== undefined;
+        const pendingCaret = caretLayer.pending(), pendingDragScroll = dragScrolling.pending();
         const pendingWord = rangeCommand?.purpose === "word" || wordJob !== undefined || graphemeJob?.purpose === "word" || graphemeJob?.purpose === "word-selection" || ordered?.purpose === "word";
         const pendingGrapheme = rangeCommand?.purpose === "grapheme" || graphemeJob !== undefined || ordered?.purpose === "grapheme";
         if (activitySnapshot && activitySnapshot.disposed === disposed && activitySnapshot.composing === composing
