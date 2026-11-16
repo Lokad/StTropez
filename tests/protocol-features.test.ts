@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
 import type { ApplyWorkspaceEditParams, CodeAction, Command, CompletionList, PublishDiagnosticsParams, WorkspaceEdit } from "vscode-languageserver-protocol/node.js";
 import { TextBuffer } from "../src/core/text-buffer.ts";
-import { Workspace, createSelectionSet, planSnippetEdit, planSnippetChoice, snippetChoiceText } from "../src/index.ts";
+import { Workspace, composePositionMaps, createSelectionSet, planSnippetEdit, planSnippetChoice, snippetChoiceText } from "../src/index.ts";
 import type { JsonValue, LspDocumentCapture, RpcTransport } from "../src/protocol/index.ts";
 
 const { LspLineIndex, UnsupportedLspSnippetError, decodeLspCompletions, decodeLspResolvedCompletion, rebaseLspCompletion, lspCompletionPlan, decodeLspDiagnostics, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, decodeLspApplyEdit, decodeLspCodeActions, decodeLspResolvedCodeAction, lspRangeOffsets, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
@@ -432,6 +432,9 @@ test("compatible prefix rebasing uses exact commit metadata and resolves additio
     assert.equal(rebaseLspCompletion(item, { ...next, buffer: unrelated.buffer }, { ...change, mapping: unrelated.mapping }, 8), undefined);
     const unknown = { oldLength: applied.mapping.oldLength, newLength: applied.mapping.newLength, map: applied.mapping.map.bind(applied.mapping), mapRange: applied.mapping.mapRange.bind(applied.mapping), invert: applied.mapping.invert.bind(applied.mapping) };
     assert.equal(rebaseLspCompletion(item, next, { ...change, mapping: unknown }, 8), undefined);
+    const first = capture.document.buffer.apply([{ from: 8, to: 8, insert: "ab" }]), second = first.buffer.apply([{ from: 8, to: 10, insert: "m" }]);
+    assert.equal(second.buffer.equals(next.buffer), true);
+    assert.equal(rebaseLspCompletion(item, { ...next, buffer: second.buffer }, { ...change, mapping: composePositionMaps(first.mapping, second.mapping) }, 8), undefined);
 });
 
 test("diagnostics separate provider freshness from validated snapshot placement and retain unplaceable wire ranges", async () => {

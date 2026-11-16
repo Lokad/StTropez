@@ -1,4 +1,5 @@
 import { validateTextEdits } from "../core/changes.ts";
+import { positionChanges } from "../core/positions.ts";
 import { parseSnippet, offsetSnippetStops } from "../core/snippets.ts";
 import { adjustInsertionText, insertionContext } from "../core/insertion-text.ts";
 import type { InsertionIndentation } from "../core/insertion-text.ts";
@@ -400,7 +401,9 @@ export function rebaseLspCompletion(original: LspCompletion, next: LspDocumentSn
     if (change.previousRevision !== before.revision || next.revision !== before.revision + 1 || change.origin !== "human" || change.kind !== "typing"
         || next.uri !== before.uri || next.resourceId !== before.resourceId || next.documentId !== before.documentId || next.languageId !== before.languageId
         || mapping.oldLength !== before.buffer.length || mapping.newLength !== next.buffer.length || units < 1 || units > 2048
-        || caret !== original.offset || caret < primary.from || caret > primary.insertTo || !mapping.isSingleInsertion?.(caret, units)) return;
+        || caret !== original.offset || caret < primary.from || caret > primary.insertTo) return;
+    const changes = positionChanges(mapping), insertion = changes?.length === 1 ? changes[0] : undefined;
+    if (!insertion || insertion.from !== caret || insertion.to !== caret || insertion.insertedLength !== units) return;
     const from = mapping.map(primary.from, "before").offset, insertTo = mapping.map(primary.insertTo, "after").offset, replaceTo = mapping.map(primary.replaceTo, "after").offset;
     const additional = Object.freeze(original.additional.map(edit => Object.freeze({ from: mapping.map(edit.from, "after").offset, to: mapping.map(edit.to, edit.from === edit.to ? "after" : "before").offset, insert: edit.insert })));
     const nextPrimary = Object.freeze({ from, insertTo, replaceTo, text: primary.text });

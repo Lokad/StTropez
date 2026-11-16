@@ -126,9 +126,10 @@ stable provider order for equal keys, filter by a case-insensitive `filterText` 
 `preselect` when the prior choice is unavailable. Explicit invocation initially shows all choices;
 `filterManualCompletions: true` applies the captured edit-prefix filter to manual requests too.
 
-`rebaseLspCompletion` accepts only a proven single human typing insertion inside the primary
-insert range. The browser additionally requires matching selections, fold generation, authority,
-URI, binding and language configuration. Mapped primary/additional ranges are validated again.
+`rebaseLspCompletion` accepts only a single human typing insertion proved by Core batch metadata
+inside the primary insert range. The browser additionally requires matching selections, fold
+generation, authority, URI, binding and language configuration. Mapped primary/additional ranges
+are validated again.
 Undo, replacements, host edits, unknown/composed changes or incompatible navigation expire the
 offer. Incomplete lists retrigger with context kind 3 while compatible choices stay visible.
 `completionIncomplete` preserves provider partial-list status independently of client filtering.

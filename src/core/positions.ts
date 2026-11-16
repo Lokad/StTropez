@@ -12,8 +12,7 @@ export type PositionMapping = Readonly<{ oldLength: number; newLength: number;
     /** Independent lookup cursor. Ordered endpoints reuse progress; arbitrary order remains valid. */
     createMapper?: () => PositionMapping["map"];
     mapRange: (range: AnchoredRange) => AnchoredRange | undefined;
-    invert: () => PositionMapping;
-    isSingleInsertion?: (offset: number, units: number) => boolean }>;
+    invert: () => PositionMapping }>;
 type Change = Readonly<{ from: number; to: number; insertedLength: number; unitDeletion?: boolean; inverseUnitDeletion?: boolean }>;
 type IndexedChange = Change & Readonly<{ deltaBefore: number; coveredTo: number }>;
 type GeometryPair = Readonly<{ forward: MappingGeometry; reverse: MappingGeometry }>;
@@ -63,10 +62,6 @@ class ChangePositionMap implements PositionMapping {
         this.newLength = oldLength + delta;
         if (!Number.isSafeInteger(this.newLength)) throw new RangeError("Resulting length exceeds safe positions.");
         Object.freeze(this);
-    }
-    /** Exact change metadata, unlike endpoint probes which cannot exclude other edits. */
-    isSingleInsertion(offset: number, units: number): boolean {
-        const change = this.changes[0]; return this.changes.length === 1 && change!.from === offset && change!.to === offset && change!.insertedLength === units;
     }
     [unchangedEdges](): UnchangedEdges {
         return { prefix: this.changes[0]?.from ?? this.oldLength, suffix: this.oldLength - (this.changes.at(-1)?.to ?? 0) };

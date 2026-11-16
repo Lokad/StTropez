@@ -101,8 +101,7 @@ retain their ordered composition when their semantics cannot be inferred.
 
 The optional `createMapper()` returns an independent lookup cursor. Ascending endpoints reuse
 progress; backward queries are valid and restart the search. The immutable map stores no cursor
-state. The optional `isSingleInsertion(offset, units)` checks exact insertion geometry; custom
-mappings need not provide either optimization.
+state. Custom mappings need not provide this optimization.
 
 ### Selection sets
 
