@@ -34,11 +34,14 @@ presenter an empty subtree through a stable callback ref; the returned cleanup r
 subscription, listeners and documentation on detach, including Strict Mode replay. Signature
 commands remain pure React output using the shared action model. No effect synchronizes state.
 
-Navigation and workspace-provider panels derive one presentation model from the snapshot
+Navigation, workspace-provider, rename and code-action panels derive one presentation model from the snapshot
 observed by their renderer. Both hosts use its labels, progress, paging and command targets;
 React does not reread the store while deriving commands. Result rows retain their captured
 request token or resource ID. Lazy list formatting lets the plain host retain unchanged rows
 on status updates; React uses stable row keys. The models own no subscriptions or service state.
+Rename/action input bindings keep their existing stable refs and keyboard lifecycle. Provider
+choice activation checks the current token before selecting an item; rendering itself uses only
+the supplied snapshot. Both action routes capture the displayed changed resource in their links.
 
 A persisted `pagehide` retains the mounted host and its listener for a later final hide. A
 non-persisted hide starts teardown. Browser regressions exercise this policy with synthetic

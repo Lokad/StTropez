@@ -5,8 +5,51 @@ import { navigationPanelModel } from "../examples/hosts/navigation-panel.ts";
 import { projectPanelModel } from "../examples/hosts/project-panel.ts";
 import type { NavigationSnapshot } from "../examples/hosts/navigation.ts";
 import type { ProjectSnapshot } from "../examples/hosts/project.ts";
+import { renamePanelModel } from "../examples/hosts/rename-panel.ts";
+import { actionsPanelModel } from "../examples/hosts/actions-panel.ts";
+import type { RenameSnapshot } from "../examples/hosts/rename.ts";
+import type { ActionsSnapshot } from "../examples/hosts/code-actions.ts";
 
 const noop = () => {};
+
+test("rename presentation retains its preview name, confirmation token and changed resource", () => {
+    const applied: (number | null)[] = [], opened: DocumentId[] = [], firstId = "first" as DocumentId, secondId = "second" as DocumentId;
+    const tools: Parameters<typeof renamePanelModel>[0] = { usesLsp: false, prepare: noop, apply: token => { applied.push(token); }, cancel: noop,
+        previousPage: noop, nextPage: noop, disconnect: noop, reconnect: noop, bindName: noop, setName: noop, openChanged: id => { opened.push(id); } };
+    let formatted = 0;
+    const state: RenameSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, pending: false, status: "ready", message: "Captured rename",
+        name: "firstName", symbol: "symbol", token: 3, canApply: true, work: 1, total: 1, count: 1, page: 0,
+        locations: Object.freeze([Object.freeze({ ordinal: 0, document: firstId, resource: "source", title: "First", revision: 1, from: 0, to: 6, line: 0, column: 0,
+            get context() { formatted++; return "symbol"; } })]), changes: Object.freeze([Object.freeze({ document: firstId, title: "First" })]) });
+    const first = renamePanelModel(tools, state), renamed = renamePanelModel(tools, { ...state, name: "secondName", token: 4, changes: [{ document: secondId, title: "Second" }] });
+    assert.equal(formatted, 0); assert.equal(first.targets.identity, renamed.targets.identity);
+    assert.match(first.targets.items()[0]!.text, /symbol → firstName/); assert.match(renamed.targets.items()[0]!.text, /symbol → secondName/);
+    renamed.actions.find(action => action.label === "Apply captured rename")!.invoke(); first.actions.find(action => action.label === "Apply captured rename")!.invoke();
+    renamed.changes.items()[0]!.invoke(); first.changes.items()[0]!.invoke();
+    assert.deepEqual(applied, [4, 3]); assert.deepEqual(opened, [secondId, firstId]); assert.equal(first.name.bind, tools.bindName);
+});
+
+test("action presentation reads current state only on choice activation and rejects an older choice generation", () => {
+    const selected: number[] = [], applied: (number | null)[] = [], opened: DocumentId[] = [], firstId = "first" as DocumentId, secondId = "second" as DocumentId;
+    const state: ActionsSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, reconnectRequired: false, pending: false, canApply: true,
+        token: 9, module: "module", status: "ready", message: "Captured action", title: "Action", disabled: null, work: 1, total: 1, command: null, edits: Object.freeze([]),
+        changed: Object.freeze({ document: firstId, title: "First" }), changes: Object.freeze([Object.freeze({ document: firstId, title: "First" })]),
+        choices: Object.freeze([Object.freeze({ index: 0, title: "First action", kind: null, preferred: false, disabled: null, needsResolve: false })]),
+        choice: 0, choicePage: 0, resolving: false, page: 0, editCount: 0 });
+    let current = state, reads = 0;
+    const tools: Parameters<typeof actionsPanelModel>[0] = { usesLsp: true, state: { getSnapshot: () => { reads++; return current; }, subscribe: () => noop },
+        request: noop, apply: token => { applied.push(token); }, cancel: noop, moveChoicePage: noop, previousPage: noop, nextPage: noop, disconnect: noop,
+        reconnect: noop, bindModule: noop, setModule: noop, selectChoice: index => { selected.push(index); }, openChangedDocument: id => { opened.push(id); } };
+    const first = actionsPanelModel(tools, state), legacy = actionsPanelModel({ ...tools, usesLsp: false }, state), oldChoice = first.choices.items()[0]!;
+    current = { ...state, token: 10, changed: { document: secondId, title: "Second" }, changes: [{ document: secondId, title: "Second" }] };
+    const newer = actionsPanelModel(tools, current), newChoice = newer.choices.items()[0]!;
+    assert.equal(reads, 0, "model derivation and row formatting use only their supplied snapshot");
+    assert.equal(first.choices.identity, newer.choices.identity); assert.notEqual(first.choices.pageKey, newer.choices.pageKey);
+    oldChoice.invoke(); assert.deepEqual(selected, []); newChoice.invoke(); assert.deepEqual(selected, [0]); assert.equal(reads, 2);
+    first.actions.find(action => action.label === "Apply captured action")!.invoke(); assert.deepEqual(applied, [9]);
+    newer.changes.items()[0]!.invoke(); legacy.changes.items()[0]!.invoke(); assert.deepEqual(opened, [secondId, firstId]);
+    assert.equal(first.module.bind, tools.bindModule);
+});
 
 test("navigation presentation keeps a captured target while a newer snapshot supplies another page", () => {
     const opened: [number, number][] = [];

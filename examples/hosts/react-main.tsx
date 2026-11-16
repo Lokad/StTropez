@@ -14,8 +14,8 @@ import { navigationPanelModel } from "./navigation-panel.ts";
 import { projectPanelModel } from "./project-panel.ts";
 import { documentColorActions, documentColorDescription, documentColorLabel, colorEditLabel } from "./document-colors-panel.ts";
 import { documentLinkActions, documentLinkDescription, documentLinkLabel, documentLinkDetails } from "./document-links-panel.ts";
-import { actionsControls, actionsDescriptionFor, actionChoiceLabel, actionTarget } from "./actions-panel.ts";
-import { renameActions, renameDescriptionFor, renameTarget } from "./rename-panel.ts";
+import { actionsPanelModel } from "./actions-panel.ts";
+import { renamePanelModel } from "./rename-panel.ts";
 import { signatureActions, mountSignaturePopup } from "./signature-panel.ts";
 import { mountHoverPanel } from "./hover-panel.ts";
 import { HostDraftRecovery } from "./draft-recovery.ts";
@@ -192,23 +192,23 @@ function DocumentLinksTools() {
         <ul ref={tools.bindList} tabIndex={-1} aria-label="Module link results">{s.links.map(link => <li key={link.from}><button disabled={!link.target && !link.resolvable || s.status !== "ready"} onClick={() => tools.open(s.token, link.ordinal)}>{documentLinkLabel(link)}</button><p>{documentLinkDetails(link)}</p></li>)}</ul></section>;
 }
 function ActionsTools() {
-    const tools = bindings.actions, s = useObserved(tools.state);
-    return <section className="host-language" aria-label="Code actions"><h2>Code actions</h2><p>{actionsDescriptionFor(tools)}</p>
-        <output aria-label="Code action status">{s.message}</output>
-        <label>Action module <input ref={tools.bindModule} type="text" maxLength={64} value={s.module} onChange={event => tools.setModule(event.currentTarget.value)} /></label>
-        <div>{actionsControls(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
-        {tools.usesLsp && <ol aria-label="Provider code actions" start={s.choicePage * 16 + 1}>{s.choices.slice(s.choicePage * 16, (s.choicePage + 1) * 16).map(choice => <li key={choice.index}><button disabled={s.pending} aria-pressed={s.choice === choice.index} onClick={() => { if (tools.state.getSnapshot().token === s.token) tools.selectChoice(choice.index); }}>{actionChoiceLabel(choice)}</button></li>)}</ol>}
-        <p aria-label="Captured action title">{s.title}</p><ol aria-label="Proposed action edits" start={s.page * 64 + 1}>{s.edits.map((at, i) => <li key={i}><pre>{actionTarget(at)}</pre></li>)}</ol>
-        {tools.usesLsp ? s.changes.map(change => <button key={change.document} disabled={s.token !== null} onClick={() => tools.openChangedDocument(change.document)}>Open action changes in {change.title}</button>) : s.changed && <button disabled={s.token !== null} onClick={tools.openChanged}>Open action changes in {s.changed.title}</button>}</section>;
+    const tools = bindings.actions, model = actionsPanelModel(tools, useObserved(tools.state));
+    return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
+        <output aria-label={model.status.label}>{model.status.text}</output>
+        <label>{model.module.label}<input ref={model.module.bind} type="text" maxLength={model.module.maxLength} value={model.module.value} onChange={event => model.module.change(event.currentTarget.value)} /></label>
+        <div>{model.actions.map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        {model.choices.enabled && <ol aria-label={model.choices.label} start={model.choices.start}>{model.choices.items().map(choice => <li key={choice.key}><button disabled={model.choices.disabled} aria-pressed={model.choices.isSelected(choice.key)} onClick={choice.invoke}>{choice.label}</button></li>)}</ol>}
+        <p aria-label={model.preview.label}>{model.preview.text}</p><ol aria-label={model.edits.label} start={model.edits.start}>{model.edits.items().map((text, i) => <li key={i}><pre>{text}</pre></li>)}</ol>
+        <div aria-label={model.changes.label}>{model.changes.items().map(change => <button key={change.key} disabled={model.changes.disabled} onClick={change.invoke}>{change.label}</button>)}</div></section>;
 }
 function RenameTools() {
-    const tools = bindings.rename, s = useObserved(tools.state);
-    return <section className="host-language" aria-label="Rename preview"><h2>Rename preview</h2><p>{renameDescriptionFor(tools)}</p>
-        <output aria-label="Rename status">{s.message}</output>
-        <label>New identifier <input ref={tools.bindName} type="text" maxLength={256} value={s.name} onChange={event => tools.setName(event.currentTarget.value)} /></label>
-        <div>{renameActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
-        <ol aria-label="Captured rename targets" start={s.page * 64 + 1}>{s.locations.map(at => <li key={at.ordinal}>{renameTarget(at, s.symbol, s.name)}</li>)}</ol>
-        <ul aria-label="Renamed resources">{s.changes.map(c => <li key={c.document}><button disabled={s.token !== null} onClick={() => tools.openChanged(c.document)}>Open renamed changes in {c.title}</button></li>)}</ul></section>;
+    const tools = bindings.rename, model = renamePanelModel(tools, useObserved(tools.state));
+    return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2><p>{model.description}</p>
+        <output aria-label={model.status.label}>{model.status.text}</output>
+        <label>{model.name.label}<input ref={model.name.bind} type="text" maxLength={model.name.maxLength} value={model.name.value} onChange={event => model.name.change(event.currentTarget.value)} /></label>
+        <div>{model.actions.map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        <ol aria-label={model.targets.label} start={model.targets.start}>{model.targets.items().map(at => <li key={at.key}>{at.text}</li>)}</ol>
+        <ul aria-label={model.changes.label}>{model.changes.items().map(change => <li key={change.key}><button disabled={model.changes.disabled} onClick={change.invoke}>{change.label}</button></li>)}</ul></section>;
 }
 function ProjectTools() {
     const tools = bindings.project, model = projectPanelModel(tools, useObserved(tools.state));

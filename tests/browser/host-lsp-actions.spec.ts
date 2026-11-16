@@ -24,7 +24,15 @@ async function waitForActions(page: Page): Promise<void> {
 }
 async function select(page: Page, at = raw.indexOf("TODO") + 1) { await input(page).focus(); await page.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: at, head: at }]); }, at); await waitForActions(page); }
 async function seed(page: Page, text = raw) { await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, text); await select(page, text.indexOf("TODO") + 1); }
-async function preview(page: Page) { await button(page, "Preview module action").click(); await waitForActions(page); }
+async function preview(page: Page) {
+    const requested = (await snapshot(page)).bindings.actions.requested;
+    await button(page, "Preview module action").click();
+    // Idle also satisfies !pending. Establish that the intended command actually started.
+    await expect.poll(async () => { const s = (await snapshot(page)).bindings.actions;
+        return { requested: s.requested, status: s.state.status, message: s.state.message };
+    }).toMatchObject({ requested: requested + 1 });
+    await waitForActions(page);
+}
 async function exact(page: Page, text: string) { expect(await page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false; for (let at = 0; at < text.length; at += 32768) if (f.range(at, Math.min(at + 32768, text.length)) !== text.slice(at, at + 32768)) return false; return true; }, text)).toBe(true); }
 async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.actions).toMatchObject({ sessions: 0, subscriptions: 0, transport: null, disposed: true }); }
 for (const host of ["plain", "react"]) test.describe(`${host} LSP code actions`, () => {
@@ -36,8 +44,12 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP code actions`,
         page.on("websocket", socket => { opened++; socket.on("close", () => closed++); socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) requests.push(value); }); });
         await seed(page); const ranges = [{ anchor: raw.indexOf("TODO") + 4, head: raw.indexOf("TODO") + 1 }, { anchor: raw.length, head: raw.length }]; await page.evaluate(ranges => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, ranges); }, ranges); const before = await snapshot(page);
         await input(page).press("Control+."); await expect(input(page, "Action module")).toBeFocused(); await waitForActions(page); await expect(choices(page)).toHaveCount(9); await expect(edits(page)).toHaveCount(1); await expect(button(page, "Apply captured action")).toBeEnabled();
+        await choices(page).nth(5).evaluate(node => { node.dataset.retained = "action-choice"; });
+        await input(page, "Action module").evaluate(node => { node.dataset.retained = "action-module"; });
         await choices(page).nth(3).click(); await expect(button(page, "Apply captured action")).toBeDisabled(); await expect(page.getByLabel("Code action status", { exact: true })).toContainText("requires another context");
         await choices(page).nth(4).click(); await expect(button(page, "Execute captured action")).toBeEnabled(); await choices(page).nth(5).click(); await expect(button(page, "Execute captured action")).toBeEnabled(); expect(requests.some(r => r.method === "workspace/executeCommand")).toBe(false); await exact(page, raw);
+        await expect(choices(page).nth(5)).toHaveAttribute("data-retained", "action-choice"); await expect(choices(page).nth(5)).toHaveAttribute("aria-pressed", "true");
+        await expect(input(page, "Action module")).toHaveAttribute("data-retained", "action-module");
         await page.evaluate(() => window.hostFixture.setActionDelay(200)); await choices(page).nth(2).click(); await input(page, "Configuration path").focus(); await waitForActions(page); await expect(input(page, "Configuration path")).toBeFocused(); await expect(edits(page)).toHaveCount(1); await expect(edits(page).first()).toContainText('Insert "DONE"');
         const request = requests.find(r => r.method === "textDocument/codeAction")!; expect(request.params.range).toEqual({ start: { line: 0, character: 7 }, end: { line: 0, character: 10 } }); expect(request.params.context.triggerKind).toBe(1); expect(request.params.context.diagnostics).toHaveLength(1); expect(request.params.context.diagnostics[0].range).toEqual({ start: { line: 0, character: 6 }, end: { line: 0, character: 10 } });
         expect(requests.filter(r => r.method === "codeAction/resolve")).toHaveLength(1); const initialize = requests.find(r => r.method === "initialize" && r.params.capabilities.textDocument.codeAction)!; expect(initialize.params.capabilities.textDocument.codeAction.resolveSupport.properties).toEqual(["edit"]);

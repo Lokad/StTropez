@@ -25,10 +25,12 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP rename host`, 
         const ranges = [{ anchor: raw.indexOf("catalogue") + 4, head: raw.indexOf("catalogue") + 2 }, { anchor: raw.length, head: raw.length }];
         await page.evaluate(ranges => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, ranges); }, ranges); const before = await snapshot(page);
         await input(page).press("F2"); await expect(name(page)).toBeFocused(); await expect(name(page)).toHaveValue("catalogue"); await name(page).press("Escape"); await expect(input(page)).toBeFocused();
+        await name(page).evaluate(node => { node.dataset.retained = "rename-name"; });
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(v => v.id === "primary")!.selectionSet);
         await input(page).press("F2"); await name(page).fill("discarded"); await name(page).press("Enter"); await waitForRename(page); await expect(targets(page)).toHaveCount(5); await exact(page, raw);
         await name(page).fill("café"); await expect(button(page, "Apply captured rename")).toBeDisabled(); await expect(targets(page)).toHaveCount(0); await name(page).press("Enter"); await waitForRename(page);
         await expect(targets(page)).toHaveCount(5); await expect(targets(page).filter({ hasText: "// fixture rename" })).toHaveCount(1); expect((await snapshot(page)).history).toEqual(before.history);
+        await expect(name(page)).toHaveAttribute("data-retained", "rename-name");
         // Some frame-inspection backends expose raw UTF-8 as Latin-1. Applied model text below
         // and actual preview text establish Unicode correctness independently of that diagnostic.
         await expect(targets(page).filter({ hasText: "café" })).toHaveCount(4);
@@ -38,9 +40,11 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP rename host`, 
         expect(responses.at(-1).documentChanges.find((change: any) => change.textDocument.uri === request.params.textDocument.uri).textDocument.version).toBe(remote.version);
         const expected = marker + raw.replace("const catalogue", "const café").replace("\r\ncatalogue;", "\r\ncafé;"); await button(page, "Apply captured rename").click(); await waitForRename(page); await exact(page, expected);
         const companion = before.bindings.navigation.companion!; expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("const café = 1;\r\ncafé;\r\n"); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
+        await button(page, "Open renamed changes in Navigation companion").evaluate(node => { node.dataset.retained = "rename-resource"; });
         await input(page).press("Control+End"); await input(page).pressSequentially("H"); await waitForRename(page); await input(page, "Secondary source").press("Control+z"); await waitForRename(page); await exact(page, expected);
         await input(page, "Secondary source").press("Control+z"); await waitForRename(page); await exact(page, raw); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet.ranges.map(r => ({ anchor: r.anchor, head: r.head }))).toEqual(ranges);
         await input(page, "Secondary source").press("Control+Shift+z"); await waitForRename(page); await button(page, "Open renamed changes in Navigation companion").click(); await waitForRename(page); await expect(input(page, "Secondary source")).toBeFocused();
+        await expect(button(page, "Open renamed changes in Navigation companion")).toHaveAttribute("data-retained", "rename-resource");
         await input(page, "Secondary source").press("Control+z"); await waitForRename(page); await exact(page, raw); await input(page, "Secondary source").press("Control+Shift+z"); await waitForRename(page); await exact(page, expected); expect((await snapshot(page)).source.exports).toBe(0); await dispose(page); await expect.poll(() => closed).toBe(opened);
     });
     test("malformed targets, authority changes, cancelled captures and reconnect leave editing available", async ({ page }) => {
