@@ -59,7 +59,7 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
         let linksResolveConfig: { delay: number; fault?: "outside" | "malformed" } = { delay: 0 };
         type ColorConfig = { delay: number; fault?: "malformed" | "failure" | "incomplete" | "markup" };
         let colorDiscoveryConfig: ColorConfig = { delay: 0 }, colorPresentationConfig: ColorConfig = { delay: 0 };
-        let hoverConfig: { delay: number; fault?: "malformed" | "failure" | "markup" } | undefined, navigationConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, definitionLinks = false;
+        let navigationConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, definitionLinks = false;
         let renameConfig: { delay: number; fault?: "malformed" | "failure" } = { delay: 0 }, versionedEdits = false;
         type ActionConfig = { module: string; delay: number; fault?: "malformed" | "failure" | "incomplete" | "markup" };
         let actionConfig: ActionConfig = { module: "sample-utils", delay: 0 }, actionResolveConfig: ActionConfig = { module: "sample-utils", delay: 0 }, actionGeneration = 0, actionLiterals = false, actionResolve = false;
@@ -184,14 +184,11 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
                     ...config.fault === "malformed" ? [{ label: 7 }] : []] };
             });
         });
-        peer.onRequest("fixture/hoverConfig", (params: NonNullable<typeof hoverConfig>) => {
-            if (!params || !Number.isFinite(params.delay) || params.delay < 0 || params.delay > 1000 || params.fault !== undefined && !["malformed", "failure", "markup"].includes(params.fault)) throw new ResponseError(-32602, "Invalid hover configuration"); hoverConfig = { ...params }; return null;
-        });
-        peer.onRequest("textDocument/hover", (params: { textDocument: { uri: string }; position: { line: number; character: number } }, token) => {
+        peer.onRequest("textDocument/hover", (params: { textDocument: { uri: string }; position: { line: number; character: number }; _fixture?: { delay: number; fault?: "malformed" | "failure" | "markup" } }, token) => {
             const doc = documents.get(params.textDocument.uri); if (!doc) throw new ResponseError(-32602, "Document not open");
-            const config = hoverConfig;
-            if (!config) return { contents: { kind: "plaintext", value: `Fixture ${params.textDocument.uri}:${params.position.line}:${params.position.character}` } };
-            hoverConfig = { delay: 0 };
+            const config = params._fixture;
+            if (config === undefined) return { contents: { kind: "plaintext", value: `Fixture ${params.textDocument.uri}:${params.position.line}:${params.position.character}` } };
+            if (!config || !Number.isFinite(config.delay) || config.delay < 0 || config.delay > 1000 || config.fault !== undefined && !["malformed", "failure", "markup"].includes(config.fault)) throw new ResponseError(-32602, "Invalid hover configuration");
             return deferred(config.delay, token, () => {
                 if (config.fault === "failure") throw new ResponseError(-32001, "Fixture hover unavailable");
                 if (config.fault === "malformed") return { contents: ["valid prefix", { language: "fixture", value: 42 }] };

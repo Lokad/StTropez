@@ -1,5 +1,6 @@
 import { openWebSocketTransport } from "../../src/browser/index.ts";
-import { LspWorkspace } from "../../src/protocol/index.ts";
+import type { LspWorkspace } from "../../src/protocol/index.ts";
+import { FixtureLspWorkspace } from "./fixture-workspace.ts";
 import { createLspProviderController } from "../editing/lsp-provider-controller.ts";
 import type { ProviderFactory } from "../editing/provider-controller.ts";
 import { createHoverController } from "../editing/hover-controller.ts";
@@ -27,7 +28,7 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
     const url = new URL("/lsp-fixture", location.href); url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const connect: LspSessionOptions["connect"] = context => { const abort = new AbortController(), stop = context.onCancel(() => abort.abort()); return openWebSocketTransport(url.href, { signal: abort.signal }).finally(stop); };
     const uri = (workspace: Workspace, id: DocumentId) => fixtureDocumentUri(workspace.resourceForDocument(id).id, id);
-    const connection = new LspWorkspace(owner, { connect, schedule: (ms, callback) => { const timer = window.setTimeout(callback, ms); return () => window.clearTimeout(timer); },
+    const connection = new FixtureLspWorkspace(owner, { connect, schedule: (ms, callback) => { const timer = window.setTimeout(callback, ms); return () => window.clearTimeout(timer); },
         initializationOptions: { fixtureDynamicLanguage: new URLSearchParams(location.search).get("lspSubset") === "dynamic" },
         features: ["textDocument/completion", "textDocument/hover", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction", "workspace/executeCommand", "textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor", "textDocument/colorPresentation"], diagnostics: true, workspaceEdits: true, applyEdit: true,
         documentInfo: document => document.key.variant === "working" ? { uri: uri(owner, document.id), languageId: "fixture" } : undefined });
@@ -43,7 +44,7 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
             beforeRequest: (session, configuration) => session.request("fixture/completionConfig", configuration).result }),
         hover: (workspace, tab, editor, canCapture) => createHoverController(workspace, tab, editor, { canCapture,
             backend: createLspHoverClient({ provider: connection,
-                beforeRequest: (session, configuration) => session.request("fixture/hoverConfig", configuration).result }) }),
+                beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/hover", configuration) }) }),
         navigation: { positionQueries: true, create: (_clock, counts, changed) => createLspNavigationClient(owner, counts, changed, { provider: connection,
             beforeRequest: (session, input) => session.request("fixture/navigationConfig", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) }).result }) },
         rename: () => createLspRenameClient({ provider: connection,
