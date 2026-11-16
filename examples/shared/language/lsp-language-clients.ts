@@ -12,7 +12,8 @@ import type { ColorPresentationInput, ColorReference, ColorsInput } from "../../
 /** Host presentation models with optional, host-owned request preparation. */
 export function lspSignatureBackend(workspace: Workspace, provider: LspWorkspace, changed: () => void, prepare?: (input: SignatureInput) => LspPrepare): SignatureBackend {
     const client = createLspSignatureClient(provider); let busy = false, disposed = false, result: (LspSignatureHelp & Readonly<{ isCurrent: () => boolean }>) | null = null, serial = 0;
-    const stop = client.subscribe(changed);
+    // Host cleanup can release workspace leases/scopes; run it after provider delivery.
+    const stop = client.subscribe(() => queueMicrotask(() => { if (!disposed) changed(); }));
     return Object.freeze({
         trigger: (document, character, retrigger) => client.options(document).some(option => [...Array.isArray(option.triggerCharacters) ? option.triggerCharacters : [], ...retrigger && Array.isArray(option.retriggerCharacters) ? option.retriggerCharacters : []].includes(character)),
         signature: async (input, buffer, _progress, context) => {
@@ -31,7 +32,7 @@ export function lspSignatureBackend(workspace: Workspace, provider: LspWorkspace
 export function lspLinkBackend(workspace: Workspace, provider: LspWorkspace, uri: (id: DocumentId) => string, changed: () => void, prepare?: (input: LinksInput) => LspPrepare): LinkBackend {
     const client = createLspLinkClient(provider), raw = new Map<HostModuleLink, LspDocumentLink>();
     let batch: Awaited<ReturnType<typeof client.run>> | undefined, normalize: ((item: LspDocumentLink) => HostModuleLink) | undefined, busy = false, disposed = false, serial = 0;
-    const stop = client.subscribe(changed);
+    const stop = client.subscribe(() => queueMicrotask(() => { if (!disposed) changed(); }));
     return Object.freeze({
         links: async (input, buffer) => {
             const token = ++serial, doc = workspace.document(input.document as DocumentId); busy = true; batch = undefined; raw.clear();
@@ -56,7 +57,8 @@ export function lspLinkBackend(workspace: Workspace, provider: LspWorkspace, uri
 export function lspColorBackend(workspace: Workspace, provider: LspWorkspace, changed: () => void,
     prepare?: Readonly<{ discovery: (input: ColorsInput) => LspPrepare; presentation: (input: ColorPresentationInput) => LspPrepare }>): ColorBackend {
     const client = createLspColorClient(provider), raw = new Map<ColorReference, LspDocumentColor>();
-    let batch: Awaited<ReturnType<typeof client.run>> | undefined, busy = false, disposed = false, serial = 0; const stop = client.subscribe(changed);
+    let batch: Awaited<ReturnType<typeof client.run>> | undefined, busy = false, disposed = false, serial = 0;
+    const stop = client.subscribe(() => queueMicrotask(() => { if (!disposed) changed(); }));
     return Object.freeze({
         colors: async (input, buffer) => {
             const token = ++serial, doc = workspace.document(input.document as DocumentId); busy = true; batch = undefined; raw.clear();

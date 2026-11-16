@@ -83,8 +83,17 @@ export class HostDocumentColors {
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.release(); this.publish({ status: "idle", message: "Color references and presentation preview dismissed.", work: 0, total: 0, page: 0 }); };
     readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ message: "Color provider disconnected; local editing remains available." }); };
     readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ message: "Discover fresh colors." }); };
-    private connectionChanged(): void { if (this.dropping) return; if (this.job && !this.current(this.job)) { this.changed(this.job); return; }
-        if (this.client && !this.client.snapshot().connected && !this.client.snapshot().busy) { const job = this.job; if (job) this.clearPreview(job); this.drop(); this.publish({ status: "failed", message: "Color connection failed; request a fresh preview or rediscover." }); } else this.publish(); }
+    private connectionChanged(): void {
+        if (this.dropping) return;
+        const job = this.job;
+        // The pending promise owns its outcome. Decoder invalidation can notify before its
+        // rejection arrives; resource/input subscriptions independently expire changed captures.
+        if (job && (!job.colors || job.preview && !job.preview.result)) { this.publish(); return; }
+        if (this.client && !this.client.snapshot().connected && !this.client.snapshot().busy) {
+            this.release(); this.drop(); this.publish({ status: "failed", message: "Color connection failed; reconnect and discover fresh colors." });
+        } else if (job && !this.current(job)) this.changed(job);
+        else this.publish();
+    }
     private changed(job: Job): void {
         if (this.publishing || this.job !== job) return;
         if (!this.current(job)) { job.invalid = true; queueMicrotask(() => { if (this.job === job) { this.release(); this.metrics.expired++; this.publish({ status: "expired", message: "Captured resource, revision, authority or view changed; rediscover colors." }); } }); }
