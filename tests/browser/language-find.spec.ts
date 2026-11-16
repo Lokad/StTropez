@@ -60,6 +60,7 @@ test("keyboard find routing, read-only replacement and a pilot-sized replace-all
     await page.keyboard.press("ControlOrMeta+h"); await expect(page.getByRole("textbox", { name: "Replace with", exact: true })).toBeFocused(); await page.keyboard.type("let");
     await page.evaluate(() => window.editingFixture.readOnly(true)); await page.getByRole("button", { name: "Replace all", exact: true }).click();
     await expect(page.locator("#find-status")).toHaveText("read-only"); expect((await snapshot(page)).document!.length).toBe(240_000);
+    expect((await snapshot(page)).find.reason).toBe("editing-unavailable");
     await page.evaluate(() => window.editingFixture.readOnly(false)); const before = await snapshot(page);
     await page.getByRole("button", { name: "Replace all", exact: true }).click(); await found(page, 0); await ready(page);
     expect((await snapshot(page)).document).toMatchObject({ revision: before.document!.revision + 1, length: 220_000, exports: 0 });

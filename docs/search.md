@@ -44,7 +44,7 @@ destroying its editor.
 `createFindController` requires the workspace, tab and editor to identify the same live text view. It captures
 the tab generation and retains a resource lease; focus changes never redirect its commands.
 `FindSnapshot` is immutable and includes query/options, revision, status, count, scan frontier,
-source length, current match index, match version, message and component timings.
+source length, current match index, match version, reason, message and component timings.
 
 | Option or command | Behavior |
 | --- | --- |
@@ -82,6 +82,42 @@ States are `idle`, `searching`, `ready`, `replacing`, `failed`, `cancelled`, `ex
 `disposed`. A missing backend or failed worker produces an explicit message. Expired or destroyed
 controllers cannot address a replacement tab. See the [clock glossary](README.md#glossary) for
 the boundaries of `maxScanStepMs` and `replaceTransactionMs`.
+
+### Notice reasons
+
+`FindSnapshot.reason` is a `FindReason` or `null`. Use it for programmatic decisions and
+localization; `message` supplies default display text. The two fields are published together.
+Reasons describe the last published notice. Read `status` for progress and resource capabilities
+for current editing permissions. An ignored command can leave the previous notice intact.
+
+| Reason | Meaning |
+| --- | --- |
+| `null` | No notice; the message is empty |
+| `editing-unavailable` | Replacement is refused or cancelled because the view is read-only or resource authority is unavailable |
+| `composition-active` | Navigation/replacement is refused, or queued replacement is cancelled, for composition |
+| `backend-unavailable` | Regular-expression mode has no configured backend |
+| `search-failed` | Search construction, matching or result validation failed |
+| `replacement-failed` | Replacement planning or plan validation failed |
+| `view-unavailable` | The captured target or editor view is unavailable |
+| `cancelled` | The host explicitly cancelled find |
+| `replaced` | A replacement transaction was accepted, including a no-op |
+| An `EditResult` refusal reason | The workspace rejected the final transaction; its reason is forwarded unchanged |
+
+Starting/restarting a query, changing options, successful navigation, starting a queued
+replacement and destruction clear the notice. Unchanged options do not clear it. Scan progress,
+completion and timing-only publications preserve it; edits while cancelled preserve the
+cancellation notice. Obsolete asynchronous replies cannot overwrite it. Backend error text is
+display data: identical text can have different reasons depending on which operation failed.
+
+```ts
+import type { FindSnapshot } from "sttropez/browser";
+
+export function findNotice(state: FindSnapshot): string {
+    if (state.reason === "composition-active") return "Finish text composition first.";
+    if (state.reason === "editing-unavailable") return "Editing is unavailable for this view.";
+    return state.message || `${state.count} matches`;
+}
+```
 
 ### Literal matching and scheduling
 

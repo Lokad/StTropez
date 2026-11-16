@@ -18,7 +18,7 @@ test(`unchanged regex transfer steps preserve snapshot identity and accumulated 
     const backend: FindBackend = { dispose: () => { disposed = true; }, replace: () => { throw new Error("Unexpected replacement."); }, search: () => ({
         dispose: () => {}, next: () => {
             calls++; now += calls === 52 ? 80 : calls;
-            if (calls === 51 && terminal === "failed") throw new Error("Held search failure.");
+            if (calls === 51 && terminal === "failed") throw new Error("Regular-expression search is unavailable in this host.");
             if (calls === 51 && terminal === "cancelled") return new Promise<SearchStep>(resolve => { late = resolve; });
             return Promise.resolve({ done: calls === 53, scanned: calls === 53 ? 6 : calls > 50 ? 3 : 0,
                 readUnits: 1, matches: calls === 51 ? [{ from: 0, to: 3 }] : [] });
@@ -27,7 +27,7 @@ test(`unchanged regex transfer steps preserve snapshot identity and accumulated 
     find.setOptions({ regularExpression: true }); const states: FindSnapshot[] = [], stop = find.state.subscribe(() => states.push(find.state.getSnapshot()));
     const tick = async () => { const next = tasks.entries().next().value; if (next) { tasks.delete(next[0]); next[1](); } await Promise.resolve(); await Promise.resolve(); };
     try {
-        find.setQuery("cat"); const initial = find.state.getSnapshot();
+        find.setQuery("cat"); const initial = find.state.getSnapshot(); assert.equal(initial.reason, null);
         for (let i = 0; i < 50; i++) await tick();
         assert.equal(calls, 50); assert.equal(states.length, 1); assert.equal(find.state.getSnapshot(), initial);
         await tick();
@@ -39,11 +39,13 @@ test(`unchanged regex transfer steps preserve snapshot identity and accumulated 
             find.cancel(); const cancelled = find.state.getSnapshot(); assert.equal(cancelled.maxScanStepMs, 50);
             late!({ done: true, scanned: 6, readUnits: 0, matches: [{ from: 0, to: 3 }] }); await tick(); assert.equal(find.state.getSnapshot(), cancelled);
             assert.equal(states.length, 2);
-        } else { assert.equal(find.state.getSnapshot().message, "Held search failure."); assert.equal(find.state.getSnapshot().maxScanStepMs, 50); assert.equal(states.length, 2); }
+        } else { assert.equal(find.state.getSnapshot().message, "Regular-expression search is unavailable in this host."); assert.equal(find.state.getSnapshot().maxScanStepMs, 50); assert.equal(states.length, 2); }
         assert.equal(find.state.getSnapshot().status, terminal); assert.equal(tasks.size, 0);
+        assert.equal(find.state.getSnapshot().reason, terminal === "ready" ? null : terminal === "failed" ? "search-failed" : "cancelled");
         t.diagnostic(JSON.stringify({ terminal, transferSteps: 50, publishedSnapshots: states.length, maxScanStepMs: find.state.getSnapshot().maxScanStepMs }));
     } finally {
-        stop(); find.destroy(); view.dispose(); workspace.close(tab); assert.equal(disposed, true); assert.equal(tasks.size, 0);
+        stop(); find.destroy(); assert.equal(find.state.getSnapshot().reason, null); assert.equal(find.state.getSnapshot().message, "");
+        view.dispose(); workspace.close(tab); assert.equal(disposed, true); assert.equal(tasks.size, 0);
         assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0);
     }
 });
@@ -144,24 +146,39 @@ test("partial async regex plans respect selection, revision, composition, author
             assert.equal(f.text(), change === "revision" ? "cat cat human" : change === "focus" ? "dog dog" : "cat cat", change);
             assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, change === "revision" || change === "focus" ? 1 : 0, change);
             assert.equal(f.focused(), beforeFocus, change); assert.equal(f.plans[0]!.disposed, true, change);
+            assert.equal(f.find.state.getSnapshot().reason, { selection: null, revision: null, composition: "composition-active",
+                authority: "editing-unavailable", options: null, view: "view-unavailable", focus: "replaced" }[change], change);
+            if (change === "composition") {
+                assert.equal(f.find.next(), false); assert.equal(f.find.state.getSnapshot().reason, "composition-active");
+                assert.equal(f.find.replaceCurrent("dog"), false); assert.equal(f.find.state.getSnapshot().reason, "composition-active");
+            }
         } finally { f.finish(); }
     }
 });
 
 test("missing backend, syntax errors and failed or mismatched plans cannot publish partial edits", async () => {
     const absent = fixture("cat", false);
-    try { absent.find.setOptions({ regularExpression: true }); absent.find.setQuery("cat"); await absent.drain(); assert.equal(absent.find.state.getSnapshot().status, "failed"); assert.equal(absent.find.state.getSnapshot().count, 0); assert.equal(absent.text(), "cat"); }
+    try { absent.find.setOptions({ regularExpression: true }); absent.find.setQuery("cat"); await absent.drain(); assert.equal(absent.find.state.getSnapshot().status, "failed"); assert.equal(absent.find.state.getSnapshot().count, 0); assert.equal(absent.text(), "cat");
+        assert.equal(absent.find.state.getSnapshot().reason, "backend-unavailable");
+        absent.find.setOptions({ regularExpression: false }); assert.equal(absent.find.state.getSnapshot().reason, null); await absent.drain();
+        assert.equal(absent.find.state.getSnapshot().status, "ready"); assert.equal(absent.find.state.getSnapshot().count, 1);
+        absent.find.setQuery(""); assert.equal(absent.find.state.getSnapshot().reason, null); assert.equal(absent.find.state.getSnapshot().message, "");
+    }
     finally { absent.finish(); }
     const f = fixture("cat cat");
     try {
         f.find.setOptions({ regularExpression: true }); f.find.setQuery("("); await f.drain(); assert.equal(f.find.state.getSnapshot().status, "failed");
+        assert.equal(f.find.state.getSnapshot().reason, "search-failed");
         f.find.setQuery("cat"); await f.drain(); f.fail(); f.find.replaceAll("dog"); await f.drain(); assert.equal(f.text(), "cat cat"); assert.equal(f.find.state.getSnapshot().status, "ready"); assert.match(f.find.state.getSnapshot().message, /failure/);
+        assert.equal(f.find.state.getSnapshot().reason, "replacement-failed");
         assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 0); assert.equal(f.plans[0]!.disposed, true);
         assert.ok(Object.isFrozen(f.find.matchesIn(0, 7)));
+        assert.equal(f.find.next(), true); assert.equal(f.find.state.getSnapshot().reason, null); assert.equal(f.find.state.getSnapshot().message, "");
     } finally { f.finish(); }
     const wrong = fixture("cat cat");
     try {
         wrong.find.setOptions({ regularExpression: true }); wrong.find.setQuery("cat"); await wrong.drain(); wrong.tamper(); wrong.find.replaceAll("dog"); await wrong.drain();
         assert.equal(wrong.text(), "cat cat"); assert.match(wrong.find.state.getSnapshot().message, /captured search/); assert.equal(wrong.workspace.observeHistory(wrong.source.documentId).getSnapshot().undoDepth, 0);
+        assert.equal(wrong.find.state.getSnapshot().reason, "replacement-failed");
     } finally { wrong.finish(); }
 });

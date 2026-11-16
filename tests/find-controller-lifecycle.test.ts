@@ -91,6 +91,7 @@ for (const lifetime of ["destroyed", "expired", "view-disposed"] as const) for (
             else view.dispose();
             const before = find.state.getSnapshot(), document = workspace.document(documentId), selected = view.getSnapshot(), history = workspace.observeHistory(documentId).getSnapshot();
             if (lifetime !== "view-disposed") assert.equal(before.current, null);
+            assert.equal(before.reason, lifetime === "expired" ? "view-unavailable" : null);
             let notifications = 0; stop = find.state.subscribe(() => { notifications++; });
             const returned = find.replaceCurrent("changed"), after = find.state.getSnapshot();
             t.diagnostic(JSON.stringify({ lifetime, composing, returned, notifications, before, after }));

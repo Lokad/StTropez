@@ -4,7 +4,7 @@ import { fontFixture } from "./font-fixture.js";
 import { DiffReferenceCache, WorkspaceCommands } from "sttropez";
 import { createSelectionSet, planSelectionEdits } from "sttropez";
 import type { SaveReview } from "sttropez";
-import type { InputConflictDetail, PresentedLine } from "sttropez/browser";
+import type { FindReason, InputConflictDetail, PresentedLine } from "sttropez/browser";
 import { JsonRpcConnection } from "sttropez/protocol";
 import { openWebSocketTransport } from "sttropez/browser";
 const workspace = new Workspace();
@@ -160,11 +160,14 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
                 if (change === "permission") { const policy = source.metadata.getSnapshot().capabilities; model.setCapabilities(source.id, { ...policy, edit: ["host"] }); model.setCapabilities(source.id, policy); }
                 else { const lease = model.acquireEditLease(source.id, "consumer", "host"); lease.release(); }
                 await ready();
-                if (model.document(source.documentId).buffer !== before.buffer || !find.state.getSnapshot().message.includes("cancelled")
+                const reason: FindReason | null = find.state.getSnapshot().reason;
+                if (model.document(source.documentId).buffer !== before.buffer || reason !== "editing-unavailable"
                     || model.observeHistory(source.documentId).getSnapshot().undoDepth !== 0 || model.diagnostics().subscriptions !== subscriptions
                     || JSON.stringify(editor.view.getSnapshot().selectionSet) !== JSON.stringify(selected)) throw new Error("Interrupted compiled replacement resumed.");
-                find.replaceAll("dog"); await ready(); const changed = model.document(source.documentId);
-                if (changed.buffer.slice(0, 7) !== "dog dog" || model.observeHistory(source.documentId).getSnapshot().undoDepth !== 1) throw new Error("Fresh compiled retry failed.");
+                find.replaceAll("dog"); if (find.state.getSnapshot().reason !== null) throw new Error("Compiled retry retained an old notice.");
+                await ready(); const changed = model.document(source.documentId);
+                if (changed.buffer.slice(0, 7) !== "dog dog" || model.observeHistory(source.documentId).getSnapshot().undoDepth !== 1
+                    || find.state.getSnapshot().reason !== "replaced") throw new Error("Fresh compiled retry failed.");
                 model.undo({ documentId: source.documentId, expectedRevision: changed.revision }); await ready();
                 if (model.document(source.documentId).buffer.slice(0, 7) !== "cat cat" || JSON.stringify(editor.view.getSnapshot().selectionSet) !== JSON.stringify(selected)) throw new Error("Compiled retry undo lost selections.");
                 find.replaceAll("cat"); await ready();

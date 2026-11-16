@@ -136,6 +136,7 @@ test("confirmed matches remain navigable and replaceable during repair without w
         assert.equal(f.find.replaceCurrent("cat"), true);
         assert.equal(f.find.state.getSnapshot().status, "searching"); assert.equal(f.find.state.getSnapshot().retained, true);
         f.drain(); assert.equal(f.find.state.getSnapshot().status, "ready"); assert.equal(f.find.state.getSnapshot().count, 19998);
+        assert.equal(f.find.state.getSnapshot().reason, "replaced");
         assert.deepEqual(f.workspace.observeHistory(f.documentId).getSnapshot(), history);
     } finally { f.dispose(); }
 });
