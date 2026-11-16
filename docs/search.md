@@ -207,7 +207,7 @@ zero-width occurrence. Undo restores complete selections.
 | Pattern | At most 4,096 UTF-16 units |
 | Matches | At most 1,000,000; response pages contain at most 512 ranges |
 | Replacement template | At most 32,768 UTF-16 units |
-| Replacement output | Inserted text and final document each bounded by `maxOutputUnits`; integer from 0 through 32 Mi, default 32 Mi |
+| Replacement output | Inserted text bounded by `maxOutputUnits`, an integer from 0 through 32 Mi, default 32 Mi; final document at most 32 Mi |
 | Replacement transfer | At most 512 small edits per page; large insertions use 32,768-unit fragments |
 | `regularExpressionDelayMs` | Controller query delay: default 80; finite value from 0 through 1,000 |
 | `timeoutMs` | Backend exchange timeout: default 5,000; positive finite value |
@@ -218,7 +218,9 @@ immutable buffer identity. Query changes can reuse that source. Changed revision
 complete source again. Cancelling active exchanges or result streams terminates the worker and
 drops the cache; a query cancelled before its first message preserves an idle cache. A timeout
 terminates a worker stuck in native matching. Limits, malformed replies and worker failures
-reject incomplete plans without partial edits. Final fragment assembly and model application
+reject incomplete plans without partial edits. Identified replies for older requests are ignored.
+Current replies pass bounded message validation before captured raw-range, ordering and output checks.
+Final fragment assembly and model application
 are synchronous bulk work.
 
 ## Host responsibilities

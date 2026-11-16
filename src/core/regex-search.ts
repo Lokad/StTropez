@@ -1,4 +1,5 @@
 import { codeWordConstituentPattern } from "./words.ts";
+import { splitsSurrogatePair } from "./utf16.ts";
 import type { SearchMatch } from "./search.ts";
 /** Pure matching kernel for a dedicated worker, never a main-thread cooperative cursor.
  * Native matching can take unbounded time in one next() call; the owner must terminate
@@ -38,7 +39,7 @@ export function regexExpression(pattern: string, matchCase = true, wholeWord = f
 }
 function nativeMatches(text: string, pattern: string, matchCase: boolean, wholeWord: boolean, from: number) {
     if (typeof text !== "string") throw new TypeError("Invalid regex search input.");
-    if (!Number.isSafeInteger(from) || from < 0 || from > text.length || from > 0 && from < text.length && /^[\ud800-\udbff][\udc00-\udfff]$/.test(text.slice(from - 1, from + 1))) throw new RangeError("Invalid regex start offset.");
+    if (!Number.isSafeInteger(from) || from < 0 || from > text.length || splitsSurrogatePair(text, from)) throw new RangeError("Invalid regex start offset.");
     // The platform iterator handles Unicode zero-width progression, including EOF.
     // Multiline anchors match editor lines; dot still requires an explicit class to cross lines.
     const expression = regexExpression(pattern, matchCase, wholeWord);

@@ -1,5 +1,6 @@
-import { RegexSession } from "./regex-session.ts";
-import type { RegexReply } from "./regex-session.ts";
+import { RegexSession } from "../protocol/regex-session.ts";
+import { decodeRegexMessage, regexIdentity } from "../protocol/regex.ts";
+import type { RegexReply } from "../protocol/regex.ts";
 const session = new RegexSession();
 let continuation: { id: number; revision: number; replies: Generator<RegexReply> } | undefined;
 function publish(replies: Generator<RegexReply>): void {
@@ -18,16 +19,14 @@ function publish(replies: Generator<RegexReply>): void {
     }
 }
 globalThis.addEventListener("message", (event: MessageEvent<unknown>) => {
-    let decoded: unknown;
-    try { if (typeof event.data !== "string" || event.data.length > 262144) throw new TypeError(); decoded = JSON.parse(event.data); }
-    catch { decoded = null; }
-    if (typeof decoded === "object" && decoded !== null && "operation" in decoded && decoded.operation === "regex-continue") {
-        if (continuation && "id" in decoded && decoded.id === continuation.id && "revision" in decoded && decoded.revision === continuation.revision) {
+    const decoded = decodeRegexMessage(event.data);
+    if (decoded?.operation === "regex-continue") {
+        if (continuation && regexIdentity(decoded) && decoded.id === continuation.id && decoded.revision === continuation.revision) {
             const current = continuation; continuation = undefined; publish(current.replies);
         }
         return;
     }
-    if (continuation && typeof decoded === "object" && decoded !== null && "id" in decoded && "revision" in decoded
+    if (continuation && decoded && "id" in decoded && "revision" in decoded
         && (decoded.id !== continuation.id || decoded.revision !== continuation.revision)) return;
     continuation?.replies.return(undefined); continuation = undefined;
     // Acknowledgement bounds result queues as well as source transfer. A native match

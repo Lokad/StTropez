@@ -65,7 +65,7 @@ lease semantics.
 | Layer | Owns | Dependencies and effects |
 | --- | --- | --- |
 | `src/core` | Buffers, changes, selections, history, resources, transactions and headless computation | Core modules only; no DOM, React, Node, networking or storage APIs |
-| `src/protocol` | JSON-RPC/LSP messages, sessions, synchronization, validation and feature coordination | Protocol and core; transport/scheduling through supplied interfaces, without platform networking/storage APIs |
+| `src/protocol` | JSON-RPC/LSP coordination and the private regex worker contract/session, including message validation | Protocol and core; transport/scheduling through supplied interfaces, without platform networking/storage APIs |
 | `src/browser` | Editor DOM, native input, geometry, presentation scheduling and browser adapters | Browser, protocol and core; browser effects stay in this layer |
 | Host application | Storage, authentication, service endpoints, resource routing, framework state, forms and controls | Public package entries; application dependencies stay in the host |
 | Development tools/fixtures | Builds, servers, controlled providers, test hooks and measurement | Development dependencies; excluded from the library runtime graph |

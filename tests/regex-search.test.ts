@@ -18,6 +18,8 @@ test("worker regex kernel retains raw multiline, lookbehind, captures and Unicod
     assert.ok(ranges.every(m => Object.isFrozen(m) && Object.keys(m).join(",") === "from,to"));
     assert.deepEqual([...regexRanges(text, "(?<name>𐐨value)", false, true, 25)], [{ from: 25, to: 32 }]);
     assert.throws(() => [...regexRanges(text, "x", true, false, 1)], RangeError);
+    assert.deepEqual([...regexRanges("\ud800x\udc00😀", "(?:)", true, false, 2)].map(match => match.from), [2, 3, 5]);
+    assert.throws(() => [...regexRanges("\ud800x\udc00😀", "(?:)", true, false, 4)], RangeError);
     assert.deepEqual([...regexMatches("K k K", "k", false)].map(m => m.from), [0, 2, 4]);
     assert.throws(() => [...regexMatches("text", "(")], SyntaxError);
 });

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { RegexSession, regexChunkUnits, regexSourceLimit, regexProtocolVersion } from "../src/browser/regex-session.ts";
+import { RegexSession } from "../src/protocol/regex-session.ts";
+import { regexChunkUnits, regexSourceLimit, regexProtocolVersion } from "../src/protocol/regex.ts";
 const start = (length: number, pattern = "😀(?<word>𐐀value)\\r\\nnext") => ({ operation: "regex-start", version: regexProtocolVersion, source: 1, id: 1, revision: 7, length, pattern, matchCase: true });
 
 test("regex transfer preserves cross-chunk raw spans and publishes bounded pages only after complete capture", () => {
@@ -22,7 +23,8 @@ test("regex capture rejects malformed ordering/bounds and superseded generators 
         assert.deepEqual([...session.receive({ ...start(1), version })], [{ operation: "regex-error", id: 1, revision: 7, message: "Unsupported regex worker protocol version." }]);
         assert.deepEqual([...session.receive({ operation: "regex-chunk", id: 1, revision: 7, from: 0, text: "x" })], []);
     }
-    for (const bad of [{ ...start(1), length: regexSourceLimit + 1 }, { ...start(1), pattern: "(" }, { ...start(1), matchCase: "yes" }]) {
+    for (const bad of [{ ...start(1), length: regexSourceLimit + 1 }, { ...start(1), pattern: "(" }, { ...start(1), matchCase: "yes" },
+        { ...start(1), pattern: "x".repeat(4097) }, { ...start(1), replacement: "x".repeat(32769) }, { ...start(1), range: { from: 0, to: 1 } }]) {
         const session = new RegexSession(); assert.equal([...session.receive(bad)][0]!.operation, "regex-error");
     }
     for (const bad of [{ operation: "regex-run", id: 1, revision: 7 }, { operation: "regex-chunk", id: 1, revision: 7, from: 1, text: "x" }, null, {}]) {

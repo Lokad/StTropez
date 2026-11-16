@@ -1,5 +1,7 @@
 export const highSurrogate = (unit: number): boolean => unit >= 0xd800 && unit <= 0xdbff;
 export const lowSurrogate = (unit: number): boolean => unit >= 0xdc00 && unit <= 0xdfff;
+/** Whether a raw offset separates a valid surrogate pair; string edges never split one. */
+export const splitsSurrogatePair = (text: string, offset: number): boolean => highSurrogate(text.charCodeAt(offset - 1)) && lowSurrogate(text.charCodeAt(offset));
 /** Internal bounded window reader. A clipped trailing high surrogate stays a raw code unit. */
 export function utf16CodePointAt(text: string, index: number): number {
     const first = text.charCodeAt(index);

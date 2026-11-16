@@ -5,8 +5,9 @@ import type { TextEdit } from "../src/index.ts";
 import { createRegexClient } from "../src/browser/regex-client.ts";
 import { createRegexFindBackend } from "../src/browser/regex-find.ts";
 import type { DocumentId } from "../src/index.ts";
-import { RegexSession, regexProtocolVersion } from "../src/browser/regex-session.ts";
-import type { RegexReply } from "../src/browser/regex-session.ts";
+import { RegexSession } from "../src/protocol/regex-session.ts";
+import { regexProtocolVersion } from "../src/protocol/regex.ts";
+import type { RegexReply } from "../src/protocol/regex.ts";
 class FixtureWorker extends EventTarget {
     readonly messages: Record<string, unknown>[] = [];
     readonly session = new RegexSession();
@@ -137,6 +138,7 @@ test("regex replacement plans stream exact captures, large fragments, zero-width
     for (const { text, pattern, options, expected } of [
         { text: "foobar foo foo_", pattern: "foo|foobar", options: { wholeWord: true, replacement: "<$&>" }, expected: "<foobar> <foo> foo_" },
         { text: "xab xab", pattern: "(?<=x)(ab)", options: { replacement: "$1!", range: { from: 5, to: 7 } }, expected: "xab xab!" },
+        { text: "abc", pattern: "a", options: { replacement: "", maxOutputUnits: 0 }, expected: "bc" },
     ]) {
         const f = fixture(TextBuffer.from(text), pattern, true, options), edits: TextEdit[] = [];
         for (;;) { const step = await f.cursor.next(); edits.push(...step.edits); if (step.done) break; } assert.equal(applyTextEdits(text, edits), expected);
@@ -159,7 +161,8 @@ test("regex replacement limits and malformed insertion streams reject incomplete
 });
 
 test("regex client validates complete pages, rejects split pairs/counts and preserves pending steps after stale replies", async () => {
-    for (const matches of [[{ from: 0, to: 1 }], [{ from: 0, to: 2 }, { from: 0, to: 2 }], [{ from: 2, to: 99 }], [{ from: -1, to: 0 }], []]) {
+    for (const matches of [[{ from: 0, to: 1 }], [{ from: 0, to: 2 }, { from: 0, to: 2 }], [{ from: 2, to: 99 }], [{ from: -1, to: 0 }],
+        [{ from: 0.5, to: 2 }], [null], Array.from({ length: 513 }, () => ({ from: 0, to: 0 })), []]) {
         const f = fixture(TextBuffer.from("😀x")); await f.cursor.next(); const worker = f.workers[0]!; worker.automatic = false;
         const pending = f.cursor.next(), target = worker.messages.at(-1)!;
         worker.reply({ operation: "regex-matches", id: Number(target.id) + 1, revision: 9, matches: [{ from: 0, to: 0 }] }); assert.equal(f.cursor.snapshot().pending, true);
@@ -168,6 +171,38 @@ test("regex client validates complete pages, rejects split pairs/counts and pres
     }
     const f = fixture(TextBuffer.from("x")); await f.cursor.next(); const worker = f.workers[0]!; worker.automatic = false; const pending = f.cursor.next();
     worker.reply({ operation: "regex-done", id: worker.messages.at(-1)!.id, revision: 9, count: 99 }); await assert.rejects(pending, /count/); assert.equal(worker.terminated, true);
+});
+
+test("regex wire bounds apply to current replies after identity routing and release rejected lanes", async () => {
+    const f = fixture(TextBuffer.from("x")); await f.cursor.next(); const worker = f.workers[0]!; worker.automatic = false;
+    const result = f.cursor.next(), id = worker.messages.at(-1)!.id;
+    const page = JSON.stringify({ operation: "regex-matches", id, revision: 9, matches: [{ from: 0, to: 1 }] });
+    worker.dispatchEvent(new MessageEvent("message", { data: page.padEnd(262144, " ") }));
+    assert.deepEqual((await result).matches, [{ from: 0, to: 1 }]);
+    const pending = f.cursor.next();
+    worker.reply({ operation: "regex-matches", id: Number(id) + 1, revision: 9, matches: "malformed stale payload" });
+    assert.equal(f.cursor.snapshot().pending, true); assert.equal(f.timers.size, 1);
+    const done = JSON.stringify({ operation: "regex-done", id, revision: 9, count: 1 });
+    worker.dispatchEvent(new MessageEvent("message", { data: done.padEnd(262145, " ") }));
+    await assert.rejects(pending, /Malformed/); assert.equal(worker.terminated, true); assert.equal(f.timers.size, 0);
+
+    for (const reply of [
+        { operation: "regex-edits", edits: [{ from: 0, to: 1, insert: 4 }] },
+        { operation: "regex-edits", edits: [{ from: 0, to: 1, insert: "x".repeat(32768) }, { from: 1, to: 2, insert: "x" }] },
+        { operation: "regex-edits", edits: [{ from: 0.5, to: 1, insert: "x" }] },
+        { operation: "regex-edit", ordinal: -1, from: 0, to: 1, units: 40000 },
+        { operation: "regex-edit", ordinal: 0, from: 0, to: 1, units: 32768 },
+        { operation: "regex-done", count: 0, outputLength: "3" },
+    ]) {
+        const lane = fixture(TextBuffer.from("abc"), "a", true, { replacement: "b" }); await lane.cursor.next();
+        const current = lane.workers[0]!; current.automatic = false; const step = lane.cursor.next();
+        current.reply({ id: current.messages.at(-1)!.id, revision: 9, ...reply });
+        await assert.rejects(step, /Invalid/); assert.equal(current.terminated, true); assert.equal(lane.timers.size, 0); assert.equal(lane.cursor.snapshot().count, 0);
+    }
+    const owner = workerFixture(), client = createRegexClient(owner.options), capture = { documentId: "limit" as DocumentId, revision: 0, buffer: TextBuffer.from("") };
+    assert.throws(() => client.createCursor(capture, "x".repeat(4097), true), /capture/); assert.equal(owner.workers.length, 0);
+    assert.equal((await client.createCursor(capture, "x".repeat(4096), true).next()).done, true); client.dispose();
+    assert.equal(owner.timers.size, 0); assert.equal(owner.workers[0]!.terminated, true);
 });
 
 test("regex client cancellation, timeout and malformed responses release the lane without continuing transfer", async () => {
