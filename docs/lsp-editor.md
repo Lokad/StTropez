@@ -5,7 +5,7 @@ WebSocket provider. Their default local worker remains a separate fixture. The L
 real session using the pinned 3.17.5 reference peer; it never falls back to that worker. Both hosts
 reuse the same provider controls, captured view ownership, Workspace transactions and history.
 Their generic controller is the exported `createLspEditor`; the
-[public integration guide](lsp-integration.md) covers its lifetime and independent consumers.
+[public integration guide](language-server.md) covers its lifetime and independent consumers.
 Hover, definition/reference navigation, [rename/edit previews](lsp-rename.md) and
 [code-action discovery/resolve](lsp-code-actions.md), [signature help, links and colors](lsp-language.md)
 also use LSP in this route. Local tokenization and domain tools retain their independent fixtures.
@@ -156,7 +156,7 @@ the new source. `diagnosticsPending` distinguishes that presentation from a newl
 batch; `diagnosticRevision` identifies the offsets used by `selectDiagnostic`. The host examples
 show a separate pending-analysis status so completion messages cannot hide that distinction.
 Deleted diagnostic ranges disappear, and reconnect/close invalidates all retained locations.
-Pending diagnostics never supply code-action context; see [diagnostic ownership](lsp.md).
+Pending diagnostics never supply code-action context; see [diagnostic ownership](language-server.md#diagnostics).
 
 Completion documentation remains literal text;
 hover and signature help separately support the focused [documentation subset](documentation.md).
@@ -195,7 +195,7 @@ request IDs, cancellation and original arguments pass through unchanged. Review 
 registration is a separate acknowledged operation, not a side effect of setting fault policy.
 The [workspace-provider adapter](lsp-server-edits.md) uses that same connection
 and a shared exclusive command lane for confirmed action/workspace commands and edit decisions. The
-[remaining LSP matrix](lsp.md) describes the selected remaining feature gaps.
+[supported LSP subset](language-server.md#capabilities-and-supported-subset) describes the protocol routes.
 
 Diagnostic injection in this development peer uses `fixture/diagnostics` with `{ uri, mode }`.
 Capture the intended document URI explicitly; an absent, unknown or closed URI and an invalid

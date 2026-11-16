@@ -63,7 +63,7 @@ the actual source position. A local word heuristic may label the request, but do
 LSP queries at other valid positions. Definition link support is negotiated; references send the
 captured `includeDeclaration` flag. Standard reference locations contain no declaration flag, so
 the client does not guess which returned references are declarations. Wire versions remain
-separate from local document revisions. Session/project bounds remain the [declared limits](lsp.md).
+separate from local document revisions. Session/project bounds follow the [declared limits](language-server.md#limits-and-failures).
 The generic fixture fails explicitly when its result bound is exceeded instead of pretending its
 response is complete. Semantic completeness belongs to the provider.
 

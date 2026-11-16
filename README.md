@@ -153,14 +153,14 @@ The [viewport layer](docs/viewport.md) and `/viewport/` fixture record bounded-r
 The [editing candidate](docs/editing-candidate.md) and `/editing/` fixture exercise bounded native
 context, measured pointer selection, shared history and composition guards. Long contextual-line
 layout and native-device input remain qualification gates.
-The optional [LSP protocol layer](docs/lsp.md) supplies JSON-RPC/WebSocket transport, captured
+The optional [LSP protocol layer](docs/language-server.md) supplies JSON-RPC/WebSocket transport, captured
 sessions and shared Workspace provider ownership, validated [diagnostic/completion](docs/lsp-editor.md), [hover/navigation](docs/lsp-navigation.md)
 and [rename/workspace-text-edit](docs/lsp-rename.md) host adapters, plus
 [code-action choices and resolve](docs/lsp-code-actions.md) and
 [workspace commands with server-edit decisions](docs/lsp-server-edits.md), plus
 [signature help, resolvable links and color presentations](docs/lsp-language.md).
-Its supported-subset matrix states the remaining protocol boundaries.
-The [public integration APIs](docs/lsp-integration.md) serve both hosts and an isolated consumer;
+The language-server guide covers connection ownership, supported methods and limits.
+Its public integration APIs serve both hosts and an isolated consumer;
 `npm run test:package:lsp` qualifies that minimal restored-package boundary.
 The [find controller](docs/search.md) and [provider/presentation fixture](docs/providers.md)
 add revision-checked workflows to that view, with explicit scope and scheduling limits.

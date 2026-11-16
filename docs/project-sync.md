@@ -64,5 +64,5 @@ physical-display qualification.
 The [workspace command fixture](server-edits.md) uses the same client in a separately owned lane
 for acknowledged local registration, captured server edits and custom status messages. Full
 external-protocol compatibility and broader language semantics remain required. The declared
-[LSP 3.17 target and supported subset](lsp.md) are separate from this internal protocol. Native IME,
+[LSP 3.17 target and supported subset](language-server.md) are separate from this internal protocol. Native IME,
 OS clipboard qualification remains unverified where applicable.

@@ -170,13 +170,13 @@ configuration. Feature scopes share document leases, synchronization, wire versi
 view/request cancellation has its own lifetime. The host supplies URI/language/transport policy and
 retains edit authorization. Command review is exclusive on that connection, with explicit recovery
 after cancellation. This reuses the existing session, observable stores and Workspace snapshots
-without introducing runtime packages. The [public editor integration](lsp-integration.md)
+without introducing runtime packages. The [public editor integration](language-server.md)
 supplies captured browser coordination and headless feature clients used by both hosts and
 an isolated installed consumer. Automatic completion and the selected signature/link/color routes
 reuse those scopes and captures. Host controls retain presentation, URI opening and edit review;
 the LSP route has no worker fallback for those features. Actual connection counts belong to the
 provider owner, while feature snapshots describe their intent state.
-[The supported subset](lsp.md) states remaining protocol boundaries.
+[The supported subset](language-server.md) states remaining protocol boundaries.
 
 Local tokenization and server features are separate contracts. Verify that token classes
 produce the intended visible styles and that unavailable services leave basic editing usable.

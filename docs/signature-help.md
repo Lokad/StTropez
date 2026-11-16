@@ -60,4 +60,4 @@ Measurements distinguish the candidate's own input handler, whole synchronous co
 background synchronization/scan and complete all-view/widget readiness. Single controls and
 functional deadlines qualify neither latency tails nor native input, clipboard or
 physical display. General language semantics and application-specific service policy remain
-outside these fixtures; the [declared LSP subset](lsp.md) is qualified separately.
+outside these fixtures; the [declared LSP subset](language-server.md) is qualified separately.

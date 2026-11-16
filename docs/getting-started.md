@@ -85,7 +85,7 @@ the completion target. Treat saving as a captured operation, not a read of which
 current when a server reply arrives.
 
 For the next integration step, use [resource and save contracts](workspace.md),
-[language-server integration](lsp-integration.md), [host extension points](host-integrations.md)
+[language-server integration](language-server.md), [host extension points](host-integrations.md)
 or [editor commands and configuration](editing-candidate.md).
 
 ## Not covered
