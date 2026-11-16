@@ -1,5 +1,5 @@
 import { Store } from "../core/observable.ts";
-import { FoldIndex, createFoldRegions } from "../core/folding.ts";
+import { createFoldRegions } from "../core/folding.ts";
 import { reconcileFoldRanges } from "../core/fold-discovery.ts";
 import type { DiscoveredFold } from "../core/fold-discovery.ts";
 import type { DocumentSnapshot, TabId, Workspace } from "../core/workspace.ts";
@@ -104,25 +104,24 @@ export function createFoldingController(workspace: Workspace, tabId: TabId, edit
         if (!candidates.length) return false;
         const ids = new Set(candidates.map(range => range.id));
         const ranges = createFoldRegions(document.buffer, before.regions.map(range => ids.has(range.id) ? { ...range, collapsed: collapse } : range), before.regions);
-        if (collapse) {
-            const index = new FoldIndex(document.buffer.lineCount, ranges);
-            const selections = state.selectionSet.ranges.map(range => {
-                const anchor = index.hiddenBy(document.buffer.lineAt(range.anchor)), head = index.hiddenBy(document.buffer.lineAt(range.head));
-                return { ...range, anchor: anchor ? document.buffer.offsetAt(anchor.lineFrom) : range.anchor, head: head ? document.buffer.offsetAt(head.lineFrom) : range.head };
-            });
-            if (!view.setSelections(document.revision, selections, state.selectionSet.primary)) return false;
-        }
         const latest = view.folding.getSnapshot();
         if (!available() || latest.revision !== document.revision || latest.regions !== before.regions) return false;
         const applied = view.folding.setRanges(latest, ranges);
-        if (applied) { editor.viewport.revealOffset(view.getSnapshot().selection.head); editor.focus(); }
+        if (applied) {
+            // Collapse changes projection, not the logical selection. Reveal the visible header
+            // edge instead of the hidden head, since revealOffset would otherwise reopen it.
+            const hidden = view.folding.getSnapshot().index.hiddenBy(line);
+            editor.viewport.revealOffset(hidden ? document.buffer.offsetAt(hidden.lineFrom + 1) - 1 : state.selection.head);
+            editor.focus();
+        }
         return applied;
     };
+    // Handle folds before ordinary navigation reveals a hidden logical caret.
     editor.element.addEventListener("keydown", event => {
         if (event.defaultPrevented || event.isComposing || !(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey) return;
         const command = event.code === "BracketLeft" ? "collapse" : event.code === "BracketRight" ? "expand" : undefined;
         if (command && runCommand(command)) event.preventDefault();
-    }, { signal: listeners.signal });
+    }, { capture: true, signal: listeners.signal });
     refresh();
     return Object.freeze({ state: cell.observable, refresh: () => { notifications.assertWritable(); refresh(); }, runCommand, dispose: () => {
         if (disposed) return; notifications.assertWritable(); disposed = true; cancel(); listeners.abort(); stopDocument(); stopTab(); stopFolds(); publish("disposed");

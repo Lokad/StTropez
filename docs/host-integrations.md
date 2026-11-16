@@ -121,6 +121,14 @@ Use a `LineDecorator` to return source-offset ranges and host CSS classes for pr
 fragments. The demo's tiny single-line lexer colors its own rule syntax and quoted CSV; it is
 not a general language parser. Folding uses the existing indentation discovery API.
 
+`createFoldingController(...).runCommand("collapse-all", group)` and `"expand-all"` apply
+to every region of the optional group. The single-region `"collapse"`/`"expand"` commands
+and Ctrl/Cmd+Shift+[/] shortcuts operate on enclosing regions. Folding retains the complete
+logical selection set, including direction, affinities and primary range. A hidden primary
+caret is drawn at its visible fold header; expanding restores its source position. Typing
+or navigation reveals the retained selection before acting, so input addresses the source
+ranges rather than the header. Each view retains its own fold choices.
+
 `new BracketMatcher(language)` compiles the asymmetric configured pairs for headless matching.
 `createCursor(buffer, caret, options)` captures the immutable buffer; call `next(workBudget)`
 cooperatively and dispose the cursor when its owning revision or selection expires. It prefers

@@ -1,6 +1,80 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
+
+test("group folding preserves every selection and typing replaces the retained hidden ranges", async ({ page }) => {
+    await page.goto("/editing/");
+    const text = "outer\r\n  first\r\n    second\r\n  third\r\nother\r\n  last\r\nend";
+    await page.evaluate(text => {
+        const f = window.editingFixture; f.setText(text);
+        f.discoverFolds(() => [
+            { from: 0, to: text.indexOf("other"), group: "regions" },
+            { from: text.indexOf("  first"), to: text.indexOf("  third"), group: "regions" },
+            { from: text.indexOf("other"), to: text.indexOf("end"), group: "other" },
+        ]);
+        f.selections([
+            { anchor: text.indexOf("first") + 5, head: text.indexOf("first"), anchorAffinity: "before", headAffinity: "after" },
+            { anchor: text.indexOf("second"), head: text.indexOf("second") + 6, anchorAffinity: "after", headAffinity: "before" },
+        ], 1);
+    }, text);
+    await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready"); await ready(page);
+    const before = await page.evaluate(() => window.editingFixture.snapshot());
+    const selected = before.primary.viewport.selectionSet;
+    const folded = async (command: "collapse-all" | "expand-all") => {
+        expect(await page.evaluate(command => window.editingFixture.foldCommand(command, "regions"), command)).toBe(true); await ready(page);
+        const after = await page.evaluate(() => window.editingFixture.snapshot());
+        expect(after.primary.viewport.selectionSet).toEqual(selected); expect(after.document).toEqual(before.document);
+        expect(after.history).toEqual(before.history); expect(after.secondary.selection).toEqual(before.secondary.selection);
+        expect(after.secondary.viewport.collapsedFolds).toBe(0);
+        expect((await page.evaluate(() => window.editingFixture.folding())).regions.map(r => r.collapsed)).toEqual([command === "collapse-all", command === "collapse-all", false]);
+        await expect(input(page)).toBeFocused();
+    };
+    await folded("collapse-all");
+    expect(await page.locator("#primary .st-viewport-row").allTextContents()).toEqual(["outer", "other", "  last", "end"]);
+    await folded("expand-all"); await folded("collapse-all");
+    // A real input event must reveal and replace both raw ranges, not their projected header.
+    await page.keyboard.type("X"); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(0, window.editingFixture.snapshot().document!.length))).toBe(text.replace("first", "X").replace("second", "X"));
+    expect((await page.evaluate(() => window.editingFixture.snapshot())).primary.viewport.collapsedFolds).toBe(0);
+    await page.keyboard.press("Control+z"); await ready(page);
+    expect(await page.evaluate(length => window.editingFixture.range(0, length), text.length)).toBe(text);
+    expect((await page.evaluate(() => window.editingFixture.snapshot())).primary.viewport.selectionSet).toEqual(selected);
+    await page.keyboard.press("Control+Shift+z"); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(0, window.editingFixture.snapshot().document!.length))).toBe(text.replace("first", "X").replace("second", "X"));
+    await page.evaluate(() => window.editingFixture.dispose());
+    expect((await page.evaluate(() => window.editingFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+});
+
+test("nested fold shortcuts keep the logical caret and project it to the header until navigation", async ({ page }) => {
+    await page.goto("/editing/");
+    const text = "outer\r\n  first\r\n    second\r\n  third\r\ntail", at = text.indexOf("second") + 3;
+    await page.evaluate(({ text, at }) => {
+        const f = window.editingFixture; f.setText(text); f.select("primary", { anchor: at, head: at });
+        f.discoverFolds(() => [{ from: 0, to: text.indexOf("tail") }, { from: text.indexOf("  first"), to: text.indexOf("  third") }]);
+        f.focus("primary");
+    }, { text, at });
+    await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready"); await ready(page);
+    const before = await page.evaluate(() => window.editingFixture.snapshot());
+    const shortcut = async (key: string, collapsed: boolean[]) => {
+        await page.keyboard.press(key); await ready(page);
+        const after = await page.evaluate(() => window.editingFixture.snapshot());
+        expect(after.primary.selection).toEqual(before.primary.selection); expect(after.history).toEqual(before.history);
+        expect((await page.evaluate(() => window.editingFixture.folding())).regions.map(r => r.collapsed)).toEqual(collapsed);
+    };
+    await shortcut("Control+Shift+[", [false, true]);
+    await shortcut("Control+Shift+[", [true, true]);
+    const projected = await page.evaluate(at => { const f = window.editingFixture; return { hidden: f.coords(at), header: f.coords(5) }; }, at);
+    expect(projected.hidden?.left).toBe(projected.header!.left); expect(projected.hidden?.top).toBe(projected.header!.top);
+    await expect(page.locator("#primary .st-input-caret")).toBeVisible();
+    await shortcut("Control+Shift+]", [false, true]);
+    await shortcut("Control+Shift+]", [false, false]);
+    await shortcut("Control+Shift+[", [false, true]);
+    await page.keyboard.press("ArrowRight"); await ready(page);
+    expect((await page.evaluate(() => window.editingFixture.snapshot())).primary.selection).toMatchObject({ anchor: at + 1, head: at + 1 });
+    expect((await page.evaluate(() => window.editingFixture.folding())).regions.map(r => r.collapsed)).toEqual([false, false]);
+    await page.evaluate(() => window.editingFixture.dispose());
+    expect((await page.evaluate(() => window.editingFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+});
 test("automatic discovery preserves newer view choices, cancels changed targets and waits for composition", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => {
@@ -105,7 +179,12 @@ test("a 100k-line fold keeps row work bounded, maps edits and undo, and reveals 
     await input(page, "Secondary source").press("Control+z"); await ready(page); expect((await page.evaluate(() => window.editingFixture.snapshot())).primary.viewport.visibleLines).toBe(2);
     await page.evaluate(at => window.editingFixture.select("primary", { anchor: at, head: at }), middle); await ready(page);
     expect((await page.evaluate(() => window.editingFixture.folding())).regions[0]!.collapsed).toBe(false);
-    await page.evaluate(end => window.editingFixture.folds([{ id: "many", from: 0, to: end, collapsed: true }]), end); await ready(page);
+    await page.evaluate(end => window.editingFixture.discoverFolds(() => [{ from: 0, to: end, group: "large" }]), end);
+    await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
+    expect(await page.evaluate(() => window.editingFixture.foldCommand("collapse-all", "large"))).toBe(true); await ready(page);
+    state = await page.evaluate(() => window.editingFixture.snapshot());
+    expect(state.primary.selection).toMatchObject({ anchor: middle, head: middle });
+    expect(state.primary.viewport.rows).toBe(2); expect(state.primary.inputUnits).toBeLessThanOrEqual(2600);
     await input(page).pressSequentially("!"); await ready(page); state = await page.evaluate(() => window.editingFixture.snapshot());
     expect(state.primary.selection.head).toBe(middle + 1); expect(state.primary.viewport.visibleLines).toBe(100002); expect(state.document!.exports).toBe(0);
     expect(await page.evaluate(at => window.editingFixture.range(at, at + 5), middle)).toBe("!" + text.slice(middle, middle + 4));
