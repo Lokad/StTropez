@@ -50,7 +50,7 @@ export async function stagePackagedReactHost(project, consumer) {
     });
     const sources = [];
     for (const path of Object.keys(graph.metafile.inputs).sort()) {
-        assert.ok(path.startsWith("examples/") && !path.includes(".."), `Unexpected host fixture: ${path}`);
+        assert.ok((path.startsWith("examples/") || path.startsWith("fixtures/protocol/")) && !path.includes(".."), `Unexpected host fixture: ${path}`);
         const original = resolve(project, path), text = await readFile(original, "utf8"), imports = [];
         // Includes type-only imports erased from the emitted graph. Existing fixture
         // imports use quoted relative public paths; private library imports must fail.
