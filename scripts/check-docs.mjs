@@ -6,7 +6,7 @@ import { moduleSpecifiers } from "./module-specifiers.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 // Extend this list as subject pages replace the historical documentation.
-const pages = ["getting-started", "viewport", "folding", "search", "comparison", "text-model", "workspace", "language-server", "language-features", "unicode", "host-integration", "packaging", "architecture"].map(name => `docs/${name}.md`);
+const pages = ["getting-started", "editor", "viewport", "folding", "search", "comparison", "text-model", "workspace", "language-server", "language-features", "unicode", "host-integration", "packaging", "architecture"].map(name => `docs/${name}.md`);
 const entries = {
     sttropez: "src/index.ts",
     "sttropez/browser": "src/browser/index.ts",

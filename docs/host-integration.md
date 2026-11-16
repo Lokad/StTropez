@@ -210,7 +210,7 @@ presented fragments. Cache lexical results by document identity and revision, bo
 source reads, and invalidate presentation when host results change. A fragment boundary is not
 a language boundary. A reference pane needs the syntax context of its own immutable snapshot;
 working-document offsets cannot color a different reference. Configure editor language rules
-through the [editing API](editing-candidate.md), folding through its [controller](folding.md),
+through the [editing API](editor.md), folding through its [controller](folding.md),
 and character warnings through [Unicode policy](unicode.md#character-warnings).
 
 Use [anchored ranges and transaction maps](text-model.md#position-maps-and-anchors) for

@@ -6,7 +6,7 @@ application owns storage, services, language policy and surrounding controls.
 ## Choose a task
 
 - [Embed an editor](getting-started.md): obtain the assets, create a document, mount and dispose.
-- [Configure editing](editing-candidate.md): keyboard commands, selections and language rules.
+- [Configure editing](editor.md): keyboard commands, selections and language rules.
 - [Connect a language server](language-server.md): WebSocket transport, session and workspace.
 - [Save or review documents](workspace.md): resource ownership and captured save operations;
   [comparison](comparison.md) describes reference and working views.
@@ -17,7 +17,7 @@ application owns storage, services, language policy and surrounding controls.
 | Subject | Contents |
 | --- | --- |
 | [Getting started](getting-started.md) | Assets, minimal embedding and host lifecycle |
-| [Editor](editing-candidate.md) | Input, commands, selections, configuration and view state |
+| [Editor](editor.md) | Input, commands, selections, configuration and view state |
 | [Viewport](viewport.md) | Read-only rendering, scrolling and coordinates |
 | [Folding](folding.md) | Fold ranges, discovery, groups and commands |
 | [Search](search.md) | Literal/regular-expression search and replacement |
@@ -40,7 +40,7 @@ that requires a real device or consuming application; it does not mean an automa
 
 | Area | Supported | Not supported | Unverified |
 | --- | --- | --- | --- |
-| Text and editing | UTF-16 range edits; multiple selections; shared undo/redo; host language rules; bounded native input and rendered rows | Word wrapping; general rich-text editing | Native IME reconversion/placement; dead keys and AltGr across keyboard layouts |
+| Text and editing | UTF-16 range edits; multiple selections; shared undo/redo; host language rules; bounded native input and rendered rows | Word wrapping; general rich-text editing | Native IME reconversion/placement; dead keys and AltGr across keyboard layouts; touch/mobile selection; browser/OS menu undo and redo |
 | Clipboard and drag | Plain-text clipboard events; host conversion; captured text transfer | Arbitrary rich-document import | OS/app clipboard formats and permissions; native drag images and token-preserving transfer across applications |
 | Search and review | Literal/regular-expression search; replacement; immutable references; editable comparisons; independent folding and aligned rows | General merge/conflict-resolution UI | Consuming-host review policies and durable retention |
 | Lifecycle and recovery | Explicit teardown, captured save conflicts and host-managed draft restoration | Portable previous-session undo; a crash/power-loss durability guarantee | Native application termination; actual browser back/forward-cache restoration; consuming-host storage policy |
@@ -63,6 +63,12 @@ that requires a real device or consuming application; it does not mean an automa
 | Lease | Explicit resource retention while a view or operation needs it. |
 | Elapsed duration | Wall-clock time between declared endpoints, including delays inside that span; not process CPU time. |
 | Input-handler duration | Time inside the named adapter listener, including model/context work, synchronous subscribers and browser work triggered there. It excludes preceding native work, other listeners and later queued/service/rendering work. |
+| Editor handler samples | `lastBeforeInputMs`, `lastInputMs` and `lastKeydownMs` are separate listener spans. Event counters distinguish a new sample from a retained last value. |
+| Command callback duration | `maxQueuedInputTurnMs`, `maxWordSelectionTurnMs` and `maxDragScrollStepMs` cover their complete synchronous callbacks, including guards, synchronous publication/refresh and scheduling. Per-mount maxima are not callback distributions or whole-interaction latency. |
+| Navigation work | `navigationWorkMs` and `maxNavigationTurnMs` include initialization and complete scheduled navigation callbacks; nested work counts once. Later caret/render frames are excluded except synchronous flushes inside the measured callback. |
+| Navigation preparation | `navigationPreparationMs` covers initial viewport/primary-geometry preparation only; it is a substage of navigation work. |
+| Pointer word selection | `lastWordSelectionMs` covers the synchronous double-click handler and its first scans/subscribers. Later cooperative turns and rendering need separate observations. |
+| Word/grapheme scan step | `maxWordScanStepMs` and `maxGraphemeScanStepMs` cover kernel advances, excluding final normalization, model commit and rendering. They are smaller spans than complete command callbacks. |
 | Event observation span | Time between capture and bubble observers, including intervening listeners; it does not isolate the adapter's own handler. |
 | Work units | Algorithmic work counters used for cooperative scheduling; not time deadlines or CPU/memory measurements. |
 | Search scan step | `FindSnapshot.maxScanStepMs`: maximum synchronous matching/index span. Regex mode measures main-thread dispatch/index work; worker matching, later transfer/decoding, publication and waiting are excluded. |

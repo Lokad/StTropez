@@ -124,6 +124,21 @@ Word destinations use these boundaries. Collapsed deletion from inside a cluster
 to both boundaries; nonempty selections keep their exact requested extent. Delayed commands
 validate revision, selection, tab generation, composition and edit permission before use.
 
+`WordCursor(buffer, offset, direction, options)` supplies code-word endpoints in either direction.
+`WordOptions` can bound the source range and disable whitespace skipping. Unicode letters,
+numbers and connector punctuation form words; other symbols form runs, and whitespace is
+separate. Marks and join controls attach to their preceding base. Forward movement consumes
+the current run and following whitespace; backward movement skips preceding whitespace and
+consumes the preceding run. `skipWhitespace: false` finds run edges for pointer selection.
+This is a code-oriented policy, not dictionary segmentation or Unicode word-boundary conformance.
+
+`next(maxWork)` returns immutable `WordStep` progress with status, raw UTF-16 offset and work/read
+counts. The budget is a safe integer of at least 256 (default 4,096); checkpoints can overshoot
+it. Reads retain a 256-unit slice plus at most one unit to complete a surrogate pair. `dispose()`
+releases unfinished scanning and marks it cancelled. The caller supplies grapheme snapping and
+logical-line bounds where needed. `codeWordConstituentPattern` exposes the one-code-point pattern
+for host Unicode expressions; it includes marks/joiners as well as word bases.
+
 ### Bidirectional resolution
 
 `resolveBidi(text, direction)` returns frozen levels, visual order and paragraph base levels

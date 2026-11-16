@@ -163,7 +163,7 @@ belong to the host; ending a ticket does not abort a host request automatically.
 
 The reference display has its own read-only resource, tab and view. Its resource denies all edit
 origins, Save and Run. It shares the captured immutable buffer without exporting it. Selection,
-navigation and explicit copy operate on source coordinates through the [editor](editing-candidate.md).
+navigation and explicit copy operate on source coordinates through the [editor](editor.md).
 
 `referenceEditor()` and `referenceViewport()` resolve the current attachment. The stable
 `reference` observable publishes `ComparisonReferenceView` with `{ editor, target, epoch, version }`.

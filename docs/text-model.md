@@ -135,7 +135,7 @@ export function replaceSelections(
 ```
 
 For a live document, submit the edits and resulting selections through one captured workspace
-transaction. [View history](history.md#multiple-selection-model) defines undo and other-view mapping.
+transaction. [Document views](workspace.md#document-views) define undo and other-view mapping.
 
 ### Explicit newline conversion
 

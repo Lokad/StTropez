@@ -70,6 +70,30 @@ acyclic plain objects. Inputs are copied and deeply frozen as `Immutable<T>`. Ac
 functions, class instances, undefined and nonfinite values are rejected. The host owns
 schema validation and any conversion between typed data and text.
 
+### Document views
+
+`createDocumentView(documentId, initialSelection?)` creates a stable observable view with an
+independent identity and an ownership lease until `dispose()`. The initial value can be one
+selection or a complete set. Every document edit maps all retained views, including views
+without a DOM mount. A view snapshot's `selection` is its complete set's primary range.
+
+`setSelection(expectedRevision, selection)` deliberately replaces the set with one range;
+`setSelections(expectedRevision, ranges, primary?)` replaces the whole set. Stale, unready or
+disposed targets return `false`. Valid writes normalize ranges and reveal selected fold targets.
+An unchanged set and fold projection publish nothing. A real selection/projection change seals
+that document's history group, including when a batch also changes another document.
+The [selection primitives](text-model.md#selection-sets) own direction, affinity and normalization.
+
+An edit can supply `selection` or `selectionSet` together with its live initiating view. Undo/redo
+restore that view's captured complete set and map other retained views independently. Mapping
+deleted positions is lossy; another view does not acquire the initiator's selection history.
+Retain the handle when selections/folds must track edits through detach or remount. The
+[editor contract](editor.md#view-state-activity-and-limits) owns browser scroll capture and restore.
+
+View registration/disposal and subscriptions are permitted during notification delivery because
+they do not mutate document snapshots. Actual selection, text and history writes are rejected
+during delivery; queue those commands. Do not synchronize view state during component rendering.
+
 ### Transactions and history
 
 `edit` applies one text transaction; `editDocuments` validates every participant before
@@ -103,7 +127,7 @@ export function undoFrom(workspace: Workspace, documentId: DocumentId) {
 Every changed document advances its revision, including undo/redo. `DocumentChange` records
 the preceding revision, transaction ID, origin, kind and position mapping. Participants in
 one transaction share its transaction ID. An equal-content result preserves buffer,
-revision and history; an explicit selection-only request can still update its view.
+revision and history; an explicit selection-only request can update its view.
 `updateResource` similarly preserves a typed resource's revision on a no-op, but typed panels
 do not acquire text undo history.
 
@@ -112,7 +136,7 @@ validate every participant's current boundary and permissions. A linked unit ret
 `history-blocked` if another participant has later work; it does not silently undo that
 work. `observeHistory` reports per-document depths, which can include blocked entries.
 The initiating view's captured selections are restored, while other retained views are
-mapped. See [selection and view lifetime](history.md#selection-and-view-lifetime).
+mapped. See [document views](#document-views).
 
 An omitted history policy creates a standalone `replace` unit. Origins are `human`, `agent`
 and `host`; `EditKind` distinguishes typing, deletion, paste, composition, form, refactor,
@@ -141,7 +165,7 @@ once across the workspace.
 
 Zero disables the corresponding retention capacity. Least recently extended units are
 evicted whole. A group rolls over before exceeding its transaction or changed-unit bound.
-Oversized edits still apply but clear history for affected/linked documents
+Oversized edits apply but clear history for affected/linked documents
 when the change cannot be retained. `diagnostics().history` reports retention counts.
 These are operation/content bounds, not byte-accurate heap limits: live buffers, saved
 baselines, pending operations and snapshots retained by the host have separate lifetimes.
@@ -243,8 +267,8 @@ preserves local content and the previous saved baseline.
 
 A successful `SaveReceipt` retains the immutable submission, canonical saved value, resulting
 server version and optional acknowledgement ID. Canonical content replaces the working value
-only when the submitted revision, host edit permission, edit lock and captured proposal still
-allow it. Otherwise the saved baseline advances while later local content stays intact.
+only when the submitted revision, host edit permission, edit lock and captured proposal
+permit it. Otherwise the saved baseline advances while later local content stays intact.
 Dirty means content differs from that baseline; undoing back to it clears dirty even though
 the revision increases. Canonical text changes form separate undo units.
 
