@@ -65,6 +65,47 @@ test("fold anchors map through interior edits, shared undo/redo and no-op select
     } finally { f.finish(); }
 });
 
+for (const origin of ["edit", "proposal", "canonical"] as const) test(`${origin} and replay publish mapped views, folds and history together`, () => {
+    const errors: unknown[] = [], model = new Workspace({ onListenerError: error => errors.push(error) });
+    const original = "head\none\ntwo\nend", updated = "head\none\nnew\ntwo\nend";
+    const source = model.createTextResource({ scope: "fold", resource: origin, variant: "working" }, "Source", { value: original });
+    const view = model.createDocumentView(source.documentId), peer = model.createDocumentView(source.documentId);
+    view.setSelection(0, { anchor: 9, head: 9 }); peer.setSelection(0, { anchor: original.length, head: original.length });
+    for (const target of [view, peer]) target.folding.setRanges(target.folding.getSnapshot(), [{ id: "block", from: 0, to: 13, collapsed: true }]);
+    if (origin === "proposal") model.associateAgent(source.id, "session");
+    const ticket = origin === "canonical" ? model.captureSave(source) : undefined; ticket?.start();
+    let notifications = 0, expectedRevision = 1;
+    const inspect = () => {
+        notifications++;
+        const document = model.document(source.documentId), undone = expectedRevision === 2;
+        assert.equal(document.revision, expectedRevision); assert.equal(document.text, undone ? original : updated);
+        assert.deepEqual(model.observeHistory(source.documentId).getSnapshot(), { undoDepth: undone ? 0 : 1, redoDepth: undone ? 1 : 0 });
+        for (const target of [view, peer]) {
+            assert.equal(target.getSnapshot().revision, expectedRevision); assert.equal(target.folding.getSnapshot().revision, expectedRevision);
+            assert.equal(target.folding.getSnapshot().index.lineCount, document.buffer.lineCount);
+            assert.equal(target.folding.getSnapshot().regions[0]!.to, undone ? 13 : 17);
+        }
+        assert.equal(view.getSnapshot().selection.head, undone ? 9 : 13); assert.equal(peer.getSnapshot().selection.head, document.buffer.length);
+        assert.equal(view.folding.getSnapshot().regions[0]!.collapsed, false); assert.equal(peer.folding.getSnapshot().regions[0]!.collapsed, true);
+        assert.equal(source.metadata.getSnapshot().dirty, origin === "canonical" ? undone : !undone);
+    };
+    const subscriptions = [source, model.observeDocument(source.documentId), model.observeHistory(source.documentId), view, view.folding, peer, peer.folding]
+        .map(observable => observable.subscribe(inspect));
+    try {
+        const edits = [{ from: 9, to: 9, insert: "new\n" }];
+        if (ticket) assert.equal(ticket.accept({ serverVersion: "saved", canonical: updated }).canonicalApplied, true);
+        else if (origin === "proposal") assert.equal(model.offerAgentProposal(model.captureProposal(source.id), { id: "proposal", revision: 1, edits }).applied, true);
+        else assert.equal(model.edit({ documentId: source.documentId, expectedRevision: 0, origin: "host", edits }).applied, true);
+        expectedRevision = 2; assert.equal(model.undo({ documentId: source.documentId, expectedRevision: 1 }).applied, true);
+        expectedRevision = 3; assert.equal(model.redo({ documentId: source.documentId, expectedRevision: 2 }).applied, true);
+        assert.equal(notifications, 3); assert.deepEqual(errors, []);
+    } finally {
+        subscriptions.forEach(unsubscribe => unsubscribe()); ticket?.finish(); view.dispose(); peer.dispose();
+        if (origin === "proposal") model.detachAgent(source.id); model.releaseResource(source.id, true);
+        assert.equal(model.diagnostics().views, 0); assert.equal(model.diagnostics().leases, 0);
+    }
+});
+
 test("boundary newline removal cannot publish crossing folds or interrupt an atomic text transaction", () => {
     const f = fixture(); try {
         const b = f.model.document(f.source.documentId).buffer;

@@ -98,12 +98,16 @@ export type BatchEditResult = Readonly<{ applied: true; revisions: readonly Read
 export type HistoryRequest = Readonly<{ documentId: DocumentId; expectedRevision: number; origin?: EditOrigin; lease?: EditLease }>;
 export type WorkspaceOptions = Readonly<{ onListenerError?: (error: unknown) => void; history?: HistoryOptions }>;
 
+type ViewRecord = { handle: DocumentView; state: Store<DocumentViewSnapshot>; folds: Store<FoldingSnapshot>; lease: ResourceLease };
+type PreparedView = Readonly<{ view: ViewRecord; state: DocumentViewSnapshot; folds: FoldingSnapshot }>;
+type PreparedText = Readonly<{ record: ResourceRecord; buffer: TextBuffer; mapping: PositionMapping;
+    state: ResourceSnapshot<SnapshotValue>; views: readonly PreparedView[] }>;
 type ResourceRecord = {
     handle: ResourceHandle<SnapshotValue>; documentId: DocumentId | null;
     state: Store<ResourceSnapshot<SnapshotValue>>; metadata: Store<ResourceMetadata>;
     document: Store<DocumentSnapshot | undefined>; saved: SnapshotValue | undefined;
     buffer: TextBuffer | null; savedBuffer: TextBuffer | null; change: DocumentChange | null; history: Store<HistorySnapshot>;
-    views: Map<ViewId, { handle: DocumentView; state: Store<DocumentViewSnapshot>; folds: Store<FoldingSnapshot>; lease: ResourceLease }>;
+    views: Map<ViewId, ViewRecord>;
     leases: Set<symbol>; operations: Map<string | symbol, Operation>; nextOperation: number;
     saveReservations: number; saving: symbol | null;
     editLease: EditLease | null; agent: Store<AgentSnapshot>; proposalLease: ResourceLease | null;
@@ -347,7 +351,11 @@ export class Workspace {
             const before = record.buffer!, result = before.apply(request.edits);
             const afterSelections = request.selectionSet ? createSelectionSet(result.buffer.length, request.selectionSet.ranges, request.selectionSet.primary)
                 : request.selection ? createSelectionSet(result.buffer.length, [request.selection]) : view ? mapSelectionSet(result.mapping, view.state.get().selectionSet) : undefined;
-            prepared.push({ request, record, before, after: result.buffer, mapping: result.mapping, units: result.changedUnits, view, afterSelections });
+            const text = result.buffer !== before ? this.prepareText(record, result.buffer, result.mapping,
+                view && afterSelections ? { viewId: view.handle.id, selectionSet: afterSelections } : undefined) : undefined;
+            const selection = !text && view && afterSelections
+                ? this.prepareView(view, request.documentId, record.state.get().revision, before, afterSelections, view.folds.get().regions) : undefined;
+            prepared.push({ request, record, before, after: result.buffer, mapping: result.mapping, units: result.changedUnits, view, afterSelections, text, selection });
         }
         const actual = prepared.filter(change => change.before !== change.after);
         const changes: HistoryChange[] = actual.map(change => Object.freeze({ documentId: change.request.documentId, before: change.before, after: change.after,
@@ -357,18 +365,11 @@ export class Workspace {
         if (changes.length) this.history.record(changes, first.origin, kind, requests.length === 1 ? group : undefined);
         const changed = new Set<Store<unknown>>(), transactionId = actual.length ? ++this.nextTransaction : 0;
         for (const change of prepared) {
-            if (change.before !== change.after) this.commitText(change.record, change.after, change.mapping, first.origin, kind, transactionId, changed,
-                change.view && change.afterSelections ? { viewId: change.view.handle.id, selectionSet: change.afterSelections } : undefined);
-            if (change.before === change.after && change.view && change.afterSelections) {
-                const priorFolds = change.view.folds.get(), revealed = revealSelectionFolds(change.before, priorFolds.regions, change.afterSelections, priorFolds.index);
-                if (revealed !== priorFolds.regions) {
-                    this.history.seal(change.request.documentId);
-                    change.view.folds.set(foldingSnapshot(change.before, change.record.state.get().revision, priorFolds.generation + 1, revealed, priorFolds), changed);
-                }
-            }
-            if (change.view && change.afterSelections && !sameSelectionSet(change.view.state.get().selectionSet, change.afterSelections)) {
-                if (change.before === change.after) this.history.seal(change.request.documentId);
-                change.view.state.set(viewSnapshot(change.request.documentId, change.record.state.get().revision, change.afterSelections), changed);
+            if (change.text) this.commitText(change.text, first.origin, kind, transactionId, changed);
+            if (change.selection) {
+                const { view, state, folds } = change.selection;
+                if (state !== view.state.get() || folds !== view.folds.get()) this.history.seal(change.request.documentId);
+                this.commitView(change.selection, changed);
             }
         }
         this.syncHistory(changed); if (changed.size) { if (actual.length) this.publish(changed); else this.scope.deliver([...changed]); }
@@ -389,31 +390,50 @@ export class Workspace {
             if (!participant || participant.buffer !== (direction === "undo" ? change.after : change.before)) return { applied: false, reason: "history-blocked" };
             const denied = this.validateEdit(participant, participant.state.get().revision, origin, participant === record ? request.lease : undefined); if (denied) return denied;
         }
-        this.history.move(entry, direction);
-        const changed = new Set<Store<unknown>>(), transactionId = ++this.nextTransaction, revisions = [];
-        for (const change of entry.changes) {
+        const prepared = entry.changes.map(change => {
             const participant = this.documents.get(change.documentId as DocumentId)!, forward = change.mapping;
             const view = change.selection ? participant.views.get(change.selection.viewId as ViewId) : undefined;
-            this.commitText(participant, direction === "undo" ? change.before : change.after, direction === "undo" ? forward.invert() : forward,
-                origin, direction, transactionId, changed, view && change.selection ? { viewId: view.handle.id,
+            return this.prepareText(participant, direction === "undo" ? change.before : change.after, direction === "undo" ? forward.invert() : forward,
+                view && change.selection ? { viewId: view.handle.id,
                     selectionSet: direction === "undo" ? change.selection.before : change.selection.after } : undefined);
-            revisions.push(Object.freeze({ documentId: participant.documentId!, revision: participant.state.get().revision }));
+        });
+        this.history.move(entry, direction);
+        const changed = new Set<Store<unknown>>(), transactionId = ++this.nextTransaction, revisions = [];
+        for (const text of prepared) {
+            this.commitText(text, origin, direction, transactionId, changed);
+            revisions.push(Object.freeze({ documentId: text.record.documentId!, revision: text.state.revision }));
         }
         this.syncHistory(changed); this.publish(changed); return Object.freeze({ applied: true, revisions: Object.freeze(revisions) });
     }
-    private commitText(record: ResourceRecord, buffer: TextBuffer, mapping: PositionMapping, origin: EditOrigin, kind: DocumentChange["kind"], transactionId: number, changed: Set<Store<unknown>>,
-        override?: Readonly<{ viewId: ViewId; selectionSet: SelectionSet }>): void {
+    /** Prepare every projection before history, resource or view mutation, including linked documents. */
+    private prepareText(record: ResourceRecord, buffer: TextBuffer, mapping: PositionMapping,
+        override?: Readonly<{ viewId: ViewId; selectionSet: SelectionSet }>): PreparedText {
         const current = record.state.get(), revision = current.revision + 1, before = record.buffer!;
-        record.buffer = buffer;
-        record.change = Object.freeze({ previousRevision: current.revision, mapping, transactionId, origin, kind });
-        this.setRecord(record, readySnapshot({ ...current.metadata, dirty: record.savedBuffer === null || !buffer.equals(record.savedBuffer) }, revision, buffer), changed);
+        const state = readySnapshot({ ...current.metadata, dirty: record.savedBuffer === null || !buffer.equals(record.savedBuffer) }, revision, buffer), views = [];
         for (const view of record.views.values()) {
             const selections = override?.viewId === view.handle.id ? override.selectionSet : mapSelectionSet(mapping, view.state.get().selectionSet);
             const priorFolds = view.folds.get(), mapped = mapFoldRegions(buffer, mapping, priorFolds.regions, before);
-            const regions = revealSelectionFolds(buffer, mapped, selections, mapped === priorFolds.regions && buffer.lineCount === priorFolds.index.lineCount ? priorFolds.index : undefined);
-            view.folds.set(foldingSnapshot(buffer, revision, priorFolds.generation + 1, regions, priorFolds), changed);
-            view.state.set(viewSnapshot(record.documentId!, revision, selections), changed);
+            views.push(this.prepareView(view, record.documentId!, revision, buffer, selections, mapped));
         }
+        return { record, buffer, mapping, state, views };
+    }
+    private prepareView(view: ViewRecord, documentId: DocumentId, revision: number, buffer: TextBuffer,
+        selections: SelectionSet, mapped: FoldingSnapshot["regions"]): PreparedView {
+        const priorFolds = view.folds.get(), priorState = view.state.get();
+        const regions = revealSelectionFolds(buffer, mapped, selections,
+            mapped === priorFolds.regions && buffer.lineCount === priorFolds.index.lineCount ? priorFolds.index : undefined);
+        return { view, folds: revision === priorFolds.revision && regions === priorFolds.regions ? priorFolds
+            : foldingSnapshot(buffer, revision, priorFolds.generation + 1, regions, priorFolds),
+            state: revision === priorState.revision && sameSelectionSet(priorState.selectionSet, selections) ? priorState : viewSnapshot(documentId, revision, selections) };
+    }
+    private commitView(prepared: PreparedView, changed: Set<Store<unknown>>): void {
+        prepared.view.folds.set(prepared.folds, changed); prepared.view.state.set(prepared.state, changed);
+    }
+    private commitText(prepared: PreparedText, origin: EditOrigin, kind: DocumentChange["kind"], transactionId: number, changed: Set<Store<unknown>>): void {
+        const { record, buffer, mapping, state, views } = prepared;
+        record.change = Object.freeze({ previousRevision: record.state.get().revision, mapping, transactionId, origin, kind });
+        record.buffer = buffer; this.setRecord(record, state, changed);
+        for (const view of views) this.commitView(view, changed);
     }
     private syncHistory(changed: Set<Store<unknown>>): void {
         for (const id of this.history.takeChangedDocuments()) {
@@ -586,9 +606,10 @@ export class Workspace {
         if (current.state !== "ready") return { applied: false, reason: "not-ready" };
         const before = record.buffer!, result = before.apply(proposal.edits);
         if (result.buffer !== before) {
+            const text = this.prepareText(record, result.buffer, result.mapping);
             this.history.record([Object.freeze({ documentId: record.documentId, before, after: result.buffer, mapping: result.mapping,
                 units: result.changedUnits, selection: null })], "agent", "proposal");
-            this.commitText(record, result.buffer, result.mapping, "agent", "proposal", ++this.nextTransaction, changed); this.syncHistory(changed);
+            this.commitText(text, "agent", "proposal", ++this.nextTransaction, changed); this.syncHistory(changed);
         } else this.history.seal(record.documentId);
         const nextRevision = record.state.get().revision;
         record.proposalLease ??= this.acquire(record.handle.id);
@@ -757,18 +778,16 @@ export class Workspace {
                 && record.editLease === null && (proposal === null ? record.agent.get().proposal === null
                     : record.agent.get().proposal !== null && sameProposal(proposal, record.agent.get().proposal!.target))
                 && (savedBuffer ? !record.buffer!.equals(savedBuffer) : !equalValue(current.value, savedValue));
+            const canonical = savedBuffer && canonicalApplied ? record.buffer!.apply([textDifference(current.value as string, savedValue as string)!]) : undefined;
+            const text = canonical ? this.prepareText(record, canonical.buffer, canonical.mapping) : undefined;
+            if (canonical) this.history.record([Object.freeze({ documentId: record.documentId!, before: record.buffer!, after: canonical.buffer,
+                mapping: canonical.mapping, units: canonical.changedUnits, selection: null })], "host", "canonical");
             record.saved = savedBuffer ? undefined : savedValue; record.savedBuffer = savedBuffer; settled = true;
             const acknowledgementId = proposal === null ? null : `ack-${id}`;
             const receipt = Object.freeze({ submission: submitted, savedValue, serverVersion: response.serverVersion, canonicalApplied, acknowledgementId });
             const changed = new Set<Store<unknown>>();
             if (savedBuffer) {
-                if (canonicalApplied) {
-                    const before = record.buffer!, edit = textDifference(current.value as string, savedValue as string)!;
-                    const result = before.apply([edit]);
-                    this.history.record([Object.freeze({ documentId: record.documentId!, before, after: result.buffer, mapping: result.mapping,
-                        units: result.changedUnits, selection: null })], "host", "canonical");
-                    this.commitText(record, result.buffer, result.mapping, "host", "canonical", ++this.nextTransaction, changed);
-                }
+                if (text) this.commitText(text, "host", "canonical", ++this.nextTransaction, changed);
                 const next = record.state.get();
                 this.setRecord(record, withMetadata(next, { ...next.metadata, serverVersion: response.serverVersion,
                     dirty: !record.buffer!.equals(savedBuffer), saveStatus: record.saveReservations > 1 ? "saving" : "idle" }), changed);

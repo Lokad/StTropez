@@ -138,6 +138,12 @@ and history policy. Identity, readiness, expected revision, edit capabilities, e
 view ownership and ranges are checked before publication. Check the returned `applied`
 flag and rejection reason; malformed arguments can throw.
 
+Text changes prepare mapped selections and fold projections for all retained views before
+changing history or document state. Undo/redo, proposals and canonical save responses use
+the same preparation boundary. Selection-only participants in a batch prepare their fold
+reveals before the batch commits. Observers receive the completed document, view and history
+snapshots together.
+
 ```ts
 import type { DocumentId, Workspace } from "sttropez";
 
