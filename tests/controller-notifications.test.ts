@@ -9,7 +9,7 @@ for (const kind of ["folding", "highlights"] as const) test(`${kind} commands re
     const f = clientFixture(t), tab = f.workspace.open({ kind: "text", documentId: f.source.documentId }, "source"), view = f.workspace.createDocumentView(f.source.documentId);
     const tasks = new Map<number, () => void>(); let serial = 0;
     const owner = { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } };
-    const editor = { view, element: Object.assign(new EventTarget(), { ownerDocument: owner }), input: new EventTarget(),
+    const editor = { view, element: Object.assign(new EventTarget(), { ownerDocument: owner }), input: Object.assign(new EventTarget(), { getRootNode: () => owner }),
         activity: () => ({ disposed: false, composing: false }), viewport: { revealOffset: () => {} }, focus: () => {} } as unknown as EditingCandidate;
     const controller = kind === "folding" ? createFoldingController(f.workspace, tab, editor, () => [])
         : createLspHighlightController(f.workspace, tab, editor, { provider: f.provider });

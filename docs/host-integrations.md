@@ -5,6 +5,18 @@ host language, CSV/literal insertion and source notes. No compiler or language s
 for that sample. These policies belong in the consuming application; shipped editor assets
 remain dependency-free. The following pieces can be used independently.
 
+## Focus inside a shadow root
+
+Mount the editor into an element inside the shadow root and supply the editor stylesheet in
+that same root. Caret display and resize reveal, fold-button focus recovery, LSP occurrences,
+automatic completion and deferred completion acceptance use the input's own focus tree. This
+also applies inside nested or closed roots; the host does not need to expose its shadow root.
+Moving focus to surrounding UI still cancels deferred acceptance and hides focus-dependent
+decorations. Composition keeps an active snippet only while its input retains focus.
+
+These focus guarantees do not establish complete shadow-host integration or native IME and
+OS clipboard qualification. The host still owns surrounding controls, styles and lifecycle.
+
 ## Captured view requests
 
 `captureViewRequest(workspace, target, view, options?)` from `sttropez/browser` retains one

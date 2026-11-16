@@ -1,4 +1,5 @@
 import { clientBox } from "./dom-coordinates.ts";
+import { isFocused } from "./dom-focus.ts";
 import type { DocumentSnapshot, DocumentView } from "../core/workspace.ts";
 import type { TextViewport } from "./viewport.ts";
 
@@ -17,7 +18,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
         frame = undefined;
         if (disposed) return;
         const composing = isComposing();
-        const { selection: selected, selectionSet } = view.getSnapshot(), focused = owner.activeElement === input;
+        const { selection: selected, selectionSet } = view.getSnapshot(), focused = isFocused(input);
         let rectangle = clientBox(root);
         const currentDocument = readDocument();
         let state = viewport.snapshot(), point = viewport.coordsAt(selected.head, selected.headAffinity);
@@ -42,7 +43,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
         // DOM layout can advance before ResizeObserver queues a render. Retain the last valid
         // placement until measured metrics arrive, then attempt reveal once even if no point exists.
         if (!retainLayout || layoutChanged) caretLayout = { state, visible: !!visible, focused: focused && !composing };
-        const buffer = currentDocument?.buffer, active = owner.activeElement === input;
+        const buffer = currentDocument?.buffer, active = isFocused(input);
         const points = [];
         if (!composing && active && buffer && state.selectionSet === selectionSet && state.lastLine > state.firstLine) {
             const from = buffer.offsetAt(state.firstLine), to = state.lastLine < buffer.lineCount ? buffer.offsetAt(state.lastLine) : buffer.length;

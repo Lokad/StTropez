@@ -1,4 +1,5 @@
 import { clientBox, cssZoom } from "./dom-coordinates.ts";
+import { isFocused } from "./dom-focus.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, TabId, Workspace } from "../core/workspace.ts";
 import type { Selection } from "../core/history.ts";
 import type { SelectionSet } from "../core/selections.ts";
@@ -525,7 +526,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             button.style.left = `${physicalLeft + 1}px`; button.style.top = `${physicalTop + padding + index.rowAt(item.line) * lineHeight - top}px`; button.style.height = `${lineHeight}px`;
         }
         for (const [id, button] of foldButtons) if (!visibleFolds.has(id)) {
-            const focused = owner.activeElement === button; button.remove(); foldButtons.delete(id);
+            const focused = isFocused(button); button.remove(); foldButtons.delete(id);
             if (focused) root.dispatchEvent(new CustomEvent("sttropez-focus-source"));
         }
         orderedButtons.forEach((button, index) => { if (foldLayer.children.item(index) !== button) foldLayer.insertBefore(button, foldLayer.children.item(index)); });

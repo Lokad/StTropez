@@ -2,6 +2,7 @@ import { BracketMatcher, bracketMatchLimits } from "../core/bracket-matching.ts"
 import type { BracketMatchCursor, BracketMatchOptions, BracketMatchProgress, BracketMatchResult } from "../core/bracket-matching.ts";
 import type { ResolvedLanguageConfiguration } from "../core/language-edits.ts";
 import { Store } from "../core/observable.ts";
+import { isFocused } from "./dom-focus.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentId, DocumentView, TabId, Workspace } from "../core/workspace.ts";
 import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.ts";
@@ -25,7 +26,7 @@ export function mountBracketHighlights(workspace: Workspace, tabId: TabId, view:
     const stops: (() => void)[] = [];
     type Job = { cursor: BracketMatchCursor; current: () => boolean; revision: number; caret: number; running: boolean };
     let job: Job | undefined, current: (() => boolean) | undefined, decorations = empty, first = empty, second = empty;
-    const focused = () => (input.getRootNode() as Document | ShadowRoot).activeElement === input;
+    const focused = () => isFocused(input);
     const available = () => !disposed && !!limits && !input.disabled && workspace.ownsDocumentView(view) && !!workspace.resolveTab(target) && focused();
     const publish = (status: BracketHighlightSnapshot["status"], revision = cell.get().revision, caret: number | null = null, progress?: BracketMatchProgress) => {
         const result = progress?.result ?? null;

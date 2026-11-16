@@ -1,4 +1,5 @@
 import { Store } from "../core/observable.ts";
+import { isFocused } from "./dom-focus.ts";
 import type { DocumentId, TabId, Workspace } from "../core/workspace.ts";
 import { createLspHighlightClient } from "../protocol/lsp-highlights.ts";
 import type { LspDocumentHighlight } from "../protocol/lsp-highlights.ts";
@@ -21,7 +22,7 @@ export function createLspHighlightController(workspace: Workspace, tabId: TabId,
     const events = new AbortController(); let disposed = false, generation = 0, timer: number | undefined;
     let result: Awaited<ReturnType<typeof client.run>["result"]> | undefined;
     const available = () => !disposed && !editor.activity().disposed && workspace.ownsDocumentView(view) && !!workspace.resolveTab(target);
-    const focused = () => editor.element.ownerDocument.activeElement === editor.input;
+    const focused = () => isFocused(editor.input);
     const busy = () => { const state = editor.activity(); return state.composing || state.pendingInput || state.pendingCommand || state.pendingWord || state.pendingGrapheme; };
     const publish = (status: LspHighlightSnapshot["status"], revision = cell.get().revision, caret: number | null = null) => {
         const changed = new Set<Store<unknown>>(); cell.set(Object.freeze({ status, documentId, revision, caret, items: result?.items ?? empty }), changed); notifications.deliver([...changed]);

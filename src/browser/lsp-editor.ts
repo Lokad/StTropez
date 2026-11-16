@@ -1,3 +1,4 @@
+import { isFocused } from "./dom-focus.ts";
 import { codeWordConstituentPattern } from "../core/words.ts";
 import type { ResourceLease, ResourceMetadata, TabId, Workspace } from "../core/workspace.ts";
 import type { SelectionSet } from "../core/selections.ts";
@@ -192,7 +193,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
             if (labelItems === previous) labelItems = captured.visible;
             publish("LSP completion ready.");
             if (acceptance?.item === item) queueMicrotask(() => {
-                if (job === captured && captured.acceptance === acceptance && captured.id === acceptance.id && captured.visible[captured.choice] === resolved && owner.activeElement === editor.input) {
+                if (job === captured && captured.acceptance === acceptance && captured.id === acceptance.id && captured.visible[captured.choice] === resolved && isFocused(editor.input)) {
                     captured.acceptance = undefined; apply(acceptance.mode, acceptance.id);
                 }
             });
@@ -285,7 +286,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
         if (options.automatic === false || !inputIntent || autoFrame !== undefined) return;
         autoFrame = clock.requestAnimationFrame(() => {
             autoFrame = undefined;
-            if (!inputIntent || disposed || !available() || owner.activeElement !== editor.input || editor.input.readOnly || editor.activity().composing) { cancelAuto(); return; }
+            if (!inputIntent || disposed || !available() || !isFocused(editor.input) || editor.input.readOnly || editor.activity().composing) { cancelAuto(); return; }
             if (!idle()) { if (++autoTurns < 120) scheduleAuto(); return; }
             if (session.state.getSnapshot().phase !== "ready" && connecting) { if (++autoTurns < 120) scheduleAuto(); return; }
             const intent = inputIntent, selected = editor.view.getSnapshot().selectionSet, caret = selected.ranges[selected.primary]!;
@@ -391,7 +392,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
     }, { capture: true, signal: listeners.signal });
     editor.input.addEventListener("input", () => { if (inputIntent) scheduleAuto(); }, { signal: listeners.signal });
     editor.input.addEventListener("compositionend", event => {
-        if (snippet) { if (owner.activeElement !== editor.input) { snippet = undefined; publish("Snippet ended after composition lost focus."); } return; }
+        if (snippet) { if (!isFocused(editor.input)) { snippet = undefined; publish("Snippet ended after composition lost focus."); } return; }
         if (!event.data || options.automatic === false || !Array.from(event.data).every(value => word.test(value))) return;
         const selections = editor.view.getSnapshot().selectionSet, caret = selections.ranges[selections.primary]!;
         inputIntent = { revision: workspace.document(documentId).revision, selections, caret: caret.head, data: event.data, word: true, trigger: undefined, reused: false }; scheduleAuto();

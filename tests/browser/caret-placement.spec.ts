@@ -1,8 +1,9 @@
 import { test, expect } from "./fixtures.ts";
 import { build } from "esbuild";
 import { basename } from "node:path";
+import { readFile } from "node:fs/promises";
 
-test("caret placement measures every visible head before writes and remeasures after reveal", async ({ page }, testInfo) => {
+for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} caret placement measures every visible head before writes and remeasures after reveal`, async ({ page }, testInfo) => {
     const built = await build({ entryPoints: { core: "src/index.ts", viewport: "src/browser/viewport.ts", caret: "src/browser/input-caret.ts" },
         outdir: "artifacts/caret-placement", bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
     const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
@@ -11,14 +12,17 @@ test("caret placement measures every visible head before writes and remeasures a
         return body === undefined ? route.abort() : route.fulfill({ contentType: "text/javascript", body });
     });
     await page.goto("/viewport/");
-    const result = await page.evaluate(async () => {
+    const result = await page.evaluate(async ({ shadow, css }) => {
         const path = "/caret-placement/";
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextViewport } = await import(path + "viewport.js") as typeof import("../../src/browser/viewport.ts");
         const { mountInputCaret } = await import(path + "caret.js") as typeof import("../../src/browser/input-caret.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "caret", variant: "text" }, "Caret", { value: ("0123456789".repeat(16) + "\n").repeat(1000) });
         const tab = workspace.open({ kind: "text", documentId: source.documentId }, "caret"), host = document.createElement("section");
-        host.style.cssText = "height:220px;width:800px;position:fixed;top:10px;left:10px"; document.body.append(host);
+        const container = document.createElement("div"); document.body.append(container);
+        const tree = shadow ? container.attachShadow({ mode: "closed" }) : container;
+        const style = document.createElement("style"); style.textContent = css; tree.append(style, host);
+        host.style.cssText = "height:220px;width:800px;position:fixed;top:10px;left:10px";
         const viewport = mountTextViewport(host, workspace, tab), root = viewport.element, input = document.createElement("textarea");
         root.classList.add("st-editing-candidate"); input.className = "st-input-context"; root.append(input);
         let composing = false, queries = 0, reveals = 0;
@@ -92,8 +96,8 @@ test("caret placement measures every visible head before writes and remeasures a
             const offscreen = { hidden: primary.hidden, height: parseFloat(input.style.height), expectedHeight: viewport.snapshot().lineHeight, reveals };
             layer.dispose(); layer.schedule();
             return { work, composition, beforeResize, revealed, blurred, offscreen, disposed: !layer.pending() && !root.contains(primary) };
-        } finally { layer.dispose(); viewport.destroy(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
-    });
+        } finally { layer.dispose(); viewport.destroy(); workspace.close(tab); workspace.releaseResource(source.id, true); container.remove(); }
+    }, { shadow, css: await readFile("src/browser/editor.css", "utf8") });
     await testInfo.attach("caret-placement", { body: JSON.stringify(result), contentType: "application/json" });
     for (const work of result.work) {
         expect(work.lateReads, JSON.stringify(work)).toBe(0);
