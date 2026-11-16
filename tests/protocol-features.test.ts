@@ -61,6 +61,8 @@ test("document links retain opaque host URIs and resolve only the captured targe
     const links = decodeLspDocumentLinks([wire, { ...wire, target: "host+opaque:%2F resource" }], capture, true); assert.equal(links[0]!.target, null); assert.equal(links[1]!.target, "host+opaque:%2F resource"); assert.ok(Object.isFrozen(links[0]!.resolve));
     const resolved = decodeLspResolvedDocumentLink({ ...wire, target: "custom:unknown", tooltip: "Resolved literal" }, links[0]!, capture); assert.equal(resolved.target, "custom:unknown"); assert.equal(resolved.resolve, null);
     assert.equal(decodeLspDocumentLinks([{ ...wire, range: range(0, 8, 99) }], capture)[0]!.to, capture.document.buffer.length);
+    assert.equal(decodeLspDocumentLinks(Array(1024).fill(wire), capture).length, 1024);
+    assert.throws(() => decodeLspDocumentLinks(Array(1025).fill(wire), capture));
     for (const invalid of [{ ...wire, target: "" }, { ...wire, range: range(99, 8, 99) }, { ...wire, tooltip: 7 }, { ...wire, data: "x".repeat(8193) }]) assert.throws(() => decodeLspDocumentLinks([wire, invalid], capture, true));
     assert.throws(() => decodeLspResolvedDocumentLink({ ...wire, target: "custom:x", data: { token: 4 } }, links[0]!, capture));
     assert.throws(() => decodeLspResolvedDocumentLink({ ...wire, range: range(0, 0, 2), target: "custom:x" }, links[0]!, capture));
@@ -69,6 +71,9 @@ test("document links retain opaque host URIs and resolve only the captured targe
 test("document colors and presentations validate channels, fallback text and every additional edit before publication", async () => {
     const { capture, expire } = await captured("const c = #fff;"), color = { red: 1, green: 0, blue: .5, alpha: .25 };
     const colors = decodeLspDocumentColors([{ range: range(0, 10, 14), color }], capture), reference = colors[0]!; assert.ok(Object.isFrozen(reference.color)); assert.deepEqual(decodeLspColor(color), color);
+    const item = { range: range(0, 10, 14), color };
+    assert.equal(decodeLspDocumentColors(Array(1024).fill(item), capture).length, 1024);
+    assert.throws(() => decodeLspDocumentColors(Array(1025).fill(item), capture));
     const presentations = decodeLspColorPresentations([{ label: "#123" }, { label: "Explicit", textEdit: { range: range(0, 10, 14), newText: "rgba(1,2,3,.5)" }, additionalTextEdits: [{ range: range(0, 0, 0), newText: "// color\r\n" }] }], reference, capture);
     const after = capture.document.buffer.apply(presentations[1]!.edits).buffer; assert.equal(after.slice(0, after.length), "// color\r\nconst c = rgba(1,2,3,.5);"); assert.equal(presentations[0]!.edits[0]!.insert, "#123");
     for (const invalid of [{ ...color, alpha: NaN }, { ...color, red: 2 }, { ...color, blue: "0" }, {}]) assert.throws(() => decodeLspDocumentColors([{ range: range(0, 10, 14), color: invalid }], capture));

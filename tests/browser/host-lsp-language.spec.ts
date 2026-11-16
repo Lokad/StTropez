@@ -1,4 +1,4 @@
-import { isolatedTest as test, expect } from "./fixtures.ts";
+import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
@@ -9,8 +9,70 @@ async function seed(page: Page, text: string, offset = text.length) {
     await field(page).focus(); await page.evaluate(at => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: at, head: at }); }, offset);
     await expect.poll(async () => (await snapshot(page)).bindings.language.sessions.find(session => session.id === "primary")!.provider.connected).toBe(true);
 }
+async function settledColorsAndLinks(page: Page) {
+    await ready(page);
+    await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && !s.bindings.colors.state.pending && !s.bindings.links.state.pending; });
+}
+async function exact(page: Page, text: string) {
+    expect(await page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false;
+        for (let at = 0; at < text.length; at += 32768) if (f.range(at, Math.min(text.length, at + 32768)) !== text.slice(at, at + 32768)) return false;
+        return true;
+    }, text)).toBe(true);
+}
+async function disposeColorsAndLinks(page: Page) {
+    await page.evaluate(() => window.hostFixture.dispose()); const state = await snapshot(page);
+    expect(state.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(state.hostSubscriptions).toBe(0);
+    for (const feature of [state.bindings.colors, state.bindings.links]) expect(feature).toMatchObject({ transport: null, sessions: 0, subscriptions: 0, disposed: true, worker: { created: 0 } });
+    expect(state.bindings.colors.decoratedViews).toBe(0);
+}
 for (const host of ["plain", "react"] as const) test.describe(`${host} selected LSP features`, () => {
     test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); });
+    test("paged links and colors keep unresolved targets and invalid form values inert and reject oversized lists", async ({ page }) => {
+        const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));
+        const line = 'import "sample-utils";\r\n#abc;\r\n', text = line.repeat(70) + 'import "missing-utils";';
+        await seed(page, text, text.indexOf("#abc") + 2); await button(page, "Add module companion").click(); const before = await snapshot(page);
+        const links = page.getByLabel("Module link results", { exact: true }), colors = page.getByLabel("Document color results", { exact: true });
+        await button(page, "Discover module links").click(); await settledColorsAndLinks(page); await expect(links.getByRole("listitem")).toHaveCount(64);
+        await expect(button(page, "Previous module links")).toBeDisabled(); await button(page, "Next module links").click(); await expect(links.getByRole("listitem")).toHaveCount(7);
+        await expect(button(page, "Next module links")).toBeDisabled(); await expect(links.getByRole("button").last()).toBeEnabled();
+        await links.getByRole("button").last().click(); await settledColorsAndLinks(page); await expect(links.getByRole("button").last()).toBeDisabled();
+        expect((await snapshot(page)).bindings.links.opened).toBe(0); await button(page, "Previous module links").click(); await expect(links.getByRole("listitem")).toHaveCount(64);
+        await button(page, "Discover document colors").click(); await settledColorsAndLinks(page); await expect(colors.getByRole("listitem")).toHaveCount(64);
+        await expect(button(page, "Previous document colors")).toBeDisabled(); await button(page, "Next document colors").click(); await expect(colors.getByRole("listitem")).toHaveCount(6);
+        await expect(button(page, "Next document colors")).toBeDisabled(); await colors.getByRole("button").last().click();
+        await expect(button(page, "Preview color presentations")).toBeEnabled();
+        expect(await page.locator(".st-document-color").count()).toBeGreaterThan(0); expect(await page.locator(".st-document-color").count()).toBeLessThan(150);
+        const previews = (await snapshot(page)).bindings.colors.previews, presentations = methods.filter(method => method === "textDocument/colorPresentation").length;
+        await field(page, "Proposed color").fill('url("https://invalid.example/")'); await expect(button(page, "Preview color presentations")).toBeDisabled(); await expect(button(page, "Apply captured color")).toBeDisabled();
+        await page.evaluate(() => window.hostFixture.previewColor()); await page.evaluate(() => window.hostFixture.providerCustom("fixture/state", {}));
+        expect((await snapshot(page)).bindings.colors.previews).toBe(previews); expect(methods.filter(method => method === "textDocument/colorPresentation")).toHaveLength(presentations);
+        await exact(page, text); expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).source.revision).toBe(before.source.revision);
+        for (const method of ["textDocument/documentLink", "documentLink/resolve", "textDocument/documentColor"]) expect(methods).toContain(method);
+        const oversized = line.repeat(1025); await seed(page, oversized, oversized.indexOf("#abc") + 2); const overflow = await snapshot(page);
+        await button(page, "Discover module links").click(); await settledColorsAndLinks(page); await expect(links.getByRole("listitem")).toHaveCount(0);
+        expect((await snapshot(page)).bindings.links.state.status).toBe("failed"); await expect(page.getByLabel("Module link status", { exact: true })).toContainText("limit");
+        await button(page, "Discover document colors").click(); await settledColorsAndLinks(page); await expect(colors.getByRole("listitem")).toHaveCount(0);
+        expect((await snapshot(page)).bindings.colors.state.status).toBe("failed"); await expect(page.getByLabel("Document color status", { exact: true })).toContainText("limit");
+        expect((await snapshot(page)).bindings.colors.decoratedViews).toBe(0); await exact(page, oversized);
+        expect((await snapshot(page)).history).toEqual(overflow.history); expect((await snapshot(page)).source.revision).toBe(overflow.source.revision);
+        expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
+    });
+    test("secondary-resource color edits and explicit reveal keep primary Save and Run identity", async ({ page }) => {
+        const text = 'import "sample-utils";', original = 'const color = "#abc";\r\nexport const value = 1;\r\n', expected = original.replace("#abc", "#112233");
+        await seed(page, text, 10); await button(page, "Add module companion").click(); const companion = (await snapshot(page)).bindings.links.companion!;
+        await page.evaluate(id => { const f = window.hostFixture, document = f.navigationDocument(id); f.editLinkTarget(id, document.revision, [{ from: 0, to: 0, insert: 'const color = "#abc";\r\n' }]); }, companion);
+        await button(page, "Discover module links").click(); await settledColorsAndLinks(page); await page.getByLabel("Module link results", { exact: true }).getByRole("button").click();
+        await settledColorsAndLinks(page); await expect(field(page, "Secondary source")).toBeFocused();
+        await button(page, "Discover document colors").click(); await settledColorsAndLinks(page); expect((await snapshot(page)).bindings.colors.capture!.view).toBe("secondary");
+        await field(page, "Proposed color").fill("#112233"); await button(page, "Preview color presentations").click(); await settledColorsAndLinks(page);
+        await button(page, "Apply captured color").click(); await settledColorsAndLinks(page); expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(expected); await exact(page, text);
+        await field(page).focus(); await button(page, "Open color changes in Module companion").click(); await expect(field(page, "Secondary source")).toBeFocused();
+        await field(page, "Secondary source").press("Control+z"); await settledColorsAndLinks(page); expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(original);
+        await field(page, "Secondary source").press("Control+Shift+z"); await settledColorsAndLinks(page); expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(expected);
+        await button(page, "Run captured inputs").click(); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(text); await page.evaluate(() => window.hostFixture.finishRun());
+        await button(page, "Save source").click(); await page.evaluate(() => window.hostFixture.finishSave()); await settledColorsAndLinks(page);
+        await exact(page, text); expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(expected); await disposeColorsAndLinks(page);
+    });
     test("provider color presentations preview every edit and preserve shared history while cancelled requests leave text intact", async ({ page }) => {
         const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));
         const raw = '\ufeffconst color = "#abc";\r\nvalue;'; await seed(page, raw);
