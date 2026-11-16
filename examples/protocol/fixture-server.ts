@@ -71,7 +71,8 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
         let definitionLinks = false, versionedEdits = false;
         type ActionConfig = { module: string; delay: number; fault?: "malformed" | "failure" | "incomplete" | "markup" };
         let actionConfig: ActionConfig = { module: "sample-utils", delay: 0 }, actionResolveConfig: ActionConfig = { module: "sample-utils", delay: 0 }, actionGeneration = 0, actionLiterals = false, actionResolve = false;
-        const actionResolutions = new Map<number, WorkspaceEdit>();
+        const actionResolutions = new Map<number, { source: TextDocument; edit: WorkspaceEdit }>();
+        const expireActions = (uri: string) => { for (const [id, action] of actionResolutions) if (action.source.uri === uri) actionResolutions.delete(id); };
         let projectConfig: Pick<ProjectCommand, "kind" | "delay" | "fault"> = { kind: "status", delay: 0 }, projectRegistered = false, applyEditSupport = false, projectStyle: "markers" | "many" | "wide" = "markers", cancelApply: (() => void) | undefined;
         let lastCommand: unknown = null;
         const deferred = <T>(delay: number, token: CancellationToken, compute: () => T | Promise<T>) => new Promise<T>((resolve, reject) => {
@@ -106,9 +107,9 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
             const before = documents.get(params.textDocument.uri); if (!before || params.textDocument.version <= before.version) throw new Error("Invalid change version");
             let text = before.getText(); for (const change of params.contentChanges) { if (!("range" in change)) throw new Error("Expected incremental changes");
                 text = TextDocument.applyEdits(TextDocument.create(before.uri, before.languageId, before.version, text), [{ range: change.range, newText: change.text }]); }
-            const changed = TextDocument.create(before.uri, before.languageId, params.textDocument.version, text); documents.set(before.uri, changed); countSync(before.uri, "change"); publish(changed);
+            const changed = TextDocument.create(before.uri, before.languageId, params.textDocument.version, text); documents.set(before.uri, changed); expireActions(before.uri); countSync(before.uri, "change"); publish(changed);
         }));
-        peer.onNotification("textDocument/didClose", (params: DidCloseTextDocumentParams) => sync(() => { if (!documents.delete(params.textDocument.uri)) throw new Error("Close without open"); countSync(params.textDocument.uri, "close"); }));
+        peer.onNotification("textDocument/didClose", (params: DidCloseTextDocumentParams) => sync(() => { if (!documents.delete(params.textDocument.uri)) throw new Error("Close without open"); expireActions(params.textDocument.uri); countSync(params.textDocument.uri, "close"); }));
         peer.onRequest("fixture/synchronization", () => ({ initialize: initializeCount, failures: [...syncFailures], documents: [...syncCounts].map(([uri, counts]) => ({ uri, ...counts, version: documents.get(uri)?.version ?? null })) }));
         peer.onRequest("fixture/register", (params: RegistrationParams) => peer.sendRequest(RegistrationRequest.type, params));
         peer.onRequest("fixture/unregister", (params: UnregistrationParams) => peer.sendRequest(UnregistrationRequest.type, params));
@@ -296,7 +297,7 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
         });
         peer.onRequest("textDocument/codeAction", (params: { textDocument: { uri: string }; range: Location["range"]; context: { diagnostics: unknown[]; triggerKind?: number } }, token) => {
             const origin = documents.get(params.textDocument.uri); if (!origin || !Array.isArray(params.context?.diagnostics)) throw new ResponseError(-32602, "Code actions need captured context");
-            const config = actionConfig, project = [...documents.values()], generation = ++actionGeneration; actionConfig = { module: config.module, delay: 0 }; actionResolutions.clear();
+            const config = actionConfig, project = [...documents.values()], generation = ++actionGeneration; actionConfig = { module: config.module, delay: 0 };
             return deferred(config.delay, token, async (): Promise<(CodeAction | Command)[]> => {
                 if (config.fault === "failure") throw new ResponseError(-32001, "Fixture actions unavailable");
                 const status = { title: "Provider status command", command: "fixture.status", arguments: [] };
@@ -308,10 +309,15 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
                 const reviewEdit = workspaceTextEdits(project, changes), todoEdits: TextEdit[] = []; let todo = -1;
                 while ((todo = text.indexOf("TODO", todo + 1)) >= 0) { if (todoEdits.length === 1024) throw new ResponseError(-32000, "Fixture TODO action exceeds its edit limit"); todoEdits.push({ range: { start: origin.positionAt(todo), end: origin.positionAt(todo + 4) }, newText: "DONE" }); }
                 const lazyEdit = todoEdits.length ? workspaceTextEdits(project, new Map([[origin.uri, todoEdits]])) : importEdit;
-                actionResolutions.set(generation, lazyEdit);
+                if (token.isCancellationRequested || socket.readyState !== 1) throw new ResponseError(-32800, "Fixture action cancelled");
+                if (documents.get(origin.uri) !== origin) throw new ResponseError(-32801, "Fixture action source changed");
+                // Keep earlier valid offers resolvable. At capacity, new offers carry their
+                // already-computed edits eagerly; rejected response shapes retain no entries.
+                const lazy = actionResolve && actionResolutions.size < 64 && config.fault !== "malformed" && config.fault !== "incomplete";
+                if (lazy) actionResolutions.set(generation, { source: origin, edit: lazyEdit });
                 const actions: (CodeAction | Command)[] = [{ title: config.fault === "markup" ? '<img src=x onerror="actionExecuted=1">' : found.title, kind: "source.addImport", isPreferred: true, ...(found.disabled ? { disabled: { reason: found.disabled } } : {}), edit: importEdit },
                     { title: "Add review markers across captured resources", kind: "refactor.rewrite", edit: reviewEdit, ...(changes.size ? {} : { disabled: { reason: "All captured sources already have review markers." } }) },
-                    { title: todoEdits.length ? "Load TODO fixes preview" : "Load alternate import preview", kind: todoEdits.length ? "source.fixAll" : "source.addImport", ...(actionResolve ? { data: { token: generation, opaque: { label: "captured", uri: origin.uri } } } : { edit: lazyEdit }) },
+                    { title: todoEdits.length ? "Load TODO fixes preview" : "Load alternate import preview", kind: todoEdits.length ? "source.fixAll" : "source.addImport", ...(lazy ? { data: { token: generation, opaque: { label: "captured", uri: origin.uri } } } : { edit: lazyEdit }) },
                     { title: "Unavailable context example", kind: "refactor", disabled: { reason: "The fixture requires another context." } }, status,
                     { title: "Edit then provider command", kind: "source", edit: reviewEdit, command: status },
                     { title: "Review provider edits command", command: "fixture.review", arguments: [{ uri: origin.uri, opaque: { note: "😀" } }] },
@@ -326,7 +332,9 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
             const config = actionResolveConfig; actionResolveConfig = { module: config.module, delay: 0 };
             return deferred(config.delay, token, () => {
                 if (config.fault === "failure") throw new ResponseError(-32001, "Fixture action resolution unavailable");
-                const edit = actionResolutions.get(params.data?.token); if (!edit) throw new ResponseError(-32602, "Unknown captured action");
+                const retained = actionResolutions.get(params.data?.token);
+                if (!retained || documents.get(retained.source.uri) !== retained.source) throw new ResponseError(-32602, "Unknown captured action");
+                const edit = retained.edit;
                 if (config.fault === "incomplete") return params;
                 if (config.fault === "markup") return { ...params, title: "Changed during resolve", edit };
                 if (config.fault === "malformed") return { ...params, edit: { ...edit, documentChanges: [...edit.documentChanges ?? [], { textDocument: { uri: "host+fixture:unknown-target", version: null }, edits: [] }] } };
@@ -399,8 +407,8 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
         peer.onNotification("fixture/disconnect", () => port.dispose());
         peer.onNotification("fixture/binary", () => socket.send(Buffer.from("{}"), { binary: true }));
         peer.listen();
-        const dispose = () => { for (const cancel of [...pending]) cancel(); peer.dispose(); socket.terminate(); }; release.add(dispose);
-        socket.on("close", () => { for (const cancel of [...pending]) cancel(); const listener = owner; owner = undefined; listener?.close(new Error("Fixture socket closed")); peer.dispose(); release.delete(dispose); });
+        const dispose = () => { for (const cancel of [...pending]) cancel(); actionResolutions.clear(); peer.dispose(); socket.terminate(); }; release.add(dispose);
+        socket.on("close", () => { for (const cancel of [...pending]) cancel(); actionResolutions.clear(); const listener = owner; owner = undefined; listener?.close(new Error("Fixture socket closed")); peer.dispose(); release.delete(dispose); });
     });
     return () => { server.off("upgrade", onUpgrade); for (const dispose of [...release]) dispose(); release.clear(); sockets.close(); };
 }

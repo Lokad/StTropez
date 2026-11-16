@@ -98,6 +98,11 @@ length. Confirming applies every validated edit, not only the visible page.
 The generic reference-peer fixture reuses StTropez's import cursor for one choice, supplies working-
 project review markers and resolves TODO-to-DONE edits. It includes static/dynamic command choices,
 ordered edit+command checks, opaque argument roundtrips and captured server-edit decisions.
+The fixture retains at most 64 lazy edits per connection, each owned by its exact source
+snapshot. Independent discoveries preserve earlier offers; at capacity, new offers carry
+their edits eagerly. Source changes, closure and disconnect release the affected entries;
+delayed discoveries cannot republish edits from a closed or changed source. This fixture
+limit does not impose a public client quota.
 Disabled and unpermitted choices,
 malformed lists/resolves, changed authority, cancellation/reconnect, comparison, history and 100k-line
 journeys qualify protocol/host behavior, not general module/type/scope resolution. No production
