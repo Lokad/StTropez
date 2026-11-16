@@ -59,7 +59,7 @@ Hosts can intercept clipboard events on the public input in the capture phase an
 with `preventDefault()`. The candidate then leaves clipboard data and source mutation to the
 host, cancels queued navigation/grouping work, and stops a delegated cut/paste drag. Empty or
 unsupported nontext literal paste is a no-op, including when source text is selected. The
-[table-paste host](table-paste.md) exercises a captured conversion through this boundary.
+[table-paste host](examples.md#table-conversion) exercises a captured conversion through this boundary.
 Copy/cut with only collapsed selections leave the clipboard event and history untouched.
 Read-only Tab/Shift+Tab traverse host controls. On Apple platforms Cmd+Left/Right navigate the
 whole source line and Cmd+Up/Down the document; Shift extends the selection. Unhandled command
@@ -309,7 +309,7 @@ Complete rows support [visual bidi navigation and dual affinities](unicode.md). 
 long contextual-line geometry/navigation, wrapping,
 touch/mobile selection, native undo/menu behavior, OS clipboard,
 and additional platform modifier bindings. [Literal search/replace](search.md) and the host-owned
-[provider/highlighting fixture](providers.md) now exercise the view. [Grapheme navigation](unicode.md) first attempts an exact local ASCII boundary query; uncertain context cooperatively indexes the full captured logical line using Unicode 18 facts. A one-line cache uses immutable buffer identity and range; long clusters and RI parity retain full context. Delayed commands check captured revision, selection, tab generation, composition, permission and disposal. Complete-row visual movement still requires measured geometry.
+[provider/highlighting fixture](examples.md#worker-protocol-v1) now exercise the view. [Grapheme navigation](unicode.md) first attempts an exact local ASCII boundary query; uncertain context cooperatively indexes the full captured logical line using Unicode 18 facts. A one-line cache uses immutable buffer identity and range; long clusters and RI parity retain full context. Delayed commands check captured revision, selection, tab generation, composition, permission and disposal. Complete-row visual movement still requires measured geometry.
 The textarea's value is an internal context, so setting it is not a full-document edit API.
 Hosts use revision-checked model edits for that operation.
 

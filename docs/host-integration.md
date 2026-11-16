@@ -201,7 +201,7 @@ Parsing and import policy belong to the host. Copy all clipboard formats synchro
 never retain the event for asynchronous reads. Validate the complete converted result before
 insertion, including aggregate size across selections. Cooperative parsing does not preempt
 native clipboard retrieval, native HTML parsing, final string assembly or atomic model commits.
-See the [table conversion example](table-paste.md) for one bounded host format policy.
+See the [table conversion example](examples.md#table-conversion) for one bounded host format policy.
 
 ### Tokenization, annotations and forms
 
@@ -228,7 +228,7 @@ A source-backed form parses a captured range and patches validated source spans 
 same workspace transactions/history. Separate typed settings retain their own identity and
 revision. Copying values into them requires a captured destination and explicit operation;
 it does not make the form a second source authority or imply Save/Run. See the
-[source-backed form example](transfer-instruction.md).
+[source-backed form example](examples.md#source-backed-transfer-form).
 
 ### Navigation, commands and lifecycle
 
@@ -297,7 +297,7 @@ Draft persistence is a host pattern, not an editor storage API. A host implement
 
 Navigation protection considers uncovered input, composition, pending editing and unsettled
 host services. Full host disposal releases storage, observers and navigation listeners;
-view disposal releases only view-owned work. The [draft example](host-drafts.md) demonstrates
+view disposal releases only view-owned work. The [draft example](examples.md#draft-checkpoints) demonstrates
 independent source/settings restores and a temporary loaded-resource slot.
 
 ### Bounds and validation

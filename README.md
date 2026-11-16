@@ -25,8 +25,8 @@ JavaScript, review Changes and save in the browser. Edited programs are not exec
 The server binds to loopback and does not open a browser window. Compiler/provider dependencies
 belong to the example and are excluded from the editor package.
 
-The [demo guide](docs/demo-language.md) describes the language tools and samples;
-[static hosting](docs/demo-static.md) describes the browser provider and deployment build.
+The [example guide](docs/examples.md) describes the samples, providers and development hosts;
+[static hosting](docs/examples.md#static-build-and-deployment) describes the deployment build.
 `npm run dev` starts the same server, including the additional development fixtures.
 Use `STTROPEZ_PORT` for a different source-server port and `STTROPEZ_DEMO_PORT` for static preview.
 

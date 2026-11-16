@@ -31,7 +31,7 @@ application owns storage, services, language policy and surrounding controls.
 | [Packaging](packaging.md) | Assets, entry points, manifest and consumer integration |
 | [Architecture](architecture.md) | Layering, ownership, identity and dependencies |
 | [Testing](testing.md) | Test owners, readiness, measurement and device checks |
-| [Examples](demo-language.md) | Editable demonstrations and language providers |
+| [Examples](examples.md) | Demo, development hosts, providers and static deployment |
 
 ## Support matrix
 
