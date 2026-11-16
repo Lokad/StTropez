@@ -72,7 +72,7 @@ assertion limits are separate. Pass `--workers=1` to Playwright for a serial foc
 
 ```sh
 npm run check          # Type checking, documentation examples, model tests, build, Chromium tests
-npm run check:docs     # Compile examples in getting-started, viewport, folding and search
+npm run check:docs     # Compile examples in getting-started, viewport, folding, search and comparison
 npm run test:ci        # Representative Chromium owner journeys used in CI
 npm run test:browsers  # Chromium, Firefox and WebKit
 npm run inspect        # Screenshot and machine-readable state

@@ -62,6 +62,7 @@ that requires a real device or consuming application; it does not mean an automa
 | Input-handler duration | Synchronous time inside the measured input listener. It excludes later parsing, service work and rendering. |
 | Search scan step | `FindSnapshot.maxScanStepMs`: maximum synchronous matching/index span. Regex mode measures main-thread dispatch/index work; worker matching, later transfer/decoding, publication and waiting are excluded. |
 | Replacement transaction | `FindSnapshot.replaceTransactionMs`: final model transaction and synchronous publication/context refresh. Planning and later rendering are excluded. |
+| Comparison advance loop | Browser comparison `maxStepMs`/`totalStepMs`: synchronous controller advances grouped within scheduled tasks. Rendering after the loop and later view/scroll/alignment settlement are excluded. |
 | Frame readiness | Time until the required text, selection, decorations and view state are observable in browser frames. It does not establish physical display latency. |
 | Provider duration | Time attributed to language/service work, with transport and scheduling boundaries stated by the measurement. |
 | Automation action duration | Time around a complete scripted action and its readiness condition, including automation transport. |

@@ -1,324 +1,216 @@
-# Versioned text comparison
+# Text comparison
 
-`createComparisonController` compares an immutable reference buffer/version with a captured
-working text tab. `mountTextComparison` displays both through bounded viewports and uses
-the experimental input candidate on both sides: editable working text and a read-only reference. `/comparison/` supplies deferred,
-synthetic host responses. No retrieval, persistence, execution or application service is
-included in the package.
+`mountTextComparison` displays an immutable reference beside an editable working document.
+`createComparisonController` supplies the headless comparison and captured commands. Reference
+versions, working revisions and saved/server versions are independent; the host owns retrieval,
+review decisions and persistence.
 
-During a working edit, the last review hunks follow that transaction's position mapping and
-remain visible while exact alignment is recomputed. `status: "running"` identifies these
-provisional hunks: they describe retained presentation, not a current edit plan. Typing at a
-change boundary is included; deletion can merge adjacent projected ranges. Progress updates
-preserve this capture, and completion replaces it atomically. Reference replacement or a gap
-in document revision history clears it. Navigation and reversion require a ready comparison
-and its current generation; provisional colors never authorize a stale edit.
-Comparison observes the working document, its metadata and tab lifecycle rather than the
-workspace-wide store.
+## Use
 
-The reference version, reference epoch, working resource ID, document revision, tab
-generation and view selection have separate meanings. Moving a tab preserves the comparison;
-closing or replacing it expires the captured presentation. Baseline display resources have
-their own identity and deny editing from every origin, saving and execution. They retain
-the existing `TextBuffer` through `createTextResourceFromBuffer`, without a string export.
+Pass an open working text tab and a captured `ComparisonBaseline`. Load the packaged CSS and
+provide a bounded container as described in [Getting started](getting-started.md):
 
-Browser mounts accept an optional host-owned working `DocumentView`, as the core controller
-already does. Destroying such a mount releases its jobs, DOM and reference display resource,
-while leaving that view registered for revision-mapped selection updates. The host disposes
-the view at its own lifetime boundary. Reference display views remain mount-owned; restoring
-their scroll and selection requires the same immutable reference buffer and version. Use
-`referenceEditor()` for the current read-only candidate and its `focus`, `captureView`, `restoreView`
-and pending-input snapshot; `referenceViewport()` remains available for view geometry. Reference
-replacement disposes the old candidate and its pending navigation, pointer and input work. Callers
-must resolve the current handle after refresh. Focusing the reference viewport also enters its input.
-The stable `reference` observable publishes an immutable `{ editor, target, epoch, version }`
-reference-view handle. `target` is the captured tab identity; it is separate from the buffer version,
-view and document revision. The observable publishes `undefined` before releasing an old editor or
-display resource, then publishes the replacement handle. Subscribers queue attachment and cleanup
-after notification delivery, resolve the latest handle, and cancel queued callbacks when the
-comparison unmounts. A retired baseline stays readable while a host lease or independent view
-owns it; the workspace releases it after that last owner leaves. The comparison still releases
-its own controller, editor and DOM immediately. `referenceSubscriptions` in the
-comparison work snapshot supports lifecycle diagnostics.
+```ts
+import type { ComparisonBaseline, TabId, Workspace } from "sttropez";
+import { mountTextComparison } from "sttropez/browser";
 
+export function showChanges(
+    host: HTMLElement, workspace: Workspace, tab: TabId, reference: ComparisonBaseline
+) {
+    return mountTextComparison(host, workspace, tab, reference, {
+        ariaLabel: "Review changes",
+        rowsAligned: true
+    }); // Call destroy() when the review attachment ends.
+}
+```
 
-Reference arrows, word/line/page commands, whole-source selection and pointer ranges use real
-source coordinates, including beyond the rendered window. Copy reads the explicit selected source
-ranges. The native textarea retains bounded context and compresses large selections; ordinary
-navigation does not export the reference or render its entire selection. Read-only typing, cut,
-paste and history commands cannot mutate the reference or working history. The resource denies
-all edit origins, saving and execution independently of its input presentation. Selection and copy
-remain available while the working source is read-only or independently edited.
+The returned `TextComparison` exposes the working editor, `controller`, reference-view access
+and presentation commands. Its built-in controls navigate changes, revert a selected change,
+link scrolling and align rows. Supply `view` to retain a host-owned working `DocumentView`
+across mounts. Destroying the comparison disposes only views it creates.
+`ariaLabel` defaults to `"Text comparison"`.
 
-The evaluation hosts route Ctrl+S from the current reference input to the captured working source.
-The reference is never a save target. Run controls remain host-owned and capture the working
-source/configuration. Replacing a reference cannot retarget old input events or save shortcuts.
-The evaluation hosts attach Find to this reference lifecycle without creating a language-provider
-session. Ctrl+F searches the immutable source, including offscreen text; Ctrl+H opens the same
-read-only Find field. These Find/Replace shortcuts and F3/Shift+F3 also work from enabled controls
-in the owned language/Find tool region. F3/Shift+F3 and query Enter navigate source ranges, reveal folded matches and
-return to the reference input; Escape also returns there. A keyboard navigation request made
-while the index is scanning retains its captured source, query/options, revision, complete selections
-and focus. Only the latest pending direction is retained; expiry never redirects or refocuses a
-later view. Literal, whole-word, match-case and
-actual-worker regex search reuse the existing Find controller. Match previews and visible markers
-stay bounded. The query/options are host UI preferences; jobs, markers and selections capture their
-own reference resource and view. Replacement fields/actions are disabled, and reference commands
-reject replacement independently of the UI. Working Replacement Enter can wait for its index
-with captured replacement text and edit authority; field input or authority changes expire it. Working Find/replace and Save/Run retain their scope.
-Ctrl/Command+S from enabled text fields, options or navigation controls in the evaluation hosts'
-owned language/Find tool region uses the same captured save guard as the pane. Reference Find explicitly saves the working source; it never saves the
-immutable reference. Stale, detached, unowned, disabled or composing contexts cannot start a
-tool save. Disabled ancestors are respected; unrelated host forms are outside this region.
-Held-key repeats do not add duplicate saves. The focused control keeps focus while saving;
-later typing remains separate from the captured revision.
-Reference refresh cancels its old Find/regex work. If Find still targets the reference, fresh field
-input targets the replacement view; replacement alone starts no search and moves no focus.
-Switching to a working view keeps that owner. Unmount releases jobs and live ownership; compatible
-remount restores a dormant logical context for fresh field input, without moving focus or starting
-old queries/providers. Working contexts require the same tab generation and document; reference
-contexts require the same buffer/version. A replaced target requires explicit selection again.
-Late results cannot target a later focused source. Final host disposal clears retained ownership.
+## Contract
 
-Synthetic clipboard/composition checks exercise model guards; native OS/application clipboard,
-IME/reconversion/dead-key qualification remains separate.
+### Identity and comparison state
 
-## Exact alignment and scheduling
+A baseline contains an immutable `TextBuffer` and a string `version`; versions are opaque host
+labels. The working tab must identify a live text document. A supplied view must belong to that
+document and workspace. The controller retains the resource and captures the tab generation;
+moving a tab preserves it, while closing or replacing the target expires it.
 
-`TextDiff` tokenizes LF-inclusive lines, aligns them with shortest-edit bisection, and trims
-common UTF-16 boundaries within changed blocks. CRLF, LF, tabs, spaces and final newlines
-remain exact. `whitespaceOnly` describes a change; it never suppresses one. Lines of at most
-256 UTF-16 units retain exact strings and rejection hashes. Each job interns visited lines to
-exact integer identities. Longer lines use ordered sequences of bounded chunks, so no native
-string-key operation compares or hashes an arbitrarily long line. Cold probes keep cooperative
-shared-text comparisons; repeated probes can materialize an identity. A complete literal
-equality scan remembers its inspected chunks without rereading the source. Cached chunks and
-lazy rejection hashes belong weakly to immutable line metadata and retain no buffers on their
-own. Disjoint large blocks retain linear scanning instead of an unnecessary quadratic search.
-No normalization or hash-only equality is introduced. Adjacent unmatched regions
-coalesce before scalar trimming, so optional signatures cannot split a contiguous review hunk.
+`ComparisonController` is an observable with immutable `ComparisonSnapshot` values:
 
-After 64 frontier distances in a region of at least 64 lines per side, alignment can check for
-at most one shared exact short-line token. Its longest common subsequence is precisely the
-smaller occurrence count, so greedy matching preserves the minimal line edit distance while
-avoiding a large frontier for repeated-row deletion or scattered changes. The optional check
-declines after 64 distinct left-side tokens, a long row, or a second shared token, then resumes
-general exact bisection. Small-edit searches retain their existing ownership shortcuts. This
-addresses a reproduced 100k-line review stall; it introduces no heuristic equality or dependency.
+| Field | Meaning |
+| --- | --- |
+| `status` | `running`, `ready`, `failed`, `expired` or `disposed` |
+| `generation` | Identity of this comparison result or in-progress replacement |
+| `baseline` | Buffer/version and a separate reference `epoch`, or `null` after expiry/disposal |
+| `working` | Captured working document snapshot, or `null` after expiry/disposal |
+| `hunks` | Exact when ready; mapped presentation from the preceding comparison while running |
+| `progress`, `failure` | Current diff work counters or a failure message |
 
-Alignment consumes maximal exact matching line prefixes and suffixes. Immutable node/backing
-proofs can skip whole matching spans, including inside bisection searches. Unproved rows still
-use exact comparisons, so repeated-line ties do not depend on storage identity. An unterminated
-final token does not match if the other buffer extends that line. Within changed blocks, the
-same ownership proofs skip equal scalar spans; unrelated storage falls back to bounded exact
-reads. Cold character/Enter edits and distant edits after a tail-only warmup therefore need
-not index every intervening line. Long equal text with no applicable ownership proof can still
-require a linear scan. Short periodic-row candidates can use exact bounded text comparisons
-instead of materializing every equal row. Candidate detection never establishes equality;
-the subsequent string checks do. String-equal chunks skip the per-unit mismatch search.
-Already materialized metadata can prove a bounded run of equal rows from exact short strings
-or known identities in the current job. Each proof stays inside the two existing immutable
-metadata leaves, with at most 64 rows, and charges cooperative row work before continuing.
-Runs stop at the next ownership checkpoint, including when a partial metadata leaf is traversed
-in reverse, so cached strides cannot skip a proof of shared source storage.
-It neither materializes missing rows nor reads source text. Hashes alone cannot establish this
-proof; unknown identities retain the exact fallback. Ownership proofs remain first,
-so shared source spans can still skip large interiors without walking every metadata block.
-This is a line alignment with trimmed boundaries, rather than a globally minimal character
-alignment or moved-block detection. The original TypeScript implementation reuses the
-project's buffers; a general diff package would add a runtime dependency.
+Working edits start a fresh exact comparison. Prior hunks follow a continuous transaction map
+for display while that work runs. An unknown revision gap or reference replacement clears the
+provisional hunks. Only a ready result authorizes hunk navigation and reversion. Completion
+replaces the provisional presentation atomically; progress alone does not repaint decorations.
 
-Core callers explicitly advance work with a safe integer budget of at least 256 units, shared
-with the other work-unit cursors. Invalid budgets throw before changing the comparison or
-publishing progress; the active job remains usable. Browser tasks group up to 32 advances of
-at most 4,096 work units, respecting smaller `workBudget` values and stopping after the first
-advance that reaches four milliseconds. Larger requested budgets are validated before capping;
-core callers retain their explicit budgets. Smaller advances limit uninterrupted work but can
-increase total review readiness time through scheduling/publication overhead. Grouping reduces nested
-timer delays while bounding each batch's advances. Reads and comparisons yield within long
-lines, and stale revision jobs are
-disposed before replacement. The budget is work accounting, not a hard millisecond deadline:
-allocation, garbage collection, publication and rendering can still delay a turn. Alignment
-uses line metadata and linear search space; difficult repeated-line cases can take quadratic
-work. Bisection frontiers grow geometrically with the explored edit distance instead of the
-whole region's line count. Growth copies and initializes slots cooperatively; exact alignment
-and tie choices are unchanged. No worker or WASM runtime is required.
+### Exact text and scheduling
 
-Diff progress alone does not invalidate either viewport. A new generation or status redraws
-decorations; selection and scrolling retain their viewport-owned invalidation. This avoids
-repeated row work while the same captured diff is still running. The scheduling and short-line
-identity changes address a reproduced large conflict-review interaction, not a new shaping
-feature. Full input-to-review-ready measurements remain separate from elapsed adapter-handler
-duration. Comparison advance-loop counters exclude the rest of the scheduled callback and
-rendering; complete callback traces and complete interaction readiness are separate measurements.
+`TextDiff` compares LF-inclusive lines, then trims equal UTF-16 boundaries within changed blocks.
+CRLF, LF, tabs, spaces and final newlines participate in equality. `DiffHunk` contains baseline
+and working `DiffRange` values with exclusive text and line ends. `whitespaceOnly` describes a
+change without suppressing it. Alignment minimizes line insertions/deletions; it does not
+provide a globally minimal character diff or moved-block detection.
 
-`DiffReferenceCache` optionally retains one reference index and one most recently completed
-working index across `TextDiff` jobs. Pass it as the third constructor argument and dispose it
-when its owner ends. Each index captures the full buffer's row coordinates. Unvisited regions
-occupy implicit gaps in a persistent sequence; offsets come from the buffer's existing line
-index. Metadata blocks of at most 64 rows are built cooperatively when a probe needs them.
-Only completed blocks are memoized. This private memoization changes neither source nor public
-snapshots. Verified unchanged rows reuse sequence subtrees without copying every suffix offset.
-The project already owns the AVL balancing implementation; this original sparse layer adds no
-dependency. Exact candidate matches can decline an unnecessary disjoint-region scan.
-Numeric identity dictionaries belong to one job and are cleared on completion, cancellation
-or failure, even when the caller retains that job. Only literal metadata and bounded long-line
-chunks survive for future reuse. IDs from separate jobs or baselines are never compared, and
-no dictionary accumulates historical working revisions.
+For direct headless use, the caller supplies scheduling between cursor steps:
 
-Working reuse proves whole-line ownership against the preceding working capture. It also
-works when the remote reference has independent backing. There is no working revision chain:
-new indices retain only their buffer and needed metadata subtrees. Gap nodes retain no old
-buffers. Replacing the reference replaces both cache captures. Partial metadata blocks are
-not published, and older concurrent jobs cannot replace a newer job's cache capture. Memoized
-reference metadata stays valid for every job using that immutable reference. Active jobs retain
-their original captures; disposing the
-cache releases future reuse and prevents new jobs from using it. The comparison controller
-owns a cache and disposes it on expiration or teardown. Indexing and fallback reads remain
-cooperative. Cold input, warm remote-reference input and sustained bursts still require
-separate complete-interaction measurements; reduced read counts alone do not prove latency.
+```ts
+import { TextDiff } from "sttropez";
+import type { DiffProgress, TextBuffer } from "sttropez";
 
-Hunks and progress snapshots are immutable. A hunk command carries its comparison generation
-and index. Reversion checks that generation and the working revision, then submits one human
-replacement transaction with the initiating view. Shared undo restores the preceding text
-and selection. A later edit clears the selected hunk; it cannot silently retarget a button.
-Large hunk insertion materializes its inserted text and commits synchronously, as other
-workspace edits do.
+export function* compareText(reference: TextBuffer, working: TextBuffer): Generator<DiffProgress> {
+    const diff = new TextDiff(reference, working);
+    try {
+        for (;;) {
+            const progress = diff.next(4096);
+            yield progress;
+            if (progress.status !== "running") return;
+        }
+    } finally {
+        diff.dispose();
+    }
+}
+```
 
-## Host tickets and ownership
+`DiffProgress` carries immutable hunks, status (`running`, `ready`, `cancelled`), work, read units,
+line comparisons and line edit count. `DiffReferenceCache` can be passed as the third `TextDiff`
+argument to reuse reference metadata and the latest completed working index. Dispose the cache
+when its owner ends. Reference replacement resets both captures; active jobs keep their own
+captures, and late jobs cannot replace a newer cache result. The controller owns its cache.
+A disposed cache cannot start a new diff job.
 
-`beginRefresh()` captures the reference epoch/version, working snapshot and saved/server
-version. Complete it with `{ buffer, version }`. A newer refresh supersedes an older refresh;
-any successful reference advancement invalidates tickets against the preceding epoch.
-Typing during retrieval is retained because refresh changes only the reference.
+| Limit or setting | Contract |
+| --- | --- |
+| `TextDiff.next`, controller `advance` | Default budget 32,768; safe integer at least 256; invalid budgets throw before progress changes |
+| Browser `workBudget` | Default 4,096; validates the same range, then caps each advance at 4,096 |
+| Browser scheduling | Up to 32 advances per task, stopping after an advance reaches the cooperative 4 ms target |
+| Source reads | Bounded chunks and reusable immutable line metadata; no whole-document string export for comparison |
+| Worst-case work | Difficult repeated-line inputs can require quadratic alignment work; unproved equal spans can require linear reads |
+| Reversion | Inserted hunk text is materialized and the final workspace transaction runs synchronously |
+| Selected-change preview | At most 160 source UTF-16 units per side, with visible whitespace markers and truncation |
 
-`beginAcceptance()` captures the exact working buffer/revision. Complete it with that
-captured buffer and the host's new reference version. Acceptance advances to the captured
-revision even if the human has typed further. Later text remains in the working resource;
-its history, saved baseline, dirty state and server version remain intact. Acceptance requires
-human edit permission and no edit lock, checked at capture and completion. It is a review
-reference advancement. Hosts use the independent save/acknowledgement protocol for persistence.
+Work budgets bound cooperative work units, not elapsed time. Allocation, publication, rendering
+and individual batches can exceed a scheduling target. Browser `snapshot()` exposes work and
+presentation state; the [clock glossary](README.md#glossary) defines its advance-loop timings.
+A headless controller requires explicit `advance()` calls until ready; the browser mount
+schedules them automatically. Mutating commands run outside workspace notification callbacks.
 
-`beginReversion()` captures a ready comparison's entire change set for a delayed discard
-confirmation. `complete()` restores those reviewed changes in one human transaction, using
-the existing hunks and history. It preserves raw source bytes outside the hunks and maps
-independent views normally; shared undo restores the initiating view's complete selection set.
-The reference and saved/server version remain independent. Empty comparisons create no history.
-No full-document export or second comparison is needed, although inserted hunk text still
-materializes synchronously as it does for an individual hunk reversion.
+### Hunk commands and host tickets
 
-The confirmation expires after text, initiating selection, reference generation or reference
-intent changes, saved-version changes, authorization/lease transitions, agent ownership changes,
-tab replacement/close or view/controller disposal. Restoring permission does not revive an old
-confirmation. The host additionally guards its own pending variant-selection intent and composition
-state. The evaluation hosts expose immutable saved/server/draft/history choices, captured deferred
-loads, failure/cancellation and an explicit discard confirmation. Selecting a version changes the
-reference; Save and Run keep targeting the working resource. A newer server version does not relabel
-an already captured version. These local host ports do not perform application-service integration.
+`selectHunk(generation, index)` on the browser mount selects and reveals both captured ranges,
+including folded bodies. It returns `false` for stale, unavailable or composing targets.
+`controller.revert(generation, index)` replaces that working range with its baseline text in
+one human history transaction. It checks readiness, generation, revision and edit authority;
+shared undo restores text and selection. A working edit clears the selected hunk.
 
-The evaluation hosts share a latest-request guard between version selection and remote conflict
-review. An older response cannot replace the reference after a newer request, even if that newer
-load fails or is cancelled. A changed reference publication also expires an outstanding remote
-review. Starting a new request also expires a completed remote review's save authorization.
-Stale results release their leases and cannot authorize a reviewed save; working text,
-history and the current reference remain intact. A fresh remote review can authorize saving again.
-Closing the review dismisses pending version and remote-review requests, including across a later
-reopen. Their late responses cannot replace the reference or reopen the comparison. This keeps a
-completed remote review's save authorization intact; hiding an already reviewed version does not
-change what was reviewed. Explicit host remounts retain their existing logical presentation lifetime.
+Hosts use explicit tickets for delayed operations:
 
-Tickets own explicit resource leases until completion, cancellation or `finish()`. Completion
-settles even stale or rejected results; finish/cancel are idempotent. Captures remain available
-for host recovery. Dispose the controller and release host-held tickets when done. Disposal
-cancels jobs/tickets, unsubscribes and releases owned views/leases; supplied views remain
-host-owned. Browser teardown also removes timers, listeners and reference display resources.
-Commands run outside notification delivery; subscribers render or schedule subsequent work.
+| Command | Capture and completion |
+| --- | --- |
+| `beginRefresh()` | Capture reference epoch/version, working snapshot and server version; complete with a fetched baseline |
+| `beginAcceptance()` | Capture the working snapshot; complete with that exact buffer object and a host reference version |
+| `beginReversion()` | Capture a ready result, tab, complete selection set and authority for confirmation; `complete()` reverts all reviewed hunks in one transaction |
 
-## Presentation and evidence
+`ComparisonTicket` exposes `capture`, `isCurrent`, `complete`, `cancel` and `finish`.
+`ComparisonCapture` keeps reference identity separate from the working snapshot and captured server
+version. Each newer refresh supersedes earlier refreshes; each newer acceptance supersedes
+earlier acceptances. Any successful reference advancement expires tickets for the preceding
+epoch. Typing during retrieval or acceptance is retained: refresh changes only the reference,
+and acceptance advances it to the captured working revision. Acceptance requires human edit
+permission and no edit lock at capture and completion. It does not save or alter dirty state,
+history or server version.
 
-Previous/next navigation selects and reveals both ranges. Row colors include insertion points
-and empty rows; a bounded selected-change preview makes spaces, tabs, CR and LF explicit.
-Only the selected preview is rendered, even with many hunks. Scrolling is independent by default.
-**Link review scrolling** optionally keeps corresponding vertical positions together in either
-direction. Hosts can set `scrollLinked` when mounting or call `setScrollLinked(boolean)`;
-`snapshot().scrollLinked` and `pendingScroll` expose the preference and queued view work.
-The evaluation hosts retain the preference across explicit remounts. Horizontal offsets, focus,
-complete selections, source history and the immutable reference remain independent.
+```ts
+import type { ComparisonBaseline, ComparisonCapture, ComparisonController } from "sttropez";
 
-The link reuses completed diff ranges and the existing fold/scroll indexes. Unchanged rows retain
-their fractional alignment; changed rows interpolate between their captured line coordinates.
-Inserted/deleted rows project to the opposite anchor. At a line-start insertion, the after edge
-keeps the following unchanged row aligned; an insertion inside a row retains its unchanged prefix.
-Raw hunk endpoints preserve the true newline delta, including same-line edits and unterminated
-final rows. This original logarithmic projection adds no parser, buffer scan/export or dependency.
-Folds project to visible headers without expanding them. Each pane clamps at its own scroll limit,
-so positions near unequal document ends can differ. Enable row alignment below to give both panes
-the same vertical row grid. Inline merge conflicts and advanced review remain later work.
+export async function refreshReference(
+    controller: ComparisonController,
+    load: (capture: ComparisonCapture) => Promise<ComparisonBaseline>
+): Promise<boolean> {
+    const ticket = controller.beginRefresh();
+    try {
+        return ticket.complete(await load(ticket.capture));
+    } finally {
+        ticket.finish();
+    }
+}
+```
 
-Coordination waits for a ready comparison and current viewport revisions/folds. A queued frame
-captures the comparison snapshot and reference view; edits, reference replacement, changed folds,
-disable and disposal invalidate it. Pending input/navigation or composition in either pane pauses coordination.
-Rendered logical positions are observed as well as native scroll notifications. A scroll consumed
-while navigation is pending retains its initiating pane and resumes when input/viewport work settle. The clamped logical target suppresses delayed programmatic feedback. Resize and
-fold changes reuse bounded frame scheduling; horizontal scrolling does not move the other pane.
-Disabling linking detaches its pane listeners, fold subscriptions and resize observations;
-re-enabling binds the current reference. Alignment owns its listeners independently, so a
-shared grid can remain active with scrolling unlinked. Disabling alignment releases those
-listeners and pending preparation too.
-The host owns refresh/acceptance controls and transport errors. Native IME and
-physical-display qualification remain separate; scroll callback work is not complete interaction
-latency.
+`ComparisonReversion` additionally captures generation and complete initiating selections. It
+expires after text/selection changes, a new reference intent, server-version or permission
+transitions, edit-lock/agent-ownership changes, tab replacement, view disposal or superseding
+confirmation. Restoring permission does not revive it. An empty comparison succeeds without
+adding history. Other views map through the single transaction normally.
 
-**Align review rows** optionally adds empty visual padding beside inserted/deleted rows.
-Hosts can pass `rowsAligned` or call `setRowsAligned(boolean)`; `snapshot().rowsAligned` retains
-the preference and `snapshot().alignment` reports preparation, pending work, run count or failure.
-Enabling alignment also enables linked scrolling. Hosts may subsequently disable linking while
-keeping the shared grid. Both preferences survive the evaluation hosts' stable-ref remounts.
+Tickets retain resource leases until completion, cancellation or `finish()`. Completion settles
+even rejected or stale results. Finish/cancel are idempotent. An unavailable command throws at
+capture; a stale completion returns `false`. `isCurrent()` checks captured lifetime but does not
+replace completion's validation and authority checks. Host transport cancellation and error UI
+belong to the host; ending a ticket does not abort a host request automatically.
 
-The grid reuses the completed exact diff. It zips source rows within each changed block and pads
-its shorter side; it does not search again for matching line bodies. Line terminators remain part
-of equality, including a body moved to an unterminated final row. Scalar-trimmed hunk endpoints
-expand to whole rows on both sides when either end lies inside a row. Empty documents, line-start
-insertions, deleted newlines and EOF boundaries retain real source coordinates. Collapsed folds
-remain independent: a row hidden on one side becomes padding there, and rows hidden on both sides
-are omitted. A common pitch uses the larger measured natural line height; this adds no shaping.
+### Reference views and decoration
 
-Sparse runs contain source/visual coordinates, with work proportional to diff and hidden-fold
-boundaries rather than expanded folds, document or padding row count. `FoldIndex.collapsedRegions()`
-iterates the indexed outer collapsed headers, skipping regions hidden inside them. Preparation
-checks elapsed time every 64 cursor steps, yields after 4ms or 4096 steps, and notifies the view
-when state changes or the result is ready; progress-only steps do not request pane renders.
-The time budget is cooperative, so an individual batch can exceed it. A cursor publishes both layouts together
-against captured reference, working revision and fold snapshots. Edits, refresh, fold changes,
-disable and disposal cancel stale work. Publication waits for pending input, navigation, pointer
-gestures and composition in either pane to settle. Pending state reflects stale captures immediately. Only the
-visible row window creates DOM; padding is empty and nonfocusable.
+The reference display has its own read-only resource, tab and view. Its resource denies all edit
+origins, Save and Run. It shares the captured immutable buffer without exporting it. Selection,
+navigation and explicit copy operate on source coordinates through the [editor](editing-candidate.md).
 
-Padding contains no source characters. Clicking it chooses the adjacent source boundary or visible
-fold header; ordinary arrows skip padding and Page commands use the visual grid with real-source
-destinations. Exact text, complete selections, shared history and Save/Run targets remain source
-owned. View snapshots expose `visualRows`, `paddingRows`, `aligned`, `alignmentId`, `rowGeneration`
-and `naturalLineHeight`; `visibleLines` continues to count genuine fold-visible source rows.
-Versioned `verticalAnchor` view state preserves source position across layout changes and rapid
-ref remounts, including before the first paint. Its source-row pixel remainder retains positions
-inside padding; the optional `aligned: true` marker defers restoration until the shared grid
-exists, so provisional source-only paints cannot consume it. Explicit reveal/scroll overrides it. `setComparisonRows` rejects mismatched document,
-revision or fold captures. Hosts should normally use the comparison's alignment API instead.
+`referenceEditor()` and `referenceViewport()` resolve the current attachment. The stable
+`reference` observable publishes `ComparisonReferenceView` with `{ editor, target, epoch, version }`.
+It publishes `undefined` before releasing an old attachment, then publishes its replacement.
+Queue host attachment/cleanup after notification delivery, resolve the latest handle, and cancel
+queued callbacks on unmount. Refresh disposes the old editor and pending input/navigation work.
+A retired reference resource stays readable while an independent view or host lease owns it.
 
-Hosts may supply independent `workingDecorate` and `baselineDecorate` callbacks for bounded
-visible fragments. Their decorations compose with changed ranges, preserving both classes
-where they overlap. The host owns provider/search state and invalidates its working viewport
-when that state changes. Reference presentation stays independent of mutable working state.
-The restored consumer verifies this composition using the compiled API and declarations.
+Keep saved reference view state with its immutable buffer/version; working view state belongs
+to the working document/view. [Viewport](viewport.md#scrolling-and-saved-views) describes captures.
+`workingDecorate` and `baselineDecorate` receive bounded `PresentedLine` fragments and compose
+with change colors. The host owns syntax/search state and calls the appropriate viewport's
+`invalidate()` when it changes. Reference decorations must use the captured reference text.
 
-Tests check exact reconstruction, a seeded dynamic-programming edit-distance oracle, hash
-collisions, cooperative long-line work, undo, late typing, out-of-order and cross-lane results,
-permission changes, presentation expiry and disposal. Browser tests exercise actual keyboard
-input, virtualized large comparisons and stable working-view identity. The restored NuGet
-consumer also uses the compiled comparison modules, declarations and styles.
+### Linked scrolling and aligned rows
 
-`npm run bench:comparison` records headless total/step time separately from browser step and
-readiness proxies, with source/environment metadata and raw samples. Large browser cases are
-single diagnostic observations. These checks do not qualify native-device IME,
-full contextual long-line shaping, physical presentation latency or production
-performance budgets.
+`scrollLinked` and `rowsAligned` are boolean mount options. Both default to `false`; when
+`rowsAligned` is true and `scrollLinked` is omitted, scrolling is linked. Use
+`setScrollLinked(boolean)` and `setRowsAligned(boolean)` to change them. Enabling alignment
+also enables linking; linking can then be disabled independently.
+
+Linked scrolling projects vertical positions through the completed diff and each pane's folds.
+Unchanged rows keep their fractional position; changed rows interpolate between captured bounds,
+and insertions/deletions map to opposite anchors. Each pane clamps to its own extent. Horizontal
+scroll, focus, selection, history and reference identity are independent.
+
+Aligned rows add empty padding to the shorter side of changed blocks, using a common measured
+line height. The grid reuses the completed diff and does not perform another text search. Folds
+stay independent: a row hidden on one side becomes padding there; a row hidden on both is omitted.
+Padding contains no source text, clipboard content or focusable controls. Clicking it selects
+an adjacent source boundary; arrows skip it and Page commands follow the visual grid.
+
+Both features wait for current comparison/view captures and settled input/navigation. Alignment
+also waits for pointer gestures. Edits, reference/fold changes, disable and disposal cancel stale
+work. Disabling either feature releases its listeners and pending work independently. Only the
+visible row window creates DOM. `snapshot()` exposes `scrollLinked`, `pendingScroll`, `rowsAligned`
+and alignment phase/work/failure; controller readiness alone does not establish settled panes.
+
+## Host responsibilities
+
+Own reference retrieval, acceptance/discard confirmation, transport failures, Save/Run policy,
+provider/search attachments and view-state storage. Guard host composition and any newer version
+selection intent across delayed confirmations. Capture the working resource explicitly for host
+commands invoked from the reference or surrounding controls. Dispose subscriptions and tickets
+with their owners. Call `destroy()` for a browser comparison or `dispose()` for a headless
+controller; then release host-owned views/resources at their own lifetime boundary.
+
+## Not covered
+
+See the [support matrix](README.md#support-matrix) for unsupported features and device checks.
