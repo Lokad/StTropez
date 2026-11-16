@@ -3,6 +3,7 @@ import type { DocumentId, DocumentSnapshot, TabId, Workspace } from "../core/wor
 import { unchangedPositionEdges } from "../core/positions.ts";
 import { FindIndex } from "../core/find-index.ts";
 import { LiteralFindRepair } from "./find-index.ts";
+import { createLiteralFindBackend } from "./find-literal.ts";
 import type { Observable } from "../core/observable.ts";
 import type { SearchMatch, SearchStep } from "../core/search.ts";
 import type { SelectionSet } from "../core/selections.ts";
@@ -46,6 +47,9 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     let matches = new FindIndex(), count = 0, navigationTo = 0, observed = initial;
     let literal: { document: DocumentSnapshot; index: FindIndex; query: string; wholeWord: boolean; matchCase: boolean } | undefined;
     let edges: { prefix: number; suffix: number } | undefined;
+    const literalBackend = createLiteralFindBackend(() => matches);
+    const backendFor = (regularExpression: boolean) => regularExpression ? backend : literalBackend;
+    const disposeBackends = () => { literalBackend.dispose(); backend?.dispose(); };
     let scanMaximum = 0;
     const sameOwner = (a: DocumentSnapshot, b: DocumentSnapshot) => a.id === b.id && a.resourceId === b.resourceId && a.key === b.key;
     const valid = () => !disposed && lease.active() && workspace.resolveTab(target) !== undefined && workspace.ownsDocumentView(editor.view)
@@ -91,7 +95,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     };
     function restart(query: string, wholeWord = store.get().wholeWord, matchCase = store.get().matchCase, regularExpression = store.get().regularExpression, retain = false): void {
         stop();
-        if (!valid()) { backend?.dispose(); reset({ status: "expired", message: "View is unavailable." }); return; }
+        if (!valid()) { disposeBackends(); reset({ status: "expired", message: "View is unavailable." }); return; }
         const document = workspace.document(documentId), token = generation;
         let repair: LiteralFindRepair | undefined;
         if (retain && literal && !regularExpression && literal.query === query && literal.wholeWord === wholeWord && literal.matchCase === matchCase
@@ -126,12 +130,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
                 // use the ordinary scan budget so ambiguous suffixes do not yield per 64 matches.
                 created = { next: () => { const small = first; first = false; return repairing.next(small ? 4096 : 131_072, small ? 64 : 8192); }, dispose: () => repairing.dispose() };
             }
-            else if (regularExpression) created = backend!.search(capture(query, wholeWord, matchCase));
-            else {
-                const search = new LiteralSearch(document.buffer, query, { wholeWord, matchCase });
-                // Amortize timer yields while retaining bounded scans and match publication.
-                created = { next: () => search.next(131_072, 8_192), dispose: () => search.dispose() };
-            }
+            else created = backendFor(regularExpression)!.search(capture(query, wholeWord, matchCase));
             if (token !== generation) { created.dispose(); return; } cursor = created;
         } catch (error) { failed(error, token); return; }
         const step = () => {
@@ -211,15 +210,20 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         navigatedZero = from === to ? { index, selectionSet: editor.view.getSnapshot().selectionSet } : undefined; replacedZero = undefined;
         publish({ current: index, message: "" }); editor.viewport.revealOffset(from); editor.focus(); return true;
     };
-    function regexPlan(state: FindSnapshot, replacement: string, range?: SearchMatch): boolean {
-        if (!backend || !valid() || state.revision !== workspace.document(documentId).revision) return false;
+    function planReplacement(state: FindSnapshot, replacement: string, range?: SearchMatch): boolean {
+        const selectedBackend = backendFor(state.regularExpression), immediate = !!range && !state.regularExpression;
+        if (!selectedBackend || !valid() || state.revision !== workspace.document(documentId).revision) return false;
         if (!canEdit()) { publish({ message: "read-only" }); return false; }
         if (editor.activity().composing) { publish({ message: "Finish composition before replacing." }); return false; }
         const request = capture(state.query, state.wholeWord, state.matchCase), positions = matches, total = range ? 1 : count;
         const selectionSet = editor.view.getSnapshot().selectionSet, edits: TextEdit[] = [];
-        stop(); const token = generation, focusToken = focusGeneration; observePlanAuthority(token); publish({ status: "replacing", message: "" });
+        // A synchronous literal replacement must leave an in-progress repair alive on a no-op.
+        // Yielding plans cancel scans and retain authority until their captured commit.
+        if (!immediate) stop();
+        const token = generation, focusToken = focusGeneration; let committed = false;
+        if (!immediate) { observePlanAuthority(token); publish({ status: "replacing", message: "" }); }
         if (token !== generation) return false;
-        try { const created = backend.replace(request, replacement, range); if (token !== generation) { created.dispose(); return false; } planCursor = created; }
+        try { const created = selectedBackend.replace(request, replacement, range); if (token !== generation) { created.dispose(); return false; } planCursor = created; }
         catch (error) { failed(error, token, true); return false; }
         const current = () => {
             if (token !== generation) return false;
@@ -243,9 +247,12 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
             const head = range ? range.from + edits[0]!.insert.length : undefined, started = win.performance.now();
             const applied = workspace.edit({ documentId, expectedRevision: state.revision, origin: "human", edits, view: editor.view,
                 ...(head === undefined ? {} : { selection: { anchor: head, head } }), history: { kind: "replace" } });
-            stopPlanAuthority?.(); stopPlanAuthority = undefined; publish({ replaceTransactionMs: win.performance.now() - started });
+            committed = applied.applied;
+            stopPlanAuthority?.(); stopPlanAuthority = undefined;
+            if (!valid()) return;
+            publish({ replaceTransactionMs: win.performance.now() - started });
             if (!applied.applied) { publish({ status: "ready", message: applied.reason }); return; }
-            if (workspace.document(documentId).revision === state.revision) publish({ status: "ready" });
+            if (!immediate && workspace.document(documentId).revision === state.revision) publish({ status: "ready" });
             if (range && range.from === range.to && store.get().query === state.query && store.get().regularExpression && valid()) {
                 replacedZero = { revision: workspace.document(documentId).revision, head: head!, selectionSet: editor.view.getSnapshot().selectionSet };
             }
@@ -259,6 +266,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
                 else receive(result);
             } catch (error) { failed(error, token, true); }
         };
+        if (immediate) { step(); return committed; }
         later(step); return true;
     }
     const replaceCurrent = (replacement: string): boolean => {
@@ -267,38 +275,12 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         if (!canEdit()) { publish({ message: "read-only" }); return false; }
         if (editor.activity().composing) { publish({ message: "Finish composition before replacing." }); return false; }
         const match = currentRange(); if (!match) return next();
-        if (store.get().regularExpression) return regexPlan(store.get(), replacement, match);
-        const head = match.from + replacement.length;
-        const result = workspace.edit({ documentId, expectedRevision: store.get().revision, origin: "human", edits: [{ ...match, insert: replacement }], view: editor.view,
-            selection: { anchor: head, head }, history: { kind: "replace" } });
-        if (!result.applied) { publish({ message: result.reason }); return false; }
-        editor.viewport.revealOffset(head); editor.focus(); return true;
+        return planReplacement(store.get(), replacement, match);
     };
     const replaceAll = (replacement: string): void => {
         scope.assertWritable(); if (typeof replacement !== "string") throw new TypeError("Expected replacement text.");
         const state = store.get(); if (!valid() || state.status !== "ready" || !count) return;
-        if (!canEdit()) { publish({ message: "read-only" }); return; }
-        if (editor.activity().composing) { publish({ message: "Finish composition before replacing." }); return; }
-        if (state.regularExpression) { regexPlan(state, replacement); return; }
-        stop(); const token = generation, focusToken = focusGeneration, positions = matches, total = count, edits: TextEdit[] = [], selectionSet = editor.view.getSnapshot().selectionSet; let index = 0;
-        // A restored permission/lock does not revive an interrupted human command.
-        // Observe only while planning; disposal does not mutate workspace state in delivery.
-        observePlanAuthority(token);
-        publish({ status: "replacing", message: "" });
-        const step = () => {
-            if (token !== generation) return;
-            if (!valid() || workspace.document(documentId).revision !== state.revision || editor.view.getSnapshot().selectionSet !== selectionSet) { restart(state.query); return; }
-            const stopAt = Math.min(total, index + 1024);
-            for (; index < stopAt; index++) edits.push({ ...positions.at(index), insert: replacement });
-            if (index < total) { later(step); return; }
-            const started = win.performance.now(), result = workspace.edit({ documentId, expectedRevision: state.revision, origin: "human", edits, view: editor.view, history: { kind: "replace" } });
-            stopPlanAuthority?.(); stopPlanAuthority = undefined;
-            publish({ replaceTransactionMs: win.performance.now() - started });
-            if (!result.applied) { publish({ status: "ready", message: result.reason }); return; }
-            if (workspace.document(documentId).revision === state.revision) publish({ status: "ready" });
-            publish({ message: `Replaced ${total} matches.` });
-            if (focusGeneration === focusToken) editor.focus();
-        }; if (token === generation) later(step);
+        planReplacement(state, replacement);
     };
     // Disabling the command button can clear activeElement without a new focus choice.
     const focusChanged = () => { focusGeneration++; };
@@ -313,7 +295,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         if (current && sameOwner(observed, current) && current.revision === observed.revision && current.buffer === observed.buffer) return;
         if (store.get().status === "cancelled" && valid()) { observed = workspace.document(documentId); publish({ revision: observed.revision, length: observed.buffer.length }); }
         else { const state = store.get(); restart(state.query, state.wholeWord, state.matchCase, state.regularExpression, true); }
-    }), workspace.tabState.subscribe(() => { if (!valid()) { stop(); backend?.dispose(); reset({ status: "expired", message: "View is unavailable." }); } })];
+    }), workspace.tabState.subscribe(() => { if (!valid()) { stop(); disposeBackends(); reset({ status: "expired", message: "View is unavailable." }); } })];
     return Object.freeze({ state: store.observable, matchesIn, setQuery: (query: string) => { scope.assertWritable(); if (typeof query !== "string") throw new TypeError("Expected a search string."); if (!disposed) restart(query); },
         setOptions: (options: FindOptions) => {
             scope.assertWritable(); if (options === null || typeof options !== "object" || (options.wholeWord !== undefined && typeof options.wholeWord !== "boolean" || options.matchCase !== undefined && typeof options.matchCase !== "boolean" || options.regularExpression !== undefined && typeof options.regularExpression !== "boolean")) throw new TypeError("Expected find options.");
@@ -321,5 +303,5 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
             if (!disposed && (wholeWord !== store.get().wholeWord || matchCase !== store.get().matchCase || regularExpression !== store.get().regularExpression)) restart(store.get().query, wholeWord, matchCase, regularExpression);
         },
         next, replaceCurrent, replaceAll, cancel: () => { scope.assertWritable(); if (!disposed) { stop(); reset({ status: "cancelled", message: "Search cancelled." }); } },
-        destroy: () => { if (disposed) return; scope.assertWritable(); disposed = true; stop(); backend?.dispose(); subscriptions.forEach(unsubscribe => unsubscribe()); lease.release(); reset({ status: "disposed", query: "", length: 0, message: "" }); } });
+        destroy: () => { if (disposed) return; scope.assertWritable(); disposed = true; stop(); disposeBackends(); subscriptions.forEach(unsubscribe => unsubscribe()); lease.release(); reset({ status: "disposed", query: "", length: 0, message: "" }); } });
 }

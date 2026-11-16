@@ -131,8 +131,13 @@ requires membership in the index. Otherwise the command selects the next match. 
 and replacement reject active composition. Read-only state, edit capabilities and edit leases
 guard replacement independently of search availability.
 
+Literal current-match replacement completes synchronously, including while confirmed matches
+remain available during repair. A no-op replacement leaves that repair running. Literal planning
+reuses the captured match index; it neither rescans the source nor builds another index.
+
 Replace-all planning yields every 1,024 edits and captures document revision, the complete
-selection set and tab generation. One atomic transaction rechecks authority and creates one
+selection set and tab generation. Each plan step rechecks the editor's read-only state and
+composition state. One atomic transaction rechecks authority and creates one
 shared undo unit. Editing restarts search; selection/query changes, composition, tab replacement
 and disposal invalidate queued replacement. Losing edit permission or acquiring an edit lease
 cancels a queued command even if permission returns before its next step. Retry explicitly with

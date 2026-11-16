@@ -131,6 +131,12 @@ test("confirmed matches remain navigable and replaceable during repair without w
         f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.state.getSnapshot().count, 19999);
         f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.state.getSnapshot().count, 20000);
         f.workspace.redo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.state.getSnapshot().count, 19999);
+        f.edit(60000, 60003, "dog"); f.select(4, 7);
+        const history = f.workspace.observeHistory(f.documentId).getSnapshot();
+        assert.equal(f.find.replaceCurrent("cat"), true);
+        assert.equal(f.find.state.getSnapshot().status, "searching"); assert.equal(f.find.state.getSnapshot().retained, true);
+        f.drain(); assert.equal(f.find.state.getSnapshot().status, "ready"); assert.equal(f.find.state.getSnapshot().count, 19998);
+        assert.deepEqual(f.workspace.observeHistory(f.documentId).getSnapshot(), history);
     } finally { f.dispose(); }
 });
 
