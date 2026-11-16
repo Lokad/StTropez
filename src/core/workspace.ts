@@ -35,7 +35,7 @@ export type ResourceMetadata = Readonly<{
     editLock: Readonly<{ owner: string; origin: EditOrigin }> | null;
 }>;
 export type ResourceSnapshot<T> = Readonly<{ revision: number; metadata: ResourceMetadata }> & Readonly<
-    { state: "ready"; value: Immutable<T> } | { state: "loading" | "failed" | "released" }
+    { state: "ready"; value: () => Immutable<T> } | { state: "loading" | "failed" | "released" }
 >;
 export type ResourceHandle<T extends SnapshotValue> = Observable<ResourceSnapshot<T>> & Readonly<{
     id: ResourceId; metadata: Observable<ResourceMetadata>;
@@ -44,7 +44,7 @@ export type TextResourceHandle = ResourceHandle<string> & Readonly<{ documentId:
 export type LoadedResource<T> = Readonly<{ value: T; serverVersion?: string | null }>;
 export type LoadedTextBuffer = Readonly<{ buffer: TextBuffer; serverVersion?: string | null }>;
 export type DocumentSnapshot = Readonly<{
-    id: DocumentId; resourceId: ResourceId; key: ResourceKey; title: string; buffer: TextBuffer; text: string; revision: number;
+    id: DocumentId; resourceId: ResourceId; key: ResourceKey; title: string; buffer: TextBuffer; text: () => string; revision: number;
     change: DocumentChange | null;
 }>;
 export type DocumentChange = Readonly<{ previousRevision: number; transactionId: number; origin: EditOrigin;
@@ -125,15 +125,15 @@ function sameMetadata(a: ResourceMetadata, b: ResourceMetadata): boolean {
 /** Tuple encoding preserves exact string components, including delimiters and empty values. */
 function resourceKeyIdentity(key: ResourceKey): string { return JSON.stringify([key.scope, key.resource, key.variant]); }
 function readySnapshot(metadata: ResourceMetadata, revision: number, value: SnapshotValue | TextBuffer): ResourceSnapshot<SnapshotValue> {
-    if (!(value instanceof TextBuffer)) return Object.freeze({ state: "ready", revision, metadata, value });
+    if (!(value instanceof TextBuffer)) return Object.freeze({ state: "ready", revision, metadata, value: () => value });
     // History retains buffers, not these closures or their optional whole-text exports.
     let exported: string | undefined;
-    return Object.freeze({ state: "ready", revision, metadata, get value() { exported ??= value.text(); return exported; } });
+    return Object.freeze({ state: "ready", revision, metadata, value: () => { exported ??= value.text(); return exported; } });
 }
-/** Preserve a lazy value descriptor through metadata-only commits. Object spread would export text. */
+/** Metadata changes retain the captured value reader and its optional cached export. */
 function withMetadata(state: ResourceSnapshot<SnapshotValue>, metadata: ResourceMetadata): ResourceSnapshot<SnapshotValue> {
     if (state.metadata === metadata) return Object.freeze(state);
-    return Object.freeze(Object.defineProperties({}, { ...Object.getOwnPropertyDescriptors(state), metadata: { value: metadata, enumerable: true } })) as ResourceSnapshot<SnapshotValue>;
+    return Object.freeze({ ...state, metadata });
 }
 function viewSnapshot(documentId: DocumentId, revision: number, selectionSet: SelectionSet): DocumentViewSnapshot {
     return Object.freeze({ documentId, revision, selection: selectionSet.ranges[selectionSet.primary]!, selectionSet });
@@ -453,9 +453,8 @@ export class Workspace {
     private changeValue(record: ResourceRecord, value: SnapshotValue): ChangeResult {
         const current = record.state.get();
         if (current.state !== "ready") return { applied: false, reason: "not-ready" };
-        if (equalValue(current.value, value)) return { applied: true, revision: current.revision };
-        this.commitRecord(record, { ...current, revision: current.revision + 1, value,
-            metadata: { ...current.metadata, dirty: record.saved === undefined || !equalValue(record.saved, value) } });
+        if (equalValue(current.value(), value)) return { applied: true, revision: current.revision };
+        this.commitRecord(record, readySnapshot({ ...current.metadata, dirty: record.saved === undefined || !equalValue(record.saved, value) }, current.revision + 1, value));
         return { applied: true, revision: current.revision + 1 };
     }
     setCapabilities(id: ResourceId, permissions: Capabilities): void {
@@ -546,7 +545,7 @@ export class Workspace {
         const id = `request-${++this.nextId}`;
         const input = Object.freeze({ id, association: review.association, context: copiedContext,
             source: Object.freeze({ target: operation.target, key: state.metadata.key, revision: state.revision,
-                value: state.value as string, serverVersion: state.metadata.serverVersion }) });
+                value: state.value() as string, serverVersion: state.metadata.serverVersion }) });
         record.agentRequest = { operation, lease };
         record.agent.set(Object.freeze({ ...review, request: Object.freeze({ id, documentRevision: state.revision }), lastResult: "none" }), changed);
         this.publish(changed);
@@ -742,7 +741,7 @@ export class Workspace {
         }
         const lease = this.acquire(handle.id), target = this.captureResource(handle.id), marker = Symbol("save");
         if (record.documentId !== null) this.history.seal(record.documentId);
-        const value = initial.value as Immutable<T>, revision = initial.revision, id = `save-${++this.nextId}`;
+        const value = initial.value() as Immutable<T>, revision = initial.revision, id = `save-${++this.nextId}`;
         const capturedBuffer = record.buffer;
         const proposal = record.agent.get().proposal?.target ?? null;
         let finished = false, settled = false, submission: SaveSubmission<T> | undefined;
@@ -777,8 +776,8 @@ export class Workspace {
             const canonicalApplied = current.revision === revision && current.metadata.capabilities.edit.includes("host")
                 && record.editLease === null && (proposal === null ? record.agent.get().proposal === null
                     : record.agent.get().proposal !== null && sameProposal(proposal, record.agent.get().proposal!.target))
-                && (savedBuffer ? !record.buffer!.equals(savedBuffer) : !equalValue(current.value, savedValue));
-            const canonical = savedBuffer && canonicalApplied ? record.buffer!.apply([textDifference(current.value as string, savedValue as string)!]) : undefined;
+                && (savedBuffer ? !record.buffer!.equals(savedBuffer) : !equalValue(current.value(), savedValue));
+            const canonical = savedBuffer && canonicalApplied ? record.buffer!.apply([textDifference(current.value() as string, savedValue as string)!]) : undefined;
             const text = canonical ? this.prepareText(record, canonical.buffer, canonical.mapping) : undefined;
             if (canonical) this.history.record([Object.freeze({ documentId: record.documentId!, before: record.buffer!, after: canonical.buffer,
                 mapping: canonical.mapping, units: canonical.changedUnits, selection: null })], "host", "canonical");
@@ -792,7 +791,7 @@ export class Workspace {
                 this.setRecord(record, withMetadata(next, { ...next.metadata, serverVersion: response.serverVersion,
                     dirty: !record.buffer!.equals(savedBuffer), saveStatus: record.saveReservations > 1 ? "saving" : "idle" }), changed);
             } else {
-                const nextValue = canonicalApplied ? savedValue : current.value;
+                const nextValue = canonicalApplied ? savedValue : current.value();
                 this.setRecord(record, readySnapshot({ ...current.metadata, serverVersion: response.serverVersion, dirty: !equalValue(nextValue, savedValue),
                     saveStatus: record.saveReservations > 1 ? "saving" : "idle" }, current.revision + (canonicalApplied ? 1 : 0), nextValue), changed);
             }
@@ -919,7 +918,7 @@ export class Workspace {
         if (previous?.revision === state.revision) return;
         const buffer = record.buffer!;
         record.document.set(Object.freeze({ id: record.documentId, resourceId: record.handle.id, key: state.metadata.key,
-            title: state.metadata.title, buffer, get text() { return state.value as string; }, revision: state.revision, change: record.change }), changed);
+            title: state.metadata.title, buffer, text: state.value as () => string, revision: state.revision, change: record.change }), changed);
     }
     private setRecord(record: ResourceRecord, next: ResourceSnapshot<SnapshotValue>, changed: Set<Store<unknown>>): void {
         const previous = record.metadata.get();

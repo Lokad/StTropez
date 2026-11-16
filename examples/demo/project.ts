@@ -69,7 +69,7 @@ export class DemoProject {
         if (this.disposed) throw new Error("The sample is closed.");
         const existing = this.files.find(file => file.name === name);
         if (existing) {
-            if (text !== undefined && this.workspace.document(existing.resource.documentId).text !== text) throw new Error("The file changed while loading.");
+            if (text !== undefined && this.workspace.document(existing.resource.documentId).text() !== text) throw new Error("The file changed while loading.");
             return existing;
         }
         const readOnly = Object.hasOwn(this.sample.declarations ?? {}, name);
@@ -147,7 +147,7 @@ export class DemoProject {
             && this.editable.every((file, i) => this.workspace.document(file.resource.documentId).revision === this.reviewedRevisions![i]);
     }
     download(): string {
-        return JSON.stringify({ version: 1, files: { ...this.unloaded, ...Object.fromEntries(this.editable.map(file => [file.name, this.workspace.document(file.resource.documentId).text])) } }, null, 2);
+        return JSON.stringify({ version: 1, files: { ...this.unloaded, ...Object.fromEntries(this.editable.map(file => [file.name, this.workspace.document(file.resource.documentId).text()])) } }, null, 2);
     }
     async save(changed: () => void, reviewed = false): Promise<void> {
         if (this.disposed || this.saving) return;

@@ -61,9 +61,26 @@ Recreating a released resource with the same key produces a new resource ID.
 
 Resource handles expose `getSnapshot`, `subscribe` and a separate `metadata` observable.
 `observeDocument` returns a ready text snapshot or `undefined` when unavailable; `document`
-requires a ready document. `DocumentSnapshot.buffer` supports bounded reads. Its `text`
-getter and a ready text resource's `value` export the whole string lazily. Use the
-[text model](text-model.md) for range reads and coordinate operations.
+requires a ready document. `DocumentSnapshot.buffer` supports bounded reads. Call `text()`
+on a document snapshot or `value()` on a ready resource snapshot to read its captured content.
+For text, these operations share a lazy, cached whole-string export for that revision; bounded
+reads through the [text model](text-model.md) avoid that export. Typed resources return their
+captured immutable value with stable identity. Readers can be retained or called without a
+receiver and keep their captured value after later edits, metadata changes or resource release.
+Spreading, assigning or JSON-serializing a snapshot does not read its content. JSON omits the
+reader functions; persistence and transport code must explicitly capture the values it needs.
+
+```ts
+import type { DocumentSnapshot, ResourceSnapshot } from "sttropez";
+
+export function serializeCapturedInputs(
+    source: DocumentSnapshot, settings: ResourceSnapshot<{ limit: number }>
+) {
+    if (settings.state !== "ready") return null;
+    return JSON.stringify({ source: { revision: source.revision, text: source.text() },
+        settings: { revision: settings.revision, value: settings.value() } });
+}
+```
 
 Typed values follow `SnapshotValue`: null, booleans, finite numbers, strings, arrays and
 acyclic plain objects. Inputs are copied and deeply frozen as `Immutable<T>`. Accessors,

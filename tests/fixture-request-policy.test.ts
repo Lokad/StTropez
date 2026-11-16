@@ -115,7 +115,7 @@ test("fixture language requests retain their own faults, module aliases and reso
     };
     try {
         scope.setDocuments([document]); await scope.connect();
-        const offset = document.text.indexOf("color") + 2;
+        const offset = document.text().indexOf("color") + 2;
         await overlap("textDocument/completion", async (index, prepare) => {
             const session = completion[index]!; session.setDocuments([document]); await session.flush(); await prepare(session);
             return session.requestDocument("textDocument/completion", session.attachDocument(document.id), index => ({ position: index.at(offset) })).result;

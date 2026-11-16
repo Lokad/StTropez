@@ -25,14 +25,14 @@ test("controller and workspace notifications reject cross-owner writes through n
     })];
     try {
         find.setQuery("cat"); assert.deepEqual(rejected, ["workspace", "comparison", "find"]);
-        assert.equal(workspace.document(documentId).revision, 0); assert.equal(other.document(independent).text, "b");
+        assert.equal(workspace.document(documentId).revision, 0); assert.equal(other.document(independent).text(), "b");
         const seen: number[] = [];
         stops.push(workspace.subscribe(() => { seen.push(workspace.document(documentId).revision);
             attempt("after nested workspace", write); attempt("after nested find", () => find.cancel());
         }));
         write(); assert.deepEqual(seen, [1]); assert.equal(find.state.getSnapshot().revision, 1);
         assert.deepEqual(rejected, ["workspace", "comparison", "find", "after nested workspace", "after nested find"]);
-        assert.equal(find.state.getSnapshot().status, "searching"); assert.equal(workspace.document(documentId).text, "xcat");
+        assert.equal(find.state.getSnapshot().status, "searching"); assert.equal(workspace.document(documentId).text(), "xcat");
         find.cancel(); assert.equal(find.state.getSnapshot().status, "cancelled"); assert.equal(comparison.advance().status, "ready");
         assert.deepEqual(errors, []);
     } finally {

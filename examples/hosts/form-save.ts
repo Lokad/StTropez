@@ -29,7 +29,7 @@ export class FormSave<T extends SnapshotValue> {
     constructor(workspace: Workspace, commands: WorkspaceCommands, resource: ResourceHandle<T>, track: (task: Promise<unknown>) => void, policy: FormPolicy<T>) {
         this.workspace = workspace; this.commands = commands; this.resource = resource; this.track = track; this.policy = policy;
         const initial = resource.getSnapshot(); if (initial.state !== "ready") throw new Error(`${policy.title} fixture must start ready.`);
-        this.serverValue = initial.value; this.serverVersion = initial.metadata.serverVersion;
+        this.serverValue = initial.value(); this.serverVersion = initial.metadata.serverVersion;
         this.cell = new HostCell<State<T>>({ pending: false, message: `${policy.title} is saved independently of source and Run.`, conflict: null, preview: null }); this.state = this.cell.observable;
         this.presentation = Object.freeze({ getSnapshot: () => this.presentationSnapshot(), subscribe: (listener: () => void) => {
             const stopState = this.state.subscribe(listener);
@@ -41,7 +41,7 @@ export class FormSave<T extends SnapshotValue> {
         const state = this.cell.get(), resource = this.resource.getSnapshot(), request = this.request, reviewed = this.reviewed, disposed = this.disposed, cached = this.cached;
         const reviewCurrent = reviewed !== undefined && this.workspace.resolveResource(reviewed.target) === this.resource;
         if (cached && cached.state === state && cached.resource === resource && cached.request === request && cached.reviewed === reviewed && cached.reviewCurrent === reviewCurrent && cached.disposed === disposed) return cached.value;
-        const validation = resource.state === "ready" ? this.policy.validate(resource.value) : `${this.policy.title} is unavailable.`, metadata = resource.metadata;
+        const validation = resource.state === "ready" ? this.policy.validate(resource.value()) : `${this.policy.title} is unavailable.`, metadata = resource.metadata;
         const available = !disposed && !state.pending && resource.state === "ready" && metadata.capabilities.save && metadata.editLock === null && metadata.saveStatus !== "saving" && validation === null;
         const value: FormSavePresentation<T> = Object.freeze({ title: this.policy.title, noun: this.policy.noun, resource, validation, preview: state.preview, disposed,
             status: `${this.policy.title} ${metadata.dirty ? "Unsaved" : "Saved"} · Save status: ${state.pending ? "saving" : metadata.saveStatus} · ${validation ?? state.message}`,

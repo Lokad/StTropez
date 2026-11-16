@@ -31,7 +31,7 @@ export async function benchmarkModel() {
                 expectedRevision++; roots.push(before);
                 assert.equal(workspace.document(documentId).buffer.readMetrics().textExports, 0, "Routine delivery flattened the document.");
             }
-            assert.equal(workspace.document(documentId).text, next);
+            assert.equal(workspace.document(documentId).text(), next);
             assert.equal(workspace.document(documentId).revision, expectedRevision);
             oracle = next;
             if (index >= 5) samples.push(elapsed);
@@ -56,7 +56,7 @@ export async function benchmarkModel() {
             assert.equal(result.applied, true); assert.equal(workspace.document(documentId).buffer, roots[index + 1] ?? final);
             if (index >= 5) redo.push(elapsed);
         }
-        assert.equal(workspace.document(documentId).text, oracle);
+        assert.equal(workspace.document(documentId).text(), oracle);
         assert.equal(notifications, expectedRevision * 3);
         scenarios.push({ corpus: id, initialLength: corpus(id).length, finalLength: oracle.length,
             revisions: expectedRevision, finalRevision: workspace.document(documentId).revision, notifications, routineWholeTextExports: 0, retention,

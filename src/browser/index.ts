@@ -58,7 +58,7 @@ function project(text: string): Projection {
 }
 function projection(document: DocumentSnapshot): Projection {
     let value = projections.get(document.buffer)?.deref();
-    if (!value) { value = project(document.text); projections.set(document.buffer, new WeakRef(value)); } return value;
+    if (!value) { value = project(document.text()); projections.set(document.buffer, new WeakRef(value)); } return value;
 }
 
 /** Native input baseline. Document history/selection are shared; whole-value rendering remains unbounded. */
@@ -139,7 +139,7 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
         if (!nativeEdit) { refresh(); return; }
         const inverse = rendered.mapping.invert(), from = inverse.map(nativeEdit.from, "before").offset;
         const edit = { from, to: nativeEdit.from === nativeEdit.to ? from : inverse.map(nativeEdit.to, "before").offset, insert: nativeEdit.insert };
-        const next = rendered.hasCR ? project(applyTextEdits(document.text, [edit])) : project(input.value);
+        const next = rendered.hasCR ? project(applyTextEdits(document.text(), [edit])) : project(input.value);
         const after = readSelection(next.mapping), now = performance.now();
         const typing = type === "insertText" && edit.from === edit.to && !edit.insert.includes("\n");
         const deleting = type === "deleteContentBackward" || type === "deleteContentForward";

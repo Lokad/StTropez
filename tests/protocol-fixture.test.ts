@@ -90,8 +90,8 @@ test("generic host profile joins selector registration, space-triggered lazy sni
         const resolved = decodeLspResolvedCompletion(await scope.request("completionItem/resolve", choice.resolve).result, choice, capture);
         assert.equal(resolved.additional.length, 1); const plan = lspCompletionPlan(resolved, "replace");
         assert.ok(workspace.edit({ documentId: before.id, expectedRevision: before.revision, origin: "human", edits: plan.edits, history: { kind: "replace" } }).applied);
-        assert.equal(document().text, "// resolved import\r\nconst sample = 1;\nsample; sample(value)");
-        assert.ok(workspace.undo({ documentId: before.id, expectedRevision: document().revision }).applied); assert.equal(document().text, initial);
+        assert.equal(document().text(), "// resolved import\r\nconst sample = 1;\nsample; sample(value)");
+        assert.ok(workspace.undo({ documentId: before.id, expectedRevision: document().revision }).applied); assert.equal(document().text(), initial);
         const occurrences = await highlights.run(document(), 19).result;
         assert.deepEqual(occurrences.items, [{ from: 6, to: 12, kind: "text" }, { from: 18, to: 24, kind: "text" }]);
         await scope.request("fixture/completionStyle", { style: "edits" }).result;
@@ -109,13 +109,13 @@ test("generic host profile joins selector registration, space-triggered lazy sni
             review: async (request, context) => { reviews++; assert.ok(context.isCurrent()); assert.ok(request.edit.isCurrent()); return apply(request.edit); }
         };
         const receipt = await batch.execute(action, commandScope); assert.equal(receipt.decision?.applied, true); assert.equal(reviews, 1);
-        assert.equal(document().text, reviewHeader + "// fixture action\r\n" + initial + reviewFooter);
+        assert.equal(document().text(), reviewHeader + "// fixture action\r\n" + initial + reviewFooter);
         const last = await scope.request("fixture/lastCommand").result as { command: string; documents: { prefix: string }[] };
         assert.equal(last.command, "fixture.unadvertised"); assert.ok(last.documents[0]!.prefix.startsWith("// fixture action\r\n"));
         // Initial action and later server edits are separate, explicitly undoable phases.
         assert.ok(workspace.undo({ documentId: before.id, expectedRevision: document().revision }).applied);
-        assert.equal(document().text, "// fixture action\r\n" + initial);
-        assert.ok(workspace.undo({ documentId: before.id, expectedRevision: document().revision }).applied); assert.equal(document().text, initial);
+        assert.equal(document().text(), "// fixture action\r\n" + initial);
+        assert.ok(workspace.undo({ documentId: before.id, expectedRevision: document().revision }).applied); assert.equal(document().text(), initial);
     } finally {
         actions.dispose(); defaultActions.dispose(); highlights.dispose(); owner.dispose(); detach();
         await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));

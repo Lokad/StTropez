@@ -75,7 +75,7 @@ test("late agent edits cannot overwrite a newer human revision", () => {
     workspace.edit({ documentId, expectedRevision: 0, origin: "human", edits: [{ from: 1, to: 2, insert: "B" }] });
     assert.deepEqual(workspace.edit({ documentId, expectedRevision: 0, origin: "agent", edits: [{ from: 0, to: 3, insert: "old" }] }),
         { applied: false, reason: "stale-revision" });
-    assert.equal(workspace.document(documentId).text, "aBc");
+    assert.equal(workspace.document(documentId).text(), "aBc");
 });
 
 test("all surfaces share one document while ownership prevents premature release", () => {
@@ -84,7 +84,7 @@ test("all surfaces share one document while ownership prevents premature release
     workspace.close(tabId);
     assert.throws(() => workspace.releaseDocument(documentId));
     workspace.close(panel);
-    assert.equal(workspace.document(documentId).text, "abc");
+    assert.equal(workspace.document(documentId).text(), "abc");
     workspace.releaseDocument(documentId);
     assert.throws(() => workspace.document(documentId));
 });
@@ -99,8 +99,8 @@ test("snapshots are immutable, stable between changes and notify subscribers onc
     const stopDocument = workspace.observeDocument(documentId).subscribe(() => { observed = workspace.getSnapshot(); });
     workspace.edit({ documentId, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 1, insert: "A" }] });
     assert.equal(calls, 1);
-    assert.equal(observed, workspace.getSnapshot()); assert.equal(observed.documents[0]?.text, "Abc");
-    assert.equal(before.documents[0]?.text, "abc");
+    assert.equal(observed, workspace.getSnapshot()); assert.equal(observed.documents[0]?.text(), "Abc");
+    assert.equal(before.documents[0]?.text(), "abc");
     assert.ok(Object.isFrozen(workspace.getSnapshot().documents));
     unsubscribe(); stopDocument();
     workspace.move(workspace.getSnapshot().tabs[0]!.id, "other");

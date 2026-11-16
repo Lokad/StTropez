@@ -128,7 +128,7 @@ export class HostController {
         if (configuration.state !== "ready") throw new Error("Configuration not ready.");
         const before = this.workspace.document(this.source.documentId);
         const baseline = Object.freeze({ buffer: before.buffer, version: `reference:before-proposal-r${before.revision}` });
-        const request = this.workspace.beginAgentRequest(this.source, { configurationRevision: configuration.revision, path: configuration.value.path });
+        const request = this.workspace.beginAgentRequest(this.source, { configurationRevision: configuration.revision, path: configuration.value().path });
         this.pendingAgent = request;
         void this.track(this.services.proposal(request).then(text => {
             const start = performance.now();
@@ -147,7 +147,7 @@ export class HostController {
         if (!review.association || !review.proposal) throw new Error("A proposal is required.");
         const result = this.workspace.offerAgentProposal(this.workspace.captureProposal(this.source.id),
             { id: review.proposal.target.id, revision: review.proposal.target.revision + 1,
-                edits: [{ from: 0, to: document.text.length, insert: "newer agent proposal" }] });
+                edits: [{ from: 0, to: document.text().length, insert: "newer agent proposal" }] });
         if (!result.applied) throw new Error(result.reason);
     });
     readonly interrupt = (): void => this.safe(() => { this.workspace.interruptAgent(this.source.id); });
@@ -205,7 +205,7 @@ export class HostController {
     };
     readonly setPath = (path: string): void => this.safe(() => {
         const state = this.connection.getSnapshot(); if (state.state !== "ready") return;
-        const result = this.workspace.updateResource(this.connection, { expectedRevision: state.revision, origin: "human", value: { ...state.value, path } });
+        const result = this.workspace.updateResource(this.connection, { expectedRevision: state.revision, origin: "human", value: { ...state.value(), path } });
         if (!result.applied) throw new Error(result.reason);
     });
     readonly move = (): void => this.safe(this.presentation.move);

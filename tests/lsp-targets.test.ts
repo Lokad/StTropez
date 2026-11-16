@@ -111,7 +111,7 @@ test("rename and resolved actions retain unloaded null-version edit targets thro
     f.peer.onRequest("textDocument/rename", () => edit);
     const plan = await rename.run([source], source.id, 6, "omega"); assert.equal(plan.isCurrent(), true);
     f.workspace.editDocuments(plan.documents.map(item => ({ documentId: f.other.documentId, expectedRevision: item.target.document.revision, edits: item.edits, origin: "human" })));
-    assert.equal(f.workspace.document(f.other.documentId).text, "gamma omega"); assert.equal(plan.isCurrent(), false);
+    assert.equal(f.workspace.document(f.other.documentId).text(), "gamma omega"); assert.equal(plan.isCurrent(), false);
     rename.cancel(); await settled(); assert.equal(leases[0]!.released, 1);
     f.peer.onRequest("textDocument/codeAction", () => [{ title: "lazy", data: { key: 1 } }]);
     f.peer.onRequest("codeAction/resolve", (value: object) => ({ ...value, edit }));
@@ -131,7 +131,7 @@ test("a closed target cannot satisfy an invented wire version or bypass read-onl
     const applied = f.workspace.editDocuments(plan.documents.map(item => ({ documentId: item.target.document.documentId as typeof source.id,
         expectedRevision: item.target.document.revision, edits: item.edits, origin: "human" })));
     assert.equal(applied.applied, false);
-    assert.equal(f.document(), source); assert.equal(f.workspace.document(f.other.documentId).text, "gamma delta");
+    assert.equal(f.document(), source); assert.equal(f.workspace.document(f.other.documentId).text(), "gamma delta");
 });
 
 test("server-proposed edits resolve through the same host policy and release targets after the decision", async t => {

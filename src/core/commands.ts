@@ -63,7 +63,7 @@ export class WorkspaceCommands {
             const state = handle.getSnapshot();
             if (state.state !== "ready" || !state.metadata.capabilities.run) throw new Error("Resource is not ready or cannot run.");
             return Object.freeze({ target: this.workspace.captureResource(handle.id), key: state.metadata.key,
-                revision: state.revision, value: state.value, serverVersion: state.metadata.serverVersion });
+                revision: state.revision, value: state.value(), serverVersion: state.metadata.serverVersion });
         };
         const submission = Object.freeze({ source: capture(source), configuration: capture(configuration), settings: snapshotValue(settings) });
         const leases = [this.workspace.acquire(source.id), this.workspace.acquire(configuration.id)];

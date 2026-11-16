@@ -105,6 +105,6 @@ test("large comments and whitespace yield without partial edits and form one sha
     assert.equal(workspace.edit({ documentId: resource.documentId, expectedRevision: 0, origin: "human", view, ...result.value, history: { kind: "replace" } }).applied, true);
     assert.equal(workspace.observeHistory(resource.documentId).getSnapshot().undoDepth, 1);
     assert.equal(workspace.undo({ documentId: resource.documentId, expectedRevision: 1 }).applied, true);
-    assert.equal(workspace.document(resource.documentId).text, text);
+    assert.equal(workspace.document(resource.documentId).text(), text);
     view.dispose(); workspace.releaseResource(resource.id, true);
 });

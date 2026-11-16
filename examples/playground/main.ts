@@ -46,7 +46,7 @@ sourcePath.addEventListener("input", () => {
     const snapshot = connection.getSnapshot();
     if (snapshot.state !== "ready") return;
     workspace.updateResource(connection, { expectedRevision: snapshot.revision, origin: "human",
-        value: { ...snapshot.value, path: sourcePath.value } });
+        value: { ...snapshot.value(), path: sourcePath.value } });
 });
 const status = element("status");
 function renderMetadata() {
@@ -57,7 +57,7 @@ function renderMetadata() {
 workspace.subscribe(renderMetadata);
 connection.subscribe(() => {
     const state = connection.getSnapshot();
-    if (state.state === "ready" && sourcePath.value !== state.value.path) sourcePath.value = state.value.path;
+    if (state.state === "ready" && sourcePath.value !== state.value().path) sourcePath.value = state.value().path;
 });
 renderMetadata();
 const pendingSaves: { submission: SaveSubmission<string>; finish: (response: SaveResponse<string>) => void }[] = [];
@@ -139,18 +139,18 @@ const instrumentation = {
     frameSamples: () => [...frameSamples],
     handlerSamples: () => [...handlerSamples],
     sampleCount: () => sampleCount,
-    readText: () => workspace.document(documentId).text,
+    readText: () => workspace.document(documentId).text(),
     loadCorpus: (id: CorpusId) => {
         if (!corpusIds.includes(id)) throw new RangeError("Unknown corpus.");
         const current = workspace.document(documentId);
         workspace.edit({ documentId, expectedRevision: current.revision, origin: "host",
-            edits: [{ from: 0, to: current.text.length, insert: corpus(id) }] });
+            edits: [{ from: 0, to: current.text().length, insert: corpus(id) }] });
     },
     loadSynthetic: (lines: number) => {
         if (!Number.isSafeInteger(lines) || lines < 1 || lines > 100_000) throw new RangeError("Invalid fixture size.");
         const current = workspace.document(documentId);
         workspace.edit({ documentId, expectedRevision: current.revision, origin: "host",
-            edits: [{ from: 0, to: current.text.length, insert: "const sample = 123456789;\n".repeat(lines) }] });
+            edits: [{ from: 0, to: current.text().length, insert: "const sample = 123456789;\n".repeat(lines) }] });
     },
 };
 declare global { interface Window { sttropez: typeof instrumentation } }

@@ -32,7 +32,7 @@ function fixture(store = new MemoryDraftStore(), inputIdle = () => true) {
         return { name, resource, tab, view: workspace.createDocumentView(resource.documentId) };
     });
     const recovery = new DemoRecovery(workspace, files, "sample", () => null, inputIdle, store);
-    const text = () => files.map(file => workspace.document(file.resource.documentId).text);
+    const text = () => files.map(file => workspace.document(file.resource.documentId).text());
     const edit = () => workspace.edit({ documentId: files[0]!.resource.documentId, expectedRevision: workspace.document(files[0]!.resource.documentId).revision,
         origin: "human", edits: [{ from: 0, to: 0, insert: "newer " }] });
     return { workspace, files, recovery, store, text, edit };
@@ -80,10 +80,10 @@ test("partial editor inventories checkpoint every file and restore only against 
         } else if (scenario === "loaded-during-read") {
             assert.equal(files.length, 2); assert.equal(recovery.canRestore(), false); assert.equal(store.row?.token, "genuine");
             assert.match(recovery.download()!, /draft B/); await recovery.restore();
-            assert.deepEqual(files.map(file => workspace.document(file.resource.documentId).text), ["original a.ts", "original b.ts"]);
+            assert.deepEqual(files.map(file => workspace.document(file.resource.documentId).text()), ["original a.ts", "original b.ts"]);
         } else {
             assert.equal(files.length, 2); assert.equal(recovery.canRestore(), scenario === "restore"); await recovery.restore();
-            assert.deepEqual(files.map(file => workspace.document(file.resource.documentId).text), scenario === "restore" ? ["draft A", "draft B"] : ["newer original a.ts", "original b.ts"]);
+            assert.deepEqual(files.map(file => workspace.document(file.resource.documentId).text()), scenario === "restore" ? ["draft A", "draft B"] : ["newer original a.ts", "original b.ts"]);
         }
     }
 });

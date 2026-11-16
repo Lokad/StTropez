@@ -93,7 +93,7 @@ test("real demo provider uses public workspace capture/sync over WebSocket and r
         const diagnostics = await scope.requestCommand("typescript.tsserverRequest", ["semanticDiagnosticsSync", { file: config.documents["main.ts"]!.path }, {}]).result;
         assert.match(JSON.stringify(diagnostics), /2345/);
         const captured = scope.synchronized(binding); assert.ok(captured); assert.ok(captured.isCurrent());
-        const document = workspace.document(source.resource.documentId), from = document.text.indexOf('"10%"');
+        const document = workspace.document(source.resource.documentId), from = document.text().indexOf('"10%"');
         assert.ok(from > 0); workspace.edit({ documentId: document.id, expectedRevision: document.revision, origin: "human", edits: [{ from, to: from + 5, insert: "0.1" }] });
         await scope.flush(); assert.equal(captured.isCurrent(), false);
         const fixed = await scope.requestCommand("typescript.tsserverRequest", ["semanticDiagnosticsSync", { file: config.documents["main.ts"]!.path }, {}]).result;
@@ -141,9 +141,9 @@ test("real lazy imports, snippets and reviewed command edits use public clients 
         assert.equal(resolved.additional[0]!.from, 0); assert.equal(resolved.additional[0]!.to, 0);
         const plan = lspCompletionPlan(resolved, "replace"), view = workspace.createDocumentView(before.id, { anchor: before.buffer.length, head: before.buffer.length });
         assert.ok(workspace.edit({ documentId: before.id, expectedRevision: before.revision, origin: "human", edits: plan.edits, view, selectionSet: plan.selectionSet, history: { kind: "replace" } }).applied);
-        const after = workspace.document(before.id); assert.equal(after.text, 'import { calculateTotal } from "./pricing";\n\ncalculateTotal');
+        const after = workspace.document(before.id); assert.equal(after.text(), 'import { calculateTotal } from "./pricing";\n\ncalculateTotal');
         assert.equal(view.getSnapshot().selection.head, after.buffer.length); assert.equal(capture.isCurrent(), false);
-        assert.ok(workspace.undo({ documentId: before.id, expectedRevision: after.revision }).applied); assert.equal(workspace.document(before.id).text, "calculateT");
+        assert.ok(workspace.undo({ documentId: before.id, expectedRevision: after.revision }).applied); assert.equal(workspace.document(before.id).text(), "calculateT");
         const replace = (text: string) => {
             const doc = workspace.document(before.id);
             assert.ok(workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "host", edits: [{ from: 0, to: doc.buffer.length, insert: text }] }).applied);
@@ -160,11 +160,11 @@ test("real lazy imports, snippets and reviewed command edits use public clients 
         const snippetPlan = lspCompletionPlan(decodeLspResolvedCompletion(snippetWire, method, snippetCapture), "replace");
         assert.ok(workspace.edit({ documentId: before.id, expectedRevision: snippetBefore.revision, origin: "human", edits: snippetPlan.edits,
             view, selectionSet: snippetPlan.selectionSet, history: { kind: "replace" } }).applied);
-        const snippetAfter = workspace.document(before.id); assert.equal(snippetAfter.text,
+        const snippetAfter = workspace.document(before.id); assert.equal(snippetAfter.text(),
             snippetSource.slice(0, -3) + "method(value: number): number {\n        \n    }");
         assert.equal(snippetAfter.buffer.slice(snippetPlan.head - 8, snippetPlan.head + 1), "        \n");
         assert.equal(view.getSnapshot().selection.head, snippetPlan.head);
-        assert.ok(workspace.undo({ documentId: before.id, expectedRevision: snippetAfter.revision }).applied); assert.equal(workspace.document(before.id).text, snippetSource);
+        assert.ok(workspace.undo({ documentId: before.id, expectedRevision: snippetAfter.revision }).applied); assert.equal(workspace.document(before.id).text(), snippetSource);
 
         const refactorSource = "export function price(count: number) {\n    return count * (1 + 2);\n}\n", refactorBefore = replace(refactorSource);
         const snapshots = () => files.map(file => workspace.document(file.resource.documentId));
@@ -199,9 +199,9 @@ test("real lazy imports, snippets and reviewed command edits use public clients 
         const declined = await batch.execute(action, commandScope); assert.equal(declined.decision?.applied, false); assert.equal(workspace.document(before.id), refactorBefore);
         approve = true; const depth = workspace.observeHistory(before.id).getSnapshot().undoDepth;
         const applied = await batch.execute(action, commandScope); assert.equal(applied.decision?.applied, true); assert.equal(reviews, 2); assert.equal(renameHints, 1);
-        const refactorAfter = workspace.document(before.id); assert.match(refactorAfter.text, /const \w+ = 1 \+ 2;/); assert.doesNotMatch(refactorAfter.text, /return count \* \(1 \+ 2\)/);
+        const refactorAfter = workspace.document(before.id); assert.match(refactorAfter.text(), /const \w+ = 1 \+ 2;/); assert.doesNotMatch(refactorAfter.text(), /return count \* \(1 \+ 2\)/);
         assert.equal(workspace.observeHistory(before.id).getSnapshot().undoDepth, depth + 1); assert.equal(batch.isCurrent(), false);
-        assert.ok(workspace.undo({ documentId: before.id, expectedRevision: refactorAfter.revision }).applied); assert.equal(workspace.document(before.id).text, refactorSource);
+        assert.ok(workspace.undo({ documentId: before.id, expectedRevision: refactorAfter.revision }).applied); assert.equal(workspace.document(before.id).text(), refactorSource);
         actions.dispose(); actions = undefined;
         view.dispose(); owner.dispose(); owner = undefined; assert.equal((await fetch(url + config.endpoint, { method: "DELETE" })).status, 204);
         assert.deepEqual(provider.snapshot(), { projects: 0, connections: 0, processes: 0, removals: 0 });
@@ -224,7 +224,7 @@ test("real quick fixes use correlated diagnostic context through the public acti
             schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
             documentInfo: document => ({ uri: config.documents[document.key.resource]!.uri, languageId: "typescript" }) });
         const scope = owner.createScope(); scope.setDocuments(files.map(file => workspace.document(file.resource.documentId))); await scope.connect();
-        const source = files.find(file => file.name === "main.ts")!, binding = scope.attachDocument(source.resource.documentId), doc = workspace.document(source.resource.documentId), from = doc.text.indexOf("calculateTotl(");
+        const source = files.find(file => file.name === "main.ts")!, binding = scope.attachDocument(source.resource.documentId), doc = workspace.document(source.resource.documentId), from = doc.text().indexOf("calculateTotl(");
         const request = () => scope.requestDocument("textDocument/codeAction", binding, index => ({ range: { start: index.at(from), end: index.at(from + 13) }, context: { diagnostics: [] } })).result;
         await assert.rejects(request(), /current captured diagnostics/);
         client = createLspActionClient(owner);
@@ -244,10 +244,10 @@ test("real quick fixes use correlated diagnostic context through the public acti
         const applied = workspace.editDocuments(fix.edit.documents.map(change => ({
             documentId: files.find(file => file.resource.documentId === change.target.document.documentId)!.resource.documentId,
             expectedRevision: change.target.document.revision, origin: "host", edits: change.edits, history: { kind: "refactor" } })));
-        assert.ok(applied.applied); assert.match(workspace.document(doc.id).text, /calculateTotal\(cart, 0.1\)/); assert.equal(batch.isCurrent(), false);
+        assert.ok(applied.applied); assert.match(workspace.document(doc.id).text(), /calculateTotal\(cart, 0.1\)/); assert.equal(batch.isCurrent(), false);
         await scope.flush(); await assert.rejects(request(), /current captured diagnostics/);
         const current = workspace.document(doc.id); assert.ok(workspace.undo({ documentId: doc.id, expectedRevision: current.revision }).applied);
-        assert.match(workspace.document(doc.id).text, /calculateTotl\(cart, 0.1\)/);
+        assert.match(workspace.document(doc.id).text(), /calculateTotl\(cart, 0.1\)/);
         client.dispose(); client = undefined; owner.dispose(); owner = undefined;
         assert.equal((await fetch(url + config.endpoint, { method: "DELETE" })).status, 204);
         assert.deepEqual(provider.snapshot(), { projects: 0, connections: 0, processes: 0, removals: 0 });

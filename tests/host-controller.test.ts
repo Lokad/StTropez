@@ -107,12 +107,12 @@ test("loaded drafts remain reachable until explicit discard and clean loads resp
         const pending = host.workspace.acquire(draft.id); host.discardLoadedSource(); assert.equal(draft.getSnapshot().state, "ready");
         host.workspace.edit({ documentId: d.id, expectedRevision: snapshot.revision, origin: "host", edits: [{ from: 0, to: 0, insert: "later correction " }] });
         pending.release(); host.collectLoadedDocument(); assert.equal(draft.getSnapshot().state, "ready"); assert.equal(host.hasPendingRecoveryWork(), true);
-        host.reopenLoaded(); assert.match(host.workspace.document(d.id).text, /^later correction /);
+        host.reopenLoaded(); assert.match(host.workspace.document(d.id).text(), /^later correction /);
         const stop = host.registerDetachedDocumentCleanup(id => { const current = host.workspace.document(id); host.workspace.edit({ documentId: id, expectedRevision: current.revision, origin: "host", edits: [{ from: 0, to: 0, insert: "cleanup correction " }] }); });
-        try { host.discardLoadedSource(); assert.equal(draft.getSnapshot().state, "ready"); assert.match(host.workspace.document(d.id).text, /^cleanup correction /); }
+        try { host.discardLoadedSource(); assert.equal(draft.getSnapshot().state, "ready"); assert.match(host.workspace.document(d.id).text(), /^cleanup correction /); }
         finally { stop(); }
         host.discardLoadedSource(); assert.equal(draft.getSnapshot().state, "released"); assert.equal(host.hasPendingRecoveryWork(), false);
-        assert.deepEqual(host.debug().diagnostics, before); assert.equal(host.workspace.document(host.source.documentId).text, "start");
+        assert.deepEqual(host.debug().diagnostics, before); assert.equal(host.workspace.document(host.source.documentId).text(), "start");
         host.openClosePrompt(); host.confirmClose(); host.beginDeferredLoad(); assert.equal(host.debug().loadPending, true); host.finishLoad();
         host.openClosePrompt(); host.confirmClose(); host.reopenPrimary(); assert.deepEqual(host.debug().diagnostics, before);
         host.beginDeferredLoad(); host.reopenPrimary(); await host.dispose(); assert.equal(host.debug().loadPending, false); assert.equal(host.debug().diagnostics.leases, 0);
@@ -123,14 +123,14 @@ test("loaded drafts remain reachable until explicit discard and clean loads resp
 test("independent transfer Save retains invalid input, opaque fields, later edits and reviewed conflict", async () => {
     const h = new HostController(), t = h.transfer, save = t.save;
     try {
-        t.update("batchSize", "1e"); save.save(); await h.run(); await settled(); assert.equal(transfer(h).value.batchSize, "1e"); assert.equal(h.debug().activity.pendingRuns, 0); assert.equal(save.capture(), null);
-        h.workspace.updateResource(t.resource, { expectedRevision: transfer(h).revision, origin: "human", value: { ...transfer(h).value, batchSize: "2000", destination: " captured.csv ", opaque: { separator: "Δ", zero: -0 } } });
+        t.update("batchSize", "1e"); save.save(); await h.run(); await settled(); assert.equal(transfer(h).value().batchSize, "1e"); assert.equal(h.debug().activity.pendingRuns, 0); assert.equal(save.capture(), null);
+        h.workspace.updateResource(t.resource, { expectedRevision: transfer(h).revision, origin: "human", value: { ...transfer(h).value(), batchSize: "2000", destination: " captured.csv ", opaque: { separator: "Δ", zero: -0 } } });
         save.save(); await settled(); const captured = save.capture()!; assert.equal(captured.resourceId, t.resource.id);
         t.update("destination", "later.csv"); sourceEdit(h, " correction"); h.setPath("connection.csv"); const before = h.debug(); save.finish(); await settled();
-        assert.equal(transfer(h).value.destination, "later.csv"); assert.equal(transfer(h).metadata.serverVersion, "transfer-v1"); assert.equal(transfer(h).metadata.dirty, true); assert.deepEqual(h.debug().source, before.source); assert.deepEqual(h.debug().configuration, before.configuration);
+        assert.equal(transfer(h).value().destination, "later.csv"); assert.equal(transfer(h).metadata.serverVersion, "transfer-v1"); assert.equal(transfer(h).metadata.dirty, true); assert.deepEqual(h.debug().source, before.source); assert.deepEqual(h.debug().configuration, before.configuration);
         save.save(); await settled(); save.fail(); await settled(); assert.equal(transfer(h).metadata.saveStatus, "failed");
         save.externalWrite(); save.save(); await settled(); save.finish(); await settled(); assert.equal(save.canSave(), false); save.review(); assert.equal(save.state.getSnapshot().conflict?.value?.destination, "remote-target.csv");
-        t.update("destination", " merged.csv "); save.saveReviewed(); await settled(); save.finish(); await settled(); assert.equal(transfer(h).value.destination, "merged.csv"); assert.equal(transfer(h).metadata.dirty, false); assert.deepEqual(transfer(h).value.opaque, captured.value.opaque);
+        t.update("destination", " merged.csv "); save.saveReviewed(); await settled(); save.finish(); await settled(); assert.equal(transfer(h).value().destination, "merged.csv"); assert.equal(transfer(h).metadata.dirty, false); assert.deepEqual(transfer(h).value().opaque, captured.value.opaque);
         assert.equal(h.debug().activity.pendingRuns, 0); assert.equal(h.source.metadata.getSnapshot().dirty, true); assert.equal(configuration(h).metadata.dirty, true);
     } finally { await h.dispose(); }
 });
@@ -168,7 +168,7 @@ test("immutable Run/log resources link captured inputs and keep older progress/r
 test("disposal interrupts Run resources and pending transfer Save without completing or losing inputs", async () => {
     const h = new HostController(); h.transfer.update("destination", "unsaved.csv"); h.transfer.save.save(); const run = h.run(); await settled();
     const id = h.runResources.state.getSnapshot().runs[0]!.id; await h.dispose(); await run; const stopped = h.debug(); assert.equal(stopped.runResources.runs[0]!.status, "interrupted"); assert.equal(stopped.activity.completedRuns, 0); assert.equal(stopped.diagnostics.leases, 0);
-    assert.equal(transfer(h).value.destination, "unsaved.csv"); h.runResources.advance(id); h.transfer.save.finish(); h.transfer.save.save(); h.runResources.open(id); await settled(); assert.deepEqual(h.debug(), stopped);
+    assert.equal(transfer(h).value().destination, "unsaved.csv"); h.runResources.advance(id); h.transfer.save.finish(); h.transfer.save.save(); h.runResources.open(id); await settled(); assert.deepEqual(h.debug(), stopped);
 });
 function configuration(host: HostController) { const s = host.connection.getSnapshot(); assert.equal(s.state, "ready"); if (s.state !== "ready") throw new Error("Missing configuration"); return s; }
 function sourceEdit(host: HostController, insert: string) { const d = host.workspace.document(host.source.documentId); host.workspace.edit({ documentId: d.id, expectedRevision: d.revision, origin: "human", edits: [{ from: d.buffer.length, to: d.buffer.length, insert }] }); }
@@ -182,11 +182,11 @@ test("configuration Save captures independently through later edits, source Save
         h.setPath("later.csv"); sourceEdit(h, " first"); h.save(); await settled(); sourceEdit(h, " later"); const run = h.run(); await settled();
         assert.equal(h.runCapture(0)?.configuration.path, "later.csv"); assert.equal(h.debug().pendingSaves.length, 1);
         const history = h.workspace.observeHistory(h.source.documentId).getSnapshot(), source = h.workspace.document(h.source.documentId);
-        save.finish(); await settled(); assert.equal(configuration(h).value.path, "later.csv"); assert.equal(configuration(h).metadata.dirty, true); assert.equal(configuration(h).metadata.serverVersion, "configuration-v1");
-        assert.deepEqual(configuration(h).value.opaque, capture.value.opaque); assert.equal(h.workspace.document(h.source.documentId), source); assert.deepEqual(h.workspace.observeHistory(h.source.documentId).getSnapshot(), history);
+        save.finish(); await settled(); assert.equal(configuration(h).value().path, "later.csv"); assert.equal(configuration(h).metadata.dirty, true); assert.equal(configuration(h).metadata.serverVersion, "configuration-v1");
+        assert.deepEqual(configuration(h).value().opaque, capture.value.opaque); assert.equal(h.workspace.document(h.source.documentId), source); assert.deepEqual(h.workspace.observeHistory(h.source.documentId).getSnapshot(), history);
         save.save(); await settled(); assert.equal(save.capture()?.expectedServerVersion, "configuration-v1"); save.fail(); await settled(); assert.equal(configuration(h).metadata.saveStatus, "failed");
-        h.setPath(" retry.csv "); save.save(); await settled(); save.finish(); await settled(); assert.equal(configuration(h).value.path, "retry.csv"); assert.equal(configuration(h).metadata.dirty, false);
-        assert.deepEqual(configuration(h).value.opaque, capture.value.opaque); assert.equal(h.runCapture(0)?.configuration.path, "later.csv"); assert.equal(h.debug().activity.completedRuns, 0);
+        h.setPath(" retry.csv "); save.save(); await settled(); save.finish(); await settled(); assert.equal(configuration(h).value().path, "retry.csv"); assert.equal(configuration(h).metadata.dirty, false);
+        assert.deepEqual(configuration(h).value().opaque, capture.value.opaque); assert.equal(h.runCapture(0)?.configuration.path, "later.csv"); assert.equal(h.debug().activity.completedRuns, 0);
         h.finishSave(); h.finishRun(); await run; await settled(); assert.equal(h.source.metadata.getSnapshot().dirty, true); assert.equal(h.debug().diagnostics.leases, 0);
     } finally { await h.dispose(); }
 });
@@ -195,7 +195,7 @@ test("configuration review uses an explicit precondition and retains corrections
     const h = new HostController(), save = h.configurationSave;
     try {
         h.setPath("local.csv"); save.externalWrite("remote-one.csv"); save.save(); await settled(); save.finish(); await settled();
-        assert.equal(configuration(h).value.path, "local.csv"); assert.equal(save.canSave(), false); assert.equal(save.canSaveReviewed(), false);
+        assert.equal(configuration(h).value().path, "local.csv"); assert.equal(save.canSave(), false); assert.equal(save.canSaveReviewed(), false);
         save.review(); const firstReview = formSavePanelModel(save, save.presentation.getSnapshot());
         assert.equal(save.state.getSnapshot().conflict?.value?.path, "remote-one.csv"); h.setPath("merged.csv"); save.externalWrite("remote-two.csv");
         save.saveReviewed(); await settled(); assert.equal(save.capture()?.expectedServerVersion, "configuration-v1"); save.finish(); await settled(); assert.equal(configuration(h).metadata.serverVersion, null);
@@ -203,9 +203,9 @@ test("configuration review uses an explicit precondition and retains corrections
         const secondReview = save.presentation.getSnapshot(); firstReview.actions[5].invoke(); assert.equal(save.presentation.getSnapshot(), secondReview);
         formSavePanelModel(save, secondReview).actions[5].invoke(); await settled(); save.fail(); await settled(); assert.equal(save.canSaveReviewed(), true);
         h.setPath("final.csv"); save.saveReviewed(); await settled(); assert.equal(save.capture()?.expectedServerVersion, "configuration-v2"); h.setPath("newer.csv"); save.finish(); await settled();
-        assert.equal(configuration(h).value.path, "newer.csv"); assert.equal(configuration(h).metadata.dirty, true); assert.equal(configuration(h).metadata.serverVersion, "configuration-v3");
+        assert.equal(configuration(h).value().path, "newer.csv"); assert.equal(configuration(h).metadata.dirty, true); assert.equal(configuration(h).metadata.serverVersion, "configuration-v3");
         save.save(); await settled(); save.finish(); await settled(); assert.equal(configuration(h).metadata.dirty, false); assert.equal(configuration(h).metadata.serverVersion, "configuration-v4");
-        assert.equal(h.workspace.document(h.source.documentId).text, "start"); assert.equal(h.workspace.observeHistory(h.source.documentId).getSnapshot().undoDepth, 0);
+        assert.equal(h.workspace.document(h.source.documentId).text(), "start"); assert.equal(h.workspace.observeHistory(h.source.documentId).getSnapshot().undoDepth, 0);
     } finally { await h.dispose(); }
 });
 
@@ -213,14 +213,14 @@ test("invalid configuration remains editable and blocks its Save and Run while s
     const h = new HostController();
     try {
         h.setPath("   "); h.configurationSave.save(); await h.run(); await settled();
-        assert.equal(configuration(h).value.path, "   "); assert.equal(h.configurationSave.capture(), null); assert.equal(h.debug().activity.pendingRuns, 0);
+        assert.equal(configuration(h).value().path, "   "); assert.equal(h.configurationSave.capture(), null); assert.equal(h.debug().activity.pendingRuns, 0);
         sourceEdit(h, " correction"); h.save(); await settled(); assert.equal(h.debug().pendingSaves.length, 1); h.finishSave(); await settled(); assert.equal(h.source.metadata.getSnapshot().dirty, false);
     } finally { await h.dispose(); }
 });
 
 for (const started of [false, true]) test(`configuration disposal ${started ? "during request" : "before queued request"} settles without losing unsaved inputs`, async () => {
     const h = new HostController(); h.setPath("unsaved.csv"); h.configurationSave.save(); if (started) { await settled(); assert.ok(h.configurationSave.capture()); }
-    await h.dispose(); const stopped = h.debug(); assert.equal(stopped.diagnostics.leases, 0); assert.equal(stopped.pendingCommands, 0); assert.equal(configuration(h).value.path, "unsaved.csv");
+    await h.dispose(); const stopped = h.debug(); assert.equal(stopped.diagnostics.leases, 0); assert.equal(stopped.pendingCommands, 0); assert.equal(configuration(h).value().path, "unsaved.csv");
     h.configurationSave.finish(); h.configurationSave.fail(); h.configurationSave.save(); await settled(); assert.deepEqual(h.debug(), stopped);
 });
 
@@ -242,7 +242,7 @@ test("host disposal releases an unacknowledged proposal while retaining the unsa
     await host.dispose();
     assert.equal(host.debug().diagnostics.leases, 0); assert.equal(host.debug().review.association, null);
     assert.equal(host.source.getSnapshot().state, "ready");
-    assert.equal(host.workspace.document(host.source.documentId).text, "unsaved proposal"); assert.equal(host.debug().source.dirty, true);
+    assert.equal(host.workspace.document(host.source.documentId).text(), "unsaved proposal"); assert.equal(host.debug().source.dirty, true);
 });
 
 test("parallel Run captures, denied submission and older results keep independent counts and targets", async () => {

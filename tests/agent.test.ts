@@ -16,9 +16,9 @@ function fixture() {
     const association = workspace.associateAgent(source.id, "session-one");
     const review = workspace.agentState(source.id), commands = new WorkspaceCommands(workspace, error => errors.push(error));
     const edit = (text: string, origin: "human" | "agent" | "host" = "human") => workspace.edit({ documentId: source.documentId,
-        expectedRevision: workspace.document(source.documentId).revision, origin, edits: [{ from: 0, to: workspace.document(source.documentId).text.length, insert: text }] });
+        expectedRevision: workspace.document(source.documentId).revision, origin, edits: [{ from: 0, to: workspace.document(source.documentId).text().length, insert: text }] });
     const offer = (text: string, version: number) => workspace.offerAgentProposal(workspace.captureProposal(source.id), { id: "proposal", revision: version,
-            edits: [{ from: 0, to: workspace.document(source.documentId).text.length, insert: text }] });
+            edits: [{ from: 0, to: workspace.document(source.documentId).text().length, insert: text }] });
     return { workspace, source, form, tab, association, review, commands, errors, edit, offer };
 }
 
@@ -40,7 +40,7 @@ test("an exclusive request captures immutable inputs, enforces every origin, and
     assert.throws(() => workspace.beginLoad(source));
     assert.equal(request.accept({ id: "proposal", revision: 1, edits: [{ from: 0, to: 5, insert: "proposed" }] }).applied, true);
     assert.equal(request.isCancelled(), false); assert.equal(request.isCurrent(), false);
-    assert.equal(workspace.document(source.documentId).text, "proposed");
+    assert.equal(workspace.document(source.documentId).text(), "proposed");
     assert.equal(review.getSnapshot().proposal?.target.revision, 1);
     assert.deepEqual(observations, ["true:true", "false:false"]); assert.equal(errors.length, 0);
     unsubscribe(); request.finish();
@@ -60,7 +60,7 @@ test("interrupt/detach preserve human edits and reject old replies after move, c
     assert.equal(review.getSnapshot().request?.id, next.input.id);
     workspace.detachAgent(source.id); workspace.associateAgent(source.id, "session-two"); edit("retained");
     assert.equal(next.accept({ id: "obsolete", revision: 1, edits: [] }).applied, false);
-    assert.equal(workspace.document(source.documentId).text, "retained"); assert.equal(review.getSnapshot().association?.id, "session-two");
+    assert.equal(workspace.document(source.documentId).text(), "retained"); assert.equal(review.getSnapshot().association?.id, "session-two");
     workspace.close(reopened); assert.equal(workspace.ownership(source.id).leases, 0);
 });
 
@@ -78,9 +78,9 @@ test("proposal/correction/save/failed acknowledgement/retry/next request uses th
     assert.ok(save.kind === "saved"); const acknowledgementId = save.receipt.acknowledgementId!;
     assert.equal(source.metadata.getSnapshot().dirty, false);
     workspace.undo({ documentId: source.documentId, expectedRevision: workspace.document(source.documentId).revision });
-    assert.equal(workspace.document(source.documentId).text, "agent text"); assert.equal(source.metadata.getSnapshot().dirty, true);
+    assert.equal(workspace.document(source.documentId).text(), "agent text"); assert.equal(source.metadata.getSnapshot().dirty, true);
     workspace.redo({ documentId: source.documentId, expectedRevision: workspace.document(source.documentId).revision });
-    assert.equal(workspace.document(source.documentId).text, "human corrected text"); assert.equal(source.metadata.getSnapshot().dirty, false);
+    assert.equal(workspace.document(source.documentId).text(), "human corrected text"); assert.equal(source.metadata.getSnapshot().dirty, false);
     const payloads: AcknowledgementSubmission[] = [];
     const failed = await commands.acknowledge(source.id, acknowledgementId, { acknowledge: async submission => {
         payloads.push(submission); throw new Error("Synthetic acknowledgement failure");
@@ -114,7 +114,7 @@ test("two deferred saves and acknowledgements cannot retire a newer proposal or 
     assert.ok(secondResult.kind === "saved");
     assert.equal(secondResult.receipt.submission.proposal?.association, association);
     await commands.acknowledge(source.id, secondResult.receipt.acknowledgementId!, { acknowledge: async () => {} });
-    assert.equal(review.getSnapshot().proposal, null); assert.equal(workspace.document(source.documentId).text, "later human text");
+    assert.equal(review.getSnapshot().proposal, null); assert.equal(workspace.document(source.documentId).text(), "later human text");
     assert.equal(source.metadata.getSnapshot().dirty, true); assert.equal(workspace.ownership(source.id).leases, 0);
 });
 
@@ -150,7 +150,7 @@ test("proposal revision checks, malformed ranges and permission changes preserve
     const malformed = workspace.beginAgentRequest(source, {});
     assert.throws(() => malformed.accept({ id: "bad", revision: 1, edits: [{ from: -1, to: 1, insert: "bad" }] }));
     assert.equal(review.getSnapshot().lastResult, "failed"); assert.equal(source.metadata.getSnapshot().editLock, null);
-    assert.equal(workspace.document(source.documentId).text, "new"); assert.equal(workspace.ownership(source.id).leases, 0); assert.equal(errors.length, 0);
+    assert.equal(workspace.document(source.documentId).text(), "new"); assert.equal(workspace.ownership(source.id).leases, 0); assert.equal(errors.length, 0);
 });
 
 test("edit-lease identity, origin and revision are all required and releasing a lease never restores revoked permissions", () => {

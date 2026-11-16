@@ -48,7 +48,7 @@ test("checkpoint includes dirty temporary text after close and reopen", async ()
         assert.equal(tab.surface.kind, "text"); if (tab.surface.kind !== "text") throw Error("Missing loaded source");
         const doc = c.workspace.document(tab.surface.documentId), value = "loaded café😀\r\ndirty draft";
         c.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "human", edits: [{ from: 0, to: doc.buffer.length, insert: value }] });
-        c.openClosePrompt(); c.confirmClose(); c.reopenLoaded(); assert.equal(c.workspace.document(doc.id).text, value);
+        c.openClosePrompt(); c.confirmClose(); c.reopenLoaded(); assert.equal(c.workspace.document(doc.id).text(), value);
         d.prepare("keep"); await idle(d);
         const saved = store.shared.value!.value as { loaded?: { text: string } };
         assert.equal(saved.loaded?.text, value); assert.equal(d.shouldWarnOnLeave(), false);
@@ -87,13 +87,13 @@ test("loaded restore creates a fresh owned resource and keeps independent input 
         d.prepare("loaded"); edit(c, "independent original source"); c.setPath("later.csv"); c.transfer.update("batchSize", "invalid");
         const configuration = c.connection.getSnapshot(), transfer = c.transfer.resource.getSnapshot(), reference = c.savedComparisonReference();
         d.confirm(); await idle(d); const resource = c.loadedSource.getSnapshot().resource!; assert.ok(resource); assert.notEqual(resource.id, c.source.id);
-        assert.equal(c.workspace.document(resource.documentId).text, "stored loaded café😀\r\ndraft"); assert.equal(resource.metadata.getSnapshot().serverVersion, "loaded-v1");
+        assert.equal(c.workspace.document(resource.documentId).text(), "stored loaded café😀\r\ndraft"); assert.equal(resource.metadata.getSnapshot().serverVersion, "loaded-v1");
         assert.equal(text(c), "independent original source"); assert.equal(c.connection.getSnapshot(), configuration); assert.equal(c.transfer.resource.getSnapshot(), transfer); assert.equal(c.savedComparisonReference(), reference);
         assert.equal(c.workspace.observeHistory(resource.documentId).getSnapshot().undoDepth, 1);
-        c.workspace.undo({ documentId: resource.documentId, expectedRevision: c.workspace.document(resource.documentId).revision }); assert.equal(c.workspace.document(resource.documentId).text, "loaded resource"); assert.equal(resource.metadata.getSnapshot().dirty, false);
+        c.workspace.undo({ documentId: resource.documentId, expectedRevision: c.workspace.document(resource.documentId).revision }); assert.equal(c.workspace.document(resource.documentId).text(), "loaded resource"); assert.equal(resource.metadata.getSnapshot().dirty, false);
         editLoaded(c, "later loaded text"); view = c.workspace.createDocumentView(resource.documentId); view.setSelections(c.workspace.document(resource.documentId).revision, [{ anchor: 2, head: 1 }, { anchor: 8, head: 4 }], 1);
         stop = c.registerInputCaptureGuard(() => true, () => view); const set = view.getSnapshot().selectionSet; d.prepare("loaded"); d.confirm(); await idle(d);
-        c.workspace.undo({ documentId: resource.documentId, expectedRevision: c.workspace.document(resource.documentId).revision }); assert.equal(c.workspace.document(resource.documentId).text, "later loaded text"); assert.deepEqual(view.getSnapshot().selectionSet, set);
+        c.workspace.undo({ documentId: resource.documentId, expectedRevision: c.workspace.document(resource.documentId).revision }); assert.equal(c.workspace.document(resource.documentId).text(), "later loaded text"); assert.deepEqual(view.getSnapshot().selectionSet, set);
     } finally { stop(); view?.dispose(); await close(c, d); }
 });
 for (const change of ["revision", "authority", "slot-generation"] as const) test(`loaded restore rejects ${change} changes after storage read starts`, async () => {
@@ -131,14 +131,14 @@ test("new session offers independent source/configuration restore with a new und
     const payload = envelope.value as { configuration: { value: Record<string, unknown> } }; payload.configuration.value = { ...payload.configuration.value, ...extra }; store.shared.value = envelope;
     const c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); assert.equal(text(c), "start"); assert.equal(d.state.getSnapshot().present, true);
     d.prepare("source"); d.confirm(); await idle(d); assert.equal(text(c), "stored café😀\r\ndraft"); assert.equal(c.source.metadata.getSnapshot().serverVersion, "v0"); assert.equal(c.workspace.observeHistory(c.source.documentId).getSnapshot().undoDepth, 1);
-    const initialConfiguration = c.connection.getSnapshot(); assert.equal(initialConfiguration.state === "ready" && initialConfiguration.value.path, "source.csv");
-    d.prepare("configuration"); d.confirm(); await idle(d); const configuration = c.connection.getSnapshot(); assert.equal(configuration.state === "ready" && configuration.value.path, "stored.csv"); assert.equal(d.shouldWarnOnLeave(), false);
-    assert.deepEqual(configuration.state === "ready" && configuration.value, { path: "stored.csv", format: "csv", ...extra });
+    const initialConfiguration = c.connection.getSnapshot(); assert.equal(initialConfiguration.state === "ready" && initialConfiguration.value().path, "source.csv");
+    d.prepare("configuration"); d.confirm(); await idle(d); const configuration = c.connection.getSnapshot(); assert.equal(configuration.state === "ready" && configuration.value().path, "stored.csv"); assert.equal(d.shouldWarnOnLeave(), false);
+    assert.deepEqual(configuration.state === "ready" && configuration.value(), { path: "stored.csv", format: "csv", ...extra });
     c.workspace.undo({ documentId: c.source.documentId, expectedRevision: c.workspace.document(c.source.documentId).revision }); assert.equal(text(c), "start"); await close(c, d);
 });
 test("stale source confirmation retains corrections while independent configuration can restore", async () => {
     const store = await seeded(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); d.prepare("source"); edit(c, "human correction"); d.confirm(); await idle(d); assert.equal(text(c), "human correction");
-    d.prepare("configuration"); edit(c, "further correction"); d.confirm(); await idle(d); assert.equal(text(c), "further correction"); const configuration = c.connection.getSnapshot(); assert.equal(configuration.state === "ready" && configuration.value.path, "stored.csv"); await close(c, d);
+    d.prepare("configuration"); edit(c, "further correction"); d.confirm(); await idle(d); assert.equal(text(c), "further correction"); const configuration = c.connection.getSnapshot(); assert.equal(configuration.state === "ready" && configuration.value().path, "stored.csv"); await close(c, d);
 });
 
 test("configuration save receipt expires a pending restore and pending Save still warns with checkpoint coverage", async () => {
@@ -147,7 +147,7 @@ test("configuration save receipt expires a pending restore and pending Save stil
     const gate = deferred(); store.shared.readGate = gate.promise; d.prepare("configuration"); d.confirm();
     c.configurationSave.save(); await new Promise<void>(done => setImmediate(done)); assert.equal(d.shouldWarnOnLeave(), true);
     c.configurationSave.finish(); await new Promise<void>(done => setImmediate(done)); gate.resolve(); await idle(d);
-    const state = c.connection.getSnapshot(); assert.equal(state.state === "ready" && state.value.path, "checkpoint.csv"); assert.equal(state.metadata.serverVersion, "configuration-v1"); assert.equal(state.metadata.dirty, false);
+    const state = c.connection.getSnapshot(); assert.equal(state.state === "ready" && state.value().path, "checkpoint.csv"); assert.equal(state.metadata.serverVersion, "configuration-v1"); assert.equal(state.metadata.dirty, false);
     assert.match(d.state.getSnapshot().message, /changed|stale|expired/i); assert.equal(text(c), "start"); await close(c, d);
 });
 
@@ -156,9 +156,9 @@ test("transfer checkpoints retain invalid and opaque input, restore independentl
     const value = { destination: "kept.csv", batchSize: "1e", opaque: { columns: ["Δ"], zero: -0 } };
     c.workspace.updateResource(c.transfer.resource, { expectedRevision: 0, origin: "human", value }); assert.equal(d.shouldWarnOnLeave(), true); d.prepare("keep"); await idle(d); assert.equal(d.shouldWarnOnLeave(), false);
     c.transfer.update("destination", "correction.csv"); d.prepare("transfer"); edit(c, "independent source"); c.setPath("independent.csv"); d.confirm(); await idle(d);
-    let s = c.transfer.resource.getSnapshot(); assert.deepEqual(s.state === "ready" && s.value, value); assert.equal(text(c), "independent source"); assert.equal(c.configurationSave.validation(), null);
+    let s = c.transfer.resource.getSnapshot(); assert.deepEqual(s.state === "ready" && s.value(), value); assert.equal(text(c), "independent source"); assert.equal(c.configurationSave.validation(), null);
     c.transfer.update("batchSize", "100"); const gate = deferred(); store.shared.readGate = gate.promise; d.prepare("transfer"); d.confirm(); c.transfer.save.save(); await new Promise<void>(done => setImmediate(done)); c.transfer.save.finish(); await new Promise<void>(done => setImmediate(done)); gate.resolve(); await idle(d);
-    s = c.transfer.resource.getSnapshot(); assert.equal(s.metadata.serverVersion, "transfer-v1"); assert.equal(s.state === "ready" && s.value.batchSize, "100"); assert.match(d.state.getSnapshot().message, /failed|stale|changed/i); await close(c, d);
+    s = c.transfer.resource.getSnapshot(); assert.equal(s.metadata.serverVersion, "transfer-v1"); assert.equal(s.state === "ready" && s.value().batchSize, "100"); assert.match(d.state.getSnapshot().message, /failed|stale|changed/i); await close(c, d);
 });
 
 for (const format of [1, 2]) test(`unsupported recovery format ${format} cannot restore any input or rewrite storage`, async () => {

@@ -111,7 +111,7 @@ export class TransferInstruction {
         try {
             const t = this.host.transfer.resource, s = t.getSnapshot();
             if (!copy.operation.isCurrent() || !this.host.workspace.resolveResource(copy.source) || copy.stale() || s.state !== "ready" || s.revision !== copy.revision || s.metadata.serverVersion !== copy.version) throw new Error("Copy expired");
-            const result = this.host.workspace.updateResource(t, { expectedRevision: copy.revision, origin: "human", value: { ...s.value, ...copy.values } }); if (!result.applied) throw new Error("Copy unavailable");
+            const result = this.host.workspace.updateResource(t, { expectedRevision: copy.revision, origin: "human", value: { ...s.value(), ...copy.values } }); if (!result.applied) throw new Error("Copy unavailable");
             this.publish({ pendingCopy: false, message: "Captured instruction copied into transfer settings. Nothing was saved or run." });
         } catch { this.publish({ pendingCopy: false, message: "Instruction copy expired. Later transfer edits are retained; capture again." }); }
         finally { copy.operation.finish(); copy.sourceLease.release(); }

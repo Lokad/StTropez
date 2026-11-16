@@ -108,8 +108,8 @@ export class HostDraftRecovery {
     private needsProtection(): boolean {
         const c = this.controller, source = c.source.metadata.getSnapshot(), configuration = c.connection.getSnapshot(), transfer = c.transfer.resource.getSnapshot(), loaded = c.loadedSource.getSnapshot().resource;
         return source.dirty && (source.state !== "ready" || c.workspace.document(c.source.documentId).buffer !== this.protectedSource)
-            || configuration.metadata.dirty && (configuration.state !== "ready" || configuration.value !== this.protectedConfiguration)
-            || transfer.metadata.dirty && (transfer.state !== "ready" || transfer.value !== this.protectedTransfer)
+            || configuration.metadata.dirty && (configuration.state !== "ready" || configuration.value() !== this.protectedConfiguration)
+            || transfer.metadata.dirty && (transfer.state !== "ready" || transfer.value() !== this.protectedTransfer)
             || c.recovery.getSnapshot().items.length > 0 && c.recovery.getSnapshot().items !== this.protectedInput
             || !!loaded?.metadata.getSnapshot().dirty && (loaded.getSnapshot().state !== "ready" || loaded !== this.protectedLoaded?.resource || c.workspace.document(loaded.documentId).buffer !== this.protectedLoaded.buffer);
     }
@@ -196,15 +196,15 @@ export class HostDraftRecovery {
             await new Promise<void>(done => setTimeout(done, 0)); if (this.disposed || serial !== this.serial) return;
             const record: Draft | undefined = capture.kind === "keep" ? Object.freeze({ format: 3, id: token(), created: Date.now(),
             source: Object.freeze({ key: document.key, revision: document.revision, serverVersion: capture.sourceVersion, text: document.buffer.text() }),
-            configuration: Object.freeze({ key: configuration.metadata.key, revision: configuration.revision, serverVersion: capture.configurationVersion, value: Object.freeze({ ...configuration.value }) }),
-            transfer: Object.freeze({ key: transfer.metadata.key, revision: transfer.revision, serverVersion: capture.transferVersion, value: transfer.value }),
+            configuration: Object.freeze({ key: configuration.metadata.key, revision: configuration.revision, serverVersion: capture.configurationVersion, value: Object.freeze({ ...configuration.value() }) }),
+            transfer: Object.freeze({ key: transfer.metadata.key, revision: transfer.revision, serverVersion: capture.transferVersion, value: transfer.value() }),
             loaded: loadedState?.metadata.dirty && loadedDocument ? Object.freeze({ identity: "temporary-loaded-source", revision: loadedDocument.revision, serverVersion: capture.loadedVersion, text: loadedDocument.buffer.text() }) : null,
             input: Object.freeze([...(this.draft?.input.filter(i => i.session !== this.session) ?? []), ...input.map((i, ordinal) => Object.freeze({ session: this.session, ordinal,
                 expectedRevision: i.expectedRevision, reason: i.reason, contextFrom: i.contextFrom, attemptedText: i.attemptedText, attemptedEdit: i.attemptedEdit }))]) }) : undefined;
             if (record) {
                 await this.store.write(Object.freeze({ token: record.id, value: record }), capture.token); if (this.disposed || serial !== this.serial) return;
                 this.envelope = Object.freeze({ token: record.id, value: record }); this.draft = record; this.protectedSource = document.buffer;
-                this.protectedConfiguration = configuration.value; this.protectedTransfer = transfer.value; this.protectedInput = input;
+                this.protectedConfiguration = configuration.value(); this.protectedTransfer = transfer.value(); this.protectedInput = input;
                 this.protectedLoaded = record.loaded && loaded && loaded === c.loadedSource.getSnapshot().resource && loadedDocument ? { resource: loaded, buffer: loadedDocument.buffer } : undefined;
                 this.publish("Draft checkpoint retained. Later changes need another checkpoint.");
             } else if (capture.kind === "discard") {
@@ -227,8 +227,8 @@ export class HostDraftRecovery {
                     : c.workspace.updateResource(c.transfer.resource, { expectedRevision: capture.transferRevision, origin: "human", value: draft.transfer.value });
                 if (!result.applied) throw new Error("Restore unavailable.");
                 if (capture.kind === "source") this.protectedSource = c.workspace.document(c.source.documentId).buffer;
-                else if (capture.kind === "configuration") { const restored = c.connection.getSnapshot(); this.protectedConfiguration = restored.state === "ready" ? restored.value : undefined; }
-                else { const restored = c.transfer.resource.getSnapshot(); this.protectedTransfer = restored.state === "ready" ? restored.value : undefined; }
+                else if (capture.kind === "configuration") { const restored = c.connection.getSnapshot(); this.protectedConfiguration = restored.state === "ready" ? restored.value() : undefined; }
+                else { const restored = c.transfer.resource.getSnapshot(); this.protectedTransfer = restored.state === "ready" ? restored.value() : undefined; }
                 this.publish(capture.kind === "source" ? "Source draft restored. Undo returns to the loaded source." : capture.kind === "configuration" ? "Configuration draft restored independently." : "Transfer draft restored independently.");
             }
         } catch { if (!this.disposed && serial === this.serial) {

@@ -44,7 +44,7 @@ test("independent comparison modules share workspace identity and release retain
         while (one.controller.getSnapshot().status === "running") one.controller.advance();
         const retiredRejected = !one.state.getSnapshot().canNavigate && !one.selectHunk(one.controller.getSnapshot().generation, 0);
         await changed;
-        const afterRefresh = { old: old.getSnapshot().state, text: workspace.document(old.documentId).text, oldEditorDisposed: oldEditor.snapshot().disposed,
+        const afterRefresh = { old: old.getSnapshot().state, text: workspace.document(old.documentId).text(), oldEditorDisposed: oldEditor.snapshot().disposed,
             retiredRejected, currentReady: one.state.getSnapshot().canNavigate };
         const current = workspace.resourceForDocument(one.referenceEditor()!.view.documentId), currentLease = workspace.acquire(current.id);
         one.destroy(); one.destroy(); two.destroy(); stopInventory();

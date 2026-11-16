@@ -99,7 +99,7 @@ test("demo save releases partial capture and started tickets before retry or pro
             await project.save(() => { renders++; });
             assert.equal(project.saving, false); assert.equal(store.writes, 0); assert.equal(renders, 1);
             assert.match(project.message, /Could not save/);
-            assert.equal(workspace.document(first.resource.documentId).text, "// keep\n" + doc.text);
+            assert.equal(workspace.document(first.resource.documentId).text(), "// keep\n" + doc.text());
             other?.fail(); other?.finish();
             workspace.setCapabilities(second.resource.id, permissions);
             assert.deepEqual(project.files.map(file => workspace.ownership(file.resource.id)), owners);
@@ -108,7 +108,7 @@ test("demo save releases partial capture and started tickets before retry or pro
             assert.ok(project.files.every(file => file.resource.metadata.getSnapshot().saveStatus === "idle"));
             assert.deepEqual(project.files.map(file => workspace.ownership(file.resource.id)), owners);
             const saved = store.row!.value as { files: Record<string, string> };
-            assert.equal(saved.files[first.name], "// keep\n" + doc.text);
+            assert.equal(saved.files[first.name], "// keep\n" + doc.text());
         } finally { project.dispose(); await project.language.dispose(); }
         assert.equal(store.closed, true); assert.equal(recovery.closed, true);
         assert.equal(project.workspace.getSnapshot().resources.length, 0);

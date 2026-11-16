@@ -32,31 +32,37 @@ test("packed bulk changes preserve initiating selection, independent views and e
     assert.equal(before.readMetrics().textExports, 0); assert.equal(after.readMetrics().textExports, 0); first.dispose(); second.dispose();
 });
 
-test("workspace buffer snapshots stay immutable and bounded readers and metadata commits never export text", t => {
+test("workspace snapshots export text only through explicit captured readers", () => {
     const { workspace, source, document, errors } = fixture(corpus("lines-100000"));
-    const first = document(), saved = first.buffer, seen = [];
+    const first = document(), firstResource = source.getSnapshot(), saved = first.buffer, seen = [];
+    assert.ok(firstResource.state === "ready");
+    const readText = first.text, readValue = firstResource.value;
     let anchor = anchoredRange(saved.length, 100, 130);
-    workspace.observeDocument(source.documentId).subscribe(() => {
+    const unsubscribe = workspace.observeDocument(source.documentId).subscribe(() => {
         const current = document(); anchor = current.change!.mapping.mapRange(anchor)!;
         seen.push(current.buffer.slice(current.buffer.offsetAt(100), current.buffer.offsetAt(100) + 12));
     });
-    const wrappers = (work: () => void) => {
-        const descriptors = Object.getOwnPropertyDescriptors; let calls = 0;
-        Object.getOwnPropertyDescriptors = function<T>(value: T) { calls++; return descriptors(value); };
-        try { work(); return calls; } finally { Object.getOwnPropertyDescriptors = descriptors; }
-    };
-    const edit = wrappers(() => { workspace.edit({ documentId: source.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "😀" }] }); });
+    workspace.edit({ documentId: source.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "😀" }] });
     assert.deepEqual([anchor.from, anchor.to], [102, 132]);
     const current = document(); assert.notEqual(current.buffer, saved); assert.equal(current.buffer.length, saved.length + 2);
-    const lease = wrappers(() => { const lease = workspace.acquireEditLease(source.id, "synthetic", "host"); lease.release(); });
-    const capabilities = wrappers(() => { workspace.setCapabilities(source.id, { edit: ["human"], save: true, run: true }); });
+    const lease = workspace.acquireEditLease(source.id, "synthetic", "host"); lease.release();
+    workspace.setCapabilities(source.id, { edit: ["human"], save: true, run: true });
+    for (const snapshot of [first, firstResource, current, source.getSnapshot(), workspace.getSnapshot()]) {
+        const spread = { ...snapshot }, assigned = Object.assign({}, snapshot);
+        assert.deepEqual(Object.keys(spread), Object.keys(assigned)); JSON.stringify(spread); JSON.stringify(snapshot);
+    }
     assert.equal(document(), current); assert.equal(saved.diagnostics().textExports, 0); assert.equal(current.buffer.diagnostics().textExports, 0);
     assert.equal(seen.length, 1); assert.ok(Object.isFrozen(current)); assert.equal(errors.length, 0);
     assert.ok(Object.isFrozen(source.getSnapshot())); assert.ok(Object.isFrozen(source.metadata.getSnapshot()));
     assert.equal(source.getSnapshot().metadata, source.metadata.getSnapshot());
-    t.diagnostic(JSON.stringify({ edit, lease, capabilities }));
-    assert.deepEqual({ edit, lease, capabilities }, { edit: 0, lease: 2, capabilities: 1 });
-    assert.equal(first.text.length, 2_400_000); assert.equal(document().buffer.diagnostics().textExports, 0);
+    assert.equal(readText().length, 2_400_000); assert.equal(readValue(), readText());
+    assert.equal(saved.readMetrics().textExports, 1); assert.equal(current.buffer.readMetrics().textExports, 0);
+    const currentResource = source.getSnapshot(); assert.ok(currentResource.state === "ready");
+    assert.equal(current.text().slice(0, 2), "😀"); assert.equal(currentResource.value(), current.text());
+    assert.equal(current.buffer.readMetrics().textExports, 1);
+    unsubscribe(); workspace.releaseResource(source.id, true);
+    assert.equal(readValue(), readText()); assert.equal(currentResource.value(), current.text());
+    assert.equal(saved.readMetrics().textExports, 1); assert.equal(current.buffer.readMetrics().textExports, 1);
 });
 
 test("explicit consecutive groups, origins, standalone intents and saved boundaries keep exact undo-to-saved states", async () => {
@@ -67,12 +73,12 @@ test("explicit consecutive groups, origins, standalone intents and saved boundar
     const saved = await commands.save(source, { save: async () => ({ kind: "saved", serverVersion: "v1" }) }); assert.equal(saved.kind, "saved");
     replace("abcdef", "typing", "typing-one"); assert.equal(state.getSnapshot().undoDepth, 2);
     const beforeUndo = document().revision; assert.equal(undo().applied, true);
-    assert.equal(document().text, "abcde"); assert.equal(source.metadata.getSnapshot().dirty, false); assert.ok(document().revision > beforeUndo);
-    undo(); assert.equal(document().text, "abc"); assert.equal(source.metadata.getSnapshot().dirty, true);
-    redo(); assert.equal(document().text, "abcde"); assert.equal(source.metadata.getSnapshot().dirty, false);
+    assert.equal(document().text(), "abcde"); assert.equal(source.metadata.getSnapshot().dirty, false); assert.ok(document().revision > beforeUndo);
+    undo(); assert.equal(document().text(), "abc"); assert.equal(source.metadata.getSnapshot().dirty, true);
+    redo(); assert.equal(document().text(), "abcde"); assert.equal(source.metadata.getSnapshot().dirty, false);
     for (const kind of ["paste", "composition", "form", "refactor", "proposal", "live"] as const) {
-        replace(`${document().text}:${kind}`, kind); const after = document().text;
-        undo(); assert.ok(!document().text.endsWith(`:${kind}`)); redo(); assert.equal(document().text, after);
+        replace(`${document().text()}:${kind}`, kind); const after = document().text();
+        undo(); assert.ok(!document().text().endsWith(`:${kind}`)); redo(); assert.equal(document().text(), after);
     }
 });
 
@@ -89,7 +95,7 @@ test("two view selections map independently, history restores its initiating vie
     workspace.move(tab, "right"); workspace.close(tab); assert.throws(() => workspace.releaseResource(source.id, true));
     const reopened = workspace.open({ kind: "text", documentId: source.documentId }, "left");
     workspace.undo({ documentId: source.documentId, expectedRevision: document().revision });
-    assert.equal(document().text, "a😀bcdef"); assert.deepEqual([primary.getSnapshot().selection.anchor, primary.getSnapshot().selection.head], [3, 3]);
+    assert.equal(document().text(), "a😀bcdef"); assert.deepEqual([primary.getSnapshot().selection.anchor, primary.getSnapshot().selection.head], [3, 3]);
     assert.deepEqual([secondary.getSnapshot().selection.anchor, secondary.getSnapshot().selection.head], [7, 4]);
     workspace.redo({ documentId: source.documentId, expectedRevision: document().revision });
     assert.equal(primary.getSnapshot().selection.head, 5); assert.equal(secondary.getSnapshot().selection.anchor, 9);
@@ -111,8 +117,8 @@ test("typing grouping is local to its document while unrelated live traffic and 
         await commands.save(other, { save: async () => ({ kind: "saved", serverVersion: `v${index}` }) });
     }
     assert.equal(state.getSnapshot().undoDepth, 1); assert.equal(workspace.observeHistory(other.documentId).getSnapshot().undoDepth, 3);
-    undo(); assert.equal(document().text, "abc"); assert.equal(source.metadata.getSnapshot().dirty, false);
-    assert.equal(workspace.document(other.documentId).text, "3");
+    undo(); assert.equal(document().text(), "abc"); assert.equal(source.metadata.getSnapshot().dirty, false);
+    assert.equal(workspace.document(other.documentId).text(), "3");
 });
 
 test("multi-document edits preflight every target, publish coherently, and undo/redo one shared unit", () => {
@@ -126,7 +132,7 @@ test("multi-document edits preflight every target, publish coherently, and undo/
     assert.equal(workspace.getSnapshot(), original);
     let notifications = 0;
     const unsubscribe = workspace.observeDocument(source.documentId).subscribe(() => {
-        notifications++; assert.equal(document().text, "a!c"); assert.equal(workspace.document(other.documentId).text, "x!z");
+        notifications++; assert.equal(document().text(), "a!c"); assert.equal(workspace.document(other.documentId).text(), "x!z");
         assert.equal(workspace.observeHistory(other.documentId).getSnapshot().undoDepth, 1);
     });
     assert.equal(workspace.editDocuments(requests()).applied, true); unsubscribe(); assert.equal(notifications, 1);
@@ -135,10 +141,10 @@ test("multi-document edits preflight every target, publish coherently, and undo/
     assert.deepEqual(workspace.undo({ documentId: source.documentId, expectedRevision: 1 }), { applied: false, reason: "read-only" }); assert.equal(workspace.getSnapshot(), locked);
     workspace.setCapabilities(other.id, { edit: ["human", "host"], save: true, run: true });
     assert.equal(workspace.undo({ documentId: source.documentId, expectedRevision: 1 }).applied, true);
-    assert.equal(document().text, "abc"); assert.equal(workspace.document(other.documentId).text, "xyz");
+    assert.equal(document().text(), "abc"); assert.equal(workspace.document(other.documentId).text(), "xyz");
     assert.equal(source.metadata.getSnapshot().dirty, false); assert.equal(other.metadata.getSnapshot().dirty, false);
     workspace.redo({ documentId: other.documentId, expectedRevision: 2 });
-    assert.equal(document().text, "a!c"); assert.equal(workspace.document(other.documentId).text, "x!z"); assert.equal(errors.length, 0);
+    assert.equal(document().text(), "a!c"); assert.equal(workspace.document(other.documentId).text(), "x!z"); assert.equal(errors.length, 0);
 });
 
 test("later edits block linked undo; branching invalidates dependent redo and release clears linked history", () => {
@@ -256,34 +262,34 @@ test("canonical saves and deferred receipts remain exact through undo and redo, 
     const { workspace, source, document, replace, undo, redo, state } = fixture();
     replace("local"); const commands = new WorkspaceCommands(workspace);
     const saved = await commands.save(source, { save: async () => ({ kind: "saved", serverVersion: "v1", canonical: "LOCAL" }) });
-    assert.ok(saved.kind === "saved" && saved.receipt.canonicalApplied); undo(); assert.equal(document().text, "local"); assert.equal(source.metadata.getSnapshot().dirty, true);
-    redo(); assert.equal(document().text, "LOCAL"); assert.equal(source.metadata.getSnapshot().dirty, false);
+    assert.ok(saved.kind === "saved" && saved.receipt.canonicalApplied); undo(); assert.equal(document().text(), "local"); assert.equal(source.metadata.getSnapshot().dirty, true);
+    redo(); assert.equal(document().text(), "LOCAL"); assert.equal(source.metadata.getSnapshot().dirty, false);
     replace("next"); const ticket = workspace.captureSave(source); ticket.start(); undo();
-    ticket.accept({ serverVersion: "v2" }); ticket.finish(); assert.equal(document().text, "LOCAL"); assert.equal(source.metadata.getSnapshot().dirty, true);
-    redo(); assert.equal(document().text, "next"); assert.equal(source.metadata.getSnapshot().dirty, false);
+    ticket.accept({ serverVersion: "v2" }); ticket.finish(); assert.equal(document().text(), "LOCAL"); assert.equal(source.metadata.getSnapshot().dirty, true);
+    redo(); assert.equal(document().text(), "next"); assert.equal(source.metadata.getSnapshot().dirty, false);
     const view = workspace.createDocumentView(source.documentId, { anchor: 4, head: 4 });
     const loadedRevision = document().revision;
     const load = workspace.beginLoad(source); assert.equal(view.setSelection(loadedRevision, { anchor: 0, head: 0 }), false);
     load.accept({ value: "reloaded", serverVersion: "v3" });
-    assert.equal(document().text, "reloaded"); assert.equal(state.getSnapshot().undoDepth, 0); assert.equal(view.getSnapshot().selection.head, 0); view.dispose();
+    assert.equal(document().text(), "reloaded"); assert.equal(state.getSnapshot().undoDepth, 0); assert.equal(view.getSnapshot().selection.head, 0); view.dispose();
 });
 
 test("seeded Unicode edits and random undo/redo match a string history oracle without revision reuse", () => {
     const { workspace, source, document, undo, redo } = fixture(corpus("unicode"));
-    const past: string[] = [], future: string[] = []; let text = document().text, revision = document().revision;
+    const past: string[] = [], future: string[] = []; let text = document().text(), revision = document().revision;
     const log = editLog(text.length, 80);
     for (const [index, edit] of log.entries()) {
         const next = applyTextEdits(text, [edit]); if (next !== text) { past.push(text); text = next; future.length = 0; }
         workspace.edit({ documentId: source.documentId, expectedRevision: revision, origin: "human", edits: [edit] });
-        if (next !== document().text) assert.fail("Edit oracle mismatch"); revision = document().revision;
+        if (next !== document().text()) assert.fail("Edit oracle mismatch"); revision = document().revision;
         if (index % 7 === 0 && past.length) {
             future.push(text); text = past.pop()!; undo(); assert.ok(document().revision > revision); revision = document().revision;
-            assert.equal(document().text, text); past.push(text); text = future.pop()!; redo(); revision = document().revision;
+            assert.equal(document().text(), text); past.push(text); text = future.pop()!; redo(); revision = document().revision;
         }
-        assert.equal(document().text, text);
+        assert.equal(document().text(), text);
     }
-    while (past.length) { future.push(text); text = past.pop()!; assert.equal(undo().applied, true); assert.equal(document().text, text); }
-    while (future.length) { past.push(text); text = future.pop()!; assert.equal(redo().applied, true); assert.equal(document().text, text); }
-    assert.equal(document().text, text);
+    while (past.length) { future.push(text); text = past.pop()!; assert.equal(undo().applied, true); assert.equal(document().text(), text); }
+    while (future.length) { past.push(text); text = future.pop()!; assert.equal(redo().applied, true); assert.equal(document().text(), text); }
+    assert.equal(document().text(), text);
     assert.equal(workspace.undo({ documentId: "missing" as DocumentId, expectedRevision: 0 }).applied, false);
 });

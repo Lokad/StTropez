@@ -192,7 +192,7 @@ export class DemoRecovery {
             }
             const token = crypto.randomUUID();
             const draft: Draft = { version: 1, sample: this.sample, baseVersion,
-                files: { ...unloaded, ...Object.fromEntries(capture.map(item => [item.file.name, item.document.text])) } };
+                files: { ...unloaded, ...Object.fromEntries(capture.map(item => [item.file.name, item.document.text()])) } };
             await this.store.write({ token, value: draft }, expected);
             if (!this.disposed) { this.token = token; this.checkpointed = capture; this.publish("protected", "Recovery draft captured in this browser."); }
         });

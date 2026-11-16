@@ -32,7 +32,7 @@ function mountMultipleInput() {
     return { model, source, tab, host, editor };
 }
 let multipleInput: ReturnType<typeof mountMultipleInput> | undefined;
-Object.assign(window, { consumer: { text: () => workspace.document(documentId).text,
+Object.assign(window, { consumer: { text: () => workspace.document(documentId).text(),
     protocolExports: () => ({ connection: typeof JsonRpcConnection, websocket: typeof openWebSocketTransport }),
     clipboardBoundary: () => {
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "clipboard-boundary", variant: "working" }, "Source", { value: "before\r\nend" });
@@ -264,7 +264,7 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
             model.edit({ documentId: source.documentId, expectedRevision: submission.revision, origin: "human", edits: [{ from: 6, to: 6, insert: " later" }] });
             return { kind: "saved", serverVersion: "v2" };
         } }, review);
-        const textAfter = model.document(source.documentId).text, dirtyAfter = source.metadata.getSnapshot().dirty;
+        const textAfter = model.document(source.documentId).text(), dirtyAfter = source.metadata.getSnapshot().dirty;
         model.undo({ documentId: source.documentId, expectedRevision: source.getSnapshot().revision });
         return { baselineBefore, precondition, saved: saved.kind, textAfter, dirtyAfter, cleanAfterUndo: !source.metadata.getSnapshot().dirty,
             serverVersion: source.metadata.getSnapshot().serverVersion, leases: model.ownership(source.id).leases };

@@ -22,9 +22,9 @@ test("reviewed retry preserves the old baseline until a receipt, then keeps late
     edit("merged   later"); resolve({ kind: "saved", serverVersion: "v2", canonical: "merged" });
     const result = await saving; assert.equal(result.kind, "saved");
     if (result.kind === "saved") { assert.equal(result.receipt.canonicalApplied, false); assert.equal(result.receipt.submission.revision, revision); }
-    assert.equal(workspace.document(source.documentId).text, "merged   later"); assert.equal(source.metadata.getSnapshot().dirty, true);
+    assert.equal(workspace.document(source.documentId).text(), "merged   later"); assert.equal(source.metadata.getSnapshot().dirty, true);
     workspace.undo({ documentId: source.documentId, expectedRevision: source.getSnapshot().revision });
-    assert.equal(workspace.document(source.documentId).text, "merged  "); assert.equal(source.metadata.getSnapshot().dirty, true);
+    assert.equal(workspace.document(source.documentId).text(), "merged  "); assert.equal(source.metadata.getSnapshot().dirty, true);
     edit("merged"); assert.equal(source.metadata.getSnapshot().dirty, false); assert.equal(source.metadata.getSnapshot().serverVersion, "v2");
     assert.equal(workspace.ownership(source.id).leases, 0);
 });
@@ -34,7 +34,7 @@ test("another remote change rejects a reviewed retry without adopting either rem
     const reviewed = { target: workspace.captureResource(source.id), expectedRevision: source.getSnapshot().revision, expectedServerVersion: "v1" };
     const result = await commands.save(source, { save: async submission => { assert.equal(submission.expectedServerVersion, "v1"); return { kind: "conflict", serverVersion: "v2" }; } }, reviewed);
     assert.deepEqual(result, { kind: "conflict", serverVersion: "v2" }); assert.equal(source.metadata.getSnapshot().serverVersion, "v0");
-    assert.equal(workspace.document(source.documentId).text, "local");
+    assert.equal(workspace.document(source.documentId).text(), "local");
     edit("base"); assert.equal(source.metadata.getSnapshot().dirty, false); assert.equal(workspace.ownership(source.id).leases, 0);
 });
 
@@ -73,7 +73,7 @@ test("reviewed writes retain proposal identity and independently retryable ackno
     assert.equal(result.kind, "saved"); assert.equal(workspace.agentState(source.id).getSnapshot().acknowledgements.length, 1);
     const acknowledgement = workspace.agentState(source.id).getSnapshot().acknowledgements[0]!;
     await commands.acknowledge(source.id, acknowledgement.id, { acknowledge: async () => {} });
-    assert.equal(workspace.ownership(source.id).leases, 0); assert.equal(workspace.document(source.documentId).text, "corrected");
+    assert.equal(workspace.ownership(source.id).leases, 0); assert.equal(workspace.document(source.documentId).text(), "corrected");
 });
 
 test("typed resources use the reviewed precondition without acquiring a text document", async () => {
@@ -86,7 +86,7 @@ test("typed resources use the reviewed precondition without acquiring a text doc
         return { kind: "saved", serverVersion: "v2" };
     } }, { target: workspace.captureResource(form.id), expectedRevision: 1, expectedServerVersion: "v1" });
     assert.equal(result.kind, "saved"); const final = form.getSnapshot(); assert.equal(final.state, "ready");
-    if (final.state === "ready") assert.deepEqual(final.value, { path: "later.csv" });
+    if (final.state === "ready") assert.deepEqual(final.value(), { path: "later.csv" });
     assert.equal(final.metadata.dirty, true); assert.equal(workspace.diagnostics().documents, 0); assert.equal(workspace.ownership(form.id).leases, 0);
 });
 

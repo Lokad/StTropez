@@ -45,8 +45,8 @@ test("explicit captured copy preserves independent transfer edits and unknown va
     const h = setup('// @transfer {"destination":"captured.csv","batchSize":"2000"}');
     try {
         const t = h.transfer.resource; h.workspace.updateResource(t, { expectedRevision: 0, origin: "human", value: { destination: "original.csv", batchSize: "1000", opaque: { zero: -0 } } });
-        h.instruction.captureCopy(); assert.equal(h.hasPendingRecoveryWork(), true); h.transfer.update("destination", "later.csv"); h.instruction.finishCopy(); let s = t.getSnapshot(); assert.equal(s.state === "ready" && s.value.destination, "later.csv");
-        h.instruction.captureCopy(); h.instruction.edit(h.instruction.capture("destination")!, "source-later.csv"); h.instruction.finishCopy(); s = t.getSnapshot(); assert.deepEqual(s.state === "ready" && s.value, { destination: "captured.csv", batchSize: "2000", opaque: { zero: -0 } });
+        h.instruction.captureCopy(); assert.equal(h.hasPendingRecoveryWork(), true); h.transfer.update("destination", "later.csv"); h.instruction.finishCopy(); let s = t.getSnapshot(); assert.equal(s.state === "ready" && s.value().destination, "later.csv");
+        h.instruction.captureCopy(); h.instruction.edit(h.instruction.capture("destination")!, "source-later.csv"); h.instruction.finishCopy(); s = t.getSnapshot(); assert.deepEqual(s.state === "ready" && s.value(), { destination: "captured.csv", batchSize: "2000", opaque: { zero: -0 } });
         assert.equal(h.debug().activity.writes, 0); assert.equal(h.debug().activity.pendingRuns, 0); assert.equal(h.debug().pendingSaves.length, 0);
         h.instruction.captureCopy(); const caps = t.metadata.getSnapshot().capabilities; h.workspace.setCapabilities(t.id, { ...caps, edit: [] }); h.workspace.setCapabilities(t.id, caps); h.instruction.finishCopy(); assert.match(h.instruction.state.getSnapshot().message, /expired/);
         h.instruction.captureCopy(); await h.dispose(); assert.equal(h.workspace.diagnostics().leases, 0); assert.equal(h.workspace.diagnostics().subscriptions, 0);

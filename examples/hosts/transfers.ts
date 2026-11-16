@@ -20,6 +20,6 @@ export class HostTransfer {
     }
     readonly update = (field: "destination" | "batchSize", value: string): void => {
         if (this.save.debug().disposed) return; const s = this.resource.getSnapshot(); if (s.state !== "ready") return;
-        this.workspace.updateResource(this.resource, { expectedRevision: s.revision, origin: "human", value: { ...s.value, [field]: value } });
+        this.workspace.updateResource(this.resource, { expectedRevision: s.revision, origin: "human", value: { ...s.value(), [field]: value } });
     };
 }

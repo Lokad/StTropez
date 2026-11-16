@@ -32,9 +32,9 @@ export function readCompatibility(handle: ResourceHandle<Form>, submission: Save
     const snapshot = handle.getSnapshot();
     if (snapshot.state === "ready") {
         // @ts-expect-error Published nested values are deeply readonly even for a mutable host schema.
-        snapshot.value.nested.enabled = false;
+        snapshot.value().nested.enabled = false;
         // @ts-expect-error Published arrays are immutable.
-        snapshot.value.fields.push("field");
+        snapshot.value().fields.push("field");
     }
     // @ts-expect-error A captured submission must not become a second writable form.
     submission.value.nested.enabled = false;

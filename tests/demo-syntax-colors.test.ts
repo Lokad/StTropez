@@ -85,7 +85,7 @@ test("fresh compiler classifications replace provisional colors after a multilin
     workspace.edit({ documentId: id, expectedRevision: initial.revision, edits: [{ from: 0, to: 0, insert: "/* open\n" }], origin: "host" });
     const current = workspace.document(id); colors.update(current);
     assert.ok(colors.decorate(presented(current)).some(range => range.className === "demo-token-keyword"));
-    colors.accept(current, analyzeTypeScript(current.text).spans);
+    colors.accept(current, analyzeTypeScript(current.text()).spans);
     const fresh = colors.decorate(presented(current));
     assert.ok(fresh.length > 0); assert.ok(fresh.every(range => range.className === "demo-token-comment"));
     colors.clear(); assert.deepEqual(colors.decorate(presented(current)), []);

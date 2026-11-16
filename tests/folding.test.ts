@@ -78,7 +78,7 @@ for (const origin of ["edit", "proposal", "canonical"] as const) test(`${origin}
     const inspect = () => {
         notifications++;
         const document = model.document(source.documentId), undone = expectedRevision === 2;
-        assert.equal(document.revision, expectedRevision); assert.equal(document.text, undone ? original : updated);
+        assert.equal(document.revision, expectedRevision); assert.equal(document.text(), undone ? original : updated);
         assert.deepEqual(model.observeHistory(source.documentId).getSnapshot(), { undoDepth: undone ? 0 : 1, redoDepth: undone ? 1 : 0 });
         for (const target of [view, peer]) {
             assert.equal(target.getSnapshot().revision, expectedRevision); assert.equal(target.folding.getSnapshot().revision, expectedRevision);

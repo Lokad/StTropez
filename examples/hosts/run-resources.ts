@@ -30,7 +30,7 @@ export class RunResources {
     constructor(workspace: Workspace, source: TextResourceHandle, configuration: ResourceHandle<Connection>, transfer: ResourceHandle<TransferSettings>) {
         this.workspace = workspace; this.source = source; this.configuration = configuration; this.transfer = transfer;
     }
-    validation(): string | null { const s = this.transfer.getSnapshot(); return s.state !== "ready" || !s.metadata.capabilities.run ? "Transfer settings are unavailable for Run." : transferValidation(s.value); }
+    validation(): string | null { const s = this.transfer.getSnapshot(); return s.state !== "ready" || !s.metadata.capabilities.run ? "Transfer settings are unavailable for Run." : transferValidation(s.value()); }
     start(submission: RunSubmission<string, Connection, Readonly<{ mode: string }>>): ResourceId {
         if (this.disposed) throw new Error("Run resources are disposed.");
         const error = this.validation(), transfer = this.transfer.getSnapshot(); if (error || transfer.state !== "ready") throw new Error(error ?? "Transfer settings unavailable.");
@@ -39,7 +39,7 @@ export class RunResources {
             const input = this.workspace.createResource<RunInput>({ scope: "host-fixture", resource: `run-${number}`, variant: "snapshot" }, `Run ${number}`, { value: { kind: "run", number,
                 source: { id: submission.source.target.id, revision: submission.source.revision, serverVersion: submission.source.serverVersion, value: submission.source.value },
                 configuration: { id: submission.configuration.target.id, revision: submission.configuration.revision, serverVersion: submission.configuration.serverVersion, value: submission.configuration.value },
-                transfer: { id: this.transfer.id, revision: transfer.revision, serverVersion: transfer.metadata.serverVersion, value: transfer.value }, mode: submission.settings.mode } }, inspectionPermissions);
+                transfer: { id: this.transfer.id, revision: transfer.revision, serverVersion: transfer.metadata.serverVersion, value: transfer.value() }, mode: submission.settings.mode } }, inspectionPermissions);
             this.resources.set(input.id, input); this.pending.set(input.id, lease);
             this.cell.set({ ...this.cell.get(), runs: [...this.cell.get().runs, { id: input.id, number, status: "running", progress: 0, logs: [] }] });
             this.log(input.id, "Run started with captured source, configuration and transfer settings.", 0); return input.id;
@@ -63,18 +63,21 @@ export class RunResources {
         const tab = this.tabs.get(id); if (!tab || !this.workspace.getSnapshot().tabs.some(t => t.id === tab)) this.tabs.set(id, this.workspace.open({ kind: "panel", resourceId: id, panelType: "resource-inspection" }, "right"));
         this.cell.set({ ...this.cell.get(), selected: id, inspection: this.readInspection(id) });
     };
-    capture(id: ResourceId): RunInput | null { const s = this.resources.get(id)?.getSnapshot(); return s?.state === "ready" && s.value.kind === "run" ? s.value : null; }
+    capture(id: ResourceId): RunInput | null {
+        const state = this.resources.get(id)?.getSnapshot(), value = state?.state === "ready" ? state.value() : null;
+        return value?.kind === "run" ? value : null;
+    }
     inspect(): Inspection | null { return this.cell.get().inspection; }
     private readInspection(id: ResourceId): Inspection | null {
         const s = this.resources.get(id)?.getSnapshot();
-        if (s?.state === "ready") { const value = s.value;
+        if (s?.state === "ready") { const value = s.value();
             return value.kind === "log" ? { id, title: s.metadata.title, text: value.message, preview: null, links: [{ label: "Inspect captured Run", id: value.runId }] }
                 : { id, title: s.metadata.title, text: `Captured source ${value.source.id} revision ${value.source.revision}, ${value.source.value.length} UTF-16 units (preview limited to 512); configuration ${value.configuration.id} revision ${value.configuration.revision} (${value.configuration.value.path}); transfer ${value.transfer.id} revision ${value.transfer.revision} (${value.transfer.value.destination}, batch ${value.transfer.value.batchSize}); mode ${value.mode}.`,
                     preview: value.source.value.slice(0, 512), links: [{ label: "Inspect current source", id: value.source.id }, { label: "Inspect current configuration", id: value.configuration.id }, { label: "Inspect current transfer settings", id: value.transfer.id }] };
         }
         if (id === this.source.id) { const d = this.workspace.document(this.source.documentId); return { id, title: "Current source", text: `Working source revision ${d.revision} at inspection. Refresh to inspect later edits; captured Run inputs remain separate.`, preview: d.buffer.slice(0, Math.min(512, d.buffer.length)), links: [] }; }
         const handle = id === this.configuration.id ? this.configuration : this.transfer, current = handle.getSnapshot();
-        return { id, title: current.metadata.title, text: `Current resource ${id} revision ${current.revision} at inspection. Refresh to inspect later edits; captured Run inputs remain separate.`, preview: current.state === "ready" ? JSON.stringify(current.value).slice(0, 512) : null, links: [] };
+        return { id, title: current.metadata.title, text: `Current resource ${id} revision ${current.revision} at inspection. Refresh to inspect later edits; captured Run inputs remain separate.`, preview: current.state === "ready" ? JSON.stringify(current.value()).slice(0, 512) : null, links: [] };
     }
     debug() { return { runs: this.cell.get().runs, selected: this.cell.get().selected, pending: this.pending.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
     dispose(): void { if (this.disposed) return; this.disposed = true; for (const id of [...this.pending.keys()]) this.finish(id, "interrupted"); for (const tab of this.tabs.values()) this.workspace.close(tab); this.tabs.clear(); }

@@ -11,7 +11,7 @@ export function transferFormModel(transfer: Pick<HostTransfer, "update" | "save"
     return { title: "Transfer workspace", available: state.state === "ready", status: state.state,
         save: formSavePanelModel(transfer.save, saved, "Transfer save status"),
         fields: ([['destination', 'Transfer destination', 'text'], ['batchSize', 'Transfer batch size', 'numeric']] as const).map(([key, label, inputMode]) => ({
-            key, label, inputMode, value: state.state === "ready" ? state.value[key] : "", readOnly, invalid: saved.validation !== null,
+            key, label, inputMode, value: state.state === "ready" ? state.value()[key] : "", readOnly, invalid: saved.validation !== null,
             change: (value: string) => transfer.update(key, value),
         })),
     } as const;

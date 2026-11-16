@@ -18,9 +18,9 @@ export function formSavePanelModel<T extends SnapshotValue>(save: SaveControls<T
 }
 
 export function configurationFormModel(controller: Pick<HostController, "setPath">, state: ResourceSnapshot<Connection>) {
-    const validation = state.state === "ready" ? configurationValidation(state.value) : null;
+    const validation = state.state === "ready" ? configurationValidation(state.value()) : null;
     return { available: state.state === "ready", status: state.state, validation: validation ?? "", field: {
-        label: "Configuration path", value: state.state === "ready" ? state.value.path : "",
+        label: "Configuration path", value: state.state === "ready" ? state.value().path : "",
         readOnly: state.state !== "ready" || !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null,
         invalid: validation !== null, change: controller.setPath,
     } } as const;
