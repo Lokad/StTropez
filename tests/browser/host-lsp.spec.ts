@@ -1,5 +1,6 @@
 import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { publishFixtureDiagnostics, sourceDiagnosticUri } from "./fixture-diagnostics.ts";
 // Explicit background process ownership also avoids the known Firefox context-deletion issue.
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
@@ -43,7 +44,7 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         const selected = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection; expect(selected.anchor).not.toBe(selected.head);
         await page.evaluate(() => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: 9, head: 9 }); }); await offer(page);
         await page.evaluate(() => { const choices = window.hostFixture.providerState()!.choices!; if (!Object.isFrozen(choices)) throw new Error("Completion choices must be immutable."); Reflect.set(window, "retainedCompletionChoices", choices); });
-        await page.evaluate(() => window.hostFixture.providerCustom("fixture/diagnostics", { mode: "clear" }));
+        await publishFixtureDiagnostics(page, await sourceDiagnosticUri(page), "clear");
         await field(page).press("ArrowDown");
         expect(await page.evaluate(() => window.hostFixture.providerState()!.choices === Reflect.get(window, "retainedCompletionChoices"))).toBe(true);
         await field(page).press("Enter"); await ready(page);
@@ -166,17 +167,17 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         await seed(page, "const saMORE = 1; // TODO\r\n"); await offer(page); await button(page, "Cancel request").click();
         const diagnostics = page.getByLabel("Source diagnostics", { exact: true }); await expect(diagnostics.getByRole("button")).toHaveCount(1);
         await diagnostics.getByRole("button").evaluate(node => { node.dataset.retained = "diagnostic"; });
-        const before = await provider(page); await page.evaluate(() => window.hostFixture.providerCustom("fixture/diagnostics", { mode: "malformed" }));
+        const before = await provider(page), uri = await sourceDiagnosticUri(page); await publishFixtureDiagnostics(page, uri, "malformed");
         await expect.poll(async () => (await provider(page)).invalid).toBe(before.invalid + 1); await expect(diagnostics.getByRole("button")).toHaveCount(1);
-        await page.evaluate(() => window.hostFixture.providerCustom("fixture/diagnostics", { mode: "stale" })); await expect.poll(async () => (await provider(page)).stale).toBe(before.stale + 1);
-        await page.evaluate(() => window.hostFixture.providerCustom("fixture/diagnostics", { mode: "unversioned" })); await expect(diagnostics.getByRole("button")).toHaveCount(1);
+        await publishFixtureDiagnostics(page, uri, "stale"); await expect.poll(async () => (await provider(page)).stale).toBe(before.stale + 1);
+        await publishFixtureDiagnostics(page, uri, "unversioned"); await expect(diagnostics.getByRole("button")).toHaveCount(1);
         await expect(page.getByLabel("Unversioned diagnostics", { exact: true })).toContainText("Resolve this placeholder.");
         await expect(diagnostics.getByRole("button")).toHaveAttribute("data-retained", "diagnostic");
         await diagnostics.getByRole("button").click(); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: 21, head: 25 });
-        await page.evaluate(() => window.hostFixture.providerCustom("fixture/diagnostics", { mode: "out-of-bounds" })); await expect(diagnostics.getByRole("button")).toHaveCount(1);
+        await publishFixtureDiagnostics(page, uri, "out-of-bounds"); await expect(diagnostics.getByRole("button")).toHaveCount(1);
         await expect(page.getByLabel("Unversioned diagnostics", { exact: true })).toContainText("Unplaceable diagnostic (range outside the current snapshot)");
-        await page.evaluate(() => window.hostFixture.providerCustom("fixture/diagnostics", { mode: "html" })); await expect(diagnostics).toContainText("<img src=x onerror=unsafe()>"); expect(await page.locator('img[src="x"]').count()).toBe(0);
-        await page.evaluate(() => window.hostFixture.providerCustom("fixture/diagnostics", { mode: "clear" })); await expect(diagnostics.getByRole("button")).toHaveCount(0);
+        await publishFixtureDiagnostics(page, uri, "html"); await expect(diagnostics).toContainText("<img src=x onerror=unsafe()>"); expect(await page.locator('img[src="x"]').count()).toBe(0);
+        await publishFixtureDiagnostics(page, uri, "clear"); await expect(diagnostics.getByRole("button")).toHaveCount(0);
         await field(page).focus(); await page.evaluate(() => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: 8, head: 8 }); });
         await page.evaluate(() => window.hostFixture.faultProviderNext("malformed")); await field(page).press("Control+Space"); await expect(page.getByLabel("Language status", { exact: true })).toContainText("Malformed"); await expect(page.getByRole("option")).toHaveCount(0);
         await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "plain" })); await offer(page); await field(page).press("Alt+Enter"); expect(await source(page)).toBe("const sample = 1; // TODO\r\n");

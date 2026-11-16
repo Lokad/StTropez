@@ -1,5 +1,6 @@
 import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page, WebSocketRoute } from "@playwright/test";
+import { publishFixtureDiagnostics, sourceDiagnosticUri } from "./fixture-diagnostics.ts";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const source = (page: Page) => page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length));
@@ -81,7 +82,7 @@ test("pending LSP diagnostics remain painted and navigable while server analysis
     await field(page).press("Control+z"); await expect(diagnostic).toHaveText("21: Resolve this placeholder."); expect(await source(page)).toBe(original);
     await expect(status).toHaveText("Diagnostics pending analysis.");
     // A barrier ensures the held batch belongs to the undo revision before releasing it.
-    await page.evaluate(() => window.hostFixture.providerCustom("fixture/diagnostics", { mode: "normal" }));
+    await publishFixtureDiagnostics(page, await sourceDiagnosticUri(page), "normal");
     expect(held).toBeDefined(); hold = false; client!.send(held!);
     await expect(status).toHaveText(""); await expect.poll(async () => (await provider(page)).diagnosticsPending).toBe(false);
     await expect(diagnostic).toHaveText("21: Resolve this placeholder.");

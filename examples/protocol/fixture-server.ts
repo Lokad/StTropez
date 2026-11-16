@@ -372,8 +372,9 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
                 return { ...params, ...(config.fault === "retarget" ? { label: "Retargeted" } : {}), detail: `Resolved ${params.label}`, documentation: "<b>Literal completion detail</b>", additionalTextEdits };
             });
         });
-        peer.onRequest("fixture/diagnostics", (params: { mode: "normal" | "malformed" | "out-of-bounds" | "stale" | "unversioned" | "clear" | "html" }) => {
-            const doc = documents.values().next().value; if (!doc) throw new ResponseError(-32602, "No fixture document");
+        peer.onRequest("fixture/diagnostics", (params: { uri: string; mode: "normal" | "malformed" | "out-of-bounds" | "stale" | "unversioned" | "clear" | "html" }) => {
+            if (!params || typeof params.uri !== "string" || !["normal", "malformed", "out-of-bounds", "stale", "unversioned", "clear", "html"].includes(params.mode)) throw new ResponseError(-32602, "Diagnostics require a document URI and valid mode");
+            const doc = documents.get(params.uri); if (!doc) throw new ResponseError(-32602, "Diagnostic document is not open");
             const diagnostics = params.mode === "clear" ? [] : diagnosticItems(doc);
             if (params.mode === "malformed") diagnostics.push({ range: { start: { line: 0, character: 1 }, end: { line: 0, character: 0 } }, message: "Invalid final diagnostic", severity: 2 });
             if (params.mode === "out-of-bounds") diagnostics.push({ range: { start: { line: doc.lineCount + 10, character: 0 }, end: { line: doc.lineCount + 10, character: 1 } }, message: "Unplaceable diagnostic", severity: 2 });

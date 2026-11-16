@@ -5,8 +5,52 @@ import { attachProtocolFixture } from "../examples/protocol/fixture-server.ts";
 import { reviewHeader, reviewFooter } from "../examples/probes/project-commands.ts";
 import { Workspace } from "../src/index.ts";
 import { openWebSocketTransport } from "../src/browser/index.ts";
-import { LspWorkspace, createLspActionClient, createLspHighlightClient, decodeLspCompletions, decodeLspResolvedCompletion, lspCompletionPlan } from "../src/protocol/index.ts";
+import { LspWorkspace, RpcError, createLspActionClient, createLspHighlightClient, decodeLspCompletions, decodeLspResolvedCompletion, lspCompletionPlan } from "../src/protocol/index.ts";
 import type { LspDocumentCapture, LspCommandScope, LspWorkspaceEdit } from "../src/protocol/index.ts";
+
+test("fixture diagnostics address the requested URI and reject missing, unknown or closed targets", { timeout: 15000 }, async () => {
+    const server = createServer(), detach = attachProtocolFixture(server);
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address(); assert.ok(address && typeof address === "object");
+    const workspace = new Workspace(), first = workspace.createTextResource({ scope: "diagnostics", resource: "first", variant: "working" }, "First", { value: "TODO first" });
+    const second = workspace.createTextResource({ scope: "diagnostics", resource: "second", variant: "working" }, "Second", { value: "header\nTODO second" });
+    const firstUri = "host+fixture:first", uri = "host+fixture:second%20document";
+    const owner = new LspWorkspace(workspace, { connect: () => openWebSocketTransport(`ws://127.0.0.1:${address.port}/lsp-fixture`), diagnostics: true,
+        schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
+        documentInfo: doc => ({ uri: doc.id === first.documentId ? firstUri : uri, languageId: "fixture" }) });
+    const scope = owner.createScope(), pushes: { uri: string; version?: number; diagnostics: { range: unknown; message: string }[] }[] = [];
+    scope.onNotification("textDocument/publishDiagnostics", value => { pushes.push(value as typeof pushes[number]); });
+    try {
+        scope.setDocuments([workspace.document(first.documentId), workspace.document(second.documentId)]); await scope.connect(); await scope.flush();
+        assert.ok(workspace.edit({ documentId: second.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "// " }] }).applied);
+        await scope.flush(); const secondVersion = scope.captureProject().get(uri)!.version;
+        await scope.request("fixture/state").result; pushes.length = 0;
+        const firstDiagnostics = scope.observeDiagnostics(scope.attachDocument(first.documentId)), untouched = firstDiagnostics.getSnapshot();
+        for (const mode of ["normal", "clear", "stale", "unversioned", "html", "malformed", "out-of-bounds"] as const) {
+            const before = pushes.length;
+            assert.deepEqual(await scope.request("fixture/diagnostics", { uri, mode }).result, { version: secondVersion });
+            assert.equal(pushes.length, before + 1); const push = pushes.at(-1)!;
+            assert.equal(push.uri, uri); assert.equal(firstDiagnostics.getSnapshot(), untouched);
+            assert.equal(push.version, mode === "unversioned" ? undefined : mode === "stale" ? secondVersion - 1 : secondVersion);
+            if (mode === "clear") assert.deepEqual(push.diagnostics, []);
+            else assert.deepEqual(push.diagnostics[0], { range: { start: { line: 1, character: 0 }, end: { line: 1, character: 4 } }, message: "Resolve this placeholder.", severity: 2 });
+            assert.equal(push.diagnostics.length, ["html", "malformed", "out-of-bounds"].includes(mode) ? 2 : mode === "clear" ? 0 : 1);
+        }
+        const beforeInvalid = pushes.length;
+        for (const params of [{}, { mode: "clear" }, { uri: 7, mode: "clear" }, { uri: "host+fixture:unknown", mode: "clear" }, { uri, mode: "unknown" }]) {
+            await assert.rejects(scope.request("fixture/diagnostics", params).result, error => error instanceof RpcError && error.code === -32602);
+        }
+        assert.equal(pushes.length, beforeInvalid);
+        scope.setDocuments([workspace.document(first.documentId)]); await scope.flush();
+        await assert.rejects(scope.request("fixture/diagnostics", { uri, mode: "clear" }).result, error => error instanceof RpcError && error.code === -32602);
+        assert.equal(pushes.length, beforeInvalid);
+        await scope.request("fixture/diagnostics", { uri: firstUri, mode: "clear" }).result;
+        assert.equal(pushes.at(-1)!.uri, firstUri); assert.deepEqual(pushes.at(-1)!.diagnostics, []);
+    } finally {
+        owner.dispose(); detach(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+        assert.equal(workspace.diagnostics().leases, 0);
+    }
+});
 
 test("generic host profile joins selector registration, space-triggered lazy snippets, occurrences and an explicitly authorized command", { timeout: 15000 }, async () => {
     const server = createServer(), detach = attachProtocolFixture(server);

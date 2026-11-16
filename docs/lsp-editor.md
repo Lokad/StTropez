@@ -188,6 +188,13 @@ disposing one view cannot close another's document or transport. Custom fixture 
 stays in host hooks. The [workspace-provider adapter](lsp-server-edits.md) uses that same connection
 and a shared exclusive command lane for confirmed action/workspace commands and edit decisions. The
 [remaining LSP matrix](lsp.md) describes the selected remaining feature gaps.
+
+Diagnostic injection in this development peer uses `fixture/diagnostics` with `{ uri, mode }`.
+Capture the intended document URI explicitly; an absent, unknown or closed URI and an invalid
+mode are rejected without publishing diagnostics. Each mode affects only that document,
+independently of opening order or focused view. The host fixture's URI policy is shared by
+its provider adapter and browser test helpers; production hosts retain their own URI mapping.
+
 Native IME/clipboard and physical-display checks
 remain unverified; all browser qualification stays headless on the shared desktop.
 

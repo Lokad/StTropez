@@ -19,13 +19,14 @@ import { lspColorBackend, lspLinkBackend, lspSignatureBackend } from "../editing
 import type { SignatureBackendFactory } from "../hosts/signature.ts";
 import type { LinkBackendFactory } from "../hosts/document-links.ts";
 import type { ColorBackendFactory } from "../hosts/document-colors.ts";
+import { fixtureDocumentUri } from "./document-uri.ts";
 
 /** Explicit development-host choice. Generic session/feature code has no fixture endpoint policy. */
 export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspace; provider: ProviderFactory; hover: HoverControllerFactory; navigation: NavigationServiceFactory; rename: LspRenameFactory; actions: LspActionFactory; project: LspProjectFactory; signature: SignatureBackendFactory; links: LinkBackendFactory; colors: ColorBackendFactory }> | undefined {
     if (new URLSearchParams(location.search).get("language") !== "lsp") return undefined;
     const url = new URL("/lsp-fixture", location.href); url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const connect: LspSessionOptions["connect"] = context => { const abort = new AbortController(), stop = context.onCancel(() => abort.abort()); return openWebSocketTransport(url.href, { signal: abort.signal }).finally(stop); };
-    const uri = (workspace: Workspace, id: DocumentId) => `host+fixture:workspace/${encodeURIComponent(workspace.resourceForDocument(id).id)}/${encodeURIComponent(id)}`;
+    const uri = (workspace: Workspace, id: DocumentId) => fixtureDocumentUri(workspace.resourceForDocument(id).id, id);
     const connection = new LspWorkspace(owner, { connect, schedule: (ms, callback) => { const timer = window.setTimeout(callback, ms); return () => window.clearTimeout(timer); },
         initializationOptions: { fixtureDynamicLanguage: new URLSearchParams(location.search).get("lspSubset") === "dynamic" },
         features: ["textDocument/completion", "textDocument/hover", "textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/codeAction", "workspace/executeCommand", "textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor", "textDocument/colorPresentation"], diagnostics: true, workspaceEdits: true, applyEdit: true,
