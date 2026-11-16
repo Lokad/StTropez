@@ -90,7 +90,7 @@ The existing deterministic protocol fixture keeps its separate `/lsp-fixture` ro
 - Hover over a symbol to inspect its real type without changing focus. Code → Inspect type or
   Ctrl+K, Ctrl+I inspects the caret instead. Escape dismisses the popup. Provider documentation
   preserves plaintext/Markdown/code identity and uses the focused public
-  [documentation view](documentation.md). Choose **Documentation & help links** to see
+  [documentation view](language-features.md#hover-and-documentation). Choose **Documentation & help links** to see
   formatted JSDoc, lists, code and a permitted handbook link. HTML is never inserted.
 - Signature help opens while typing advertised trigger characters and follows the active
   argument. Code → Signature help or Ctrl+Shift+Space requests it explicitly. Completion gets

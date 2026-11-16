@@ -1,7 +1,7 @@
 # Captured signature help
 
 This page describes the default local-worker fixture. The `language=lsp` host route
-uses the shared public provider instead; its [signature contract](lsp-language.md)
+uses the shared public provider instead; its [signature contract](language-features.md#signature-help)
 defines advertised triggers and protocol active-parameter defaults.
 
 The plain and React candidate hosts show signature help beside the primary caret. Type `lookup(`,

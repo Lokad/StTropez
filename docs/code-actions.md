@@ -1,7 +1,7 @@
 # Captured module-import actions
 
 The default worker route below is a local fixture. The explicit LSP route offers
-[provider action choices and lazy previews](lsp-code-actions.md), with captured multi-resource
+[provider action choices and lazy previews](language-features.md#code-actions-and-commands), with captured multi-resource
 text edits and the same atomic Workspace history. Commands permitted by host policy require
 explicit confirmation and use the shared workspace review owner.
 

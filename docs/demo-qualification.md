@@ -31,13 +31,13 @@ and save/reload. A held-content source check rejects loading after edits or samp
 an injected standard edit action exercises preview/application of another newly resolved target.
 Partial-inventory recovery tests cover complete draft contents, redundant saved drafts and a
 stale read that cannot authorize replacing newer edits. Native/device qualification remains
-separate. The public [target-loading contract](lsp-navigation.md) defines retention and authority.
+separate. The public [target-loading contract](language-features.md#navigation-and-target-loading) defines retention and authority.
 
 The **Documentation & help links** sample has a shared source/static/restored-assets journey
 for formatted hover/signature content, active-parameter documentation, explicit permitted help
 opening and popup placement. The public renderer preserves plaintext, creates no provider HTML
 and retires links on replacement/disposal. Its contract is the focused
-[documentation subset](documentation.md), not a general Markdown engine.
+[documentation subset](language-features.md#hover-and-documentation), not a general Markdown engine.
 
 The documentation milestone passes strict types and 442 model/provider tests. The affected
 source campaign initially passed 68/69 checks: a pointer helper assumed one DOM text node.

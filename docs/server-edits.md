@@ -1,7 +1,7 @@
 # Captured workspace provider commands
 
 The default route below uses the internal worker fixture. The optional `language=lsp` route
-instead qualifies [actual LSP workspace commands and captured server-edit decisions](lsp-server-edits.md)
+instead qualifies [actual LSP workspace commands and captured server-edit decisions](language-features.md#code-actions-and-commands)
 over WebSocket. Worker protocol v1 does not establish LSP compatibility.
 
 The example owns one project backend through the shared provider lifecycle. Both existing

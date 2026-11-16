@@ -81,7 +81,7 @@ The **Snippets & lazy completion** sample uses a labeled demo-owned template pro
 same public protocol. Ctrl+End, Ctrl+Space then Tab inserts linked fields; Tab/Shift+Tab traverse
 them, Alt+Up/Down or the visible buttons select a choice, and Escape ends the session while
 keeping text. The lazy declaration supplies its body and import during resolution. TypeScript
-continues to color, check and compile the result. See the [supported snippet subset](lsp-editor.md).
+continues to color, check and compile the result. See the [supported snippet subset](language-features.md#completion).
 The **Project-wide results** sample exposes 300 diagnostics and 1,201 references/rename edits
 from real TypeScript analysis. Problems, reference navigation and edit previews retain the whole
 result while rendering 64 entries per page; applying a rename creates one shared undo command.

@@ -1,7 +1,7 @@
 # Captured document colors and presentation edits
 
 This page describes the default local-worker fixture. The `language=lsp` route
-uses [public document-color and presentation clients](lsp-language.md) with these
+uses [public document-color and presentation clients](language-features.md#document-colors) with these
 same host controls, arbitrary provider labels and captured edit confirmation.
 
 Both candidate hosts expose **Discover document colors** (F6 in a source), a paged

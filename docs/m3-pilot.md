@@ -200,9 +200,9 @@ before the initial edit. Later focus changes cannot retarget the captured origin
 The panel also offers **Register provider review command**, **Request provider review edits** and
 **Request provider workspace status** independently. Comparison baselines stay immutable, while
 Save/Run keep their captured primary resource even after another changed resource is revealed.
-See [action commands](lsp-code-actions.md), [server-edit decisions](lsp-server-edits.md) and the
+See [action commands](language-features.md#code-actions-and-commands), [server-edit decisions](language-features.md#code-actions-and-commands) and the
 [supported subset](language-server.md) for limits, cancellation and remaining protocol gaps.
-[Signature help, links/resolve and color presentations](lsp-language.md) also use the shared
+[Signature help, links/resolve and color presentations](language-features.md) also use the shared
 LSP provider and existing host controls. Local tokenization and domain tools remain separate fixtures.
 
 ## Qualification scope

@@ -95,7 +95,7 @@ when the view detaches. It releases its requests and subscriptions without destr
 or provider. Dispose other feature clients at their own boundaries, then `provider.dispose()` at
 the workspace/configuration boundary. Destroy the mounted editor separately. Connect the host's
 retry control to `provider.connect()` or `provider.reconnect()` and handle its rejected promise.
-The [completion and diagnostics contract](lsp-editor.md) defines controller commands and capture
+The [language-feature contract](language-features.md) defines controller commands and capture
 guards; [embedding](getting-started.md) defines mounting and view teardown.
 
 Custom handlers use a feature scope and validate their own schemas. In this example, the host
@@ -224,13 +224,13 @@ dynamic programming. Unsupported selector forms are refused instead of becoming 
 | Area | Contract and detailed owner |
 | --- | --- |
 | Lifecycle and synchronization | Initialize/initialized, UTF-16 negotiation, incremental open/change/close, cancellation, dynamic registration and explicit reconnect |
-| Diagnostics and completion | Versioned or explicitly uncertain diagnostics, complete result validation, filtering, lazy resolution, supported snippets and captured acceptance; [editor integration](lsp-editor.md) |
-| Hover and navigation | Format-preserving hover, definitions and references, captured target loading/reveal; [navigation](lsp-navigation.md) and [documentation rendering](documentation.md) |
-| Rename and workspace text edits | Whole-batch URI/range/version validation, previews and atomic shared history; [rename/edit forms](lsp-rename.md) |
-| Code actions | Literals/commands, disabled/preferred choices, lazy edit resolution and authorized command phases; [actions](lsp-code-actions.md) |
-| Workspace commands and server edits | Advertised commands or exact host grants, one captured command lane, explicit incoming-edit decisions; [server edits](lsp-server-edits.md) |
-| Signature, links and colors | Captured signature context, link discovery/resolution, color discovery/presentations and host application; [language features](lsp-language.md) |
-| Folding and occurrences | Whole-line folding with kind groups; text/read/write occurrence ranges and visible-row queries; [folding](folding.md) and [occurrences](lsp-editor.md) |
+| Diagnostics and completion | Versioned or explicitly uncertain [diagnostics](language-features.md#diagnostics), complete result validation, filtering, lazy resolution, supported snippets and captured [completion](language-features.md#completion) |
+| Hover and navigation | Format-preserving hover, definitions and references, captured target loading/reveal; [navigation](language-features.md#navigation-and-target-loading) and [documentation rendering](language-features.md#hover-and-documentation) |
+| Rename and workspace text edits | Whole-batch URI/range/version validation, previews and atomic shared history; [rename/edit forms](language-features.md#rename-and-workspace-edits) |
+| Code actions | Literals/commands, disabled/preferred choices, lazy edit resolution and authorized command phases; [actions](language-features.md#code-actions-and-commands) |
+| Workspace commands and server edits | Advertised commands or exact host grants, one captured command lane, explicit incoming-edit decisions; [server edits](language-features.md#code-actions-and-commands) |
+| Signature, links and colors | Captured signature context, link discovery/resolution, color discovery/presentations and host application; [language features](language-features.md) |
+| Folding and occurrences | Whole-line folding with kind groups; text/read/write occurrence ranges and visible-row queries; [folding](folding.md) and [occurrences](language-features.md#occurrences) |
 | Extensions | Host-defined URI mapping, removable custom handlers and host-supplied connection/preparation policies |
 
 Feature clients share capture and cancellation ownership. Supersession expires earlier results
@@ -243,30 +243,7 @@ request fails. Completed wire calls can be released without cancelling later cal
 Target lookup first uses captured project resources. An optional `resolveTarget` loads missing
 targets through host policy and returns an exact retained target with a release callback. No
 server URI is fetched or opened automatically. Guards check the captured project and loaded
-targets without caching authority across asynchronous work. See [target loading](lsp-navigation.md).
-
-### Diagnostics
-
-`scope.observeDiagnostics(binding)` returns shared immutable state with `empty`, `current`,
-`pending` and `expired` status. Provider version/revision can be null, independently of the
-`snapshotRevision` used to place ranges. Unversioned diagnostics have uncertain freshness.
-Positions past a valid line's end clamp to its end; nonexistent lines retain the message and
-wire range with null offsets. Fresh batches replace the result, including an empty clearing
-batch. Invalid or known-stale batches preserve the preceding valid result.
-
-Local transaction maps move placed offsets and mark the result pending; wholly deleted ranges
-disappear. Provider version/revision and original wire ranges stay intact. Pending `isCurrent()`
-is false; `isPlacementCurrent()` separately guards local display/navigation offsets. Undo cannot
-resurrect deleted diagnostics. Missing maps, close/URI reuse and reconnect expire associations.
-Unrelated capability registration does not invent an analysis revision or erase valid placement.
-Mapping visits retained diagnostics without a full-source export or provider request.
-
-Immutable metadata includes integer/string `code`, `codeDescription`, `tags`, `relatedInformation`
-and opaque JSON `data`. Unknown integer tags survive forwarding; the advertised presentation tags
-are unnecessary and deprecated. Malformed metadata rejects the entire batch. Related resources
-are not loaded automatically. Code actions receive overlapping placed diagnostics only from a
-matching current provider version; pending and unversioned diagnostics supply no verified action
-context. Help links, related-location navigation and edit authority belong to the host.
+targets without caching authority across asynchronous work. See [target loading](language-features.md#navigation-and-target-loading).
 
 ### Commands and edit decisions
 
@@ -283,14 +260,8 @@ active server command can receive its incoming edits; unsolicited and overlappin
 refused. Host routes use the same lane and validation through their captured `applyEdit` callback.
 Each review rechecks request currentness, all target identities/revisions and host authority.
 
-`applyLspWorkspaceEdit` validates the complete captured batch before one workspace transaction.
-It returns changed snapshots, throws on refusal and creates no revision/history entry for an
-empty or unchanged batch. Its `historyKind` defaults to `"replace"`; each changed
-batch is a separate shared undo command. The synchronous helper owns no leases or approval UI.
-Retain results and host selection/lifecycle guards through the decision. `previewLspWorkspaceEdit`
-produces bounded pages from captured buffers without granting application authority. Exact edit
-forms and limits belong to [workspace edits](lsp-rename.md); sequencing belongs to
-[command decisions](lsp-server-edits.md).
+The feature guide defines [workspace-edit validation, previews and atomic application](language-features.md#rename-and-workspace-edits)
+and [action/command phase decisions](language-features.md#code-actions-and-commands).
 
 Cancellation before a server command is sent releases its reservation. Cancellation, timeout or
 capability invalidation after sending quarantines the command lane until a fresh connection:
