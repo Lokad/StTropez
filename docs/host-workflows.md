@@ -35,8 +35,8 @@ subscription, listeners and documentation on detach, including Strict Mode repla
 commands derive their heading, status and availability from one observed snapshot in both hosts.
 Their pointer focus policy and popup ownership are preserved. No effect synchronizes state.
 
-Language/find, navigation, workspace-provider, rename, code-action, color and link panels derive
-one presentation model from the snapshot observed by their renderer. Both hosts use its labels,
+Language/find, navigation, workspace-provider, rename, code-action, color, link, domain and
+table-paste panels derive one presentation model from the snapshot observed by their renderer. Both hosts use its labels,
 progress, paging and command targets;
 React does not reread the store while deriving commands. Result rows retain their captured
 request token or resource ID. Lazy list formatting lets the plain host retain unchanged rows
@@ -53,6 +53,10 @@ Language/find shares its field bindings, options, read-only policy, status text 
 Completion and diagnostic callbacks require their captured presentation snapshot to remain
 current, so an older result cannot act on a newer view or batch. Retained plain rows receive
 updated callbacks without replacing their DOM nodes; detach clears those handlers explicitly.
+Domain annotation callbacks retain their session token, document revision and annotation ID.
+The plain presenter compares visible annotation members, retaining rows when publication copies
+the array. Table-paste option and cancellation controls share the controller's policy; clipboard
+capture, conversion and insertion remain owned by `HostTablePaste`.
 
 A persisted `pagehide` retains the mounted host and its listener for a later final hide. A
 non-persisted hide starts teardown. Browser regressions exercise this policy with synthetic

@@ -29,6 +29,7 @@ for (const host of ["plain", "react"]) {
     for (const large of [false, true]) test(`${host} ${large ? "100k TSV" : "HTML"} table paste keeps all selections, shared undo, reference, Save/Run and remount`, async ({ page }) => {
         test.setTimeout(120000); const original = "AA\r\n" + (large ? "const unchanged = 123;\r\n".repeat(100000) : "middle\r\n") + "ZZ";
         await setup(page, host, original); await button(page, "Open source review").click(); await button(page, "Capture review acceptance").click(); await button(page, "Finish review acceptance").click(); await waitForPaste(page);
+        await page.getByRole("checkbox", { name: "Paste tables as CSV", exact: true }).evaluate(node => { node.dataset.retained = "table-option"; });
         const requests: string[] = []; await page.route("**/table-paste-probe/**", route => { requests.push(route.request().url()); return route.fulfill({ status: 200, body: "" }); });
         await input(page).focus(); await page.evaluate(length => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 2, head: 0 }, { anchor: length - 2, head: length }], 1);
             Object.assign(globalThis, { tablePasteUnsafe: 0 }); }, original.length);
@@ -37,6 +38,7 @@ for (const host of ["plain", "react"]) {
         const html = '<table><tbody><tr><th rowspan="2">name<script>globalThis.tablePasteUnsafe=1</script><img src="/table-paste-probe/image" onerror="globalThis.tablePasteUnsafe=2"></th><th colspan="2">東京,<br>A "quote"</th></tr><tr><td>1</td><td>😀</td></tr></tbody></table>';
         const dispatched = await paste(input(page), 'name\t"東京,\r\nA ""quote"""\t\r\n\t1\t😀', large ? "" : html);
         expect(dispatched).toMatchObject({ before: before.source.revision, after: before.source.revision, prevented: true }); await waitForPaste(page);
+        await expect(page.getByRole("checkbox", { name: "Paste tables as CSV", exact: true })).toHaveAttribute("data-retained", "table-option");
         const expected = csv + original.slice(2, -2) + csv; await exact(page, expected);
         let s = await snapshot(page); expect(s.bindings.tablePaste.status).toBe("applied"); expect(s.bindings.tablePaste).toMatchObject({ rows: 2, columns: 3, pending: false });
         expect(s.history.undoDepth).toBe(before.history.undoDepth + 1); expect(s.bindings.views.find(v => v.id === "primary")!.selectionSet.ranges.length).toBe(2); expect(s.source.exports).toBe(0);

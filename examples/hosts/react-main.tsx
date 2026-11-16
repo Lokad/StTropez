@@ -9,7 +9,8 @@ import { actions, conflictText, statusText } from "./actions.ts";
 import { installHostHarness } from "./harness.ts";
 import { HostLifecycle } from "./lifecycle.ts";
 import { languagePanelModel } from "./language-panel.ts";
-import { domainActions } from "./domain-panel.ts";
+import { domainPanelModel } from "./domain-panel.ts";
+import { tablePastePanelModel } from "./table-panel.ts";
 import { navigationPanelModel } from "./navigation-panel.ts";
 import { projectPanelModel } from "./project-panel.ts";
 import { documentColorsPanelModel } from "./document-colors-panel.ts";
@@ -157,12 +158,12 @@ function SignatureTools() {
         <div ref={signaturePopupRef} /></>;
 }
 function TablePasteTools() {
-    const tools = bindings.tablePaste, state = useObserved(tools.state);
-    return <section className="host-language" aria-label="Table paste tools"><label><input type="checkbox" checked={state.enabled} disabled={!state.available}
-        onChange={event => tools.setEnabled(event.currentTarget.checked)} />Paste tables as CSV</label>
-        <output aria-label="Table paste status">{state.message}</output>
-        <progress aria-label="Table conversion progress" hidden={state.status !== "converting"} />
-        <button disabled={state.status !== "converting"} onClick={tools.cancel}>Cancel table paste</button></section>;
+    const tools = bindings.tablePaste, model = tablePastePanelModel(tools, useObserved(tools.state));
+    return <section className="host-language" aria-label={model.label}><label><input type="checkbox" checked={model.enabled.checked} disabled={model.enabled.disabled}
+        onChange={event => model.enabled.change(event.currentTarget.checked)} />{model.enabled.label}</label>
+        <output aria-label={model.status.label}>{model.status.text}</output>
+        <progress aria-label={model.progress.label} hidden={model.progress.hidden} />
+        <button disabled={model.cancel.disabled} onClick={model.cancel.invoke}>{model.cancel.label}</button></section>;
 }
 function App() {
     return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview /><ConfigurationSavePanel /><TransferWorkspace /><DraftRecovery /><LanguageTools /><TablePasteTools /><DomainTools /><NavigationTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentLinksTools /><DocumentColorsTools /><SignatureTools /><SymbolInfo /></>;
@@ -222,13 +223,13 @@ function NavigationTools() {
         <ul aria-label={model.results.label}>{model.results.items().map(note => <li key={note.key}><button onClick={note.invoke}>{note.label}</button></li>)}</ul></section>;
 }
 function DomainTools() {
-    const tools = bindings.domain, state = useObserved(tools.state);
-    return <section className="host-language" aria-label="Domain tools"><h2>Domain tools</h2>
-        <output aria-label="Domain command status">{state.message}</output>
-        <progress aria-label="Domain discovery progress" hidden={state.status !== "running"} max={Math.max(1, state.total)} value={state.work} />
-        <div>{domainActions(tools).map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
-        <ul aria-label="Domain annotations">{state.annotations.map(note => <li key={`${state.token}:${state.revision}:${note.id}`}>
-            <button onClick={() => tools.reveal(state.token!, state.revision!, note.id)}>{note.label}</button></li>)}</ul></section>;
+    const tools = bindings.domain, model = domainPanelModel(tools, useObserved(tools.state));
+    return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2>
+        <output aria-label={model.status.label}>{model.status.text}</output>
+        <progress aria-label={model.progress.label} hidden={model.progress.hidden} max={model.progress.max} value={model.progress.value} />
+        <div>{model.actions.map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        <ul aria-label={model.annotations.label}>{model.annotations.items().map(note => <li key={note.key}>
+            <button onClick={note.invoke}>{note.label}</button></li>)}</ul></section>;
 }
 let root: Root | undefined;
 const unmount = () => { const current = root; root = undefined; current?.unmount(); };

@@ -14,8 +14,27 @@ import { documentLinksPanelModel } from "../examples/hosts/document-links-panel.
 import type { DocumentColorsSnapshot } from "../examples/hosts/document-colors.ts";
 import type { DocumentLinksSnapshot } from "../examples/hosts/document-links.ts";
 import { languagePanelModel } from "../examples/hosts/language-panel.ts";
+import { domainPanelModel } from "../examples/hosts/domain-panel.ts";
+import type { DomainSnapshot } from "../examples/hosts/domain.ts";
 
 const noop = () => {};
+
+test("domain annotation callbacks retain session and revision when another view reuses the annotation ID", () => {
+    const revealed: [string, number, string][] = [];
+    const tools: Parameters<typeof domainPanelModel>[0] = { discover: noop, collapse: noop, insertImport: noop, cancel: noop,
+        reveal: (token, revision, id) => { revealed.push([token, revision, id]); } };
+    let formatted = 0;
+    const state: DomainSnapshot = Object.freeze({ available: true, editable: true, view: "primary", token: "first", revision: 4, status: "ready", message: "Captured regions",
+        work: 100, total: 100, pendingView: null, annotationCount: 1, foldCount: 1,
+        annotations: Object.freeze([Object.freeze({ id: "region", from: 0, to: 12, get label() { formatted++; return "Region"; } })]) });
+    const first = domainPanelModel(tools, state), status = domainPanelModel(tools, { ...state, message: "Collapsed", annotations: state.annotations.slice() });
+    assert.equal(formatted, 0, "status updates need not format retained annotation rows");
+    assert.equal(first.annotations.capture, status.annotations.capture); assert.equal(first.annotations.identity[0], status.annotations.identity[0]);
+    const newer = domainPanelModel(tools, { ...state, view: "secondary", token: "second", revision: 5 });
+    assert.notEqual(first.annotations.capture, newer.annotations.capture); assert.notEqual(first.annotations.items()[0]!.key, newer.annotations.items()[0]!.key);
+    newer.annotations.items()[0]!.invoke(); first.annotations.items()[0]!.invoke(); assert.deepEqual(revealed, [["second", 5, "region"], ["first", 4, "region"]]);
+    domainPanelModel(tools, { ...state, token: null, revision: null }).annotations.items()[0]!.invoke(); assert.equal(revealed.length, 2);
+});
 
 test("language result callbacks cannot follow a newer view or diagnostic batch while rendering stays snapshot-only", () => {
     type Snapshot = Parameters<typeof languagePanelModel>[1];

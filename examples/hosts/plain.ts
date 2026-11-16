@@ -46,8 +46,8 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         conflictStatus.textContent = conflictText(controller); finishRemote.disabled = state?.review !== "loading";
         retry.disabled = !controller.canSaveReviewedSource(); };
     const language = document.createElement("section"); language.className = "host-language";
-    const tablePaste = document.createElement("section"); tablePaste.className = "host-language"; tablePaste.setAttribute("aria-label", "Table paste tools");
-    const domain = document.createElement("section"); domain.className = "host-language"; domain.setAttribute("aria-label", "Domain tools");
+    const tablePaste = document.createElement("section"); tablePaste.className = "host-language";
+    const domain = document.createElement("section"); domain.className = "host-language";
     const navigation = document.createElement("section"); navigation.className = "host-language";
     const project = document.createElement("section"); project.className = "host-language";
     const rename = document.createElement("section"); rename.className = "host-language";

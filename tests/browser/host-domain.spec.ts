@@ -95,7 +95,9 @@ for (const host of ["plain", "react"]) {
         expect(s.bindings.domain.sessions.find(v => v.id === "primary")).toMatchObject({ annotations: 2, folds: 2 });
         expect(s.bindings.views.find(v => v.id === "secondary")!.metrics!.viewport.collapsedFolds).toBe(0); expect(s.bindings.comparison!.workingViewport.collapsedFolds).toBe(0);
         const notes = page.getByRole("list", { name: "Domain annotations", exact: true }); await expect(notes.getByRole("button")).toHaveText(["<b>東京 😀</b>", "Child"]); await expect(notes.locator("b")).toHaveCount(0);
+        await notes.getByRole("button", { name: "Child", exact: true }).evaluate(node => { node.dataset.retained = "domain-note"; });
         await button(page, "Collapse domain regions").click(); await waitForDomain(page); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.collapsedFolds).toBe(3);
+        await expect(notes.getByRole("button", { name: "Child", exact: true })).toHaveAttribute("data-retained", "domain-note");
         await button(page, "Discover domain regions").click(); await waitForDomain(page); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.collapsedFolds).toBe(3);
         await notes.getByRole("button", { name: "Child", exact: true }).click(); await waitForDomain(page);
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: text.indexOf("// #region child"), head: text.indexOf("// #region child") + "// #region child Child".length });
