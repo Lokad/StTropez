@@ -1,171 +1,87 @@
 # StTropez
 
-A standalone TypeScript foundation for a browser workspace combining source editing,
-structured configuration, review and data operations. Production code has **zero
-third-party dependencies**. React, editor libraries and compiler runtimes are not
-required by the package.
+StTropez is a standalone TypeScript editor and workspace foundation.
+It provides source editing, shared undo/redo, search, folding, comparison and language-server integration.
+Runtime code has **zero third-party dependencies**.
+The host owns storage, services, framework state and surrounding controls.
+The preferred distribution is an assets-only NuGet package; browser execution is independent of .NET.
 
-Try the [browser-only TypeScript demo](https://lokad.github.io/StTropez/). Editing, language
-tools, comparison and browser-local saving run without a backend. The [static demo build](docs/demo-static.md)
-uses the normal compiled library assets and keeps compiler/provider code in the example.
+Start with the [documentation index](docs/README.md), [embedding guide](docs/getting-started.md)
+or [packaging contract](docs/packaging.md). The [support matrix](docs/README.md#support-matrix)
+defines the implemented subset and unverified native-input, clipboard and device boundaries.
 
-The M3 editor/review pilot supports actual typing, selection/navigation, shared undo/redo,
-comparison and hunk reversion, captured saves/conflicts, recovery and explicit host lifecycle.
-The plain and React development hosts combine these with typed configuration, synthetic
-deferred services and captured Run/agent decisions through stable controllers and refs.
-Try the [integrated editor/review pilot](docs/m3-pilot.md#try-the-integrated-hosts) for direct
-host links and a walkthrough of editing, comparison, captured saves, conflicts and remount.
-Documents use an immutable indexed piece tree, bounded shared undo/redo, mapped view selections,
-atomic multi-document edits and explicit newline conversion. The bounded input adapter and
-viewport provide editing and measured local caret geometry; the native textarea remains a
-control. Literal find/replace and the public LSP route support host integration. The separate
-worker protocol is an internal fixture. Native IME, OS clipboard and physical-display checks
-remain unverified; full contextual long-line geometry and production adoption remain scoped
-qualification gaps.
+## Try the demo
 
-The [LSP provider route](docs/m3-pilot.md#try-the-lsp-provider-route) adds actual captured protocol
-workflows and explicit command/server-edit decisions. [Qualification limits](docs/testing.md#native-device-checklist)
-keep native, performance and adoption claims scoped.
-
-## Run
-
-Requires Node.js 24 or newer.
+Open the [browser-only TypeScript demo](https://lokad.github.io/StTropez/), or run it locally
+with Node.js 24 or later:
 
 ```sh
 npm ci
 npm run demo
 ```
 
-Open `http://127.0.0.1:4173` for the TypeScript editor demo. Edit the shopping cart, switch to
-`pricing.ts`, inspect generated JavaScript, find/replace text, compare changes and save locally.
-Save locally stores all files of that sample in this browser; another page's saved copy is
-protected by a version check. Samples retain their edits while you switch between them.
-Reset restores the sample through undoable edits. After a short pause, a recovery draft captures
-the committed contents of all changed files. On reload, explicitly restore or download that draft,
-or keep the current files. Restore is one undoable operation and expires if the files change
-while it is pending. Recovery status shows when the captured draft is stored; the latest keystrokes
-can still be pending, and abrupt browser termination is not a guarantee of recovery.
-Unsaved work prompts before leaving the page. If another page saves the same sample,
-review its saved copy before explicitly saving your version, or download your local changes.
-TypeScript 5.9.3 runs in a development worker for syntax colors and JavaScript emission.
-A local TypeScript language server supplies live type checking and contextual language tools.
-Open Problems to select an error, use Ctrl+Space for completion, or hover over a symbol for its
-type. Signature help follows function arguments; Ctrl+Shift+Space requests it explicitly.
-F12 follows a definition, Shift+F12 lists references, and F2 previews a rename. Rename the
-function at its definition to update both files; imported aliases can have a local rename.
-The Code menu exposes these commands. Enter or a click accepts a resolved completion; Escape
-dismisses popups. Provider failure leaves editing and saves available, with a separate retry action.
-Use Ctrl+. or Code → Quick fix to review a provider fix before applying it. The spelling fix
-for a mistyped known name is supported and undoable. See the [demo language integration](docs/demo-language.md) for its
-supported subset and ownership. [Testing](docs/testing.md) describes restored-package coverage, visible-continuity checks,
-measurement policy and the native-device checklist.
-The server binds to loopback only and does not open a browser window.
+Open `http://127.0.0.1:4173/`. Edit a sample project, inspect diagnostics and generated
+JavaScript, review Changes and save in the browser. Edited programs are not executed.
+The server binds to loopback and does not open a browser window. Compiler/provider dependencies
+belong to the example and are excluded from the editor package.
 
-`npm run dev` is an alias for the same server. The older mixed-surface workspace fixture is
-at `/workspace/`; the technical host/editor routes remain available for qualification.
-Install the test browsers with `npm run browsers:install` before running browser checks.
-It serves the last completed build while source watching compiles updates. Reload after a build
-finishes to use those updates; asset requests do not start compilation or delay worker startup.
-An unsuccessful build returns a development error until the source is corrected.
-Browser qualification uses up to four workers and a 30-minute suite limit; individual test and
-assertion limits are separate. Pass `--workers=1` to Playwright for a serial focused control.
+The [demo guide](docs/demo-language.md) describes the language tools and samples;
+[static hosting](docs/demo-static.md) describes the browser provider and deployment build.
+`npm run dev` starts the same server, including the additional development fixtures.
+Use `STTROPEZ_PORT` for a different source-server port and `STTROPEZ_DEMO_PORT` for static preview.
 
-```sh
-npm run check          # Type checking, documentation examples, model tests, build, Chromium tests
-npm run check:docs     # Compile examples in getting-started, viewport, folding, search and comparison
-npm run test:ci        # Representative Chromium owner journeys used in CI
-npm run test:browsers  # Chromium, Firefox and WebKit
-npm run inspect        # Screenshot and machine-readable state
-npm run bench          # Representative model and bounded-editor timing samples
-npm run bench:pilot    # Explicit integrated input/review/save measurements
-npm run bench:all      # Explicit broader performance inventory
-npm run bench:trace    # Separate layout/paint attribution diagnostic
-npm run bench:storage  # Flat/chunk/piece comparison, separate from browser timing
-npm run bench:viewport # Bounded read-only rendering and programmatic edits
-npm run bench:editing  # Actual keyboard input through the bounded candidate
-npm run bench:services # Piece search, atomic replacement and a real worker result
-npm run bench:bulk     # Isolated multi-range construction and traversal
-npm run test:package   # One pack/restore, then full, LSP and React consumers (.NET SDK 10+)
-```
+## Commands
 
-Generated evidence is in `artifacts/`; failed browser tests also retain traces in
-`test-results/`. Missing browsers, missing readiness, uncaught page errors, `console.error`
-and missing tests cause failures. Browser specs use the shared automatic context guard in
-`tests/browser/fixtures.ts`; it includes secondary tabs. Standalone restored-demo journeys use
-the same error policy. An intentional network failure or connection cancellation may permit one exact console diagnostic
-for its URL; other errors fail. [Qualification ownership](docs/testing.md) separates focused changes,
-broad boundaries and performance runs. Input-handler time, frame readiness and complete
-scripted action latency are different clocks; none establishes physical input/display latency.
-The editing, viewport, comparison and host fixtures expose one `settled` flag, polled by the
-shared `ready` helper. It covers queued editing/navigation, caret work, each view's rendered
-revision/selection/folds, and comparison alignment/scrolling. Service replies, native controls
-and required mounts remain assertions in the owning specs. An active composition session alone
-does not prevent settling; an ongoing drag can keep scrolling pending until the test releases it.
-See [runtime ownership](docs/architecture.md#mutable-state-and-lifetime) for composition, caret and delayed work.
+| Command | Purpose |
+| --- | --- |
+| `npm run demo` | Local TypeScript demo and development fixtures |
+| `npm run build` | Compiled library modules, declarations, CSS and manifest |
+| `npm run build:demo` | Static demo using the compiled library assets |
+| `npm run preview:demo` | Serve the built static demo locally |
+| `npm run check` | Types, documentation examples, models, library build and Chromium tests |
+| `npm run check:docs` | Compile public TypeScript documentation examples |
+| `npm run browsers:install` | Install the configured Playwright browser binaries |
+| `npm run test:browsers` | Source browser tests across Chromium, Firefox and WebKit |
+| `npm run test:demo` | Built static-demo tests |
+| `npm run inspect` | Headless behavioral and visual inspection |
+| `npm run bench` | Model and keyboard-input measurements |
+| `npm run pack:nuget` | Build and pack the local assets-only NuGet archive |
+| `npm run test:package` | Qualify restored assets through isolated consuming hosts |
 
-Pushes to the main branches and pull requests run all model tests, strict type checking,
-the library build, `test:ci` and the Chromium static-demo suite. Pages publishes the same
-qualified static output from main-branch runs. Multi-engine and package qualification stay
-explicit checkpoint commands. Set `STTROPEZ_PORT` for development/browser tests and
-`STTROPEZ_DEMO_PORT` for static preview/demo tests when their default ports (4173/4174)
-are occupied; both the launcher and test configuration use those environment values.
+Package commands also require a .NET SDK capable of building the `net10.0` packaging project.
+See [testing](docs/testing.md) for focused checks, ownership, readiness, measurement policy
+and the native-device checklist. CI runs a selected Chromium gate and built-demo checks;
+full multi-engine and package qualification have separate scopes.
 
 ## Layout
 
 | Path | Responsibility |
 | --- | --- |
-| `src/core` | Documents, resource keys, tab lifetimes, transactions; no DOM |
-| `src/browser` | Explicitly mounted and disposed browser views |
-| `examples/demo` | TypeScript editor demo and development-only compiler worker |
-| `examples/playground` | Technical mixed-surface workspace fixture at `/workspace/` |
-| `experiments` | Development storage comparisons; excluded from the runtime and package |
-| `fixtures` | Shared synthetic workloads for examples, tests and measurements; excluded from the runtime and package |
-| `tests` | Model invariants and real browser interactions |
-| `scripts` | Build, local server, screenshots and benchmark runner |
-| `docs` | Architecture, integration boundaries and performance guidance |
-| `external` | Ignored reference checkouts; not part of build or package |
+| `src/core/` | Headless text, edits, selections, history, resources and computation |
+| `src/protocol/` | Headless JSON-RPC/LSP sessions, synchronization and feature clients |
+| `src/browser/` | Editor DOM, input, geometry, view controllers and browser adapters |
+| `examples/demo/` | TypeScript project demo and example-owned compiler/providers |
+| `examples/hosts/` | Plain/React host controllers, forms, deferred services and recovery |
+| `examples/playground/` | Mixed-surface workspace fixture |
+| `examples/editing/` | Editing, search and language-feature fixture |
+| `examples/comparison/` | Reference/working review fixture |
+| `examples/viewport/` | Read-only rendering and geometry fixture |
+| `examples/probes/` | Input, provider and workspace probes |
+| `examples/protocol/` | Protocol integration fixture |
+| `examples/shared/` | Shared host presentation, readiness and lifecycle helpers |
+| `fixtures/` | Deterministic text/workspace workloads and language/protocol peers |
+| `experiments/` | Development storage comparisons, excluded from runtime assets |
+| `tests/` | Model/browser tests, helpers and isolated-consumer fixtures |
+| `scripts/` | Build, development servers, qualification, inspection and measurements |
+| `packaging/` | NuGet project, MSBuild bridge and packaged README |
+| `licenses/` | Notices for included Unicode data |
+| `docs/` | Public contracts, architecture and contributor guides |
+| `.github/workflows/` | CI qualification and demo deployment |
 
-`npm run build` emits ESM, declaration files and CSS to `dist/`, checks that the runtime
-dependency graph contains only `src/`, and records compressed JavaScript sizes. The
-package allowlist contains only `dist/`. StTropez is released under the MIT license
-(`LICENSE.txt`). The package stays private until release metadata is deliberately selected.
+[Architecture](docs/architecture.md) defines dependency and ownership boundaries.
+Frameworks, compilers, test providers and development tools stay outside the library runtime.
 
-The preferred distribution is a NuGet package containing the browser assets and MSBuild
-integration files. `npm run pack:nuget` builds a local evaluation package under
-`artifacts/nuget/feed/`. No package is published. `npm run test:package` checks its actual
-contents and restores an isolated consumer with an explicit frontend resolution bridge.
-See [packaging](docs/packaging.md) for the artifact and consumer build contract.
-The development hosts are `/hosts/plain/` and `/hosts/react/`; their
-[adapter contract](docs/host-adapter.md) and [agent protocol](docs/workspace.md#agent-review) describe the
-synthetic fixtures and the consuming host's remaining integration responsibilities.
+## License
 
-The [testing guide](docs/testing.md#behavioral-coverage) defines behavioral coverage, workload
-sizes and the native-device checklist. `/probes/` on the development server
-compares native input candidates and exercises highlighting, completion and diagnostics
-through a real development worker. These experiments do not select or qualify a production
-renderer or language client; native IME checks remain pending.
-
-See [the architecture](docs/architecture.md), [performance assessment](docs/testing.md#measurement-policy), and
-[instrumentation guide](docs/testing.md#fixtures-and-test-hooks). [Text model](docs/text-model.md) describes
-buffers, position mapping, selections and newline conversion. The local roadmap is `PLAN.md`.
-See [workspace transactions and history](docs/workspace.md#transactions-and-history) for transaction, grouping and undo policy.
-The [viewport layer](docs/viewport.md) and `/viewport/` fixture record bounded-rendering evidence.
-The [editing candidate](docs/editing-candidate.md) and `/editing/` fixture exercise bounded native
-context, measured pointer selection, shared history and composition guards. Long contextual-line
-layout and native-device input remain qualification gates.
-The optional [language-server integration](docs/language-server.md) supplies JSON-RPC/WebSocket
-transport, captured sessions and shared workspace ownership. The [language-feature guide](docs/language-features.md)
-covers validated results, completion, documentation, navigation and authorized edit/command decisions.
-These public APIs serve both hosts and an isolated consumer;
-`npm run test:package:lsp` qualifies that minimal restored-package boundary.
-The [find controller](docs/search.md) and [provider/presentation fixture](docs/providers.md)
-add revision-checked workflows to that view, with explicit scope and scheduling limits.
-The [comparison controller](docs/comparison.md) and `/comparison/` fixture add an immutable
-baseline, editable working side, undoable hunk reversion and captured refresh/acceptance.
-The [host workflows](docs/host-workflows.md) run proposal/correction/save/acknowledgement and
-captured Run through both editor modes in the plain and React hosts, including input recovery.
-The [bidi resolver and caret geometry](docs/unicode.md) combine Unicode conformance tests with
-native shaping on complete bounded rows; contextual long-line layout remains open.
-The editor preserves [Unicode 18 graphemes](docs/unicode.md) and cooperatively indexes long
-logical lines for whole-cluster commands. [Native font registration](docs/unicode.md) owns loaded
-faces and generations; text shaping and measurement use browser APIs.
+StTropez is [MIT licensed](LICENSE.txt), copyright Lokad. Included Unicode data carries the
+[Unicode License V3](licenses/Unicode-3.0.txt). Retain both notices when redistributing assets.
