@@ -24,8 +24,11 @@ export type PaneId = string;
 export type ResourceKey = Readonly<{ scope: string; resource: string; variant: string }>;
 export type EditOrigin = "human" | "agent" | "host";
 export type Capabilities = Readonly<{ edit: readonly EditOrigin[]; save: boolean; run: boolean }>;
+export type ResourceVisibility = "workspace" | "internal";
+export type ResourceOptions = Readonly<{ visibility?: ResourceVisibility }>;
 export type ResourceMetadata = Readonly<{
     id: ResourceId; key: ResourceKey; title: string; kind: "text" | "panel";
+    visibility: ResourceVisibility;
     state: "loading" | "ready" | "failed" | "released";
     dirty: boolean; serverVersion: string | null; capabilities: Capabilities;
     saveStatus: "idle" | "saving" | "failed" | "conflict"; failure: string | null;
@@ -55,7 +58,7 @@ export type Surface = Readonly<
     { kind: "text"; documentId: DocumentId }
     | { kind: "panel"; resourceId: ResourceId; panelType: string }
 >;
-export type TabSnapshot = Readonly<{ id: TabId; paneId: PaneId; generation: number; surface: Surface }>;
+export type TabSnapshot = Readonly<{ id: TabId; paneId: PaneId; generation: number; surface: Surface; visibility: ResourceVisibility }>;
 export type WorkspaceSnapshot = Readonly<{
     revision: number; resources: readonly ResourceMetadata[];
     documents: readonly DocumentSnapshot[]; tabs: readonly TabSnapshot[];
@@ -149,6 +152,7 @@ export class Workspace {
     private readonly documents = new Map<DocumentId, ResourceRecord>();
     private readonly tabs: Store<readonly TabSnapshot[]>;
     private readonly tabIndex = new Map<TabId, TabSnapshot>();
+    private inventoryTabs: readonly TabSnapshot[] = Object.freeze([]);
     private readonly state: Store<number>;
     private snapshot: WorkspaceSnapshot | undefined;
     readonly getSnapshot: () => WorkspaceSnapshot;
@@ -160,13 +164,17 @@ export class Workspace {
         this.scope = new NotificationScope(options.onListenerError ?? (() => {}));
         this.tabs = new Store<readonly TabSnapshot[]>(Object.freeze([]), this.scope);
         this.state = new Store(0, this.scope);
-        this.tabState = this.tabs.observable;
+        // Internal tabs still notify captured owners when their lifetime changes.
+        this.tabState = Object.freeze({ getSnapshot: () => this.inventoryTabs, subscribe: this.tabs.observable.subscribe });
         this.getSnapshot = () => {
             if (!this.snapshot) {
-                const records = [...this.records.values()];
+                const resources: ResourceMetadata[] = [], documents: DocumentSnapshot[] = [];
+                for (const record of this.records.values()) {
+                    const metadata = record.metadata.get(); if (metadata.visibility === "internal") continue;
+                    resources.push(metadata); const document = record.document.get(); if (document) documents.push(document);
+                }
                 this.snapshot = Object.freeze({ revision: this.state.get(),
-                    resources: Object.freeze(records.map(record => record.metadata.get())),
-                    documents: Object.freeze(records.flatMap(record => record.document.get() ? [record.document.get()!] : [])), tabs: this.tabs.get() });
+                    resources: Object.freeze(resources), documents: Object.freeze(documents), tabs: this.inventoryTabs });
             }
             return this.snapshot;
         };
@@ -186,22 +194,24 @@ export class Workspace {
         return Object.freeze({ scope, resource, variant });
     }
 
-    createResource<T extends SnapshotValue>(key: ResourceKey, title: string, loaded?: LoadedResource<T>, permissions = defaultCapabilities): ResourceHandle<T> {
-        return this.create(key, title, "panel", loaded, permissions) as ResourceHandle<T>;
+    createResource<T extends SnapshotValue>(key: ResourceKey, title: string, loaded?: LoadedResource<T>, permissions = defaultCapabilities, options: ResourceOptions = {}): ResourceHandle<T> {
+        return this.create(key, title, "panel", loaded, permissions, options) as ResourceHandle<T>;
     }
-    createTextResource(key: ResourceKey, title: string, loaded?: LoadedResource<string>, permissions = defaultCapabilities): TextResourceHandle {
-        return this.create(key, title, "text", loaded, permissions) as TextResourceHandle;
+    createTextResource(key: ResourceKey, title: string, loaded?: LoadedResource<string>, permissions = defaultCapabilities, options: ResourceOptions = {}): TextResourceHandle {
+        return this.create(key, title, "text", loaded, permissions, options) as TextResourceHandle;
     }
     /** Retain an immutable buffer directly, without exporting or reparsing its text. */
-    createTextResourceFromBuffer(key: ResourceKey, title: string, loaded: LoadedTextBuffer, permissions = defaultCapabilities): TextResourceHandle {
+    createTextResourceFromBuffer(key: ResourceKey, title: string, loaded: LoadedTextBuffer, permissions = defaultCapabilities, options: ResourceOptions = {}): TextResourceHandle {
         if (!(loaded.buffer instanceof TextBuffer)) throw new TypeError("Text resource requires a TextBuffer.");
-        return this.create(key, title, "text", loaded, permissions) as TextResourceHandle;
+        return this.create(key, title, "text", loaded, permissions, options) as TextResourceHandle;
     }
     createDocument(key: ResourceKey, title: string, text: string): DocumentId {
         return this.createTextResource(key, title, { value: text }).documentId;
     }
-    private create(key: ResourceKey, title: string, kind: "text" | "panel", loaded: LoadedResource<SnapshotValue> | LoadedTextBuffer | undefined, permissions: Capabilities): ResourceHandle<SnapshotValue> {
+    private create(key: ResourceKey, title: string, kind: "text" | "panel", loaded: LoadedResource<SnapshotValue> | LoadedTextBuffer | undefined, permissions: Capabilities, options: ResourceOptions): ResourceHandle<SnapshotValue> {
         this.scope.assertWritable();
+        const visibility = options.visibility === undefined ? "workspace" : options.visibility;
+        if (visibility !== "workspace" && visibility !== "internal") throw new TypeError("Expected workspace or internal resource visibility.");
         key = Object.freeze({ ...key });
         const identity = resourceKeyIdentity(key);
         if (this.resourceKeys.has(identity)) throw new Error("Resource already exists in this workspace.");
@@ -211,7 +221,7 @@ export class Workspace {
         const buffer = loaded && "buffer" in loaded ? loaded.buffer : kind === "text" && typeof value === "string" ? TextBuffer.from(value) : null;
         const id = `resource-${++this.nextId}` as ResourceId;
         const documentId = kind === "text" ? `document-${++this.nextId}` as DocumentId : null;
-        const metadata = Object.freeze({ id, key, title, kind,
+        const metadata = Object.freeze({ id, key, title, kind, visibility,
             state: loaded === undefined ? "loading" as const : "ready" as const, dirty: false,
             serverVersion: loaded?.serverVersion ?? null, capabilities: capabilities(permissions), saveStatus: "idle" as const, failure: null, editLock: null });
         const state = new Store<ResourceSnapshot<SnapshotValue>>(loaded === undefined
@@ -787,9 +797,9 @@ export class Workspace {
     }
 
     open(surface: Surface, paneId: PaneId): TabId {
-        this.scope.assertWritable(); this.surfaceResource(surface);
+        this.scope.assertWritable(); const visibility = this.requireResource(this.surfaceResource(surface)).metadata.get().visibility;
         const id = `tab-${++this.nextId}` as TabId;
-        this.publishTabs([...this.tabs.get(), Object.freeze({ id, paneId, generation: 0, surface: Object.freeze({ ...surface }) })]);
+        this.publishTabs([...this.tabs.get(), Object.freeze({ id, paneId, generation: 0, surface: Object.freeze({ ...surface }), visibility })]);
         return id;
     }
     move(id: TabId, paneId: PaneId): void {
@@ -799,8 +809,9 @@ export class Workspace {
         this.publishTabs(this.tabs.get().map(tab => tab.id === id ? Object.freeze({ ...tab, paneId }) : tab));
     }
     replace(id: TabId, surface: Surface): void {
-        this.scope.assertWritable(); const previous = this.surfaceResource(this.requireTab(id).surface); this.surfaceResource(surface);
-        this.publishTabs(this.tabs.get().map(tab => tab.id === id ? Object.freeze({ ...tab, generation: tab.generation + 1, surface: Object.freeze({ ...surface }) }) : tab));
+        this.scope.assertWritable(); const previous = this.surfaceResource(this.requireTab(id).surface);
+        const visibility = this.requireResource(this.surfaceResource(surface)).metadata.get().visibility;
+        this.publishTabs(this.tabs.get().map(tab => tab.id === id ? Object.freeze({ ...tab, generation: tab.generation + 1, surface: Object.freeze({ ...surface }), visibility }) : tab));
         this.scheduleRelease(previous);
     }
     /** Immediate host decision. Use captureClose/completeClose for an asynchronous dirty prompt. */
@@ -902,8 +913,15 @@ export class Workspace {
         const changed = new Set<Store<unknown>>(); this.setRecord(record, next, changed); this.publish(changed);
     }
     private publishTabs(tabs: readonly TabSnapshot[]): void {
-        this.tabIndex.clear(); for (const tab of tabs) this.tabIndex.set(tab.id, tab);
-        const changed = new Set<Store<unknown>>(); this.tabs.set(Object.freeze(tabs), changed); this.publish(changed);
+        const visible: TabSnapshot[] = []; let sameVisible = true;
+        this.tabIndex.clear();
+        for (const tab of tabs) {
+            this.tabIndex.set(tab.id, tab);
+            if (tab.visibility === "workspace") { if (tab !== this.inventoryTabs[visible.length]) sameVisible = false; visible.push(tab); }
+        }
+        const all = Object.freeze(tabs);
+        if (!sameVisible || visible.length !== this.inventoryTabs.length) this.inventoryTabs = visible.length === all.length ? all : Object.freeze(visible);
+        const changed = new Set<Store<unknown>>(); this.tabs.set(all, changed); this.publish(changed);
     }
     private publish(changed: Set<Store<unknown>>): void {
         // Scoped consumers need no coarse inventory. A requested snapshot is captured in full,

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Workspace, WorkspaceCommands } from "../src/index.ts";
-import type { SaveResponse, SaveSubmission } from "../src/index.ts";
+import { TextBuffer, Workspace, WorkspaceCommands } from "../src/index.ts";
+import type { ResourceOptions, SaveResponse, SaveSubmission } from "../src/index.ts";
 
 function deferred<T>() {
     let resolve!: (value: T) => void;
@@ -40,6 +40,47 @@ test("typed resources need no document, isolate scopes/variants and expose immut
     assert.equal(foreign.resolveResource(workspace.captureResource(form.id)), undefined);
 });
 
+test("internal resources keep captured ownership while workspace inventories contain only host resources", async () => {
+    const { workspace, source, form, tab } = fixture(), before = workspace.getSnapshot(), tabs = workspace.tabState.getSnapshot();
+    const options = { visibility: "internal" as const }, buffer = TextBuffer.from("immutable reference");
+    const reference = workspace.createTextResourceFromBuffer({ scope: "test", resource: "reference", variant: "one" }, "Reference",
+        { buffer }, { edit: [], save: false, run: false }, options);
+    const scratch = workspace.createTextResource({ scope: "test", resource: "scratch", variant: "one" }, "Scratch", { value: "x" }, undefined, options);
+    const panel = workspace.createResource({ scope: "test", resource: "panel", variant: "one" }, "Panel", { value: { count: 0 } }, undefined, options);
+    const referenceTab = workspace.open({ kind: "text", documentId: reference.documentId }, "reference");
+    const panelTab = workspace.open({ kind: "panel", resourceId: panel.id, panelType: "temporary" }, "temporary");
+    const target = workspace.captureTab(referenceTab), resourceTarget = workspace.captureResource(reference.id);
+    assert.equal(workspace.tabState.getSnapshot(), tabs);
+    const inventory = workspace.getSnapshot();
+    assert.deepEqual(inventory.resources.map(resource => resource.id), [source.id, form.id]);
+    assert.deepEqual(inventory.documents.map(document => document.id), [source.documentId]);
+    assert.deepEqual(inventory.tabs.map(tab => tab.id), [tab]);
+    assert.equal(inventory.tabs, tabs); assert.equal(before.resources.length, 2);
+    assert.equal(reference.metadata.getSnapshot().visibility, "internal");
+    assert.equal(workspace.resolveTab(target)?.visibility, "internal");
+    assert.equal(workspace.resolveResource(resourceTarget), reference);
+    assert.equal(workspace.document(reference.documentId).buffer, buffer);
+    assert.equal(workspace.edit({ documentId: reference.documentId, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "x" }], origin: "human" }).applied, false);
+    // Inventory visibility is independent of permissions and text/value mutation.
+    assert.equal(workspace.edit({ documentId: scratch.documentId, expectedRevision: 0, edits: [{ from: 0, to: 1, insert: "y" }], origin: "human" }).applied, true);
+    assert.equal(workspace.updateResource(panel, { expectedRevision: 0, value: { count: 1 }, origin: "human" }).applied, true);
+    assert.equal(panel.metadata.getSnapshot().visibility, "internal");
+    const view = workspace.createDocumentView(reference.documentId), lease = workspace.acquire(reference.id);
+    let calls = 0, current = true;
+    const stop = workspace.tabState.subscribe(() => { calls++; current = !!workspace.resolveTab(target); assert.equal(workspace.tabState.getSnapshot(), tabs); });
+    workspace.releaseResourceWhenUnowned(reference.id);
+    workspace.move(referenceTab, "moved"); assert.equal(current, true);
+    workspace.close(referenceTab); assert.equal(current, false); assert.equal(calls, 2); stop();
+    await Promise.resolve(); assert.equal(reference.getSnapshot().state, "ready");
+    lease.release(); await Promise.resolve(); assert.equal(reference.getSnapshot().state, "ready");
+    view.dispose(); await Promise.resolve(); assert.equal(reference.getSnapshot().state, "released");
+    assert.equal(workspace.resolveResource(resourceTarget), undefined);
+    workspace.close(panelTab); workspace.releaseResource(panel.id, true); workspace.releaseResource(scratch.id, true);
+    assert.equal(buffer.readMetrics().textExports, 0);
+    assert.deepEqual(workspace.getSnapshot().resources.map(resource => resource.id), [source.id, form.id]);
+    assert.equal(workspace.diagnostics().resources, 2);
+});
+
 test("a non-text panel traverses load failure, retry, ownership and release without allocating a buffer", () => {
     const workspace = new Workspace();
     const form = workspace.createResource<{ path: string }>({ scope: "probe", resource: "form", variant: "working" }, "Form");
@@ -74,6 +115,12 @@ test("resource keys retain exact component identity through failed creation and 
     const key = { scope: "lifecycle", resource: "item", variant: "working" }, before = workspace.getSnapshot();
     assert.throws(() => workspace.createResource(key, "Bad value", { value: NaN }), TypeError);
     assert.throws(() => workspace.createResource(key, "Bad permissions", { value: 0 }, { edit: ["bad" as "human"], save: true, run: false }), TypeError);
+    for (const visibility of [null, "private", false, 3]) {
+        const invalid = { visibility } as unknown as ResourceOptions;
+        assert.throws(() => workspace.createResource(key, "Bad visibility", { value: 0 }, undefined, invalid), TypeError);
+        assert.throws(() => workspace.createTextResource(key, "Bad visibility", { value: "x" }, undefined, invalid), TypeError);
+        assert.throws(() => workspace.createTextResourceFromBuffer(key, "Bad visibility", { buffer: TextBuffer.from("x") }, undefined, invalid), TypeError);
+    }
     assert.equal(workspace.getSnapshot(), before);
     const handle = workspace.createResource(key, "Valid", { value: 0 }), capturedKey = { ...key }, target = workspace.captureResource(handle.id);
     key.resource = "mutated";

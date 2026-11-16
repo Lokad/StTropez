@@ -24,10 +24,19 @@ test("independent comparison modules share workspace identity and release retain
         const tab = workspace.open({ kind: "text", documentId: source.documentId }, "working"), view = workspace.createDocumentView(source.documentId);
         const host = document.createElement("section"); document.body.append(host);
         const baseline = { buffer: TextBuffer.from("baseline"), version: "one" };
+        let hiddenThroughout = true;
+        const stopInventory = workspace.subscribe(() => {
+            const state = workspace.getSnapshot();
+            hiddenThroughout &&= state.resources.length === 1 && state.resources[0]!.id === source.id
+                && state.documents.length === 1 && state.documents[0]!.id === source.documentId
+                && state.tabs.length === 1 && state.tabs[0]!.id === tab && workspace.tabState.getSnapshot() === state.tabs;
+        });
         const one = first.mountTextComparison(host, workspace, tab, baseline, { view, workBudget: 256 });
         const two = second.mountTextComparison(host, workspace, tab, baseline, { view, controls: false });
         const oldEditor = one.referenceEditor()!, old = workspace.resourceForDocument(oldEditor.view.documentId), oldLease = workspace.acquire(old.id);
         const distinct = old.id !== workspace.resourceForDocument(two.referenceEditor()!.view.documentId).id;
+        const internal = old.metadata.getSnapshot().visibility === "internal"
+            && workspace.resolveTab(one.reference.getSnapshot()!.target)?.visibility === "internal";
         const changed = new Promise<void>(resolve => {
             const stop = one.reference.subscribe(() => { if (one.reference.getSnapshot()?.version === "two") { stop(); resolve(); } });
         });
@@ -38,16 +47,16 @@ test("independent comparison modules share workspace identity and release retain
         const afterRefresh = { old: old.getSnapshot().state, text: workspace.document(old.documentId).text, oldEditorDisposed: oldEditor.snapshot().disposed,
             retiredRejected, currentReady: one.state.getSnapshot().canNavigate };
         const current = workspace.resourceForDocument(one.referenceEditor()!.view.documentId), currentLease = workspace.acquire(current.id);
-        one.destroy(); one.destroy(); two.destroy();
+        one.destroy(); one.destroy(); two.destroy(); stopInventory();
         const afterDestroy = { children: host.childElementCount, controllers: [one.controller.getSnapshot().status, two.controller.getSnapshot().status],
             leases: workspace.diagnostics().leases, views: workspace.diagnostics().views, subscriptions: workspace.diagnostics().subscriptions,
             retained: [old.getSnapshot().state, current.getSnapshot().state] };
         oldLease.release(); currentLease.release(); await Promise.resolve();
         const afterRelease = { resources: workspace.diagnostics().resources, retained: [old.getSnapshot().state, current.getSnapshot().state] };
         view.dispose(); workspace.close(tab); workspace.releaseResource(source.id); host.remove();
-        return { distinct, afterRefresh, afterDestroy, afterRelease, leases: workspace.diagnostics().leases };
+        return { distinct, internal, hiddenThroughout, afterRefresh, afterDestroy, afterRelease, leases: workspace.diagnostics().leases };
     });
-    expect(result).toEqual({ distinct: true, afterRefresh: { old: "ready", text: "baseline", oldEditorDisposed: true, retiredRejected: true, currentReady: true },
+    expect(result).toEqual({ distinct: true, internal: true, hiddenThroughout: true, afterRefresh: { old: "ready", text: "baseline", oldEditorDisposed: true, retiredRejected: true, currentReady: true },
         afterDestroy: { children: 0, controllers: ["disposed", "disposed"], leases: 3, views: 1, subscriptions: 0, retained: ["ready", "ready"] },
         afterRelease: { resources: 1, retained: ["released", "released"] }, leases: 0 });
 });

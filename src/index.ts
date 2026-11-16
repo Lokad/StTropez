@@ -47,7 +47,7 @@ export type {
     BatchEditResult, Capabilities, ChangeResult, CloseIntent, CloseOperation, DocumentChange, DocumentId, DocumentSnapshot, DocumentView,
     DocumentViewSnapshot, EditLease, EditOrigin, EditRequest, EditResult, HistoryRequest,
     LoadedResource, LoadedTextBuffer, LoadOperation, Operation, PaneId, ResourceHandle, ResourceId, ResourceKey, ResourceLease,
-    ResourceMetadata, ResourceSnapshot, ResourceTarget, SaveReceipt, SaveReview, SaveSubmission, SaveTicket, Surface, TabId, TabSnapshot, TabTarget, TextResourceHandle,
+    ResourceMetadata, ResourceOptions, ResourceSnapshot, ResourceTarget, ResourceVisibility, SaveReceipt, SaveReview, SaveSubmission, SaveTicket, Surface, TabId, TabSnapshot, TabTarget, TextResourceHandle,
     ViewId, WorkspaceOptions, WorkspaceSnapshot,
 } from "./core/workspace.ts";
 export type { Observable } from "./core/observable.ts";

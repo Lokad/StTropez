@@ -197,8 +197,11 @@ belong to the host; ending a ticket does not abort a host request automatically.
 
 ### Reference views and decoration
 
-The reference display has its own read-only resource, tab and view. Its resource denies all edit
-origins, Save and Run. It shares the captured immutable buffer without exporting it. Selection,
+The reference display has its own internal read-only resource, tab and view. Its resource denies all edit
+origins, Save and Run. The resource, document and tab are omitted from workspace inventories;
+captured reference handles and diagnostic ownership counts remain available under the
+[inventory visibility contract](workspace.md#inventory-visibility).
+It shares the captured immutable buffer without exporting it. Selection,
 navigation and explicit copy operate on source coordinates through the [editor](editor.md).
 
 `referenceEditor()` and `referenceViewport()` resolve the current attachment. The stable

@@ -125,7 +125,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
         if (state.baseline && state.baseline.epoch !== epoch) {
             clearReference(); epoch = state.baseline.epoch;
             display = workspace.createTextResourceFromBuffer(workspace.createResourceKey("comparison", "baseline"), "Comparison baseline",
-                { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false, run: false });
+                { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false, run: false }, { visibility: "internal" });
             displayTab = workspace.open({ kind: "text", documentId: display.documentId }, display.id);
             displayTarget = workspace.captureTab(displayTab);
             referenceInput = mountEditingCandidate(referencePane.content, workspace, displayTab, { ariaLabel: "Comparison baseline source", decorate: decorate("baseline"), lineClass: lineClass("baseline") });

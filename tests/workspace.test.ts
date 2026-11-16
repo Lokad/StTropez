@@ -31,6 +31,24 @@ test("delayed actions follow a moved tab and expire after replacement or close",
     assert.throws(() => workspace.captureTab(tabId), /Unknown tab/); stop();
 });
 
+test("tab replacement follows resource visibility without reviving captured generations", () => {
+    const { workspace, documentId, tabId } = fixture(), before = workspace.getSnapshot(), original = workspace.captureTab(tabId);
+    const internal = workspace.createResource({ scope: "test", resource: "preview", variant: "internal" }, "Preview", { value: 0 }, undefined, { visibility: "internal" });
+    let observed = workspace.tabState.getSnapshot();
+    const stop = workspace.tabState.subscribe(() => { observed = workspace.tabState.getSnapshot(); assert.equal(workspace.getSnapshot().tabs, observed); });
+    workspace.replace(tabId, { kind: "panel", resourceId: internal.id, panelType: "preview" });
+    assert.equal(workspace.resolveTab(original), undefined); assert.deepEqual(observed, []);
+    const privateTarget = workspace.captureTab(tabId), privateSnapshot = workspace.resolveTab(privateTarget)!;
+    assert.equal(privateSnapshot.visibility, "internal"); assert.equal(privateSnapshot.generation, original.generation + 1);
+    workspace.move(tabId, "right"); assert.equal(workspace.resolveTab(privateTarget)?.paneId, "right"); assert.deepEqual(observed, []);
+    workspace.replace(tabId, { kind: "text", documentId });
+    const visible = workspace.tabState.getSnapshot();
+    assert.equal(workspace.resolveTab(privateTarget), undefined); assert.equal(observed, visible); assert.equal(visible.length, 1);
+    assert.equal(visible[0]!.visibility, "workspace"); assert.equal(visible[0]!.generation, original.generation + 2);
+    assert.equal(before.tabs[0]!.visibility, "workspace"); assert.equal(privateSnapshot.visibility, "internal");
+    stop(); workspace.close(tabId); workspace.releaseResource(internal.id); workspace.releaseDocument(documentId);
+});
+
 test("repeated tab captures and resolution do not scan the tab inventory", t => {
     const workspace = new Workspace(), documentId = workspace.createDocument({ scope: "tabs", resource: "shared", variant: "working" }, "Document", "x");
     const tabs = Array.from({ length: 1000 }, () => workspace.open({ kind: "text", documentId }, "main"));

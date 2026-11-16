@@ -295,6 +295,7 @@ try {
         assert.equal(result.undoAfter, result.undoBefore); assert.equal(result.exports, 0); readonlyIndent.push(result);
     }
     const comparison = await page.evaluate(() => window.consumer.comparison()); assert.equal(comparison.count, 1);
+    assert.equal(comparison.internalBaseline, true);
     assert.equal(await page.locator("#comparison .consumer-review-token.st-comparison-added").textContent(), "working");
     assert.equal(await page.locator("#comparison .consumer-review-token.st-comparison-removed").textContent(), "baseline");
     assert.deepEqual(await page.evaluate(() => window.consumer.diff()), { status: "ready", whitespaceOnly: true });
@@ -310,6 +311,7 @@ try {
     await page.waitForFunction(() => { const s = window.consumer.comparison(); return s.status === "ready" && !s.working.pending
         && JSON.stringify(s.working.selection) === JSON.stringify(s.selection); });
     const remountedComparison = await page.evaluate(() => window.consumer.comparison());
+    assert.equal(remountedComparison.internalBaseline, true);
     assert.equal(remountedComparison.viewId, retainedComparison.viewId); assert.deepEqual(remountedComparison.selection, retainedComparison.selection);
     const saveReview = await page.evaluate(() => window.consumer.saveReview());
     assert.deepEqual(saveReview, { baselineBefore: "v0", precondition: "v1", saved: "saved", textAfter: "merged later", dirtyAfter: true,

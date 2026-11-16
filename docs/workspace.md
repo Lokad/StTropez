@@ -70,6 +70,41 @@ acyclic plain objects. Inputs are copied and deeply frozen as `Immutable<T>`. Ac
 functions, class instances, undefined and nonfinite values are rejected. The host owns
 schema validation and any conversion between typed data and text.
 
+### Inventory visibility
+
+`createResource`, `createTextResource` and `createTextResourceFromBuffer` accept a fifth
+`ResourceOptions` argument. Its `visibility` is `"workspace"` by default or `"internal"` for
+presentation resources owned by an attachment. Invalid values throw before resource creation.
+The fixed value appears in `ResourceMetadata.visibility`; every `TabSnapshot` inherits its
+surface resource's visibility. Moving a tab preserves it; replacement adopts the new resource's
+visibility and invalidates the previous captured generation.
+
+```ts
+import { TextBuffer } from "sttropez";
+import type { ResourceOptions, Workspace } from "sttropez";
+
+export function createReference(workspace: Workspace, buffer: TextBuffer) {
+    const options: ResourceOptions = { visibility: "internal" };
+    return workspace.createTextResourceFromBuffer(
+        workspace.createResourceKey("review", "reference"), "Reference", { buffer },
+        { edit: [], save: false, run: false }, options
+    );
+}
+```
+
+`WorkspaceSnapshot.resources`, `documents` and `tabs`, and `tabState.getSnapshot()` contain
+only workspace-visible entries. Direct resource/document lookup, captured tabs and leases
+also work for internal entries. `diagnostics()` counts all live resources, tabs and ownership.
+Visibility controls inventory membership independently of edit/Save/Run permissions and does
+not release a resource automatically. The creating owner closes its tabs and releases its
+resource when the attachment ends, subject to outstanding views and leases.
+
+`tabState` notifications cover every tab lifetime, including internal tab moves, replacement
+and close. Its visible array retains identity when its entries do not change. A captured owner
+must recheck `resolveTab(target)` after notification; an inventory reader may see the same array.
+The coarse workspace observable also publishes internal resource changes, while omitting their
+entries from its immutable inventory snapshot.
+
 ### Document views
 
 `createDocumentView(documentId, initialSelection?)` creates a stable observable view with an
