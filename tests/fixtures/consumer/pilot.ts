@@ -84,6 +84,11 @@ export function mountPackagedPilot(host: HTMLElement, original: string) {
     const subscriptions = [workspace.observeDocument(source.documentId).subscribe(render), source.metadata.subscribe(render)];
     const timer = win.setInterval(() => { background++; progress.value = background % 100; }, 50); render();
     const fixture = {
+        onSourceRender: (id: "primary" | "secondary" | "comparison", listener: () => void) => {
+            const editor = id === "primary" ? primary : id === "secondary" ? peer : comparison?.working;
+            if (!editor) throw new Error("Source viewport is not mounted.");
+            return editor.viewport.onRender(listener);
+        },
         snapshot: () => {
             const c = comparison?.controller.getSnapshot(), document = released ? null : workspace.document(source.documentId);
             const views = [["primary", primary], ["secondary", peer]] as const;

@@ -69,7 +69,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
             const index = Number(button.dataset.index), id = Number(button.dataset.completion);
             if (controller.chooseCompletion(index, id)) controller.accept("replace", id);
         }, { signal: listeners.signal });
-        editor.element.addEventListener("sttropez-render", render, { signal: listeners.signal });
+        scope.defer(editor.viewport.onRender(render));
         editor.input.addEventListener("keydown", event => {
             if (!controller && (event.ctrlKey || event.metaKey) && event.code === "Space") event.preventDefault();
         }, { capture: true, signal: listeners.signal });

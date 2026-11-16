@@ -9,21 +9,22 @@ test("a fitting demo settles at fractional zoom with visible scrollbars", async 
     await page.addStyleTag({ content: ".st-viewport::-webkit-scrollbar { width: 15px; height: 15px; }" });
     await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
     await page.evaluate(() => document.fonts.ready.then(() => {}));
-    // Let optional provider decorations settle before counting layout-driven renders.
+    // Let optional provider decorations settle before counting presentation mutations.
     if (await page.locator("#language-status").count()) await expect(page.locator("#language-status")).toHaveText("Language ready");
     await page.evaluate(() => { document.documentElement.style.zoom = "1.25"; });
     const result = await page.locator("#editor .st-viewport").evaluate(async root => {
-        let renders = 0, counting = false;
-        const changed = () => { if (counting) renders++; }; root.addEventListener("sttropez-render", changed);
+        let paintBatches = 0, counting = false;
+        const paints = new MutationObserver(() => { if (counting) paintBatches++; });
+        paints.observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
         const states: string[] = [];
         for (let frame = 0; frame < 60; frame++) {
             await new Promise(requestAnimationFrame);
             if (frame >= 12) { counting = true; states.push(JSON.stringify([root.clientWidth, root.clientHeight, root.scrollWidth, root.scrollHeight])); }
         }
-        root.removeEventListener("sttropez-render", changed);
-        return { renders, states: [...new Set(states)], horizontal: root.scrollWidth - root.clientWidth, vertical: root.scrollHeight - root.clientHeight };
+        paints.disconnect();
+        return { paintBatches, states: [...new Set(states)], horizontal: root.scrollWidth - root.clientWidth, vertical: root.scrollHeight - root.clientHeight };
     });
-    expect(result.states).toHaveLength(1); expect(result.renders).toBe(0);
+    expect(result.states).toHaveLength(1); expect(result.paintBatches).toBe(0);
     expect(result.horizontal).toBe(0); expect(result.vertical).toBe(0);
 });
 

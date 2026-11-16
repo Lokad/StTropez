@@ -47,6 +47,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         setTransfer: controller.transfer.update, runInput: (id: ResourceId) => controller.runResources.capture(id),
         range: (from: number, to: number) => controller.workspace.document(controller.source.documentId).buffer.slice(from, to),
         referenceRange: (from: number, to: number) => bindings.referenceRange(from, to),
+        onSourceRender: (id: "primary" | "secondary" | "comparison", listener: () => void) => bindings.onSourceRender(id, listener),
         selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => bindings.selectSource(id, revision, selection),
         selectSourceSet: (id: "primary" | "secondary" | "comparison", revision: number, ranges: readonly Selection[], primary = 0) => bindings.selectSourceSet(id, revision, ranges, primary),
         configureSource: (id: "primary" | "secondary" | "comparison", configuration: import("../../src/index.ts").LanguageConfiguration) => bindings.configureSource(id, configuration),
@@ -109,6 +110,7 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; sett
     transferCapture: () => ReturnType<HostController["transfer"]["save"]["capture"]>; transferValue: () => import("./transfers.ts").TransferSettings | null;
     setTransfer: HostController["transfer"]["update"]; runInput: (id: ResourceId) => ReturnType<HostController["runResources"]["capture"]>;
     referenceRange: (from: number, to: number) => string | undefined;
+    onSourceRender: (id: "primary" | "secondary" | "comparison", listener: () => void) => () => void;
     selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => boolean;
     selectSourceSet: (id: "primary" | "secondary" | "comparison", revision: number, ranges: readonly Selection[], primary?: number) => boolean;
     configureSource: (id: "primary" | "secondary" | "comparison", configuration: import("../../src/index.ts").LanguageConfiguration) => boolean;

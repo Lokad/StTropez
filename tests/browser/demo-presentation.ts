@@ -202,8 +202,9 @@ export async function runDemoPresentationContinuity(page: Page, url: string) {
                 }
                 if (!output.isConnected || !output.querySelector(".st-viewport-row")) state.missingOutput++;
             };
-            root.addEventListener("sttropez-render", check);
-            function frame(now: number) { if (!state.active) { root.removeEventListener("sttropez-render", check); return; }
+            // Observe the demo's actual DOM mutations and frame-visible colors without an internal editor event.
+            const paints = new MutationObserver(check); paints.observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
+            function frame(now: number) { if (!state.active) { paints.disconnect(); return; }
                 state.maxFrameGapMs = Math.max(state.maxFrameGapMs, now - previous); previous = now; check(); requestAnimationFrame(frame); }
             requestAnimationFrame(frame);
         });

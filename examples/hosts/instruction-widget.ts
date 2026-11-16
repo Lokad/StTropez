@@ -96,8 +96,8 @@ export function mountInstructionWidget(host: HTMLElement, lane: HTMLElement, edi
     };
     function schedule() { if (!disposed && frame === undefined) frame = win.requestAnimationFrame(place); }
     const observer = new win.ResizeObserver(schedule); observer.observe(host);
-    editor.viewport.element.addEventListener("sttropez-render", schedule, { signal: listeners.signal }); win.addEventListener("resize", schedule, { signal: listeners.signal });
-    const stops = [model.state.subscribe(() => { sync(); schedule(); }), editor.view.folding.subscribe(schedule)]; schedule();
+    win.addEventListener("resize", schedule, { signal: listeners.signal });
+    const stops = [editor.viewport.onRender(schedule), model.state.subscribe(() => { sync(); schedule(); }), editor.view.folding.subscribe(schedule)]; schedule();
     return Object.freeze({ hasPendingInput: () => fields.some(f => f.composing || !!f.capture),
         debug: () => ({ visible, pending: frame !== undefined, top, anchorTop, renders, layouts, layoutWorkMs, lastLayoutMs, maxLayoutMs, formInputs, lastFormInputMs, fieldNodes: fields.length, laneState: lane.dataset.state ?? "inactive", disposed }),
         dispose: () => { if (disposed) return; unmount(false); disposed = true; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;

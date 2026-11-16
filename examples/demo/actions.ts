@@ -80,7 +80,7 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
         pages.hidden = state.editCount <= 64; previous.disabled = state.page === 0; next.disabled = (state.page + 1) * 64 >= state.editCount;
         if (state.status === "applied" && !commandAction) queueMicrotask(() => { if (!disposed && tools.state.getSnapshot() === state) { dismiss(); editor.focus(); } });
     }));
-    editor.element.addEventListener("sttropez-render", () => { if (!popup.hidden) position(); }, { signal: events.signal });
+    scope.defer(editor.viewport.onRender(() => { if (!popup.hidden) position(); }));
     apply.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
     choices.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
     close.addEventListener("click", () => { dismiss(); editor.focus(); }, { signal: events.signal });

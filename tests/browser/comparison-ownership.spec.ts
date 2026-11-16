@@ -137,7 +137,7 @@ test("review highlights survive every typing paint while exact comparison work i
         const next = TextDiff.prototype.next;
         TextDiff.prototype.next = function() { return Object.freeze({ status: "running", work: 0, readUnits: 0, lineComparisons: 0, lineEdits: 0, hunks: Object.freeze([]) }); };
         const paints: { revision: number; text: string; color: string }[] = [];
-        mounted.working.viewport.element.addEventListener("sttropez-render", () => {
+        mounted.working.viewport.onRender(() => {
             const revision = workspace.document(source.documentId).revision; if (!revision) return;
             const marked = mounted.working.viewport.element.querySelector(".st-comparison-added");
             paints.push({ revision, text: marked?.textContent ?? "", color: marked ? getComputedStyle(marked).backgroundColor : "" });

@@ -31,7 +31,7 @@ export function installHostReferenceProbe() {
     function arm({ kind, operation, text = "", replaceSelection = false, caretOffset = text.length }) {
         active?.abort();
         const before = fixture.snapshot(), prior = before.bindings.views.find(v => v.id === "primary"), initial = before.bindings.comparison;
-        const node = document.querySelector('textarea[aria-label="Primary source"]'), listeners = new AbortController(), records = [], generations = new Map(), phases = {};
+        const node = document.querySelector('textarea[aria-label="Primary source"]'), listeners = new AbortController(), stops = [], records = [], generations = new Map(), phases = {};
         const offset = replaceSelection ? Math.min(prior.selection.anchor, prior.selection.head) : prior.selection.head;
         const replacedUnits = replaceSelection ? Math.abs(prior.selection.anchor - prior.selection.head) : 0;
         let start, pendingStart, dispatchEnd, frame, frames = 0, insertedUnits = 0, finished = false, failure, resolve, reject;
@@ -43,7 +43,7 @@ export function installHostReferenceProbe() {
         const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
         // A later Playwright call awaits this promise; keep a timeout rejection handled in the meantime.
         promise.catch(() => {});
-        const cleanup = () => { finished = true; listeners.abort(); cancelAnimationFrame(frame); clearTimeout(timer); };
+        const cleanup = () => { finished = true; listeners.abort(); stops.forEach(stop => stop()); cancelAnimationFrame(frame); clearTimeout(timer); };
         const fail = message => { if (finished) return; failure = message; cleanup(); reject(new Error(message)); };
         const timer = setTimeout(() => fail(`Host reference ${kind} readiness timed out.`), 20000);
         active = { promise, abort: () => fail("Host reference observation superseded before completion."), snapshot: () => ({
@@ -83,7 +83,7 @@ export function installHostReferenceProbe() {
         // The immutable reference has its own candidate surface; observe the three working inputs here.
         const roots = [...document.querySelectorAll(".st-editing-candidate")].filter(root => root.querySelector("textarea")?.readOnly === false);
         if (roots.length !== 3 || !facts(before).full || !node) { fail("Reference experiment requires three ready bounded working views."); return; }
-        roots.forEach(root => root.addEventListener("sttropez-render", observe, { signal: listeners.signal }));
+        for (const id of ["primary", "secondary", "comparison"]) stops.push(fixture.onSourceRender(id, observe));
         if (kind === "reference") {
             const label = operation === "identity" ? "Finish review acceptance" : "Finish reference refresh";
             const button = [...document.querySelectorAll("button")].find(b => b.textContent === label);

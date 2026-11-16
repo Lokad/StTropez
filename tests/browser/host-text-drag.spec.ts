@@ -59,14 +59,14 @@ test("a replacement drop target survives a render callback during edge scrolling
         window.textDragStore = data;
         const over = (x: number, y: number) => element.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: data, clientX: x, clientY: y }));
         const retarget = () => {
-            if (!element.scrollTop) return; element.removeEventListener("sttropez-render", retarget);
+            if (!element.scrollTop) return; stop();
             const box = element.getBoundingClientRect();
             const row = [...element.querySelectorAll<HTMLElement>(".st-viewport-row")].find(row => { const r = row.getBoundingClientRect(); return r.top > box.top && r.bottom < box.bottom; })!;
             const node = document.createTreeWalker(row, NodeFilter.SHOW_TEXT).nextNode()!;
             const range = document.createRange(); range.setStart(node, 1); range.setEnd(node, 2); const r = range.getBoundingClientRect();
             element.dataset.retargetAt = String(Number(row.dataset.from) + 1); over(r.left + r.width * .1, r.top + r.height * .5);
         };
-        element.addEventListener("sttropez-render", retarget);
+        const stop = window.hostFixture.onSourceRender("primary", retarget);
         const box = element.getBoundingClientRect(); over(box.left + element.clientWidth / 2, box.top + element.clientHeight - 10);
     }, payload);
     await expect(root(page)).toHaveAttribute("data-retarget-at", /\d+/);

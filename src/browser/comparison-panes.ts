@@ -19,6 +19,7 @@ export function createComparisonPanes(working: EditingCandidate, compositionChan
     }
     function watch(binding: Binding, kind: Kind): () => void {
         const pane = binding.editor.viewport;
+        if (kind === "render") return pane.onRender(() => emit(kind, binding));
         if (kind === "fold") return pane.view.folding.subscribe(() => emit(kind, binding));
         if (kind === "resize") {
             resize ??= new ResizeObserver(entries => {
@@ -27,7 +28,7 @@ export function createComparisonPanes(working: EditingCandidate, compositionChan
             resize.observe(pane.element); return () => resize!.unobserve(pane.element);
         }
         const events = new AbortController();
-        const types = kind === "render" ? ["sttropez-render"] : kind === "input" ? ["keydown", "beforeinput"] : [kind];
+        const types = kind === "input" ? ["keydown", "beforeinput"] : [kind];
         for (const type of types) pane.element.addEventListener(type, event => emit(kind, binding, event), {
             signal: events.signal, capture: kind === "input" || kind === "pointerdown" || kind === "compositionend", passive: kind === "scroll"
         });

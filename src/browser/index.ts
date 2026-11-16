@@ -14,7 +14,7 @@ import type { InputConflictDetail } from "./input-conflict.ts";
 export { inputConflictEvent } from "./input-conflict.ts";
 export type { InputConflictDetail } from "./input-conflict.ts";
 export { mountTextViewport } from "./viewport.ts";
-export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealOptions, TextViewport, ViewportActivity, ViewportSnapshot, ViewportComparisonRows } from "./viewport.ts";
+export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealOptions, TextViewport, ViewportActivity, ViewportSnapshot, ViewportComparisonRows, ViewportInputBinding } from "./viewport.ts";
 export { mountEditingCandidate } from "./editing-candidate.ts";
 export type { BracketHighlights, BracketHighlightSnapshot } from "./bracket-highlights.ts";
 export type { CharacterWarningHighlights, CharacterWarningCapture } from "./character-warnings.ts";

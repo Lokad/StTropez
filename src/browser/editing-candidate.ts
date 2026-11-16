@@ -93,8 +93,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     root.style.tabSize = String(language.tabSize);
     const owner = host.ownerDocument, win = owner.defaultView!, input = owner.createElement("textarea");
     const scope = ++nextMount, listeners = new AbortController();
-    root.classList.add("st-editing-candidate"); root.tabIndex = -1;
-    root.querySelector(".st-viewport-layer")!.setAttribute("aria-hidden", "true");
+    root.classList.add("st-editing-candidate");
     input.className = "st-input-context"; input.wrap = "off"; input.spellcheck = false; input.autocomplete = "off";
     // The native projection belongs to the editor, independently of enclosing host forms.
     input.setAttribute("form", "");
@@ -108,8 +107,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
     let hostInsertion: CapturedInsertion | undefined;
     const escapeState = (value: boolean) => {
         if (escaped === value) return;
-        escaped = value; root.toggleAttribute("data-st-tab-escape", value);
-        for (const button of root.querySelectorAll<HTMLButtonElement>(".st-fold-button")) button.tabIndex = value ? -1 : 0;
+        escaped = value; inputBinding.setTabEscape(value);
     };
     let commits = 0, conflicts = 0, serial = 0, inputEvents = 0, lastInputMs = 0;
     let beforeInputEvents = 0, lastBeforeInputMs = 0, maxQueuedInputTurnMs = 0;
@@ -310,6 +308,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         refresh();
     }
     const focus = () => { if (!disposed) { input.focus({ preventScroll: true }); scheduleCaret(); } };
+    const inputBinding = viewport.bindInput(focus);
     function replaceSelection(insert: string, kind: EditKind, type?: string): void {
         const document = workspace.document(documentId), plan = planSelectionEdits(document.buffer.length, view.getSnapshot().selectionSet, insert);
         apply(plan.edits, plan.selectionSet, kind, type, document.revision);
@@ -790,16 +789,14 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         composition = captureInput("insertCompositionText", null);
         composing = true;
         group = undefined;
-        root.classList.add("st-composing");
-        viewport.invalidate();
+        inputBinding.setComposing(true);
         scheduleCaret();
     }
     function endComposition(): void {
         const captured = composition;
         composition = undefined;
         composing = false;
-        root.classList.remove("st-composing");
-        viewport.invalidate();
+        inputBinding.setComposing(false);
         commit("insertCompositionText", captured);
     }
     input.addEventListener("compositionstart", startComposition, { signal: listeners.signal });
@@ -942,10 +939,8 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             if (type === "cut") replaceSelection("", "delete");
         }
     }, { signal: listeners.signal });
-    root.addEventListener("sttropez-render", scheduleCaret, { signal: listeners.signal });
-    root.addEventListener("sttropez-focus-source", focus, { signal: listeners.signal });
     let observedFoldRevision = view.folding.getSnapshot().revision;
-    const subscriptions = [workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(refresh),
+    const subscriptions = [viewport.onRender(scheduleCaret), workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(refresh),
         view.folding.subscribe(() => { const revision = view.folding.getSnapshot().revision;
             if (revision === observedFoldRevision) { cancelWord(); stopDrag(); preferred = undefined; group = undefined; }
             observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh), workspace.tabState.subscribe(refresh)];
@@ -1015,6 +1010,7 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
             listeners.abort();
             subscriptions.forEach(unsubscribe => unsubscribe());
             input.value = "";
+            inputBinding.dispose();
             viewport.destroy();
             if (!options.view) view.dispose();
         } });

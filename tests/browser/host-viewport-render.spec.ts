@@ -91,7 +91,7 @@ for (const host of ["plain", "react"]) test(`${host} bounded long-context reveal
         await input.evaluate(node => {
             const root = node.closest<HTMLElement>(".st-editing-candidate")!;
             // The viewport queues its caret callback before this host layout change.
-            root.addEventListener("sttropez-render", () => { root.style.width = "140px"; root.style.setProperty("--st-font-size", "24px"); }, { once: true });
+            const stop = window.hostFixture.onSourceRender("primary", () => { stop(); root.style.width = "140px"; root.style.setProperty("--st-font-size", "24px"); });
             window.hostFixture.setSourceReadOnly(true);
         });
         await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.width).toBe(140);

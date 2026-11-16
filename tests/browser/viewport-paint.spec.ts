@@ -21,7 +21,8 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
         let calls = 0, notices = 0, shade = "paint-a";
         const viewport = mountTextViewport(host, workspace, tab, { decorate: line => { calls++; return [{ from: line.from, to: line.to, className: shade }]; } });
-        viewport.element.addEventListener("sttropez-render", () => notices++);
+        viewport.onRender(() => notices++);
+        const input = viewport.bindInput(() => {});
         const observer = new MutationObserver(() => {}); observer.observe(viewport.element, { subtree: true, childList: true, attributes: true, characterData: true });
         const documentState = () => workspace.document(source.documentId);
         const settle = () => { for (let i = 0; i < 8; i++) { viewport.flush(); if (!viewport.snapshot().pending) return; } throw new Error("Viewport did not settle."); };
@@ -63,7 +64,7 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
             changes.push(work("zoom", () => { host.style.zoom = "1.25"; }));
             changes.push(work("font completion", () => document.fonts.dispatchEvent(new Event("loadingdone"))));
             viewport.revealOffset(buffer.offsetAt(50000)); settle();
-            changes.push(work("composition controls", () => { viewport.element.classList.add("st-composing"); }));
+            changes.push(work("composition controls", () => { input.setComposing(true); }));
             const disabledFold = host.querySelector<HTMLButtonElement>(".st-fold-button")!.disabled;
             changes.push(work("scroll", () => viewport.scrollTo({ top: viewport.snapshot().scrollTop + 100 })));
             const initialExports = buffer.readMetrics().textExports;

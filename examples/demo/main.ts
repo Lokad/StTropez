@@ -35,6 +35,7 @@ let languageViewFailure: Readonly<{ error: unknown }> | undefined;
 let stopReference: (() => void) | undefined;
 let folding: FoldingController | undefined, referenceFolding: FoldingController | undefined, stopFolding: (() => void) | undefined;
 let viewListeners: AbortController | undefined;
+let stopRender: (() => void) | undefined;
 let reviewLabel: HTMLSpanElement | undefined;
 let hostIntegrations: ReturnType<typeof mountHostIntegrations> | undefined;
 const hostLanguage = () => project?.sample.id === "outline" || project?.sample.id === "host";
@@ -239,6 +240,7 @@ function detachView(): void {
     detachLanguage();
     stopView?.(); stopView = undefined; stopFind?.(); stopFind = undefined;
     viewListeners?.abort(); viewListeners = undefined;
+    stopRender?.(); stopRender = undefined;
     find?.destroy(); find = undefined; presentation.search = undefined;
     if (comparison) comparison.destroy(); else editor?.destroy();
     comparison = undefined; editor = undefined; reviewLabel = undefined;
@@ -331,7 +333,7 @@ function mountFile(file: DemoFile, focus = false): void {
     folding = mountDemoFolding(project, file, editor, () => editingConfiguration().tabSize!);
     stopFolding = folding.state.subscribe(renderFolding); renderFolding();
     viewListeners = new AbortController();
-    editor.element.addEventListener("sttropez-render", renderGutter, { signal: viewListeners.signal });
+    stopRender = editor.viewport.onRender(renderGutter);
     editor.input.addEventListener("compositionstart", renderMetadata, { signal: viewListeners.signal });
     editor.input.addEventListener("compositionend", renderMetadata, { signal: viewListeners.signal });
     editor.element.addEventListener("keydown", event => {

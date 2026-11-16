@@ -59,9 +59,9 @@ function mountNotes(model: HostSourceNotes, project: DemoProject, file: DemoFile
         for (const [id, node] of nodes) if (!shown.has(id)) { node.onclick = null; node.remove(); nodes.delete(id); }
     };
     const stop = model.state.subscribe(render), stopFolds = editor.view.folding.subscribe(render);
-    editor.element.addEventListener("sttropez-render", render, { signal: events.signal });
+    const stopRender = editor.viewport.onRender(render);
     window.addEventListener("resize", render, { signal: events.signal }); render();
-    return () => { events.abort(); stop(); stopFolds(); for (const node of nodes.values()) node.onclick = null; layer.remove(); nodes.clear(); };
+    return () => { events.abort(); stopRender(); stop(); stopFolds(); for (const node of nodes.values()) node.onclick = null; layer.remove(); nodes.clear(); };
 }
 
 /** The sample composes the public editor hooks; formatting, UI and note content stay in the host. */

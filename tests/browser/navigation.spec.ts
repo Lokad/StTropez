@@ -175,13 +175,14 @@ test("navigation reuses immediate style captures and rejects synchronous layout 
         changes.push(await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate((input, phase) => {
             const root = input.parentElement!, nativeRects = Range.prototype.getClientRects; let changed = 0;
             const alter = () => { if (!changed) { changed++; root.style.letterSpacing = "1px"; } };
-            if (phase === "render") { root.addEventListener("sttropez-render", alter, { once: true }); root.scrollTop += 2; root.dispatchEvent(new Event("scroll")); }
+            let stop = () => {};
+            if (phase === "render") { stop = window.editingFixture.onRender("primary", () => { stop(); alter(); }); root.scrollTop += 2; root.dispatchEvent(new Event("scroll")); }
             else Range.prototype.getClientRects = function () { alter(); return nativeRects.call(this); };
             try {
                 input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
                 const state = window.editingFixture.snapshot();
                 return { phase, changed, head: state.primary.selection.head, pending: state.primary.pendingCommand, conflicts: state.conflicts.length };
-            } finally { Range.prototype.getClientRects = nativeRects; root.removeEventListener("sttropez-render", alter); }
+            } finally { Range.prototype.getClientRects = nativeRects; stop(); }
         }, phase));
         await testInfo.attach(`navigation-${phase}`, { body: JSON.stringify(changes.at(-1)), contentType: "application/json" });
         await ready(page); await page.keyboard.press("ArrowRight"); await ready(page);

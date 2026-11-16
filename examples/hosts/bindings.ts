@@ -197,6 +197,11 @@ export class ViewBindings {
     readonly cancelDiscard = (): void => { for (const { ticket } of this.discardTickets.splice(0)) ticket.cancel();
         this.reviewResult = "Discard cancelled. Working text was retained."; if (this.reviewStatus) this.reviewStatus.textContent = this.reviewResult; };
     referenceRange(from: number, to: number): string | undefined { return this.review?.controller.getSnapshot().baseline?.buffer.slice(from, to); }
+    onSourceRender(id: "primary" | "secondary" | "comparison", listener: () => void): () => void {
+        const editor = id === "comparison" ? this.review?.working : this.mounted.get(id)?.candidate;
+        if (!editor) throw new Error("Source viewport is not mounted.");
+        return editor.viewport.onRender(listener);
+    }
     selectSource(id: "primary" | "secondary", revision: number, selection: Selection): boolean {
         return this.mounted.get(id)?.editor.view.setSelection(revision, selection) ?? false;
     }

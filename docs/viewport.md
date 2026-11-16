@@ -109,6 +109,32 @@ and view before treating a projection as settled; `pending: false` alone is insu
 `ViewportSnapshot` dimensions, work counts and component timings; use the [clock glossary](README.md#glossary)
 when interpreting them.
 
+`onRender(listener)` observes a completed paint or consumed scheduled render, including one
+that leaves the painted rows unchanged. An idle synchronous `flush()` emits no notification.
+Subscribe before the first frame to observe the initial paint. The returned function removes
+that registration; destroying the viewport removes all registrations. Removing a listener
+during delivery prevents its later call in that delivery; newly added listeners wait for a
+later notification. Callbacks can schedule work or change model/view state, so later callbacks
+must recheck captured identities. Exceptions are reported by the browser and do not prevent
+other callbacks. A notification is not proof of complete interaction readiness or display.
+
+### Input adapter ownership
+
+The [editor](editor.md) owns input by default. A low-level adapter can call `bindInput(focus)`
+once per viewport to obtain a `ViewportInputBinding`. The callback restores source focus when
+a focused fold control disappears or receives Escape. The binding moves the viewport root
+out of the tab order and hides its duplicate text projection from semantic navigation.
+`setComposing(boolean)` controls composition presentation and guards fold clicks;
+`setTabEscape(boolean)` controls existing and subsequently rendered fold tab stops.
+These states belong to the binding; CSS classes and DOM attributes do not grant input authority.
+
+Both setters validate booleans and return whether live state changed. `dispose()` releases the
+binding, restores viewport/fold tab stops and clears composition presentation. A stale binding
+cannot alter a replacement binding. Binding an already bound, destroyed or replaced viewport
+throws; setters on expired bindings return `false`. Focus callbacks and render subscriptions
+end with the viewport and never redirect to a replacement tab. A focus callback can detach the
+viewport; rendering stops when that callback invalidates the mount.
+
 ### Rendering limits
 
 | Area | Contract or limit |

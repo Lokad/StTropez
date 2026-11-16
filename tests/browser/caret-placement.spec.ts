@@ -25,6 +25,7 @@ for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} care
         host.style.cssText = "height:220px;width:800px;position:fixed;top:10px;left:10px";
         const viewport = mountTextViewport(host, workspace, tab), root = viewport.element, input = document.createElement("textarea");
         root.classList.add("st-editing-candidate"); input.className = "st-input-context"; root.append(input);
+        const binding = viewport.bindInput(() => input.focus({ preventScroll: true }));
         let composing = false, queries = 0, reveals = 0;
         const layer = mountInputCaret(root, input, viewport.view, { ...viewport,
             coordsAt: (...args) => { queries++; return viewport.coordsAt(...args); },
@@ -82,13 +83,13 @@ for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} care
         try {
             viewport.flush(); input.focus({ preventScroll: true });
             const work = [measure(1), measure(33)];
-            composing = true; root.classList.add("st-composing"); run();
+            composing = true; binding.setComposing(true); run();
             const composition = { hidden: primary.hidden, secondary: root.querySelectorAll(".st-input-secondary-caret").length };
-            composing = false; root.classList.remove("st-composing");
+            composing = false; binding.setComposing(false);
             select([60]); run(); const beforeResize = { visible: !primary.hidden, error: error(primary, 60) };
             host.style.width = "200px"; viewport.flush(); reveals = 0;
             // A synchronous host layout change during the reveal flush moves client coordinates.
-            root.addEventListener("sttropez-render", () => { host.style.left = "70px"; }, { once: true });
+            const stop = viewport.onRender(() => { stop(); host.style.left = "70px"; });
             run();
             const revealed = { reveals, visible: !primary.hidden, error: error(primary, 60), left: host.getBoundingClientRect().left };
             input.blur(); run(); const blurred = primary.hidden;

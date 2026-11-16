@@ -31,7 +31,13 @@ export type ViewportSnapshot = ViewportActivity & Readonly<{ selection: Selectio
     rows: number; partialRows: number; textUnits: number; readUnits: number; navigationReadUnits: number; navigationRows: number; navigationBatches: number; navigationPreparedRows: number; maxNavigationBatchRows: number; lastRenderMs: number; scrollTop: number; scrollLeft: number; width: number; height: number;
     lineHeight: number; columnWidth: number; verticalExtent: number; horizontalExtent: number;
     physicalHeight: number; physicalWidth: number }>;
+export type ViewportInputBinding = Readonly<{ setComposing: (active: boolean) => boolean;
+    setTabEscape: (active: boolean) => boolean; dispose: () => void }>;
 export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentView;
+    /** Observe completed paints and consumed scheduled renders, including unchanged paints. */
+    onRender: (listener: () => void) => () => void;
+    /** One input owner controls composition, fold tab stops and source-focus recovery. */
+    bindInput: (focus: () => void) => ViewportInputBinding;
     columnRulers: () => readonly number[];
     configureColumnRulers: (columns: readonly number[]) => boolean;
     currentLineHighlight: () => boolean;
@@ -112,6 +118,19 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     foldLayer.className = "st-fold-controls"; const foldButtons = new Map<string, HTMLButtonElement>();
     root.append(spacer, layer, probeHost, foldLayer); host.append(root);
     const listeners = new AbortController(), padding = viewportPadding;
+    // A private platform target preserves listener removal, reentrancy and error reporting
+    // without routing editor coordination through the presentation DOM or model write guard.
+    const events = new win.EventTarget(), observationStops = new Set<() => void>();
+    let inputOwner: { composing: boolean; tabEscaped: boolean; detach: () => void } | undefined;
+    const observe = (type: "render" | "focus", listener: () => void): (() => void) => {
+        if (typeof listener !== "function") throw new TypeError("Viewport listener must be a function.");
+        if (disposed || !workspace.resolveTab(target)) return () => {};
+        const invoke = () => { if (!disposed && workspace.resolveTab(target)) listener(); };
+        const stop = () => { events.removeEventListener(type, invoke); observationStops.delete(stop); };
+        events.addEventListener(type, invoke); observationStops.add(stop);
+        return stop;
+    };
+    const notify = (type: "render" | "focus") => events.dispatchEvent(new win.Event(type));
     const rulers = mountColumnRulers(layer, padding), notifications = workspace.createNotificationScope();
     let currentLineBackground: HTMLDivElement | undefined;
     const clearCurrentLine = () => { currentLineBackground?.remove(); currentLineBackground = undefined; };
@@ -447,13 +466,13 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         const { selection: selected, selectionSet } = view.getSnapshot();
         const key = [document.revision, selectionSet, folds.generation, rowGeneration, comparisonRows?.id,
             top, left, width, height, zoom, columnWidth, naturalLineHeight, lineHeight, font, x.extent, y.extent, paintEpoch, highlightCurrentLine,
-            root.classList.contains("st-composing"), root.hasAttribute("data-st-tab-escape")];
+            inputOwner?.composing ?? false, inputOwner?.tabEscaped ?? false];
         if (!requested && painted && painted.horizontalAnchor === horizontalAnchor && painted.placement === fragmentPlacement
             && key.every((value, index) => value === painted!.key[index])
             && Math.abs(root.scrollTop - y.toPhysical(top)) <= 1 && Math.abs(root.scrollLeft - x.toPhysical(left)) <= 1) {
             // Consuming scheduled work still releases caret/alignment/linked-scroll listeners.
             // An idle synchronous flush needs neither row work nor a new caret frame.
-            if (scheduled) root.dispatchEvent(new CustomEvent("sttropez-render"));
+            if (scheduled) notify("render");
             return;
         }
         const highlightedLine = currentLine(document, selectionSet, index);
@@ -521,13 +540,14 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             button.setAttribute("aria-label", label); button.title = label; button.setAttribute("aria-expanded", String(!region.collapsed));
             // Replacing even identical text during a pointer press cancels WebKit's native click.
             const arrow = region.collapsed ? "▸" : "▾"; if (button.textContent !== arrow) button.textContent = arrow;
-            button.disabled = root.classList.contains("st-composing");
-            button.tabIndex = root.hasAttribute("data-st-tab-escape") ? -1 : 0;
+            button.disabled = inputOwner?.composing ?? false;
+            button.tabIndex = inputOwner?.tabEscaped ? -1 : 0;
             button.style.left = `${physicalLeft + 1}px`; button.style.top = `${physicalTop + padding + index.rowAt(item.line) * lineHeight - top}px`; button.style.height = `${lineHeight}px`;
         }
         for (const [id, button] of foldButtons) if (!visibleFolds.has(id)) {
             const focused = isFocused(button); button.remove(); foldButtons.delete(id);
-            if (focused) root.dispatchEvent(new CustomEvent("sttropez-focus-source"));
+            if (focused) notify("focus");
+            if (disposed || !workspace.resolveTab(target)) return;
         }
         orderedButtons.forEach((button, index) => { if (foldLayer.children.item(index) !== button) foldLayer.insertBefore(button, foldLayer.children.item(index)); });
         // A bounded batch of native shaping measurements follows the row writes. Extent corrections
@@ -570,7 +590,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
         lastRenderMs = win.performance.now() - started;
         // Keep the scroll/extent values actually painted; reveal corrections may queue a newer one.
         painted = { key, horizontalAnchor, placement: fragmentPlacement };
-        root.dispatchEvent(new CustomEvent("sttropez-render"));
+        notify("render");
     }
     const foldButton = (target: EventTarget | null): HTMLButtonElement | undefined => {
         const button = (target as Element | null)?.closest?.("button.st-fold-button") as HTMLButtonElement | null | undefined;
@@ -579,11 +599,11 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     foldLayer.addEventListener("pointerdown", event => { if (foldButton(event.target)) event.stopPropagation(); }, { signal: listeners.signal });
     foldLayer.addEventListener("click", event => {
         const button = foldButton(event.target); if (!button) return; event.stopPropagation();
-        if (disposed || !workspace.resolveTab(target) || root.classList.contains("st-composing")) return;
+        if (disposed || !workspace.resolveTab(target) || inputOwner?.composing) return;
         view.folding.setCollapsed({ revision: Number(button.dataset.revision), generation: Number(button.dataset.generation) }, button.dataset.fold!, button.getAttribute("aria-expanded") === "true");
     }, { signal: listeners.signal });
     foldLayer.addEventListener("keydown", event => { if (event.key === "Escape" && foldButton(event.target)) {
-        event.preventDefault(); if (!disposed && workspace.resolveTab(target)) root.dispatchEvent(new CustomEvent("sttropez-focus-source"));
+        event.preventDefault(); if (!disposed && workspace.resolveTab(target)) notify("focus");
     } }, { signal: listeners.signal });
     root.addEventListener("scroll", () => {
         const newTop = y.toLogical(root.scrollTop), newLeft = x.toLogical(root.scrollLeft);
@@ -617,6 +637,27 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     }
     schedule();
     return Object.freeze({ element: root, view, activity,
+        onRender: listener => observe("render", listener),
+        bindInput: focus => {
+            if (disposed || !workspace.resolveTab(target) || inputOwner) throw new Error("Viewport requires one current input owner.");
+            const binding = { composing: false, tabEscaped: false, detach: observe("focus", focus) };
+            inputOwner = binding; root.tabIndex = -1; layer.setAttribute("aria-hidden", "true");
+            const update = (key: "composing" | "tabEscaped", value: boolean): boolean => {
+                if (typeof value !== "boolean") throw new TypeError("Input interaction state must be boolean.");
+                if (disposed || inputOwner !== binding || !workspace.resolveTab(target) || binding[key] === value) return false;
+                binding[key] = value;
+                if (key === "composing") { root.classList.toggle("st-composing", value); invalidate(); }
+                for (const button of foldButtons.values()) { button.disabled = binding.composing; button.tabIndex = binding.tabEscaped ? -1 : 0; }
+                return true;
+            };
+            return Object.freeze({ setComposing: (active: boolean) => update("composing", active), setTabEscape: (active: boolean) => update("tabEscaped", active),
+                dispose: () => {
+                    if (inputOwner !== binding) return; binding.detach(); inputOwner = undefined;
+                    root.classList.remove("st-composing"); root.tabIndex = 0; layer.removeAttribute("aria-hidden");
+                    for (const button of foldButtons.values()) { button.disabled = false; button.tabIndex = 0; }
+                    if (!disposed) invalidate();
+                } });
+        },
         columnRulers: () => columns,
         configureColumnRulers: value => {
             notifications.assertWritable(); if (disposed) return false;
@@ -749,6 +790,8 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent }),
         destroy: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
+            inputOwner?.detach(); inputOwner = undefined;
+            for (const stop of observationStops) stop();
             rulers.clear(); columns = resolveColumnRulers();
             clearCurrentLine(); highlightCurrentLine = false;
             fontLigatures = false;
