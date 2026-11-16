@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
-import { corpusIds } from "../tests/fixtures/workloads.ts";
+import { corpusIds } from "../fixtures/workloads.ts";
 
 const source = await sourceIdentity(), harness = await openHarness();
 try {

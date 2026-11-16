@@ -2,8 +2,8 @@ import { Workspace } from "../../src/index.ts";
 import type { Selection, TextEdit } from "../../src/index.ts";
 import { mountTextViewport, mountTextEditor } from "../../src/browser/index.ts";
 import type { MountedEditor, ViewState } from "../../src/browser/index.ts";
-import { corpus, corpusIds } from "../../tests/fixtures/workloads.ts";
-import type { CorpusId } from "../../tests/fixtures/workloads.ts";
+import { corpus, corpusIds } from "../../fixtures/workloads.ts";
+import type { CorpusId } from "../../fixtures/workloads.ts";
 import { viewportSettled } from "../shared/readiness.ts";
 import "./style.css";
 
@@ -68,5 +68,5 @@ const fixture = { ready: true, load, edit, background,
         workspace.releaseResource(source.id, true); workspace.releaseResource(progress.id, true);
     } };
 window.viewportFixture = fixture;
-window.addEventListener("pagehide", fixture.dispose, { once: true });
+window.addEventListener("pagehide", event => { if (!event.persisted) fixture.dispose(); }, { signal: listeners.signal });
 declare global { interface Window { viewportFixture: typeof fixture } }

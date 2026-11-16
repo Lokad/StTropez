@@ -142,17 +142,28 @@ test("Unicode/CRLF rows preserve bounded content and stale tab generations disab
     expect((await page.evaluate(() => window.viewportFixture.snapshot())).primary.revision).toBeNull();
 });
 
-test("unrelated 20Hz traffic does not render text, and disposal removes views, subscriptions and pending frames", async ({ page }) => {
+test("unrelated 20Hz traffic and persisted transitions retain views until final teardown", async ({ page }, info) => {
+    info.annotations.push({ type: "page-transition-policy", description: "Synthetic persisted/final events; native back/forward-cache qualification remains external." });
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))); await ready(page);
     const before = await page.evaluate(() => window.viewportFixture.snapshot()); await page.evaluate(() => window.viewportFixture.background(true));
     await expect.poll(() => page.evaluate(() => window.viewportFixture.snapshot().ticks)).toBeGreaterThan(3);
     const after = await page.evaluate(() => window.viewportFixture.snapshot()); expect(after.primary.renders).toBe(before.primary.renders);
     expect(after.secondary.renders).toBe(before.secondary.renders);
-    await page.evaluate(() => { window.viewportFixture.scroll("primary", 200, 0); window.viewportFixture.dispose(); });
+    await page.evaluate(() => window.viewportFixture.scroll("primary", 200, 0)); await ready(page);
+    const retained = await page.evaluate(() => window.viewportFixture.snapshot());
+    for (let index = 0; index < 2; index++) {
+        await page.evaluate(() => { window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })); window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })); });
+        const current = await page.evaluate(() => window.viewportFixture.snapshot());
+        expect(current.disposed).toBe(false); expect(current.document).toEqual(retained.document);
+        expect(current.primary.scrollTop).toBe(retained.primary.scrollTop); expect(current.primary.revision).toBe(retained.primary.revision);
+    }
+    await page.locator("#prepend").click(); await ready(page); expect(await page.evaluate(() => window.viewportFixture.range(0, 15))).toBe("new first line\n");
+    await page.evaluate(() => { window.viewportFixture.scroll("primary", 200, 0); window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false })); });
     const stopped = await page.evaluate(() => window.viewportFixture.snapshot());
     expect(stopped.diagnostics).toMatchObject({ resources: 0, documents: 0, views: 0, subscriptions: 0, leases: 0 });
     expect(stopped.primary).toMatchObject({ disposed: true, pending: false, rows: 0, textUnits: 0 });
     expect(await page.locator(".st-viewport").count()).toBe(0);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false })));
     await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 100)));
     expect(await page.evaluate(() => window.viewportFixture.snapshot())).toEqual(stopped);
 });

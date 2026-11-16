@@ -3,7 +3,7 @@ import { createReportWriter } from "./benchmark-report.mjs";
 import { performance } from "node:perf_hooks";
 import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
-import { corpus } from "../tests/fixtures/workloads.ts";
+import { corpus } from "../fixtures/workloads.ts";
 
 const source = await sourceIdentity(), writer = await createReportWriter("artifacts/bench/host-table-paste", "full");
 const harness = await openHarness(), page = harness.page;

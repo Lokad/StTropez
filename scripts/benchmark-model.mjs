@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { Workspace, TextBuffer } from "../src/index.ts";
-import { corpus, corpusIds, editLog, workloadSeed, workspaceWorkload } from "../tests/fixtures/workloads.ts";
+import { corpus, corpusIds, editLog, workloadSeed, workspaceWorkload } from "../fixtures/workloads.ts";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
 
 export async function benchmarkModel() {

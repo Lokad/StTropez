@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { openHarness } from "./browser-harness.mjs";
-import { corpus } from "../tests/fixtures/workloads.ts";
+import { corpus } from "../fixtures/workloads.ts";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
 
 const source = await sourceIdentity(), smoke = process.env.STTROPEZ_HOST_SMOKE === "1", warmup = smoke ? 0 : 3, measured = smoke ? 1 : 10;

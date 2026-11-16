@@ -3,8 +3,8 @@ import type { SaveResponse, SaveSubmission } from "../../src/index.ts";
 import { inputConflictEvent, mountTextEditor } from "../../src/browser/index.ts";
 import type { InputConflictDetail } from "../../src/browser/index.ts";
 import "./style.css";
-import { corpus, corpusIds } from "../../tests/fixtures/workloads.ts";
-import type { CorpusId } from "../../tests/fixtures/workloads.ts";
+import { corpus, corpusIds } from "../../fixtures/workloads.ts";
+import type { CorpusId } from "../../fixtures/workloads.ts";
 
 function element(id: string): HTMLElement {
     const found = document.getElementById(id);
@@ -86,7 +86,7 @@ run.addEventListener("click", () => {
     } });
 });
 element("tabs").append(save, finish, run);
-window.addEventListener("pagehide", () => { editor.destroy(); secondary.destroy(); });
+window.addEventListener("pagehide", event => { if (!event.persisted) { editor.destroy(); secondary.destroy(); } });
 for (const [title, focus] of [["Transform · Working copy", () => editor.element.focus()], ["Connection · Configuration", () => sourcePath.focus()]] as const) {
     const button = document.createElement("button"); button.textContent = title;
     button.addEventListener("click", focus); element("tabs").append(button);

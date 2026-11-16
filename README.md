@@ -118,6 +118,7 @@ are occupied; both the launcher and test configuration use those environment val
 | `examples/demo` | TypeScript editor demo and development-only compiler worker |
 | `examples/playground` | Technical mixed-surface workspace fixture at `/workspace/` |
 | `experiments` | Development storage comparisons; excluded from the runtime and package |
+| `fixtures` | Shared synthetic workloads for examples, tests and measurements; excluded from the runtime and package |
 | `tests` | Model invariants and real browser interactions |
 | `scripts` | Build, local server, screenshots and benchmark runner |
 | `docs` | Architecture, integration boundaries and performance guidance |

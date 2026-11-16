@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Workspace, WorkspaceCommands, applyTextEdits, anchoredRange } from "../src/index.ts";
 import type { DocumentId, EditKind, HistoryOptions, Selection } from "../src/index.ts";
-import { corpus, editLog } from "./fixtures/workloads.ts";
+import { corpus, editLog } from "../fixtures/workloads.ts";
 import { TextHistory } from "../src/core/history.ts";
 
 function fixture(text = "abc", history?: HistoryOptions) {

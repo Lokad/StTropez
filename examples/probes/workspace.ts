@@ -1,6 +1,6 @@
 import { Workspace } from "../../src/index.ts";
 import { mountTextEditor } from "../../src/browser/index.ts";
-import { corpus, workspaceWorkload } from "../../tests/fixtures/workloads.ts";
+import { corpus, workspaceWorkload } from "../../fixtures/workloads.ts";
 
 // M0 stress recipe for the native baseline. Annotations are host overlays, not editor decorations.
 export function mountWorkspaceProbe(host: HTMLElement) {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
-import { corpusIds, workloadSeed } from "../tests/fixtures/workloads.ts";
+import { corpusIds, workloadSeed } from "../fixtures/workloads.ts";
 import { sourceIdentity, environment } from "./measurement.mjs";
 
 const rounds = Number(process.env.STTROPEZ_STORAGE_ROUNDS ?? 5);

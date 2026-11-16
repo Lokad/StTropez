@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createReportWriter } from "./benchmark-report.mjs";
 import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
-import { corpus } from "../tests/fixtures/workloads.ts";
+import { corpus } from "../fixtures/workloads.ts";
 import { typeHostSuffix } from "./host-typing.mjs";
 
 const source = await sourceIdentity(), smoke = process.env.STTROPEZ_CONFLICT_SMOKE === "1", warmup = smoke ? 0 : 3, measured = smoke ? 1 : 10;

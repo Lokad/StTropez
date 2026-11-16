@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createReportWriter } from "./benchmark-report.mjs";
 import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
-import { corpus, corpusIds } from "../tests/fixtures/workloads.ts";
+import { corpus, corpusIds } from "../fixtures/workloads.ts";
 const caselessCount = (text, query) => { let count = 0; for (const match of text.matchAll(new RegExp(query, "giu"))) { assert.ok(match[0].length); count++; } return count; };
 const wholeWord = process.argv.includes("--whole-word"), matchCase = !process.argv.includes("--ignore-case"), regularExpression = process.argv.includes("--regex");
 const source = await sourceIdentity(), writer = await createReportWriter("artifacts/bench/services", `${regularExpression ? "regex" : "literal"}-${wholeWord ? "whole-word" : "substring"}-${matchCase ? "case-sensitive" : "ignore-case"}`);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { candidates, ChunkTree, retained } from "../experiments/text-storage.ts";
-import { corpus, editLog } from "../tests/fixtures/workloads.ts";
+import { corpus, editLog } from "../fixtures/workloads.ts";
 import { distribution, environment } from "./measurement.mjs";
 
 const [candidate, corpusId, action, measurement = "timing"] = process.argv.slice(2);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { openHarness } from "./browser-harness.mjs";
-import { corpus, corpusIds, workloadSeed } from "../tests/fixtures/workloads.ts";
+import { corpus, corpusIds, workloadSeed } from "../fixtures/workloads.ts";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
 import { benchmarkModel } from "./benchmark-model.mjs";
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createReportWriter } from "./benchmark-report.mjs";
 import { openHarness } from "./browser-harness.mjs";
-import { corpus } from "../tests/fixtures/workloads.ts";
+import { corpus } from "../fixtures/workloads.ts";
 import { distribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
 import { typeHostSuffix } from "./host-typing.mjs";
 

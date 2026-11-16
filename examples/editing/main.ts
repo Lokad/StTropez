@@ -2,13 +2,13 @@ import { Workspace } from "../../src/index.ts";
 import type { EditingCommand, LanguageConfiguration, FoldRange, Selection, TextEdit } from "../../src/index.ts";
 import { inputConflictEvent, mountEditingCandidate, createFoldingController } from "../../src/browser/index.ts";
 import type { CandidateEditTransform, FoldDiscovery, FoldCommand, FoldingController, InputConflictDetail } from "../../src/browser/index.ts";
-import { corpus, corpusIds } from "../../tests/fixtures/workloads.ts";
+import { corpus, corpusIds } from "../../fixtures/workloads.ts";
 import { EditingPresentation } from "./presentation.ts";
 import { editorSettled } from "../shared/readiness.ts";
 import { mountFindUI } from "./find-ui.ts";
 import { mountProviderUI } from "./provider-ui.ts";
 import { mountParagraphUI } from "./paragraph-ui.ts";
-import type { CorpusId } from "../../tests/fixtures/workloads.ts";
+import type { CorpusId } from "../../fixtures/workloads.ts";
 import "./style.css";
 
 const workspace = new Workspace(), source = workspace.createTextResource({ scope: "editing", resource: "source", variant: "working" }, "Source", { value: corpus("lines-100000") });
@@ -82,5 +82,6 @@ const fixture = { ready: true, setText, edit, select, history,
         Object.values(editors).forEach(editor => editor.destroy()); Object.values(presentation).forEach(value => value.clear());
         for (const tab of workspace.tabState.getSnapshot()) workspace.close(tab.id); workspace.releaseResource(source.id, true);
     } };
-window.editingFixture = fixture; window.addEventListener("pagehide", fixture.dispose, { once: true });
+window.editingFixture = fixture;
+window.addEventListener("pagehide", event => { if (!event.persisted) fixture.dispose(); }, { signal: listeners.signal });
 declare global { interface Window { editingFixture: typeof fixture } }

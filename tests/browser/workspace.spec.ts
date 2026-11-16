@@ -1,7 +1,8 @@
 import { test, expect } from "./fixtures.ts";
-import { corpus } from "../fixtures/workloads.ts";
+import { corpus } from "../../fixtures/workloads.ts";
 
-test("real typing reaches the document and moving the surface preserves identity and selection", async ({ page }) => {
+test("real typing and moving preserve identity through persisted transitions until final teardown", async ({ page }, info) => {
+    info.annotations.push({ type: "page-transition-policy", description: "Synthetic persisted/final events; native back/forward-cache qualification remains external." });
 
 
     await page.goto("/workspace/");
@@ -9,6 +10,11 @@ test("real typing reaches the document and moving the surface preserves identity
     const editor = page.getByRole("textbox", { name: "Transform source" });
     const before = await page.evaluate(() => window.sttropez.snapshot());
     await editor.fill("hello");
+    await editor.evaluate(node => { node.dataset.retained = "yes"; });
+    for (let index = 0; index < 2; index++) {
+        await page.evaluate(() => { window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })); window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })); });
+        expect(await editor.count()).toBe(1); await expect(editor).toHaveAttribute("data-retained", "yes"); await expect(editor).toHaveValue("hello");
+    }
     await editor.press("End");
     await editor.pressSequentially(" world");
     await expect(editor).toHaveValue("hello world");
@@ -20,7 +26,9 @@ test("real typing reaches the document and moving the surface preserves identity
     expect(after.tabs[0]?.id).toBe(before.tabs[0]?.id);
     expect(after.documents[0]?.revision).toBeGreaterThan(before.documents[0]?.revision ?? -1);
     expect(after.documents[0]?.length).toBe(11);
-
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false })));
+    await expect(page.locator("textarea")).toHaveCount(0);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false })));
 });
 
 test("deferred Save and explicit Run preserve their source/configuration targets while views move and typing continues", async ({ page }) => {

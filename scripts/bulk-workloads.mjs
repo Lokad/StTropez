@@ -1,4 +1,4 @@
-import { corpus, sourceLine } from "../tests/fixtures/workloads.ts";
+import { corpus, sourceLine } from "../fixtures/workloads.ts";
 export const bulkWorkloadIds = ["dense-100", "dense-10000", "dense-100000", "sparse-line", "fragmented-point", "unicode", "large-inserts", "same-position"];
 export function bulkWorkload(id) {
     if (!bulkWorkloadIds.includes(id)) throw new Error("Unknown bulk workload.");

@@ -280,16 +280,26 @@ test("synthetic composition commits once and rejects stale, readonly and expired
     expect((await state(page)).secondary.viewport.revision).toBe((await state(page)).document!.revision);
 });
 
-test("two views share text while selection, focus escape and disposal stay independent", async ({ page }) => {
+test("two views retain text and selections through persisted transitions, then dispose on final hide", async ({ page }, info) => {
+    info.annotations.push({ type: "page-transition-policy", description: "Synthetic persisted/final events; native back/forward-cache qualification remains external." });
     await page.evaluate(() => { window.editingFixture.setText("first\nsecond"); window.editingFixture.select("secondary", { anchor: 6, head: 12 }); window.editingFixture.focus("primary"); }); await ready(page);
+    const before = await state(page), primary = page.getByRole("textbox", { name: "Primary source", exact: true });
+    await primary.evaluate(node => { node.dataset.retained = "yes"; });
+    for (let index = 0; index < 2; index++) {
+        await page.evaluate(() => { window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })); window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })); });
+        const retained = await state(page); expect(retained.disposed).toBe(false); expect(retained.document).toEqual(before.document);
+        expect(retained.primary.selection).toEqual(before.primary.selection); expect(retained.secondary.selection).toEqual(before.secondary.selection);
+        await expect(primary).toHaveAttribute("data-retained", "yes");
+    }
     await page.keyboard.type("!"); await ready(page);
     expect((await state(page)).secondary.selection).toMatchObject({ anchor: 7, head: 13 });
     await page.keyboard.press("Tab"); expect(await page.evaluate(() => window.editingFixture.range(0, 6))).toBe("!    f");
     await page.keyboard.press("Escape"); await page.keyboard.press("Tab"); await expect(page.getByRole("textbox", { name: "Secondary source" })).toBeFocused();
-    await page.evaluate(() => window.editingFixture.dispose());
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false })));
     expect((await state(page)).diagnostics).toMatchObject({ resources: 0, documents: 0, views: 0, subscriptions: 0, leases: 0 });
     expect((await state(page)).primary).toMatchObject({ disposed: true, inputUnits: 0, viewport: { disposed: true, pending: false } });
     expect(await page.locator("textarea, .st-viewport").count()).toBe(0);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false })));
 });
 
 test("line indentation/outdent, CRLF Enter, paired brackets and vertical navigation use model selections", async ({ page }) => {

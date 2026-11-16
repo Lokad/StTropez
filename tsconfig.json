@@ -17,6 +17,6 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "examples/**/*.ts", "examples/**/*.tsx", "experiments/**/*.ts", "tests/**/*.ts", "playwright*.ts"],
+  "include": ["src/**/*.ts", "fixtures/**/*.ts", "examples/**/*.ts", "examples/**/*.tsx", "experiments/**/*.ts", "tests/**/*.ts", "playwright*.ts"],
   "exclude": ["external", "node_modules", "dist", "artifacts", "tests/fixtures/consumer"]
 }

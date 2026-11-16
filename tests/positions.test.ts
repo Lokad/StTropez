@@ -3,7 +3,7 @@ import { unchangedPositionEdges } from "../src/core/positions.ts";
 import assert from "node:assert/strict";
 import { PositionMap, anchoredRange, applyTextEdits, composePositionMaps, importText, exportText } from "../src/index.ts";
 import type { Affinity, AnchoredRange, PositionMapping, TextEdit } from "../src/index.ts";
-import { corpus } from "./fixtures/workloads.ts";
+import { corpus } from "../fixtures/workloads.ts";
 
 test("position mapping defines insertion, replacement, deletion and adjacent-batch affinity", () => {
     const map = new PositionMap(6, [{ from: 1, to: 1, insert: "😀" }, { from: 1, to: 3, insert: "X" }, { from: 3, to: 3, insert: "Y" }]);
