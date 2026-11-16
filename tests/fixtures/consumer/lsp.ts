@@ -11,6 +11,7 @@ const tab = workspace.open({ kind: "text", documentId: source.documentId }, "sou
 const editor = mountEditingCandidate(document.getElementById("editor")!, workspace, tab, { ariaLabel: "Public LSP source" });
 const endpoint = new URL("/lsp-fixture", location.href); endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
 const provider = new LspWorkspace(workspace, {
+    initializationOptions: { fixtureModuleUris: [{ module: "sample-utils", uri: `consumer+opaque:project/${encodeURIComponent(companion.id)}` }] },
     documentInfo: snapshot => ({ uri: `consumer+opaque:project/${encodeURIComponent(snapshot.resourceId)}`, languageId: "generic" }),
     connect: context => { const abort = new AbortController(), stop = context.onCancel(() => abort.abort());
         return openWebSocketTransport(endpoint.href, { signal: abort.signal }).finally(stop); },
@@ -57,7 +58,7 @@ command("Code actions", async () => { const at = text().indexOf("TODO"), value =
 command("Signature", async () => { const value = await signature.run(workspace.document(source.documentId), text().indexOf("lookup(") + 12).result;
     if (!value?.isCurrent()) throw new Error("Signature expired"); const active = value.signatures[value.activeSignature]!, parameter = active.parameters[active.activeParameter ?? 0];
     notes.signature = parameter ? active.label.slice(parameter.from, parameter.to) : active.label; result.textContent = notes.signature; });
-command("Links", async () => { const value = await links.run(workspace.document(source.documentId), session => session.request("fixture/linksConfig", { delay: 0, aliases: [{ module: "sample-utils", uri: `consumer+opaque:project/${encodeURIComponent(workspace.document(companion.documentId).resourceId)}` }] }).result);
+command("Links", async () => { const value = await links.run(workspace.document(source.documentId));
     const link = await value.resolve(value.items[0]!); if (!value.isCurrent()) throw new Error("Link expired"); notes.linkUri = link.target ?? "unresolved"; result.textContent = notes.linkUri; });
 command("Colors", async () => { const document = workspace.document(source.documentId), value = await colors.run(document), choices = await value.presentations(value.items[0]!, { red: 1 / 255, green: 2 / 255, blue: 3 / 255, alpha: .5 });
     if (!value.isCurrent() || !choices[0]) throw new Error("Color presentation unavailable"); notes.colorPresentations = choices.length; colorPlan = { document, edits: choices[0].edits, isCurrent: value.isCurrent }; result.textContent = `Color choices: ${choices.length}`; });
@@ -67,7 +68,7 @@ command("Apply color", () => { if (!colorPlan?.isCurrent()) throw new Error("Col
     if (!applied.applied) throw new Error(applied.reason); notes.colorApplied = true; result.textContent = "Color applied"; });
 const dispose = () => { if (disposed) return; disposed = true; stop(); controller.destroy(); hover.dispose(); navigation.dispose(); rename.dispose(); actions.dispose(); signature.dispose(); links.dispose(); colors.dispose(); provider.dispose(); editor.destroy(); };
 const bridge = { text, select: (at: number) => editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at }),
-    state: () => ({ provider: provider.snapshot(), editor: controller.snapshot(), completion: controller.state.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, metrics: editor.snapshot(), errors }),
+    state: () => ({ provider: provider.snapshot(), editor: controller.snapshot(), completion: controller.state.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, companionResource: companion.id, metrics: editor.snapshot(), errors }),
     custom: controller.customRequest, dispose };
 Object.assign(window, { publicLsp: bridge });
 declare global { interface Window { publicLsp: typeof bridge } }

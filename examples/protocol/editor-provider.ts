@@ -37,9 +37,14 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
     return Object.freeze({
         owner: connection,
         signature: (_clock, changed) => lspSignatureBackend(owner, connection, changed,
-            input => session => session.request("fixture/signatureConfig", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) }).result),
-        links: (_clock, changed) => lspLinkBackend(owner, connection, id => uri(owner, id), changed),
-        colors: (_clock, changed) => lspColorBackend(owner, connection, changed),
+            input => session => connection.prepareRequest(session, "textDocument/signatureHelp", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) })),
+        links: (_clock, changed) => lspLinkBackend(owner, connection, id => uri(owner, id), changed,
+            input => session => connection.prepareRequest(session, "textDocument/documentLink", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}),
+                aliases: input.aliases.map(alias => ({ module: alias.module, uri: uri(owner, alias.document as DocumentId) })) })),
+        colors: (_clock, changed) => lspColorBackend(owner, connection, changed, {
+            discovery: input => session => connection.prepareRequest(session, "textDocument/documentColor", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) }),
+            presentation: input => session => connection.prepareRequest(session, "textDocument/colorPresentation", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) }),
+        }),
         provider: (workspace, tab, editor, options) => createLspProviderController(workspace, tab, editor, { ...options, provider: connection,
             beforeRequest: (session, configuration) => session.request("fixture/completionConfig", configuration).result }),
         hover: (workspace, tab, editor, canCapture) => createHoverController(workspace, tab, editor, { canCapture,

@@ -5,7 +5,8 @@ import { attachProtocolFixture } from "../examples/protocol/fixture-server.ts";
 import { FixtureLspWorkspace } from "../examples/protocol/fixture-workspace.ts";
 import { Workspace } from "../src/index.ts";
 import { openWebSocketTransport } from "../src/browser/index.ts";
-import { RpcError, createLspHoverClient } from "../src/protocol/index.ts";
+import { RpcError, createLspColorClient, createLspHoverClient, createLspLinkClient, createLspSignatureClient } from "../src/protocol/index.ts";
+import type { JsonValue, LspDocumentFeature, LspPrepare } from "../src/protocol/index.ts";
 
 const gate = () => { let release!: () => void; const promise = new Promise<void>(resolve => { release = resolve; }); return { promise, release }; };
 const cancelled = (error: unknown) => error instanceof RpcError && error.code === -32800;
@@ -77,6 +78,78 @@ test("fixture hover policy belongs to the captured request across overlapping sc
         assert.equal(packets.some(packet => packet.method === "fixture/hoverConfig"), false);
     } finally {
         held.release(); first.dispose(); second.dispose(); owner.dispose(); detach();
+        await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+        assert.equal(workspace.diagnostics().leases, 0);
+    }
+});
+
+test("fixture language requests retain their own faults, module aliases and resolve policies", { timeout: 15000 }, async () => {
+    const server = createServer(), detach = attachProtocolFixture(server);
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address(); assert.ok(address && typeof address === "object");
+    const workspace = new Workspace(), source = workspace.createTextResource({ scope: "language", resource: "source", variant: "working" }, "Source",
+        { value: 'lookup("a", );\nimport "sample-utils";\nconst color = "#abc";' });
+    const document = workspace.document(source.documentId), defaultUri = "host+fixture:default", firstUri = "host+fixture:first", secondUri = "host+fixture:second";
+    const owner = new FixtureLspWorkspace(workspace, {
+        connect: () => openWebSocketTransport(`ws://127.0.0.1:${address.port}/lsp-fixture`),
+        initializationOptions: { fixtureModuleUris: [{ module: "sample-utils", uri: defaultUri }] },
+        features: ["textDocument/signatureHelp", "textDocument/documentLink", "textDocument/documentColor", "textDocument/colorPresentation"],
+        documentInfo: doc => ({ uri: `host+fixture:${doc.resourceId}`, languageId: "fixture" }),
+        schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
+    });
+    const scope = owner.createScope(), signatures = [createLspSignatureClient(owner), createLspSignatureClient(owner)],
+        links = [createLspLinkClient(owner), createLspLinkClient(owner)], colors = [createLspColorClient(owner), createLspColorClient(owner)];
+    type Run = (index: number, prepare: LspPrepare) => Promise<unknown>;
+    const overlap = async (method: LspDocumentFeature, run: Run) => {
+        const prepared = gate(); let count = 0;
+        const outcomes = await Promise.allSettled([0, 1].map(index => run(index, async session => {
+            await owner.prepareRequest(session, method, { delay: 0, ...(index === 0 ? { fault: "failure" } : {}) });
+            if (++count === 2) prepared.release(); await prepared.promise;
+        })));
+        assert.equal(outcomes[0]!.status, "rejected", method);
+        if (outcomes[0]!.status === "rejected") assert.ok(outcomes[0]!.reason instanceof RpcError && outcomes[0]!.reason.code === -32001, method);
+        assert.equal(outcomes[1]!.status, "fulfilled", method);
+        if (outcomes[1]!.status === "fulfilled") assert.ok(outcomes[1]!.value, method);
+    };
+    try {
+        scope.setDocuments([document]); await scope.connect();
+        await overlap("textDocument/signatureHelp", (index, prepare) => signatures[index]!.run(document, 12, undefined, prepare).result);
+        await overlap("textDocument/documentLink", (index, prepare) => links[index]!.run(document, prepare));
+        await overlap("textDocument/documentColor", (index, prepare) => colors[index]!.run(document, prepare));
+        const discovered = await Promise.all(colors.map(client => client.run(document)));
+        assert.ok(discovered.every(batch => batch.items.length === 1));
+        await overlap("textDocument/colorPresentation", (index, prepare) => discovered[index]!.presentations(discovered[index]!.items[0]!, { red: 0, green: 0, blue: 1, alpha: 1 }, prepare));
+
+        // Distinct views of the same source capture different alias maps, including nested data.
+        const prepared = gate(); let count = 0;
+        const batches = await Promise.all(links.map((client, index) => client.run(document, async session => {
+            const policy = { delay: 0, aliases: [{ module: "sample-utils", uri: index ? secondUri : firstUri }] };
+            await owner.prepareRequest(session, "textDocument/documentLink", policy); policy.aliases[0]!.uri = "host+fixture:mutated";
+            if (++count === 2) prepared.release(); await prepared.promise;
+        })));
+        const resolved = await Promise.all(batches.map(batch => batch.resolve(batch.items[0]!)));
+        assert.deepEqual(resolved.map(link => link.target), [firstUri, secondUri]);
+
+        // Resolve policy belongs to the actual resolve message, independently of discovery.
+        const item = batches[0]!.items[0]!, values = item.resolve as Readonly<Record<string, JsonValue>>;
+        const responses = await Promise.all([
+            scope.request("documentLink/resolve", { ...values, _fixture: { delay: 0, fault: "outside" } }).result,
+            scope.request("documentLink/resolve", values).result,
+        ]) as { target: string; _fixture?: unknown }[];
+        assert.deepEqual(responses.map(link => link.target), ["host+fixture:outside-project", firstUri]);
+        assert.ok(responses.every(link => link._fixture === undefined));
+        const unconfigured = await links[0]!.run(document);
+        assert.equal((await unconfigured.resolve(unconfigured.items[0]!)).target, defaultUri);
+
+        const binding = scope.attachDocument(document.id);
+        for (const aliases of [null, [{ uri: firstUri }], [{ module: "sample-utils", uri: "" }], [{ module: "not a module", uri: firstUri }], Array(101).fill({ module: "sample-utils", uri: firstUri })]) {
+            await assert.rejects(scope.requestDocument("textDocument/documentLink", binding, () => ({ _fixture: { delay: 0, aliases } })).result,
+                error => error instanceof RpcError && error.code === -32602);
+        }
+        await assert.rejects(scope.request("documentLink/resolve", { ...values, _fixture: { delay: 0, fault: "failure" } }).result,
+            error => error instanceof RpcError && error.code === -32602);
+    } finally {
+        for (const client of [...signatures, ...links, ...colors]) client.dispose(); owner.dispose(); detach();
         await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
         assert.equal(workspace.diagnostics().leases, 0);
     }

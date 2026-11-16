@@ -32,17 +32,33 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
     });
     test("provider links resolve to captured host resources and late or outside destinations do not steal focus", async ({ page }) => {
         const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));
+        let outside = false, hold = false, release: (() => void) | undefined;
+        await page.routeWebSocket("**/lsp-fixture", client => {
+            const server = client.connectToServer(), held = new Set<number>();
+            client.onMessage(message => { const value = JSON.parse(message.toString());
+                if (value.method === "documentLink/resolve") {
+                    if (hold) { hold = false; held.add(value.id); }
+                    if (outside) { outside = false; server.send(JSON.stringify({ ...value, params: { ...value.params, _fixture: { delay: 0, fault: "outside" } } })); return; }
+                }
+                server.send(message);
+            });
+            server.onMessage(message => { const value = JSON.parse(message.toString());
+                if (held.delete(value.id)) release = () => client.send(message); else client.send(message); });
+        });
+        await page.reload(); await expect(field(page)).toBeVisible();
         const text = 'import "sample-utils";\r\nvalue;'; await seed(page, text); await button(page, "Add module companion").click();
         const history = (await snapshot(page)).history, list = page.getByLabel("Module link results", { exact: true });
         await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toHaveCount(1); await expect(list.getByRole("button")).toBeEnabled();
         await list.getByRole("button").click(); await expect.poll(async () => (await snapshot(page)).bindings.links.opened).toBe(1); await expect(field(page, "Secondary source")).toBeFocused();
         await button(page, "Return to link origin").click(); await expect(field(page)).toBeFocused(); expect((await snapshot(page)).history).toEqual(history); expect((await snapshot(page)).bindings.links.worker.created).toBe(0);
         await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toBeEnabled();
-        await page.evaluate(() => window.hostFixture.providerCustom("fixture/linksResolveConfig", { delay: 0, fault: "outside" })); await list.getByRole("button").click();
+        outside = true; await list.getByRole("button").click(); expect(outside).toBe(false);
         await expect(page.getByLabel("Module link status", { exact: true })).toContainText("outside the host"); await expect(list.getByRole("button")).toBeDisabled(); expect((await snapshot(page)).bindings.links.opened).toBe(1);
         await field(page).focus(); await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toBeEnabled();
-        await page.evaluate(() => window.hostFixture.providerCustom("fixture/linksResolveConfig", { delay: 650 })); await list.getByRole("button").click();
-        await field(page, "Configuration path").focus(); await expect.poll(async () => (await snapshot(page)).bindings.links.state.pending).toBe(false);
+        hold = true; await list.getByRole("button").click(); await expect.poll(() => !!release).toBe(true);
+        await field(page, "Configuration path").focus(); release!(); release = undefined;
+        await page.evaluate(() => window.hostFixture.providerCustom("fixture/state", {}));
+        await expect.poll(async () => (await snapshot(page)).bindings.links.state.pending).toBe(false);
         await expect(field(page, "Configuration path")).toBeFocused(); expect((await snapshot(page)).bindings.links.opened).toBe(1);
         expect(methods).toContain("textDocument/documentLink"); expect(methods).toContain("documentLink/resolve"); expect((await snapshot(page)).source.exports).toBe(0);
     });
