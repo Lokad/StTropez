@@ -181,6 +181,14 @@ test("workspace batches and grouped history retain bounded wire edits; skipped r
     assert.equal(f.workspace.undo({ documentId: id, expectedRevision: f.workspace.document(id).revision }).applied, true); await verify(true);
     assert.equal(peer.documents.get(uri)!.getText(), text);
     assert.equal(f.workspace.redo({ documentId: id, expectedRevision: f.workspace.document(id).revision }).applied, true); await verify(true);
+    const acknowledged = f.workspace.document(id), version = peer.documents.get(uri)!.version, updates = peer.changes.length;
+    assert.equal(f.workspace.undo({ documentId: id, expectedRevision: acknowledged.revision }).applied, true);
+    assert.equal(f.workspace.redo({ documentId: id, expectedRevision: f.workspace.document(id).revision }).applied, true);
+    const restored = f.workspace.document(id);
+    assert.equal(restored.buffer, acknowledged.buffer); assert.equal(restored.revision, acknowledged.revision + 2);
+    await verify(false);
+    assert.equal(peer.changes.length, updates + 1); assert.equal(peer.documents.get(uri)!.version, version + 1);
+    assert.deepEqual(peer.changes.at(-1)!.contentChanges, [], "A new revision of the acknowledged buffer advances the wire version without copying text.");
     const count = peer.changes.length; f.edit(id, "first"); f.edit(id, "second"); await verify(false);
     assert.equal(peer.changes.length, count + 1, "Skipped local revisions still coalesce into one exact wire update.");
     f.provider.disconnect(); f.edit(id, "offline"); await f.provider.connect(); await scope.request("test/barrier").result;

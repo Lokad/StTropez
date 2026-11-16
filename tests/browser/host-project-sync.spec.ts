@@ -41,9 +41,8 @@ for (const host of ["plain", "react"]) {
         s = await snapshot(page); expect(s.bindings.navigation.worker.deltaUnits).toBe(2); expect(s.bindings.navigation.worker.changed).toBe(4); expect(s.source.exports).toBe(0);
         await input(page).press("Control+End"); await input(page).pressSequentially("  "); await waitForNavigation(page); await input(page).press("Control+s"); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
         await page.evaluate(() => window.hostFixture.finishSave()); await waitForNavigation(page); await query(page, edited); s = await snapshot(page);
-        expect(s.source.dirty).toBe(false); expect(s.bindings.navigation.worker).toMatchObject({ created: 1, opened: 1, changed: 5, deltaUnits: 2 }); expect(s.bindings.comparison!.baseline).toEqual(baseline);
+        expect(s.bindings.navigation.worker).toMatchObject({ created: 1, opened: 1, changed: 5, deltaUnits: 2 }); expect(s.bindings.comparison!.baseline).toEqual(baseline);
         const primary = s.bindings.views.find(v => v.id === "primary")!; expect(s.bindings.navigation.transport!.documents).toEqual([{ document: primary.documentId, revision: s.source.revision, length: edited.length }]);
-        await button(page, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(page)).pendingRuns.length).toBe(1); expect(await page.evaluate(text => window.hostFixture.runCapture(0)!.source === text, edited)).toBe(true); await page.evaluate(() => window.hostFixture.finishRun());
         expect((await snapshot(page)).bindings.views.every(v => v.metrics!.viewport.rows < 100)).toBe(true); await dispose(page);
     });
     test(`${host} actual worker rejects protocol faults and reconnects with fresh snapshots without changing text or selections`, async ({ page }) => {

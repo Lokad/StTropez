@@ -8,5 +8,5 @@ export default defineConfig({ ...base, testMatch: [
     "comparison-ownership.spec.ts", "save-conflicts.spec.ts", "hosts.spec.ts", "host-attachment.spec.ts", "host-lifecycle.spec.ts", "demo-language-lifecycle.spec.ts", "demo-project-lifecycle.spec.ts", "protocol-websocket.spec.ts",
     "viewport-decorations.spec.ts", "viewport-geometry.spec.ts", "viewport-paint.spec.ts",
     "text-geometry.spec.ts", "owner-activity.spec.ts", "caret-placement.spec.ts", "shadow-focus.spec.ts", "folding.spec.ts", "viewport-row-retention.spec.ts", "input-context-reuse.spec.ts",
-    "host-completion-indentation.spec.ts", "host-popup.spec.ts", "host-hover.spec.ts", "host-lsp-review.spec.ts", "host-lsp-input.spec.ts", "bracket-highlights.spec.ts", "character-warnings.spec.ts", "viewport-presentation.spec.ts", "lsp-interop.spec.ts",
+    "host-completion-indentation.spec.ts", "host-popup.spec.ts", "host-hover.spec.ts", "host-lsp-review.spec.ts", "host-lsp-input.spec.ts", "host-lsp-sync.spec.ts", "bracket-highlights.spec.ts", "character-warnings.spec.ts", "viewport-presentation.spec.ts", "lsp-interop.spec.ts",
 ] });
