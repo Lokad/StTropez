@@ -72,8 +72,9 @@ the boundaries of `maxScanStepMs` and `replaceTransactionMs`.
 
 ### Literal matching and scheduling
 
-`LiteralSearch` is the headless cursor underlying literal find. It accepts an immutable buffer,
-a query and `LiteralSearchOptions` with optional `from`, `to`, `wholeWord` and `matchCase`.
+`LiteralSearch(buffer, query, options?)` is the headless cursor underlying literal find. It accepts
+an immutable buffer, a query and an optional `LiteralSearchOptions` object with `from`, `to`,
+`wholeWord` and `matchCase`. Bounds default to `0` and `buffer.length`; options must be an object.
 Bounds and returned `SearchMatch` ranges use original UTF-16 offsets; `to` is exclusive.
 Matching is non-overlapping and preserves raw line endings. An empty query has no matches.
 

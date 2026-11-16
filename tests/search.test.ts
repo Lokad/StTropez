@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { LiteralSearch, TextBuffer } from "../src/index.ts";
 import type { LiteralSearchOptions } from "../src/index.ts";
 function all(buffer: TextBuffer, query: string, budget = 3, options?: LiteralSearchOptions) {
-    const cursor = new LiteralSearch(buffer, query, options ?? 0), matches = [];
+    const cursor = new LiteralSearch(buffer, query, options), matches = [];
     for (;;) { const step = cursor.next(budget, 2); assert.ok(step.readUnits <= budget); matches.push(...step.matches); if (step.done) return matches; }
 }
 test("literal search crosses piece/step boundaries, preserves UTF-16/newlines and does not export", () => {
@@ -62,7 +62,7 @@ test("fragmented whole-word scans agree with an independent flat code-point orac
     assert.equal(buffer.readMetrics().textExports, 0);
 });
 test("adversarial prefixes, match/read budgets, ranged scans and disposal stay explicit", context => {
-    const query = "aaaaab", buffer = TextBuffer.from("a".repeat(100_000) + "b"), cursor = new LiteralSearch(buffer, query, 4);
+    const query = "aaaaab", buffer = TextBuffer.from("a".repeat(100_000) + "b"), cursor = new LiteralSearch(buffer, query, { from: 4 });
     const indexOf = String.prototype.indexOf; let nativeCalls = 0;
     const probe = context.mock.method(String.prototype, "indexOf", function (this: string, search: string, from = 0) {
         if (search === query) { nativeCalls++; assert.ok(this.length - from <= 1024, "Native scans must obey the same cooperative span bound."); }
@@ -73,9 +73,11 @@ test("adversarial prefixes, match/read budgets, ranged scans and disposal stay e
     assert.deepEqual(step.matches, [{ from: 99_995, to: 100_001 }]);
     const many = new LiteralSearch(buffer, "a"); assert.equal(many.next(100, 2).matches.length, 2);
     many.dispose(); assert.deepEqual(many.next(), { done: true, scanned: 2, readUnits: 0, matches: [] });
-    assert.throws(() => cursor.next(0), RangeError); assert.throws(() => new LiteralSearch(buffer, "a", -1), RangeError);
+    assert.throws(() => cursor.next(0), RangeError); assert.throws(() => new LiteralSearch(buffer, "a", { from: -1 }), RangeError);
     assert.deepEqual(all(TextBuffer.from("xxabxx"), "ab"), [{ from: 2, to: 4 }]);
-    assert.deepEqual(new LiteralSearch(buffer, "b", 0, 100_000).next(100_001).matches, []);
+    assert.deepEqual(new LiteralSearch(buffer, "b", { from: 0, to: 100_000 }).next(100_001).matches, []);
+    // @ts-expect-error Bounds belong in the options object.
+    assert.throws(() => new LiteralSearch(buffer, "a", 0), TypeError);
 });
 test("seeded fragmented snapshots agree with the platform literal-search oracle", () => {
     let seed = 0x51a7, text = "a😀\r\néabc".repeat(20), buffer = TextBuffer.from(text);

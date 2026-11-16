@@ -20,15 +20,15 @@ export class LiteralSearch {
     private folded: CaseInsensitiveMatcher | undefined;
     private leading: { text: string; from: number } | undefined;
     private queued: { text: string; from: number } | undefined;
-    constructor(buffer: TextBuffer, query: string, from: number | LiteralSearchOptions = 0, to = buffer.length) {
+    constructor(buffer: TextBuffer, query: string, options: LiteralSearchOptions = {}) {
         if (typeof query !== "string") throw new TypeError("Expected a literal search string.");
-        if (typeof from !== "number" && (typeof from !== "object" || from === null)) throw new TypeError("Expected search bounds or options.");
-        const options = typeof from === "number" ? undefined : from, start = typeof from === "number" ? from : from.from ?? 0;
-        if (options?.wholeWord !== undefined && typeof options.wholeWord !== "boolean") throw new TypeError("Expected a whole-word flag.");
-        if (options?.matchCase !== undefined && typeof options.matchCase !== "boolean") throw new TypeError("Expected a match-case flag.");
-        this.iterator = buffer.chunks(start, options?.to ?? to)[Symbol.iterator](); this.offset = start; this.query = query;
-        if (options?.wholeWord) this.boundaryBuffer = buffer;
-        if (options?.matchCase === false) this.folded = new CaseInsensitiveMatcher(query);
+        if (typeof options !== "object" || options === null) throw new TypeError("Expected search options.");
+        const start = options.from ?? 0;
+        if (options.wholeWord !== undefined && typeof options.wholeWord !== "boolean") throw new TypeError("Expected a whole-word flag.");
+        if (options.matchCase !== undefined && typeof options.matchCase !== "boolean") throw new TypeError("Expected a match-case flag.");
+        this.iterator = buffer.chunks(start, options.to ?? buffer.length)[Symbol.iterator](); this.offset = start; this.query = query;
+        if (options.wholeWord) this.boundaryBuffer = buffer;
+        if (options.matchCase === false) this.folded = new CaseInsensitiveMatcher(query);
         this.prefix = new Uint32Array(this.folded ? 0 : query.length);
         for (let index = 1, length = 0; !this.folded && index < query.length; index++) {
             while (length && query[index] !== query[length]) length = this.prefix[length - 1]!;
