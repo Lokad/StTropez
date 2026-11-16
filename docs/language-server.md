@@ -160,6 +160,11 @@ String, null and safe-integer IDs are accepted; fractional and unsafe numeric ID
 Notifications receive no replies. Late successful replies are ignored; uncorrelated error replies
 reach `onError`. Disposing the connection releases its transport, deadlines and pending work.
 
+`RpcError` carries a numeric protocol `code`, message and optional JSON `data`. Remote error
+responses reject their calls with this error; request handlers can throw it to supply a
+structured error response. Cancellation, expiry and transport failures also reject pending
+work, so callers must handle rejected results and release their captured intent.
+
 `LspSession` is the lower-level owner for hosts without a `Workspace`. Construct it with a
 connection factory and scheduler, bind immutable buffers with `bindDocument`, and retain each
 handle for expected-revision updates or closing. An old handle cannot modify its replacement;
@@ -191,7 +196,13 @@ replacements: proven transaction ranges are sent in descending original-offset o
 revisions, opaque maps and unproved gaps use a shared-edge replacement. Excess batch-encoding
 overhead can also use that replacement fallback. Transport failures do not retry an edit.
 
-The line index preserves raw LF, CRLF and bare-CR text. CRLF interiors have no unambiguous protocol
+`LspLineIndex.create(buffer, cooperate)` builds an immutable UTF-16 position index. `positionAt`
+rejects invalid offsets; `offsetAt` rejects malformed positions, clamps oversized characters to
+the line's content end and maps lines beyond the document to EOF. `change` returns a replacement
+index and incremental changes without mutating the original. The caller supplies cooperative
+scheduling for construction and change planning.
+
+The index preserves raw LF, CRLF and bare-CR text. CRLF interiors have no unambiguous protocol
 position and are refused; generated change boundaries expand across the pair. LF metadata is
 reused and changed regions are scanned. Dense bare-CR indexes can require linear copying.
 Synchronization planning yields after its time/checkpoint budget; encoding, allocation and server

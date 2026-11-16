@@ -22,12 +22,12 @@ Select the commands relevant to the changed owner:
 | Command | Scope |
 | --- | --- |
 | `npm run typecheck` | Strict project types plus headless core/protocol compilations |
-| `npm run check:docs` | Selected public TypeScript documentation examples, compiled independently |
+| `npm run check:docs` | Subject-page structure, repository links/anchors, public value ownership, prose and independently compiled TypeScript examples |
 | `npm test` | Headless model and host-policy tests |
 | `npm run test:browser` | Source browser suite in Chromium |
 | `npm run test:browsers` | Source browser suite in Chromium, Firefox and WebKit; explicit paths/projects narrow it |
 | `npm run test:ci` | Selected Chromium owner journeys defined in `playwright.ci.config.ts` |
-| `npm run check` | Types, documentation examples, models, library build and source Chromium suite |
+| `npm run check` | Types, documentation gate, models, library build and source Chromium suite |
 | `npm run inspect` | Headless behavioral/screenshots inspection with state metadata |
 | `npm run build:demo` then `npm run test:demo` | Built static demo in the configured engines |
 | `npm run test:package` | One packed/restored asset set across selected consuming hosts |
@@ -39,11 +39,39 @@ Browser configurations own their servers and expose `STTROPEZ_PORT` or `STTROPEZ
 for source/static routes. The static-demo configuration can target a supplied
 `STTROPEZ_DEMO_URL`. Keep a test server separate from an interactive demo session.
 
-The CI workflow runs types, documentation examples, models, library build, the selected
+The CI workflow runs types, the documentation gate, models, library build, the selected
 Chromium gate and the static-demo Chromium journey. A passing CI run has that scope;
 full multi-engine and package qualification use their separate commands.
 
 ## Contract
+
+### Documentation gate
+
+`scripts/check-docs.mjs` checks the subject-page inventory and the root, package and contributor
+entry documents. Relative Markdown links, image links and reference definitions must resolve
+to non-ignored repository files or directories. Heading anchors use rendered text and duplicate
+heading suffixes; explicit HTML anchors and source-line links are supported. Other raw HTML is
+refused so embedded URLs cannot bypass the link checks. External URLs are not fetched. Paths
+inside inline code, including installed asset examples, are not repository links.
+
+The gate enumerates runtime exports from the public core, browser and protocol entries without
+executing them. TypeScript resolves each public name to its declaring module; the ownership map
+in `scripts/documentation-audit.mjs` selects its subject page. That page must name the value in
+its `Contract` prose, including inline code. A fenced example, private declaration name or comment
+does not satisfy ownership. Type-only exports have no runtime-value obligation.
+
+API pages require the `Use`, `Contract`, `Host responsibilities` and `Not covered` sections,
+a TypeScript example and a support-matrix link. Every `ts`, `typescript` or `tsx` fence in the
+checked documents compiles independently against the public entries; imports of private source
+files or other packages are refused. Diagnostics identify the authored Markdown file and line.
+Development-only Markdown and heading parsers handle nested examples and formatted headings.
+
+The prose check rejects historical vocabulary, milestone labels, dated delivery notes, commit
+references and pass-count narratives. Code keeps real API names and commands. Contributor
+instructions are exempt from the prose rule because they describe repository policy; their
+links and examples are checked. Review must also verify contract accuracy and useful explanations:
+mention coverage and compilation cannot establish either, and the vocabulary rule cannot identify
+every historical narrative or measured-run claim.
 
 ### Test ownership
 

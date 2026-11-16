@@ -41,7 +41,7 @@ destroying its editor.
 
 ### Options, matches and commands
 
-The workspace, tab and editor must identify the same live text view. The controller captures
+`createFindController` requires the workspace, tab and editor to identify the same live text view. It captures
 the tab generation and retains a resource lease; focus changes never redirect its commands.
 `FindSnapshot` is immutable and includes query/options, revision, status, count, scan frontier,
 source length, current match index, preview, message and component timings.

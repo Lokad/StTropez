@@ -1,47 +1,30 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { moduleSpecifiers } from "./module-specifiers.mjs";
+import { apiPages, subjectPages, documentationPages, publicEntries as entries, parseDocumentation, auditPage, auditLinks, publicValues, auditValueCoverage } from "./documentation-audit.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-// Extend this list as subject pages replace the historical documentation.
-const pages = ["getting-started", "editor", "viewport", "folding", "search", "comparison", "text-model", "workspace", "language-server", "language-features", "unicode", "host-integration", "packaging", "architecture"].map(name => `docs/${name}.md`);
-const entries = {
-    sttropez: "src/index.ts",
-    "sttropez/browser": "src/browser/index.ts",
-    "sttropez/protocol": "src/protocol/index.ts"
-};
 
-/** Top-level fenced examples; other fenced content cannot open a nested example. */
 export function documentationExamples(path, markdown) {
-    const examples = [], lines = markdown.split(/\r?\n/);
-    let fence;
-    for (let index = 0; index < lines.length; index++) {
-        const line = lines[index];
-        if (fence) {
-            const close = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(line);
-            if (close && close[1][0] === fence.marker && close[1].length >= fence.size) {
-                if (fence.language) examples.push({ path, line: fence.start + 2, language: fence.language, code: fence.lines.join("\n") });
-                fence = undefined;
-            } else fence.lines.push(line.slice(Math.min(fence.indent, /^ */.exec(line)[0].length)));
-            continue;
-        }
-        const open = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(line);
-        if (!open || open[2][0] === "`" && open[3].includes("`")) continue;
-        const info = open[3].trim().split(/\s+/)[0];
-        fence = { marker: open[2][0], size: open[2].length, indent: open[1].length,
-            language: ["ts", "typescript", "tsx"].includes(info) ? info : undefined, start: index, lines: [] };
-    }
-    if (fence) throw new Error(`${path}:${fence.start + 1}: Unclosed code fence.`);
-    return examples;
+    const page = parseDocumentation(path, markdown);
+    const issue = page.diagnostics.find(issue => issue.code === "fence");
+    if (issue) throw new Error(`${path}:${issue.line}: ${issue.message}`);
+    return page.examples;
 }
 
 /** Compile each example as its own module against the public source entry points. */
 export async function compileDocumentation(examples) {
     if (!examples.length) throw new Error("No TypeScript documentation examples found.");
     for (const example of examples) {
-        for (const specifier of moduleSpecifiers(`${example.path}.${example.language === "tsx" ? "tsx" : "ts"}`, example.code)) {
+        let specifiers;
+        try { specifiers = moduleSpecifiers(`${example.path}.${example.language === "tsx" ? "tsx" : "ts"}`, example.code); }
+        catch (error) {
+            const line = example.line + example.code.slice(0, error.offset ?? 0).split("\n").length - 1;
+            throw new Error(`${example.path}:${line}: ${error.message}`, { cause: error });
+        }
+        for (const specifier of specifiers) {
             if (!Object.hasOwn(entries, specifier.value)) {
                 const line = example.line + example.code.slice(0, specifier.from).split("\n").length - 1;
                 throw new Error(`${example.path}:${line}: Import ${JSON.stringify(specifier.value)} must use a public entry point.`);
@@ -82,15 +65,20 @@ export async function compileDocumentation(examples) {
 }
 
 async function main() {
-    const examples = [];
-    for (const path of pages) {
-        const found = documentationExamples(path, await readFile(resolve(root, path), "utf8"));
-        if (!found.length) throw new Error(`${path}: Expected a TypeScript example.`);
-        examples.push(...found);
-    }
-    const result = await compileDocumentation(examples);
+    const actual = (await readdir(resolve(root, "docs"))).map(name => `docs/${name}`).sort();
+    if (JSON.stringify(actual) !== JSON.stringify([...subjectPages].sort())) throw new Error("docs/: Update the subject-page inventory when adding or removing a page.");
+    const read = path => readFile(resolve(root, path), "utf8");
+    const pages = await Promise.all(documentationPages.map(async path => parseDocumentation(path, await read(path))));
+    const inventory = spawnSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: root, encoding: "utf8", windowsHide: true });
+    if (inventory.error || inventory.status !== 0) throw inventory.error ?? new Error(inventory.stderr);
+    const files = new Set(inventory.stdout.split("\0").filter(Boolean));
+    const values = await publicValues(root);
+    const issues = pages.flatMap(page => auditPage(page, { api: apiPages.includes(page.path), vocabulary: page.path !== "AGENTS.md" }));
+    issues.push(...await auditLinks(pages, files, read), ...auditValueCoverage(values, pages));
+    if (issues.length) throw new Error(issues.map(issue => `${issue.path}:${issue.line}: [${issue.code}] ${issue.message}`).join("\n"));
+    const examples = pages.flatMap(page => page.examples), result = await compileDocumentation(examples);
     if (!result.success) throw new Error(result.output || "Documentation compilation failed.");
-    console.log(`Compiled ${examples.length} independent TypeScript examples in ${pages.length} documentation pages.`);
+    console.log(`Checked ${pages.length} documents, repository links/anchors, ${values.length} public values and prose; compiled ${examples.length} independent TypeScript examples.`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

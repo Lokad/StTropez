@@ -32,7 +32,7 @@ does not dispose the supplied view; a view created by the mount is disposed with
 
 ### Mounting and presentation
 
-The tab must identify a text surface. A supplied view must belong to that document and
+`mountTextViewport` requires a tab identifying a text surface. A supplied view must belong to that document and
 workspace. The mount captures the tab generation; replacing the tab clears its projection
 instead of redirecting it to the replacement document.
 

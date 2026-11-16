@@ -3,7 +3,10 @@ import ts from "typescript-demo";
 /** Development-only parsing shared by declaration finalization and host staging. */
 export function moduleSpecifiers(path, text) {
     const file = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true), result = [];
-    if (file.parseDiagnostics.length) throw new Error(`Invalid module syntax in ${path}: ${ts.flattenDiagnosticMessageText(file.parseDiagnostics[0].messageText, " ")}`);
+    if (file.parseDiagnostics.length) {
+        const first = file.parseDiagnostics[0];
+        throw Object.assign(new Error(`Invalid module syntax in ${path}: ${ts.flattenDiagnosticMessageText(first.messageText, " ")}`), { offset: first.start ?? 0 });
+    }
     function visit(node) {
         const literal = ts.isImportDeclaration(node) || ts.isExportDeclaration(node) ? node.moduleSpecifier
             : ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) ? node.argument.literal

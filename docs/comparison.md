@@ -34,10 +34,12 @@ across mounts. Destroying the comparison disposes only views it creates.
 
 ### Identity and comparison state
 
-A baseline contains an immutable `TextBuffer` and a string `version`; versions are opaque host
-labels. The working tab must identify a live text document. A supplied view must belong to that
-document and workspace. The controller retains the resource and captures the tab generation;
-moving a tab preserves it, while closing or replacing the target expires it.
+`createComparisonController` captures a baseline containing an immutable `TextBuffer` and a
+string `version`; versions are opaque host labels. The working tab must identify a live text
+document. A supplied view must belong to that
+document and workspace. `mountTextComparison` attaches the controller and both browser panes.
+The controller retains the resource and captures the tab generation; moving a tab preserves it,
+while closing or replacing the target expires it.
 
 `ComparisonController` is an observable with immutable `ComparisonSnapshot` values:
 
