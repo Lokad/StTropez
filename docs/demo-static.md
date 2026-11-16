@@ -48,7 +48,7 @@ Generated JavaScript uses the existing read-only virtualized text viewport, so l
 keep bounded DOM content in both panes instead of laying out the complete output in one element.
 Edits retain provisionally mapped syntax colors and the last completed output while analysis
 runs; the footer reports pending or unavailable analysis. Only current worker results replace
-them. File changes clear presentation ownership. See the [visible-continuity checks](demo-qualification.md#visible-continuity-and-complete-host-coverage).
+them. File changes clear presentation ownership. See the [visible-continuity checks](testing.md#readiness-and-visible-continuity).
 The syntax worker retains compiler state and receives incremental replacement text. JavaScript
 emission follows panel visibility; reopening requests current output without re-uploading the
 source. Syntax colors remain active when the output panel is hidden or showing review/problems.

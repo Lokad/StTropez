@@ -157,7 +157,7 @@ including archive membership/hashes, exports and strict declarations, host bundl
 worker deployment and browser interactions. It also exercises controlled version/staging
 transitions. Within one qualification run, scope-specific checks reuse an immutable archive
 and restored root with package-hash checks and an unchanged-source guard.
-See [qualification](qualification.md) for test ownership.
+See [qualification](testing.md) for test ownership.
 
 ### Bounds and validation
 

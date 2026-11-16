@@ -13,7 +13,7 @@ The M3 editor/review pilot supports actual typing, selection/navigation, shared 
 comparison and hunk reversion, captured saves/conflicts, recovery and explicit host lifecycle.
 The plain and React development hosts combine these with typed configuration, synthetic
 deferred services and captured Run/agent decisions through stable controllers and refs.
-Try the [integrated editor/review pilot](docs/m3-pilot.md#try-the-integrated-pilot) for direct
+Try the [integrated editor/review pilot](docs/m3-pilot.md#try-the-integrated-hosts) for direct
 host links and a walkthrough of editing, comparison, captured saves, conflicts and remount.
 Documents use an immutable indexed piece tree, bounded shared undo/redo, mapped view selections,
 atomic multi-document edits and explicit newline conversion. The bounded input adapter and
@@ -24,7 +24,7 @@ remain unverified; full contextual long-line geometry and production adoption re
 qualification gaps.
 
 The [LSP provider route](docs/m3-pilot.md#try-the-lsp-provider-route) adds actual captured protocol
-workflows and explicit command/server-edit decisions. [Qualification limits](docs/m3-pilot.md#qualification-scope)
+workflows and explicit command/server-edit decisions. [Qualification limits](docs/testing.md#native-device-checklist)
 keep native, performance and adoption claims scoped.
 
 ## Run
@@ -57,8 +57,8 @@ The Code menu exposes these commands. Enter or a click accepts a resolved comple
 dismisses popups. Provider failure leaves editing and saves available, with a separate retry action.
 Use Ctrl+. or Code → Quick fix to review a provider fix before applying it. The spelling fix
 for a mistyped known name is supported and undoable. See the [demo language integration](docs/demo-language.md) for its
-supported subset and ownership. [Demo qualification](docs/demo-qualification.md) records the
-restored-package workflow, integrated normal/100k measurements and remaining device checks.
+supported subset and ownership. [Testing](docs/testing.md) describes restored-package coverage, visible-continuity checks,
+measurement policy and the native-device checklist.
 The server binds to loopback only and does not open a browser window.
 
 `npm run dev` is an alias for the same server. The older mixed-surface workspace fixture is
@@ -93,7 +93,7 @@ Generated evidence is in `artifacts/`; failed browser tests also retain traces i
 and missing tests cause failures. Browser specs use the shared automatic context guard in
 `tests/browser/fixtures.ts`; it includes secondary tabs. Standalone restored-demo journeys use
 the same error policy. An intentional network failure or connection cancellation may permit one exact console diagnostic
-for its URL; other errors fail. [Qualification ownership](docs/qualification.md) separates focused changes,
+for its URL; other errors fail. [Qualification ownership](docs/testing.md) separates focused changes,
 broad boundaries and performance runs. Input-handler time, frame readiness and complete
 scripted action latency are different clocks; none establishes physical input/display latency.
 The editing, viewport, comparison and host fixtures expose one `settled` flag, polled by the
@@ -139,14 +139,14 @@ The development hosts are `/hosts/plain/` and `/hosts/react/`; their
 [adapter contract](docs/host-adapter.md) and [agent protocol](docs/workspace.md#agent-review) describe the
 synthetic fixtures and the consuming host's remaining integration responsibilities.
 
-The [acceptance inventory](docs/acceptance.md) defines pilot/replacement workflows, workload
-sizes and the proposed input matrix. `/probes/` on the development server
+The [testing guide](docs/testing.md#behavioral-coverage) defines behavioral coverage, workload
+sizes and the native-device checklist. `/probes/` on the development server
 compares native input candidates and exercises highlighting, completion and diagnostics
 through a real development worker. These experiments do not select or qualify a production
 renderer or language client; native IME checks remain pending.
 
-See [the architecture](docs/architecture.md), [performance assessment](docs/performance.md), and
-[instrumentation guide](docs/instrumentation.md). [Text model](docs/text-model.md) describes
+See [the architecture](docs/architecture.md), [performance assessment](docs/testing.md#measurement-policy), and
+[instrumentation guide](docs/testing.md#fixtures-and-test-hooks). [Text model](docs/text-model.md) describes
 buffers, position mapping, selections and newline conversion. The local roadmap is `PLAN.md`.
 See [workspace transactions and history](docs/workspace.md#transactions-and-history) for transaction, grouping and undo policy.
 The [viewport layer](docs/viewport.md) and `/viewport/` fixture record bounded-rendering evidence.

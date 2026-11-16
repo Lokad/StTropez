@@ -179,7 +179,7 @@ An input-handler duration alone cannot establish interaction readiness. Visible 
 selection, syntax decoration and comparison state form part of the user's result; gutter
 movement or a single frame callback is insufficient when those outputs are pending. The
 [glossary](README.md#glossary) owns clock definitions, and
-[qualification](qualification.md) describes test ownership.
+[qualification](testing.md) describes test ownership.
 
 ### Dependency and acceleration policy
 

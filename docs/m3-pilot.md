@@ -1,31 +1,11 @@
-# M3 editor and review pilot
+# Host workflow walkthrough
 
-M3 targets a usable editor/review workflow in the plain and React evaluation hosts. It does
-not require a general font engine, IDE parity, deployment or application-service integration.
-Further font/shaping expansion is deferred unless a reproducible pilot defect requires it.
+The plain and React development hosts exercise deferred services and editor/review workflows.
+See [testing](testing.md) for behavioral coverage, measurement policy and device checks.
 
-Completion requires current evidence for each criterion below. Existing kernel and isolated
-fixture results are supporting evidence; they do not replace an integrated host workflow.
+## Try the integrated hosts
 
-| Criterion | Required behavior and evidence |
-| --- | --- |
-| Editing | Actual keyboard typing, single and multiple selections, word/line/grapheme/page navigation and deletion, multiline indentation, paired brackets, clipboard paths, read-only transitions and focus escape preserve exact text and selection. |
-| History | Undo/redo is shared across views, reverses each command as one intended transaction, returns to the saved baseline, and preserves later human corrections around programmatic edits. |
-| Saving | Captured saves, server-version conflicts, retry/canonical replies and dirty state are visible and correct while typing continues. Stale responses never overwrite newer work or retarget another tab. |
-| Review | The same host exposes an immutable reference and editable working comparison, hunk navigation/reversion, captured refresh/acceptance and shared history. Reference, saved and proposal versions stay distinct. |
-| Host integration | Plain and pure-function React hosts exercise edit, proposal/correction, comparison, save/acknowledgement and the next request. Background progress, configuration edits, move/remount and failures preserve focus and independent selections. |
-| Large documents | Normal Unicode/CRLF sources, 100,000 lines of about 2.4 million UTF-16 units, and long-line controls exercise beginning/middle/end edits and navigation. Input contexts, rendered rows, reads and DOM stay bounded; ordinary edits do not export the complete document. Unsupported contextual geometry stays explicitly identified. |
-| Responsiveness | Repeated source- and hardware-labelled samples include semantic assertions, raw timings, background traffic and both views. Report input-handler duration separately from interaction readiness and complete action/workflow proxies. Bulk operations show progress, yield, reject stale targets and cancel without partial commits. |
-| Lifecycle and package | Close/replace/dispose during work releases views, listeners, subscriptions and leases without losing owned unsaved work. The restored assets-only package exercises the pilot surface without checkout fallback. |
-| Native input | Real IME/reconversion, OS clipboard and keyboard-only checks have a declared support record. Unavailable checks remain unverified, and the native baseline stays available. Automation does not satisfy this device gate. |
-
-Useful automated host evaluation may proceed while device checks are unavailable. Keep that
-status separate from complete M3/native qualification, and continue independent implementation
-and measurement. Do not claim production replacement readiness from synthetic composition.
-
-## Try the integrated pilot
-
-The root [demo workflow](demo-qualification.md) supplies the smaller user-facing acceptance
+The root [demo workflow](demo-language.md) supplies the smaller user-facing acceptance
 surface: TypeScript editing, language actions, Problems, Changes and local save/recovery.
 Extended samples load on demand. **Host integrations · paste & notes** demonstrates public
 configuration, token decoration, captured insertion and mapped host metadata; see the
@@ -204,68 +184,3 @@ See [action commands](language-features.md#code-actions-and-commands), [server-e
 [supported subset](language-server.md) for limits, cancellation and remaining protocol gaps.
 [Signature help, links/resolve and color presentations](language-features.md) also use the shared
 LSP provider and existing host controls. Local tokenization and domain tools remain separate fixtures.
-
-## Qualification scope
-
-The automated pilot covers both hosts, normal and 100k-line sources, actual editing/history,
-comparison, captured Save/Run and lifecycle guards in Chromium, Firefox and WebKit. Restored
-assets qualify a separately built React host without checkout-source fallback. A tracked-files-only
-checkout also passes public locked dependency installation, strict checks/build, all 499 model
-tests and focused normal/100k editor/LSP/reference-Find journeys. Its compiled modules,
-declarations, CSS and license assets match the qualified package byte for byte. Browser binaries
-were reused; the clean trial is setup and correctness evidence, not a new browser-install test.
-
-A separate [LSP lifecycle retention check](performance.md#lsp-lifecycle-retention) qualifies the
-documented settled owner-release boundary for retained Chromium V8/DOM, including pending decisions
-and remount. Immediate post-detach collection remains unqualified; the experiment is closed.
-
-These results qualify the documented evaluation surface. Native IME/dead keys/AltGr/reconversion,
-OS/app/menu clipboard, native unload, token-preserving WebKit drag and physical display checks
-remain unverified. Scoped Chromium retained V8/DOM observations do not establish process/backing/
-peak memory, GC pauses or other-engine retention. Production/constrained hardware, release and
-consuming-host adoption gates remain separate in the [acceptance inventory](acceptance.md).
-Correctness journeys and generous timeouts make no new latency-tail or heap claim.
-
-## Measurement boundaries
-
-For local point typing and navigation, initial targets on the recorded development runner are
-p95 input-handler duration at most 16ms, interaction-ready proxy at most 100ms for normal sources
-and 250ms for large sources, and complete action proxy at most 200ms/500ms respectively.
-These are targets to test, not established results or physical display-latency claims. Report
-bulk command totals and longest uninterrupted calls separately. Controlled service delays belong
-in full workflow results and must not be hidden in handler measurements.
-
-The timing boundaries are explicit:
-
-1. Handler duration is elapsed time inside a named adapter listener, such as `beforeinput`,
-   `input` or `keydown`. Include its model commit, context refresh and synchronous subscribers.
-   Exclude other listeners, preceding native work and queued callbacks; report those clocks
-   separately. A cancelled `beforeinput` has no new `input` sample. Handler elapsed time is
-   neither complete interaction latency nor process CPU time.
-2. Interaction readiness starts at browser input/command dispatch and ends only after the
-   expected model, selection and both rendered view revisions are current, plus scheduled
-   animation frames. The editor/review proxy also waits for current working and reference panes,
-   the visible reference version, caret work, scans and comparison completion. This is a readiness
-   proxy, not proof of pixels reaching a display.
-3. Complete action/workflow proxies include automation transport, command controls, asynchronous
-   settlement and the same semantic/view readiness checks. Keep these separate from handler duration
-   and record imposed service delays.
-
-Delivery order:
-
-1. Fix reproduced pilot defects in typing, selection/navigation, history, saving, review and
-   lifecycle with focused regressions. Comparison and the integrated workflows above are already
-   implemented; use their existing scenarios before adding coverage.
-2. At coherent milestones, batch the relevant model/browser/package/inspection checks and bounded
-   measurements. Reuse passing source-labelled evidence for unchanged paths and commit qualified
-   work. Benchmark tooling supports delivery; it is not an independent expansion queue.
-3. Keep historical timing failures and unresolved attribution explicit. Rerun or trace them only
-   for a new hypothesis with a bounded experiment. Separate own-listener, complete readiness and
-   workflow clocks; a larger correctness timeout does not qualify latency.
-4. Obtain native-device evidence when available and continue independent work
-   meanwhile. Further font/shaping expansion requires a reproduced pilot defect.
-
-All runtime code remains dependency-free, core logic stays headless, and host services and
-reactive libraries remain outside the editor. Keep the native baseline and bounded candidate
-distinguished in every result. The ignored local roadmap retains historical research evidence;
-its earlier shaping-first next steps are superseded by this pilot queue.

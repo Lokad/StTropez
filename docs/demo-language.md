@@ -245,8 +245,5 @@ resolution/history, pointer/keyboard inspection, argument changes and popup Esca
 held real responses after edits/file switches, startup failure/retry,
 direct spelling-fix selection/history, delayed activated resolution, reviewed two-file actions,
 concurrent diagnostic refresh, related-file invalidation,
-incremental synchronization, reconnect and owned process/workspace cleanup. The actual demo's
-restored-package walkthrough and integrated normal/100k measurements are recorded in
-[demo qualification](demo-qualification.md), including separate handler, editor-frame,
-automation, compiler and provider clocks. Headless checks do not qualify native IME,
-OS clipboard or physical input/display behavior.
+incremental synchronization, reconnect and owned process/workspace cleanup. See [testing](testing.md) for restored-package coverage, readiness and measurement policy,
+and the [support matrix](README.md#support-matrix) for native-device boundaries.

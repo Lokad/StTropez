@@ -14,5 +14,7 @@ StTropez is a standalone TypeScript editor and workspace foundation.
 - `PLAN.md` is an ignored local roadmap. Keep all project files generic: no private repositories, tickets, customer data, endpoints, or copied internal implementation details.
 - Before adding logic, search this project and relevant public references for an existing solution. Explain a deliberate new implementation where reuse conflicts with the zero-dependency requirement.
 - Use `npm run check`, `npm run test:browsers`, `npm run inspect` and `npm run bench` for the relevant change. A native-input prototype is not proof of a production editing engine.
+- Use focused owner regressions during implementation; batch broad browser/package qualification at coherent milestones and reuse evidence for unchanged inputs. Test ownership, commands and measurement boundaries are in `docs/testing.md`.
+- On a shared desktop, keep browser automation headless or in the background. Do not activate applications, inject global input or change the OS clipboard without coordinating with the user. Keep test servers separate from the user's interactive demo server.
 - Do not add a WASM compiler or runtime until a measured kernel experiment justifies it. Keep a TypeScript implementation and test semantic equivalence.
 - No publishing, remote creation or application-service integration is part of the scaffold.
