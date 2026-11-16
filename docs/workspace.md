@@ -409,6 +409,30 @@ listener list; changes to subscriptions affect later publications. Listener exce
 to `WorkspaceOptions.onListenerError` when supplied and cannot stop other listeners or roll
 back a committed transaction. Error-reporter exceptions are contained.
 
+`createNotificationScope(onListenerError?)` returns a controller notification scope sharing the
+workspace's write guard. Its `batch(action)` defers notifications from the workspace and related
+scopes until the outermost synchronous action returns or throws. State commits immediately;
+the batch does not roll back writes, combine history transactions or await asynchronous work.
+Use `editDocuments` when several document edits must validate and commit as one transaction.
+
+Each delivery request captures its current listeners. A batch invokes each captured callback
+once, in first-capture order, using the error policy of the scope that first captured it.
+Later subscription removal does not cancel an already captured callback. Independent workspace
+scopes are unaffected. A batch cannot start during notification delivery.
+
+```ts
+import type { ResourceId, Workspace } from "sttropez";
+
+export function restrictPair(workspace: Workspace, first: ResourceId, second: ResourceId): void {
+    // Resolve both targets before either write; batching itself provides no rollback.
+    workspace.resource(first); workspace.resource(second);
+    workspace.createNotificationScope().batch(() => {
+        workspace.setCapabilities(first, { edit: [], save: true, run: true });
+        workspace.setCapabilities(second, { edit: [], save: true, run: true });
+    });
+}
+```
+
 Reentrant state mutations during notification are rejected. Queue follow-up commands after
 delivery through the host scheduler, retaining their captured identities and revalidating
 before execution. Observable subscriptions provide reads, not writable reactive state.

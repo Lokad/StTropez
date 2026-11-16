@@ -66,3 +66,53 @@ test("nested controller publications deliver their new state while sharing the p
     } finally { stops.forEach(stop => stop()); }
     assert.equal(parent.subscriptionCount(), 0); assert.equal(child.subscriptionCount(), 0);
 });
+
+test("nested scope batches deliver final state once with captured registrations and each listener's error policy", () => {
+    const parentErrors: unknown[] = [], childErrors: unknown[] = [], order: string[] = [];
+    const parent = new NotificationScope(error => parentErrors.push(error));
+    const child = new NotificationScope(error => { childErrors.push(error); throw new Error("reporter"); }, parent);
+    const independent = new NotificationScope(() => {}), outside = new Store(0, independent);
+    const a = new Store(0, parent), b = new Store(0, child), failure = new Error("listener");
+    const publish = (scope: NotificationScope, store: Store<number>, value: number) => {
+        const changed = new Set<Store<unknown>>(); store.set(value, changed); scope.deliver([...changed]);
+    };
+    const shared = () => {
+        order.push("shared"); assert.deepEqual([a.get(), b.get()], [2, 3]);
+        assert.throws(() => child.batch(() => {}), /Reentrant/);
+    };
+    const broken = () => { order.push("broken"); throw failure; };
+    const stops = [a.observable.subscribe(shared), b.observable.subscribe(shared), b.observable.subscribe(broken),
+        a.observable.subscribe(broken), outside.observable.subscribe(() => order.push("outside"))];
+    let stopLate = () => {};
+    try {
+        const result = child.batch(() => {
+            publish(child, b, 1); stops[1]!();
+            stopLate = b.observable.subscribe(() => order.push("late"));
+            parent.batch(() => { publish(parent, a, 2); publish(child, b, 3); });
+            assert.deepEqual(order, []);
+            publish(independent, outside, 1); assert.deepEqual(order, ["outside"]);
+            return 7;
+        });
+        assert.equal(result, 7); assert.deepEqual(order, ["outside", "shared", "broken", "late"]);
+        assert.deepEqual(parentErrors, []); assert.deepEqual(childErrors, [failure]);
+        assert.doesNotThrow(() => parent.assertWritable());
+    } finally { stops.forEach(stop => stop()); stopLate(); }
+    assert.equal(parent.subscriptionCount() + child.subscriptionCount() + independent.subscriptionCount(), 0);
+});
+
+test("a failed synchronous batch publishes committed workspace changes and releases the notification boundary", () => {
+    const workspace = new Workspace(), scope = workspace.createNotificationScope();
+    const source = workspace.createTextResource({ scope: "batch", resource: "source", variant: "working" }, "Source", { value: "a" });
+    const seen: string[] = [], failure = new Error("command");
+    const stop = source.subscribe(() => {
+        seen.push(workspace.document(source.documentId).text());
+        assert.throws(() => scope.batch(() => workspace.setCapabilities(source.id, { edit: [], save: false, run: false })), /Reentrant/);
+    });
+    const edit = (revision: number, insert: string) => workspace.edit({ documentId: source.documentId, expectedRevision: revision,
+        origin: "human", edits: [{ from: 0, to: 1, insert }] });
+    try {
+        assert.throws(() => scope.batch(() => { edit(0, "b"); assert.deepEqual(seen, []); throw failure; }), error => error === failure);
+        assert.deepEqual(seen, ["b"]);
+        edit(1, "c"); assert.deepEqual(seen, ["b", "c"]);
+    } finally { stop(); workspace.releaseResource(source.id, true); }
+});

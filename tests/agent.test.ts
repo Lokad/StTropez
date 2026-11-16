@@ -25,11 +25,12 @@ function fixture() {
 test("an exclusive request captures immutable inputs, enforces every origin, and publishes lock/review state together", () => {
     const { workspace, source, review, edit, errors } = fixture();
     const observations: string[] = [];
-    const unsubscribe = source.metadata.subscribe(() => {
+    const observe = () => {
         const locked = source.metadata.getSnapshot().editLock !== null;
         observations.push(`${locked}:${review.getSnapshot().request !== null}`);
         assert.equal(locked, review.getSnapshot().request !== null);
-    });
+    };
+    const stops = [source.metadata.subscribe(observe), review.subscribe(observe), workspace.subscribe(observe)];
     const context = { configuration: { revision: 3, path: "before.csv" } };
     const request = workspace.beginAgentRequest(source, context);
     context.configuration.path = "after.csv";
@@ -43,7 +44,7 @@ test("an exclusive request captures immutable inputs, enforces every origin, and
     assert.equal(workspace.document(source.documentId).text(), "proposed");
     assert.equal(review.getSnapshot().proposal?.target.revision, 1);
     assert.deepEqual(observations, ["true:true", "false:false"]); assert.equal(errors.length, 0);
-    unsubscribe(); request.finish();
+    stops.forEach(stop => stop()); request.finish();
     assert.equal(review.getSnapshot().lastResult, "proposed");
 });
 
