@@ -12,10 +12,11 @@ export function installHostReferenceProbe() {
         const scans = views.every(v => !v.metrics.pendingWord && !v.metrics.pendingGrapheme) && c && !c.input.pendingWord && !c.input.pendingGrapheme;
         const caret = views.every(v => !v.metrics.pendingCaret) && c && !c.input.pendingCaret;
         const drag = views.every(v => !v.metrics.pendingDragScroll) && c && !c.input.pendingDragScroll;
+        const input = views.every(v => !v.metrics.pendingInput && !v.metrics.pendingCommand) && c && !c.input.pendingInput && !c.input.pendingCommand;
         const comparison = c?.status === "ready" && c.workingRevision === state.source.revision;
         const reference = c?.referenceViewport && !c.referenceViewport.pending && referenceLabel() === `Baseline · ${c.baseline?.version}`;
-        return { rendered: !!rendered, scans: !!scans, caret: !!caret, drag: !!drag, comparison: !!comparison, reference: !!reference,
-            full: !!(state.bindings.activeViews === 2 && rendered && scans && caret && drag && comparison && reference) };
+        return { rendered: !!rendered, scans: !!scans, caret: !!caret, drag: !!drag, input: !!input, comparison: !!comparison, reference: !!reference,
+            full: !!(state.bindings.activeViews === 2 && rendered && scans && caret && drag && input && comparison && reference) };
     };
     function waitReady() {
         return new Promise((resolve, reject) => {
@@ -27,21 +28,31 @@ export function installHostReferenceProbe() {
             }; frame = requestAnimationFrame(check);
         });
     }
-    function arm({ kind, operation, text = "", replaceSelection = false }) {
+    function arm({ kind, operation, text = "", replaceSelection = false, caretOffset = text.length }) {
         active?.abort();
         const before = fixture.snapshot(), prior = before.bindings.views.find(v => v.id === "primary"), initial = before.bindings.comparison;
         const node = document.querySelector('textarea[aria-label="Primary source"]'), listeners = new AbortController(), records = [], generations = new Map(), phases = {};
         const offset = replaceSelection ? Math.min(prior.selection.anchor, prior.selection.head) : prior.selection.head;
         const replacedUnits = replaceSelection ? Math.abs(prior.selection.anchor - prior.selection.head) : 0;
-        const expectedRevision = before.source.revision + (kind === "input" ? text.length : 0);
-        let start, pendingStart, dispatchEnd, frame, frames = 0, finished = false, resolve, reject;
+        let start, pendingStart, dispatchEnd, frame, frames = 0, insertedUnits = 0, finished = false, failure, resolve, reject;
+        const transactions = () => kind === "reference" ? 0 : kind === "command" ? 1 : records.length;
+        const model = state => state.source.revision === before.source.revision + transactions() && (kind === "reference"
+            ? state.bindings.comparison.baseline?.epoch === initial.baseline.epoch + 1
+            : kind === "command" ? records.length === 1 && state.bindings.views.find(v => v.id === "primary").metrics.commits === prior.metrics.commits + 1
+            : insertedUnits === text.length);
         const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
         // A later Playwright call awaits this promise; keep a timeout rejection handled in the meantime.
         promise.catch(() => {});
         const cleanup = () => { finished = true; listeners.abort(); cancelAnimationFrame(frame); clearTimeout(timer); };
-        const fail = message => { if (finished) return; cleanup(); reject(new Error(message)); };
+        const fail = message => { if (finished) return; failure = message; cleanup(); reject(new Error(message)); };
         const timer = setTimeout(() => fail(`Host reference ${kind} readiness timed out.`), 20000);
-        active = { promise, abort: () => fail("Host reference observation superseded before completion.") };
+        active = { promise, abort: () => fail("Host reference observation superseded before completion."), snapshot: () => ({
+            kind, expectedText: text, caretOffset, start, pendingStart, finished, failure, nativeInputUnits: insertedUnits, transactions: transactions(),
+            records: records.map(record => ({ ...record })), phases: { ...phases }, generations: [...generations.values()].map(entry => ({ ...entry })),
+            state: fixture.snapshot() }) };
+        if (!["reference", "input", "command"].includes(kind) || kind !== "reference" && (!text.length || !Number.isSafeInteger(caretOffset) || caretOffset < 0 || caretOffset > text.length)) {
+            fail("Invalid captured input observation."); return;
+        }
         function observeGeneration(state) {
             const c = state.bindings.comparison;
             if (!c || c.generation <= initial.generation) return;
@@ -65,12 +76,9 @@ export function installHostReferenceProbe() {
         function observe() {
             if (finished || start === undefined) return;
             const state = fixture.snapshot(), current = facts(state); observeGeneration(state); observeWorking(state, current);
-            const c = state.bindings.comparison;
-            const model = state.source.revision === expectedRevision && (kind === "reference"
-                ? c.baseline?.epoch === initial.baseline.epoch + 1 : records.length === text.length);
-            if (!model) return;
+            if (!model(state)) return;
             const now = performance.now(); phases.modelObservedAt ??= now;
-            for (const key of ["rendered", "scans", "caret", "drag", "comparison", "reference"]) if (current[key]) phases[`${key}At`] ??= now;
+            for (const key of ["rendered", "scans", "caret", "drag", "input", "comparison", "reference"]) if (current[key]) phases[`${key}At`] ??= now;
         }
         // The immutable reference has its own candidate surface; observe the three working inputs here.
         const roots = [...document.querySelectorAll(".st-editing-candidate")].filter(root => root.querySelector("textarea")?.readOnly === false);
@@ -85,42 +93,71 @@ export function installHostReferenceProbe() {
             document.addEventListener("click", event => { if (event.target === button) { dispatchEnd = performance.now(); observe(); } }, { signal: listeners.signal });
         } else {
             if ((!replaceSelection && prior.selection.anchor !== offset) || node.ownerDocument.activeElement !== node) { fail("Input experiment requires its captured source selection and focus."); return; }
-            node.addEventListener("beforeinput", () => { pendingStart = performance.now(); start ??= pendingStart; observeGeneration(fixture.snapshot()); }, { capture: true, signal: listeners.signal });
-            node.addEventListener("input", () => observeGeneration(fixture.snapshot()), { capture: true, signal: listeners.signal });
             node.addEventListener("blur", () => fail("Reference experiment input lost focus."), { signal: listeners.signal });
-            node.addEventListener("input", event => {
-                const state = fixture.snapshot(), view = state.bindings.views.find(v => v.id === "primary"), count = records.length + 1;
-                if (pendingStart === undefined || count > text.length || !["insertText", "insertLineBreak"].includes(event.inputType)
-                    || state.source.id !== before.source.id || view.viewId !== prior.viewId || state.source.revision !== before.source.revision + count
-                    || state.source.length !== before.source.length - replacedUnits + count || view.selection.anchor !== offset + count || view.selection.head !== offset + count
-                    || fixture.range(offset, offset + count) !== text.slice(0, count) || view.metrics.inputEvents !== prior.metrics.inputEvents + count
-                    || view.metrics.commits !== prior.metrics.commits + count || view.metrics.inputUnits > 2600) { fail("Incorrect reference experiment input result."); return; }
-                records.push({ revision: state.source.revision, beforeinputAt: pendingStart, inputFinishedAt: performance.now(), inputHandlerMs: view.metrics.lastInputMs });
-                pendingStart = undefined; observe();
-            }, { signal: listeners.signal });
+            if (kind === "command") {
+                node.addEventListener("keydown", event => {
+                    if (event.key !== "Enter" || !event.isTrusted || start !== undefined) { fail("Expected one trusted Enter command."); return; }
+                    start = performance.now(); observeGeneration(fixture.snapshot());
+                }, { capture: true, signal: listeners.signal });
+                node.addEventListener("keydown", event => {
+                    if (finished) return;
+                    const state = fixture.snapshot(), view = state.bindings.views.find(v => v.id === "primary");
+                    if (!event.defaultPrevented || view.metrics.keydownEvents !== prior.metrics.keydownEvents + 1) { fail("Enter was not handled by the captured editor."); return; }
+                    records.push({ revision: before.source.revision + 1, keydownAt: start, keydownFinishedAt: performance.now(), keydownHandlerMs: view.metrics.lastKeydownMs,
+                        key: event.key, trusted: event.isTrusted }); observe();
+                }, { signal: listeners.signal });
+                for (const type of ["beforeinput", "input"]) node.addEventListener(type, () => fail("Handled Enter unexpectedly used native input."), { signal: listeners.signal });
+            } else {
+                node.addEventListener("beforeinput", event => {
+                    pendingStart = performance.now(); start ??= pendingStart; observeGeneration(fixture.snapshot());
+                    if (event.inputType !== "insertText") fail(`Expected native insertText; received ${event.inputType}.`);
+                }, { capture: true, signal: listeners.signal });
+                node.addEventListener("input", () => observeGeneration(fixture.snapshot()), { capture: true, signal: listeners.signal });
+                node.addEventListener("input", event => {
+                    const state = fixture.snapshot(), view = state.bindings.views.find(v => v.id === "primary"), count = records.length + 1;
+                    const units = insertedUnits + (event.data?.length ?? 0);
+                    if (pendingStart === undefined || !event.data?.length || units > text.length || event.inputType !== "insertText"
+                        || state.source.id !== before.source.id || view.viewId !== prior.viewId || state.source.revision !== before.source.revision + count
+                        || state.source.length !== before.source.length - replacedUnits + units || view.selection.anchor !== offset + units || view.selection.head !== offset + units
+                        || fixture.range(offset, offset + units) !== text.slice(0, units) || view.metrics.inputEvents !== prior.metrics.inputEvents + count
+                        || view.metrics.commits !== prior.metrics.commits + count || view.metrics.inputUnits > 2600) { fail("Incorrect reference experiment input result."); return; }
+                    records.push({ revision: state.source.revision, beforeinputAt: pendingStart, inputFinishedAt: performance.now(), inputHandlerMs: view.metrics.lastInputMs,
+                        data: event.data, trusted: event.isTrusted });
+                    insertedUnits = units; pendingStart = undefined; observe();
+                }, { signal: listeners.signal });
+            }
         }
         const check = () => {
             if (finished) return; observe(); const state = fixture.snapshot(), c = state.bindings.comparison;
-            const model = state.source.revision === expectedRevision && (kind === "reference" ? c.baseline?.epoch === initial.baseline.epoch + 1 : records.length === text.length);
-            frames = start !== undefined && model && facts(state).full ? frames + 1 : 0;
+            frames = start !== undefined && model(state) && facts(state).full ? frames + 1 : 0;
             if (frames < 2) { frame = requestAnimationFrame(check); return; }
             if (state.source.id !== before.source.id || state.bindings.mounts !== before.bindings.mounts || c.viewId !== initial.viewId
-                || kind === "input" && (document.activeElement !== node || state.source.exports !== 0)
+                || kind !== "reference" && (document.activeElement !== node || state.source.exports !== 0)
                 || kind === "reference" && (state.source.length !== before.source.length || !same(state.history, before.history) || dispatchEnd === undefined)) {
                 fail("Reference observation changed ownership, history, export count or focus."); return;
+            }
+            if (kind === "command") {
+                const view = state.bindings.views.find(v => v.id === "primary");
+                if (view.viewId !== prior.viewId || state.source.length !== before.source.length - replacedUnits + text.length
+                    || fixture.range(offset, offset + text.length) !== text || view.selection.anchor !== offset + caretOffset || view.selection.head !== offset + caretOffset
+                    || view.metrics.inputEvents !== prior.metrics.inputEvents || view.metrics.beforeInputEvents !== prior.metrics.beforeInputEvents
+                    || view.metrics.inputUnits > 2600) { fail("Incorrect handled Enter text, selection or event counters."); return; }
             }
             const now = performance.now(), lastStart = records.at(-1)?.beforeinputAt ?? start;
             const observed = [...generations.values()].map(entry => ({ ...entry,
                 supersededWhileObservedRunning: entry.generation !== c.generation && entry.status === "running" }));
-            if (observed.length !== (kind === "input" ? text.length : 1) || c.work.generation !== c.generation) { fail("Missing or misattributed comparison generation observations."); return; }
+            if (observed.length !== (kind === "reference" ? 1 : transactions()) || c.work.generation !== c.generation) { fail("Missing or misattributed comparison generation observations."); return; }
             const rows = [...state.bindings.views.map(v => v.metrics.viewport.rows), c.workingViewport.rows, c.referenceViewport.rows];
             const readUnits = [...state.bindings.views.map(v => v.metrics.viewport.readUnits), c.workingViewport.readUnits, c.referenceViewport.readUnits];
-            cleanup(); resolve({ browserToFullReviewReadyProxyMs: now - start, lastInputToFullReviewReadyProxyMs: kind === "input" ? now - lastStart : null,
+            cleanup(); resolve({ kind, transactions: transactions(), insertedUnits: kind === "reference" ? 0 : text.length,
+                browserToFullReviewReadyProxyMs: now - start, commandToFullReviewReadyProxyMs: kind === "command" ? now - start : null,
+                lastInputToFullReviewReadyProxyMs: kind === "input" ? now - lastStart : null,
+                lastInputFinishedToFullReviewReadyProxyMs: kind === "input" ? now - records.at(-1).inputFinishedAt : null,
                 clickDispatchObservationMs: dispatchEnd === undefined ? null : dispatchEnd - start,
                 phasesFromStartMs: Object.fromEntries(Object.entries(phases).map(([key, at]) => [key, at - start])),
                 phasesFromLastInputMs: kind === "input" ? Object.fromEntries(Object.entries(phases).map(([key, at]) => [key, at - lastStart])) : null,
                 inputDispatchSpanMs: kind === "input" ? lastStart - start : null,
-                records: records.map(record => ({ ...record, workingRenderProxyMs: record.workingRenderedAt === undefined ? null : record.workingRenderedAt - record.beforeinputAt,
+                records: records.map(record => ({ ...record, workingRenderProxyMs: record.workingRenderedAt === undefined ? null : record.workingRenderedAt - (record.beforeinputAt ?? record.keydownAt),
                     supersededBeforeObservedWorkingReady: record.workingRenderedAt === undefined })),
                 generations: observed, observedDiffBatchMs: observed.reduce((n, entry) => n + entry.totalStepMs, 0),
                 observedDiffWork: observed.reduce((n, entry) => n + entry.work, 0), finalDiffBatch: c.work, finalDiffProgress: c.progress,
@@ -132,5 +169,5 @@ export function installHostReferenceProbe() {
                 primarySelection: state.bindings.views.find(v => v.id === "primary").selection, secondarySelection: state.bindings.views.find(v => v.id === "secondary").selection });
         }; frame = requestAnimationFrame(check);
     }
-    globalThis.hostReferenceProbe = Object.freeze({ waitReady, arm, read: () => active.promise, abort: () => active?.abort() });
+    globalThis.hostReferenceProbe = Object.freeze({ waitReady, arm, read: () => active.promise, snapshot: () => active?.snapshot(), abort: () => active?.abort() });
 }

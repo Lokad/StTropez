@@ -70,6 +70,7 @@ that requires a real device or consuming application; it does not mean an automa
 | Pointer word selection | `lastWordSelectionMs` covers the synchronous double-click handler and its first scans/subscribers. Later cooperative turns and rendering need separate observations. |
 | Word/grapheme scan step | `maxWordScanStepMs` and `maxGraphemeScanStepMs` cover kernel advances, excluding final normalization, model commit and rendering. They are smaller spans than complete command callbacks. |
 | Event observation span | Time between capture and bubble observers, including intervening listeners; it does not isolate the adapter's own handler. |
+| Edit interaction start | Handled Enter starts at keydown capture; native `insertText` starts at beforeinput capture. Their handler samples and readiness clocks stay separate. A command or native payload can insert several UTF-16 units in one transaction. |
 | Work units | Algorithmic work counters used for cooperative scheduling; not time deadlines or CPU/memory measurements. |
 | Search scan step | `FindSnapshot.maxScanStepMs`: maximum synchronous matching/index span. Regex mode measures main-thread dispatch/index work; worker matching, later transfer/decoding, publication and waiting are excluded. |
 | Replacement transaction | `FindSnapshot.replaceTransactionMs`: final model transaction and synchronous publication/context refresh. Planning and later rendering are excluded. |

@@ -204,6 +204,19 @@ bounded work and operations that can retain proportional/global costs.
 
 ### Measurement policy
 
+Host input/reference benchmarks share `scripts/host-reference-probe.mjs` and the Node-side
+driver in `scripts/host-edit-measurement.mjs`. They observe actual Enter commands and native
+text input with the distinct [clock definitions](README.md#glossary).
+Inapplicable command/input clocks are null. Full review readiness includes pending input and
+commands, working/reference views, caret/scans and comparison settlement over two frames.
+Exact text, transaction counts and undo/redo are checked independently of inserted UTF-16 units.
+The probe retains partial observations on failure.
+
+These benchmarks use `scripts/benchmark-report.mjs`: each variant retains a unique run under
+`artifacts/bench/<benchmark>/<variant>/runs/`; only a successful run updates that variant's
+`latest.json`. Smoke, full and retention-check results stay separate, as do raw warmups and
+measured observations. Failed runs retain completed samples and the active partial observation.
+
 The [glossary](README.md#glossary) owns clock definitions. Record exact start/end events and
 included work for each metric; preserve those definitions when comparing results. In particular,
 an adapter handler, capture-to-bubble observation, cooperative advance, editor-frame readiness,

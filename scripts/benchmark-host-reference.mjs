@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { openHarness } from "./browser-harness.mjs";
-import { distribution as measuredDistribution, environment, sourceIdentity } from "./measurement.mjs";
-import { typeHostSuffix } from "./host-typing.mjs";
+import { distribution as measuredDistribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
+import { measureHostEdit, summarizeHostEdits } from "./host-edit-measurement.mjs";
+import { createReportWriter } from "./benchmark-report.mjs";
 import { installHostReferenceProbe } from "./host-reference-probe.mjs";
 
 const source = await sourceIdentity(), smoke = process.env.STTROPEZ_REFERENCE_SMOKE === "1", retentionCheck = process.argv.includes("--retention-check");
@@ -12,6 +12,7 @@ const warmup = retentionCheck ? 2 : smoke ? 0 : 3, measured = smoke || retention
 const distribution = values => ({ ...measuredDistribution(values), max: Math.max(...values) });
 const harness = await openHarness(), page = harness.page, cases = new Map(), warmupCases = new Map(), displays = []; let activeCase, activeSample, mounted = false;
 const directory = "artifacts/bench/host-reference", snapshot = () => page.evaluate(() => window.hostFixture.snapshot());
+const writer = await createReportWriter(directory, retentionCheck ? "retention-check" : smoke ? "smoke" : "full");
 const click = name => page.getByRole("button", { name, exact: true }).click();
 const ready = () => page.evaluate(() => globalThis.hostReferenceProbe.waitReady());
 const fullText = text => page.evaluate(text => { const f = window.hostFixture; return f.snapshot().source.length === text.length && f.range(0, text.length) === text; }, text);
@@ -52,48 +53,26 @@ async function prepare(original, reference) {
     assert.equal(await page.evaluate(text => window.hostFixture.referenceRange(0, text.length) === text, original), true);
     return { refresh, setup: { saveAutomationProxyMs, submittedRevision: submitted.revision, serverVersion: saved.source.serverVersion, exportsBeforeInput: refresh.exports } };
 }
-async function measureInput(input, text, mode) {
-    await page.evaluate(text => globalThis.hostReferenceProbe.arm({ kind: "input", text }), text);
-    let start, history;
-    if (mode === "cold-newline") { start = performance.now(); await input.press("Enter"); }
-    else history = await typeHostSuffix(input, text, () => { start = performance.now(); return page.keyboard.type(text, { delay: mode === "sustained" ? 8 : 0 }); });
-    const result = await page.evaluate(() => globalThis.hostReferenceProbe.read()); result.completeActionProxyMs = performance.now() - start; result.history = history ?? null;
-    activeSample.input = result;
-    assert.equal(result.records.length, text.length); assert.equal(result.generations.length, text.length);
-    assert.ok(result.rows.every(n => n < 100)); assert.ok(result.readUnits.every(n => n < 20000));
-    assert.ok(result.inputUnits.every(n => n <= 2600)); assert.ok(result.comparisonInputUnits <= 2600);
-    assert.equal(result.exports, 0); assert.equal(result.records.at(-1).supersededBeforeObservedWorkingReady, false);
-    assert.equal(result.generations.at(-1).status, "ready");
-    assert.equal(result.generations.at(-1).steps, result.finalDiffBatch.steps);
-    assert.equal(result.generations.at(-1).totalStepMs, result.finalDiffBatch.totalStepMs);
-    assert.equal(result.generations.at(-1).work, result.finalDiffProgress.work);
-    assert.ok(result.observedDiffBatchMs >= result.finalDiffBatch.totalStepMs);
-    return result;
-}
 function summarize(item) {
-    const samples = item.samples, large = item.length > 100000, handlers = samples.flatMap(s => s.input.records.map(r => r.inputHandlerMs));
-    const cadence = samples.flatMap(s => s.input.records.slice(1).map((record, i) => record.beforeinputAt - s.input.records[i].beforeinputAt));
+    const samples = item.samples, large = item.length > 100000;
     const result = { ...item, saveAutomationProxyMs: distribution(samples.map(s => s.setup.saveAutomationProxyMs)),
         referenceToReviewReadyProxyMs: distribution(samples.map(s => s.refresh.browserToFullReviewReadyProxyMs)),
         completeReferenceActionProxyMs: distribution(samples.map(s => s.refresh.completeActionProxyMs)),
         referenceClickDispatchObservationMs: distribution(samples.map(s => s.refresh.clickDispatchObservationMs)),
-        inputHandlerMs: distribution(handlers), inputHandlerMaxMs: Math.max(...handlers),
-        actualInputGapMs: cadence.length ? distribution(cadence) : null,
-        inputToFullReviewReadyProxyMs: distribution(samples.map(s => s.input.browserToFullReviewReadyProxyMs)),
-        lastInputToFullReviewReadyProxyMs: distribution(samples.map(s => s.input.lastInputToFullReviewReadyProxyMs)),
-        completeInputActionProxyMs: distribution(samples.map(s => s.input.completeActionProxyMs)),
+        ...summarizeHostEdits(samples.map(sample => sample.input)),
         observedInputDiffBatchMs: distribution(samples.map(s => s.input.observedDiffBatchMs)),
         finalInputDiffBatchMs: distribution(samples.map(s => s.input.finalDiffBatch.totalStepMs)),
         observedInputDiffWork: distribution(samples.map(s => s.input.observedDiffWork)),
         supersededWhileObservedRunning: samples.map(s => s.input.generations.filter(g => g.supersededWhileObservedRunning).length) };
-    result.targets = { inputHandlerMs: 16, lastInputReviewReadyMs: large ? 250 : 100, completePointInputActionMs: item.mode === "sustained" ? null : large ? 500 : 200,
+    result.targets = { handlerMs: 16, reviewReadyMs: large ? 250 : 100, completePointActionMs: item.mode === "sustained" ? null : large ? 500 : 200,
         referenceRefreshMs: null }; // Reference replacement is a separate whole-document operation.
-    result.assessment = { handlerMet: result.inputHandlerMs.p95 <= result.targets.inputHandlerMs,
-        reviewReadinessMet: result.lastInputToFullReviewReadyProxyMs.p95 <= result.targets.lastInputReviewReadyMs,
-        completeActionMet: result.targets.completePointInputActionMs === null ? null : result.completeInputActionProxyMs.p95 <= result.targets.completePointInputActionMs };
+    result.assessment = { handlerMet: (result.keydownHandlerMs ?? result.inputHandlerMs).p95 <= result.targets.handlerMs,
+        reviewReadinessMet: (result.commandToFullReviewReadyProxyMs ?? result.lastInputToFullReviewReadyProxyMs).p95 <= result.targets.reviewReadyMs,
+        completeActionMet: result.targets.completePointActionMs === null ? null : result.completeActionProxyMs.p95 <= result.targets.completePointActionMs };
     return result;
 }
 try {
+    await writer.write({ status: "running", source, smoke, retentionCheck, cases: [], warmupCases: [] });
     for (const host of retentionCheck ? ["plain"] : ["plain", "react"])
     for (const corpus of retentionCheck ? ["unicode-crlf"] : ["unicode-crlf", "lines-100000", "unique-lines-100000", "single-line"])
     for (const history of retentionCheck ? ["accumulated"] : ["fresh", "accumulated"]) {
@@ -121,15 +100,15 @@ try {
                     const before = await snapshot(), primary = before.bindings.views.find(v => v.id === "primary"); assert.equal(primary.selection.anchor, offset); assert.equal(primary.selection.head, offset);
                     if (iteration === 0 && reference === "identity" && pattern === "mixed" && position === "beginning" && mode === "cold-character") displays.push({ host, corpus, history,
                         ...await input.evaluate(node => { const root = node.closest(".st-viewport"), style = getComputedStyle(root); return { font: style.font, width: root.clientWidth, height: root.clientHeight, devicePixelRatio }; }) });
-                    const text = mode === "cold-newline" ? "\n" : mode === "cold-character" ? pattern === "repeated" ? "x" : "z"
+                    const text = mode === "cold-newline" ? eol : mode === "cold-character" ? pattern === "repeated" ? "x" : "z"
                         : pattern === "repeated" ? "x".repeat(32) : "abcdefghijklmnopqrstuvwxyzabcdef";
-                    activeCase.stage = "input"; const observed = await measureInput(input, text, mode), expected = original.slice(0, offset) + text + original.slice(offset);
-                    assert.equal(observed.revision, before.source.revision + text.length); assert.equal(await fullText(expected), true);
+                    activeCase.stage = "input"; const observed = await measureHostEdit(page, input, text, mode, observed => { activeSample.input = observed; }), expected = original.slice(0, offset) + text + original.slice(offset);
+                    assert.equal(observed.revision, before.source.revision + observed.transactions); assert.equal(await fullText(expected), true);
                     assert.equal(observed.referenceVersion, refresh.referenceVersion); assert.equal(observed.referenceEpoch, refresh.referenceEpoch);
                     assert.equal(await page.evaluate(text => window.hostFixture.referenceRange(0, text.length) === text, original), true);
                     assert.equal(observed.secondarySelection.anchor, 2 + (offset < 2 ? text.length : 0)); assert.equal(observed.secondarySelection.head, 4 + (offset < 4 ? text.length : 0));
                     activeCase.stage = "history"; const groups = observed.history?.groups ?? observed.historyAfter.undoDepth - observed.historyBefore.undoDepth;
-                    assert.ok(groups >= 1 && groups <= text.length);
+                    assert.ok(groups >= 1 && groups <= observed.transactions);
                     for (let i = 0; i < groups; i++) await input.press("Control+z"); await ready(); assert.equal(await fullText(original), true); assert.equal((await snapshot()).source.dirty, false);
                     for (let i = 0; i < groups; i++) await input.press("Control+Shift+z"); await ready(); assert.equal(await fullText(expected), true); assert.equal((await snapshot()).source.dirty, true);
                     {
@@ -142,6 +121,7 @@ try {
                 }
                 await dispose();
             }
+            await writer.write({ status: "running", source, smoke, retentionCheck, cases: [...cases.values()], warmupCases: [...warmupCases.values()] });
             console.log(JSON.stringify({ host, corpus, history, iteration, sample: iteration < warmup ? "warmup" : iteration - warmup + 1, semanticChecks: "passed" }));
         }
     }
@@ -149,24 +129,23 @@ try {
     assert.equal(cases.size, expectedConditions); assert.ok([...cases.values()].every(c => c.samples.length === measured));
     assert.equal(warmupCases.size, warmup ? expectedConditions : 0); assert.ok([...warmupCases.values()].every(c => c.samples.length === warmup));
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
-    const report = { schemaVersion: 1, created: new Date().toISOString(), source, smoke, retentionCheck, diagnosticOnly: smoke || retentionCheck,
+    const report = { schemaVersion: 2, status: "passed", created: new Date().toISOString(), source, smoke, retentionCheck, diagnosticOnly: smoke || retentionCheck,
         warmup, measured, environment: { ...environment(), browser: harness.browser.version(), displays },
         cases: [...cases.values()].map(summarize), warmupCases: [...warmupCases.values()], errors: harness.errors,
-        boundaries: "Paired exact-working-buffer acceptance versus independently stored equal saved-reference refresh. Both arms save identical non-trailing-whitespace source before the reference clock; save automation and explicit export counts are separate. Fresh pages isolate each condition; accumulated pages retain the existing pattern/position/mode ordering per arm and iteration. Both candidate hosts, normal Unicode/CRLF, repeated/distinct100k and long-line corpora,3positions,character/Enter/32-key bursts; long-line repeated-x character/burst controls remain explicit. Reference clocks begin at finish-command click capture; document bubbling observes both plain and delegated React handlers. Complete action clocks include automation. Input clocks start at beforeinput; adapter input-event handler duration excludes beforeinput and observation cost. Full readiness requires exact model/selections,all working/reference viewports,caret/scans,completed comparison and2frames. Render observations alone are narrower. Per-generation counters are sampled at input capture/bubble,render events and frames; stale scheduler counters are not attributed to a new generation. Observed sums include superseded generations, while final-generation counters remain separate. Observer and history tracing overhead is included in full clocks. Original host-input benchmark/results unchanged; new instrumented observations do not replace earlier misses. Reference refresh is whole-document work with no point-action budget. No service delay,physical display or native-device qualification." };
+        boundaries: "Paired exact-working-buffer acceptance versus independently stored equal saved-reference refresh. Both arms save identical non-trailing-whitespace source before the reference clock; save automation and explicit export counts are separate. Fresh pages isolate each condition; accumulated pages retain the existing pattern/position/mode ordering per arm and iteration. Both candidate hosts, normal Unicode/CRLF, repeated/distinct100k and long-line corpora,3positions,character/Enter/32-key bursts; long-line repeated-x character/burst controls remain explicit. Reference clocks begin at finish-command click capture; document bubbling observes both plain and delegated React handlers. Complete action clocks include automation. Handled Enter starts at trusted keydown, records keydown-handler time and commits contextual LF/CRLF text in one transaction. Native insertText starts at beforeinput; adapter input-event handler duration excludes beforeinput and observation cost. Model transaction counts are independent of inserted UTF-16 units. Full readiness requires exact model/selections,all working/reference viewports,pending input/commands,caret/scans,completed comparison and2frames. Render observations alone are narrower. Per-generation counters are sampled at input capture/bubble,render events and frames; stale scheduler counters are not attributed to a new generation. Observed sums include superseded generations, while final-generation counters remain separate. Observer and history tracing overhead is included in full clocks. The input benchmark shares this observation contract; historical measurements and misses remain separate. Reference refresh is whole-document work with no point-action budget. No service delay,physical display or native-device qualification." };
     report.retention = { warmupWorkflows: report.warmupCases.reduce((count, item) => count + item.samples.length, 0),
         observedWorkflows: report.cases.reduce((count, item) => count + item.samples.length, 0),
-        warmupInputs: report.warmupCases.reduce((count, item) => count + item.samples.reduce((sum, sample) => sum + sample.input.records.length, 0), 0),
-        observedInputs: report.cases.reduce((count, item) => count + item.samples.reduce((sum, sample) => sum + sample.input.records.length, 0), 0) };
+        warmupEvents: report.warmupCases.reduce((count, item) => count + item.samples.reduce((sum, sample) => sum + sample.input.records.length, 0), 0),
+        observedEvents: report.cases.reduce((count, item) => count + item.samples.reduce((sum, sample) => sum + sample.input.records.length, 0), 0) };
     report.boundaries += " Raw warmups are retained separately and never enter measured distributions or target assessments. Active setup/reference/input results are captured after their clocks close and before assertions, so failures retain available partial evidence. The same Page navigates to fresh host documents; browser/process caches may persist. Comparison totalStepMs sums inner-loop elapsed time within a generation, while maxStepMs is a loop maximum; neither includes outer render/rescheduling or measures a complete callback or CPU. The focused retention check uses eighteen existing normal accumulated controls with two warmups/one observation for reporting validation only.";
-    await mkdir(directory, { recursive: true }); await writeFile(`${directory}/${retentionCheck ? "retention-check" : smoke ? "smoke" : "latest"}.json`, JSON.stringify(report, null, 2));
-    console.log(JSON.stringify({ conditions: report.cases.length, diagnosticOnly: report.diagnosticOnly, retention: report.retention, inputEvents: report.cases.flatMap(c => c.samples.flatMap(s => s.input.records)).length,
+    await writer.write(report); console.log(JSON.stringify({ report: writer.file, latest: writer.latest }));
+    console.log(JSON.stringify({ conditions: report.cases.length, diagnosticOnly: report.diagnosticOnly, retention: report.retention, observedEvents: report.cases.flatMap(c => c.samples.flatMap(s => s.input.records)).length,
         misses: report.cases.filter(c => Object.values(c.assessment).includes(false)).map(c => ({ host: c.host, corpus: c.corpus, history: c.history, reference: c.reference,
-            pattern: c.pattern, position: c.position, mode: c.mode, handlerP95: c.inputHandlerMs.p95, readyP95: c.lastInputToFullReviewReadyProxyMs.p95, actionP95: c.completeInputActionProxyMs.p95 })) }, null, 2));
+            pattern: c.pattern, position: c.position, mode: c.mode, handlerKind: c.handlerKind, handlerMs: timingSummary(c.keydownHandlerMs ?? c.inputHandlerMs), readyMs: timingSummary(c.commandToFullReviewReadyProxyMs ?? c.lastInputToFullReviewReadyProxyMs), actionMs: timingSummary(c.completeActionProxyMs) })) }, null, 2));
 } catch (error) {
-    const failureId = Date.now();
-    await mkdir(directory, { recursive: true });
-    await writeFile(`${directory}/failure-${failureId}.json`, JSON.stringify({ source, smoke, retentionCheck, activeCase, activeSample, error: String(error), stack: error.stack,
-        completed: [...cases.values()], completedWarmups: [...warmupCases.values()], state: mounted ? await snapshot().catch(() => null) : null, errors: harness.errors }, null, 2));
-    if (mounted) await page.screenshot({ path: `${directory}/failure-${failureId}.png`, fullPage: true }).catch(() => {});
-    throw error;
+    await writer.write({ status: "failed", source, smoke, retentionCheck, activeCase, activeSample, error: String(error), stack: error.stack,
+        cases: [...cases.values()], warmupCases: [...warmupCases.values()], state: mounted ? await snapshot().catch(() => null) : null,
+        observation: mounted ? await page.evaluate(() => globalThis.hostReferenceProbe?.snapshot()).catch(() => null) : null, errors: harness.errors });
+    if (mounted) await page.screenshot({ path: writer.file.replace(/\.json$/, ".png"), fullPage: true }).catch(() => {});
+    console.error(JSON.stringify({ failedReport: writer.file })); throw error;
 } finally { await dispose().catch(() => {}); await harness.close(); }
