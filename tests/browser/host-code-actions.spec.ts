@@ -17,26 +17,6 @@ async function select(p: Page, at = 2): Promise<void> { await input(p).focus(); 
 async function preview(p: Page): Promise<void> { await button(p, "Preview module action").click(); await waitForActions(p); }
 async function dispose(p: Page): Promise<void> { await p.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(p); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.actions).toMatchObject({ transport: null, sessions: 0, subscriptions: 0, disposed: true }); expect(s.bindings.actions.worker.created).toBe(s.bindings.actions.worker.terminated); }
 for (const host of ["plain", "react"]) {
-    test(`${host} a valid wide provider edit keeps preview context and DOM bounded without applying source`, async ({ page: p }) => {
-        const raw = "const value = 1;\n" + "x".repeat(100000);
-        await p.addInitScript(({ length }) => {
-            const Current = window.Worker, forwarded = new WeakSet<Event>();
-            window.Worker = class extends Current {
-                constructor(url: string | URL, options?: WorkerOptions) {
-                    super(url, options); this.addEventListener("message", event => {
-                        if (forwarded.has(event) || typeof event.data !== "string") return; const reply = JSON.parse(event.data);
-                        if (reply.operation !== "project-action-result" || !reply.result.action.edits.length) return;
-                        const edit = reply.result.action.edits[0].edits[0]; edit.from = 0; edit.to = length;
-                        const next = new MessageEvent("message", { data: JSON.stringify(reply) }); forwarded.add(next); event.stopImmediatePropagation(); this.dispatchEvent(next);
-                    });
-                }
-            };
-        }, { length: raw.length });
-        await setup(p, host, raw); await select(p); const before = await snapshot(p); await preview(p); const s = await snapshot(p);
-        expect(s.bindings.actions.state).toMatchObject({ status: "ready", canApply: true }); expect(s.bindings.actions.state.edits[0]).toMatchObject({ from: 0, to: raw.length });
-        expect(s.bindings.actions.state.edits[0]!.context.length).toBeLessThanOrEqual(64); expect((await p.getByLabel("Proposed action edits", { exact: true }).textContent())!.length).toBeLessThan(512);
-        await exact(p, raw); expect(s.history).toEqual(before.history); expect(s.source.exports).toBe(0); await dispose(p);
-    });
     for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} captured worker import preview preserves complete selections, shared history, review and primary Save/Run`, async ({ page: p }) => {
         test.setTimeout(120000); const raw = "\ufeffconst café = '😀';\r\n" + (large ? "const unchanged = 123;\r\n".repeat(100000) : "") + "café;", header = 'import "sample-utils";\r\n', expected = raw.slice(0, 1) + header + raw.slice(1);
         await setup(p, host, raw); await button(p, "Open source review").click(); await waitForActions(p); await input(p).focus(); const ranges = [{ anchor: 12, head: 7 }, { anchor: raw.length, head: raw.length }];

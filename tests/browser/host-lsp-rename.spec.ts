@@ -78,9 +78,25 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP rename host`, 
         await button(page, "Open renamed changes in Navigation companion").click(); await waitForRename(page); await button(page, "Run captured inputs").click(); expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(expected); await page.evaluate(() => window.hostFixture.finishRun());
         await button(page, "Save source").click(); await working.press("Control+End"); await working.pressSequentially(" later"); await waitForRename(page); await page.evaluate(() => window.hostFixture.finishSave()); await waitForRename(page); await exact(page, expected + " later"); expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline); await dispose(page);
     });
-    test("100k-line rename keeps input bounded and shares atomic undo without ordinary full exports", async ({ page }) => {
-        test.setTimeout(90000); const text = "const catalogue = 1;\r\n" + "const unchanged = 123;\r\n".repeat(99_999) + "catalogue;"; await seed(page, text); const before = await snapshot(page); await preview(page); await expect(targets(page)).toHaveCount(3); await button(page, "Apply captured rename").click(); await waitForRename(page);
-        const expected = marker + text.replace("const catalogue", "const inventory").replace(/catalogue;$/, "inventory;"); await exact(page, expected); await input(page).press("Control+z"); await waitForRename(page); await exact(page, text); await input(page).press("Control+Shift+z"); await waitForRename(page); await exact(page, expected);
+    test("100k-line rename pages its preview, preserves form focus and shares atomic undo with bounded input", async ({ page }) => {
+        test.setTimeout(90000);
+        const text = "const catalogue = 1;\r\n" + "const unchanged = 123;\r\n".repeat(99_929) + "catalogue;\r\n".repeat(70);
+        await seed(page, text); const before = await snapshot(page); await preview(page);
+        await expect(targets(page)).toHaveCount(64); await expect(button(page, "Previous rename targets")).toBeDisabled();
+        expect((await snapshot(page)).bindings.rename.state).toMatchObject({ status: "ready", count: 72, page: 0 });
+        await button(page, "Next rename targets").click(); await expect(targets(page)).toHaveCount(8);
+        await expect(targets(page).first().locator("..")).toHaveAttribute("start", "65"); await expect(button(page, "Next rename targets")).toBeDisabled();
+        expect((await snapshot(page)).bindings.rename.state.locations.map(item => item.ordinal)).toEqual([64, 65, 66, 67, 68, 69, 70, 71]);
+        await button(page, "Previous rename targets").click(); await expect(targets(page)).toHaveCount(64);
+        await expect(targets(page).first().locator("..")).toHaveAttribute("start", "1");
+        await name(page).focus(); await name(page).press("End"); await name(page).pressSequentially("X");
+        await expect(name(page)).toBeFocused(); await expect(name(page)).toHaveValue("inventoryX");
+        await expect(button(page, "Apply captured rename")).toBeDisabled(); await expect(targets(page)).toHaveCount(0);
+        await exact(page, text); expect((await snapshot(page)).history).toEqual(before.history);
+        await name(page).press("Enter"); await waitForRename(page); await expect(name(page)).toBeFocused();
+        await expect(targets(page)).toHaveCount(64); await expect(button(page, "Apply captured rename")).toBeEnabled();
+        await button(page, "Apply captured rename").click(); await waitForRename(page);
+        const expected = marker + text.replaceAll("catalogue", "inventoryX"); await exact(page, expected); await input(page).press("Control+z"); await waitForRename(page); await exact(page, text); await input(page).press("Control+Shift+z"); await waitForRename(page); await exact(page, expected);
         expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); expect((await snapshot(page)).source.exports).toBe(0); expect((await snapshot(page)).bindings.views.every(view => view.metrics!.inputUnits <= 4096 && view.metrics!.viewport.rows < 100)).toBe(true); await dispose(page);
     });
 });

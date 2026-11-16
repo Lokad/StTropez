@@ -85,11 +85,10 @@ for (const host of ["plain", "react"]) {
         expect(guard).toEqual({ pending: true, requested: 0 }); await waitForNavigation(page); await expect(status(page)).toContainText("Finish pending");
         await dispose(page);
     });
-    test(`${host} bounded reference pages expose truncation and all pages without changing text or history`, async ({ page }) => {
+    test(`${host} worker references report truncated results without changing text or history`, async ({ page }) => {
         const text = "const café = 1;\r\n" + "café;\r\n".repeat(1100); await setup(page, host, text); await select(page, 8); const before = await snapshot(page);
         await button(page, "Find references").click(); await waitForNavigation(page); await expect(status(page)).toContainText("1024+"); await expect(results(page)).toHaveCount(64);
-        for (let pageIndex = 0; pageIndex < 15; pageIndex++) await button(page, "Next navigation results").click(); await expect(button(page, "Next navigation results")).toBeDisabled(); await expect(results(page)).toHaveCount(64);
-        await results(page).last().click(); await waitForNavigation(page); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: text.indexOf("\r\n") + 2 + 1022 * 8, head: text.indexOf("\r\n") + 2 + 1022 * 8 + 5 });
+        expect((await snapshot(page)).bindings.navigation.results).toBe(1024);
         expect((await snapshot(page)).source.revision).toBe(before.source.revision); expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).source.exports).toBe(0); await dispose(page);
     });
 }

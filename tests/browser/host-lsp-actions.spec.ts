@@ -74,6 +74,31 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP code actions`,
         await input(page, "Secondary source").press("Control+z"); await waitForActions(page); await exact(page, raw); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet.ranges.map(r => ({ anchor: r.anchor, head: r.head }))).toEqual(ranges);
         await input(page, "Secondary source").press("Control+Shift+z"); await waitForActions(page); await exact(page, raw.replace("TODO", "DONE")); expect((await snapshot(page)).source.exports).toBe(0); await dispose(page); await expect.poll(() => closed).toBe(opened);
     });
+    test("a wide provider edit keeps action preview context and DOM bounded without applying source", async ({ page }) => {
+        const text = "// TODO\n" + "x".repeat(100000); let rewritten = 0;
+        await page.routeWebSocket("**/lsp-fixture", client => {
+            const server = client.connectToServer(), ids = new Set<number>();
+            client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/codeAction") ids.add(value.id); server.send(message); });
+            server.onMessage(message => {
+                const value = JSON.parse(message.toString());
+                if (ids.delete(value.id)) {
+                    expect(value.error).toBeUndefined();
+                    const edit = value.result[0].edit.documentChanges[0].edits[0];
+                    edit.range = { start: { line: 0, character: 0 }, end: { line: 1, character: 100000 } };
+                    rewritten++; client.send(JSON.stringify(value));
+                } else client.send(message);
+            });
+        });
+        await page.reload(); await waitForActions(page); await seed(page, text); const before = await snapshot(page); await preview(page);
+        expect(rewritten).toBe(1); const after = await snapshot(page);
+        expect(after.bindings.actions.state).toMatchObject({ status: "ready", canApply: true });
+        expect(after.bindings.actions.state.edits[0]).toMatchObject({ from: 0, to: text.length });
+        expect(after.bindings.actions.state.edits[0]!.context.length).toBeLessThanOrEqual(193);
+        await expect(edits(page)).toHaveCount(1);
+        expect((await page.getByRole("list", { name: "Proposed action edits", exact: true }).textContent())!.length).toBeLessThan(2000);
+        await exact(page, text); expect(after.history).toEqual(before.history); expect(after.source.revision).toBe(before.source.revision);
+        expect(after.source.exports).toBe(0); await dispose(page);
+    });
     test("a complete 65-action list pages to the last captured choice and applies one undoable edit", async ({ page }) => {
         await page.routeWebSocket("**/lsp-fixture", client => {
             const server = client.connectToServer(), ids = new Set<number>();

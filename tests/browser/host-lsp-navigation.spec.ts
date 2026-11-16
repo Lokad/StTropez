@@ -85,11 +85,19 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP inspection/nav
         expect((await snapshot(page)).source.dirty).toBe(true); expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(text + " later");
         await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
     });
-    test("large-document hover and navigation stay read-only with bounded native input", async ({ page }) => {
-        const text = "const unrelated = 123;\r\n".repeat(99_999) + "const target = 1;\r\ntarget"; await seed(page, text, text.length - 2); const before = await snapshot(page);
+    test("large-document hover and reference pages expose every target without changing source or history", async ({ page }) => {
+        const text = "const unrelated = 123;\r\n".repeat(98_976) + "const target = 1;\r\n" + "target;\r\n".repeat(1023);
+        await seed(page, text, text.lastIndexOf("target") + 2); const before = await snapshot(page);
         await hover(page); await expect(page.getByRole("tooltip")).toContainText("target"); await field(page).press("Escape"); await field(page).press("F12"); await waitForNavigation(page); await expect(results(page)).toHaveCount(1);
         const selected = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection; expect(selected).toMatchObject({ anchor: text.lastIndexOf("const target") + 6, head: text.lastIndexOf("const target") + 12 });
-        await button(page, "Find references").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(2); expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).source.revision).toBe(before.source.revision);
+        await button(page, "Find references").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(64);
+        await expect(button(page, "Previous navigation results")).toBeDisabled();
+        for (let index = 1; index < 16; index++) { await button(page, "Next navigation results").click(); await expect(results(page)).toHaveCount(64); }
+        await expect(button(page, "Next navigation results")).toBeDisabled(); await results(page).last().click(); await waitForNavigation(page);
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: text.lastIndexOf("target"), head: text.lastIndexOf("target") + 6 });
+        await button(page, "Previous navigation results").click(); await expect(results(page)).toHaveCount(64);
+        await expect(button(page, "Next navigation results")).toBeEnabled();
+        expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).source.revision).toBe(before.source.revision);
         expect((await snapshot(page)).source.exports).toBe(0); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.metrics!.inputUnits).toBeLessThanOrEqual(4096);
     });
 });
