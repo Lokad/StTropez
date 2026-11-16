@@ -1,38 +1,9 @@
 import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { holdLspReplies } from "../helpers/lsp-replies.ts";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const primary = (page: Page) => page.getByRole("textbox", { name: "Primary source", exact: true });
 const tooltip = (page: Page) => page.getByRole("tooltip");
-
-// Hold a completed response, so cancellation cannot prevent the stale reply we exercise.
-async function hoverReplies(page: Page) {
-    let hold = false, heldId: number | undefined, release: (() => void) | undefined, cancelled = false;
-    await page.routeWebSocket("**/lsp-fixture", client => {
-        const server = client.connectToServer();
-        client.onMessage(message => {
-            const value = JSON.parse(message.toString());
-            if (hold && value.method === "textDocument/hover") { hold = false; heldId = value.id; }
-            if (value.method === "$/cancelRequest" && value.params.id === heldId) cancelled = true;
-            server.send(message);
-        });
-        server.onMessage(message => {
-            const value = JSON.parse(message.toString());
-            if (heldId !== undefined && value.id === heldId) {
-                expect(value.error).toBeUndefined(); expect(value.result).toBeTruthy();
-                release = () => client.send(message);
-            } else client.send(message);
-        });
-    });
-    return {
-        hold: () => { expect(release).toBeUndefined(); hold = true; heldId = undefined; cancelled = false; },
-        waiting: () => release !== undefined, cancelled: () => cancelled,
-        release: async () => {
-            expect(release).toBeDefined(); const send = release!; release = undefined; send();
-            // A later reply on the same stream fences delivery before checking presentation.
-            await page.evaluate(() => window.hostFixture.providerCustom("fixture/state", {}));
-        },
-    };
-}
 
 async function point(page: Page): Promise<{ x: number; y: number }> {
     return page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"]) .st-viewport-row').first().evaluate(row => {
@@ -42,7 +13,7 @@ async function point(page: Page): Promise<{ x: number; y: number }> {
 }
 for (const host of ["plain", "react"]) {
     test(`${host} keyboard hover keeps complete selections, safe text, input focus and shared history`, async ({ page }) => {
-        const replies = await hoverReplies(page);
+        const replies = await holdLspReplies(page, "textDocument/hover");
         await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`);
         const original = "const café = 1;\r\n𐐀value = 2;";
         await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 2, head: 2 }, { anchor: 7, head: 7 }]); }, original);
@@ -89,7 +60,7 @@ for (const host of ["plain", "react"]) {
         expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
     });
     test(`${host} 100k pointer hover preserves host focus and refuses stale replies across edits and remount`, async ({ page }) => {
-        test.setTimeout(90000); const replies = await hoverReplies(page); await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`);
+        test.setTimeout(90000); const replies = await holdLspReplies(page, "textDocument/hover"); await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`);
         await page.evaluate(() => { const f = window.hostFixture, text = "const sample = 1234567;\r\n".repeat(100000); f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); f.setSourceReadOnly(true); });
         await primary(page).press("Control+Home"); await ready(page); const form = page.getByRole("textbox", { name: "Configuration path", exact: true }); await form.fill("keep-focus.csv");
         const at = await point(page); await page.mouse.move(at.x, at.y); await expect(tooltip(page)).toContainText("Declares a constant binding.");
