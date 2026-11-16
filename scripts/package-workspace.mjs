@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
+import { retainPackagedPage, closePackagedPage } from "./package-page-lifecycle.mjs";
 
 export async function runPackagedWorkspace(browser, baseUrl, { directory, packageSha256, outputs, corpus = "all" }) {
     await mkdir(directory, { recursive: true }); const engine = browser.browserType().name(), cases = [];
@@ -24,6 +25,7 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
             assert.equal(original.length, large ? 2_400_044 : 116, "Restored workspace corpus size changed");
             assert.deepEqual(requests.filter(s => /\.(js|css)$/.test(s)), ["/activation.js"]); assert.equal(await p.locator(".st-editing-candidate").count(), 0);
             await button("Read only").click(); await ready(); const firstReading = await snap(); assert.equal(await p.evaluate(() => window.activationFixture.snapshot().phase), "reading"); assert.equal(firstReading.readOnly, true); assert.equal(firstReading.peer.readOnly, true);
+            await retainPackagedPage(p, "reading");
             assert.equal(await p.getByLabel("Background activity", { exact: true }).textContent(), "Background activity: 0");
             await p.evaluate(() => { window.holdFirstProgress = false; });
             for (const input of [primary, peer]) await input.pressSequentially("blocked"); assert.equal(await text(), original);
@@ -36,6 +38,7 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
             await primary.press("Control+Home"); await primary.pressSequentially("A"); await ready(); assert.equal(await text(), "A" + original); const primaryHandlerMs = (await snap()).input.lastInputMs;
             assert.equal(await p.evaluate(() => window.activationFixture.select([{ anchor: 0, head: 0 }, { anchor: 3, head: 1 }], 1)), true); await ready(); const sourceState = await snap();
             await peer.press("Control+Home"); await peer.pressSequentially("P"); await ready(); const peerHandlerMs = (await snap()).peer.input.lastInputMs; assert.equal(await text(), "A" + original); assert.equal(await apiText(doc("peer").resourceId), "P" + peerOriginal);
+            await retainPackagedPage(p, "editing");
             assert.ok((await snap()).workspace.documents.filter(d => d.key.startsWith("document-")).every(d => d.revision === 0));
             const one = doc("document-1"), two = doc("document-2"); await select.selectOption(one.resourceId); await ready(); const oneOriginal = await text(); await primary.pressSequentially("one "); await ready(); const oneText = await text();
             await button("Capture job").click(); const capture = (await snap()).workspace.pendingJob; await select.selectOption(two.resourceId); await ready(); const twoOriginal = await text(); await primary.pressSequentially("two "); await ready(); assert.equal(await text(), "two " + twoOriginal);
@@ -106,7 +109,7 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
             assert.equal(selectedModel.revision, mapped.revision);
             await button("Edit").click(); await ready(); assert.deepEqual((await snap()).selections, selectedModel.selections, "A model selection change also expires the snapshot without a text revision");
             const live = await snap(); assert.equal(live.exports, 0); assert.equal(live.peer.exports, 0); if (!large) await p.screenshot({ path: `${directory}/workspace-${engine}.png` });
-            const final = await p.evaluate(() => window.activationFixture.dispose()); assert.equal(final.resources, 0); assert.equal(final.documents, 0); assert.equal(final.views, 0); assert.equal(final.leases, 0); assert.equal(final.subscriptions, 0);
+            const final = await closePackagedPage(p);
             assert.equal(await reader.evaluate(node => { const e = new KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true, cancelable: true }); node.dispatchEvent(e); return e.defaultPrevented; }), false);
             const stopped = (await snap()).workspace.ticks; await p.waitForTimeout(120); assert.equal((await snap()).workspace.ticks, stopped); assert.equal(await text(), finalText); assert.deepEqual(errors, []);
             cases.push({ large, initiallyInactive: 100, activeViews: 2, progressHz: 20, baselineNodes, maxNodes, baselineSubscriptions, dormant: dormant.diagnostics, final, primaryHandlerMs, peerHandlerMs, requests, errors, oneOriginalLength: oneOriginal.length });
@@ -114,6 +117,6 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
             await writeFile(`${directory}/workspace-${engine}-failure.json`, JSON.stringify({ large, error: String(error.stack ?? error), snapshot: await snap(), layout, errors, requests }, null, 2)); throw error; }
         finally { await context.close(); }
     }
-    await writeFile(`${directory}/workspace-${engine}.json`, JSON.stringify({ packageSha256, browser: browser.version(), corpus, cases, outputs, limits: "Bounded correctness/resource/DOM and individual input-handler observations. Retained heap, complete interaction/cold activation latency, native IME/OS clipboard and production adoption remain unverified." }, null, 2));
+    await writeFile(`${directory}/workspace-${engine}.json`, JSON.stringify({ packageSha256, browser: browser.version(), corpus, cases, outputs, limits: "Bounded correctness/resource/DOM and individual input-handler observations. Synthetic page transitions do not qualify actual BFCache eligibility/restoration. Retained heap, complete interaction/cold activation latency, native IME/OS clipboard and production adoption remain unverified." }, null, 2));
     console.log(`Restored workspace: ${cases.length} normal/100k journeys passed in ${engine}.`);
 }

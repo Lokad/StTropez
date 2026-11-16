@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
+import { retainPackagedPage, closePackagedPage } from "./package-page-lifecycle.mjs";
 
 /** Visible consumer journeys use only the restored package and host-owned activation shell. */
 export async function runPackagedActivation(browser, baseUrl, { directory, packageSha256, outputs, assetBytes, corpus = "all" }) {
@@ -96,6 +97,7 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         } finally { await context.close(); }
     }
     for (const large of [false, true]) await scenario("preview-edit-read-only-history-worker", async (page, original, requests) => {
+        await retainPackagedPage(page, "preview");
         await readerKeyboard(page, original, large); assert.equal((await snap(page)).session, null);
         const boundary = large ? [...original.matchAll(/\r\n|\r|\n/g)].slice(0, 500).at(-1) : null;
         const anchor = boundary ? boundary.index + boundary[0].length + 21 : 7, head = boundary ? boundary.index - 20 : 3;
@@ -111,6 +113,7 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         await page.keyboard.press("Enter"); await ready(page, "reading"); const input = page.getByRole("textbox", { name: "Activated source", exact: true });
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         const firstReading = await page.evaluate(() => window.stopFirstReadingProbe()); assert.ok(firstReading.frames >= 2); assert.equal(firstReading.editableFrames, 0); assert.equal(firstReading.editableFocus, 0);
+        await retainPackagedPage(page, "reading");
         assert.equal((await snap(page)).session.readOnly, true); assert.equal((await snap(page)).session.revision, 0); assert.equal((await snap(page)).session.history.undoDepth, 0);
         await input.pressSequentially("blocked"); await input.press("Control+z"); assert.equal(await text(page), original);
         await page.screenshot({ path: `${directory}/activation-first-reading-${large ? "100k-" : ""}${browserName}.png` });
@@ -137,6 +140,7 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         await input.pressSequentially("Z"); await ready(page); const changed = original.slice(0, head) + "Z" + original.slice(anchor); assert.equal(await text(page), changed);
         const handlerMs = (await snap(page)).session.input.lastInputMs;
         await input.press("Control+z"); await ready(page); assert.equal(await text(page), original); await input.press("Control+Shift+z"); await ready(page); assert.equal(await text(page), changed);
+        await retainPackagedPage(page, "editing");
         const range = large ? { anchor: changed.length - 2, head: changed.length - 42 } : { anchor: 2, head: 1 };
         assert.equal(await page.evaluate(range => window.activationFixture.select([{ anchor: 0, head: 0 }, range], 1), range), true); await ready(page);
         const before = await snap(page), assetsBefore = requests.filter(path => /\.(js|css)(\?|$)/.test(path));
@@ -194,7 +198,7 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
             await page.locator("#text").press("Escape"); await page.keyboard.press("Enter"); await ready(page); await input.press("Control+z"); await ready(page); assert.equal(await text(page), changed);
         }
         if (!large) await page.screenshot({ path: `${directory}/activation-${browserName}.png` });
-        const diagnostics = await page.evaluate(() => window.activationFixture.dispose()); assert.equal(diagnostics.resources, 0); assert.equal(diagnostics.views, 0); assert.equal(diagnostics.leases, 0); assert.equal(diagnostics.subscriptions, 0); assert.equal(await text(page), changed);
+        const diagnostics = await closePackagedPage(page); assert.equal(await text(page), changed);
         assert.equal(await page.locator("#text").evaluate(node => { const e = new KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true, cancelable: true }); node.dispatchEvent(e); return e.defaultPrevented; }), false);
         return { firstReading, handlerMs, handlerClock: "own input handler only; no complete-action or latency percentile claim", dormant: dormant.diagnostics, final: diagnostics, boundedRows: found.viewport.rows, workerRequestsAfterOptIn: found.workers, exactUnicodeCrlf: true, completeSelectionsAndHistory: true };
     }, large);
@@ -219,7 +223,7 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         await page.route("**/" + asset + "*", async route => { if (!first) { await route.continue(); return; } first = false; arrived(); await gate;
             try { await route.fulfill({ response: await route.fetch() }); } finally { finished(); } });
         try {
-            await button(page, "Read only").click(); await bounded(held); await button(page, "Cancel activation").click(); assert.equal((await snap(page)).phase, "preview"); assert.equal((await snap(page)).session, null);
+            await button(page, "Read only").click(); await bounded(held); await retainPackagedPage(page, "loading"); await button(page, "Cancel activation").click(); assert.equal((await snap(page)).phase, "preview"); assert.equal((await snap(page)).session, null);
             assert.equal(await page.locator('link[rel="stylesheet"]').count(), 0); await button(page, "Edit").click(); await ready(page); release(); await bounded(completed);
             assert.equal(await text(page), original); assert.equal((await snap(page)).phase, "editing"); assert.equal((await snap(page)).session.readOnly, false); assert.equal((await snap(page)).session.mounts, 1); const d = await page.evaluate(() => window.activationFixture.dispose()); assert.equal(d.resources, 0); return { cancelledMode: "reading", replacementMode: "editing", lateResponseIgnored: true, final: d };
         } finally { release(); await bounded(completed); }
@@ -233,6 +237,6 @@ export async function runPackagedActivation(browser, baseUrl, { directory, packa
         const d = await page.evaluate(() => window.activationFixture.dispose()); assert.equal(d.resources, 0); return { literalFindAndTypingSurvive: true, final: d };
     });
     const report = { packageSha256, browser: browser.version(), corpus, cases, assets: { javascript: outputs, ...assetBytes, wasm: [] },
-        limits: "Correctness and asset loading evidence, with own input-handler observations only. No activation/interaction p95, retained heap, native IME/OS clipboard, service integration or production qualification." };
+        limits: "Correctness and asset loading evidence, with own input-handler observations only. Synthetic page transitions do not qualify actual BFCache eligibility/restoration. No activation/interaction p95, retained heap, native IME/OS clipboard, service integration or production qualification." };
     await writeFile(`${directory}/activation-${browserName}.json`, JSON.stringify(report, null, 2)); console.log(`Restored explicit activation: ${cases.length} journeys passed in ${browserName}.`);
 }

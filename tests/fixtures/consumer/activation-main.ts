@@ -81,7 +81,8 @@ function dispose() { if (phase !== "disposed") { generation++; abort?.abort(); a
     snapshotCapture = undefined; toolbarSelection = undefined; reader.setText(retainedText); preview.hidden = false; editorHost.hidden = true; listeners.abort(); phase = "disposed"; controls(); status.textContent = "Closed. Text retained."; } return session?.dispose() ?? null; }
 edit.addEventListener("click", () => { void activate(); }, { signal: listeners.signal }); cancel.addEventListener("click", cancelActivation, { signal: listeners.signal }); readOnly.addEventListener("click", () => { void activate(true); }, { signal: listeners.signal }); snapshot.addEventListener("click", showPreview, { signal: listeners.signal });
 const search = () => { if (mounted()) session?.search(query.value, regex.checked); };
-query.addEventListener("input", search, { signal: listeners.signal }); regex.addEventListener("change", search, { signal: listeners.signal }); next.addEventListener("click", () => session?.next(), { signal: listeners.signal }); window.addEventListener("pagehide", dispose, { once: true, signal: listeners.signal });
+query.addEventListener("input", search, { signal: listeners.signal }); regex.addEventListener("change", search, { signal: listeners.signal }); next.addEventListener("click", () => session?.next(), { signal: listeners.signal });
+window.addEventListener("pagehide", event => { if (!event.persisted) dispose(); }, { signal: listeners.signal });
 const fixture = Object.freeze({ snapshot: () => ({ phase, generation, session: session?.snapshot() ?? null }), text: () => phase === "disposed" ? retainedText : session?.text() ?? original,
     select: (ranges: readonly Selection[], primary?: number) => session?.select(ranges, primary), workspace: () => session && "workspaceApi" in session ? session.workspaceApi : undefined, dispose });
 declare global { interface Window { activationFixture: typeof fixture } }
