@@ -1,22 +1,14 @@
 {
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"],
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "verbatimModuleSyntax": true,
-    "erasableSyntaxOnly": true,
-    "rewriteRelativeImportExtensions": true,
-    "jsx": "react-jsx",
-    "noEmit": true,
-    "skipLibCheck": true
+    "incremental": true,
+    "tsBuildInfoFile": "artifacts/types/development.tsbuildinfo"
   },
-  "include": ["src/**/*.ts", "fixtures/**/*.ts", "examples/**/*.ts", "examples/**/*.tsx", "experiments/**/*.ts", "tests/**/*.ts", "playwright*.ts"],
-  "exclude": ["external", "node_modules", "dist", "artifacts", "tests/fixtures/consumer"]
+  "include": ["fixtures/**/*.ts", "examples/**/*.ts", "examples/**/*.tsx", "experiments/**/*.ts", "tests/**/*.ts", "playwright*.ts"],
+  "references": [
+    { "path": "./tsconfig.core.json" },
+    { "path": "./tsconfig.protocol.json" },
+    { "path": "./tsconfig.browser.json" }
+  ]
 }

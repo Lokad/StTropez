@@ -43,7 +43,7 @@ export async function compileDocumentation(examples) {
         }
         const configuration = join(directory, "tsconfig.json");
         await writeFile(configuration, JSON.stringify({
-            extends: resolve(root, "tsconfig.json"),
+            extends: resolve(root, "tsconfig.base.json"),
             compilerOptions: { noEmit: true, skipLibCheck: false, types: [],
                 paths: Object.fromEntries(Object.entries(entries).map(([name, path]) => [name, [resolve(root, path)]])) },
             files, include: [], exclude: []

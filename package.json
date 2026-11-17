@@ -45,7 +45,7 @@
     "test:package:activation": "node scripts/qualify-package.mjs --scenarios=activation",
     "test:package:workspace": "node scripts/qualify-package.mjs --scenarios=workspace",
     "bench:package-react": "npm run pack:nuget && node scripts/test-package.mjs --react-only --bench",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.core.json && tsc -p tsconfig.protocol.json",
+    "typecheck": "tsc --build",
     "check:docs": "node scripts/check-docs.mjs",
     "test": "node --test tests/*.test.ts",
     "test:browser": "playwright test",

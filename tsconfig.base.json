@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "rewriteRelativeImportExtensions": true,
+    "jsx": "react-jsx",
+    "rootDir": ".",
+    "outDir": "artifacts/types",
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "exclude": ["external", "node_modules", "dist", "artifacts", "tests/fixtures/consumer"]
+}

@@ -21,7 +21,7 @@ Select the commands relevant to the changed owner:
 
 | Command | Scope |
 | --- | --- |
-| `npm run typecheck` | Strict project types plus headless core/protocol compilations |
+| `npm run typecheck` | Referenced strict core, protocol, browser and development type projects |
 | `npm run check:docs` | Subject-page structure, repository links/anchors, public value ownership, prose and independently compiled TypeScript examples |
 | `npm test` | Headless model and host-policy tests |
 | `npm run test:browser` | Source browser suite in Chromium |
@@ -38,6 +38,13 @@ Select the commands relevant to the changed owner:
 Browser configurations own their servers and expose `STTROPEZ_PORT` or `STTROPEZ_DEMO_PORT`
 for source/static routes. The static-demo configuration can target a supplied
 `STTROPEZ_DEMO_URL`. Keep a test server separate from an interactive demo session.
+
+Typechecking uses TypeScript project references. Core and protocol have only the ES library;
+browser code adds DOM libraries, and development code adds Node types. Each source file has
+one checking project. Compiler declarations and incremental state stay under `artifacts/types`;
+run `npm run typecheck` after a fresh checkout and pass `-- --force` to force a full recheck.
+The package build emits its own declarations to `dist`, and documentation examples compile
+independently against the public source entries using `tsconfig.base.json`.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected
 Chromium gate and the static-demo Chromium journey. A passing CI run has that scope;

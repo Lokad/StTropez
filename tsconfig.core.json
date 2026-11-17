@@ -1,5 +1,12 @@
 {
-  "extends": "./tsconfig.json",
-  "compilerOptions": { "lib": ["ES2022"], "types": [] },
-  "include": ["src/core/**/*.ts"]
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "composite": true,
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "tsBuildInfoFile": "artifacts/types/core.tsbuildinfo"
+  },
+  "include": ["src/index.ts", "src/core/**/*.ts"]
 }
