@@ -47,7 +47,8 @@ The package build emits its own declarations to `dist`, and documentation exampl
 independently against the public source entries using `tsconfig.base.json`.
 The development project also checks the JavaScript entries listed in `tsconfig.json` and
 their imports: measurement, package scenarios, the browser harness, its server and the demo
-library catalogue. Other scripts are outside its JavaScript checking scope.
+library catalogue, plus asset entry metadata, building and declaration finalization. Other
+scripts are outside its JavaScript checking scope.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected
 Chromium gate and the static-demo Chromium journey. A passing CI run has that scope;

@@ -4,6 +4,10 @@ import { relative, resolve } from "node:path";
 import { portableDeclaration } from "./module-specifiers.mjs";
 import { assetPackageExports, assetManifestEntries } from "./library-entries.mjs";
 
+/**
+ * @param {string} root
+ * @returns {Promise<string[]>}
+ */
 export async function filesUnder(root) {
     const files = [];
     for (const entry of await readdir(root, { withFileTypes: true })) {

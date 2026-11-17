@@ -1,12 +1,22 @@
 import ts from "typescript-demo";
 
-/** Development-only parsing shared by declaration finalization and host staging. */
+// The pinned parser supplies syntax diagnostics that its public SourceFile type omits.
+/** @typedef {import("typescript-demo").SourceFile & {parseDiagnostics: readonly import("typescript-demo").DiagnosticWithLocation[]}} ParsedSourceFile */
+
+/**
+ * Development-only parsing shared by declaration finalization and host staging.
+ * @param {string} path
+ * @param {string} text
+ */
 export function moduleSpecifiers(path, text) {
-    const file = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true), result = [];
-    if (file.parseDiagnostics.length) {
-        const first = file.parseDiagnostics[0];
+    const file = /** @type {ParsedSourceFile} */ (ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true));
+    /** @type {{value: string, from: number, to: number}[]} */
+    const result = [];
+    const first = file.parseDiagnostics[0];
+    if (first) {
         throw Object.assign(new Error(`Invalid module syntax in ${path}: ${ts.flattenDiagnosticMessageText(first.messageText, " ")}`), { offset: first.start ?? 0 });
     }
+    /** @param {import("typescript-demo").Node} node */
     function visit(node) {
         const literal = ts.isImportDeclaration(node) || ts.isExportDeclaration(node) ? node.moduleSpecifier
             : ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) ? node.argument.literal
@@ -20,7 +30,12 @@ export function moduleSpecifiers(path, text) {
 }
 
 const sourceExtension = /(?:\.d)?\.(ts|tsx|mts|cts)$/;
+/** @param {string} value */
 const relativeSource = value => /^\.\.?\//.test(value) && sourceExtension.test(value);
+/**
+ * @param {string} path
+ * @param {string} text
+ */
 export function portableDeclaration(path, text) {
     for (const specifier of moduleSpecifiers(path, text).filter(item => relativeSource(item.value)).sort((a, b) => b.from - a.from)) {
         const value = specifier.value.replace(sourceExtension, (_match, extension) => extension === "mts" ? ".mjs" : extension === "cts" ? ".cjs" : ".js");

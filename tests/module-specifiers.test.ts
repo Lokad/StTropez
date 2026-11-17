@@ -1,9 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-const { moduleSpecifiers, portableDeclaration } = await import(new URL("../scripts/module-specifiers.mjs", import.meta.url).href) as {
-    moduleSpecifiers(path: string, text: string): { value: string; from: number; to: number }[];
-    portableDeclaration(path: string, text: string): string;
-};
+import { moduleSpecifiers, portableDeclaration } from "../scripts/module-specifiers.mjs";
 
 test("declaration modules become portable without rewriting data literals, package names or comments", () => {
     const declaration = `import './side.ts';
