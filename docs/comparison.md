@@ -127,8 +127,12 @@ stay valid. Reentrant advancement or disposal throws. Terminal `next()` calls va
 budget and return progress without resuming work.
 
 `DiffReferenceCache` can be passed as the third `TextDiff`
-argument to reuse reference metadata and the latest completed working index. Dispose the cache
-when its owner ends. Reference replacement resets both captures; active jobs keep their own
+argument to reuse reference metadata, the latest working index and bounded exact equal-row
+ranges from a completed comparison. Ranges retain their working capture until replaced;
+across edits, only complete rows outside an ownership-proven changed interval are reused.
+The existing traversal chooses every split; cached equality does not choose new partitions.
+Complex comparisons can require full alignment work. Dispose the cache
+when its owner ends. Reference replacement resets retained captures; active jobs keep their own
 captures, and late jobs cannot replace a newer cache result. The controller owns its cache.
 A disposed cache cannot start a new diff job.
 

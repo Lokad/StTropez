@@ -12,7 +12,7 @@ function* ownedEdge(a: TextBuffer, b: TextBuffer, from: number, to: number, othe
     return length;
 }
 /** Ownership proves which complete row slots may reuse metadata across revisions. */
-function* lineEdges(a: TextBuffer, b: TextBuffer, stats: DiffStats): Generator<void, Edges> {
+export function* lineEdges(a: TextBuffer, b: TextBuffer, stats: DiffStats): Generator<void, Edges> {
     const prefix = yield* ownedEdge(a, b, 0, a.length, 0, b.length, "start", stats);
     if (prefix === a.length && prefix === b.length) return { aFrom: a.length, aTo: a.length, bTo: b.length };
     const suffix = yield* ownedEdge(a, b, prefix, a.length, prefix, b.length, "end", stats);

@@ -1,17 +1,19 @@
+import { prepareEqualities, minimumEqualRows } from "./diff-equalities.ts";
+import type { DiffEqualities, DiffEqualitySnapshot } from "./diff-equalities.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
 import { DiffIdentities, equalLineText, knownLineHash, lineHash } from "./diff-identities.ts";
 import { commonText, getLine, indexLines, lineLength, matchingLines, offsetAt, tick } from "./diff-index.ts";
 import type { DiffStats, DiffIndex as Index } from "./diff-index.ts";
-type Stats = DiffStats & { identities: DiffIdentities };
+type Stats = DiffStats & { identities: DiffIdentities; equalities: DiffEqualities | undefined };
 export type DiffRange = Readonly<{ from: number; to: number; lineFrom: number; lineTo: number }>;
 export type DiffHunk = Readonly<{ baseline: DiffRange; working: DiffRange; whitespaceOnly: boolean }>;
 export type DiffProgress = Readonly<{ status: KernelStatus; work: number; readUnits: number; lineComparisons: number; lineEdits: number; hunks: readonly DiffHunk[]; failure: string | null }>;
-type Cache = { baseline: TextBuffer; serial: number; reference: Index | undefined; working: Index | undefined };
+type Cache = { baseline: TextBuffer; serial: number; reference: Index | undefined; working: Index | undefined; equalities?: DiffEqualitySnapshot };
 const referenceCaches = new WeakMap<DiffReferenceCache, { current: Cache | undefined }>();
 
-/** Retains one reference and one current working index. Active jobs own their captures. */
+/** Retains reference/current working metadata and bounded equality proofs from one completed capture. */
 export class DiffReferenceCache {
     constructor() { referenceCaches.set(this, { current: undefined }); Object.freeze(this); }
     dispose(): void { referenceCaches.delete(this); }
@@ -44,6 +46,13 @@ function* commonLines(a: Index, b: Index, region: Region, reverse: boolean, stat
         }
         const ai = reverse ? region.a1 - count - 1 : region.a0 + count, bi = reverse ? region.b1 - count - 1 : region.b0 + count;
         if (!(yield* equalLine(a, b, ai, bi, stats, false))) break; count++;
+        // Failed frontier probes have no equal run to extend. Look up retained ranges
+        // only after the first exact match, before any repeated-row text scan.
+        if (count < maximum && stats.equalities?.hasPrior) {
+            const cached = stats.equalities.match(reverse ? region.a1 - count : region.a0 + count, reverse ? region.b1 - count : region.b0 + count, maximum - count, reverse, stats);
+            if (tick(stats, 0)) yield;
+            if (cached) { count += cached; continue; }
+        }
         // Repeated rows can align at different backing offsets. Verify their remaining
         // text in bounded native string comparisons instead of materializing every row.
         const token = a.lines.at(ai)?.token; let repeated = false;
@@ -64,6 +73,7 @@ function* commonLines(a: Index, b: Index, region: Region, reverse: boolean, stat
             count += known; stats.lineComparisons += known; if (tick(stats, known)) yield;
         }
     }
+    if (count >= minimumEqualRows && stats.equalities) yield* stats.equalities.remember(reverse ? region.a1 - count : region.a0, reverse ? region.b1 - count : region.b0, count, stats);
     return count;
 }
 function* disjoint(left: Index, right: Index, region: Region, stats: Stats): Generator<void, boolean> {
@@ -166,6 +176,7 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
         const left = yield* indexLines(a, stats, cache?.reference);
         if (cache?.serial === serial) cache.reference = left;
         const right = yield* indexLines(b, stats, cache?.working ?? left);
+        if (cache) stats.equalities = yield* prepareEqualities(right, cache.equalities, stats);
         if (cache?.serial === serial) cache.working = right;
         const tasks: Region[] = [{ a0: 0, a1: left.lines.size, b0: 0, b1: right.lines.size }], changes: Region[] = [];
         const append = (change: Region) => {
@@ -208,8 +219,9 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
             }
             if (a0 !== a1 || b0 !== b1) hunks.push(Object.freeze({ baseline: range(a, a0, a1), working: range(b, b0, b1), whitespaceOnly }));
         }
+        if (stats.equalities) { const equalities = yield* stats.equalities.finish(stats); if (cache?.serial === serial) cache.equalities = equalities; }
         return Object.freeze(hunks);
-    } finally { stats.identities.clear(); }
+    } finally { stats.identities.clear(); stats.equalities = undefined; }
 }
 
 /** Exact line alignment with bounded cooperative steps and linear-space bisection. */
@@ -220,9 +232,9 @@ export class TextDiff {
         if (cache !== undefined && !state) throw new Error("Reference cache is disposed or foreign.");
         const current = state?.current?.baseline === baseline ? state.current : { baseline, serial: 0, reference: undefined, working: undefined };
         if (state) state.current = current;
-        const stats: Stats = { work: 0, yielded: 0, readUnits: 0, lineComparisons: 0, lineEdits: 0, identities: new DiffIdentities() };
+        const stats: Stats = { work: 0, yielded: 0, readUnits: 0, lineComparisons: 0, lineEdits: 0, equalities: undefined, identities: new DiffIdentities() };
         const empty: readonly DiffHunk[] = Object.freeze([]);
-        this.driver = kernelCursor(compare(baseline, working, stats, current, ++current.serial), () => stats.work,
+        this.driver = kernelCursor(compare(baseline, working, stats, state ? current : undefined, ++current.serial), () => stats.work,
             (status, result, failure): DiffProgress => Object.freeze({ status, work: stats.work, readUnits: stats.readUnits,
                 lineComparisons: stats.lineComparisons, lineEdits: stats.lineEdits, hunks: result ?? empty, failure }), "Comparison");
     }

@@ -3,6 +3,9 @@ import test from "node:test";
 import { DiffReferenceCache, TextBuffer, TextDiff } from "../src/index.ts";
 import type { DiffProgress } from "../src/index.ts";
 import { DiffLines } from "../src/core/diff-lines.ts";
+import { prepareEqualities } from "../src/core/diff-equalities.ts";
+import { indexLines } from "../src/core/diff-index.ts";
+import type { DiffStats } from "../src/core/diff-index.ts";
 
 function finish(a: TextBuffer, b: TextBuffer, cache?: DiffReferenceCache): DiffProgress {
     const job = new TextDiff(a, b, cache); let prior = 0, result = job.next(512), calls = 0;
@@ -74,14 +77,60 @@ test("shared and cached fragmented revisions agree with independent snapshots an
     let seed = 82213; const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
     const alphabet = ["A\n", "A\r\n", "B\n", "😀é\n", "\ud800", "\r", "", "x".repeat(257) + "\n"];
     for (let trial = 0; trial < 180; trial++) {
-        const original = Array.from({ length: 1 + random(12) }, () => alphabet[random(alphabet.length)]!).join("");
-        const baseline = TextBuffer.from(original), cache = new DiffReferenceCache(); let working = baseline, text = original;
+        const independent = trial % 3 === 0;
+        const original = Array.from({ length: independent ? 48 + random(48) : 1 + random(12) }, () => alphabet[random(alphabet.length)]!).join("");
+        const baseline = TextBuffer.from(original), cache = new DiffReferenceCache(); let working = independent ? TextBuffer.from(original) : baseline, text = original;
         for (let change = 0; change < 16; change++) {
             const from = random(text.length + 1), to = Math.min(text.length, from + random(7)), insert = alphabet[random(alphabet.length)]!;
             working = working.replace(from, to, insert); text = text.slice(0, from) + insert + text.slice(to);
             const reused = finish(baseline, working, cache), fresh = finish(TextBuffer.from(original), TextBuffer.from(text));
             assert.deepEqual(reused.hunks, fresh.hunks); assert.equal(reused.lineEdits, distance(original, text)); reconstruct(reused, original, text);
             assert.equal(working.readMetrics().textExports, 0);
+        }
+        cache.dispose();
+    }
+});
+
+test("equal-row proofs stay bounded, immutable and valid across a split row", () => {
+    const stats: DiffStats = { work: 0, yielded: 0, readUnits: 0, lineComparisons: 0, lineEdits: 0 };
+    const drain = <T>(job: Generator<void, T>): T => { let prior = stats.work;
+        for (;;) { const step = job.next(); assert.ok(stats.work - prior < 768); prior = stats.work; if (step.done) return step.value; }
+    };
+    const original = TextBuffer.from("row\n".repeat(10000)), index = drain(indexLines(original, stats));
+    const owner = drain(prepareEqualities(index, undefined, stats));
+    for (let i = 0; i < 100; i++) drain(owner.remember(i * 96, i * 96, 32 + i % 24, stats));
+    drain(owner.remember(4800, 4800, 400, stats));
+    const proof = drain(owner.finish(stats)), before = JSON.stringify(proof.ranges);
+    assert.ok(proof.ranges.length <= 32); assert.ok(Object.isFrozen(proof.ranges));
+    const changed = original.replace(original.offsetAt(5000), original.offsetAt(5000) + 1, "changed\n");
+    const next = drain(prepareEqualities(drain(indexLines(changed, stats)), proof, stats));
+    const mapped = drain(next.finish(stats)); assert.ok(mapped.ranges.length <= 32);
+    assert.ok(mapped.ranges.some(range => range.a !== range.b), "the unchanged suffix shifts by one row");
+    for (const range of mapped.ranges) {
+        assert.ok(Object.isFrozen(range));
+        assert.equal(original.slice(original.offsetAt(range.a), original.offsetAt(range.a + range.length)),
+            changed.slice(changed.offsetAt(range.b), changed.offsetAt(range.b + range.length)));
+        assert.equal(next.match(range.a, range.b, range.length, false, stats), range.length);
+        assert.equal(next.match(range.a + range.length, range.b + range.length, range.length, true, stats), range.length);
+        const beforeMiss = stats.work;
+        assert.equal(next.match(range.a, range.b + 2, range.length, false, stats), 0);
+        assert.equal(stats.work - beforeMiss, 1, "an absent diagonal does not scan unrelated proofs");
+    }
+    drain(owner.remember(0, 0, 10000, stats)); assert.equal(JSON.stringify(proof.ranges), before);
+});
+
+test("independent large references reuse exact equal rows without choosing different canonical hunks", () => {
+    for (const distinct of [false, true]) {
+        const original = Array.from({ length: 100000 }, (_, i) => `const value${distinct ? i : ""} = 123;\n`).join("").trimEnd();
+        const baseline = TextBuffer.from("remote " + original), cache = new DiffReferenceCache();
+        let working = TextBuffer.from(original + " during review"); finish(baseline, working, cache);
+        for (const [insert, remove] of [["z", 0], ["q", 0], ["", 1]] as const) {
+            working = working.replace(working.length - remove, working.length, insert);
+            const reused = finish(baseline, working, cache), fresh = finish(baseline, working);
+            assert.deepEqual(reused.hunks, fresh.hunks); assert.equal(reused.lineEdits, fresh.lineEdits);
+            reconstruct(reused, baseline.slice(0, baseline.length), working.slice(0, working.length));
+            assert.ok(reused.readUnits < 1024, `warm reads: ${reused.readUnits}`);
+            assert.ok(reused.work < 4096, `warm work: ${reused.work}`);
         }
         cache.dispose();
     }
@@ -169,6 +218,19 @@ test("independent remote references reuse working metadata across shifted suffix
         assert.deepEqual(reused.hunks, fresh.hunks); assert.equal(reused.lineEdits, fresh.lineEdits); reconstruct(reused, "remote " + source, text);
         assert.ok(reused.readUnits < fresh.readUnits / 10, `${reused.readUnits}/${fresh.readUnits}`);
     }
+    cache.dispose();
+});
+
+test("many separated changes bound retained-proof lookup work across unsuccessful frontier probes", () => {
+    const source = Array.from({ length: 100000 }, (_, i) => `row ${i}\n`).join(""), baseline = TextBuffer.from(source);
+    const text = source.replace(/^row (\d+)$/gm, (line, n: string) => Number(n) % 100 === 0 ? "changed " + n : line);
+    const working = TextBuffer.from(text), cache = new DiffReferenceCache();
+    const cold = finish(baseline, working, cache), changed = working.replace(working.length, working.length, "z");
+    const warm = finish(baseline, changed, cache), fresh = finish(baseline, changed);
+    assert.deepEqual(warm.hunks, fresh.hunks); reconstruct(warm, source, text + "z");
+    assert.equal(cold.hunks.length, 1000); assert.equal(warm.hunks.length, 1001);
+    assert.ok(cold.work < 13000000, `${cold.work} cold units`);
+    assert.ok(warm.work < 15000000, `${warm.work} warm units`);
     cache.dispose();
 });
 
