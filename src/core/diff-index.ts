@@ -2,7 +2,8 @@ import type { TextBuffer } from "./text-buffer.ts";
 import { DiffLines } from "./diff-lines.ts";
 import type { DiffLine } from "./diff-lines.ts";
 
-export type DiffStats = { work: number; yielded: number; readUnits: number; lineComparisons: number; lineEdits: number };
+type TextProof = Readonly<{ a: TextBuffer; b: TextBuffer; from: number; otherFrom: number; length: number }>;
+export type DiffStats = { work: number; yielded: number; readUnits: number; lineComparisons: number; lineEdits: number; textProof?: TextProof | undefined };
 export type DiffIndex = Readonly<{ buffer: TextBuffer; to: number; lines: DiffLines }>;
 type Edges = Readonly<{ aFrom: number; aTo: number; bTo: number }>;
 export const tick = (stats: DiffStats, units = 1): boolean => { stats.work += units; if (stats.work - stats.yielded < 256) return false; stats.yielded = stats.work; return true; };
@@ -28,6 +29,17 @@ export function* commonText(a: TextBuffer, b: TextBuffer, from: number, to: numb
     inspected?: (text: string, matchedBefore: number) => void): Generator<void, number> {
     let common = yield* ownedEdge(a, b, from, to, otherFrom, otherTo, side, stats);
     const maximum = Math.min(to - from, otherTo - otherFrom);
+    const proof = stats.textProof;
+    // Reuse only exact code units on the same captured alignment; continue at its boundary.
+    if (common < maximum && proof) {
+        const af = side === "start" ? from + common : to - common;
+        const bf = side === "start" ? otherFrom + common : otherTo - common;
+        const offset = af - proof.from;
+        if (proof.a === a && proof.b === b && af - bf === proof.from - proof.otherFrom
+            && (side === "start" ? offset >= 0 && offset < proof.length : offset > 0 && offset <= proof.length))
+            common += Math.min(maximum - common, side === "start" ? proof.length - offset : offset);
+        if (tick(stats, 12)) yield;
+    }
     while (common < maximum) {
         const length = Math.min(256, maximum - common), af = side === "start" ? from + common : to - common - length;
         const bf = side === "start" ? otherFrom + common : otherTo - common - length;
@@ -36,6 +48,12 @@ export function* commonText(a: TextBuffer, b: TextBuffer, from: number, to: numb
         if (matched === length) inspected?.(av, common);
         common += matched; stats.readUnits += length * 2; if (tick(stats, length * 2)) yield;
         if (matched < length) break;
+    }
+    // A single job-local span also retains a checked prefix of an unequal row.
+    if (common >= 256 && (!proof || proof.a !== a || proof.b !== b || common >= proof.length)) {
+        stats.textProof = Object.freeze({ a, b, from: side === "start" ? from : to - common,
+            otherFrom: side === "start" ? otherFrom : otherTo - common, length: common });
+        if (tick(stats, 8)) yield;
     }
     return common;
 }

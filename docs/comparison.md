@@ -121,7 +121,10 @@ export function* compareText(reference: TextBuffer, working: TextBuffer): Genera
 read units, line comparisons, line edit count and a failure message. `TextDiff.snapshot()`
 reads progress without advancing. Only `ready` publishes completed hunks; an empty array is
 a valid completed comparison. Execution failures throw their original cause, record `failed`
-and publish no partial hunks. Completion, failure and disposal release temporary line identities.
+and publish no partial hunks. A job can retain one exact text span to avoid repeating a
+literal scan during row comparison and hunk trimming; reuse requires the same captured
+buffers and alignment. Completion, failure and disposal release temporary line identities
+and the retained text span.
 `dispose()` clears the cursor's hunks and failure and is idempotent; hunks retained by the caller
 stay valid. Reentrant advancement or disposal throws. Terminal `next()` calls validate the
 budget and return progress without resuming work.

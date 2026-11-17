@@ -162,6 +162,16 @@ test("cold shared 100k-line and long-line point edits avoid document-sized index
 });
 
 test("long-line review identities bound warm reads across revisions and independent reference storage", () => {
+    const source = "x".repeat(2400000), baseline = TextBuffer.from(source), cache = new DiffReferenceCache();
+    const tail = baseline.replace(baseline.length, baseline.length, "\nreview-tail"), deleted = tail.replace(0, 1, "");
+    finish(baseline, tail, cache);
+    for (const capture of [deleted, tail, deleted]) {
+        const result = finish(baseline, capture, cache), fresh = finish(baseline, capture);
+        assert.deepEqual(result.hunks, fresh.hunks); reconstruct(result, source, capture.slice(0, capture.length));
+        assert.ok(result.readUnits < source.length * 2 + 4096, `${result.readUnits} units; establish the long equal prefix once`);
+        assert.ok(fresh.readUnits < source.length * 2 + 4096, "the proof also belongs to comparisons without a reference cache");
+    }
+    cache.dispose();
     for (const length of [300, 1000]) for (const shared of [true, false]) {
         const source = Array.from({ length: 512 }, (_, i) => String(i).padStart(8, "0") + " " + "x".repeat(length - 9) + "\n").join("");
         const baseline = TextBuffer.from(source), cache = new DiffReferenceCache(); let working = shared ? baseline : TextBuffer.from(source);

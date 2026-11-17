@@ -221,7 +221,7 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
         }
         if (stats.equalities) { const equalities = yield* stats.equalities.finish(stats); if (cache?.serial === serial) cache.equalities = equalities; }
         return Object.freeze(hunks);
-    } finally { stats.identities.clear(); stats.equalities = undefined; }
+    } finally { stats.identities.clear(); stats.equalities = undefined; stats.textProof = undefined; }
 }
 
 /** Exact line alignment with bounded cooperative steps and linear-space bisection. */
