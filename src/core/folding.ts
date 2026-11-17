@@ -3,6 +3,7 @@ import { unchangedPositionEdges } from "./positions.ts";
 import type { PositionMapping } from "./positions.ts";
 import type { SelectionSet } from "./selections.ts";
 import type { Observable } from "./observable.ts";
+import { partitionPoint } from "./bound-search.ts";
 
 /** Host-owned raw anchors include a visible header and at least one complete body row. */
 export type FoldRange = Readonly<{ id: string; from: number; to: number; collapsed?: boolean; group?: string }>;
@@ -129,8 +130,8 @@ export function revealSelectionFolds(buffer: TextBuffer, regions: readonly FoldR
     const lines = [...new Set(selections.ranges.flatMap(r => [buffer.lineAt(r.anchor), buffer.lineAt(r.head)]))].sort((a, b) => a - b); let changed = false;
     if (metadata && lines[0]! >= metadata.maxLineTo) return regions;
     const next = regions.map(r => {
-        if (!r.collapsed) return r; let low = 0, high = lines.length;
-        while (low < high) { const mid = (low + high) >>> 1; if (lines[mid]! < r.lineFrom + 1) low = mid + 1; else high = mid; }
+        if (!r.collapsed) return r;
+        const low = partitionPoint(lines.length, index => lines[index]! < r.lineFrom + 1);
         if (low === lines.length || lines[low]! >= r.lineTo) return r;
         changed = true; return Object.freeze({ ...r, collapsed: false });
     }); return changed ? retain(next) : regions;
@@ -174,8 +175,7 @@ export class FoldIndex {
     }
     #at(line: number): Hidden | undefined {
         if (!integer(line) || line >= this.lineCount) throw new RangeError("Invalid source line.");
-        let low = 0, high = this.#hidden.length;
-        while (low < high) { const mid = (low + high) >>> 1; if (this.#hidden[mid]!.from <= line) low = mid + 1; else high = mid; }
+        const low = partitionPoint(this.#hidden.length, index => this.#hidden[index]!.from <= line);
         return this.#hidden[low - 1];
     }
     hiddenBy(line: number): FoldRegion | undefined { const h = this.#at(line); return h && line < h.to ? h.owner : undefined; }
@@ -184,14 +184,12 @@ export class FoldIndex {
     rowAt(line: number): number { const h = this.#at(line); return !h ? line : line < h.to ? h.from - h.before - 1 : line - h.before - (h.to - h.from); }
     lineAt(row: number): number {
         if (!integer(row) || row >= this.visibleLineCount) throw new RangeError("Invalid visible row.");
-        let low = 0, high = this.#hidden.length;
-        while (low < high) { const mid = (low + high) >>> 1, h = this.#hidden[mid]!; if (h.from - h.before <= row) low = mid + 1; else high = mid; }
+        const low = partitionPoint(this.#hidden.length, index => { const h = this.#hidden[index]!; return h.from - h.before <= row; });
         const h = this.#hidden[low - 1]; return row + (h ? h.before + h.to - h.from : 0);
     }
     headerAt(line: number): FoldRegion | undefined {
         if (!integer(line) || line >= this.lineCount) throw new RangeError("Invalid source line.");
-        let low = 0, high = this.regions.length;
-        while (low < high) { const mid = (low + high) >>> 1; if (this.regions[mid]!.lineFrom < line) low = mid + 1; else high = mid; }
+        const low = partitionPoint(this.regions.length, index => this.regions[index]!.lineFrom < line);
         const r = this.regions[low]; return r?.lineFrom === line ? r : undefined;
     }
     /** Display captures may survive new expanded metadata while still expiring on changed hidden rows. */

@@ -4,6 +4,7 @@ import type { FoldRegion } from "./folding.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
+import { partitionPoint } from "./bound-search.ts";
 
 type Side = "baseline" | "working";
 type Run = Readonly<{ row: number; length: number; baseline: number | null; working: number | null; baselineAnchor: number; workingAnchor: number }>;
@@ -32,8 +33,7 @@ class ComparisonRowIndex {
     headerAt(line: number): FoldRegion | undefined { return this.#folds.headerAt(line); }
     #run(row: number): Run {
         if (!Number.isSafeInteger(row) || row < 0 || row >= this.visibleLineCount) throw new RangeError("Invalid aligned row.");
-        let low = 0, high = this.#runs.length;
-        while (low < high) { const mid = (low + high) >>> 1; if (this.#runs[mid]!.row <= row) low = mid + 1; else high = mid; }
+        const low = partitionPoint(this.#runs.length, index => this.#runs[index]!.row <= row);
         return this.#runs[low - 1]!;
     }
     #anchor(run: Run): ComparisonGap {
@@ -43,8 +43,7 @@ class ComparisonRowIndex {
     }
     rowAt(line: number): number {
         line = this.#folds.hiddenBy(line)?.lineFrom ?? line;
-        let low = 0, high = this.#real.length;
-        while (low < high) { const mid = (low + high) >>> 1; if (this.#real[mid]![this.#side]! <= line) low = mid + 1; else high = mid; }
+        const low = partitionPoint(this.#real.length, index => this.#real[index]![this.#side]! <= line);
         const run = this.#real[low - 1];
         if (!run || line >= run[this.#side]! + run.length) throw new Error("Source row is missing from comparison alignment.");
         return run.row + line - run[this.#side]!;
@@ -54,8 +53,7 @@ class ComparisonRowIndex {
     /** Page destinations stay on real source rows, even when the page lies entirely in padding. */
     nextLine(row: number, direction: -1 | 1): number {
         row = Math.max(0, Math.min(this.visibleLineCount - 1, row));
-        let low = 0, high = this.#real.length;
-        while (low < high) { const mid = (low + high) >>> 1; if (this.#real[mid]!.row <= row) low = mid + 1; else high = mid; }
+        const low = partitionPoint(this.#real.length, index => this.#real[index]!.row <= row);
         const before = this.#real[low - 1];
         if (before && row < before.row + before.length) return before[this.#side]! + row - before.row;
         const run = direction > 0 ? this.#real[low] ?? this.#real.at(-1)! : before ?? this.#real[0]!;

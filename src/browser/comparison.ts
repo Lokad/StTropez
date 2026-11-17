@@ -1,5 +1,6 @@
 import { Store } from "../core/observable.ts";
 import { validateWorkBudget } from "../core/kernel-cursor.ts";
+import { partitionPoint } from "../core/bound-search.ts";
 import type { Observable } from "../core/observable.ts";
 import { createComparisonController } from "../core/comparison.ts";
 import type { ComparisonBaseline, ComparisonController, ComparisonSnapshot } from "../core/comparison.ts";
@@ -66,8 +67,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     const publishReference = (value: ComparisonReferenceView | undefined) => { const changed = new Set<Store<unknown>>(); referenceStore.set(value, changed); referenceScope.deliver([...changed]); };
     function rangeAt(side: "baseline" | "working", line: number): DiffRange | undefined {
         if (state.status !== "ready" && state.status !== "running") return;
-        let low = 0, high = state.hunks.length;
-        while (low < high) { const mid = (low + high) >>> 1, range = state.hunks[mid]![side]; if (Math.max(range.lineFrom + 1, range.lineTo) <= line) low = mid + 1; else high = mid; }
+        const low = partitionPoint(state.hunks.length, index => { const range = state.hunks[index]![side]; return Math.max(range.lineFrom + 1, range.lineTo) <= line; });
         const range = state.hunks[low]?.[side]; return range && range.lineFrom <= line ? range : undefined;
     }
     const decorate = (side: "baseline" | "working") => (line: PresentedLine): readonly InlineDecoration[] => {
