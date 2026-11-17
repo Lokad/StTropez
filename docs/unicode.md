@@ -277,8 +277,9 @@ presentation APIs when changing those inputs.
 
 Unicode data and development fixtures carry the [Unicode License V3](../licenses/Unicode-3.0.txt).
 The generators accept reviewed local data; ordinary builds and consumer restores do not
-download or regenerate it. The TypeScript kernels use generated facts and native browser
-rendering, preserving the library's zero runtime dependencies.
+download or regenerate it. The [regeneration workflow](testing.md#unicode-regeneration)
+pins input hashes and checks existing outputs offline. The TypeScript kernels use generated
+facts and native browser rendering, preserving the library's zero runtime dependencies.
 
 ## Not covered
 

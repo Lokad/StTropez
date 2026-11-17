@@ -47,8 +47,8 @@ The package build emits its own declarations to `dist`, and documentation exampl
 independently against the public source entries using `tsconfig.base.json`.
 The development project also checks the JavaScript entries listed in `tsconfig.json` and
 their imports: measurement, package scenarios, the browser harness, its server and the demo
-library catalogue, plus asset entry metadata, building and declaration finalization. Other
-scripts are outside its JavaScript checking scope.
+library catalogue, plus asset entry metadata, building, declaration finalization and shared
+Unicode generation I/O. Other scripts are outside its JavaScript checking scope.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected
 Chromium gate and the static-demo Chromium journey. A passing CI run has that scope;
@@ -211,6 +211,28 @@ input, large paste/delete, search, fold, comparison, rapid tab switch and repeat
 A completed corpus or correctness journey does not establish a production size or latency budget.
 The [architecture constraints](architecture.md#performance-invariants-and-cost-boundaries) identify
 bounded work and operations that can retain proportional/global costs.
+
+### Unicode regeneration
+
+The grapheme and bidi generators use reviewed local Unicode data. The input names, source
+URLs and SHA-256 hashes are recorded in [unicode-inputs.json](../scripts/unicode-inputs.json).
+Retain those exact raw files, named `<name>.txt`, in a directory for each generator; include
+the shared `license.txt` in both directories. Generation does not download data or update
+the recorded hashes. A data change requires explicit review of the inputs and license.
+
+Run from the repository root to verify the generated tables and compressed fixtures:
+
+```sh
+node scripts/generate-grapheme-data.mjs /path/to/reviewed/grapheme --check
+node scripts/generate-bidi-data.mjs /path/to/reviewed/bidi --check
+```
+
+Both commands validate every raw input before generating outputs. They also verify the
+repository's Unicode notice; they do not replace it. `--check` writes no files and fails on
+a missing or different output. Text comparisons normalize CRLF to LF for checkout portability;
+compressed fixtures compare exact bytes. Omitting `--check` writes the generated tables and
+fixtures after input validation. Ordinary library builds and consumer restores do not run
+these generators.
 
 ### Measurement policy
 

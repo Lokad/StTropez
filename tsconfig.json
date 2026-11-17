@@ -10,7 +10,7 @@
   "include": [
     "fixtures/**/*.ts", "examples/**/*.ts", "examples/**/*.tsx", "experiments/**/*.ts", "tests/**/*.ts", "playwright*.ts",
     "scripts/measurement.mjs", "scripts/package-scenarios.mjs", "scripts/browser-harness.mjs",
-    "scripts/build.mjs", "scripts/finalize-assets.mjs"
+    "scripts/build.mjs", "scripts/finalize-assets.mjs", "scripts/unicode-generation.mjs"
   ],
   "references": [
     { "path": "./tsconfig.core.json" },

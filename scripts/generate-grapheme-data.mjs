@@ -1,15 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { gzipSync } from "node:zlib";
+import { unicodeArguments, readUnicodeInputs, emitUnicodeFiles } from "./unicode-generation.mjs";
 
-const input = process.argv[2]; if (!input) throw new Error("Supply a reviewed Unicode18 grapheme data directory.");
-const names = ["ReadMe", "GraphemeBreakProperty", "GraphemeBreakTest", "DerivedCoreProperties", "emoji-data"], files = {};
-for (const name of names) files[name] = await readFile(resolve(input, `${name}.txt`), "utf8");
+const { input, check } = unicodeArguments(process.argv.slice(2));
+const names = ["ReadMe", "GraphemeBreakProperty", "GraphemeBreakTest", "DerivedCoreProperties", "emoji-data"];
+const files = await readUnicodeInputs("grapheme", input);
 assert.ok(files.ReadMe.includes("final data files for version 18.0.0"));
 for (const name of ["GraphemeBreakProperty", "GraphemeBreakTest", "DerivedCoreProperties"]) assert.ok(files[name].startsWith(`# ${name}-18.0.0.txt`));
 assert.ok(files["emoji-data"].includes("# Version: 18.0.0"));
-assert.equal((await readFile(resolve(input, "license.txt"), "utf8")).replaceAll("\r\n", "\n"), (await readFile("licenses/Unicode-3.0.txt", "utf8")).replaceAll("\r\n", "\n"));
 const records = text => text.split(/\r?\n/).map(line => line.replace(/#.*/, "").trim()).filter(Boolean).map(line => line.split(";").map(v => v.trim()));
 const interval = text => { const [from, to = from] = text.split("..").map(v => parseInt(v, 16)); assert.ok(from >= 0 && to >= from && to <= 0x10ffff); return [from, to]; };
 const kinds = ["Other", "CR", "LF", "Control", "Extend", "ZWJ", "Regional_Indicator", "Prepend", "SpacingMark", "L", "V", "T", "LV", "LVT"], conjunct = ["None", "Consonant", "Extend", "Linker"], packed = new Uint8Array(0x110000);
@@ -45,6 +43,10 @@ export const indicConjunctBreak = (cp: number): IndicConjunctBreak => conjunct[g
 export const extendedPictographic = (cp: number): boolean => !!(graphemeProperties(cp) & 64);
 export const defaultIgnorable = (cp: number): boolean => !!(graphemeProperties(cp) & 128);
 `;
-await writeFile("src/core/grapheme-data.ts", source); await mkdir("tests/fixtures/graphemes", { recursive: true });
-for (const name of names.filter(n => n !== "ReadMe")) { const text = files[name].split(/\r?\n/).map(line => line.replace(/#.*/, "").trim()).filter(Boolean).join("\n") + "\n"; await writeFile(`tests/fixtures/graphemes/${name}.txt.gz`, gzipSync(text, { level: 9 })); }
-console.log(JSON.stringify({ unicode: "18.0.0", intervalRecords: ranges.length / 2, sourceBytes: Buffer.byteLength(source), copiedImplementation: false }));
+const outputs = { "src/core/grapheme-data.ts": source };
+for (const name of names.filter(n => n !== "ReadMe")) {
+    const text = files[name].split(/\r?\n/).map(line => line.replace(/#.*/, "").trim()).filter(Boolean).join("\n") + "\n";
+    outputs[`tests/fixtures/graphemes/${name}.txt.gz`] = gzipSync(text, { level: 9 });
+}
+await emitUnicodeFiles(outputs, check);
+console.log(JSON.stringify({ unicode: "18.0.0", check, intervalRecords: ranges.length / 2, sourceBytes: Buffer.byteLength(source), copiedImplementation: false }));
