@@ -8,10 +8,21 @@ import { indexLines } from "../src/core/diff-index.ts";
 import type { DiffStats } from "../src/core/diff-index.ts";
 
 function finish(a: TextBuffer, b: TextBuffer, cache?: DiffReferenceCache): DiffProgress {
+    const inputs = a === b ? [a] : [a, b];
+    const reads = () => inputs.reduce((total, buffer) => { const metrics = buffer.readMetrics();
+        return { slices: total.slices + metrics.sliceUnits, exports: total.exports + metrics.textExports }; }, { slices: 0, exports: 0 });
+    let observed = reads(), reported = 0;
     const job = new TextDiff(a, b, cache); let prior = 0, result = job.next(512), calls = 0;
     for (;;) {
+        const current = reads(), advance = result.readUnits - reported;
+        // Includes construction/first advance and excludes later reconstruction oracles.
+        // Reported reads can also include an older working capture retained by the cache.
+        assert.equal(current.exports, observed.exports, "Comparison exported a captured input.");
+        assert.ok(current.slices - observed.slices <= advance, "Unreported UTF-16 slices from captured inputs.");
+        assert.ok(advance <= result.work - prior, "Comparison reads escaped the cooperative work charge.");
         assert.ok(result.work - prior < 1280); if (result.status !== "running") break;
-        prior = result.work; assert.ok(++calls < 100000); result = job.next(512);
+        observed = current; reported = result.readUnits; prior = result.work;
+        assert.ok(++calls < 100000); result = job.next(512);
     }
     job.dispose(); assert.equal(result.status, "ready"); return result;
 }
@@ -85,7 +96,6 @@ test("shared and cached fragmented revisions agree with independent snapshots an
             working = working.replace(from, to, insert); text = text.slice(0, from) + insert + text.slice(to);
             const reused = finish(baseline, working, cache), fresh = finish(TextBuffer.from(original), TextBuffer.from(text));
             assert.deepEqual(reused.hunks, fresh.hunks); assert.equal(reused.lineEdits, distance(original, text)); reconstruct(reused, original, text);
-            assert.equal(working.readMetrics().textExports, 0);
         }
         cache.dispose();
     }
@@ -156,7 +166,7 @@ test("cold shared 100k-line and long-line point edits avoid document-sized index
         for (const at of [0, Math.floor(source.length / 2), source.length]) for (const insert of ["z", "\n", "abc"]) for (const remove of at < source.length ? [0, 1] : [0]) {
             const working = baseline.replace(at, at + remove, insert), result = finish(baseline, working), expected = source.slice(0, at) + insert + source.slice(at + remove);
             reconstruct(result, source, expected); assert.ok(result.readUnits < 4096, `${result.readUnits} units for ${at}/${JSON.stringify(insert)}`);
-            assert.ok(result.lineComparisons < 12); assert.equal(baseline.readMetrics().textExports, 0); assert.equal(working.readMetrics().textExports, 0);
+            assert.ok(result.lineComparisons < 12);
         }
     }
 });
@@ -184,7 +194,7 @@ test("long-line review identities bound warm reads across revisions and independ
             assert.deepEqual(reused.hunks, fresh.hunks); assert.equal(reused.lineEdits, fresh.lineEdits);
             reconstruct(reused, source, capture.slice(0, capture.length));
             assert.ok(reused.readUnits < source.length / 3, `${length}/${shared}: ${reused.readUnits} warm read units`);
-            assert.equal(JSON.stringify(exact.hunks), before); assert.equal(capture.readMetrics().textExports, 0);
+            assert.equal(JSON.stringify(exact.hunks), before);
         }
         cache.dispose();
     }
