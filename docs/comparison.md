@@ -153,13 +153,21 @@ regions; verification checks at most 256 changed rows. Unknown tokens, new match
 row counts require alignment rather than directly reusing the raw regions.
 
 The cache can also retain up to eight frontier checkpoints from the first bisection of an
-expensive completed comparison, with fewer than 64 KiB of vector storage. A later job can resume
+expensive completed comparison. A later job can resume
 a checkpoint when the reference/trimmed region agree and ownership proves that every earlier
 move validation and equality probe stays strictly outside the changed rows in both directions.
 This includes row-count changes and new matches; affected decisions are recomputed. Verification
 bounds the changed window to 256 rows on each side and captures to 65,536 rows per side. Whole-region
 alphabet shortcuts are rechecked after an edit. Unproved or overlapping frontiers restart normally.
 Copying retained vectors is charged cooperative work; cache reuse preserves canonical hunk choices.
+
+Up to 32 completed bisection splits can also be retained, selected by their original work.
+A split is reusable only when both reference bounds match and ownership proves its entire
+working region unchanged, with suffix coordinates shifted by the exact row delta. These
+decisions share a 64 KiB numeric-storage cap with frontier vectors; older frontier checkpoints
+are dropped to respect that cap. Indexes, text captures and other cache metadata are separate.
+Whole-region shortcut results are recomputed. Lookup, storage and copying count as cooperative
+work; replay preserves the existing canonical split choices.
 
 Failed or cancelled jobs cannot publish a retained plan. Complex comparisons can require full
 alignment work. Dispose the cache

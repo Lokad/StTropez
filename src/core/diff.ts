@@ -11,7 +11,7 @@ export type DiffRange = Readonly<{ from: number; to: number; lineFrom: number; l
 export type DiffHunk = Readonly<{ baseline: DiffRange; working: DiffRange; whitespaceOnly: boolean }>;
 export type DiffProgress = Readonly<{ status: KernelStatus; work: number; readUnits: number; lineComparisons: number; lineEdits: number; hunks: readonly DiffHunk[]; failure: string | null }>;
 type Cache = { baseline: TextBuffer; serial: number; reference: Index | undefined; working: Index | undefined;
-    equalities?: DiffEqualitySnapshot; alphabet?: ReadonlySet<string> | null; alignment?: AlignmentPlan | undefined; frontier?: FrontierPlan | undefined };
+    equalities?: DiffEqualitySnapshot; alphabet?: ReadonlySet<string> | null; alignment?: AlignmentPlan | undefined; frontier?: FrontierPlan | undefined; splits?: SplitPlan | undefined };
 const referenceCaches = new WeakMap<DiffReferenceCache, { current: Cache | undefined }>();
 
 /** Retains reference/working metadata and bounded exact proofs from completed captures. */
@@ -23,6 +23,49 @@ type Region = Readonly<{ a0: number; a1: number; b0: number; b1: number }>;
 type FrontierPoint = Readonly<{ distance: number; radius: number; origin: number; forward: Int32Array; reverse: Int32Array; seenF: number; seenR: number }>;
 type FrontierPlan = Readonly<{ working: Index; region: Region; points: readonly FrontierPoint[] }>;
 type FrontierCapture = { previous: FrontierPlan | undefined; plan?: FrontierPlan; first: boolean };
+type SplitCapture = { rows?: Float64Array; count: number; reused: boolean };
+type SplitPlan = Readonly<{ working: Index; rows: Float64Array; count: number }>;
+type SavedSplit = Readonly<{ point: readonly [number, number]; work: number }>;
+const decisionLimits = Object.freeze({ bytes: 65536, splits: 32, fields: 7, minimumWork: 1024 });
+const splitBytes = decisionLimits.splits * decisionLimits.fields * Float64Array.BYTES_PER_ELEMENT;
+const regionKey = (region: Region): string => [region.a0, region.a1, region.b0, region.b1].join(":");
+/** Only whole unchanged regions preserve the deterministic bisection decision. */
+function* retainedSplits(plan: SplitPlan, right: Index, stats: Stats): Generator<void, Map<string, SavedSplit>> {
+    const saved = new Map<string, SavedSplit>(), old = plan.working;
+    let from = old.lines.size, to = from, end = from;
+    if (old.buffer !== right.buffer) {
+        const edges = yield* lineEdges(old.buffer, right.buffer, stats);
+        from = edges.aFrom === old.to ? old.lines.size : old.buffer.lineAt(edges.aFrom);
+        to = edges.aTo === old.to ? old.lines.size : old.buffer.lineAt(edges.aTo);
+        end = edges.bTo === right.to ? right.lines.size : right.buffer.lineAt(edges.bTo);
+        if (Math.max(to - from, end - from) > frontierLimits.changedRows) return saved;
+    }
+    for (let row = 0; row < plan.count; row++) {
+        const i = row * decisionLimits.fields, a0 = plan.rows[i + 1]!, a1 = plan.rows[i + 2]!, b0 = plan.rows[i + 3]!, b1 = plan.rows[i + 4]!;
+        const shift = b1 <= from ? 0 : b0 >= to ? end - to : undefined;
+        if (shift !== undefined) saved.set(regionKey({ a0, a1, b0: b0 + shift, b1: b1 + shift }),
+            { point: [plan.rows[i + 5]!, plan.rows[i + 6]! + shift], work: plan.rows[i]! });
+        if (tick(stats, decisionLimits.fields)) yield;
+    }
+    return saved;
+}
+/** Descending original work keeps expensive decisions without depending on the next edit. */
+function* retainSplit(capture: SplitCapture, region: Region, point: readonly [number, number], work: number, stats: Stats): Generator<void, void> {
+    if (tick(stats)) yield;
+    if (work < decisionLimits.minimumWork) return;
+    const fields = decisionLimits.fields; let rows = capture.rows;
+    if (!rows) { capture.rows = rows = new Float64Array(decisionLimits.splits * fields); if (tick(stats, rows.length)) yield; }
+    if (capture.count === decisionLimits.splits && work <= rows[(capture.count - 1) * fields]!) return;
+    let row = Math.min(capture.count, decisionLimits.splits - 1);
+    while (row > 0 && work > rows[(row - 1) * fields]!) {
+        for (let field = 0; field < fields; field++) rows[row * fields + field] = rows[(row - 1) * fields + field]!;
+        row--; if (tick(stats, fields)) yield;
+    }
+    const i = row * fields;
+    rows[i] = work; rows[i + 1] = region.a0; rows[i + 2] = region.a1; rows[i + 3] = region.b0; rows[i + 4] = region.b1; rows[i + 5] = point[0]; rows[i + 6] = point[1];
+    capture.count = Math.min(capture.count + 1, decisionLimits.splits);
+    if (tick(stats, fields)) yield;
+}
 const frontierLimits = Object.freeze({ rows: 65536, changedRows: 256, firstDistance: 16, lastDistance: 2048, comparisons: 100000 });
 
 /** A wave is reusable only while both directions remain strictly outside the changed rows.
@@ -250,11 +293,14 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
         return Math.max(valid(insert) ? insert : -1, valid(remove) ? remove : -1);
     };
     for (let distance = resumeDistance; distance <= maximum; distance++) {
-        // Eight geometric checkpoints retain at most 65,472 vector bytes for the first split.
+        // Geometric frontier checkpoints share one numeric-storage cap with split decisions.
         if (capture && distance >= frontierLimits.firstDistance && distance <= frontierLimits.lastDistance
             && (distance & (distance - 1)) === 0 && (points.at(-1)?.distance ?? -1) < distance) {
             const [f, r] = yield* copyFrontier(forward, reverse, stats);
             points.push(Object.freeze({ distance, radius, origin, forward: f, reverse: r, seenF, seenR }));
+            let bytes = points.reduce((total, point) => total + point.forward.byteLength + point.reverse.byteLength, 0);
+            while (bytes + splitBytes > decisionLimits.bytes) { const removed = points.shift()!; bytes -= removed.forward.byteLength + removed.reverse.byteLength; }
+            if (tick(stats, points.length)) yield;
         }
         // Preserve cheap small-edit searches and ownership proofs. Only after a bounded
         // frontier effort, try exact alphabet proofs before expanding further.
@@ -338,8 +384,8 @@ function range(buffer: TextBuffer, from: number, to: number): DiffRange {
 }
 function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, serial = 0): Generator<void, readonly DiffHunk[]> {
     try {
-        const prior = cache?.alignment; let alphabet = cache?.alphabet;
-        if (a === b) { if (cache?.serial === serial) { cache.alignment = undefined; cache.frontier = undefined; } return Object.freeze([]); }
+        const prior = cache?.alignment, previousSplits = cache?.splits; let alphabet = cache?.alphabet;
+        if (a === b) { if (cache?.serial === serial) { cache.alignment = undefined; cache.frontier = undefined; cache.splits = undefined; } return Object.freeze([]); }
         const left = yield* indexLines(a, stats, cache?.reference);
         if (cache?.serial === serial) cache.reference = left;
         const right = yield* indexLines(b, stats, cache?.working ?? left);
@@ -348,6 +394,8 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
         const reused = prior ? yield* reuseAlignment(prior, right, stats) : undefined;
         const frontier: FrontierCapture | undefined = cache && left.lines.size <= frontierLimits.rows && right.lines.size <= frontierLimits.rows
             ? { previous: cache.frontier, first: true } : undefined;
+        const splits: SplitCapture | undefined = frontier ? { count: 0, reused: false } : undefined;
+        const savedSplits = splits && previousSplits && !reused ? yield* retainedSplits(previousSplits, right, stats) : undefined;
         const tasks: Region[] = [{ a0: 0, a1: left.lines.size, b0: 0, b1: right.lines.size }], changes: Region[] = [];
         const append = (change: Region) => {
             const previous = changes.at(-1);
@@ -370,7 +418,11 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
             } else {
                 const capture = frontier?.first ? frontier : undefined;
                 if (frontier) frontier.first = false;
-                const split = yield* bisect(left, right, { a0, a1, b0, b1 }, stats, capture);
+                const region = { a0, a1, b0, b1 }, saved = savedSplits?.get(regionKey(region));
+                if (savedSplits && tick(stats, 4)) yield;
+                const before = stats.work, split = saved?.point ?? (yield* bisect(left, right, region, stats, capture));
+                if (saved && splits) splits.reused = true;
+                if (splits && !("changes" in split)) yield* retainSplit(splits, region, split, saved?.work ?? stats.work - before, stats);
                 if ("changes" in split) { split.changes.forEach(append); continue; }
                 const [ai, bi] = split;
                 if ((ai === a0 && bi === b0) || (ai === a1 && bi === b1)) throw new Error("Comparison split did not make progress.");
@@ -411,6 +463,8 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
         if (cache?.serial === serial) {
             if (alphabet !== undefined) cache.alphabet = alphabet;
             cache.alignment = capturePlan && alphabet ? Object.freeze({ working: right, alphabet, changes: Object.freeze(changes), hunks: Object.freeze(regionHunks!) }) : undefined;
+            cache.splits = reused ? previousSplits && previousSplits.working === reused.plan.working ? Object.freeze({ ...previousSplits, working: right }) : previousSplits
+                : splits?.rows && (splits.reused || stats.lineComparisons >= frontierLimits.comparisons) ? Object.freeze({ working: right, rows: splits.rows, count: splits.count }) : undefined;
             const previous = frontier?.previous, captured = frontier?.plan;
             cache.frontier = reused ? previous && previous.working === reused.plan.working ? Object.freeze({ ...previous, working: right }) : previous
                 : captured?.points.length && stats.lineComparisons >= frontierLimits.comparisons ? Object.freeze({ ...captured, points: Object.freeze([...captured.points]) }) : undefined;
