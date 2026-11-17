@@ -317,7 +317,10 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect(await input.evaluate(node => node.ownerDocument.activeElement === node)).toBe(true);
             const after = await page.evaluate(() => window.hostFixture.snapshot());
             expect(after.source.serverVersion).toBe("v0"); expect(after.activity.writes).toBe(0); expect(after.source.dirty).toBe(true);
-            expect(after.bindings.mounts).toBe(during.bindings.mounts); expect(after.diagnostics.leases - after.diagnostics.views).toBe(after.bindings.lsp!.documents);
+            expect(after.bindings.mounts).toBe(during.bindings.mounts);
+            // Completion after the final keystroke can still own a captured-resource lease.
+            await expect.poll(() => page.evaluate(() => { const { diagnostics, bindings } = window.hostFixture.snapshot();
+                return diagnostics.leases - diagnostics.views - bindings.lsp!.documents; })).toBe(0);
         });
 
         hostTest("plain-candidate", "a late Run failure preserves the focused editor while the host reports recovery", async ({ page }) => {
