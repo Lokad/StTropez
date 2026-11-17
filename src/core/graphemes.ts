@@ -1,12 +1,13 @@
 import type { TextBuffer } from "./text-buffer.ts";
 import { graphemeProperties, unicodeGraphemeVersion } from "./grapheme-data.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
+import type { KernelStatus } from "./kernel-cursor.ts";
 import { utf16CodePointAt } from "./utf16.ts";
 
 export type GraphemeSource = Readonly<{ kind: "buffer"; buffer: TextBuffer }> | Readonly<{ kind: "string"; text: string }>;
 export type GraphemeRange = Readonly<{ from: number; to: number }>;
 export type GraphemeOptions = Readonly<{ from?: number; to?: number; maxOperations?: number; maxClusters?: number }>;
-export type GraphemeProgress = Readonly<{ status: "running" | "ready" | "failed" | "disposed"; phase: "scan" | "publish";
+export type GraphemeProgress = Readonly<{ status: KernelStatus; phase: "scan" | "publish";
     scannedUnits: number; readUnits: number; inputPoints: number; publishedBoundaries: number; completedClusters: number; workUnits: number; result: GraphemeIndex | null; failure: string | null }>;
 export type GraphemeCursor = Readonly<{ next: (workBudget?: number) => GraphemeProgress; snapshot: () => GraphemeProgress; dispose: () => void }>;
 export class GraphemeLimitError extends Error {

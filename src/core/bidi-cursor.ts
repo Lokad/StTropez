@@ -3,7 +3,8 @@ import type { BidiClass } from "./bidi-data.ts";
 import type { BidiDirection, BidiParagraph, BidiText } from "./bidi.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { utf16CodePointAt } from "./utf16.ts";
-import { validateWorkBudget } from "./kernel-cursor.ts";
+import { kernelCursor } from "./kernel-cursor.ts";
+import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
 
 export type BidiIndex = Readonly<{
     from: number; to: number; length: number; visualLength: number; paragraphCount: number;
@@ -11,9 +12,9 @@ export type BidiIndex = Readonly<{
     indexOf: (offset: number) => number | null; paragraphAt: (index: number) => BidiParagraph;
     materialize: () => BidiText;
 }>;
-export type BidiStep = Readonly<{ status: "running" | "ready" | "cancelled";
-    phase: "scan" | "resolve" | "publish" | "ready" | "cancelled";
-    scannedUnits: number; readUnits: number; workUnits: number; result: BidiIndex | null }>;
+export type BidiStep = Readonly<{ status: KernelStatus;
+    phase: "scan" | "resolve" | "publish" | Exclude<KernelStatus, "running">;
+    scannedUnits: number; readUnits: number; workUnits: number; result: BidiIndex | null; failure: string | null }>;
 type Counters = { work: number; yielded: number; scanned: number; reads: number; phase: "scan" | "resolve" | "publish" };
 const spent = (c: Counters, count = 1) => { c.work += count; if (c.work - c.yielded < 256) return false; c.yielded = c.work; return true; };
 const isolate = (type: BidiClass) => type === "LRI" || type === "RLI" || type === "FSI";
@@ -210,22 +211,17 @@ function* build(source: TextBuffer | string, from: number, to: number, direction
 
 /** Cooperative Unicode 18 paragraph resolution. Text reads and all data-sized passes yield. */
 export class BidiCursor {
-    private iterator: Generator<void, BidiIndex | null> | undefined;
-    private readonly counters: Counters = { work: 0, yielded: 0, scanned: 0, reads: 0, phase: "scan" };
-    private status: BidiStep["status"] = "running";
-    private result: BidiIndex | null = null;
+    private readonly driver: KernelCursor<BidiStep>;
     constructor(source: TextBuffer | string, options: Readonly<{ from?: number; to?: number; direction?: BidiDirection }> = {}) {
         const from = options.from ?? 0, to = options.to ?? source.length, direction = options.direction ?? "ltr";
         if (![from, to].every(Number.isSafeInteger) || from < 0 || from > to || to > source.length) throw new RangeError("Invalid bidi range.");
         if (direction !== "ltr" && direction !== "rtl" && direction !== "auto") throw new TypeError("Invalid bidi direction.");
-        this.iterator = build(source, from, to, direction, this.counters);
+        const counters: Counters = { work: 0, yielded: 0, scanned: 0, reads: 0, phase: "scan" };
+        this.driver = kernelCursor(build(source, from, to, direction, counters), () => counters.work,
+            (status, result, failure): BidiStep => Object.freeze({ status, phase: status === "running" ? counters.phase : status,
+                scannedUnits: counters.scanned, readUnits: counters.reads, workUnits: counters.work, result, failure }), "Bidi");
     }
-    next(workBudget = 4096): BidiStep {
-        validateWorkBudget(workBudget, "Bidi");
-        const start = this.counters.work;
-        while (this.iterator && this.counters.work - start < workBudget) { const step = this.iterator.next(); if (step.done) { this.result = step.value; this.status = step.value ? "ready" : "cancelled"; this.iterator = undefined; } }
-        return Object.freeze({ status: this.status, phase: this.status === "running" ? this.counters.phase : this.status, scannedUnits: this.counters.scanned,
-            readUnits: this.counters.reads, workUnits: this.counters.work, result: this.result });
-    }
-    dispose(): void { this.iterator?.return(null); this.iterator = undefined; this.result = null; this.status = "cancelled"; }
+    next(workBudget = 4096): BidiStep { return this.driver.next(workBudget); }
+    snapshot(): BidiStep { return this.driver.snapshot(); }
+    dispose(): void { this.driver.dispose(); }
 }

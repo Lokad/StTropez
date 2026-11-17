@@ -18,7 +18,7 @@ test("lexical run boundaries exclude neighboring whitespace and stay inside capt
 test("run scans yield over millions of word, symbol and whitespace units and release cancelled captures",()=>{
   for(const token of ["x","!"," ","東","\u0301","\u3000"]){const original=TextBuffer.from(token.repeat(2400000)),buffer=original.replace(255,255,token),cursor=new WordCursor(buffer,1200000,1,{skipWhitespace:false});
     const first=cursor.next(256);assert.equal(first.status,"running");assert.ok(first.readUnits<=768);assert.equal(boundary(buffer,1200000,-1),0);assert.equal(boundary(buffer,1200000,1),buffer.length);assert.equal(buffer.readMetrics().textExports,0);
-    cursor.dispose();assert.equal(cursor.next().status,"cancelled");assert.equal(cursor.next().offset,null);
+    cursor.dispose();assert.equal(cursor.next().status,"disposed");assert.equal(cursor.next().offset,null);
   }
 });
 

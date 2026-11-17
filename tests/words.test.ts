@@ -7,6 +7,10 @@ const next = (buffer: TextBuffer, offset: number, direction: -1 | 1) => {
     assert.equal(step.status, "ready"); return step.offset!;
 };
 test("code word starts preserve Unicode letters, marks, joiners, punctuation and raw line endings", () => {
+    const empty = new WordCursor(TextBuffer.from(""), 0, 1), initial = empty.snapshot();
+    assert.deepEqual(initial, { status: "running", offset: null, failure: null, workUnits: 0, readUnits: 0 });
+    assert.ok(Object.isFrozen(initial)); assert.equal(empty.next().status, "ready"); assert.equal(empty.snapshot().offset, 0);
+    assert.equal(initial.status, "running"); empty.dispose(); assert.equal(empty.snapshot().status, "disposed");
     const text = "alpha_beta  gamma.delta 😀 café", buffer = TextBuffer.from(text);
     let offset = 0; const forward = [];
     while (offset < text.length) { offset = next(buffer, offset, 1); forward.push(offset); }
@@ -26,7 +30,7 @@ test("arbitrarily long code words and whitespace yield across immutable piece se
     const job = new WordCursor(buffer, 258, 1); const first = job.next(256); assert.equal(first.status, "running"); assert.ok(first.readUnits <= 768);
     let step = first; while (step.status === "running") step = job.next(4096);
     assert.equal(step.offset, 1_000_004); assert.equal(next(buffer, 1_000_004, -1), 257);
-    job.dispose(); assert.equal(job.next().status, "cancelled"); assert.equal(buffer.readMetrics().textExports, 0);
+    job.dispose(); assert.equal(job.next().status, "disposed"); assert.equal(buffer.readMetrics().textExports, 0);
     assert.throws(() => new WordCursor(buffer, -1, 1)); assert.throws(() => job.next(1));
 });
 

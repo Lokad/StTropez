@@ -10,6 +10,11 @@ function finish(cursor: BidiCursor, budget = 4096): { result: BidiIndex; steps: 
 }
 
 test("cooperative bidi indexes keep absolute UTF-16 targets and immutable query results", () => {
+    const empty = new BidiCursor(""), initial = empty.snapshot();
+    assert.ok(Object.isFrozen(initial)); assert.equal(initial.status, "running"); assert.equal(initial.readUnits, 0);
+    const emptyResult = finish(empty).result; assert.equal(emptyResult.length, 0); assert.equal(emptyResult.visualLength, 0);
+    assert.equal(empty.snapshot().failure, null); assert.equal(initial.status, "running");
+    empty.dispose(); assert.equal(empty.snapshot().phase, "disposed");
     const text = "abc אבג 😀\r\n\u2067العربية (123)\u2069", buffer = TextBuffer.from("prefix " + text + " suffix"), from = 7, to = from + text.length;
     const cursor = new BidiCursor(buffer, { from, to, direction: "auto" }); assert.equal(buffer.readMetrics().sliceUnits, 0);
     const { result, snapshot } = finish(cursor, 256), expected = resolveBidi(text, "auto");
@@ -19,7 +24,7 @@ test("cooperative bidi indexes keep absolute UTF-16 targets and immutable query 
     assert.equal(result.indexOf(from + text.indexOf("😀") + 1), null); assert.equal(result.indexOf(to), null);
     assert.equal(result.paragraphCount, 2); assert.deepEqual(result.paragraphAt(0), { from, to: from + text.indexOf("\n") + 1, level: 0 });
     assert.ok(Object.isFrozen(result)); assert.ok(Object.isFrozen(result.paragraphAt(0))); assert.equal(buffer.readMetrics().textExports, 0); assert.equal(buffer.readMetrics().sliceUnits, snapshot.readUnits);
-    cursor.dispose(); assert.equal(cursor.next().status, "cancelled"); assert.deepEqual(result.materialize(), expected);
+    cursor.dispose(); assert.equal(cursor.next().status, "disposed"); assert.deepEqual(result.materialize(), expected);
     assert.throws(() => result.levelAt(to)); assert.throws(() => result.offsetAt(result.visualLength)); assert.throws(() => result.paragraphAt(2));
 });
 
@@ -40,7 +45,7 @@ test("cancellation can release every processing phase without publishing a parti
         const cursor = new BidiCursor(text); let step = cursor.next(256);
         while (step.status === "running" && step.phase !== phase) step = cursor.next(256);
         assert.equal(step.status, "running"); assert.equal(step.phase, phase); assert.equal(step.result, null);
-        cursor.dispose(); assert.equal(cursor.next().status, "cancelled"); assert.equal(cursor.next().result, null);
+        cursor.dispose(); assert.equal(cursor.next().status, "disposed"); assert.equal(cursor.next().result, null);
     }
     assert.throws(() => new BidiCursor(text, { from: -1 })); assert.throws(() => new BidiCursor(text, { to: text.length + 1 }));
     assert.throws(() => new BidiCursor(text).next(1));

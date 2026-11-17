@@ -1,8 +1,9 @@
 import type { TextBuffer } from "./text-buffer.ts";
 import { highSurrogate as high, lowSurrogate as low } from "./utf16.ts";
-import { validateWorkBudget } from "./kernel-cursor.ts";
+import { kernelCursor } from "./kernel-cursor.ts";
+import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
 
-export type WordStep = Readonly<{ status: "running" | "ready" | "cancelled"; offset: number | null; workUnits: number; readUnits: number }>;
+export type WordStep = Readonly<{ status: KernelStatus; offset: number | null; workUnits: number; readUnits: number; failure: string | null }>;
 export type WordOptions = Readonly<{ skipWhitespace?: boolean; from?: number; to?: number }>;
 type Kind = "word" | "space" | "symbol" | "extend";
 type Unit = Readonly<{ from: number; to: number; kind: Kind; control: boolean }>;
@@ -72,22 +73,15 @@ function* scan(buffer: TextBuffer, start: number, direction: -1 | 1, counters: C
  * Endpoints are raw UTF-16; a view supplies grapheme snapping and its logical-line bounds.
  */
 export class WordCursor {
-    private iterator: Generator<void, number> | undefined;
-    private readonly counters: Counters = { work: 0, yielded: 0, reads: 0 };
-    private status: WordStep["status"] = "running";
-    private offset: number | null = null;
+    private readonly driver: KernelCursor<WordStep>;
     constructor(buffer: TextBuffer, offset: number, direction: -1 | 1, options: WordOptions = {}) {
         const from = options.from ?? 0, to = options.to ?? buffer.length;
         if (![offset, from, to].every(Number.isSafeInteger) || from < 0 || from > offset || offset > to || to > buffer.length || direction !== -1 && direction !== 1) throw new RangeError("Invalid word command target.");
-        this.iterator = scan(buffer, offset, direction, this.counters, { from, to }, options.skipWhitespace !== false);
+        const counters: Counters = { work: 0, yielded: 0, reads: 0 };
+        this.driver = kernelCursor(scan(buffer, offset, direction, counters, { from, to }, options.skipWhitespace !== false),
+            () => counters.work, (status, offset, failure): WordStep => Object.freeze({ status, offset, failure, workUnits: counters.work, readUnits: counters.reads }), "Word");
     }
-    next(maxWork = 4096): WordStep {
-        validateWorkBudget(maxWork, "Word");
-        const start = this.counters.work;
-        while (this.iterator && this.counters.work - start < maxWork) {
-            const next = this.iterator.next(); if (next.done) { this.offset = next.value; this.status = "ready"; this.iterator = undefined; }
-        }
-        return Object.freeze({ status: this.status, offset: this.offset, workUnits: this.counters.work, readUnits: this.counters.reads });
-    }
-    dispose(): void { this.iterator?.return(0); this.iterator = undefined; this.offset = null; this.status = "cancelled"; }
+    next(maxWork = 4096): WordStep { return this.driver.next(maxWork); }
+    snapshot(): WordStep { return this.driver.snapshot(); }
+    dispose(): void { this.driver.dispose(); }
 }

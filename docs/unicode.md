@@ -93,6 +93,21 @@ export function hostFont(owner: Document, applyFamily: (family: string) => void)
 
 ## Contract
 
+### Cooperative cursor lifetime
+
+Grapheme, word and bidi cursors expose `next(workBudget)`, `snapshot()` and `dispose()`.
+Snapshots are immutable and do not advance work. Status is `running`, `ready`, `failed` or
+`disposed`; only `ready` exposes a completed result, including a word offset of zero or an
+empty index. Execution failure throws its original cause, records a failure message and
+releases unfinished work. `dispose()` clears the result and failure and is idempotent.
+A completed index retained by the caller stays usable. Reentrant advancement or disposal
+throws; the active operation can catch that error or fail normally.
+
+Budgets are safe integers of at least 256, defaulting to 4,096. They count charged algorithm
+work between cooperative checkpoints, which can overshoot the requested budget. They are
+neither generator-step counts nor elapsed-time limits; the host schedules further calls.
+Invalid budgets throw before changing cursor state, including after completion or disposal.
+
 ### Graphemes and word movement
 
 `createGraphemeCursor(bufferOrString, options)` captures its source without reading it.
@@ -132,10 +147,9 @@ the current run and following whitespace; backward movement skips preceding whit
 consumes the preceding run. `skipWhitespace: false` finds run edges for pointer selection.
 This is a code-oriented policy, not dictionary segmentation or Unicode word-boundary conformance.
 
-`next(maxWork)` returns immutable `WordStep` progress with status, raw UTF-16 offset and work/read
-counts. The budget is a safe integer of at least 256 (default 4,096); checkpoints can overshoot
-it. Reads retain a 256-unit slice plus at most one unit to complete a surrogate pair. `dispose()`
-releases unfinished scanning and marks it cancelled. The caller supplies grapheme snapping and
+`next(maxWork)` returns `WordStep` progress with status, raw UTF-16 offset, failure and work/read
+counts. Work counts scanned UTF-16 units. Reads retain a 256-unit slice plus at most one unit
+to complete a surrogate pair. The caller supplies grapheme snapping and
 logical-line bounds where needed. `codeWordConstituentPattern` exposes the one-code-point pattern
 for host Unicode expressions; it includes marks/joiners as well as word bases.
 
@@ -148,10 +162,10 @@ Removed formatting controls have `null` levels. Order entries are code-point sta
 CRLF forms one paragraph separator. Resolution leaves the text unchanged.
 
 `BidiCursor(source, { from?, to?, direction? })` captures a buffer or string without an
-initial read. `next(workBudget)` exposes scan, resolve and publish progress, read/work counts
-and a completed `BidiIndex`. `dispose()` cancels unfinished work; a retained completed index
-stays usable. Index coordinates are absolute: `levelAt`, `offsetAt`, `indexOf` and
-`paragraphAt` query the captured range. Surrogate interiors, removed controls and the end
+initial read. `next(workBudget)` exposes scan, resolve and publish progress, read/work counts,
+failure and a completed `BidiIndex`. Work includes scanning, resolution and publication;
+terminal progress uses its status as its phase. Index coordinates are absolute: `levelAt`,
+`offsetAt`, `indexOf` and `paragraphAt` query the captured range. Surrogate interiors, removed controls and the end
 offset have no visual index. `visualLength` counts ordered code points, including controls
 with zero advance; it is not a glyph count. `materialize()` creates proportional arrays
 whose offsets are relative to the captured range.
