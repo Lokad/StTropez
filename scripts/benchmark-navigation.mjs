@@ -25,7 +25,7 @@ for (const content of ["word", "whitespace"]) for (const direction of [-1, 1]) {
 }
 const harness = await openHarness();
 try {
-    await harness.page.goto(new URL("/editing/", harness.page.url()).href);
+    await harness.page.goto("/editing/");
     const ready = () => harness.page.waitForFunction(() => { const s = window.editingFixture?.snapshot(); return s && !s.primary.pendingWord && !s.primary.viewport.pending && !s.secondary.viewport.pending && s.primary.viewport.revision === s.document?.revision; });
     await ready(); const cases = [];
     for (const name of ["word-forward", "word-backward", "delete-forward", "delete-backward", "page-many-lines", "page-unicode-crlf"]) {
@@ -77,7 +77,7 @@ try {
     const display = await harness.page.locator("#primary .st-viewport").evaluate(e => { const s = getComputedStyle(e); return { width: e.clientWidth, height: e.clientHeight, devicePixelRatio, font: s.font, tabSize: s.tabSize }; });
     await mkdir("artifacts/bench/navigation", { recursive: true });
     await writeFile("artifacts/bench/navigation/latest.json", JSON.stringify({ schemaVersion: 1, created: new Date().toISOString(), source,
-        environment: { ...environment(), browser: harness.browser.version(), display }, kernel, cases, errors: harness.errors,
+        environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, display }, kernel, cases, errors: harness.errors,
         note: "Stepped headless code-word scans and actual candidate keyboard commands. Each browser sample begins at a captured model selection and checks the full model result, revision, bounded native input and zero exports. Key-to-frame-ready is an animation-frame scheduling proxy, including yielding/polling and both views; it is not physical input or display latency. Kernel advances exclude browser events/rendering and are not a per-turn browser latency guarantee. Full bidi/contextual-line geometry, native devices, retained memory and production budgets remain unqualified." }, null, 2));
     console.log(JSON.stringify({ kernel: kernel.map(c => ({ content: c.content, direction: c.direction, totalP95: c.totalMs.p95, advanceP95: c.advanceMs.p95 })),
         browser: cases.map(c => ({ name: c.name, proxyP95: c.keyToFrameReadyProxyMs.p95 })) }, null, 2));

@@ -32,7 +32,7 @@ try {
             ? Array.from({ length: count }, (_, i) => `const value${String(i).padStart(6, "0")} = 123;`).join(eol) : Array(count).fill(line).join(eol);
         const results = new Map();
         for (let iteration = 0; iteration < warmup + measured; iteration++) {
-            await page.goto(new URL(`/hosts/${host}/?editor=candidate`, page.url()).href);
+            await page.goto(`/hosts/${host}/?editor=candidate`);
             await page.waitForFunction(() => window.hostFixture?.snapshot().bindings.activeViews === 2);
             await page.evaluate(installHostReferenceProbe); await click("Open source review"); await ready();
             const input = page.getByRole("textbox", { name: "Primary source", exact: true });
@@ -78,7 +78,7 @@ try {
         console.log(JSON.stringify({ host, corpus, conditions: results.size, measured, semanticChecks: "passed" }));
     }
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
-    const report = { schemaVersion: 3, status: "passed", created: new Date().toISOString(), source, smoke, environment: { ...environment(), browser: harness.browser.version(), displays }, cases, warmupCases: [...warmupCases.values()], errors: harness.errors,
+    const report = { schemaVersion: 3, status: "passed", created: new Date().toISOString(), source, smoke, environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, displays }, cases, warmupCases: [...warmupCases.values()], errors: harness.errors,
         boundaries: "Fresh identical working/reference buffer and zero diff work/read units before each measured character, Enter or 32-character typing burst. Three source positions, both candidate hosts, two source panes plus editable comparison/immutable reference and 20Hz traffic. Explicit caret placement/reveal, reference acceptance, full-text/reference oracles and shared undo/redo are outside timers. Handled Enter starts at trusted keydown and records keydown-handler time, contextual LF/CRLF text and one model transaction independently of raw units. Native insertText starts at beforeinput; the adapter input-handler span excludes beforeinput and observation cost. Input-to-full-review readiness, last-input settlement and whole keyboard-action automation are separate. Working-render event timestamps during bursts include exact model/rendered selection/revision in all three working panes, but may precede caret or comparison settlement; those clocks do not substitute for full review readiness. Missing intermediate working-ready observations remain counted as superseded, not displayed. Full final readiness includes pending input/commands/caret/scans, completed comparison/reference and two consecutive frames. Requested keyboard delay and observed gaps remain in results; burst totals include cadence. Instrumented render/history observers add work. No network delay, physical-presentation or native-device qualification." };
     await writer.write(report); console.log(JSON.stringify({ report: writer.file, latest: writer.latest }));
     console.log(JSON.stringify({ conditions: cases.length, misses: cases.filter(c => Object.values(c.assessment).some(v => v === false)).map(c => ({ host: c.host, corpus: c.corpus,

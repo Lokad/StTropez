@@ -7,7 +7,7 @@ import { attachProtocolFixture } from "../fixtures/protocol/fixture-server.ts";
 import { attachDemoProvider } from "../examples/demo/provider-server.ts";
 import { demoLibraries } from "./demo-libraries.mjs";
 
-export async function startServer(port) {
+export async function startServer(port, { watch = true } = {}) {
     await mkdir("artifacts/site", { recursive: true });
     await writeFile("artifacts/site/index.html", (await readFile("examples/demo/index.html", "utf8"))
         .replace('data-demo-provider="browser"', 'data-demo-provider="server"'));
@@ -67,12 +67,13 @@ export async function startServer(port) {
         if (path !== "/lsp-fixture" && !/^\/demo-provider\/[a-f0-9-]+$/.test(path)) socket.destroy();
     });
     try {
-        await builder.watch(); await initial;
+        if (watch) { await builder.watch(); await initial; }
+        else { await builder.rebuild(); await builder.dispose(); }
         if (failed) throw new Error("Initial development build failed.");
         await new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, "127.0.0.1", resolve); });
     } catch (error) { releaseProtocolFixture(); await demoProvider.close(); await builder.dispose(); throw error; }
     let closing;
-    return { url: `http://127.0.0.1:${server.address().port}`, close: () => closing ??= (async () => {
+    return { url: `http://127.0.0.1:${server.address().port}`, buildMode: watch ? "development-bundle-watch" : "development-bundle-no-watch", close: () => closing ??= (async () => {
         releaseProtocolFixture(); await demoProvider.close(); await builder.dispose(); await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     })() };
 }

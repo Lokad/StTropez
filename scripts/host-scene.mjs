@@ -13,7 +13,7 @@ export function createHostScene(page) {
         async mount(host, editor = "candidate") {
             assert.equal(mounted, false, "Dispose the current host scene before mounting another.");
             assert.ok(editor === "candidate" || editor === "native", "Select a fixture editor.");
-            await page.goto(new URL(`/hosts/${host}/?editor=${editor}`, page.url()).href);
+            await page.goto(`/hosts/${host}/?editor=${editor}`);
             await page.waitForFunction(() => window.hostFixture?.snapshot().bindings.activeViews === 2);
             mounted = true;
             await page.evaluate(installHostReferenceProbe);

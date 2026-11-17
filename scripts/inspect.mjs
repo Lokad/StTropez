@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { openHarness } from "./browser-harness.mjs";
 
 async function captureDemo(harness) {
-    await harness.page.goto(new URL("/", harness.page.url()).href);
+    await harness.page.goto("/");
     await harness.page.waitForFunction(() => document.querySelector("#analysis-status")?.textContent?.includes("syntax & emit"));
     await harness.page.screenshot({ path: "artifacts/inspect/demo.png", fullPage: true });
 }
@@ -11,17 +11,19 @@ const harness = await openHarness();
 try {
     await mkdir("artifacts/inspect", { recursive: true });
     if (process.argv.includes("--demo-only")) { await captureDemo(harness); if (harness.errors.length) throw new Error(harness.errors.join("\n")); return; }
+    await harness.page.goto("/workspace/");
+    await harness.page.waitForFunction(() => window.sttropez?.ready === true);
     await harness.page.screenshot({ path: "artifacts/inspect/playground.png", fullPage: true });
     const snapshot = await harness.page.evaluate(() => window.sttropez.snapshot());
-    await writeFile("artifacts/inspect/state.json", JSON.stringify({ browser: harness.browser.version(), snapshot, errors: harness.errors }, null, 2));
+    await writeFile("artifacts/inspect/state.json", JSON.stringify({ browser: harness.browser.version(), buildMode: harness.buildMode, snapshot, errors: harness.errors }, null, 2));
     await captureDemo(harness);
-    await harness.page.goto(new URL("/probes/", harness.page.url()).href);
+    await harness.page.goto("/probes/");
     await harness.page.waitForFunction(() => window.probe?.ready);
     await harness.page.screenshot({ path: "artifacts/inspect/probes.png", fullPage: true });
     await writeFile("artifacts/inspect/probes.json", JSON.stringify(await harness.page.evaluate(() => ({ events: window.probe.events() })), null, 2));
     for (const editor of ["native", "candidate"]) for (const mode of ["plain", "react"]) {
         const name = `host-${mode}${editor === "candidate" ? "-candidate" : ""}`;
-        await harness.page.goto(new URL(`/hosts/${mode}/?editor=${editor}`, harness.page.url()).href);
+        await harness.page.goto(`/hosts/${mode}/?editor=${editor}`);
         const input = harness.page.getByRole("textbox", { name: "Primary source", exact: true });
         await input.waitFor();
         await harness.page.getByRole("button", { name: "Associate agent", exact: true }).click();
@@ -68,7 +70,7 @@ try {
         }
     }
     for (const mode of ["plain", "react"]) {
-        await harness.page.goto(new URL(`/hosts/${mode}/?editor=candidate`, harness.page.url()).href);
+        await harness.page.goto(`/hosts/${mode}/?editor=candidate`);
         const input = harness.page.getByRole("textbox", { name: "Primary source", exact: true });
         await input.press("End"); await input.pressSequentially(" local correction");
         await harness.page.getByRole("button", { name: "Save source", exact: true }).click();
@@ -92,7 +94,7 @@ try {
         await harness.page.evaluate(() => window.hostFixture.dispose());
     }
     for (const mode of ["plain", "react"]) {
-        await harness.page.goto(new URL(`/hosts/${mode}/?editor=candidate`, harness.page.url()).href);
+        await harness.page.goto(`/hosts/${mode}/?editor=candidate`);
         const input = harness.page.getByRole("textbox", { name: "Primary source", exact: true });
         await input.fill("const saMORE = 123; // TODO\n😀 const value = 2;");
         await harness.page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "plain" }));
@@ -155,7 +157,7 @@ try {
         await harness.page.evaluate(() => window.hostFixture.dispose());
     }
     for (const mode of ["plain", "react"]) {
-        await harness.page.goto(new URL(`/hosts/${mode}/?editor=candidate`, harness.page.url()).href);
+        await harness.page.goto(`/hosts/${mode}/?editor=candidate`);
         await harness.page.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: "header\r\nhidden one\r\nhidden two\r\nfooter" }]); });
         await harness.page.getByRole("button", { name: "Open source review", exact: true }).click();
         await harness.page.getByRole("textbox", { name: "Primary source", exact: true }).focus();
@@ -182,14 +184,14 @@ try {
         await harness.page.screenshot({ path: `artifacts/inspect/host-${mode}-table-paste-error.png`, fullPage: true });
         await harness.page.evaluate(() => window.hostFixture.dispose());
     }
-    await harness.page.goto(new URL("/viewport/", harness.page.url()).href);
+    await harness.page.goto("/viewport/");
     await harness.page.waitForFunction(() => { const state = window.viewportFixture?.snapshot(); return state && state.primary.revision !== null && !state.primary.pending; });
     await harness.page.screenshot({ path: "artifacts/inspect/viewport-lines.png", fullPage: true });
     await harness.page.evaluate(() => { window.viewportFixture.load("single-line"); window.viewportFixture.reveal("primary", 2_400_000); });
     await harness.page.waitForFunction(() => !window.viewportFixture.snapshot().primary.pending && window.viewportFixture.snapshot().primary.scrollLeft > 1_000_000);
     await harness.page.screenshot({ path: "artifacts/inspect/viewport-long-line.png", fullPage: true });
     await writeFile("artifacts/inspect/viewport.json", JSON.stringify(await harness.page.evaluate(() => window.viewportFixture.snapshot()), null, 2));
-    await harness.page.goto(new URL("/editing/", harness.page.url()).href);
+    await harness.page.goto("/editing/");
     await harness.page.waitForFunction(() => window.editingFixture?.ready && !window.editingFixture.snapshot().primary.viewport.pending);
     await harness.page.evaluate(() => { window.editingFixture.select("primary", { anchor: 1_200_000, head: 1_200_000 }); window.editingFixture.focus("primary"); });
     await harness.page.keyboard.type("hello");
@@ -229,7 +231,7 @@ try {
     await harness.page.waitForFunction(() => { const s = window.editingFixture.snapshot(); return !s.primary.pendingGrapheme && !s.primary.viewport.pending && s.document?.length === 11; });
     await harness.page.screenshot({ path: "artifacts/inspect/editing-graphemes.png", fullPage: true });
     await writeFile("artifacts/inspect/editing-graphemes.json", JSON.stringify(await harness.page.evaluate(() => window.editingFixture.snapshot()), null, 2));
-    await harness.page.goto(new URL("/comparison/", harness.page.url()).href);
+    await harness.page.goto("/comparison/");
     await harness.page.waitForFunction(() => { const s = window.comparisonFixture?.snapshot(); return s && s.status === "ready" && !s.editor.viewport.pending && !s.reference?.pending; });
     await harness.page.getByRole("button", { name: "Next change", exact: true }).click();
     await harness.page.screenshot({ path: "artifacts/inspect/comparison.png", fullPage: true });

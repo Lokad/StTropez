@@ -8,7 +8,7 @@ import { installHostReferenceProbe } from "./host-reference-probe.mjs";
 
 const source = await sourceIdentity(), writer = await createReportWriter("artifacts/bench/host-table-paste", "full");
 const harness = await openHarness(), page = harness.page;
-const report = { schemaVersion: 1, created: new Date().toISOString(), source, environment: { ...environment(), browser: harness.browser.version(), viewport: { width: 1440, height: 900 } },
+const report = { schemaVersion: 1, created: new Date().toISOString(), source, environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, viewport: { width: 1440, height: 900 } },
     status: "running", active: null, cases: [],
     scope: "One fixed table-paste experiment: both hosts, normal/100k sources, HTML/TSV, two raw warmups and ten measured workflows per group. Normal tables have two rows; large tables have1500. One captured caret, independent source/review views, immutable reference, actual worker reply before the point and20Hz background host traffic. No prior experiment rerun.",
     clocks: "captureHandlerMs covers only the host capture listener; it excludes candidate cleanup and conversion. dispatchMs wraps complete synchronous synthetic paste dispatch, including all listeners. maxTurnMs covers entire scheduled conversion callbacks, including final assembly, commit/publication and scheduling. commitMs measures the atomic model call including synchronous subscribers; conversionToCommitMs starts after clipboard capture and stops at commit. eventToReviewReadyMs requires exact revision, completed conversion, immutable reference identity, shared live-owner working/reference settlement (complete selections/folds, pending input/commands, caret/scans/drag, comparison alignment/scroll), source revision/reference label and two RAFs; later language replies are excluded. completeActionProxyMs includes automation payload transfer and the same readiness. workflowMs includes setup, fold-free controls, oracles, shared undo and disposal. No OS clipboard, native IME, CPU or physical-display qualification. Historical reports retain their original readiness definition.",
@@ -61,7 +61,7 @@ try {
         const group = { host, corpus: id, format, sourceUnits: original.length, tableRows: count, plainUnits: payload.plain.length, htmlUnits: payload.html.length, warmup: 2, measured: 10, raw: [], distributions: null }; report.cases.push(group);
         for (let iteration = 0; iteration < 12; iteration++) {
             const began = performance.now(), raw = { iteration, warmup: iteration < 2, status: "running", paste: null }; group.raw.push(raw); report.active = { host, corpus: id, format, iteration };
-            await page.goto(new URL(`/hosts/${host}/?editor=candidate`, page.url()).href);
+            await page.goto(`/hosts/${host}/?editor=candidate`);
             await page.evaluate(installHostReferenceProbe);
             await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
             await click("Open source review"); await ready(); await click("Capture review acceptance"); await click("Finish review acceptance"); await ready();

@@ -36,7 +36,7 @@ for (const { id, text, edits } of cases) {
 const harness = await openHarness(), browser = [];
 try {
     for (const id of ["normal", "lines-10000", "lines-100000", "single-line", "unicode"]) {
-        await harness.page.goto(new URL("/comparison/", harness.page.url()).href);
+        await harness.page.goto("/comparison/");
         await harness.page.waitForFunction(() => window.comparisonFixture?.snapshot().status === "ready");
         const text = corpus(id), working = text.slice(0, Math.floor(text.length / 2)) + "changed\r\n" + text.slice(Math.floor(text.length / 2));
         await harness.page.evaluate(text => { window.comparisonFixture.setText(text); window.comparisonFixture.begin("accept"); window.comparisonFixture.finish("accept"); }, text);
@@ -65,7 +65,7 @@ try {
         browser.push({ corpus: id, length: text.length, warmup, measured, diagnosticOnly: measured === 1, wallFrameProxyMs: distribution(samples.map(s => s.wallFrameProxyMs)), maxStepMs: distribution(samples.map(s => s.maxStepMs)), samples });
     }
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
-    const report = { schemaVersion: 1, created: new Date().toISOString(), source, environment: { ...environment(), browser: harness.browser.version(), viewport: { width: 1440, height: 900 } }, model, browser, errors: harness.errors,
+    const report = { schemaVersion: 1, created: new Date().toISOString(), source, environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, viewport: { width: 1440, height: 900 } }, model, browser, errors: harness.errors,
         note: "Exact TypeScript line alignment; 32768 work units per core advance. Headless timing includes all advances without scheduling. The browser loop batches at most 32 advances, checking a four-millisecond elapsed limit after each advance. Its counter includes core publication and synchronous listeners or scheduling invoked inside advance, and excludes the outer render and final reschedule. It is not a complete task or callback duration. Wall values include transaction, scheduling, rendering/readiness polling and are not physical presentation. Largest browser cases have one diagnostic observation, no tail estimate. No worker, WASM, production budget or native-device qualification follows from this report." };
     await mkdir("artifacts/bench/comparison", { recursive: true }); await writeFile("artifacts/bench/comparison/latest.json", JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ model: model.map(s => ({ corpus: s.corpus, p95: s.elapsedMs.p95, stepP95: s.maxStepMs.p95 })), browser: browser.map(s => ({ corpus: s.corpus, samples: s.measured, wallProxyP95: s.wallFrameProxyMs.p95, stepP95: s.maxStepMs.p95 })) }, null, 2));

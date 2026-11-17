@@ -204,6 +204,12 @@ bounded work and operations that can retain proportional/global costs.
 
 ### Measurement policy
 
+Source browser benchmarks use a fixed development bundle with the compiler watcher disposed
+before browser launch (`buildMode: development-bundle-no-watch`). The shared harness starts
+on `about:blank`; each caller navigates directly to its fixture and owns readiness and deliberate
+warm-up. This mode is distinct from the watched interactive server and restored-package or
+static-demo builds. Historical reports retain their original build conditions.
+
 Host input/reference benchmarks share `scripts/host-reference-probe.mjs` and the Node-side
 driver in `scripts/host-edit-measurement.mjs`. They observe actual Enter commands and native
 text input with the distinct [clock definitions](README.md#glossary).

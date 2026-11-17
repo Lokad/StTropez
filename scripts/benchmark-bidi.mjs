@@ -20,7 +20,7 @@ for (const [name, text] of [["ltr-512", "alpha_beta 123 ".repeat(40).slice(0, 51
 }
 const harness = await openHarness();
 try {
-    await harness.page.goto(new URL("/editing/", harness.page.url()).href);
+    await harness.page.goto("/editing/");
     const ready = () => harness.page.waitForFunction(() => { const s = window.editingFixture?.snapshot(); return s && !s.primary.viewport.pending && s.primary.viewport.revision === s.document?.revision; });
     await ready(); const cases = [];
     for (const config of [{ name: "ltr", text: "alpha_beta 123 gamma", direction: "ltr", head: 4, width: 686 },
@@ -66,7 +66,7 @@ try {
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
     const display = await harness.page.locator("#primary .st-viewport").evaluate(e => { const s = getComputedStyle(e); return { devicePixelRatio, font: s.font, ligatures: s.fontVariantLigatures, kerning: s.fontKerning, tabSize: s.tabSize }; });
     await mkdir("artifacts/bench/bidi", { recursive: true }); await writeFile("artifacts/bench/bidi/latest.json", JSON.stringify({ schemaVersion: 1, created: new Date().toISOString(), source,
-        environment: { ...environment(), browser: harness.browser.version(), display }, kernel, cases, errors: harness.errors,
+        environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, display }, kernel, cases, errors: harness.errors,
         note: "Original Unicode 18 resolution through L2 and actual visual keys on complete bounded rows. The synchronous kernel uses paragraph-proportional work/memory; its long-paragraph case is not a cooperatively scheduled browser layout index. Command handlerMs is elapsed time from keydown capture to the target bubble listener, including the adapter's synchronous geometry/selection/context work and intervening listeners. It is separate from the adapter's own lastKeydownMs; neither this span nor the kernel clock measures process CPU time. Frame-ready includes animation-frame scheduling, not physical input/display latency. Two views remain mounted, only the captured primary selection moves, no model text changes or exports occur. Global contextual-line shaping/origins, native devices and production budgets remain unqualified." }, null, 2));
     console.log(JSON.stringify({ kernel: kernel.map(c => ({ name: c.name, units: c.units, p95: c.totalMs.p95 })), browser: cases.map(c => ({ name: c.name, handlerP95: c.handlerMs.p95, proxyP95: c.keyToFrameReadyProxyMs.p95 })) }, null, 2));
 } finally { await harness.close(); }

@@ -6,7 +6,7 @@ import { corpusIds } from "../fixtures/workloads.ts";
 
 const source = await sourceIdentity(), harness = await openHarness();
 try {
-    await harness.page.goto(new URL("/editing/", harness.page.url()).href);
+    await harness.page.goto("/editing/");
     const ready = () => harness.page.waitForFunction(() => { const state = window.editingFixture?.snapshot();
         return state && state.primary.viewport.revision === state.document?.revision && state.secondary.viewport.revision === state.document?.revision
             && !state.primary.viewport.pending && !state.secondary.viewport.pending; });
@@ -73,7 +73,7 @@ try {
                 style: style.fontStyle, ligatures: style.fontVariantLigatures, kerning: style.fontKerning, letterSpacing: style.letterSpacing }, tabSize: style.tabSize };
     });
     assert.equal((await sourceIdentity()).sha256, source.sha256);
-    const report = { schemaVersion: 2, created: new Date().toISOString(), source, environment: { ...environment(), browser: harness.browser.version(), display },
+    const report = { schemaVersion: 2, created: new Date().toISOString(), source, environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, display },
         runtime: "bounded-text-editor", activeViews: 2, features: { visibleLineTokens: true, find: "idle", provider: "connected; no pending requests" }, cases, errors: harness.errors,
         note: "Actual automated keyboard insertion through bounded native context into core history and two DOM views. Input-handler elapsed time covers the adapter input-event handler, model commit, context refresh and synchronous work invoked within that span, including browser work if triggered there. It excludes beforeinput, native work before the handler and later scheduled work; it is not process CPU time. Beforeinput-to-frame-ready requires exact inserted text, revision, primary selection and both rendered view revisions across two consecutive animation frames. Complete-action proxy starts before the automation keyboard call and ends after the same readiness promise returns, including transport and settlement. Neither proxy measures physical presentation. No IME/native-device or long contextual-line qualification follows." };
     await mkdir("artifacts/bench/editing", { recursive: true }); await writeFile("artifacts/bench/editing/latest.json", JSON.stringify(report, null, 2));

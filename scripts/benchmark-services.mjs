@@ -8,7 +8,7 @@ const wholeWord = process.argv.includes("--whole-word"), matchCase = !process.ar
 const source = await sourceIdentity(), writer = await createReportWriter("artifacts/bench/services", `${regularExpression ? "regex" : "literal"}-${wholeWord ? "whole-word" : "substring"}-${matchCase ? "case-sensitive" : "ignore-case"}`);
 const harness = await openHarness(), search = [], replacements = [];
 try {
-    await harness.page.goto(new URL("/editing/", harness.page.url()).href);
+    await harness.page.goto("/editing/");
     // Full oracle validation is deliberately outside timed intervals and uses bounded buffer reads.
     const equalsText = expected => harness.page.evaluate(expected => {
         if (window.editingFixture.snapshot().document.length !== expected.length) return false;
@@ -67,7 +67,7 @@ try {
     }
     assert.deepEqual(harness.errors, []);
     assert.equal((await sourceIdentity()).sha256, source.sha256, "Source changed during measurement.");
-    const report = { schemaVersion: 1, created: new Date().toISOString(), source, environment: { ...environment(), browser: harness.browser.version(), viewport: { width: 1440, height: 900 } },
+    const report = { schemaVersion: 1, created: new Date().toISOString(), source, environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, viewport: { width: 1440, height: 900 } },
         runtime: "bounded-editing-find", wholeWord, matchCase, regularExpression, search, replacements, errors: harness.errors,
         note: `${regularExpression ? "Regex runs in a dedicated module worker with acknowledged source transfer and pages; maxScanStepMs measures only main dispatch/index spans, excluding native matching, later asynchronous transfer, decode and publication. The 80ms pattern delay is included in wall time." : "Literal search runs over pieces; maxScanStepMs covers cursor/index work before publication."} Neither scan metric measures whole callbacks, input handlers, CPU or physical display. Raw warmup timings are omitted (3 per search group; 2 per repeated replacement group). All offsets retained for navigation/replacement; presentation queries visible match ranges. Full oracles use bounded reads outside timing. Planning yields; final fragment assembly and atomic transaction remain proportional bulk work. Transaction timing includes model/publication/context refresh, not paint; wall values include scheduling and readiness polling. The 100k replacement has one diagnostic observation, not a tail estimate or production budget.` };
     await writer.write({ ...report, status: "passed" });

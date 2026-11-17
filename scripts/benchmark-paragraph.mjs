@@ -29,7 +29,7 @@ for (const [name, text] of [["million-ltr-tail", "a".repeat(1_000_000) + " אב�
 }
 const harness = await openHarness();
 try {
-    await harness.page.goto(new URL("/editing/", harness.page.url()).href);
+    await harness.page.goto("/editing/");
     const ready = () => harness.page.waitForFunction(() => { const s = window.editingFixture?.snapshot(); return s && !s.primary.viewport.pending && !s.secondary.viewport.pending && s.primary.viewport.revision === s.document?.revision; });
     await ready(); const cases = [];
     for (const name of ["million-ltr-tail", "mixed"]) {
@@ -63,7 +63,7 @@ try {
     }
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
     await mkdir("artifacts/bench/paragraph", { recursive: true }); await writeFile("artifacts/bench/paragraph/latest.json", JSON.stringify({ schemaVersion: 1, created: new Date().toISOString(), source,
-        environment: { ...environment(), browser: harness.browser.version() }, kernel, cases, errors: harness.errors,
+        environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode }, kernel, cases, errors: harness.errors,
         note: "Full captured-range bidi indexing over immutable buffers. Every data-sized pass and publication expansion uses work checkpoints; no full metadata-array materialization is requested. Reported advance/turn maxima can include allocation and GC overshoot; work budgets are not hard realtime limits. Heap delta is a post-GC process observation retaining the final index and raw samples, not an isolated byte count or production retention budget. Browser readiness includes timers, animation frames and polling; frames run while analysis is pending. Reads cover the full requested range in bounded slices. Source text and bounded editor DOM remain unchanged. Exact global font shaping/window origins and native-device input remain unqualified." }, null, 2));
     console.log(JSON.stringify({ kernel: kernel.map(c => ({ name: c.name, p95: c.totalMs.p95, advanceP95: c.advanceMs.p95, maxAdvance: Math.max(...c.advanceMs.samples) })),
         browser: cases.map(c => ({ name: c.name, readyProxyP95: c.readyProxyMs.p95, maximumTurnP95: c.maximumTurnMs.p95 })) }, null, 2));

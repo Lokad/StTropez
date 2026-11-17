@@ -6,7 +6,7 @@ import { corpusIds } from "../fixtures/workloads.ts";
 
 const harness = await openHarness();
 try {
-    await harness.page.goto(new URL("/viewport/", harness.page.url()).href);
+    await harness.page.goto("/viewport/");
     const ready = () => harness.page.waitForFunction(() => { const state = window.viewportFixture?.snapshot();
         return state && state.primary.revision === state.document?.revision && !state.primary.pending && !state.secondary.pending; });
     await ready(); assert.equal(await harness.page.locator("textarea").count(), 0, "Native fallback satisfied the viewport measurement.");
@@ -51,7 +51,7 @@ try {
             font: { family: style.fontFamily, size: style.fontSize, lineHeight: style.lineHeight, weight: style.fontWeight,
                 style: style.fontStyle, ligatures: style.fontVariantLigatures, kerning: style.fontKerning, letterSpacing: style.letterSpacing }, tabSize: style.tabSize };
     });
-    const report = { schemaVersion: 1, created: new Date().toISOString(), source: await sourceIdentity(), environment: { ...environment(), browser: harness.browser.version(), display },
+    const report = { schemaVersion: 1, created: new Date().toISOString(), source: await sourceIdentity(), environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, display },
         runtime: "bounded-read-only-viewport", activeViews: 2, cases, errors: harness.errors,
         note: "Programmatic range edits and a read-only DOM projection. Render timing covers geometry reads, indexed ranges and DOM writes; the frame-ready metric is an animation-frame scheduling proxy. No typing/input/IME or production-latency claim. UTF-16 fixed-pitch horizontal estimation remains unqualified for long shaped lines." };
     await mkdir("artifacts/bench/viewport", { recursive: true }); await writeFile("artifacts/bench/viewport/latest.json", JSON.stringify(report, null, 2));

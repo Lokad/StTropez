@@ -5,11 +5,11 @@ import { dirname, join } from "node:path";
 import { createServer } from "node:http";
 
 const { startServer } = await import(new URL("../scripts/serve.mjs", import.meta.url).href) as {
-    startServer(port: number): Promise<{ url: string; close(): Promise<void> }>;
+    startServer(port: number, options?: { watch?: boolean }): Promise<{ url: string; buildMode: string; close(): Promise<void> }>;
 };
 
-// Includes five compiler/watch turns on the test filesystem, outside all editor interaction clocks.
-test("development assets follow completed watched builds, reject private paths and release their port", { timeout: 90000 }, async t => {
+// Compiler/watch turns run on the test filesystem, outside all editor interaction clocks.
+test("development assets follow completed watched or fixed builds, reject private paths and release their port", { timeout: 90000 }, async t => {
     const previous = process.cwd(); await mkdir(join(previous, "artifacts"), { recursive: true });
     const fixture = await mkdtemp(join(previous, "artifacts/dev-server-test-"));
     const put = async (path: string, text: string) => { const file = join(fixture, path); await mkdir(dirname(file), { recursive: true }); await writeFile(file, text); };
@@ -28,6 +28,7 @@ test("development assets follow completed watched builds, reject private paths a
     await put("private.txt", "not a public asset");
     await put("package.json", '{"type":"module"}'); await put("tsconfig.json", '{}');
     let server: Awaited<ReturnType<typeof startServer>> | undefined;
+    let fixed: Awaited<ReturnType<typeof startServer>> | undefined;
     const get = (path: string, init?: RequestInit) => fetch(server!.url + path, { ...init, signal: AbortSignal.any([t.signal, AbortSignal.timeout(5000)]) });
     const until = async (phase: string, matches: (response: Response, text: string) => boolean) => {
         t.diagnostic(phase);
@@ -38,6 +39,9 @@ test("development assets follow completed watched builds, reject private paths a
     };
     try {
         process.chdir(fixture); server = await startServer(0);
+        assert.equal(server.buildMode, "development-bundle-watch");
+        fixed = await startServer(0, { watch: false });
+        assert.equal(fixed.buildMode, "development-bundle-no-watch");
         assert.equal(await (await get("/")).text(), '<html data-demo-provider="server"><title>demo</title></html>');
         assert.equal(await (await get("/workspace/")).text(), "<title>playground</title>");
         assert.equal((await get("/workspace-fixture.js")).status, 200);
@@ -58,9 +62,15 @@ test("development assets follow completed watched builds, reject private paths a
         await put("src/browser/regex-worker.ts", 'globalThis.postMessage("worker-changed");'); await until("watch publishes changed worker", (r, text) => r.status === 200 && text.includes("worker-changed"));
         await put("src/browser/regex-worker.ts", "export const = ;"); await until("invalid build refuses stale assets", (r, text) => r.status === 503 && text === "Development build failed.");
         await put("src/browser/regex-worker.ts", 'globalThis.postMessage("worker-recovered");'); await until("corrected build recovers", (r, text) => r.status === 200 && text.includes("worker-recovered"));
+        const fixedWorker = await fetch(fixed.url + "/regex-worker.js", { signal: t.signal });
+        assert.equal(fixedWorker.status, 200); assert.match(await fixedWorker.text(), /worker-first/);
+        await fixed.close(); await fixed.close();
+        await assert.rejects(fetch(fixed.url + "/", { signal: t.signal }));
         const port = Number(new URL(server.url).port); await server.close(); await server.close();
         await assert.rejects(get("/"));
         const occupied = createServer(); await new Promise<void>(resolve => occupied.listen(port, "127.0.0.1", resolve));
         try { await assert.rejects(startServer(port), { code: "EADDRINUSE" }); } finally { await new Promise<void>(resolve => occupied.close(() => resolve())); }
-    } finally { await server?.close(); process.chdir(previous); }
+        await put("src/browser/regex-worker.ts", "export const = ;");
+        await assert.rejects(startServer(0, { watch: false }), /Build failed/);
+    } finally { await fixed?.close(); await server?.close(); process.chdir(previous); }
 });

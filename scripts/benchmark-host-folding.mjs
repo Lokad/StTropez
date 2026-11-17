@@ -9,7 +9,7 @@ import { installHostReferenceProbe } from "./host-reference-probe.mjs";
 const source = await sourceIdentity(), writer = await createReportWriter("artifacts/bench/host-folding", "full");
 const harness = await openHarness(), page = harness.page, warmup = 2, measured = 10;
 const report = { schemaVersion: 1, created: new Date().toISOString(), source,
-    environment: { ...environment(), browser: harness.browser.version(), viewport: { width: 1440, height: 900 } }, cases: [], status: "running", active: null,
+    environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, viewport: { width: 1440, height: 900 } }, cases: [], status: "running", active: null,
     scope: "One/1000 captured folds on normal/100k source, one active caret, independent secondary and immutable comparison, 20Hz host traffic. ArrowDown skips hidden rows; typing on the next visible header/footer and shared undo preserve raw text. No closed navigation experiment or prior score rerun.",
     clocks: "keydownHandlerMs/inputHandlerMs are adapter handlers. Readiness starts at captured keydown; typing also records beforeinput-to-readiness (includes beforeinput work). The shared live-owner predicate requires every working/reference editor, complete sets, fold generations, pending input/commands, caret/scans, alignment/scroll and comparison; the point confirms the immutable reference and two RAFs. Later language results are outside this gate; an actual worker reply is required before the points. CompleteActionProxyMs includes browser automation, excluding listener setup/oracles. Workflow includes setup, fold creation, controls, oracles, undo and disposal; it has no point-action budget. No CPU, physical display, OS input or native IME claim.",
     retention: "Every raw warmup/measured workflow is retained, including completed points of a failed workflow. A partial report is written on failure; no automatic retries." };
@@ -67,7 +67,7 @@ try {
         const group = { host, corpus: id, length: original.length, foldCount, warmup, measured, raw: [], distributions: null }; report.cases.push(group);
         for (let iteration = 0; iteration < warmup + measured; iteration++) {
             const started = performance.now(), sample = { iteration, warmup: iteration < warmup, status: "running", navigation: null, typing: null }; group.raw.push(sample); report.active = { host, corpus: id, iteration };
-            await page.goto(new URL(`/hosts/${host}/?editor=candidate`, page.url()).href);
+            await page.goto(`/hosts/${host}/?editor=candidate`);
             await page.evaluate(installHostReferenceProbe);
             await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
             await click("Open source review"); await ready(); await click("Capture review acceptance"); await click("Finish review acceptance"); await ready();

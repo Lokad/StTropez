@@ -11,6 +11,8 @@ await mkdir("artifacts/bench", { recursive: true });
 await writeFile("artifacts/bench/model.json", JSON.stringify(model, null, 2));
 const harness = await openHarness();
 try {
+    await harness.page.goto("/workspace/");
+    await harness.page.waitForFunction(() => window.sttropez?.ready === true);
     const startup = [await harness.page.evaluate(() => window.sttropez.readyAt)];
     for (let run = 0; run < 2; run++) {
         await harness.page.reload();
@@ -60,7 +62,7 @@ try {
     const font = await harness.page.getByRole("textbox", { name: "Transform source", exact: true }).evaluate(element => { const style = getComputedStyle(element);
         return { font: style.font, tabSize: style.tabSize, wrapping: element.wrap, devicePixelRatio }; });
     const report = { schemaVersion: 2, created: new Date().toISOString(), source: await sourceIdentity(), seed: workloadSeed,
-        runtime: "native-textarea-with-piece-tree-history", buildMode: "development-bundle", activeTextViews: 2, environment: { ...environment(), browser: harness.browser.version(), viewport: { width: 1440, height: 900 }, font },
+        runtime: "native-textarea-with-piece-tree-history", buildMode: harness.buildMode, activeTextViews: 2, environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, viewport: { width: 1440, height: 900 }, font },
         startupNavigationToReadyMs: distribution(startup),
         notes: ["Input-handler capture-to-bubble includes model/subscribers, excludes native work before dispatch.",
             "Second-animation-frame metric is a scheduling proxy, not paint or physical presentation latency.",

@@ -26,7 +26,7 @@ async function mount(page: Page, host: string) {
 }
 
 test("host text oracle checks complete raw source and independent reference without exports", async ({ page }) => {
-    await page.goto("/workspace/"); // Establish the harness origin before mounting a host scene.
+    expect(page.url()).toBe("about:blank");
     const scene = createHostScene(page);
     // The surrogate pair and CRLF each straddle a chunk boundary; retain the lone surrogate too.
     const text = "a".repeat(32767) + "😀" + "b".repeat(32766) + "\r\nend\ud800";
@@ -62,7 +62,7 @@ test("host text oracle checks complete raw source and independent reference with
 });
 
 test("source readiness supports native views and optional review without weakening full review", async ({ page }) => {
-    await page.goto("/workspace/");
+    expect(page.url()).toBe("about:blank");
     const host = createHostScene(page), settle = host.sourceReady;
     const state = () => page.evaluate(() => ({ source: window.hostReferenceProbe.isSourceReady(), review: window.hostReferenceProbe.isReady() }));
     for (const editor of ["native", "candidate"] as const) try {

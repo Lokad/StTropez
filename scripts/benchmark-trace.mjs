@@ -6,6 +6,8 @@ import { environment, sourceIdentity } from "./measurement.mjs";
 // A separate diagnostic run: tracing overhead must not contaminate baseline samples.
 const harness = await openHarness();
 try {
+    await harness.page.goto("/workspace/");
+    await harness.page.waitForFunction(() => window.sttropez?.ready === true);
     await harness.page.evaluate(() => window.sttropez.loadCorpus("lines-100000"));
     const input = harness.page.getByRole("textbox", { name: "Transform source" });
     await input.focus();
@@ -38,7 +40,7 @@ try {
     await mkdir("artifacts/bench", { recursive: true });
     // Keep only timings by default; the raw trace can contain source text and URLs.
     await writeFile("artifacts/bench/phases.json", JSON.stringify({ schemaVersion: 1, source: await sourceIdentity(),
-        created: new Date().toISOString(), environment: { ...environment(), browser: harness.browser.version() },
+        created: new Date().toISOString(), environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode },
         corpus: "lines-100000", measuredInputs: 5, phases,
         note: "Diagnostic trace durations include tracing overhead. Events may nest; do not add phases or infer physical display latency. No content/raw trace exported." }, null, 2));
     console.log("Layout and paint attribution recorded in artifacts/bench/phases.json");
