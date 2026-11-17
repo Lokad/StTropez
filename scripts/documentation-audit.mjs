@@ -5,11 +5,12 @@ import GithubSlugger from "github-slugger";
 import { posix, relative, resolve } from "node:path";
 import { build } from "esbuild";
 import ts from "typescript-demo";
+import { libraryModules } from "./library-entries.mjs";
 
 export const apiPages = ["getting-started", "editor", "viewport", "folding", "search", "comparison", "text-model", "workspace", "language-server", "language-features", "unicode", "host-integration", "packaging", "architecture"].map(name => `docs/${name}.md`);
 export const subjectPages = [...apiPages, "docs/README.md", "docs/testing.md", "docs/examples.md"];
 export const documentationPages = [...subjectPages, "README.md", "packaging/README.md", "AGENTS.md"];
-export const publicEntries = { sttropez: "src/index.ts", "sttropez/browser": "src/browser/index.ts", "sttropez/protocol": "src/protocol/index.ts" };
+export const publicEntries = Object.fromEntries(libraryModules.map(entry => [entry.specifier, entry.source]));
 
 // Declaration owners, rather than a second manually maintained list of public names.
 const ownerGroups = {

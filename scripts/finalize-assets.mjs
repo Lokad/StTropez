@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { portableDeclaration } from "./module-specifiers.mjs";
+import { assetPackageExports, assetManifestEntries } from "./library-entries.mjs";
 
 export async function filesUnder(root) {
     const files = [];
@@ -23,13 +24,7 @@ for (const file of await filesUnder(root)) {
     }
 }
 await writeFile(resolve(root, "package.json"), JSON.stringify({ name: "sttropez", version: "0.0.0-local",
-    private: true, license: "MIT", type: "module", exports: {
-        ".": { types: "./index.d.ts", import: "./index.js" },
-        "./browser": { types: "./browser/index.d.ts", import: "./browser/index.js" },
-        "./protocol": { types: "./protocol/index.d.ts", import: "./protocol/index.js" },
-        "./editor.css": "./editor.css",
-        "./regex-worker.js": "./browser/regex-worker.js",
-    } }, null, 2) + "\n");
+    private: true, license: "MIT", type: "module", exports: assetPackageExports }, null, 2) + "\n");
 const assets = [];
 for (const file of await filesUnder(root)) {
     const path = relative(root, file).replaceAll("\\", "/");
@@ -39,5 +34,5 @@ for (const file of await filesUnder(root)) {
     assets.push({ path, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") });
 }
 await writeFile(resolve(root, "manifest.json"), JSON.stringify({ schemaVersion: 1, version: "0.0.0-local",
-    entries: { core: "index.js", browser: "browser/index.js", protocol: "protocol/index.js", types: "index.d.ts", css: "editor.css", regexWorker: "browser/regex-worker.js" },
+    entries: assetManifestEntries,
     assets }, null, 2) + "\n");

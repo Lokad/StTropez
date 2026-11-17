@@ -5,13 +5,13 @@ import { demoLibraries } from "./demo-libraries.mjs";
 import { join, relative, resolve } from "node:path";
 import { build } from "esbuild";
 import { within } from "./package-react-host.mjs";
+import { libraryModules, libraryCss } from "./library-entries.mjs";
 
 const project = resolve("."), dist = resolve("dist"), site = resolve("artifacts/pages");
 const manifest = JSON.parse(await readFile(join(dist, "manifest.json"), "utf8"));
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 for (const asset of manifest.assets) assert.equal(hash(await readFile(join(dist, asset.path))), asset.sha256, `Build the library first: ${asset.path}`);
-const entries = new Map([["src/index.ts", "index.js"], ["src/browser/index.ts", "browser/index.js"],
-    ["src/protocol/index.ts", "protocol/index.js"], ["src/browser/editor.css", "editor.css"]]);
+const entries = new Map([...libraryModules, libraryCss].map(entry => [entry.source, entry.output]));
 assert.equal(site, join(project, "artifacts", "pages")); assert.ok(within(project, site));
 await rm(site, { recursive: true, force: true }); await mkdir(site, { recursive: true });
 const result = await build({ absWorkingDir: project,

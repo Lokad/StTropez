@@ -10,6 +10,7 @@ import { chromium, firefox, webkit } from "@playwright/test";
 import { strFromU8, unzipSync } from "fflate";
 import ts from "typescript-demo";
 import { moduleSpecifiers } from "./module-specifiers.mjs";
+import { libraryModules, libraryCss } from "./library-entries.mjs";
 import { attachDemoProvider } from "../examples/demo/provider-server.ts";
 import { runDemoWalkthrough, runDemoConflict, runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoHighlights, runDemoDocumentation, runDemoActions } from "../tests/browser/demo-walkthrough.ts";
 import { runDemoUnopenedNavigation } from "../tests/browser/demo-walkthrough.ts";
@@ -47,10 +48,7 @@ await checkStage();
 
 // Reuse the project-owned host, including erased type imports. Only the four public
 // library entry points may cross this boundary; the restored library is never compiled.
-const publicImports = new Map([
-    ["src/index.ts", "sttropez"], ["src/browser/index.ts", "sttropez/browser"],
-    ["src/protocol/index.ts", "sttropez/protocol"], ["src/browser/editor.css", "sttropez/editor.css"],
-]);
+const publicImports = new Map([...libraryModules, libraryCss].map(entry => [entry.source, entry.specifier]));
 const hostRoot = join(consumer, "demo-host"), sources = [], seen = new Set();
 const entryPoints = { app: "examples/demo/main.ts", "demo-syntax-worker": "examples/demo/syntax-worker.ts" };
 const pending = [...Object.values(entryPoints)];
