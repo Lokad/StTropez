@@ -18,7 +18,7 @@ try {
     await harness.page.goto(new URL("/probes/", harness.page.url()).href);
     await harness.page.waitForFunction(() => window.probe?.ready);
     await harness.page.screenshot({ path: "artifacts/inspect/probes.png", fullPage: true });
-    await writeFile("artifacts/inspect/probes.json", JSON.stringify(await harness.page.evaluate(() => ({ counters: window.probe.counters(), events: window.probe.events() })), null, 2));
+    await writeFile("artifacts/inspect/probes.json", JSON.stringify(await harness.page.evaluate(() => ({ events: window.probe.events() })), null, 2));
     for (const editor of ["native", "candidate"]) for (const mode of ["plain", "react"]) {
         const name = `host-${mode}${editor === "candidate" ? "-candidate" : ""}`;
         await harness.page.goto(new URL(`/hosts/${mode}/?editor=${editor}`, harness.page.url()).href);
@@ -196,15 +196,10 @@ try {
     if (await harness.page.evaluate(() => window.editingFixture.range(1_200_000, 1_200_005)) !== "hello") throw new Error("Candidate inspection missed actual keyboard input.");
     await harness.page.screenshot({ path: "artifacts/inspect/editing-lines.png", fullPage: true });
     await writeFile("artifacts/inspect/editing.json", JSON.stringify(await harness.page.evaluate(() => window.editingFixture.snapshot()), null, 2));
-    await harness.page.evaluate(() => { window.editingFixture.setText("😀 const saMORE = 123; // TODO"); window.editingFixture.select("primary", { anchor: 11, head: 11 }); });
-    await harness.page.getByRole("button", { name: "Request completion", exact: true }).click();
-    await harness.page.getByRole("option", { name: "sample", exact: true }).waitFor();
-    await harness.page.screenshot({ path: "artifacts/inspect/editing-provider.png", fullPage: true });
-    await harness.page.getByRole("button", { name: "Replace completion", exact: true }).click();
+    await harness.page.evaluate(() => window.editingFixture.setText("😀 const sample = 123; // TODO"));
     await harness.page.getByRole("textbox", { name: "Find", exact: true }).fill("sample");
     await harness.page.waitForFunction(() => { const s = window.editingFixture.snapshot(); return s.find.status === "ready" && s.find.count === 1 && !s.primary.viewport.pending; });
     if (await harness.page.locator("#primary .st-search-match").textContent() !== "sample") throw new Error("Inspection missed highlighted search result.");
-    if (await harness.page.locator("#primary .st-diagnostic").textContent() !== "TODO") throw new Error("Inspection missed provider diagnostic.");
     await harness.page.screenshot({ path: "artifacts/inspect/editing-find.png", fullPage: true });
     await writeFile("artifacts/inspect/editing-services.json", JSON.stringify(await harness.page.evaluate(() => window.editingFixture.snapshot()), null, 2));
     await harness.page.evaluate(() => {

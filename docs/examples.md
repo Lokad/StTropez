@@ -29,7 +29,7 @@ The [development server](../scripts/serve.mjs) serves these pages:
 | `/editing/` | Bounded input, selections, commands and local highlighting | [Editing fixture](../examples/editing/main.ts) |
 | `/viewport/` | Read-only virtualized text and geometry | [Viewport fixture](../examples/viewport/main.ts) |
 | `/comparison/` | Working/reference comparison and hunk commands | [Comparison fixture](../examples/comparison/main.ts) |
-| `/probes/` | Input surfaces, a small worker provider and a workspace workload | [Boundary probes](../examples/probes/main.ts) |
+| `/probes/` | Input surfaces, local tokenization and a workspace workload | [Boundary probes](../examples/probes/main.ts) |
 | `/protocol/` | JSON-RPC/WebSocket transport interoperability | [Protocol fixture](../examples/protocol/main.ts) |
 | `/fonts/` | Registered-font rendering and geometry | [Font fixture](../tests/fixtures/fonts/main.ts) |
 | `/hosts/plain/` | Two source views, forms, review and deferred services | [Plain host](../examples/hosts/plain-main.ts) |
@@ -392,10 +392,11 @@ Text edits map folds and clear stale notes. Imports use one captured shared undo
 
 ## Worker protocol v1
 
-The default development hosts and small provider pages use internal lexical fixtures from
-[fixtures/language](../fixtures/language). They do not establish LSP compatibility. A small
-keyword/number/comment lexer colors visible fragments, caching up to 128 fragments per view;
-it is not a full grammar or multiline lexer.
+The default plain/React development hosts use internal lexical fixtures from
+[fixtures/language](../fixtures/language). They do not establish LSP compatibility.
+The `/editing/` and `/probes/` fixtures
+are provider-free: their local keyword/number/comment tokenizer requires no worker or server.
+Editing views cache up to 128 visible fragments; this is not a full grammar or multiline lexer.
 
 | Control | Fixture policy and limit |
 | --- | --- |

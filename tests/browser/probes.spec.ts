@@ -47,44 +47,16 @@ test("browser-protocol composition exercises both candidates without claiming na
     await testInfo.attach("composition-events.json", { body: JSON.stringify(await page.evaluate(() => window.probe.events()), null, 2), contentType: "application/json" });
 });
 
-test("visible local tokens and actual worker completion/diagnostics use Unicode replacement ranges", async ({ page }) => {
-    const input = page.getByRole("textbox", { name: "Provider source" });
+test("local tokenizer colors actual input without a provider", async ({ page }) => {
+    const input = page.getByRole("textbox", { name: "Tokenizer source" });
     await input.fill("😀 const sam = 1; // TODO");
     const keyword = page.locator(".token-keyword"), number = page.locator(".token-number"), comment = page.locator(".token-comment");
     await expect(keyword).toHaveText("const");
     const colors = await Promise.all([keyword, number, comment].map(locator => locator.evaluate(node => getComputedStyle(node).color)));
     expect(new Set(colors).size).toBe(3);
-    await input.evaluate((input: HTMLTextAreaElement) => input.setSelectionRange(12, 12));
-    await page.getByRole("button", { name: "Complete", exact: true }).click();
-    await expect(input).toHaveValue("😀 const sample = 1; // TODO");
-    await expect(page.getByRole("list", { name: "Diagnostics" })).toHaveText("24: Resolve this placeholder.");
-    const counters = await page.evaluate(() => window.probe.counters());
-    expect(counters).toMatchObject({ posted: 1, received: 1, applied: 1, stale: 0 });
-});
-
-test("stale and cancelled worker replies are rejected; disconnect/reconnect leaves local editing usable", async ({ page }) => {
-    const input = page.getByRole("textbox", { name: "Provider source" });
-    await page.evaluate(() => window.probe.setDelay(200));
-    await input.fill("sam");
-    await page.getByRole("button", { name: "Complete", exact: true }).click();
-    await input.fill("human correction");
-    await expect.poll(() => page.evaluate(() => window.probe.counters().stale)).toBe(1);
-    await expect(input).toHaveValue("human correction");
-    await page.getByRole("button", { name: "Complete", exact: true }).click();
-    await page.getByRole("button", { name: "Cancel request" }).click();
-    await expect.poll(() => page.evaluate(() => window.probe.counters().received)).toBe(2);
-    await expect(input).toHaveValue("human correction");
-    await page.getByRole("button", { name: "Disconnect provider" }).click();
-    await input.fill("const sam");
     await input.press("End"); await input.press("x");
-    await expect(page.locator(".token-keyword")).toHaveText("const");
-    await expect(input).toHaveValue("const samx");
-    await page.getByRole("button", { name: "Complete", exact: true }).click();
-    await expect(page.locator("#provider-status")).toContainText("unavailable");
-    await page.getByRole("button", { name: "Reconnect provider" }).click();
-    await page.getByRole("button", { name: "Complete", exact: true }).click();
-    await expect(input).toHaveValue("const sample");
-    expect(await page.evaluate(() => window.probe.counters())).toMatchObject({ posted: 3, received: 3, applied: 1, stale: 2, cancelled: 1, connections: 2 });
+    await expect(comment).toHaveText("// TODOx");
+    expect(page.workers()).toEqual([]);
 });
 
 test("pinned workspace workload types in split views during background traffic, moves and disposes", async ({ page }) => {
@@ -104,9 +76,6 @@ test("pinned workspace workload types in split views during background traffic, 
     await expect(views).toHaveCount(2);
     await views.first().press("End"); await views.first().press("!"); await expect(views.nth(1)).toHaveValue("shared source typing!");
     await views.first().press("Control+z"); await expect(views.nth(1)).toHaveValue("shared source typing");
-    const provider = page.getByRole("textbox", { name: "Provider source" });
-    await provider.fill("sam"); await provider.press("End"); await page.getByRole("button", { name: "Complete", exact: true }).click();
-    await expect(provider).toHaveValue("sample");
     await page.getByRole("button", { name: "Move workload view" }).click();
     await expect(views.first()).toHaveValue("shared source typing");
     expect(await page.evaluate(() => window.probe.workspace())).toMatchObject({ resources: 100, tabs: 100, activeViews: 2, annotations: 1_000, sourceLength: 20 });
