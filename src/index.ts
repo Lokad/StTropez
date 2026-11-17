@@ -35,7 +35,7 @@ export type { EditKind, HistoryOptions, HistorySnapshot, Selection } from "./cor
 export { createSelectionSet, mapSelectionSet, planSelectionEdits } from "./core/selections.ts";
 export type { SelectionSet, SelectionEditPlan } from "./core/selections.ts";
 export { resolveLanguageConfiguration, planLanguageEdit } from "./core/language-edits.ts";
-export type { LanguageConfiguration, ResolvedLanguageConfiguration, EditingCommand, EditingPair, LanguageEditContext, PairingContext, EnterIndent } from "./core/language-edits.ts";
+export type { LanguageConfiguration, ResolvedLanguageConfiguration, EditingCommand, EditingPair, LanguageEditContext, PairingContext, EnterIndent, LanguageEditProgress, LanguageEditCursor } from "./core/language-edits.ts";
 export { BracketMatcher } from "./core/bracket-matching.ts";
 export type { BracketMatchOptions, BracketMatchResult, BracketMatchProgress, BracketMatchCursor } from "./core/bracket-matching.ts";
 export { CharacterWarnings, characterWarningKinds, characterWarningLabel } from "./core/character-warnings.ts";

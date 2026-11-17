@@ -641,23 +641,24 @@ export function mountEditingCandidate(host: HTMLElement, workspace: Workspace, t
         cancelWord(); syncSelection();
         const capture = commandCapture(true), planner = planLanguageEdit(capture.buffer, capture.selectionSet, command, language);
         let planning = false;
-        const job = { capture, purpose: "grapheme" as const, release: () => { if (!planning) planner.return({ edits: [], selectionSet: capture.selectionSet }); } }; rangeCommand = job;
+        const job = { capture, purpose: "grapheme" as const, release: () => { if (!planning) planner.dispose(); } }; rangeCommand = job;
         const step = () => commandTurn(() => {
             if (rangeCommand !== job) return;
             if (!validCommand(capture)) { cancelWord(); return; }
             let result;
             try {
                 planning = true;
-                result = commandRunner.slice(() => planner.next(), result => !result.done && rangeCommand === job, commandBudget.plannerCalls);
+                result = commandRunner.slice(() => planner.next(commandBudget.languageUnits),
+                    result => result.status === "running" && rangeCommand === job, commandBudget.languageCalls);
             }
             finally { planning = false; }
-            if (rangeCommand !== job) { planner.return({ edits: [], selectionSet: capture.selectionSet }); return; }
-            if (!result.done) {
+            if (rangeCommand !== job) { planner.dispose(); return; }
+            if (result.status === "running") {
                 cancelRangeTask = commandRunner.schedule(() => { if (rangeCommand === job) cancelRangeTask = undefined; step(); }); return;
             }
-            rangeCommand = undefined;
+            rangeCommand = undefined; planner.dispose();
             completeCaptured(capture, () => {
-                const plan = result.value;
+                const plan = result.result!;
                 if (plan.edits.length) return apply(plan.edits, plan.selectionSet, typeof command === "object" ? "typing" : "replace", undefined, capture.revision, undefined, command === "newline" && language.enter !== undefined);
                 group = undefined; view.setSelections(capture.revision, plan.selectionSet.ranges, plan.selectionSet.primary);
                 revealCaret(); refresh(); return true;

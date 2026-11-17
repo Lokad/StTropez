@@ -364,9 +364,10 @@ test("yielding multiline indentation publishes one reversible transaction", asyn
 test("configured commands retain native ordering and expire on configuration changes", async ({ page }) => {
     await page.evaluate(() => {
         window.editingFixture.configureLanguage({ tabSize: 2, lineComment: "//" });
-        window.editingFixture.setText("x\n".repeat(1024)); window.editingFixture.select("primary", { anchor: 0, head: 2048 });
+        window.editingFixture.setText("x\n".repeat(4096)); window.editingFixture.select("primary", { anchor: 0, head: 8192 });
         window.editingFixture.focus("primary");
         window.editingFixture.command("line-comment");
+        if (!window.editingFixture.snapshot().primary.pendingCommand) throw new Error("Expected deferred comment planning");
         const input = document.querySelector<HTMLTextAreaElement>("#primary textarea")!;
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
         input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "(", bubbles: true }));
@@ -380,13 +381,15 @@ test("configured commands retain native ordering and expire on configuration cha
     });
     await expect.poll(async () => (await state(page)).primary.pendingInput).toBe(false);
     expect((await state(page)).conflicts).toEqual([]);
-    expect(await page.evaluate(() => window.editingFixture.range(5115, 5125))).toBe("// x\n(\n  z");
+    expect(await page.evaluate(() => window.editingFixture.range(20475, 20485))).toBe("// x\n(\n  z");
     await page.evaluate(() => {
-        window.editingFixture.setText("x\n".repeat(1024)); window.editingFixture.select("primary", { anchor: 0, head: 2048 });
-        window.editingFixture.command("line-comment"); window.editingFixture.configureLanguage({ tabSize: 4 });
+        window.editingFixture.setText("x\n".repeat(4096)); window.editingFixture.select("primary", { anchor: 0, head: 8192 });
+        window.editingFixture.command("line-comment");
+        if (!window.editingFixture.snapshot().primary.pendingCommand) throw new Error("Expected deferred comment planning");
+        window.editingFixture.configureLanguage({ tabSize: 4 });
     });
     await expect.poll(async () => (await state(page)).primary.pendingCommand).toBe(false);
-    expect((await state(page)).document!.length).toBe(2048);
+    expect((await state(page)).document!.length).toBe(8192);
     expect(await page.locator("#primary .st-viewport").evaluate(node => getComputedStyle(node).tabSize)).toBe("4");
 });
 

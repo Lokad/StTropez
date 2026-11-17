@@ -107,15 +107,17 @@ test("deleting generated indentation changes each mirror instead of collapsing t
 test("editor newline plans mirror current local indentation, including after literal paste changed it", () => {
     for (const enter of [undefined, "keep"] as const) for (const values of [["a\n        b", "a\n    b"], ["raw\nb", "raw\nb"]]) {
         const { buffer, stops } = contextual(values), selections = createSelectionSet(buffer.length, stops[0]!.ranges.map(range => ({ anchor: range.to, head: range.to })), 1);
-        const command = planLanguageEdit(buffer, selections, "newline", resolveLanguageConfiguration(enter ? { enter } : {})); let result = command.next(); while (!result.done) result = command.next();
-        const plan = planSnippetEdit(buffer, stops, 0, result.value.edits, selections, result.value.selectionSet, !!enter)!;
-        assert.ok(plan, JSON.stringify({ values, edits: result.value.edits, selections, after: result.value.selectionSet })); const next = buffer.apply(plan.edits).buffer;
-        assert.equal(next.text(), buffer.apply(result.value.edits).buffer.text());
-        assert.equal(plan.selectionSet.primary, 1); assert.deepEqual(plan.selectionSet, result.value.selectionSet);
+        const command = planLanguageEdit(buffer, selections, "newline", resolveLanguageConfiguration(enter ? { enter } : {}));
+        let step = command.next(); while (step.status === "running") step = command.next();
+        assert.ok(step.result); const result = step.result; command.dispose();
+        const plan = planSnippetEdit(buffer, stops, 0, result.edits, selections, result.selectionSet, !!enter)!;
+        assert.ok(plan, JSON.stringify({ values, edits: result.edits, selections, after: result.selectionSet })); const next = buffer.apply(plan.edits).buffer;
+        assert.equal(next.text(), buffer.apply(result.edits).buffer.text());
+        assert.equal(plan.selectionSet.primary, 1); assert.deepEqual(plan.selectionSet, result.selectionSet);
         assert.deepEqual(plan.stops[1]!.ranges.map(range => next.slice(range.from, range.to)), ["next", "next"]);
         // With only the primary selected, the same intended newline reaches all mirrors.
         const primary = selections.ranges[selections.primary]!, one = createSelectionSet(buffer.length, [primary]);
-        const edit = result.value.edits[1]!, head = edit.from + edit.insert.length;
+        const edit = result.edits[1]!, head = edit.from + edit.insert.length;
         const single = planSnippetEdit(buffer, stops, 0, [edit], one, createSelectionSet(buffer.length + edit.insert.length, [{ anchor: head, head }]), !!enter)!;
         assert.ok(single); assert.equal(buffer.apply(single.edits).buffer.text(), next.text());
     }

@@ -235,8 +235,29 @@ closing text onto another line. Pairing, comments and cancellable non-composing 
 use the same transaction/transform path. Composition and noncancellable input use literal capture.
 
 `resolveLanguageConfiguration` and `planLanguageEdit` provide the same headless planning. The
-generator yields between bounded batches; its final `SelectionEditPlan` is a proposal, not a
-commit. This example leaves scheduling with the caller and releases a cancelled planner:
+lazy cursor exposes `next(workBudget?)`, `snapshot()` and `dispose()`. Each frozen progress
+snapshot reports `status` (`running`, `ready`, `failed` or `disposed`), `phase` (`validate`,
+`plan`, `map` or `publish`), counters, a nullable `result` and nullable `failure`. Only `ready`
+exposes a complete `SelectionEditPlan`; it is a proposal. Errors are rethrown and retained as
+a failure message. Disposal releases unfinished work and the cursor's result reference;
+already returned immutable results remain usable. Reentrant advancement or disposal throws.
+
+`workUnits` combines UTF-16 text reads, visited ranges/rows/comment records/output edits,
+pair-rule attempts and `bulkWorkUnits`. `readUnits` counts the planner's UTF-16 buffer reads,
+including repeated reads; it excludes host callback reads. Bulk charges count input cardinality
+submitted to synchronous normalization, position mapping, pair lookup and output-array freezing,
+plus large reads and newline string assembly;
+they are included once in work, and large reads also appear in the read counter. These charges
+are estimates of work, not counts of internal helper operations. Normalization can reuse owned
+selections; raw input must already have normalized range order and is validated during advancement.
+
+Budgets are safe integers of at least 256, defaulting to 4096. Cooperative checkpoints at scan,
+range and row boundaries follow roughly 256 charged units; whitespace scans read up to 4096
+units at once. A range's delimiter reads, synchronous bulk work and host callbacks can exceed
+the budget; callbacks have arbitrary cost. This is not a time or complete
+interaction-latency bound. All planning, including validation and final mapping, runs inside
+`next()`. The host schedules subsequent calls and keeps supplied selections/configuration
+immutable while work is pending. This example also releases cancelled planning:
 
 ```ts
 import { planLanguageEdit, resolveLanguageConfiguration } from "sttropez";
@@ -251,12 +272,12 @@ export async function planIndent(
     try {
         while (!signal.aborted) {
             const step = planner.next();
-            if (step.done) return step.value;
+            if (step.status === "ready") return step.result!;
             await yieldTurn();
         }
         return undefined;
     } finally {
-        planner.return({ edits: [], selectionSet: selections });
+        planner.dispose();
     }
 }
 ```
