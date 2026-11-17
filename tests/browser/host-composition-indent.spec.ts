@@ -19,7 +19,7 @@ async function exact(page: Page, text: string): Promise<void> {
 }
 
 async function drainPlanningTurns(page: Page, lines: number): Promise<void> {
-    // Exercise enough independent turns for the original 256-line plan, including after a cancelled composition.
+    // Let queued continuations run, including a stale continuation after cancelled composition.
     await page.evaluate(turns => new Promise<void>(resolve => {
         const step = () => { if (--turns) setTimeout(step, 0); else resolve(); }; setTimeout(step, 0);
     }), Math.ceil(lines / 256) + 16);
@@ -36,8 +36,9 @@ test.afterEach(async ({ page }, info) => {
     }
 });
 
-// Eight 256-line planning batches force a deferred turn without depending on machine speed.
-for (const host of ["plain", "react"] as const) for (const lines of [2048, 100000])
+// Discovery alone charges at least five units per row. 8192 rows exceed the
+// 64-call × 256-unit synchronous budget, so composition starts during pending work.
+for (const host of ["plain", "react"] as const) for (const lines of [8192, 100000])
     for (const key of ["Tab", "Shift+Tab"]) for (const outcome of ["ordinary", "commit", "cancel"] as const)
         test(`${host} ${lines} ${key} ${outcome} preserves staged composition and captured save`, async ({ page }) => {
 

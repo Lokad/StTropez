@@ -106,7 +106,7 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
         await page.getByRole("button", { name: "Replace current", exact: true }).click();
         expect(await text(page)).toBe(original); expect((await snapshot(page)).source.revision).toBe(before.source.revision);
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: middle, head: middle + 3 });
-        await page.getByRole("button", { name: "Replace current", exact: true }).click(); await expect(status).toContainText("2 matches · ready");
+        await page.getByRole("button", { name: "Replace current", exact: true }).click(); await expect(status).toHaveText("Replaced 1 match.");
         const changed = original.slice(0, middle) + "dog" + original.slice(middle + 3);
         expect(await text(page)).toBe(changed); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
         await secondary(page).press("Control+z"); expect(await text(page)).toBe(original);
