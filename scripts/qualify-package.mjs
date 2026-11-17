@@ -3,11 +3,10 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { sourceIdentity } from "./measurement.mjs";
+import { packageScenarios as choices } from "./package-scenarios.mjs";
 
-const choices = { full: [], lsp: ["--lsp-only"], react: ["--react-only"], pilot: ["--pilot-only"],
-    hunk: ["--hunk-only"], activation: ["--activation-only"], workspace: ["--workspace-only"], demo: [] };
 const selected = (process.argv.find(arg => arg.startsWith("--scenarios="))?.slice("--scenarios=".length) ?? "full,lsp,react").split(",");
-assert.ok(selected.length && new Set(selected).size === selected.length && selected.every(name => Object.hasOwn(choices, name)), "Select distinct package scenarios: full,lsp,react,pilot,hunk,activation,workspace,demo.");
+assert.ok(selected.length && new Set(selected).size === selected.length && selected.every(name => Object.hasOwn(choices, name)), `Select distinct package scenarios: ${Object.keys(choices).join(",")}.`);
 assert.ok(!selected.includes("demo") || selected.some(name => name !== "demo"), "Pair demo with a restored consumer, for example --scenarios=full,lsp,demo.");
 // Installation transitions belong to the full route, before any staged-root reuse.
 if (selected.includes("full")) selected.splice(0, 0, ...selected.splice(selected.indexOf("full"), 1));

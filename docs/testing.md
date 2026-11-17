@@ -299,6 +299,8 @@ applicable installation evidence when packaging inputs are unchanged. Rebuild af
 declarations or packaging changes. Host/fixture path changes require the affected staging
 route even if library bytes match, because runtime and erased type imports must remain isolated.
 The lower-level `--reuse-consumer=<metadata>` option checks the package hash and staged root.
+Lower-level `--*-only` workload flags are mutually exclusive; use the coordinator's
+`--scenarios` option to qualify multiple workloads against one restored artifact.
 
 Each consuming route has its own integration purpose: public exports/declarations and CSS,
 wire protocol, framework lifetime, review, deferred activation or the actual demo host. Its
