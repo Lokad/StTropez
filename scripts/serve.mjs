@@ -7,6 +7,10 @@ import { attachProtocolFixture } from "../fixtures/protocol/fixture-server.ts";
 import { attachDemoProvider } from "../examples/demo/provider-server.ts";
 import { demoLibraries } from "./demo-libraries.mjs";
 
+/**
+ * @param {number} port
+ * @param {{watch?: boolean}} [options]
+ */
 export async function startServer(port, { watch = true } = {}) {
     await mkdir("artifacts/site", { recursive: true });
     await writeFile("artifacts/site/index.html", (await readFile("examples/demo/index.html", "utf8"))
@@ -29,16 +33,23 @@ export async function startServer(port, { watch = true } = {}) {
     }
     const site = resolve("artifacts/site"), pages = new Map(await Promise.all(
         ["/", "/workspace/", "/viewport/", "/editing/", "/comparison/", "/protocol/", "/fonts/", "/hosts/plain/", "/hosts/react/"].flatMap(path => [path, path + "index.html"])
-            .map(async path => [path, await readFile(resolve(site, "." + (path.endsWith("/") ? path + "index.html" : path)))])));
+            .map(async path => /** @type {[string, Buffer]} */ ([path, await readFile(resolve(site, "." + (path.endsWith("/") ? path + "index.html" : path)))]))));
     pages.set("/typescript-libs.json", Buffer.from(await demoLibraries()));
-    let modules = new Map(), failed = false, firstBuild;
+    /** @type {Map<string, Uint8Array>} */
+    let modules = new Map();
+    let failed = false;
+    /** @type {() => void} */
+    let firstBuild;
+    /** @type {Promise<void>} */
     const initial = new Promise(resolve => { firstBuild = resolve; });
     // Requests consume completed builds. In particular, starting a worker must not trigger
     // compilation of every host before that worker can answer its first message.
     const builder = await context({ absWorkingDir: process.cwd(), write: false, plugins: [{ name: "completed-dev-build", setup(build) {
         build.onEnd(result => {
             failed = result.errors.length > 0;
-            if (!failed) modules = new Map(result.outputFiles.map(file => ["/" + relative(site, file.path).replaceAll("\\", "/"), file.contents]));
+            // A successful build with write:false returns its files in memory.
+            if (!failed) modules = new Map((/** @type {import("esbuild").OutputFile[]} */ (result.outputFiles))
+                .map(file => ["/" + relative(site, file.path).replaceAll("\\", "/"), file.contents]));
             firstBuild();
         });
     } }], entryPoints: { app: "examples/demo/main.ts", "workspace-fixture": "tests/fixtures/workspace/main.ts", "demo-syntax-worker": "examples/demo/syntax-worker.ts", "demo-language-worker": "examples/demo/language-worker.ts", fonts: "tests/fixtures/fonts/main.ts", comparison: "examples/comparison/main.ts", editing: "examples/editing/main.ts", viewport: "examples/viewport/main.ts",
@@ -46,11 +57,16 @@ export async function startServer(port, { watch = true } = {}) {
         bundle: true, format: "esm", platform: "browser", target: "es2022", sourcemap: true });
     const server = createServer((request, response) => { void handle(request, response).catch(() => { if (!response.headersSent) response.writeHead(500); response.end("Development service failed."); }); });
     const demoProvider = attachDemoProvider(server);
+    /**
+     * @param {import("node:http").IncomingMessage} request
+     * @param {import("node:http").ServerResponse} response
+     */
     async function handle(request, response) {
         if (await demoProvider.handle(request, response)) return;
         if (request.method !== "GET" && request.method !== "HEAD") { response.writeHead(405, { Allow: "GET, HEAD" }).end(); return; }
         let path;
-        try { path = decodeURIComponent(new URL(request.url, "http://localhost").pathname); }
+        // IncomingMessage.url is populated for server requests.
+        try { path = decodeURIComponent(new URL(/** @type {string} */ (request.url), "http://localhost").pathname); }
         catch { response.writeHead(400).end(); return; }
         if (failed) { response.writeHead(503).end("Development build failed."); return; }
         const bytes = pages.get(path) ?? modules.get(path);
@@ -61,18 +77,21 @@ export async function startServer(port, { watch = true } = {}) {
     }
     const releaseProtocolFixture = attachProtocolFixture(server, { allowOtherUpgrades: true });
     server.on("upgrade", (request, socket) => {
-        const path = new URL(request.url, "http://localhost").pathname;
+        const path = new URL(/** @type {string} */ (request.url), "http://localhost").pathname;
         if (path !== "/lsp-fixture" && !/^\/demo-provider\/[a-f0-9-]+$/.test(path)) socket.destroy();
     });
     try {
         if (watch) { await builder.watch(); await initial; }
         else { await builder.rebuild(); await builder.dispose(); }
         if (failed) throw new Error("Initial development build failed.");
-        await new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, "127.0.0.1", resolve); });
+        await new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, "127.0.0.1", () => resolve(undefined)); });
     } catch (error) { releaseProtocolFixture(); await demoProvider.close(); await builder.dispose(); throw error; }
+    /** @type {Promise<void> | undefined} */
     let closing;
-    return { url: `http://127.0.0.1:${server.address().port}`, buildMode: watch ? "development-bundle-watch" : "development-bundle-no-watch", close: () => closing ??= (async () => {
-        releaseProtocolFixture(); await demoProvider.close(); await builder.dispose(); await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    // The numeric-port TCP listener is bound before its address is captured.
+    const address = /** @type {import("node:net").AddressInfo} */ (server.address());
+    return { url: `http://127.0.0.1:${address.port}`, buildMode: watch ? "development-bundle-watch" : "development-bundle-no-watch", close: () => closing ??= (async () => {
+        releaseProtocolFixture(); await demoProvider.close(); await builder.dispose(); await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve(undefined)));
     })() };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
