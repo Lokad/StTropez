@@ -11,7 +11,15 @@ export function snapshotValue<T extends SnapshotValue>(value: T): Immutable<T> {
         if (typeof value !== "object" || visiting.has(value)) throw new TypeError("Expected finite, acyclic plain snapshot data.");
         visiting.add(value);
         let result: SnapshotValue;
-        if (Array.isArray(value)) result = Object.freeze(Array.from(value, copy));
+        if (Array.isArray(value)) {
+            const items: SnapshotValue[] = [];
+            for (let i = 0; i < value.length; i++) {
+                const descriptor = Object.getOwnPropertyDescriptor(value, i);
+                if (!descriptor || !("value" in descriptor)) throw new TypeError("Snapshot arrays require own data elements.");
+                items.push(copy(descriptor.value as SnapshotValue));
+            }
+            result = Object.freeze(items);
+        }
         else {
             if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) throw new TypeError("Expected plain snapshot data.");
             const entries: [string, SnapshotValue][] = [];

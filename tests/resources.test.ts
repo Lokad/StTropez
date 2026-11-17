@@ -44,6 +44,30 @@ test("typed resources need no document, isolate scopes/variants and expose immut
     assert.equal(foreign.resolveResource(workspace.captureResource(form.id)), undefined);
 });
 
+test("typed array snapshots reject accessors without invoking code or publishing partial state", () => {
+    const workspace = new Workspace(), key = { scope: "test", resource: "array", variant: "working" };
+    const handle = workspace.createResource({ ...key, resource: "existing" }, "Array", { value: { rows: [1, 2] } });
+    const before = handle.getSnapshot(), inventory = workspace.getSnapshot();
+    let calls = 0, publications = 0;
+    const stop = handle.subscribe(() => publications++);
+    const accessor = Object.defineProperty([0], "0", { get() { calls++; return 42; } });
+    const inherited = new Array<number>(1);
+    Object.setPrototypeOf(inherited, Object.create(Array.prototype, { "0": { get() { calls++; return 42; } } }));
+    try {
+        for (const rows of [accessor, inherited, new Array<number>(1)]) {
+            assert.throws(() => workspace.createResource(key, "Invalid", { value: { rows } }), TypeError);
+            assert.throws(() => workspace.updateResource(handle, { expectedRevision: 0, origin: "human", value: { rows } }), TypeError);
+            assert.equal(calls, 0); assert.equal(publications, 0);
+            assert.equal(handle.getSnapshot(), before); assert.equal(workspace.getSnapshot(), inventory);
+        }
+        // Snapshot array elements, without consulting a host-defined iteration hook.
+        const rows = Object.defineProperty([3, 4], Symbol.iterator, { get() { calls++; throw new Error("Iterator must not run"); } });
+        const valid = workspace.createResource(key, "Valid", { value: { rows } }).getSnapshot();
+        assert.ok(valid.state === "ready"); rows[0] = 99;
+        assert.deepEqual(valid.value().rows, [3, 4]); assert.ok(Object.isFrozen(valid.value().rows)); assert.equal(calls, 0);
+    } finally { stop(); }
+});
+
 test("internal resources keep captured ownership while workspace inventories contain only host resources", async () => {
     const { workspace, source, form, tab } = fixture(), before = workspace.getSnapshot(), tabs = workspace.tabState.getSnapshot();
     const options = { visibility: "internal" as const }, buffer = TextBuffer.from("immutable reference");

@@ -84,8 +84,9 @@ export function serializeCapturedInputs(
 
 Typed values follow `SnapshotValue`: null, booleans, finite numbers, strings, arrays and
 acyclic plain objects. Inputs are copied and deeply frozen as `Immutable<T>`. Accessors,
-functions, class instances, undefined and nonfinite values are rejected. The host owns
-schema validation and any conversion between typed data and text.
+functions, class instances, undefined and nonfinite values are rejected. Arrays copy their
+own indexed data elements without consulting iteration hooks; holes and inherited elements
+are rejected. The host owns schema validation and any conversion between typed data and text.
 
 ### Inventory visibility
 
