@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { commandBudget, createCooperativeRunner } from "../src/browser/cooperative-runner.ts";
+import { createCooperativeRunner } from "../src/browser/cooperative-runner.ts";
 
 function fixture() {
     let id = 0, time = 0;
@@ -16,7 +16,7 @@ test("cooperative slices yield under both stationary and advancing clocks and st
         const f = fixture(), values: number[] = [], turns: number[] = []; let current = true;
         const pump = () => {
             f.runner.slice(() => { f.elapse(cost); values.push(values.length); return values.length; },
-                count => current && count < 25, commandBudget.plannerCalls);
+                count => current && count < 25, 8);
             turns.push(values.length);
             if (current && values.length < 25) f.runner.schedule(pump);
         };
@@ -25,7 +25,7 @@ test("cooperative slices yield under both stationary and advancing clocks and st
         assert.deepEqual(values, Array.from({ length: 25 }, (_, i) => i)); assert.ok(turns.length > 1);
         assert.ok(f.delays.every(delay => delay === 0));
         let advances = 0;
-        f.runner.slice(() => { advances++; current = false; return true; }, running => running && current, commandBudget.plannerCalls);
+        f.runner.slice(() => { advances++; current = false; return true; }, running => running && current, 8);
         assert.equal(advances, 1); assert.equal(f.tasks.size, 0);
     }
 });

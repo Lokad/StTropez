@@ -109,22 +109,72 @@ test("automatic discovery preserves newer view choices, cancels changed targets 
     await page.evaluate(() => window.editingFixture.dispose());
     expect((await page.evaluate(() => window.editingFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });
-test("a host generator may invalidate itself without reentrant cancellation or leaking its iterator", async ({ page }) => {
+test("a host cursor may invalidate itself without reentrant cancellation or leaking its work", async ({ page }) => {
+    for (const throws of [false, true]) {
       await page.goto("/editing/");
-    await page.evaluate(() => {
+    await page.evaluate(throws => {
         const f = window.editingFixture; f.setText("head\n  child\nend"); let first = true;
-        Object.assign(window, { foldIteratorClosed: false });
-        f.discoverFolds(function* () {
-            if (first) { first = false; try {
-                // Cross a task boundary before invalidating the running generator.
-                for (let batch = 0; batch < 10; batch++) yield;
-                f.edit([{ from: 0, to: 0, insert: "prefix\n" }]); yield;
-            } finally { Object.assign(window, { foldIteratorClosed: true }); } }
-            return [];
+        Object.assign(window, { foldCursorClosed: false });
+        f.discoverFolds(() => {
+            if (!first) return []; first = false;
+            let calls = 0, pumping = false, disposed = false;
+            const snapshot = () => ({ status: disposed ? "disposed" as const : "running" as const, result: null, failure: null });
+            return { snapshot, next: budget => {
+                if (budget !== 4096) throw new Error("Expected charged cursor budget");
+                pumping = true;
+                try {
+                    // Cross a task boundary before invalidating the running cursor.
+                    if (++calls === 65) {
+                        f.edit([{ from: 0, to: 0, insert: "prefix\n" }]);
+                        if (throws) throw new Error("Expired fold work failed");
+                    }
+                    return snapshot();
+                } finally { pumping = false; }
+            }, dispose: () => {
+                if (pumping) throw new Error("Reentrant fold disposal");
+                disposed = true; Object.assign(window, { foldCursorClosed: true });
+            } };
         });
-    });
+    }, throws);
     await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
-    expect(await page.evaluate(() => (window as unknown as { foldIteratorClosed: boolean }).foldIteratorClosed)).toBe(true);
+    expect(await page.evaluate(() => (window as unknown as { foldCursorClosed: boolean }).foldCursorClosed)).toBe(true);
+    }
+});
+
+test("terminal and late fold cursors release ownership without replacing folds on failure", async ({ page }) => {
+    await page.goto("/editing/");
+    for (const mode of ["ready", "failed", "disposed", "throw"] as const) {
+        await page.evaluate(mode => {
+            const f = window.editingFixture; f.setText("head\n  child\nend"); f.folds([{ id: "existing", from: 0, to: 13, collapsed: true }]);
+            Object.assign(window, { foldCursorReleases: 0 });
+            f.discoverFolds(() => {
+                const snapshot = () => ({ status: mode === "throw" ? "running" as const : mode,
+                    result: mode === "ready" ? [{ from: 0, to: 13 }] : null, failure: mode === "failed" ? "Fixture failure" : null });
+                return { snapshot, next: () => { if (mode === "throw") throw new Error("Fixture failure"); return snapshot(); },
+                    dispose: () => { const w = window as unknown as { foldCursorReleases: number }; w.foldCursorReleases++; } };
+            });
+        }, mode);
+        await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe(mode === "ready" ? "ready" : "failed");
+        expect(await page.evaluate(() => (window as unknown as { foldCursorReleases: number }).foldCursorReleases)).toBe(1);
+        expect((await page.evaluate(() => window.editingFixture.folding())).regions).toMatchObject([{ id: "existing", collapsed: true }]);
+    }
+    await page.evaluate(() => {
+        const f = window.editingFixture;
+        f.discoverFolds(() => new Promise(resolve => {
+            Object.assign(window, { resolveLateFold: () => resolve({
+                snapshot: () => ({ status: "running", result: null, failure: null }),
+                next: () => { throw new Error("Late fold cursor must not advance"); },
+                dispose: () => { Object.assign(window, { lateFoldReleased: true }); }
+            }) });
+        }));
+    });
+    await page.waitForFunction(() => "resolveLateFold" in window);
+    await page.evaluate(() => {
+        window.editingFixture.discoverFolds(() => []);
+        (window as unknown as { resolveLateFold: () => void }).resolveLateFold();
+    });
+    await expect.poll(() => page.evaluate(() => (window as unknown as { lateFoldReleased: boolean }).lateFoldReleased)).toBe(true);
+    await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
 });
 
 test("folded rows keep independent views, disclosure keys and visible-line navigation while Find reveals raw matches", async ({ page }) => {

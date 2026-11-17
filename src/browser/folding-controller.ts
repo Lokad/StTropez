@@ -6,9 +6,11 @@ import type { DocumentSnapshot, TabId, Workspace } from "../core/workspace.ts";
 import type { EditingCandidate } from "./editing-candidate.ts";
 import type { FoldRegion } from "../core/folding.ts";
 import { commandBudget, createCooperativeRunner } from "./cooperative-runner.ts";
+import type { KernelCursor, KernelStatus } from "../core/kernel-cursor.ts";
 
 export type FoldDiscoveryBatch = Readonly<{ ranges: readonly DiscoveredFold[]; isCurrent?: () => boolean }>;
-export type FoldDiscoveryResult = readonly DiscoveredFold[] | Generator<void, readonly DiscoveredFold[]> | FoldDiscoveryBatch;
+export type FoldDiscoveryCursor = KernelCursor<Readonly<{ status: KernelStatus; result: readonly DiscoveredFold[] | null; failure: string | null }>>;
+export type FoldDiscoveryResult = readonly DiscoveredFold[] | FoldDiscoveryCursor | FoldDiscoveryBatch;
 export type FoldDiscovery = (document: DocumentSnapshot, signal: AbortSignal) => FoldDiscoveryResult | Promise<FoldDiscoveryResult>;
 export type FoldCommand = "collapse" | "expand" | "collapse-all" | "expand-all";
 export type FoldingStatus = Readonly<{ status: "pending" | "ready" | "failed" | "disposed"; revision: number; regions: number; collapsed: number;
@@ -26,7 +28,7 @@ export function createFoldingController(workspace: Workspace, tabId: TabId, edit
     const cell = new Store<FoldingStatus>(Object.freeze({ status: "pending", revision: workspace.document(view.documentId).revision,
         regions: 0, collapsed: 0, groups: Object.freeze([]), message: "Discovering folds…" }), notifications);
     const listeners = new AbortController(), runner = createCooperativeRunner(win); let disposed = false, generation = 0;
-    let job: { generation: number; document: DocumentSnapshot; abort: AbortController; pumping?: boolean; iterator?: Generator<void, readonly DiscoveredFold[]> } | undefined;
+    let job: { generation: number; document: DocumentSnapshot; abort: AbortController; pumping?: boolean; cursor?: FoldDiscoveryCursor } | undefined;
     const available = () => !disposed && !editor.activity().disposed && workspace.ownsDocumentView(view) && !!workspace.resolveTab(target);
     const busy = () => { const state = editor.activity(); return state.composing || state.pendingInput || state.pendingCommand; };
     let groupRegions: readonly FoldRegion[] | undefined, groups: readonly string[] = Object.freeze([]);
@@ -38,10 +40,11 @@ export function createFoldingController(workspace: Workspace, tabId: TabId, edit
         const changed = new Set<Store<unknown>>(); cell.set(Object.freeze({ status, revision: folds.revision, regions: folds.regions.length,
             collapsed: folds.index.collapsedCount, groups, message }), changed); notifications.deliver([...changed]);
     };
+    const release = (capture: NonNullable<typeof job>) => { const cursor = capture.cursor; delete capture.cursor; cursor?.dispose(); };
     const cancel = () => {
         generation++; runner.cancel();
         const previous = job; job = undefined; previous?.abort.abort();
-        if (previous && !previous.pumping) previous.iterator?.return(Object.freeze([]));
+        if (previous && !previous.pumping) release(previous);
     };
     const later = (work: () => void, ms: number) => { runner.schedule(work, ms); };
     const current = (capture: NonNullable<typeof job>) => available() && job === capture && capture.generation === generation
@@ -64,22 +67,23 @@ export function createFoldingController(workspace: Workspace, tabId: TabId, edit
         try {
             const result = runner.slice(() => {
                 capture.pumping = true;
-                try { return capture.iterator!.next(); } finally { capture.pumping = false; }
-            }, result => !result.done && current(capture), commandBudget.plannerCalls);
-            if (!current(capture)) { capture.iterator!.return(Object.freeze([])); return; }
-            if (result.done) { delete capture.iterator; accept(capture, result.value); }
-            else later(() => pump(capture), 0);
-        } catch (error) { fail(capture, error); }
+                try { return capture.cursor!.next(commandBudget.cursorUnits); } finally { capture.pumping = false; }
+            }, result => result.status === "running" && current(capture), commandBudget.foldCalls);
+            if (!current(capture)) { release(capture); return; }
+            if (result.status === "running") later(() => pump(capture), 0);
+            else if (result.status === "ready" && result.result !== null) { release(capture); accept(capture, result.result); }
+            else fail(capture, new Error(result.failure ?? "Fold discovery ended without a result."));
+        } catch (error) { if (!current(capture)) release(capture); else fail(capture, error); }
     };
     const start = () => {
         if (!available()) { cancel(); return; }
         if (busy()) { later(start, 16); return; }
         const capture = { generation, document: workspace.document(view.documentId), abort: new AbortController() }; job = capture;
         void Promise.resolve().then(() => current(capture) ? discover(capture.document, capture.abort.signal) : []).then(result => {
-            if (!current(capture)) { if ("next" in result) result.return([]); return; }
+            if (!current(capture)) { if ("next" in result) result.dispose(); return; }
             if (Array.isArray(result)) accept(capture, result);
             else if ("ranges" in result) accept(capture, result.ranges, result.isCurrent);
-            else { job!.iterator = result as Generator<void, readonly DiscoveredFold[]>; pump(job!); }
+            else { job!.cursor = result as FoldDiscoveryCursor; pump(job!); }
         }).catch(error => fail(capture, error));
     };
     const refresh = () => { if (!available()) return; cancel(); publish("pending", "Discovering folds…"); later(start, delay); };

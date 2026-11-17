@@ -84,22 +84,48 @@ Updates can visit the supplied region array; arbitrary fold changes are not cons
 
 ### Discovery
 
-`discoverIndentationFolds(buffer, IndentationFoldingOptions)` returns a yielding generator of
-`DiscoveredFold` ranges. Indentation discovery defaults to enabled, tab size 4 and group
+`discoverIndentationFolds(buffer, IndentationFoldingOptions)` returns a lazy
+`IndentationFoldingCursor`. Indentation discovery defaults to enabled, tab size 4 and group
 `"indentation"`. Tab size must be an integer from 1 through 256. Optional paired markers match
 line prefixes after indentation and a whitespace/end boundary. Marker prefixes and groups
 must be nonempty; prefixes cannot contain line endings. Nested blocks include interior blank
 lines and exclude trailing blank lines. Unclosed markers produce no collapsed region.
 
+The cursor exposes `next(workBudget?)`, `snapshot()` and `dispose()`. Frozen
+`IndentationFoldingProgress` snapshots report status (`running`, `ready`, `failed`, `disposed`),
+phase (`validate`, `scan`, `finish`, `publish`), counters, nullable `result` and nullable `failure`.
+Only `ready` exposes a complete frozen array of frozen `DiscoveredFold` records. Errors are
+rethrown and retained as failure messages. Disposal drops unfinished work and the cursor's
+result reference; returned ranges remain usable. Advancing or disposing during `next()` throws.
+Keep options immutable while discovery is pending. Validation and all discovery work run in
+`next()`, including marker preparation and EOF stack cleanup.
+
+Budgets are safe integers of at least 256, defaulting to 4096. `workUnits` combines UTF-16 reads,
+marker/row/stack visits, output records and `bulkWorkUnits`. `readUnits` counts buffer units
+read, including repeated reads. Bulk charges estimate input cardinality for native marker
+validation/comparison, large prefix reads and output-array freezing; they are included once
+in work, and prefix reads also contribute to reads. They do not count helper internals or time.
+Checkpoints follow roughly 256 charged units at operation boundaries; whitespace chunks read
+up to 4096 units. A large delimiter, native helper or host callback can exceed the requested
+budget. This is not a time limit or a complete interaction-latency bound.
+
 `reconcileFoldRanges(buffer, discovered, previous)` chooses one outer range per header,
 discards crossings and preserves identity for a matching mapped header/group. It returns a
 complete range set. Reconciliation does not merge independent publications for the host.
+Reconciliation and installing the resulting fold projection are synchronous costs outside
+the discovery cursor; include them when measuring visible acceptance.
 
 `createFoldingController` captures a tab and retained editor view. Its `FoldDiscovery` callback
 receives an immutable document and `AbortSignal`. A `FoldDiscoveryResult` may be ranges, a
-yielding generator, or a `FoldDiscoveryBatch` with `ranges` and an optional `isCurrent` guard;
+`FoldDiscoveryCursor`, or a `FoldDiscoveryBatch` with `ranges` and an optional `isCurrent` guard;
 the callback may return a promise. `delayMs` defaults to 100 and must be finite and nonnegative.
-Synchronous callback/generator work must be bounded: scheduling cannot preempt a callback.
+The controller takes ownership of a returned cursor, including a late promise result. A custom
+cursor provides `next(workBudget?)`, `snapshot()` and `dispose()`, and reports the same status,
+nullable result and failure fields; indentation-specific counters are not required. The controller
+advances 4096 work units at a time, with at most 64 advances per task and a four-millisecond
+elapsed check between advances. It releases completed, cancelled and failed cursors. A terminal
+cursor without a result fails discovery. Custom callbacks/cursors must cooperate: scheduling
+cannot preempt their synchronous work. Disposal must release work and tolerate repeated calls.
 
 The controller rejects stale edits, tab replacements, expired authority and disposal. Publication
 waits for composition and queued editing, then reconciles the latest view collapse choices.

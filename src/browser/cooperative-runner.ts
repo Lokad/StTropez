@@ -4,7 +4,7 @@ type Host = Readonly<{ performance: Pick<Performance, "now">;
 const direct: Turn = work => work();
 
 export const commandBudget = Object.freeze({ sliceMs: 4, cursorUnits: 4096, wordCalls: 32, graphemeCalls: 8,
-    plannerCalls: 8, languageUnits: 256, languageCalls: 64, rangeCalls: 64, rangeBatch: 32, shortRangeBatch: 16, inlineRanges: 32,
+    foldCalls: 64, languageUnits: 256, languageCalls: 64, rangeCalls: 64, rangeBatch: 32, shortRangeBatch: 16, inlineRanges: 32,
     queuedCalls: 8, queuedActions: 256, queuedUnits: 65536 });
 
 /** Shared task mechanics. Owners retain captures, iterator disposal, failure handling and completion. */
