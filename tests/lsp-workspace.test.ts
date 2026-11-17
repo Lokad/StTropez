@@ -10,6 +10,42 @@ import { LspWorkspace, createLspHoverClient, createLspCommandRunner, createLspSi
 const settled = async () => { await setImmediate(); await setImmediate(); };
 const latch = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; };
 
+test("feature options for other documents preserve pending and completed captures without acquiring participation", async t => {
+    let excludeCompanion = false, policyError: Error | undefined;
+    const f = fixture(t, { features: ["textDocument/signatureHelp"], documentInfo: doc => {
+        if (doc.title === "Companion") { if (policyError) throw policyError; if (excludeCompanion) return; }
+        return { uri: `custom:/${doc.title}`, languageId: doc.title };
+    } }), client = createLspSignatureClient(f.provider); t.after(client.dispose);
+    const source = f.workspace.document(f.source.documentId), other = f.workspace.document(f.companion.documentId);
+    const beforeConnect = f.provider.snapshot(); assert.deepEqual(client.options(other), []); assert.deepEqual(f.provider.snapshot(), beforeConnect);
+    await f.provider.connect(); const peer = f.peers[0]!;
+    let observed: readonly Readonly<Record<string, unknown>>[] = [];
+    const stop = f.provider.state.subscribe(() => { observed = client.options(f.workspace.document(other.id)); }); t.after(stop);
+    await peer.rpc.sendRequest("client/registerCapability", { registrations: [
+        { id: "source-signature", method: "textDocument/signatureHelp", registerOptions: { documentSelector: [{ language: "Source" }], triggerCharacters: ["("] } },
+        { id: "other-signature", method: "textDocument/signatureHelp", registerOptions: { documentSelector: [{ language: "Companion" }], triggerCharacters: ["["] } }
+    ] });
+    assert.deepEqual(observed[0]!.triggerCharacters, ["["]); assert.equal(f.provider.snapshot().documents, 0); assert.equal(f.workspace.diagnostics().leases, 0);
+    const entered = latch<void>(), answer = latch<unknown>(); let requests = 0;
+    t.after(() => answer.resolve(null)); peer.rpc.onRequest("textDocument/signatureHelp", () => { requests++; entered.resolve(); return answer.promise; });
+    const pending = client.run(source, 1).result; void pending.catch(() => {}); await entered.promise;
+    const owner = f.provider.snapshot(), workspace = f.workspace.diagnostics(), events = [...peer.events];
+    for (const document of [other, source, other]) assert.deepEqual(client.options(document)[0]!.triggerCharacters, [document === source ? "(" : "["]);
+    await settled(); assert.equal(requests, 1); assert.deepEqual(f.provider.snapshot(), owner); assert.deepEqual(f.workspace.diagnostics(), workspace); assert.deepEqual(peer.events, events);
+    answer.resolve({ signatures: [{ label: "call(value)" }] }); const result = await pending; assert.ok(result); assert.ok(result.isCurrent());
+    const completed = f.provider.snapshot(); assert.deepEqual(client.options(other)[0]!.triggerCharacters, ["["]);
+    assert.ok(result.isCurrent()); assert.deepEqual(f.provider.snapshot(), completed); assert.deepEqual(peer.events, events);
+    excludeCompanion = true; assert.deepEqual(client.options(other), []); excludeCompanion = false;
+    policyError = new TypeError("Host document mapping failed."); assert.throws(() => client.options(other), error => error === policyError); policyError = undefined;
+    f.edit(other.id); assert.throws(() => client.options(other), error => error instanceof RpcError && error.code === -32801);
+    assert.ok(result.isCurrent()); assert.deepEqual(peer.events, events);
+    await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "other-signature", method: "textDocument/signatureHelp" }] });
+    assert.deepEqual(observed, []); assert.deepEqual(client.options(f.workspace.document(other.id)), []);
+    assert.equal(result.isCurrent(), false, "Registration changes still retire captured feature authority.");
+    await f.provider.reconnect(); const reconnected = f.provider.snapshot(), reconnectedEvents = [...f.peers[1]!.events];
+    assert.deepEqual(client.options(source), []); assert.deepEqual(f.provider.snapshot(), reconnected); assert.deepEqual(f.peers[1]!.events, reconnectedEvents); assert.deepEqual(f.errors, []);
+});
+
 test("signature retriggers preserve the last resolved context through a cancelled reply without crossing document or provider authority", async t => {
     let uriVersion = 0;
     const f = fixture(t, { features: ["textDocument/signatureHelp"], documentInfo: doc => ({ uri: `fixture:${uriVersion}/${doc.resourceId}`, languageId: "fixture" }) }),

@@ -143,8 +143,7 @@ export function createLspClient(provider: LspWorkspace) {
         },
         options: (document: DocumentSnapshot, method: LspDocumentFeature) => {
             if (disposed) throw new Error("LSP feature client is disposed.");
-            if (!documents.has(document.id)) documents = scope.setDocuments([document]);
-            return scope.featureOptions(method, documents.get(document.id)!);
+            return provider.queryFeatureOptions(method, document);
         },
         isBusy: () => (latest?.pending ?? 0) > 0,
         snapshot: () => Object.freeze({ connected: scope.state.getSnapshot().phase === "ready", disposed, protocol: scope.snapshotOwnership() }),

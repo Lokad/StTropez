@@ -1,4 +1,4 @@
-import { wireLimits, ProtocolDecodeError, isRecord, rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError, jsonEqual, jsonSnapshot } from "./wire.ts";
+import { wireLimits, ProtocolDecodeError, isRecord, isLspIdentityPart, isLspUri, rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError, jsonEqual, jsonSnapshot } from "./wire.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import type { PositionMapping } from "../core/positions.ts";
 import { NotificationScope, Store } from "../core/observable.ts";
@@ -9,7 +9,7 @@ import type { JsonValue } from "./wire.ts";
 import { LspLineIndex, lspTextChanges } from "./lsp-positions.ts";
 import type { LspChangeHint, LspTextChange } from "./lsp-positions.ts";
 import { compileLspSelector } from "./lsp-selector.ts";
-import type { LspSelector, LspUriPath } from "./lsp-selector.ts";
+import type { LspSelector, LspSelectorDocument, LspUriPath } from "./lsp-selector.ts";
 
 const providers = { "textDocument/completion": "completionProvider", "textDocument/hover": "hoverProvider",
     "textDocument/definition": "definitionProvider", "textDocument/references": "referencesProvider",
@@ -46,8 +46,8 @@ export type LspSessionOptions = Readonly<{ connect: (context: LspConnectContext)
     /** Declare only features whose results the consuming host validates and presents. */
     features?: readonly LspFeature[]; diagnostics?: boolean; workspaceEdits?: boolean; applyEdit?: boolean; pathForUri?: LspUriPath; maxDocuments?: number; maxDocumentUnits?: number; maxTotalUnits?: number;
     rpc?: Pick<RpcOptions, "timeoutMs" | "maxPending" | "maxMessageUnits" | "maxJsonNodes">; onError?: (error: Error) => void }>;
-type Entry = { snapshot: LspDocumentSnapshot; handle: LspDocument; index?: LspLineIndex; change?: LspChangeHint;
-    selectors?: { generation: number; values: Map<LspSelector, boolean> };
+type SelectorEntry = { snapshot: LspSelectorDocument; selectors?: { generation: number; values: Map<LspSelector, boolean> } };
+type Entry = SelectorEntry & { snapshot: LspDocumentSnapshot; handle: LspDocument; index?: LspLineIndex; change?: LspChangeHint;
     failure?: Readonly<{ snapshot: LspDocumentSnapshot; generation: number; error: Error }> };
 type Remote = { entry: Entry; snapshot: LspDocumentSnapshot; index: LspLineIndex; version: number };
 type SyncWaiter = { resolve: () => void; reject: (error: Error) => void; ready: (() => boolean) | undefined };
@@ -256,31 +256,46 @@ export class LspSession {
         for (const id of ids) this.registrations.delete(id); this.generation++; this.publish(); this.reconcile(); return null;
     }
     private matchesRegistration(registered: string, method: string): boolean { return registered === method || registered === "textDocument/documentColor" && method === "textDocument/colorPresentation"; }
-    private matches(selector: LspSelector, entry: Entry): boolean {
+    private matches(selector: LspSelector, entry: SelectorEntry): boolean {
         if (entry.selectors?.generation !== this.generation) entry.selectors = { generation: this.generation, values: new Map() };
         const cached = entry.selectors.values.get(selector); if (cached !== undefined) return cached;
         const value = selector(entry.snapshot); entry.selectors.values.set(selector, value); return value;
     }
-    private registered(method: string, entry: Entry): boolean {
+    private registered(method: string, entry: SelectorEntry): boolean {
         for (const item of this.registrations.values()) if (this.matchesRegistration(item.value.method, method) && this.matches(item.selector, entry)) return true;
         return false;
     }
-    private syncs(entry: Entry): boolean { return (this.sync.openClose || this.registered("textDocument/didOpen", entry)) && (this.sync.change || this.registered("textDocument/didChange", entry)); }
+    private syncs(entry: SelectorEntry): boolean { return (this.sync.openClose || this.registered("textDocument/didOpen", entry)) && (this.sync.change || this.registered("textDocument/didChange", entry)); }
     private failed(entry: Entry): Error | undefined {
         return entry.failure?.snapshot === entry.snapshot && entry.failure.generation === this.generation ? entry.failure.error : undefined;
     }
     canRequest(method: LspDocumentFeature, document: LspDocument): boolean {
         const entry = this.entry(document);
-        return this.store.get().phase === "ready" && !this.failed(entry) && this.features.has(method) && this.syncs(entry) && (this.staticAvailable(method, entry) || this.registered(method, entry));
+        return !this.failed(entry) && this.supports(method, entry);
     }
-    private staticAvailable(method: LspDocumentFeature, entry: Entry): boolean {
+    private supports(method: LspDocumentFeature, entry: SelectorEntry): boolean {
+        return this.store.get().phase === "ready" && this.features.has(method) && this.syncs(entry) && (this.staticAvailable(method, entry) || this.registered(method, entry));
+    }
+    private staticAvailable(method: LspDocumentFeature, entry: SelectorEntry): boolean {
         const provider = providers[method], capability = this.capabilities[provider], selector = this.staticSelectors.get(provider);
         return (capability === true || isRecord(capability)) && (!selector || this.matches(selector, entry));
     }
     /** Static and matching dynamic options only; selectors and session readiness use the request policy. */
     featureOptions(method: LspDocumentFeature, document: LspDocument): readonly Readonly<Record<string, JsonValue>>[] {
         if (!this.canRequest(method, document)) return Object.freeze([]);
-        const entry = this.entry(document), capability = this.capabilities[providers[method]], values: Readonly<Record<string, JsonValue>>[] = [];
+        return this.optionsFor(method, this.entry(document));
+    }
+    /** Read capabilities without binding, synchronizing or reserving a document. */
+    queryFeatureOptions(method: LspDocumentFeature, document: LspSelectorDocument): readonly Readonly<Record<string, JsonValue>>[] {
+        const { uri, languageId } = document;
+        if (!isLspUri(uri) || !isLspIdentityPart(languageId)) throw new TypeError("Invalid LSP document identity.");
+        const bound = this.documents.get(uri), same = bound?.snapshot.languageId === languageId;
+        if (same && this.failed(bound)) return Object.freeze([]);
+        const entry: SelectorEntry = same ? bound : { snapshot: Object.freeze({ uri, languageId }) };
+        return this.supports(method, entry) ? this.optionsFor(method, entry) : Object.freeze([]);
+    }
+    private optionsFor(method: LspDocumentFeature, entry: SelectorEntry): readonly Readonly<Record<string, JsonValue>>[] {
+        const capability = this.capabilities[providers[method]], values: Readonly<Record<string, JsonValue>>[] = [];
         if (this.staticAvailable(method, entry)) { if (isRecord(capability)) values.push(capability); else if (capability === true) values.push(empty); }
         for (const item of this.registrations.values()) if (this.matchesRegistration(item.value.method, method) && this.matches(item.selector, entry) && isRecord(item.value.registerOptions)) values.push(item.value.registerOptions);
         return Object.freeze(values);
@@ -309,7 +324,7 @@ export class LspSession {
     }
     bindDocument(snapshot: LspDocumentSnapshot): LspDocument {
         this.writable(); const { uri, languageId, resourceId, documentId, revision, buffer } = snapshot;
-        if (![uri, languageId, resourceId, documentId].every(value => typeof value === "string" && value.length > 0 && value.length <= 4096) || !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(uri) || !integer(revision)) throw new TypeError("Invalid LSP document identity.");
+        if (!isLspUri(uri) || ![languageId, resourceId, documentId].every(isLspIdentityPart) || !integer(revision)) throw new TypeError("Invalid LSP document identity.");
         if (this.documents.has(uri) || this.documents.size >= this.maxDocuments) throw new Error("LSP URI is already bound or document limit exceeded."); this.size(buffer.length, 0);
         const entry: Entry = { snapshot: Object.freeze({ uri, languageId, resourceId, documentId, revision, buffer }), handle: undefined! };
         const handle: LspDocument = Object.freeze({ getSnapshot: () => entry.snapshot,

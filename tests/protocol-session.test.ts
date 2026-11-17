@@ -42,6 +42,37 @@ function fixture(t: test.TestContext, capabilities: InitializeResult["capabiliti
 const input = (text = "a😀\r\nb\rc\n", uri = "host+fixture://project/scope/doc%20one.ts", resourceId = "resource:one", revision = 40) =>
     ({ uri, resourceId, documentId: resourceId + ":working", revision, languageId: "typescript", buffer: TextBuffer.from(text) });
 
+test("unbound capability queries share selectors and synchronization policy without binding or sending documents", async t => {
+    const host = fixture(t, { positionEncoding: "utf-16", textDocumentSync: 0,
+        colorProvider: { id: "static-color", documentSelector: [{ language: "typescript", pattern: "**/*.ts" }], workDoneProgress: true } });
+    let paths = 0;
+    const session = new LspSession({ ...host, features: ["textDocument/documentColor"], pathForUri: uri => { paths++; return `/${uri.slice(uri.indexOf(":") + 1).toLowerCase()}.ts`; } });
+    t.after(() => session.dispose()); const first = { uri: "host+fixture:MAIN", languageId: "typescript" }, other = { uri: "host+fixture:OTHER", languageId: "typescript" };
+    assert.deepEqual(session.queryFeatureOptions("textDocument/documentColor", first), []); assert.equal(host.peers.length, 0);
+    await session.connect(); const peer = host.peers[0]!;
+    assert.deepEqual(session.queryFeatureOptions("textDocument/documentColor", first), []);
+    await peer.rpc.sendRequest("client/registerCapability", { registrations: [
+        { id: "open", method: "textDocument/didOpen", registerOptions: { documentSelector: [{ language: "typescript" }] } },
+        { id: "change", method: "textDocument/didChange", registerOptions: { documentSelector: [{ language: "typescript" }], syncKind: 2 } },
+        { id: "definition", method: "textDocument/documentColor", registerOptions: { documentSelector: [{ pattern: "**/other.ts" }], workDoneProgress: false } }
+    ] });
+    const before = session.snapshotOwnership(), messages = peer.wire.messages[0]!.length;
+    assert.equal(session.queryFeatureOptions("textDocument/documentColor", first).length, 1);
+    const options = session.queryFeatureOptions("textDocument/documentColor", other); assert.deepEqual(options.map(value => value.workDoneProgress), [true, false]);
+    assert.ok(Object.isFrozen(options)); assert.ok(options.every(Object.isFrozen));
+    assert.deepEqual(session.queryFeatureOptions("textDocument/documentColor", { ...first, languageId: "other" }), []);
+    assert.throws(() => session.queryFeatureOptions("textDocument/documentColor", { ...first, uri: "relative" }), TypeError);
+    assert.deepEqual(session.snapshotOwnership(), before); assert.equal(peer.wire.messages[0]!.length, messages);
+    const document = session.bindDocument({ ...input(), ...other }); await session.flush();
+    assert.deepEqual(session.featureOptions("textDocument/documentColor", document), options); const cachedPaths = paths;
+    assert.deepEqual(session.queryFeatureOptions("textDocument/documentColor", other), options); assert.equal(paths, cachedPaths);
+    assert.equal(session.canRequest("textDocument/documentColor", document), true);
+    await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "change", method: "textDocument/didChange" }] });
+    assert.deepEqual(session.queryFeatureOptions("textDocument/documentColor", other), []); assert.equal(session.canRequest("textDocument/documentColor", document), false);
+    session.disconnect(); await session.connect(); assert.deepEqual(session.queryFeatureOptions("textDocument/documentColor", first), []);
+    session.dispose(); assert.deepEqual(session.queryFeatureOptions("textDocument/documentColor", other), []);
+});
+
 test("document synchronization waits exclude unrelated work and expire changed captures", async t => {
     const host = fixture(t), queued = new Set<() => void>(); let blocked = false;
     const session = new LspSession({ ...host, features: ["textDocument/hover"], schedule: (ms, callback) => {

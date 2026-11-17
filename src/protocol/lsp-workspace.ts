@@ -4,7 +4,7 @@ import { NotificationScope, Store } from "../core/observable.ts";
 import { anchoredRange } from "../core/positions.ts";
 import type { Observable } from "../core/observable.ts";
 import { LspSession } from "./lsp-session.ts";
-import type { LspDocument, LspDocumentCapture, LspDocumentSnapshot, LspRequestContext, LspSessionOptions, LspSessionSnapshot } from "./lsp-session.ts";
+import type { LspDocument, LspDocumentCapture, LspDocumentFeature, LspDocumentSnapshot, LspRequestContext, LspSessionOptions, LspSessionSnapshot } from "./lsp-session.ts";
 import type { RpcCall } from "./json-rpc.ts";
 import type { JsonValue } from "./wire.ts";
 import { decodeLspDiagnostics } from "./lsp-features.ts";
@@ -165,6 +165,14 @@ export class LspWorkspace {
         // Preserve provider version, original wire ranges and metadata as provenance, not fresh edit authority.
         entry.diagnostics.set(Object.freeze({ ...before, status: "pending", result: Object.freeze({ ...result, snapshotRevision: next.revision, items: Object.freeze(items) }),
             isCurrent: () => false, isPlacementCurrent }), this.changed); this.queueDelivery();
+    }
+    /** Read the current host mapping/capabilities without acquiring document participation. */
+    queryFeatureOptions(method: LspDocumentFeature, document: DocumentSnapshot): readonly Readonly<Record<string, JsonValue>>[] {
+        if (this.disposed) return Object.freeze([]);
+        const current = this.workspace.observeDocument(document.id).getSnapshot();
+        if (!current || current.resourceId !== document.resourceId || current.revision !== document.revision || current.buffer !== document.buffer) throw stale();
+        const info = this.options.documentInfo(current);
+        return info ? this.session.queryFeatureOptions(method, info) : Object.freeze([]);
     }
     private document(id: DocumentId): DocumentEntry {
         this.writable(); const current = this.workspace.document(id), info = this.options.documentInfo(current);

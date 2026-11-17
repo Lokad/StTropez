@@ -233,7 +233,8 @@ is plaintext. Completion documentation uses plaintext independently.
 ### Signature help
 
 `createLspSignatureClient(provider).run(document, offset, context?, prepare?)` returns a
-cancellable call. `options(document)` supplies matching provider options for host trigger policy.
+cancellable call. `options(document)` supplies matching provider options for host trigger policy
+through a [read-only capability query](language-server.md#feature-capability-queries).
 `LspSignatureContext` carries trigger kind, optional trigger character, retrigger status and
 optional `activeSignatureHelp`. Without a context, invocation is explicit and not a retrigger.
 

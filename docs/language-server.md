@@ -179,6 +179,21 @@ UTF-16 negotiation and synchronizes eligible bindings. `shutdown()` performs the
 shutdown/exit exchange. `disconnect()` retains local bindings for a new connection; `dispose()`
 releases session ownership. `LspWorkspace.dispose()` closes the connection directly.
 
+### Feature capability queries
+
+`queryFeatureOptions(method, document)` reads matching static and dynamic options without
+opening, closing or synchronizing documents, acquiring resource leases, or changing a request's
+participation. The returned array and option objects are immutable. Queries use the same
+selectors, host URI-to-path policy, connection readiness and synchronization requirements as
+requests; an existing failed binding supplies no options.
+
+On `LspWorkspace`, supply a current `DocumentSnapshot`. The query validates its resource,
+revision and buffer, then uses `documentInfo`; an unmapped document supplies no options.
+On `LspSession`, supply `{ uri, languageId }`. Queries do not connect automatically and return
+an empty array while disconnected or disposed. Host mapping failures propagate to the caller.
+Reading another document's options preserves pending work and completed captures. The answer
+is capability metadata: a later request requires an admitted binding and current capture.
+
 ### Workspace ownership and synchronization
 
 `LspWorkspace.createScope()` creates independent feature participation over the shared session.
