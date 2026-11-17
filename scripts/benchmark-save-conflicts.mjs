@@ -4,19 +4,18 @@ import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
 import { corpus } from "../fixtures/workloads.ts";
 import { typeHostSuffix } from "./host-typing.mjs";
-import { installHostReferenceProbe } from "./host-reference-probe.mjs";
+import { createHostScene } from "./host-scene.mjs";
 
 const source = await sourceIdentity(), smoke = process.env.STTROPEZ_CONFLICT_SMOKE === "1", warmup = smoke ? 0 : 3, measured = smoke ? 1 : 10;
 const writer = await createReportWriter("artifacts/bench/save-conflicts", smoke ? "smoke" : "full");
-const harness = await openHarness(), cases = [], snapshot = () => harness.page.evaluate(() => window.hostFixture.snapshot());
+const harness = await openHarness(), scene = createHostScene(harness.page), cases = [], snapshot = scene.snapshot;
 const click = name => harness.page.getByRole("button", { name, exact: true }).click();
-const ready = () => harness.page.evaluate(() => window.hostReferenceProbe.waitSourceReady());
+const ready = scene.sourceReady;
 try {
     for (const editor of ["native", "candidate"]) for (const host of ["plain", "react"]) for (const corpusId of editor === "candidate" ? ["normal", "lines-100000", "unique-lines-100000", "single-line"] : ["normal"]) {
         const original = (corpusId === "unique-lines-100000" ? Array.from({ length: 100000 }, (_, index) => `const value${String(index).padStart(6, "0")} = 123;\n`).join("") : corpus(corpusId)).trimEnd(), remote = `remote ${original}`, samples = [];
         for (let iteration = 0; iteration < warmup + measured; iteration++) {
-            await harness.page.goto(new URL(`/hosts/${host}/?editor=${editor}`, harness.page.url()).href);
-            await harness.page.evaluate(installHostReferenceProbe); await ready();
+            await scene.mount(host, editor); await ready();
             await harness.page.evaluate(({ original, remote }) => { const f = window.hostFixture, s = f.snapshot();
                 f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: original }]); f.externalWrite(remote); }, { original, remote });
             await ready(); const before = await snapshot(), input = harness.page.getByRole("textbox", { name: "Primary source", exact: true });
@@ -87,14 +86,9 @@ try {
             assert.equal(after.activity.writes, 1); assert.equal(after.activity.errors, 0); assert.equal(after.saveConflict, null);
             assert.equal(after.bindings.mounts, before.bindings.mounts); assert.equal(await input.evaluate(node => node.ownerDocument.activeElement === node), true);
             // Full text and remote-reference oracles deliberately run outside timed intervals.
-            assert.equal(await harness.page.evaluate(({ expected, reference }) => { const f = window.hostFixture;
-                if (f.snapshot().source.length !== expected.length || f.snapshot().bindings.comparison.baseline.length !== reference.length) return false;
-                for (let from = 0; from < expected.length; from += 32768) if (f.range(from, Math.min(expected.length, from + 32768)) !== expected.slice(from, from + 32768)) return false;
-                for (let from = 0; from < reference.length; from += 32768) if (f.referenceRange(from, Math.min(reference.length, from + 32768)) !== reference.slice(from, from + 32768)) return false;
-                return true;
-            }, { expected: `${original} during reviewz later`, reference: remote }), true);
-            await harness.page.evaluate(() => window.hostFixture.dispose()); const disposed = await snapshot();
-            assert.equal(disposed.diagnostics.views, 0); assert.equal(disposed.diagnostics.leases, 0); assert.equal(disposed.diagnostics.subscriptions, 0); assert.equal(disposed.hostSubscriptions, 0);
+            assert.equal(await scene.exactText(`${original} during reviewz later`), true);
+            assert.equal(await scene.exactText(remote, "reference"), true);
+            await scene.dispose();
             const sample = { conflictOutcomeActionProxyMs, reviewWithTypingActionProxyMs, retryWithTypingActionProxyMs, workflowActionProxyMs, point, lateTyping,
                 backgroundUpdates: after.activity.background - before.activity.background, sourceRevisions: after.source.revision - before.source.revision };
             if (iteration >= warmup) samples.push(sample);
@@ -118,4 +112,4 @@ try {
         environment: { ...environment(), browser: harness.browser.version(), viewport: { width: 1440, height: 900 } }, cases, errors: harness.errors,
         note: "Deferred local conflict/review/retry workflows with two source views, immutable remote reference, editable comparison and 20Hz host traffic. External writer setup is outside the workflow clock. No network or imposed service delay. Stage timings include automation controls, typing while waiting, settlement and completed comparison/view readiness. Setup permits absent review and native source metrics. Point input requires review, begins at document-capture beforeinput on the intended input and ends after exact text/revision/primary selection, complete source/reference/working editor settlement and the displayed reference version are current for two frames. Complete point action begins before keyboard automation and includes transport and returning the readiness result. Adapter-handler elapsed time is separate; the native baseline has no corresponding handler timer. These elapsed clocks do not measure process CPU time. Full text/reference oracles are outside timing. Three warmups and ten fresh-page measured workflows per condition unless explicitly smoke. Neither proxy measures physical presentation; this diagnostic does not qualify native IME, contextual long-line geometry, production tails or adoption budgets." });
 } catch (error) { await writer.write({ status: "failed", source, smoke, cases, error: String(error), browserErrors: harness.errors }); throw error; }
-finally { await harness.close(); }
+finally { try { await scene.dispose(); } finally { await harness.close(); } }

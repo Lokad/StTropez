@@ -9,19 +9,24 @@ export function createHostScene(page) {
         get mounted() { return mounted; },
         snapshot,
         ready: () => page.evaluate(() => window.hostReferenceProbe.waitReady()),
-        async mount(host) {
+        sourceReady: () => page.evaluate(() => window.hostReferenceProbe.waitSourceReady()),
+        async mount(host, editor = "candidate") {
             assert.equal(mounted, false, "Dispose the current host scene before mounting another.");
-            await page.goto(new URL(`/hosts/${host}/?editor=candidate`, page.url()).href);
+            assert.ok(editor === "candidate" || editor === "native", "Select a fixture editor.");
+            await page.goto(new URL(`/hosts/${host}/?editor=${editor}`, page.url()).href);
             await page.waitForFunction(() => window.hostFixture?.snapshot().bindings.activeViews === 2);
             mounted = true;
             await page.evaluate(installHostReferenceProbe);
         },
-        async dispose() {
+        async dispose(observe) {
             if (!mounted) return;
             await page.evaluate(() => window.hostFixture.dispose()); mounted = false;
+            // Close a caller-owned disposal clock before collecting teardown diagnostics.
+            await observe?.();
             const state = await snapshot();
             for (const key of ["views", "leases", "subscriptions"]) assert.equal(state.diagnostics[key], 0, key);
             assert.equal(state.hostSubscriptions, 0, "host subscriptions");
+            return state;
         },
         // This whole-document oracle belongs outside interaction clocks.
         exactText(text, target = "source") {

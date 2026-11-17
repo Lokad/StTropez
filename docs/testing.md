@@ -222,8 +222,11 @@ when present, the complete settled comparison and displayed reference version. N
 metrics are null; they do not satisfy the full `isReady` predicate. Conflict input points
 require a review, capture `beforeinput` on the intended input, and check exact revision, text and
 selection over two frames. Missing origins and terminal failures reject with listener/frame cleanup.
-Reference, pointer, drag-scroll and word-selection measurements share `scripts/host-scene.mjs`
-for mounting, readiness, disposal counters and complete source/reference text checks. Text
+Reference, pointer, drag-scroll, word-selection, generic host and save/conflict measurements
+share `scripts/host-scene.mjs` for mounting, readiness, disposal counters and complete
+source/reference text checks. Its `sourceReady` permits native source views and optional
+review; `ready` requires editor metrics and a complete review. A disposal observer can close the
+caller-owned automation clock after fixture disposal and before teardown diagnostics. Text
 checks compare lengths and raw UTF-16 chunks outside point and gesture clocks. Combined
 workflow proxies can include intermediate checks. Each caller retains its review preparation,
 captured identities, gesture release and operation-specific assertions.

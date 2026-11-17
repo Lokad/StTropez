@@ -4,23 +4,22 @@ import { openHarness } from "./browser-harness.mjs";
 import { corpus } from "../fixtures/workloads.ts";
 import { distribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
 import { typeHostSuffix } from "./host-typing.mjs";
-import { installHostReferenceProbe } from "./host-reference-probe.mjs";
+import { createHostScene } from "./host-scene.mjs";
 
 const source = await sourceIdentity(), smoke = process.env.STTROPEZ_HOST_SMOKE === "1", warmup = smoke ? 0 : 3, measured = smoke ? 1 : 10;
 const writer = await createReportWriter("artifacts/bench/hosts", smoke ? "smoke" : "full");
 let activeCase;
-const harness = await openHarness(), cases = [];
-const snapshot = () => harness.page.evaluate(() => window.hostFixture.snapshot());
+const harness = await openHarness(), scene = createHostScene(harness.page), cases = [];
+const snapshot = scene.snapshot;
 const click = name => harness.page.getByRole("button", { name, exact: true }).click();
 const clock = () => harness.page.evaluate(() => performance.now());
-const ready = () => harness.page.evaluate(() => window.hostReferenceProbe.waitSourceReady());
+const ready = scene.sourceReady;
 try {
     for (const editor of ["native", "candidate"]) for (const host of ["plain", "react"]) for (const corpusId of editor === "candidate" ? ["normal", "lines-10000", "lines-100000"] : ["normal", "lines-10000"]) {
         const original = corpus(corpusId).trimEnd(), proposal = `agent ${original}`, corrected = `fixed ${proposal}`, samples = [];
         for (let iteration = 0; iteration < warmup + measured; iteration++) {
             activeCase = { editor, host, corpus: corpusId, iteration, stage: "mount" };
-            await harness.page.goto(new URL(`/hosts/${host}/?editor=${editor}`, harness.page.url()).href);
-            await harness.page.evaluate(installHostReferenceProbe); await ready();
+            await scene.mount(host, editor); await ready();
             await harness.page.evaluate(text => { const s = window.hostFixture.snapshot(); window.hostFixture.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original); await ready();
             assert.equal(await harness.page.locator("textarea.st-input-context").count(), editor === "candidate" ? 2 : 0);
             assert.equal(await harness.page.locator("textarea.st-editor").count(), editor === "native" ? 2 : 0);
@@ -72,23 +71,14 @@ try {
             assert.equal(next.requestInput.sourceLength, corrected.length + 8); assert.equal(next.requestInput.configurationRevision, next.configuration.revision);
             const workflowAutomationProxyMs = await clock() - start;
             // Full text checks run outside timing and use explicit bounded range reads.
-            assert.equal(await harness.page.evaluate(expected => {
-                const f = window.hostFixture; if (f.snapshot().source.length !== expected.length) return false;
-                for (let from = 0; from < expected.length; from += 32768) if (f.range(from, Math.min(expected.length, from + 32768)) !== expected.slice(from, from + 32768)) return false;
-                return true;
-            }, `${corrected} later!?`), true);
-            assert.equal(await harness.page.evaluate(expected => {
-                const f = window.hostFixture;
-                for (let from = 0; from < expected.length; from += 32768) if (f.referenceRange(from, Math.min(expected.length, from + 32768)) !== expected.slice(from, from + 32768)) return false;
-                return true;
-            }, original), true);
+            assert.equal(await scene.exactText(`${corrected} later!?`), true);
+            assert.equal(await scene.exactText(original, "reference"), true);
             assert.equal(next.bindings.mounts, before.bindings.mounts); assert.equal(next.activity.errors, 1);
             const metrics = [correction, typing, running].flatMap(s => s.bindings.views.filter(v => v.id === "primary" && v.metrics).map(v => v.metrics));
             if (editor === "candidate") { assert.ok(metrics.every(s => s.inputUnits < 2600)); assert.ok(next.bindings.views.every(v => v.metrics.viewport.rows < 100)); }
-            const disposeStart = await clock(); await harness.page.evaluate(() => window.hostFixture.dispose());
-            const disposeAutomationProxyMs = await clock() - disposeStart, disposed = await snapshot();
-            assert.equal(disposed.pendingCommands, 0); assert.equal(disposed.diagnostics.leases, 0); assert.equal(disposed.diagnostics.views, 0);
-            assert.equal(disposed.diagnostics.subscriptions, 0); assert.equal(disposed.hostSubscriptions, 0);
+            const disposeStart = await clock(); let disposeAutomationProxyMs;
+            const disposed = await scene.dispose(async () => { disposeAutomationProxyMs = await clock() - disposeStart; });
+            assert.equal(disposed.pendingCommands, 0);
             const sample = { workflowAutomationProxyMs, disposeAutomationProxyMs, proposalTransactionMs: delivered.proposalTransactionMs,
                 observedInputHandlerMs: metrics.map(s => s.lastInputMs), maxInputUnits: metrics.length ? Math.max(...metrics.map(s => s.inputUnits)) : null,
                 revisions: next.source.revision - before.source.revision, backgroundUpdates: next.activity.background - before.activity.background,
@@ -111,4 +101,4 @@ try {
         return { snapshot: s, head: f.range(0, Math.min(s.source.length, 80)), tail: f.range(Math.max(0, s.source.length - 100), s.source.length) }; }).catch(failure => ({ observationError: String(failure) }));
     await writer.write({ status: "failed", source, smoke, cases, activeCase, error: String(error), observed, browserErrors: harness.errors });
     throw error;
-} finally { await harness.close(); }
+} finally { try { await scene.dispose(); } finally { await harness.close(); } }

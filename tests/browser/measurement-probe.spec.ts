@@ -1,7 +1,9 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const { installHostReferenceProbe } = await import(new URL("../../scripts/host-reference-probe.mjs", import.meta.url).href) as { installHostReferenceProbe: () => void };
-type HostScene = Readonly<{ mounted: boolean; mount(host: string): Promise<void>; dispose(): Promise<void>; ready(): Promise<unknown>;
+type HostScene = Readonly<{ mounted: boolean; mount(host: string, editor?: "native" | "candidate"): Promise<void>;
+    dispose(observe?: () => Promise<void>): Promise<ReturnType<Window["hostFixture"]["snapshot"]> | undefined>;
+    ready(): Promise<unknown>; sourceReady(): Promise<unknown>;
     snapshot(): Promise<ReturnType<Window["hostFixture"]["snapshot"]>>; exactText(text: string, target?: "source" | "reference"): Promise<boolean> }>;
 const { createHostScene } = await import(new URL("../../scripts/host-scene.mjs", import.meta.url).href) as { createHostScene: (page: Page) => HostScene };
 type Result = { kind: string; transactions: number; insertedUnits: number; revision: number; commandToFullReviewReadyProxyMs: number | null;
@@ -60,23 +62,30 @@ test("host text oracle checks complete raw source and independent reference with
 });
 
 test("source readiness supports native views and optional review without weakening full review", async ({ page }) => {
-    for (const editor of ["native", "candidate"]) {
-        await page.goto(`/hosts/plain/?editor=${editor}`); await ready(page);
-        await page.evaluate(installHostReferenceProbe);
-        const settle = () => page.evaluate(() => window.hostReferenceProbe.waitSourceReady());
-        const scene = () => page.evaluate(() => ({ source: window.hostReferenceProbe.isSourceReady(), review: window.hostReferenceProbe.isReady() }));
-        await settle(); expect(await scene()).toEqual({ source: true, review: false });
+    await page.goto("/workspace/");
+    const host = createHostScene(page), settle = host.sourceReady;
+    const state = () => page.evaluate(() => ({ source: window.hostReferenceProbe.isSourceReady(), review: window.hostReferenceProbe.isReady() }));
+    for (const editor of ["native", "candidate"] as const) try {
+        await host.mount("plain", editor);
+        await settle(); expect(await state()).toEqual({ source: true, review: false });
         await page.getByRole("button", { name: "Open source review", exact: true }).click(); await settle();
-        expect(await scene()).toEqual({ source: true, review: editor === "candidate" });
+        expect(await state()).toEqual({ source: true, review: editor === "candidate" });
         expect(await page.evaluate(() => {
             const f = window.hostFixture;
             f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: 0, head: 1 }]);
             return { source: window.hostReferenceProbe.isSourceReady(), review: window.hostReferenceProbe.isReady() };
         })).toEqual({ source: false, review: false });
-        await settle(); expect(await scene()).toEqual({ source: true, review: editor === "candidate" });
-        await page.evaluate(() => window.hostFixture.dispose());
-        expect(await scene()).toEqual({ source: false, review: false });
-    }
+        await settle(); expect(await state()).toEqual({ source: true, review: editor === "candidate" });
+        let observations = 0;
+        const disposed = await host.dispose(async () => {
+            observations++;
+            expect(host.mounted).toBe(false);
+            expect(await state()).toEqual({ source: false, review: false });
+        });
+        expect(disposed!.pendingCommands).toBe(0);
+        await host.dispose(async () => { observations++; });
+        expect(observations).toBe(1);
+    } finally { await host.dispose(); }
 });
 
 test("review measurements await full selections, folds, queued input and reference work", async ({ page }) => {
