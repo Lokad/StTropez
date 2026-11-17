@@ -79,7 +79,6 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         setDomainDelay: (delay: number) => { if (!Number.isFinite(delay) || delay < 0 || delay > 10000) throw new RangeError("Invalid domain delay."); bindings.domain.fixture.delay = delay; },
         faultDomainNext: (fault: "malformed" | "failure" | "late") => { bindings.domain.fixture.fault = fault; },
         setNavigationDelay: (delay: number) => bindings.navigation.setDelay(delay), faultNavigationNext: (fault: "malformed" | "failure") => bindings.navigation.faultNext(fault),
-        faultNavigationSyncNext: (fault: "version" | "epoch" | "sequence" | "revision") => bindings.navigation.faultSyncNext(fault),
         releaseNavigationCompanion: () => bindings.navigation.releaseCompanion(),
         setProjectDelay: (value: number) => bindings.project.setDelay(value), faultProjectNext: (value: "malformed" | "failure" | "ack") => bindings.project.faultNext(value),
         confirmProjectReview: (token: number | null) => bindings.project.confirmReview(token), declineProjectReview: (token: number | null) => bindings.project.declineReview(token),
@@ -128,7 +127,7 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; sett
     requestProvider: () => void;
     setDomainDelay: (delay: number) => void; faultDomainNext: (fault: "malformed" | "failure" | "late") => void;
     setNavigationDelay: (delay: number) => void; faultNavigationNext: (fault: "malformed" | "failure") => void;
-    faultNavigationSyncNext: (fault: "version" | "epoch" | "sequence" | "revision") => void; releaseNavigationCompanion: () => boolean;
+    releaseNavigationCompanion: () => boolean;
     setProjectDelay: (value: number) => void; faultProjectNext: (value: "malformed" | "failure" | "ack") => void;
     confirmProjectReview: (token: number | null) => void; declineProjectReview: (token: number | null) => void;
     setSignatureDelay: (value: number) => void; faultSignatureNext: (value: "malformed" | "failure" | "markup") => void; requestSignature: () => void;

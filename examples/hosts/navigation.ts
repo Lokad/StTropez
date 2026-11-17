@@ -1,8 +1,7 @@
 import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
-import { createNavigationClient } from "../shared/language/navigation-client.ts";
-import type { NavigationMetrics, SyncFault, NavigationService, NavigationServiceFactory } from "../shared/language/navigation-service.ts";
+import type { NavigationMetrics, NavigationService, NavigationServiceFactory } from "../shared/language/navigation-service.ts";
 import { navigationLimits, navigationSymbol, validateNavigationInput } from "../../fixtures/language/navigation.ts";
 import type { NavigationInput, NavigationLocation } from "../../fixtures/language/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
@@ -30,18 +29,16 @@ export class HostNavigationTools {
     private companion: DocumentId | undefined;
     private delay = 0;
     private fault: NavigationInput["fault"];
-    private syncFault: SyncFault | undefined;
     private client: NavigationService | undefined;
     private readonly createService: NavigationServiceFactory;
     private disconnected = false;
     private readonly cell = new HostCell<NavigationSnapshot>({ available: false, connected: false, disconnected: false, syncedDocuments: 0, view: null, requestView: null, token: null, status: "idle", message: "Focus a candidate source to navigate symbols.", work: 0, total: 0, includeDeclaration: true, locations: [], count: 0, truncated: false, page: 0, canReturn: false });
     readonly state = this.cell.observable;
     private readonly metrics = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0 };
-    private readonly worker: NavigationMetrics = { created: 0, posted: 0, received: 0, transferred: 0, maxChunk: 0, completed: 0, failed: 0, terminated: 0,
-        opened: 0, changed: 0, closed: 0, reused: 0, snapshotUnits: 0, deltaUnits: 0, planningTurns: 0, rejected: 0 };
+    private readonly queries: NavigationMetrics = { completed: 0, failed: 0 };
     private readonly reconnectProvider: (() => void) | undefined;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined,
-        createService: NavigationServiceFactory = { positionQueries: false, create: (clock, counts, changed) => createNavigationClient(clock, counts, undefined, changed) }, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider;
+        createService: NavigationServiceFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider;
         this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.createService = createService;
     }
     private available(session: Session): boolean {
@@ -111,7 +108,7 @@ export class HostNavigationTools {
         const origin = this.active;
         if (!origin || !this.available(origin)) { this.publish({ message: "Focus an available candidate source." }); return; }
         if (!this.canCapture(origin.editor.view.documentId)) { this.publish({ message: "Finish pending input, navigation or composition first." }); return; }
-        this.cancel(); const selected = origin.editor.view.getSnapshot(), document = this.workspace.document(origin.editor.view.documentId), symbol = navigationSymbol(document.buffer, selected.selection.head) ?? (this.createService.positionQueries ? "position" : undefined);
+        this.cancel(); const selected = origin.editor.view.getSnapshot(), document = this.workspace.document(origin.editor.view.documentId), symbol = navigationSymbol(document.buffer, selected.selection.head) ?? "position";
         if (!symbol) { this.publish({ status: "empty", message: "No bounded symbol at this position." }); return; }
         const documents = this.workspace.getSnapshot().documents.filter(doc => doc.key.variant === "working"), sources = new Map(documents.map(doc => [doc.id as string, { document: doc, authority: this.authority(doc.id) }]));
         if (!sources.has(document.id)) { this.publish({ status: "failed", message: "This source is outside the host navigation scope." }); return; }
@@ -137,9 +134,8 @@ export class HostNavigationTools {
             job.timer = win.setTimeout(() => { if (this.job === job && !job.ready) { this.metrics.failed++; this.clear("failed", "Navigation timed out; source is unchanged."); } }, 30000);
             const total = input.documents.reduce((sum, doc) => sum + doc.length, 0);
             this.publish({ status: "pending", message: `Finding ${kind === "definition" ? "definitions" : "references"} of ${symbol} from ${origin.id}.`, work: 0, total, page: 0, truncated: false });
-            this.client ??= this.createService.create(win, this.worker, () => { const job = this.job; if (job?.ready && !this.current(job)) this.invalidate(job); this.publish(); });
-            const syncFault = this.syncFault; this.syncFault = undefined;
-            void this.client.run(input, new Map([...sources].map(([id, source]) => [id, source.document.buffer])), work => { if (this.current(job)) this.publish({ work }); }, syncFault,
+            this.client ??= this.createService.create(win, this.queries, () => { const job = this.job; if (job?.ready && !this.current(job)) this.invalidate(job); this.publish(); });
+            void this.client.run(input, new Map([...sources].map(([id, source]) => [id, source.document.buffer])), work => { if (this.current(job)) this.publish({ work }); },
                 { document: document.id, offset: selected.selection.head }).then(result => {
                 if (result.isCurrent) job.serviceCurrent = result.isCurrent;
                 if (!this.current(job)) { if (this.job === job) this.invalidate(job); return; }
@@ -178,12 +174,11 @@ export class HostNavigationTools {
     };
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid navigation delay."); this.delay = value; }
     faultNext(value: NonNullable<NavigationInput["fault"]>): void { this.fault = value; }
-    faultSyncNext(value: SyncFault): void { this.syncFault = value; }
     releaseCompanion(): boolean {
         if (!this.companion) return false; this.cancel();
         try { this.workspace.releaseDocument(this.companion); this.companion = undefined; this.publish(); return true; } catch { return false; }
     }
-    debug() { return { ...this.metrics, worker: { ...this.worker }, sessions: [...this.sessions.values()].map(s => ({ id: s.id, documentId: s.editor.view.documentId, token: s.token })), subscriptions: this.cell.count(),
+    debug() { return { ...this.metrics, queries: { ...this.queries }, sessions: [...this.sessions.values()].map(s => ({ id: s.id, documentId: s.editor.view.documentId, token: s.token })), subscriptions: this.cell.count(),
         pending: !!this.job && !this.job.ready, results: this.job?.locations.length ?? 0, scope: this.job?.sources.size ?? 0, companion: this.companion ?? null, transport: this.client?.snapshot() ?? null, disposed: this.disposed }; }
     dispose(): void { if (this.disposed) return; this.cancel(); this.dropClient(); this.disposed = true; this.active = undefined; this.publish(); }
 }

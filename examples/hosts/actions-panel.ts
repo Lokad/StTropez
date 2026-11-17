@@ -1,37 +1,36 @@
 import type { HostActionsTools, ActionNote, ActionChoice, ActionsSnapshot } from "./code-actions.ts";
-type ActionsPanelTools = Pick<HostActionsTools, "usesLsp" | "state" | "request" | "apply" | "cancel" | "moveChoicePage" | "previousPage" | "nextPage" | "disconnect" | "reconnect" | "bindModule" | "setModule" | "selectChoice" | "openChangedDocument">;
+type ActionsPanelTools = Pick<HostActionsTools, "state" | "request" | "apply" | "cancel" | "moveChoicePage" | "previousPage" | "nextPage" | "disconnect" | "reconnect" | "bindModule" | "setModule" | "selectChoice" | "openChangedDocument">;
 function actionsControls(tools: ActionsPanelTools, s: ActionsSnapshot) {
     return [
         { label: "Preview module action", invoke: tools.request, disabled: !s.available || s.disconnected || s.pending },
         { label: s.command ? "Execute captured action" : "Apply captured action", invoke: () => tools.apply(s.token), disabled: !s.canApply },
         { label: "Dismiss action preview", invoke: tools.cancel, disabled: s.token === null },
-        ...(tools.usesLsp ? [{ label: "Previous action choices", invoke: () => tools.moveChoicePage(-1), disabled: s.pending || s.choicePage === 0 },
+        ...([{ label: "Previous action choices", invoke: () => tools.moveChoicePage(-1), disabled: s.pending || s.choicePage === 0 },
             { label: "Next action choices", invoke: () => tools.moveChoicePage(1), disabled: s.pending || (s.choicePage + 1) * 16 >= s.choices.length },
             { label: "Previous action edits", invoke: () => tools.previousPage(), disabled: s.pending || s.page === 0 },
-            { label: "Next action edits", invoke: () => tools.nextPage(), disabled: s.pending || (s.page + 1) * 64 >= s.editCount }] : []),
+            { label: "Next action edits", invoke: () => tools.nextPage(), disabled: s.pending || (s.page + 1) * 64 >= s.editCount }]),
         { label: "Disconnect action provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
         { label: "Reconnect action provider", invoke: tools.reconnect, disabled: !s.disconnected && !s.reconnectRequired && s.status !== "failed" }
     ];
 }
-export const actionsDescription = "Preview an import of the chosen module into the captured working source. Existing exact import lines disable the action. This local fixture uses its own bounded import policy; it does not resolve symbols, modules or types.";
-export const actionsDescriptionFor = (tools: Pick<HostActionsTools, "usesLsp">): string => tools.usesLsp ? "Choose a provider action and review its captured edits or advertised command, then confirm. Commands run after their edits; any further provider edits require a decision in Workspace provider. Some choices load a preview when selected. This sample uses lexical/import policies, not general type or scope resolution." : actionsDescription;
+export const actionsDescription = "Choose a provider action and review its captured edits or advertised command, then confirm. Commands run after their edits; any further provider edits require a decision in Workspace provider. Some choices load a preview when selected. This sample uses lexical/import policies, not general type or scope resolution.";
 export const actionChoiceLabel = (choice: ActionChoice): string => `${choice.title}${choice.kind ? ` · ${choice.kind}` : ""}${choice.preferred ? " · preferred" : ""}${choice.disabled ? ` · ${choice.disabled}` : choice.needsResolve ? " · Load preview" : ""}`;
 export const actionTarget = (at: ActionNote): string => `${at.title} · ${at.resource} · ${at.document} @ revision ${at.revision} · [${at.from},${at.to})\nInsert ${JSON.stringify(at.insert)}${at.insertUnits !== undefined && at.insertUnits > at.insert.length ? `… (${at.insertUnits} UTF-16 units)` : ""}\nContext: ${at.context}`;
 
 /** Rendering uses the supplied snapshot; only a choice click reads current state to reject stale tokens. */
 export function actionsPanelModel(tools: ActionsPanelTools, s: ActionsSnapshot) {
     return {
-        title: "Code actions", description: actionsDescriptionFor(tools), status: { label: "Code action status", text: s.message },
+        title: "Code actions", description: actionsDescription, status: { label: "Code action status", text: s.message },
         module: { label: "Action module ", value: s.module, maxLength: 64, bind: tools.bindModule, change: (value: string) => tools.setModule(value) },
         actions: actionsControls(tools, s),
-        choices: { enabled: tools.usesLsp, label: "Provider code actions", identity: s.choices, pageKey: `${s.token}:${s.choicePage}`, start: s.choicePage * 16 + 1,
+        choices: { enabled: true, label: "Provider code actions", identity: s.choices, pageKey: `${s.token}:${s.choicePage}`, start: s.choicePage * 16 + 1,
             disabled: s.pending, isSelected: (index: number) => s.choice === index,
             items: () => s.choices.slice(s.choicePage * 16, (s.choicePage + 1) * 16).map(choice => ({ key: choice.index, label: actionChoiceLabel(choice),
                 invoke: () => { if (s.token !== null && tools.state.getSnapshot().token === s.token) tools.selectChoice(choice.index); } } as const)) },
         preview: { label: "Captured action title", text: s.title },
         edits: { label: "Proposed action edits", identity: s.edits, start: s.page * 64 + 1, items: () => s.edits.map(actionTarget) },
-        changes: { label: "Action changed resources", identity: tools.usesLsp ? s.changes : s.changed, disabled: s.token !== null,
-            items: () => (tools.usesLsp ? s.changes : s.changed ? [s.changed] : []).map(change => ({ key: change.document,
+        changes: { label: "Action changed resources", identity: s.changes, disabled: s.token !== null,
+            items: () => s.changes.map(change => ({ key: change.document,
                 label: `Open action changes in ${change.title}`, invoke: () => tools.openChangedDocument(change.document) } as const)) },
     } as const;
 }

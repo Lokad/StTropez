@@ -151,7 +151,7 @@ test("link presentation retains captured ordinals while status updates do not re
 
 test("rename presentation retains its preview name, confirmation token and changed resource", () => {
     const applied: (number | null)[] = [], opened: DocumentId[] = [], firstId = "first" as DocumentId, secondId = "second" as DocumentId;
-    const tools: Parameters<typeof renamePanelModel>[0] = { usesLsp: false, prepare: noop, apply: token => { applied.push(token); }, cancel: noop,
+    const tools: Parameters<typeof renamePanelModel>[0] = { prepare: noop, apply: token => { applied.push(token); }, cancel: noop,
         previousPage: noop, nextPage: noop, disconnect: noop, reconnect: noop, bindName: noop, setName: noop, openChanged: id => { opened.push(id); } };
     let formatted = 0;
     const state: RenameSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, pending: false, status: "ready", message: "Captured rename",
@@ -174,17 +174,17 @@ test("action presentation reads current state only on choice activation and reje
         choices: Object.freeze([Object.freeze({ index: 0, title: "First action", kind: null, preferred: false, disabled: null, needsResolve: false })]),
         choice: 0, choicePage: 0, resolving: false, page: 0, editCount: 0 });
     let current = state, reads = 0;
-    const tools: Parameters<typeof actionsPanelModel>[0] = { usesLsp: true, state: { getSnapshot: () => { reads++; return current; }, subscribe: () => noop },
+    const tools: Parameters<typeof actionsPanelModel>[0] = { state: { getSnapshot: () => { reads++; return current; }, subscribe: () => noop },
         request: noop, apply: token => { applied.push(token); }, cancel: noop, moveChoicePage: noop, previousPage: noop, nextPage: noop, disconnect: noop,
         reconnect: noop, bindModule: noop, setModule: noop, selectChoice: index => { selected.push(index); }, openChangedDocument: id => { opened.push(id); } };
-    const first = actionsPanelModel(tools, state), legacy = actionsPanelModel({ ...tools, usesLsp: false }, state), oldChoice = first.choices.items()[0]!;
+    const first = actionsPanelModel(tools, state), oldChoice = first.choices.items()[0]!;
     current = { ...state, token: 10, changed: { document: secondId, title: "Second" }, changes: [{ document: secondId, title: "Second" }] };
     const newer = actionsPanelModel(tools, current), newChoice = newer.choices.items()[0]!;
     assert.equal(reads, 0, "model derivation and row formatting use only their supplied snapshot");
     assert.equal(first.choices.identity, newer.choices.identity); assert.notEqual(first.choices.pageKey, newer.choices.pageKey);
     oldChoice.invoke(); assert.deepEqual(selected, []); newChoice.invoke(); assert.deepEqual(selected, [0]); assert.equal(reads, 2);
     first.actions.find(action => action.label === "Apply captured action")!.invoke(); assert.deepEqual(applied, [9]);
-    newer.changes.items()[0]!.invoke(); legacy.changes.items()[0]!.invoke(); assert.deepEqual(opened, [secondId, firstId]);
+    newer.changes.items()[0]!.invoke(); first.changes.items()[0]!.invoke(); assert.deepEqual(opened, [secondId, firstId]);
     assert.equal(first.module.bind, tools.bindModule);
 });
 
@@ -210,7 +210,7 @@ test("navigation presentation keeps a captured target while a newer snapshot sup
 
 test("project presentation retains review tokens and resource identities across newer results", () => {
     const decisions: (number | null)[] = [], opened: DocumentId[] = [], firstId = "first" as DocumentId, secondId = "second" as DocumentId;
-    const tools: Parameters<typeof projectPanelModel>[0] = { usesLsp: true, register: noop, unregister: noop, requestEdits: noop, requestStatus: noop, cancel: noop,
+    const tools: Parameters<typeof projectPanelModel>[0] = { register: noop, unregister: noop, requestEdits: noop, requestStatus: noop, cancel: noop,
         confirmReview: token => { decisions.push(token); }, declineReview: token => { decisions.push(token); }, previousReviewPage: noop, nextReviewPage: noop,
         disconnect: noop, reconnect: noop, openChanged: id => { opened.push(id); } };
     const state: ProjectSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, reconnectRequired: false, registered: true, pending: true,

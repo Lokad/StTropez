@@ -34,7 +34,7 @@ function moduleUris(value: unknown): readonly Readonly<{ module: string; uri: st
     return value.map(alias => ({ module: alias.module, uri: alias.uri }));
 }
 
-/** Generic development peer. It is separate from the internal worker-v1 fixture and production assets. */
+/** Generic development LSP peer, excluded from production assets. */
 export function attachProtocolFixture(server: Server, options: Readonly<{ allowOtherUpgrades?: boolean }> = {}) {
     const sockets = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 }), release = new Set<() => void>();
     const onUpgrade = (request: import("node:http").IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => {

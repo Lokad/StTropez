@@ -1,12 +1,11 @@
 import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
-import { navigationMetrics } from "../shared/language/navigation-service.ts";
 import { createProjectBackend } from "../shared/language/project-backend.ts";
 import type { ProjectBackend } from "../shared/language/project-backend.ts";
 import { ProviderLane } from "../shared/provider-lane.ts";
 import { validateProjectCommand } from "../../fixtures/language/project-commands.ts";
-import type { ProjectCommand, ProjectCommandKind, ProjectOutcome, ProjectServerRequest } from "../../fixtures/language/project-commands.ts";
+import type { ProjectCommand, ProjectCommandKind } from "../../fixtures/language/project-commands.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { LspApplyEdit, LspApplyEditResult, LspRequestContext, LspWorkspaceEdit, LspWorkspace } from "../../src/protocol/index.ts";
 import type { LspProjectFactory } from "../shared/language/lsp-project-client.ts";
@@ -41,7 +40,6 @@ export class HostProjectTools {
     private readonly backendFactory: LspProjectFactory | undefined;
     private readonly provider: LspWorkspace | undefined;
     private readonly actionEditPolicy: ProjectActionEditPolicy | undefined;
-    readonly usesLsp: boolean;
     private reviewSerial = 0;
     private registered = false;
     private disconnected = false;
@@ -50,13 +48,12 @@ export class HostProjectTools {
     private serial = 0;
     private delay = 0;
     private fault: ProjectCommand["fault"];
-    private readonly worker = navigationMetrics();
     private readonly metrics = { requested: 0, serverRequests: 0, applied: 0, rejected: 0, cancelled: 0, failed: 0 };
     private readonly cell = new HostCell<ProjectSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, registered: false, pending: false, status: "idle", message: "Focus a candidate source to use workspace provider commands.", view: null, changes: [], review: null });
     readonly state = this.cell.observable;
     constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, backendFactory?: LspProjectFactory, provider?: LspWorkspace, actionEditPolicy?: ProjectActionEditPolicy, reconnectProvider?: () => void) {
         this.reconnectProvider = reconnectProvider;
-        this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory; this.provider = provider; this.usesLsp = backendFactory !== undefined || provider !== undefined; this.actionEditPolicy = actionEditPolicy;
+        this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory; this.provider = provider; this.actionEditPolicy = actionEditPolicy;
     }
     private available(s: Session): boolean {
         const tab = this.workspace.resolveTab(s.target);
@@ -76,24 +73,17 @@ export class HostProjectTools {
     private editable(document: DocumentId): boolean { const m = this.workspace.resourceForDocument(document).metadata.getSnapshot(); return m.capabilities.edit.includes("human") && m.capabilities.edit.includes("host") && m.editLock === null; }
     private drop(): void { this.registered = false; this.lane.drop(); }
     private connectionChanged(backend: ProjectBackend): void {
-        if (backend.kind === "lsp") {
-            const state = backend.snapshot(), job = this.job; this.registered = state.registered;
-            if (job?.externalCancel) {
-                if (!state.connected && !state.busy) queueMicrotask(() => { if (this.lane.value === backend) { this.drop(); this.publish(); } });
-                this.publish(); return;
-            }
-            if (!state.connected && !state.busy || job && !backend.isCurrent()) {
-                if (!state.connected) this.disconnected = true;
-                if (job) job.invalid = true;
-                queueMicrotask(() => { if (this.lane.value !== backend) return; this.cancel(); this.drop(); this.publish({ status: "failed", message: job?.applied ? "Provider connection or capability changed after application; the edit remains available to undo." : "Provider connection or capability changed; reconnect and request fresh work." }); });
-            }
+        const state = backend.snapshot(), job = this.job; this.registered = state.registered;
+        if (job?.externalCancel) {
+            if (!state.connected && !state.busy) queueMicrotask(() => { if (this.lane.value === backend) { this.drop(); this.publish(); } });
             this.publish(); return;
         }
-        const transport = backend.snapshot();
-        if (!transport.connected) this.registered = false;
-        if (!transport.connected && !transport.busy) {
-            this.metrics.failed++; this.drop(); this.publish({ status: "failed", message: "Workspace provider connection failed; register again to reconnect." });
-        } else this.publish();
+        if (!state.connected && !state.busy || job && !backend.isCurrent()) {
+            if (!state.connected) this.disconnected = true;
+            if (job) job.invalid = true;
+            queueMicrotask(() => { if (this.lane.value !== backend) return; this.cancel(); this.drop(); this.publish({ status: "failed", message: job?.applied ? "Provider connection or capability changed after application; the edit remains available to undo." : "Provider connection or capability changed; reconnect and request fresh work." }); });
+        }
+        this.publish(); return;
     }
     private current(job: Job): boolean {
         if (this.job !== job || job.invalid) return false;
@@ -166,26 +156,6 @@ export class HostProjectTools {
         return () => { if (detached) return; detached = true; if (this.job?.origin === session) this.cancel(); events.abort(); this.sessions.delete(session.token);
             if (this.active === session) this.active = undefined; if (!this.sessions.size) this.drop(); this.publish(); };
     }
-    private accept(job: Job, request: ProjectServerRequest): ProjectOutcome {
-        this.metrics.serverRequests++;
-        if (!this.current(job)) { this.metrics.rejected++; return { applied: false, reason: "Captured resource, revision, authority or input changed." }; }
-        if (request.method !== "edit") { this.registered = request.method === "register"; this.publish(); return { applied: true, reason: this.registered ? "Review command registered for this connection." : "Review command unregistered." }; }
-        if (!this.registered) { this.metrics.rejected++; return { applied: false, reason: "The review capability is not registered." }; }
-        for (const at of request.edits) {
-            const doc = job.documents.get(at.document)!, m = this.workspace.resourceForDocument(doc.id).metadata.getSnapshot();
-            if (!m.capabilities.edit.includes("human") || !m.capabilities.edit.includes("host") || m.editLock !== null) { this.metrics.rejected++; return { applied: false, reason: "Every target must allow human and host editing without a lock." }; }
-        }
-        this.publishing = true;
-        try {
-            if (!request.edits.length) return { applied: true, reason: "All captured resources already contain the review markers." };
-            const result = this.workspace.editDocuments(request.edits.map(at => ({ documentId: job.documents.get(at.document)!.id, expectedRevision: at.revision, edits: at.edits,
-                origin: "host" as const, history: { kind: "replace" as const }, ...(at.document === job.origin.editor.view.documentId ? { view: job.origin.editor.view } : {}) })));
-            if (!result.applied) { this.metrics.rejected++; return { applied: false, reason: result.reason }; }
-            for (const doc of job.documents.values()) job.revisions.set(doc.id, this.workspace.document(doc.id).revision);
-            this.changes = request.edits.map(at => { const doc = job.documents.get(at.document)!; return { document: doc.id, title: doc.title.slice(0, 128) }; });
-            job.applied = true; this.metrics.applied++; return { applied: true, reason: `Applied provider edits to ${request.edits.length} captured working resources as one undo command.` };
-        } finally { this.publishing = false; }
-    }
     private finishReview(job: Job, review: Review, result: LspApplyEditResult): boolean {
         if (job.review !== review) return false; delete job.review; review.stop(); job.origin.editor.element.ownerDocument.defaultView!.clearTimeout(review.timer); review.finish(Object.freeze(result)); this.publish(); return true;
     }
@@ -248,7 +218,7 @@ export class HostProjectTools {
             else { this.metrics.rejected++; this.finishReview(job, review, { applied: false, failureReason: error instanceof Error ? error.message : "Provider edits refused." }); this.publish({ message: "Provider edit batch refused without application." }); }
         }
     }
-    canRunAction(editor: TextEditor): boolean { return this.usesLsp && !this.disposed && !this.job && !this.provider?.state.getSnapshot().commandRequiresReconnect && [...this.sessions.values()].some(session => session.editor === editor && this.available(session)); }
+    canRunAction(editor: TextEditor): boolean { return (!this.disposed) && !this.job && !this.provider?.state.getSnapshot().commandRequiresReconnect && [...this.sessions.values()].some(session => session.editor === editor && this.available(session)); }
     /** Transfer a confirmed action to the existing review owner, independent of later focus. */
     beginAction(intent: ProjectActionIntent): ProjectActionHandle | undefined {
         const origin = [...this.sessions.values()].find(session => session.editor === intent.editor && this.available(session));
@@ -300,7 +270,7 @@ export class HostProjectTools {
     }
     private start(kind: ProjectCommandKind): void {
         const origin = this.active;
-        if (this.disconnected || this.job || !origin || !this.available(origin)) { this.publish({ message: "Focus an available source and reconnect or finish pending work first." }); return; }
+        if (!this.backendFactory || this.disconnected || this.job || !origin || !this.available(origin)) { this.publish({ message: "Focus an available source and reconnect or finish pending work first." }); return; }
         if (kind === "register" ? this.registered : kind !== "status" && !this.registered) { this.publish({ message: "Register the review command before using it; unregister before registering again." }); return; }
         const docs = this.workspace.getSnapshot().documents.filter(d => d.key.variant === "working");
         if (docs.some(d => !this.canCapture(d.id))) { this.publish({ message: "Finish pending input, navigation, table conversion or composition first." }); return; }
@@ -308,18 +278,18 @@ export class HostProjectTools {
         try { input = validateProjectCommand({ id: ++this.serial, kind, documents: docs.map(d => ({ document: d.id, revision: d.revision, length: d.buffer.length })), delay: this.delay, ...(this.fault ? { fault: this.fault } : {}) }); }
         catch (error) { this.fault = undefined; this.publish({ status: "failed", message: error instanceof Error ? error.message : "Invalid provider capture." }); return; }
         this.fault = undefined; const win = origin.editor.element.ownerDocument.defaultView!;
-        const capture = this.usesLsp ? this.capture(origin) : undefined;
-        if (this.usesLsp && !capture) { this.publish({ message: "The source changed before capture; request fresh provider work." }); return; }
+        const capture = this.capture(origin);
+        if ((!capture)) { this.publish({ message: "The source changed before capture; request fresh provider work." }); return; }
         const job: Job = { origin, input, documents: new Map(docs.map(d => [d.id, d])), revisions: new Map(docs.map(d => [d.id, d.revision])), authority: new Map(docs.map(d => [d.id, this.authority(d.id)])), leases: [], stops: [], timer: 0, invalid: false, applied: false,
             capture, changes: [] };
         this.job = job; this.metrics.requested++;
         try {
             this.retain(job);
-            job.timer = win.setTimeout(() => { if (this.job === job) { this.cancel(); this.publish({ status: "failed", message: "Workspace provider timed out; any applied edit remains available to undo." }); } }, this.usesLsp ? 120000 : 30000);
+            job.timer = win.setTimeout(() => { if (this.job === job) { this.cancel(); this.publish({ status: "failed", message: "Workspace provider timed out; any applied edit remains available to undo." }); } }, (120000));
             this.publish({ status: "pending", message: `Waiting for captured provider ${kind}.` });
-            const backend = this.lane.acquire(notify => createProjectBackend(win, this.worker, this.backendFactory, notify));
-            if (backend.kind === "lsp") job.providerCurrent = backend.isCurrent;
-            void backend.run({ input, documents: docs, accept: request => this.accept(job, request),
+            const backend = this.lane.acquire(notify => createProjectBackend(this.backendFactory!, notify));
+            job.providerCurrent = backend.isCurrent;
+            void backend.run({ input,
                 scope: { snapshots: () => [...job.documents.values()], isCurrent: () => this.current(job), review: (request, context) => this.review(job, request, context) } }).then(result => {
                 if (this.job !== job) return; this.release(job); this.registered = result.registered;
                 this.publish({ status: result.applied ? "ready" : "rejected", message: !result.applied && job.applied ? `Earlier provider edits remain applied and undoable. ${result.reason}` : result.reason });
@@ -332,6 +302,6 @@ export class HostProjectTools {
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid project delay."); this.delay = value; }
     faultNext(value: NonNullable<ProjectCommand["fault"]>): void { this.fault = value; }
     faultIdle(): boolean { return this.lane.value?.faultIdle() ?? false; }
-    debug() { return { ...this.metrics, worker: { ...this.worker }, state: this.cell.get(), pending: !!this.job, registered: this.registered, transport: this.lane.value?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
+    debug() { return { ...this.metrics, state: this.cell.get(), pending: !!this.job, registered: this.registered, transport: this.lane.value?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
     dispose(): void { if (this.disposed) return; this.cancel(); this.registered = false; this.lane.dispose(); this.disposed = true; this.active = undefined; this.changes = []; this.publish(); }
 }

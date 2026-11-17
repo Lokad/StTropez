@@ -1,8 +1,6 @@
 import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, TextBuffer, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
-import { createNavigationClient } from "../shared/language/navigation-client.ts";
-import { navigationMetrics } from "../shared/language/navigation-service.ts";
 import { linkLimits, validateLinksInput } from "../../fixtures/language/links.ts";
 import type { LinksInput, LinksResult, ModuleLink } from "../../fixtures/language/links.ts";
 import { validDomainModule } from "../../fixtures/language/domain.ts";
@@ -33,7 +31,7 @@ export class HostDocumentLinks {
     private active: Session | undefined;
     private job: Job | undefined;
     private client: LinkBackend | undefined;
-    private readonly factory: LinkBackendFactory | undefined;
+    private readonly factory: LinkBackendFactory;
     private list: HTMLElement | undefined;
     private listEvents: AbortController | undefined;
     private sequence = 0;
@@ -42,12 +40,11 @@ export class HostDocumentLinks {
     private presenting = false;
     private delay = 0;
     private fault: LinksInput["fault"];
-    private readonly worker = navigationMetrics();
     private readonly metrics = { requested: 0, opened: 0, returned: 0, cancelled: 0, expired: 0, failed: 0 };
     private readonly cell = new HostCell<DocumentLinksSnapshot>({ available: false, connected: false, disconnected: false, pending: false, token: null, requestView: null, status: "idle", message: "Focus a candidate source to discover module links.", work: 0, total: 0, count: 0, page: 0, links: [], canReturn: false });
     readonly state = this.cell.observable;
     private readonly reconnectProvider: (() => void) | undefined;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, factory?: LinkBackendFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.factory = factory; }
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, factory: LinkBackendFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.factory = factory; }
     private available(s: Session): boolean {
         const tab = this.workspace.resolveTab(s.target);
         return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
@@ -126,7 +123,7 @@ export class HostDocumentLinks {
             job.timer = win.setTimeout(() => { if (this.job === job && !job.ready) { this.release(); this.metrics.failed++; this.publish({ status: "failed", message: "Link provider timed out; source is unchanged." }); } }, 30000);
             this.publish({ status: "pending", message: `Discovering exact module-import links from ${origin.id}.`, work: 0, total: doc.buffer.length, page: 0 });
             const connectionChanged = () => { if (this.client && (!this.client.snapshot().connected && !this.client.snapshot().busy || this.job?.ready && !this.current(this.job))) { this.drop(); this.release(); this.publish({ status: "failed", message: "Link connection or capture changed; discover fresh links." }); } else this.publish(); };
-            this.client ??= this.factory ? this.factory(win, connectionChanged) : createNavigationClient(win, this.worker, undefined, connectionChanged);
+            this.client ??= this.factory(win, connectionChanged);
             void this.client.links(input, doc.buffer, work => { if (this.current(job)) this.publish({ work }); }).then(result => {
                 if (!this.current(job)) { changed(); return; }
                 // Ready links retain resource ownership but allow view movement between explicit opens.
@@ -177,6 +174,6 @@ export class HostDocumentLinks {
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid links delay."); this.delay = value; }
     faultNext(value: NonNullable<LinksInput["fault"]>): void { this.fault = value; }
     faultIdle(): boolean { return this.client?.faultIdle?.() ?? false; }
-    debug() { const job = this.job; return { ...this.metrics, worker: { ...this.worker }, state: this.cell.get(), capture: job ? { input: job.input, view: job.origin.id, selections: job.capture.selectionSet } : null, companion: this.companion ?? null, aliases: [...this.aliases].map(([module, document]) => ({ module, document })), generation: this.generation, transport: this.client?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
+    debug() { const job = this.job; return { ...this.metrics, state: this.cell.get(), capture: job ? { input: job.input, view: job.origin.id, selections: job.capture.selectionSet } : null, companion: this.companion ?? null, aliases: [...this.aliases].map(([module, document]) => ({ module, document })), generation: this.generation, transport: this.client?.snapshot() ?? null, sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
     dispose(): void { if (this.disposed) return; this.cancel(); this.drop(); this.bindList(null); this.aliases.clear(); this.disposed = true; this.active = undefined; this.publish(); }
 }

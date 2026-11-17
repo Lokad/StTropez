@@ -2,9 +2,7 @@ import type { DocumentId, DocumentSnapshot, TabId, TabTarget, TextBuffer, Worksp
 import type { LspSignatureContext } from "../../src/protocol/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
 import type { CapturedViewRequest, DocumentationContent, TextEditor } from "../../src/browser/index.ts";
-import { createNavigationClient } from "../shared/language/navigation-client.ts";
-import { navigationMetrics } from "../shared/language/navigation-service.ts";
-import { signatureTriggerName, validateSignatureInput } from "../../fixtures/language/signature.ts";
+import { validateSignatureInput } from "../../fixtures/language/signature.ts";
 import type { SignatureInput, SignatureResult } from "../../fixtures/language/signature.ts";
 import { HostCell } from "../shared/observable.ts";
 type SignaturePresentation = Omit<SignatureResult, "signatures"> & Readonly<{ signatures: readonly (Omit<SignatureResult["signatures"][number], "parameters"> & Readonly<{
@@ -31,7 +29,7 @@ export class HostSignatureTools {
     private active: Session | undefined;
     private job: Job | undefined;
     private client: SignatureBackend | undefined;
-    private readonly factory: SignatureBackendFactory | undefined;
+    private readonly factory: SignatureBackendFactory;
     private readonly completionOpen: (() => boolean) | undefined;
     private armed = false;
     private disconnected = false;
@@ -41,13 +39,12 @@ export class HostSignatureTools {
     private fault: SignatureInput["fault"];
     private auto: { session: Session; timer: number; deadline: number; context: LspSignatureContext } | undefined;
     private layout: { win: Window; observer: MutationObserver; frame: number | undefined } | undefined;
-    private readonly worker = navigationMetrics();
     private readonly counts = { requested: 0, applied: 0, cancelled: 0, expired: 0, failed: 0, scheduled: 0 };
     private readonly cell = new HostCell<SignatureSnapshot>({ available: false, connected: false, disconnected: false, visible: false, pending: false,
         status: "idle", message: "Use Ctrl/Cmd+Shift+Space for signature help.", view: null, left: 8, top: 8, before: "", parameter: "", after: "", documentation: "", parameterDocumentation: "", content: emptyContent, parameterContent: emptyContent, activeSignature: 0, signatureCount: 0, argument: null, work: 0, total: 0 });
     readonly state = this.cell.observable;
     private readonly reconnectProvider: (() => void) | undefined;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, beforeRequest: () => void, factory?: SignatureBackendFactory, completionOpen?: () => boolean, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.beforeRequest = beforeRequest; this.factory = factory; this.completionOpen = completionOpen; }
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, beforeRequest: () => void, factory: SignatureBackendFactory, completionOpen?: () => boolean, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.beforeRequest = beforeRequest; this.factory = factory; this.completionOpen = completionOpen; }
     private available(s: Session): boolean {
         const tab = this.workspace.resolveTab(s.target);
         return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
@@ -121,16 +118,13 @@ export class HostSignatureTools {
     private cycle(delta: number): void { const job = this.job; if (!job?.ready || !job.result?.signatures.length || !this.current(job)) return;
         this.show(job, (this.cell.get().activeSignature + delta + job.result.signatures.length) % job.result.signatures.length); }
     readonly inspect = (): void => { if (this.active) this.request(this.active); };
-    private trigger(s: Session, inserted: boolean, character = "("): boolean {
+    private trigger(s: Session, character = "("): boolean {
         if (!this.available(s)) return false;
-        if (this.factory) { this.ensureClient(s.editor.element.ownerDocument.defaultView!); return this.client?.trigger?.(this.workspace.document(s.editor.view.documentId), character, this.armed) ?? false; }
-        const doc = this.workspace.document(s.editor.view.documentId), to = s.editor.view.getSnapshot().selection.head - (inserted ? 1 : 0);
-        return to >= 0 && signatureTriggerName(doc.buffer.slice(Math.max(0, to - 512), to));
+        this.ensureClient(s.editor.element.ownerDocument.defaultView!);
+        return this.client?.trigger?.(this.workspace.document(s.editor.view.documentId), character, this.armed) ?? false;
     }
     private ensureClient(win: Window): void {
-        this.client ??= this.factory ? this.factory(win, () => { const active = this.active; if (active) this.invalidate(active); this.publish(); }) : createNavigationClient(win, this.worker, undefined, () => {
-            const transport = this.client?.snapshot(); if (transport && !transport.connected && !transport.busy) { this.armed = false; this.drop(); this.clear("failed", "Signature provider failed; local editing remains available."); } else this.publish();
-        });
+        this.client ??= this.factory(win, () => { const active = this.active; if (active) this.invalidate(active); this.publish(); });
     }
     private request(s: Session, context: LspSignatureContext = { triggerKind: 1, isRetrigger: false }): void {
         if (this.disconnected || !this.available(s) || !this.canCapture(s.editor.view.documentId)) { this.publish({ message: "Finish pending input, navigation, table conversion or composition first." }); return; }
@@ -160,14 +154,14 @@ export class HostSignatureTools {
         editor.input.addEventListener("keydown", event => {
             if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;
             if ((event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && event.key === " ") { event.preventDefault(); event.stopImmediatePropagation(); this.active = s; this.request(s); }
-            else if (event.key === "Escape" && (this.job || this.auto || this.armed)) { if (this.factory && this.completionOpen?.()) return; event.preventDefault(); event.stopImmediatePropagation(); this.dismiss(); }
-            else if (!event.ctrlKey && !event.metaKey && !event.altKey && !this.disconnected && (this.factory ? event.key.length === 1 && this.trigger(s, false, event.key) : event.key === "(" && (this.armed || this.trigger(s, false)) || event.key === "," && this.armed)) {
+            else if (event.key === "Escape" && (this.job || this.auto || this.armed)) { if (this.completionOpen?.()) return; event.preventDefault(); event.stopImmediatePropagation(); this.dismiss(); }
+            else if (!event.ctrlKey && !event.metaKey && !event.altKey && !this.disconnected && (event.key.length === 1 && this.trigger(s, event.key))) {
                 const retrigger = this.armed; this.active = s; this.armed = true; this.clear("idle", "Signature context changed while typing."); this.schedule(s, { triggerKind: 2, triggerCharacter: event.key, isRetrigger: retrigger }); }
         }, { capture: true, signal: events.signal });
         editor.input.addEventListener("beforeinput", (event: InputEvent) => {
             if (event.defaultPrevented || event.isComposing || editor.activity().composing || this.disconnected) return;
             const prior = this.auto?.session === s && this.auto.context.triggerCharacter === event.data ? this.auto.context : undefined;
-            const trigger = this.factory ? !!event.data && this.trigger(s, true, event.data) : event.data === "(" && this.trigger(s, true), retrigger = prior?.isRetrigger ?? this.armed;
+            const trigger = (!!event.data && this.trigger(s, event.data)), retrigger = prior?.isRetrigger ?? this.armed;
             if (!this.armed && !trigger) return; this.active = s; this.armed = true; this.clear("idle", "Signature context changed while typing."); this.schedule(s, trigger && event.data ? { triggerKind: 2, triggerCharacter: event.data, isRetrigger: retrigger } : undefined);
         }, { capture: true, signal: events.signal });
         for (const event of ["compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.active === s) this.dismiss(); }, { signal: events.signal });
@@ -178,7 +172,7 @@ export class HostSignatureTools {
     setDelay(value: number): void { if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid signature delay."); this.delay = value; }
     faultNext(value: NonNullable<SignatureInput["fault"]>): void { this.fault = value; }
     faultIdle(): boolean { return this.client?.faultIdle?.() ?? false; }
-    debug() { return { ...this.counts, worker: { ...this.worker }, pending: !!this.job && !this.job.ready, scheduled: !!this.auto, sessions: this.sessions.size, subscriptions: this.cell.count(), layoutObserver: !!this.layout, layoutFramePending: this.layout?.frame !== undefined, presentation: this.cell.get(),
+    debug() { return { ...this.counts, pending: !!this.job && !this.job.ready, scheduled: !!this.auto, sessions: this.sessions.size, subscriptions: this.cell.count(), layoutObserver: !!this.layout, layoutFramePending: this.layout?.frame !== undefined, presentation: this.cell.get(),
         capture: this.job ? { document: this.job.input.document, revision: this.job.input.revision, offset: this.job.input.offset, open: this.job.result?.call?.open ?? null } : null, disposed: this.disposed }; }
     dispose(): void { if (this.disposed) return; this.dismiss(); for (const s of [...this.sessions.values()]) s.stop(); this.drop(); this.disposed = true; this.publish(); }
 }

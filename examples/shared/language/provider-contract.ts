@@ -13,5 +13,5 @@ export type ProviderController = Readonly<{ state: Observable<ProviderSnapshot>;
     customRequest?: (method: string, params: JsonValue) => Promise<JsonValue>;
     snapshot: () => Readonly<{ posted: number; received: number; applied: number; stale: number; cancelled: number; invalid: number; outOfScope?: number; failed: number; postedUnits?: number;
         completionBeforeInputEvents?: number; lastCompletionBeforeInputMs?: number; completionKeydownEvents?: number; lastCompletionKeydownMs?: number;
-        connected: boolean; pending: boolean; offer: boolean; diagnostics: number; diagnosticRevision: number; diagnosticsPending?: boolean; transport?: "worker-v1" | "lsp3.17"; protocol?: ReturnType<LspSession["snapshotOwnership"]> }> }>;
+        connected: boolean; pending: boolean; offer: boolean; diagnostics: number; diagnosticRevision: number; diagnosticsPending?: boolean; transport?: "lsp3.17"; protocol?: ReturnType<LspSession["snapshotOwnership"]> }> }>;
 export type ProviderFactory = (workspace: Workspace, tabId: TabId, editor: TextEditor, options: ProviderOptions) => ProviderController;

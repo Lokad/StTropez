@@ -71,7 +71,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await page.getByRole("button", { name: "Deliver proposal", exact: true }).click();
             await expect(primary).toHaveValue("after interrupt");
             await page.getByRole("button", { name: "Close source review", exact: true }).click();
-            await expect.poll(() => page.evaluate(() => { const { leases, views } = window.hostFixture.snapshot().diagnostics; return leases - views; })).toBe(0);
+            await expect.poll(() => page.evaluate(() => { const { diagnostics, bindings } = window.hostFixture.snapshot(); return diagnostics.leases - diagnostics.views - bindings.lsp!.documents; })).toBe(0);
         });
 
         hostTest("proposal review exposes an immutable reference, shared typing and undoable hunk reversion without remounting source views", async ({ page }) => {
@@ -175,8 +175,9 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect(after.commits.form).toBe(ready.commits.form); expect(after.commits.metadata).toBe(ready.commits.metadata);
             expect(after.diagnostics.subscriptions).toBe(ready.diagnostics.subscriptions);
             await page.evaluate(() => window.hostFixture.unmount());
-            await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().diagnostics.subscriptions)).toBe(4);
-            expect((await page.evaluate(() => window.hostFixture.snapshot())).hostSubscriptions).toBe(2); // Input-recovery and loaded-source slot observers outlive views.
+            await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().diagnostics.subscriptions)).toBe(5); // Host observers plus the retained LSP provider.
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).bindings.lsp).toMatchObject({ scopes: 1, documents: 1 }); // The open project outlives its views.
+            expect((await page.evaluate(() => window.hostFixture.snapshot())).hostSubscriptions).toBe(3); // Input recovery, loaded-source slot and LSP action/review observers outlive views.
             await page.evaluate(() => window.hostFixture.mount()); await expect(primary).toHaveValue("abcdefghij more typing");
             expect((await page.evaluate(() => window.hostFixture.snapshot())).bindings.activeViews).toBe(2);
             await page.evaluate(() => window.hostFixture.dispose());
@@ -265,7 +266,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await page.getByRole("button", { name: "Reopen primary source", exact: true }).click();
             await page.getByRole("button", { name: "Finish delayed load", exact: true }).click();
             await expect(primary).toHaveValue("new human text");
-            await expect.poll(() => page.evaluate(() => { const { leases, views } = window.hostFixture.snapshot().diagnostics; return leases - views; })).toBe(0);
+            await expect.poll(() => page.evaluate(() => { const { diagnostics, bindings } = window.hostFixture.snapshot(); return diagnostics.leases - diagnostics.views - bindings.lsp!.documents; })).toBe(0);
             await primary.evaluate((node: HTMLTextAreaElement) => node.setSelectionRange(3, 5));
             await page.getByRole("button", { name: "Begin delayed load", exact: true }).click();
             await page.getByRole("button", { name: "Move primary view", exact: true }).click();
@@ -326,7 +327,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect(await input.evaluate(node => node.ownerDocument.activeElement === node)).toBe(true);
             const after = await page.evaluate(() => window.hostFixture.snapshot());
             expect(after.source.serverVersion).toBe("v0"); expect(after.activity.writes).toBe(0); expect(after.source.dirty).toBe(true);
-            expect(after.bindings.mounts).toBe(during.bindings.mounts); expect(after.diagnostics.leases - after.diagnostics.views).toBe(0);
+            expect(after.bindings.mounts).toBe(during.bindings.mounts); expect(after.diagnostics.leases - after.diagnostics.views).toBe(after.bindings.lsp!.documents);
         });
 
         hostTest("a late Run failure preserves the focused editor while the host reports recovery", async ({ page }) => {
@@ -498,7 +499,7 @@ test(`React ${editor} root error callbacks retain resources and recover through 
     await page.getByRole("button", { name: "Inject form error", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().activity.errors)).toBeGreaterThan(0);
     await expect(primary).toHaveCount(0);
-    expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics.subscriptions).toBe(4); // Source document/metadata, connection and transfer recovery observers.
+    expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics.subscriptions).toBe(5); // Source document/metadata, connection, transfer recovery and retained LSP provider observers.
     await page.getByRole("button", { name: "Recover views", exact: true }).click();
     await expect(primary).toHaveValue("unsaved before failure");
     const after = await page.evaluate(() => window.hostFixture.snapshot());

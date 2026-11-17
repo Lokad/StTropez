@@ -12,8 +12,7 @@ export function createLspNavigationClient(workspace: Workspace, counts: Navigati
     changed: () => void, options: LspNavigationOptions): NavigationService {
     const client = createClient(options.provider), stop = client.state.subscribe(changed);
     return Object.freeze({
-        run: async (capture: NavigationInput, buffers: ReadonlyMap<string, TextBuffer>, progress: (work: number) => void, fault?: unknown, origin?: NavigationOrigin) => {
-            if (fault !== undefined) throw new Error("Worker-v1 synchronization faults do not apply to the LSP transport.");
+        run: async (capture: NavigationInput, buffers: ReadonlyMap<string, TextBuffer>, progress: (work: number) => void, origin: NavigationOrigin) => {
             const input = validateNavigationInput(capture); if (!origin || !input.documents.some(document => document.document === origin.document)) throw new Error("LSP navigation requires its captured origin.");
             const snapshots = input.documents.map(document => { const current = workspace.document(document.document as DocumentId);
                 if (current.revision !== document.revision || current.buffer !== buffers.get(document.document) || current.buffer.length !== document.length || current.key.variant !== "working") throw new Error("Document is outside the captured working project."); return current; });

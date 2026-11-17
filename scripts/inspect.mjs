@@ -95,6 +95,7 @@ try {
         await harness.page.goto(new URL(`/hosts/${mode}/?editor=candidate`, harness.page.url()).href);
         const input = harness.page.getByRole("textbox", { name: "Primary source", exact: true });
         await input.fill("const saMORE = 123; // TODO\n😀 const value = 2;");
+        await harness.page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "plain" }));
         await harness.page.getByRole("button", { name: "Open source review", exact: true }).click();
         await input.press("Control+Home"); for (let i = 0; i < 8; i++) await input.press("ArrowRight");
         await input.press("Control+Space"); await harness.page.getByRole("option", { name: "sample", exact: true }).waitFor();

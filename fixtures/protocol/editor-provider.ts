@@ -23,8 +23,7 @@ import type { ColorBackendFactory } from "../../examples/hosts/document-colors.t
 import { fixtureDocumentUri } from "./document-uri.ts";
 
 /** Explicit development-host choice. Generic session/feature code has no fixture endpoint policy. */
-export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspace; provider: ProviderFactory; hover: HoverControllerFactory; navigation: NavigationServiceFactory; rename: LspRenameFactory; actions: LspActionFactory; project: LspProjectFactory; signature: SignatureBackendFactory; links: LinkBackendFactory; colors: ColorBackendFactory }> | undefined {
-    if (new URLSearchParams(location.search).get("language") !== "lsp") return undefined;
+export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspace; provider: ProviderFactory; hover: HoverControllerFactory; navigation: NavigationServiceFactory; rename: LspRenameFactory; actions: LspActionFactory; project: LspProjectFactory; signature: SignatureBackendFactory; links: LinkBackendFactory; colors: ColorBackendFactory }> {
     const url = new URL("/lsp-fixture", location.href); url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const connect: LspSessionOptions["connect"] = context => { const abort = new AbortController(), stop = context.onCancel(() => abort.abort()); return openWebSocketTransport(url.href, { signal: abort.signal }).finally(stop); };
     const uri = (workspace: Workspace, id: DocumentId) => fixtureDocumentUri(workspace.resourceForDocument(id).id, id);
@@ -50,7 +49,7 @@ export function hostLspFactories(owner: Workspace): Readonly<{ owner: LspWorkspa
         hover: (workspace, tab, editor, canCapture) => createHoverController(workspace, tab, editor, { canCapture,
             backend: createLspHoverClient({ provider: connection,
                 beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/hover", configuration) }) }),
-        navigation: { positionQueries: true, create: (_clock, counts, changed) => createLspNavigationClient(owner, counts, changed, { provider: connection,
+        navigation: { create: (_clock, counts, changed) => createLspNavigationClient(owner, counts, changed, { provider: connection,
             beforeRequest: (session, input) => connection.prepareRequest(session, input.kind === "definition" ? "textDocument/definition" : "textDocument/references", { delay: input.delay, ...(input.fault ? { fault: input.fault } : {}) }) }) },
         rename: () => createLspRenameClient({ provider: connection,
             beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/rename", configuration) }),

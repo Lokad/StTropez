@@ -1,5 +1,5 @@
 import type { HostRenameTools, RenameNote, RenameSnapshot } from "./rename.ts";
-type RenamePanelTools = Pick<HostRenameTools, "usesLsp" | "prepare" | "apply" | "cancel" | "previousPage" | "nextPage" | "disconnect" | "reconnect" | "bindName" | "setName" | "openChanged">;
+type RenamePanelTools = Pick<HostRenameTools, "prepare" | "apply" | "cancel" | "previousPage" | "nextPage" | "disconnect" | "reconnect" | "bindName" | "setName" | "openChanged">;
 function renameActions(tools: RenamePanelTools, s: RenameSnapshot) {
     return [
         { label: "Prepare rename preview", invoke: tools.prepare, disabled: !s.available || s.disconnected || s.pending },
@@ -11,14 +11,13 @@ function renameActions(tools: RenamePanelTools, s: RenameSnapshot) {
         { label: "Reconnect rename provider", invoke: tools.reconnect, disabled: !s.disconnected && s.status !== "failed" }
     ];
 }
-export const renameDescription = "Lexical token fixture: scans captured working resources, skipping quoted strings/comments. Includes matching names in different scopes and regular expressions; no type or scope resolution. Preview every target. Dollar identifiers and truncated results are rejected.";
-export function renameDescriptionFor(tools: Pick<HostRenameTools, "usesLsp">): string { return tools.usesLsp ? "Enter a new name and request its provider edit preview, then review the captured changes before applying. Changing the name requires a fresh preview. This fixture returns lexical replacements and a source comment; it does not resolve scopes or types. Long edit text is explicitly abbreviated." : renameDescription; }
+export const renameDescription = "Enter a new name and request its provider edit preview, then review the captured changes before applying. Changing the name requires a fresh preview. This fixture returns lexical replacements and a source comment; it does not resolve scopes or types. Long edit text is explicitly abbreviated.";
 export function renameTarget(at: RenameNote, symbol: string, name: string): string { return `${at.title} · ${at.resource} · ${at.document} @ revision ${at.revision} · ${at.line + 1}:${at.column + 1} [${at.from},${at.to}) · ${at.before ?? symbol} → ${at.after ?? (name || "(enter name)")}\n${at.context}`; }
 
 /** One captured preview supplies both renderers; formatting stays lazy for retained lists. */
 export function renamePanelModel(tools: RenamePanelTools, s: RenameSnapshot) {
     return {
-        title: "Rename preview", description: renameDescriptionFor(tools), status: { label: "Rename status", text: s.message },
+        title: "Rename preview", description: renameDescription, status: { label: "Rename status", text: s.message },
         name: { label: "New identifier ", value: s.name, maxLength: 256, bind: tools.bindName, change: (value: string) => tools.setName(value) },
         actions: renameActions(tools, s),
         targets: { label: "Captured rename targets", identity: s.locations, start: s.page * 64 + 1,

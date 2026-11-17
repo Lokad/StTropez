@@ -37,11 +37,10 @@ The [development server](../scripts/serve.mjs) serves these pages:
 
 For either host, append `?editor=candidate` to use the bounded editor. The bare route and
 `?editor=native` use the whole-value textarea source baseline; their comparison working pane
-uses the bounded editor. Append `&language=lsp` to select the shared LSP fixture provider.
+uses the bounded editor. Both hosts use the shared LSP fixture provider.
 The [textarea baseline](../fixtures/textarea-editor.ts) and its CSS are fixture assets, outside
 the library and NuGet package. Development entrypoints inject that mount into the shared hosts;
 installed consumers start the host with the public `mountTextEditor` implementation.
-Without that flag, the host uses the [internal worker fixtures](#worker-protocol-v1).
 The development WebSocket endpoint `/lsp-fixture` is a fixture service, not an HTML page.
 
 ## TypeScript demo
@@ -302,7 +301,7 @@ source replacement. See [host recovery ownership](host-integration.md#input-conf
 
 ### LSP fixture and host lifecycle
 
-Use `?editor=candidate&language=lsp` for either host. The
+Use `?editor=candidate` for either host. The
 [generic fixture server](../fixtures/protocol/fixture-server.ts) uses LSP 3.17 over JSON-RPC 2.0
 and WebSocket, UTF-16 positions, and the 3.17.5 development/test reference package. It exercises
 the [supported protocol subset](language-server.md); it is separate from the real TypeScript demo.
@@ -327,7 +326,7 @@ views before captured resources, then settles tracked services and storage. See
 ## Serverless host examples
 
 These examples use the public [host integration hooks](host-integration.md). Their syntax,
-converters and forms are application policies, independent of LSP or the internal worker protocol.
+converters and forms are application policies, independent of the language provider.
 
 ### Table conversion
 
@@ -390,62 +389,16 @@ Provider folds preserve collapse choices and independent manual regions; conflic
 rejects a refresh atomically. Manually changing a provider fold's bounds relinquishes ownership.
 Text edits map folds and clear stale notes. Imports use one captured shared undo command.
 
-## Worker protocol v1
+## Server-free editing fixtures
 
-The default plain/React development hosts use internal lexical fixtures from
-[fixtures/language](../fixtures/language). They do not establish LSP compatibility.
-The `/editing/` and `/probes/` fixtures
-are provider-free: their local keyword/number/comment tokenizer requires no worker or server.
-Editing views cache up to 128 visible fragments; this is not a full grammar or multiline lexer.
+The `/editing/` and `/probes/` fixtures use a local keyword/number/comment tokenizer,
+without a worker or language server. Editing views cache up to 128 visible fragments;
+this is not a full grammar or multiline lexer. Their tests cover typing, selection,
+history, find and lifecycle independently of a provider.
 
-| Control | Fixture policy and limit |
-| --- | --- |
-| Completion, hover, scoped diagnostics | At most 4,096 UTF-16 units around the caret; at most 256 diagnostics with visible truncation. A context-boundary word cannot be partially replaced. Hover supplies literal identifier summaries for names of at most 256 units. |
-| Resident project transport | Per connection: 100 documents, 16 Mi UTF-16 units, one staged transfer, 16,384-unit acknowledged chunks and 524,288-unit replies. Staging can temporarily retain old and incoming buffers. Reply/whole-query deadlines are 5/30 seconds. |
-| Definition / references | Unicode token subset with names up to 256 units; declarations follow `const`, `let`, `var`, `function` or `class`. Comments/quoted text are skipped. At most 1,024 locations, 64 per page, with explicit truncation. No scope, type, import/alias, destructuring or template-interpolation resolution. |
-| Rename preview | The same lexical project scan; names exclude dollar identifiers and reserved names. At most 1,024 locations, 64 per page; truncated results are rejected. Identical tokens in unrelated scopes/properties can participate. |
-| Module-import action | One document up to 16 Mi units; an ASCII module name of at most 64 characters inserts an exact `import "module";` line after the BOM, preserving LF/CRLF. Existing exact imports disable the action. Complete batches permit at most 256 edits and 16,384 inserted units. |
-| Workspace review command | A separately owned project connection adds marker header/footer comments to captured working resources. Existing pairs are a no-op. At most 256 edits and 16,384 inserted units; no formatting or semantic-review claim. |
-| Signature help | One source up to 16 Mi units; known terminal names `lookup`, `format`, `café`, names up to 256 units and 128 nesting frames. At most 8 signatures, 16 parameters each, 1,024-unit labels, 2,048-unit signature docs and 1,024-unit parameter docs. Templates are opaque; semantic overload selection is absent. |
-| Module links | Exact standalone import-line policy, up to 100 captured target aliases and 1,024 links, 64 per page. Module names are at most 64 units and line prefixes 512. Alias targets carry captured identities/revisions/lengths, not transferred text. Incomplete/oversized results are rejected. |
-| Document colors | One source up to 16 Mi units; 96-unit literal tokens, 1,024 references, 64 per page. Hex3/4/6/8 and legacy comma RGB/RGBA numbers or percentages, including strings/comments. No CSS parser, named colors, HSL/HWB or modern color spaces. Presentations permit 256 edits and 16,384 inserted units; hex requires byte-representable channels so alpha is not silently rounded. |
-
-**Add navigation companion**, type `catalogue`, then F12 / **Find definition** exercises an
-unmounted destination. **Return to navigation origin** restores the complete captured selections.
-F2 prepares a rename; edit **New identifier** and explicitly apply. Ctrl/Cmd+. prepares a module
-action; editing **Action module** requires another preview. **Add module companion**, insert
-`import "sample-utils";`, then F4 discovers links; Shift+F4 returns. Unknown aliases cannot open.
-F6 discovers colors; **Proposed color** changes the host form, Enter previews, and **Apply captured
-color** confirms. `lookup(`, `format(` or `café(` triggers signature help; Ctrl/Cmd+Shift+Space
-requests it explicitly. Overload selection never edits text.
-
-The import-line scanner does not parse surrounding comments/templates or general import syntax.
-Every reply is validated as a complete captured result before presentation. Labels are literal
-text, swatches use validated numeric channels, and link activation uses registered resource
-routes rather than executing returned URI strings. The lexical navigation/rename scanners do
-not resolve regular-expression literals as language syntax.
-
-Under **Workspace provider**, register the review command before requesting edits. Application
-validates the complete captured batch and creates one shared undo command. **Last applied provider
-edits** opens a participating resource for undo. A lost acknowledgement after commit keeps the
-edit and drops the uncertain connection; reconnect does not repeat the operation. Selection
-movement does not retarget a document-relative workspace edit. Other previews retain their
-feature-specific source/selection/fold guards.
-
-[Project synchronization](../examples/shared/language/navigation-client.ts) runs before a query,
-not on ordinary typing. Immutable acknowledged buffers prove shared edges; a changed document
-sends one conservative replacement, which can include unchanged text between distant edits.
-Unchanged documents are reused and removed documents close. Packets carry version, epoch,
-sequence and document/revision identities. Chunks stage separately; only a validated complete
-commit changes resident text. Queries cannot observe partial transfers.
-
-Navigation, signature, links/colors/actions and workspace commands own their connection lifetimes;
-their retained projects are independent limits. Pending cancellation, invalid acknowledgements,
-transport failure and timeouts discard uncertain state. A new request synchronizes fresh
-snapshots; dismissing a ready result can retain an idle cache. Last-view removal and disposal
-release owned workers, listeners and leases. These policies belong to the fixtures. Public
-request/edit guarantees are documented under [host integration](host-integration.md) and
-[language features](language-features.md).
+The plain/React development hosts use the synthetic LSP peer described above. Its
+scanners exercise protocol and captured-result behavior, not TypeScript semantics.
+The public demo uses the real TypeScript providers described under language tools.
 
 ## Contributor responsibilities
 

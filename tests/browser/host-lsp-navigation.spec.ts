@@ -68,7 +68,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP inspection/nav
         }
         await button(page, "Reconnect navigation provider").click();
         expect((await snapshot(page)).source.revision).toBeGreaterThan(before.source.revision); await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
-        expect(final.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(final.hostSubscriptions).toBe(0); expect(final.bindings.navigation.worker.created).toBe(final.bindings.navigation.worker.terminated);
+        expect(final.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(final.hostSubscriptions).toBe(0);
     });
     test("review navigation and hover preserve the immutable baseline and working Save/Run identity", async ({ page }) => {
         const text = "catalogue;\r\nconst working = 1;"; await seed(page, text, 3); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForNavigation(page);

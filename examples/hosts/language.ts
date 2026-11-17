@@ -1,7 +1,6 @@
 import { createFindController, createRegexFindBackend } from "../../src/browser/index.ts";
 import type { TextEditor, FindController, FindSnapshot } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, DocumentId, FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../src/index.ts";
-import { createProviderController } from "../shared/language/provider-controller.ts";
 import type { ProviderController, ProviderFactory, ProviderSnapshot } from "../shared/language/provider-contract.ts";
 import type { JsonValue } from "../../src/protocol/index.ts";
 import { EditingPresentation } from "../shared/language/presentation.ts";
@@ -36,8 +35,8 @@ export class HostLanguageTools {
     readonly replacementRef = (element: HTMLInputElement | null): void => { this.replacementElement = element; };
     readonly toolsRef = (element: HTMLElement | null): void => { if (this.toolsElement !== element) this.cancelFindCommand(); this.toolsElement = element; };
     private retired = { posted: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, failed: 0, postedUnits: 0 };
-    constructor(workspace: Workspace, saveShortcut: SaveShortcut, options: Readonly<{ providerFactory?: ProviderFactory; canCapture?: (documentId: DocumentId) => boolean }> = {}) {
-        this.workspace = workspace; this.saveShortcut = saveShortcut; this.providerFactory = options.providerFactory ?? createProviderController; this.canCapture = options.canCapture ?? (() => true);
+    constructor(workspace: Workspace, saveShortcut: SaveShortcut, options: Readonly<{ providerFactory: ProviderFactory; canCapture?: (documentId: DocumentId) => boolean }>) {
+        this.workspace = workspace; this.saveShortcut = saveShortcut; this.providerFactory = options.providerFactory; this.canCapture = options.canCapture ?? (() => true);
     }
     private publish(): void {
         const previous = this.cell.get(), folds = this.active?.editor.view.folding.getSnapshot() ?? null;

@@ -78,8 +78,8 @@ review; these checks are not a general platform-effect proof.
 
 The public entries expose integration contracts, while internal modules own implementation
 mechanisms. Package subpaths and payload boundaries are defined in [packaging](packaging.md).
-Development worker protocols are fixtures; their behavior does not establish language-server
-compatibility. The public [language-server contract](language-server.md) defines that boundary.
+Development hosts use a synthetic LSP peer; its lexical rules do not establish language semantics.
+The public [language-server contract](language-server.md) defines the supported protocol boundary.
 
 ### Mutable state and lifetime
 

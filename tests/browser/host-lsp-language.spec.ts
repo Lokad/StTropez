@@ -23,7 +23,7 @@ async function exact(page: Page, text: string) {
 async function disposeColorsAndLinks(page: Page) {
     await page.evaluate(() => window.hostFixture.dispose()); const state = await snapshot(page);
     expect(state.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(state.hostSubscriptions).toBe(0);
-    for (const feature of [state.bindings.colors, state.bindings.links]) expect(feature).toMatchObject({ transport: null, sessions: 0, subscriptions: 0, disposed: true, worker: { created: 0 } });
+    for (const feature of [state.bindings.colors, state.bindings.links]) expect(feature).toMatchObject({ transport: null, sessions: 0, subscriptions: 0, disposed: true });
     expect(state.bindings.colors.decoratedViews).toBe(0);
 }
 for (const host of ["plain", "react"] as const) test.describe(`${host} selected LSP features`, () => {
@@ -83,7 +83,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await field(page).press("Control+End"); await field(page).pressSequentially("X"); await field(page).press("Control+Shift+Space"); await field(page).press("F4"); await field(page).press("F6"); await ready(page);
         expect(methods.filter(method => /^(textDocument\/(signatureHelp|documentLink|documentColor|colorPresentation))$/.test(method))).toEqual(requests); await exact(page, raw + "HX");
         expect((await snapshot(page)).source.exports).toBe(0); await disposeColorsAndLinks(page);
-        const final = await snapshot(page); expect(final.bindings.signature.worker.created).toBe(0); expect(final.bindings.lsp!.created).toBe(final.bindings.lsp!.terminated);
+        const final = await snapshot(page); expect(final.bindings.lsp!.created).toBe(final.bindings.lsp!.terminated);
     });
     test("paged links and colors keep unresolved targets and invalid form values inert and reject oversized lists", async ({ page }) => {
         const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));
@@ -208,7 +208,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         const history = (await snapshot(page)).history, list = page.getByLabel("Module link results", { exact: true });
         await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toHaveCount(1); await expect(list.getByRole("button")).toBeEnabled();
         await list.getByRole("button").click(); await expect.poll(async () => (await snapshot(page)).bindings.links.opened).toBe(1); await expect(field(page, "Secondary source")).toBeFocused();
-        await button(page, "Return to link origin").click(); await expect(field(page)).toBeFocused(); expect((await snapshot(page)).history).toEqual(history); expect((await snapshot(page)).bindings.links.worker.created).toBe(0);
+        await button(page, "Return to link origin").click(); await expect(field(page)).toBeFocused(); expect((await snapshot(page)).history).toEqual(history);
         await button(page, "Discover module links").click(); await expect(list.getByRole("button")).toBeEnabled();
         outside = true; await list.getByRole("button").click(); expect(outside).toBe(false);
         await expect(page.getByLabel("Module link status", { exact: true })).toContainText("outside the host"); await expect(list.getByRole("button")).toBeDisabled(); expect((await snapshot(page)).bindings.links.opened).toBe(1);
@@ -309,7 +309,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         const before = await snapshot(page), posted = before.bindings.language.sessions.find(session => session.id === "primary")!.provider.posted;
         await field(page).press("Control+Shift+Space"); await expect.poll(async () => (await snapshot(page)).bindings.signature.applied).toBe(before.bindings.signature.applied + 1); await expect(parameter).toHaveText("fallback?: string");
         expect(contexts.at(-1)).toMatchObject({ triggerKind: 1, isRetrigger: false }); expect((await snapshot(page)).bindings.language.sessions.find(session => session.id === "primary")!.provider.posted).toBe(posted);
-        expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).bindings.signature.worker.created).toBe(0);
+        expect((await snapshot(page)).history).toEqual(before.history);
         await field(page).press("Escape"); await expect(popup).not.toBeVisible();
         await seed(page, "lookup(saMORE)", 9); await field(page).press("Control+Shift+Space"); await expect(popup).toBeVisible();
         await field(page).press("Control+Space"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
@@ -346,7 +346,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await field(page).press("Escape"); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet.ranges).toHaveLength(1);
         expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).source.exports).toBe(0); await exact(page, raw);
         await disposeColorsAndLinks(page); const final = await snapshot(page);
-        expect(final.bindings.signature).toMatchObject({ pending: false, scheduled: false, sessions: 0, subscriptions: 0, layoutObserver: false, layoutFramePending: false, capture: null, worker: { created: 0 } });
+        expect(final.bindings.signature).toMatchObject({ pending: false, scheduled: false, sessions: 0, subscriptions: 0, layoutObserver: false, layoutFramePending: false, capture: null });
         expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
     });
     if (host === "react") test("100k-line signature, link resolution and a selected color presentation use bounded source controls", async ({ page }) => {
@@ -379,6 +379,5 @@ test("missing and withdrawn language capabilities fail explicitly without a work
     await expect.poll(async () => (await snapshot(page)).bindings.colors.state.pending).toBe(true);
     await page.evaluate(() => window.hostFixture.providerCustom("fixture/unregister", { unregisterations: [{ id: "selected-2", method: "textDocument/documentColor" }] }));
     await expect.poll(async () => (await snapshot(page)).bindings.colors.state.pending).toBe(false); await expect(button(page, "Apply captured color")).toBeDisabled();
-    const state = await snapshot(page); expect(state.bindings.signature.worker.created).toBe(0); expect(state.bindings.links.worker.created).toBe(0); expect(state.bindings.colors.worker.created).toBe(0);
     expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(text);
 });

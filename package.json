@@ -59,8 +59,6 @@
     "bench:host-input": "node scripts/benchmark-host-input.mjs",
     "bench:host-folding": "node scripts/benchmark-host-folding.mjs",
     "bench:host-reference": "node scripts/benchmark-host-reference.mjs",
-    "bench:host-language": "node scripts/benchmark-host-language.mjs",
-    "bench:host-navigation": "node scripts/benchmark-host-navigation.mjs",
     "bench:host-pointer": "node scripts/benchmark-host-pointer.mjs",
     "bench:host-drag-scroll": "node scripts/benchmark-host-drag-scroll.mjs",
     "bench:host-word-selection": "node scripts/benchmark-host-word-selection.mjs",
@@ -80,7 +78,7 @@
     "bench:graphemes": "node scripts/benchmark-graphemes.mjs",
     "bench:host-reference-focus": "node scripts/benchmark-host-reference-focus.mjs",
     "bench:host-table-paste": "node scripts/benchmark-host-table-paste.mjs",
-    "bench:all": "node scripts/benchmark.mjs && node scripts/benchmark-viewport.mjs && node scripts/benchmark-editing.mjs && node scripts/benchmark-services.mjs && node scripts/benchmark-bulk.mjs && node scripts/benchmark-comparison.mjs && node scripts/benchmark-hosts.mjs && node scripts/benchmark-host-language.mjs && node scripts/benchmark-save-conflicts.mjs && node scripts/benchmark-save-recovery.mjs && node scripts/benchmark-navigation.mjs && node scripts/benchmark-host-navigation.mjs && node scripts/benchmark-host-folding.mjs && node scripts/benchmark-host-table-paste.mjs && node scripts/benchmark-host-pointer.mjs && node scripts/benchmark-host-input.mjs && node scripts/benchmark-host-reference.mjs && node scripts/benchmark-bidi.mjs && node --expose-gc scripts/benchmark-paragraph.mjs && node scripts/benchmark-graphemes.mjs",
+    "bench:all": "node scripts/benchmark.mjs && node scripts/benchmark-viewport.mjs && node scripts/benchmark-editing.mjs && node scripts/benchmark-services.mjs && node scripts/benchmark-bulk.mjs && node scripts/benchmark-comparison.mjs && node scripts/benchmark-hosts.mjs && node scripts/benchmark-save-conflicts.mjs && node scripts/benchmark-save-recovery.mjs && node scripts/benchmark-navigation.mjs && node scripts/benchmark-host-folding.mjs && node scripts/benchmark-host-table-paste.mjs && node scripts/benchmark-host-pointer.mjs && node scripts/benchmark-host-input.mjs && node scripts/benchmark-host-reference.mjs && node scripts/benchmark-bidi.mjs && node --expose-gc scripts/benchmark-paragraph.mjs && node scripts/benchmark-graphemes.mjs",
     "bench:pilot": "node scripts/benchmark-host-input.mjs && node scripts/benchmark-comparison.mjs && node scripts/benchmark-save-conflicts.mjs"
   },
   "devDependencies": {

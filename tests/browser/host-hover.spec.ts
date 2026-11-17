@@ -35,7 +35,7 @@ for (const host of ["plain", "react"]) {
         expect(await page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length))).toBe(original.slice(0, 2) + "X" + original.slice(2, 7) + "X" + original.slice(7));
         expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); expect((await snapshot(page)).source.exports).toBe(0);
         const counters = (await snapshot(page)).bindings.hover.sessions.find(s => s.id === "primary")!.counters;
-        expect(counters).toMatchObject({ created: 0, posted: 2, received: 2, transport: "lsp3.17" }); expect(page.workers().some(worker => worker.url().endsWith("/provider-worker.js"))).toBe(false);
+        expect(counters).toMatchObject({ posted: 2, received: 2, transport: "lsp3.17" }); expect(page.workers().some(worker => worker.url().endsWith("/provider-worker.js"))).toBe(false);
         await page.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: "const working = 1;\r\nconst second = 2;" }]); });
         await page.getByRole("button", { name: "Open source review", exact: true }).click();
         await expect.poll(async () => (await snapshot(page)).bindings.comparison?.status).toBe("ready");
@@ -66,7 +66,7 @@ for (const host of ["plain", "react"]) {
         const at = await point(page); await page.mouse.move(at.x, at.y); await expect(tooltip(page)).toContainText("Declares a constant binding.");
         expect(await form.evaluate(node => node.ownerDocument.activeElement === node)).toBe(true); expect((await snapshot(page)).source.exports).toBe(0);
         const posted = (await snapshot(page)).bindings.hover.sessions.find(s => s.id === "primary")!.counters;
-        expect(posted).toMatchObject({ created: 0, received: 1, transport: "lsp3.17" }); expect(posted.postedUnits).toBeLessThanOrEqual(4096);
+        expect(posted).toMatchObject({ received: 1, transport: "lsp3.17" });
         replies.hold(); await page.evaluate(() => { const f = window.hostFixture; f.setSourceReadOnly(false); f.inspectSymbol("primary"); }); await expect.poll(replies.waiting).toBe(true);
         await page.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: 0, insert: "human" }]); });
         await expect(tooltip(page)).toBeHidden(); await expect.poll(replies.cancelled).toBe(true); await replies.release(); await expect(tooltip(page)).toBeHidden();
@@ -77,7 +77,7 @@ for (const host of ["plain", "react"]) {
         const history = (await snapshot(page)).history;
         await page.evaluate(() => { const f = window.hostFixture; f.unmount(); f.mount(); }); await ready(page); await expect(tooltip(page)).toBeHidden();
         await expect.poll(replies.cancelled).toBe(true); await primary(page).focus(); await replies.release(); await expect(tooltip(page)).toBeHidden();
-        expect((await snapshot(page)).bindings.hover.sessions.find(s => s.id === "primary")!.counters).toMatchObject({ created: 0, posted: 0, received: 0 });
+        expect((await snapshot(page)).bindings.hover.sessions.find(s => s.id === "primary")!.counters).toMatchObject({ posted: 0, received: 0 });
         expect((await snapshot(page)).history).toEqual(history);
         await page.evaluate(() => { const f = window.hostFixture, at = f.range(0, 100).indexOf("\r\n") + 4; f.selectSource("primary", f.snapshot().source.revision, { anchor: at, head: at }); });
         await primary(page).press("Control+k"); await primary(page).press("Control+i"); await expect(tooltip(page)).toContainText("Declares a constant binding.");

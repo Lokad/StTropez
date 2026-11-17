@@ -1,6 +1,6 @@
 import type { Affinity, TabId, Workspace } from "../../src/index.ts";
 import type { DocumentationContent, TextEditor } from "../../src/browser/index.ts";
-import { createHoverController } from "../shared/language/hover-controller.ts";
+import type { createHoverController } from "../shared/language/hover-controller.ts";
 import type { HoverSnapshot } from "../shared/language/hover-controller.ts";
 import { HostCell } from "../shared/observable.ts";
 type Session = { id: string; editor: TextEditor; controller: ReturnType<typeof createHoverController>;
@@ -21,11 +21,11 @@ export class HostHoverTools {
     private overPopup = false;
     private cancelDismiss: (() => void) | undefined;
     private layout: { observer: MutationObserver; win: Window; frame: number | undefined } | undefined;
-    private retired = { created: 0, posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0, postedUnits: 0 };
+    private retired = { posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0 };
     readonly state = this.cell.observable;
     constructor(workspace: Workspace, allowInspect: (kind: "pointer" | "keyboard") => boolean = () => true,
-        options: Readonly<{ createController?: HoverControllerFactory; canCapture?: (document: TextEditor["view"]["documentId"]) => boolean }> = {}) {
-        this.workspace = workspace; this.allowInspect = allowInspect; this.createController = options.createController ?? ((workspace, tab, editor) => createHoverController(workspace, tab, editor)); this.canCapture = options.canCapture ?? (() => true);
+        options: Readonly<{ createController: HoverControllerFactory; canCapture?: (document: TextEditor["view"]["documentId"]) => boolean }>) {
+        this.workspace = workspace; this.allowInspect = allowInspect; this.createController = options.createController; this.canCapture = options.canCapture ?? (() => true);
     }
     private clearDismiss(): void { this.cancelDismiss?.(); this.cancelDismiss = undefined; }
     private stopLayout(): void {

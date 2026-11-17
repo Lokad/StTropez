@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer } from "../src/index.ts";
 import { DocumentColorsCursor, parseColor, hexColor, rgbaColor, sameColor, validateColorsInput, validateColorsResult, validateColorPresentationInput, provideColorPresentations, validateColorPresentationsResult } from "../fixtures/language/colors.ts";
-import { ProviderProject } from "../fixtures/language/project.ts";
 const capture = (text: string) => validateColorsInput({ id: 1, document: "source", revision: 4, length: text.length, delay: 0 });
 function scan(text: string) { const input = capture(text), buffer = TextBuffer.from(text), cursor = new DocumentColorsCursor(input, buffer); let work = 0;
     for (;;) { const step = cursor.next(); assert.ok(step.work >= work && step.work - work <= 16384); work = step.work; if (step.result) { assert.equal(work, text.length); return { input, buffer, result: step.result }; } }
@@ -33,11 +32,4 @@ test("presentation validation checks every choice/edit and preserves exact alpha
     const precise = validateColorPresentationInput({ ...input, proposed: parseColor("rgba(1,2,3,.5)") }, x.buffer); assert.deepEqual(provideColorPresentations(precise).presentations.map(p => p.id), ["rgba"]);
     const last = result.presentations[1]!; for (const bad of [{ ...result, complete: false }, { ...result, discovery: 9 }, { ...result, proposed: { ...input.proposed, alpha: NaN } }, { ...result, presentations: [result.presentations[0], { ...last, edits: [{ document: "source", revision: 4, edits: [{ from: reference.from, to: reference.to, insert: "#11223344" }, { from: -1, to: 0, insert: "bad late edit" }] }] }] }, { ...result, presentations: [{ ...last, edits: [{ document: "unknown", revision: 4, edits: last.edits[0]!.edits }] }] }, { ...result, presentations: [{ ...last, edits: [{ document: "source", revision: 4, edits: [{ from: reference.from, to: reference.to, insert: "#ff0000" }] }] }] }]) assert.throws(() => validateColorPresentationsResult(bad, input));
     assert.throws(() => validateColorPresentationInput({ ...input, reference: { ...reference, text: "#bad" } }, x.buffer));
-});
-test("resident colors and presentations require acknowledged revisions, serialize scans and never mutate worker buffers", () => {
-    const project = new ProviderProject(6), send = (operation: string, fields: Record<string, unknown> = {}) => project.handle({ version: 1, epoch: 6, sequence: project.snapshot().sequence + 1, operation, ...fields }); send("project-hello"); const text = " ".repeat(50000) + "#abc", x = scan(text);
-    send("project-open", { document: "source", revision: 4, length: text.length }); for (let from = 0; from < text.length; from += 16384) send("project-chunk", { document: "source", revision: 4, from, text: text.slice(from, from + 16384) }); send("project-commit", { document: "source", revision: 4 }); const before = project.buffer("source");
-    assert.throws(() => send("project-colors", { input: { ...x.input, revision: 5 } })); send("project-colors", { input: x.input }); assert.equal(project.snapshot().colorsPending, true); assert.throws(() => send("project-close", { document: "source", revision: 4 }));
-    let work = 0, reference = x.result.colors[0]!; for (;;) { const reply = send("project-colors-next", { request: 1 }); assert.ok((reply.work as number) - work <= 16384); work = reply.work as number; if (reply.operation === "project-colors-result") { reference = validateColorsResult(reply.result, x.input, x.buffer).colors[0]!; break; } }
-    const input = validateColorPresentationInput({ ...x.input, id: 2, discovery: 1, reference, proposed: parseColor("#123456") }, x.buffer), reply = send("project-color-presentations", { input }); validateColorPresentationsResult(reply.result, input); assert.equal(project.buffer("source"), before); assert.equal(before!.readMetrics().textExports, 0); assert.throws(() => send("project-color-presentations", { input }));
 });

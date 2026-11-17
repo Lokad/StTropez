@@ -61,7 +61,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP server edits`,
         await button(page, "Run captured inputs").click(); expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id);
         expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(expected); await page.evaluate(() => window.hostFixture.finishRun());
         await button(page, "Save source").click(); await page.evaluate(() => window.hostFixture.finishSave()); await done(page);
-        expect((await snapshot(page)).source.dirty).toBe(false); await exact(page, expected); expect((await snapshot(page)).bindings.project.worker.created).toBe(0); await dispose(page);
+        expect((await snapshot(page)).source.dirty).toBe(false); await exact(page, expected);  await dispose(page);
     });
     test("decline, stale decision tokens and project authority or view changes cannot apply a partial batch", async ({ page }) => {
         await seed(page); await button(page, "Add navigation companion").click(); await register(page); const before = await snapshot(page), companion = before.bindings.navigation.companion!;
@@ -142,7 +142,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP server edits`,
         await deliver(); await expect.poll(async () => !!(await snapshot(page)).bindings.project.state.review).toBe(true); await expect(form).toBeFocused(); await exact(page, current);
         expect((await snapshot(page)).history).toEqual(before.history); await button(page, "Apply captured provider edits").click(); await done(page);
         await exact(page, header + current + footer); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
-        expect((await snapshot(page)).bindings.project.worker.created).toBe(0); expect((await snapshot(page)).source.exports).toBe(0); await dispose(page);
+         expect((await snapshot(page)).source.exports).toBe(0); await dispose(page);
     });
     test("comparison review decisions keep immutable baselines and primary Save/Run despite companion focus", async ({ page }) => {
         await seed(page); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await editors(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline; await working.focus(); await register(page); await request(page); await button(page, "Apply captured provider edits").click(); await done(page); const expected = header + raw + footer; await exact(page, expected); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline);

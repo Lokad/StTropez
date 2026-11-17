@@ -1,6 +1,6 @@
 import type { HostProjectTools, ProjectSnapshot } from "./project.ts";
 import { actionTarget } from "./actions-panel.ts";
-type ProjectPanelTools = Pick<HostProjectTools, "usesLsp" | "register" | "unregister" | "requestEdits" | "requestStatus" | "cancel" | "confirmReview" | "declineReview" | "previousReviewPage" | "nextReviewPage" | "disconnect" | "reconnect" | "openChanged">;
+type ProjectPanelTools = Pick<HostProjectTools, "register" | "unregister" | "requestEdits" | "requestStatus" | "cancel" | "confirmReview" | "declineReview" | "previousReviewPage" | "nextReviewPage" | "disconnect" | "reconnect" | "openChanged">;
 
 /** Captured decisions and lazy bounded lists shared by both host renderers. */
 export function projectPanelModel(tools: ProjectPanelTools, s: ProjectSnapshot) {
@@ -13,14 +13,14 @@ export function projectPanelModel(tools: ProjectPanelTools, s: ProjectSnapshot) 
             { label: "Request provider review edits", invoke: tools.requestEdits, disabled: unavailable || !s.registered || s.reconnectRequired },
             { label: "Request provider workspace status", invoke: tools.requestStatus, disabled: unavailable || s.reconnectRequired },
             { label: "Cancel workspace provider request", invoke: tools.cancel, disabled: !s.pending },
-            ...(tools.usesLsp ? [{ label: "Apply captured provider edits", invoke: () => tools.confirmReview(review?.token ?? null), disabled: !review?.canApply },
+            ...([{ label: "Apply captured provider edits", invoke: () => tools.confirmReview(review?.token ?? null), disabled: !review?.canApply },
                 { label: "Decline captured provider edits", invoke: () => tools.declineReview(review?.token ?? null), disabled: !review },
                 { label: "Previous provider edits", invoke: () => tools.previousReviewPage(), disabled: !review || review.page === 0 },
-                { label: "Next provider edits", invoke: () => tools.nextReviewPage(), disabled: !review || (review.page + 1) * 64 >= review.count }] : []),
+                { label: "Next provider edits", invoke: () => tools.nextReviewPage(), disabled: !review || (review.page + 1) * 64 >= review.count }]),
             { label: "Disconnect workspace provider", invoke: tools.disconnect, disabled: !s.connected && !s.pending },
             { label: "Reconnect workspace provider", invoke: tools.reconnect, disabled: !s.disconnected && !s.reconnectRequired && s.status !== "failed" }
         ],
-        review: { enabled: tools.usesLsp, visible: review !== null, identity: review, titleLabel: "Provider edit review", title: review?.label ?? "",
+        review: { enabled: true, visible: review !== null, identity: review, titleLabel: "Provider edit review", title: review?.label ?? "",
             label: "Captured provider edits", start: (review?.page ?? 0) * 64 + 1, items: () => review?.notes.map(actionTarget) ?? [] },
         changes: { label: "Provider changed resources", description: "Last applied provider edits", visible: s.changes.length > 0, disabled: s.pending,
             identity: s.changes, items: () => s.changes.map(change => ({ key: change.document, label: `Open provider changes in ${change.title}`,

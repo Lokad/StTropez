@@ -1,36 +1,22 @@
-import type { DocumentSnapshot } from "../../../src/index.ts";
 import type { LspCommandScope } from "../../../src/protocol/index.ts";
-import type { ProjectCommand, ProjectOutcome, ProjectServerRequest } from "../../../fixtures/language/project-commands.ts";
+import type { ProjectCommand, ProjectOutcome } from "../../../fixtures/language/project-commands.ts";
 import { CleanupScope } from "../cleanup-scope.ts";
 import type { ProviderBackend } from "../provider-lane.ts";
-import { createNavigationClient } from "./navigation-client.ts";
-import type { NavigationMetrics } from "./navigation-service.ts";
 import type { LspProjectClient, LspProjectFactory } from "./lsp-project-client.ts";
 
-type ProjectRequest = Readonly<{ input: ProjectCommand; documents: readonly DocumentSnapshot[];
-    accept: (request: ProjectServerRequest) => ProjectOutcome; scope: LspCommandScope }>;
+type ProjectRequest = Readonly<{ input: ProjectCommand; scope: LspCommandScope }>;
 type ProjectResult = ProjectOutcome & Readonly<{ registered: boolean }>;
 export type ProjectBackend =
-    | ProviderBackend<ProjectRequest, ProjectResult, ReturnType<LspProjectClient["snapshot"]>> & Readonly<{ kind: "lsp"; isCurrent: () => boolean }>
-    | ProviderBackend<ProjectRequest, ProjectResult, ReturnType<ReturnType<typeof createNavigationClient>["snapshot"]>> & Readonly<{ kind: "worker" }>;
+    ProviderBackend<ProjectRequest, ProjectResult, ReturnType<LspProjectClient["snapshot"]>> & Readonly<{ isCurrent: () => boolean }>;
 
-/** Host decision callbacks remain synchronous for workers and scoped/async for LSP. */
-export function createProjectBackend(clock: Pick<Window, "setTimeout" | "clearTimeout">, metrics: NavigationMetrics,
-    factory: LspProjectFactory | undefined, changed: () => void): ProjectBackend {
-    if (factory) {
-        const client = factory(), cleanup = new CleanupScope(); cleanup.defer(client.dispose);
-        try {
-            cleanup.defer(client.subscribe(changed));
-            return Object.freeze({ kind: "lsp" as const,
-                run: ({ input, scope }: ProjectRequest) => client.run(input, scope), isCurrent: client.isCurrent,
-                cancel: cleanup.dispose, dispose: cleanup.dispose, faultIdle: client.faultIdle, snapshot: client.snapshot,
-            });
-        } catch (error) { cleanup.rollback(error); }
-    }
-    const client = createNavigationClient(clock, metrics, undefined, changed);
-    return Object.freeze({ kind: "worker" as const,
-        run: ({ input, documents, accept }: ProjectRequest) => client.command(input, new Map(documents.map(document => [document.id, document.buffer])), accept),
-        // Cancelling an uncertain command ends its connection; the host drops its lane.
-        cancel: client.dispose, dispose: client.dispose, faultIdle: client.faultIdle, snapshot: client.snapshot,
-    });
+/** Captured commands retain the LSP client and its host review scope. */
+export function createProjectBackend(factory: LspProjectFactory, changed: () => void): ProjectBackend {
+    const client = factory(), cleanup = new CleanupScope(); cleanup.defer(client.dispose);
+    try {
+        cleanup.defer(client.subscribe(changed));
+        return Object.freeze({
+            run: ({ input, scope }: ProjectRequest) => client.run(input, scope), isCurrent: client.isCurrent,
+            cancel: cleanup.dispose, dispose: cleanup.dispose, faultIdle: client.faultIdle, snapshot: client.snapshot,
+        });
+    } catch (error) { return cleanup.rollback(error); }
 }

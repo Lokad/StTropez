@@ -228,17 +228,17 @@ export class ViewBindings {
             return !this.tablePaste.hasPendingInput(documentId) && !(this.review?.working.view.documentId === documentId && busy(this.review.working.activity())) && ![...this.mounted.values()].some(value => value.documentId === documentId && busy(value.candidate?.activity()));
         };
         const lsp = hostLspFactories(controller.workspace);
-        this.lspOwner = lsp?.owner;
-        const reconnectProvider = lsp ? () => { void lsp.owner.reconnect().catch(controller.reportError); } : undefined;
-        this.language = new HostLanguageTools(controller.workspace, (event, field, target, composing) => this.handleSaveShortcut(event, field, target, composing), { canCapture, ...(lsp ? { providerFactory: lsp.provider } : {}) });
-        this.hover = new HostHoverTools(controller.workspace, kind => { if (kind === "pointer") return !this.signature?.state.getSnapshot().visible; this.signature?.dismiss(); return true; }, lsp ? { createController: lsp.hover, canCapture } : {});
-        this.navigation = new HostNavigationTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.navigation, reconnectProvider);
-        this.project = new HostProjectTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.project, lsp?.owner, undefined, reconnectProvider);
-        this.colors = new HostDocumentColors(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.colors, reconnectProvider);
-        this.links = new HostDocumentLinks(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.links, reconnectProvider);
-        this.actions = new HostActionsTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.actions, this.project, lsp?.owner, reconnectProvider);
-        this.rename = new HostRenameTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp?.rename, reconnectProvider);
-        this.signature = new HostSignatureTools(controller.workspace, canCapture, () => this.hover.dismiss(), lsp?.signature,
+        this.lspOwner = lsp.owner;
+        const reconnectProvider = () => { void lsp.owner.reconnect().catch(controller.reportError); };
+        this.language = new HostLanguageTools(controller.workspace, (event, field, target, composing) => this.handleSaveShortcut(event, field, target, composing), { canCapture, providerFactory: lsp.provider });
+        this.hover = new HostHoverTools(controller.workspace, kind => { if (kind === "pointer") return !this.signature?.state.getSnapshot().visible; this.signature?.dismiss(); return true; }, { createController: lsp.hover, canCapture });
+        this.navigation = new HostNavigationTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.navigation, reconnectProvider);
+        this.project = new HostProjectTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.project, lsp.owner, undefined, reconnectProvider);
+        this.colors = new HostDocumentColors(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.colors, reconnectProvider);
+        this.links = new HostDocumentLinks(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.links, reconnectProvider);
+        this.actions = new HostActionsTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.actions, this.project, lsp.owner, reconnectProvider);
+        this.rename = new HostRenameTools(controller.workspace, canCapture, documentId => this.presentNavigationDocument(documentId), lsp.rename, reconnectProvider);
+        this.signature = new HostSignatureTools(controller.workspace, canCapture, () => this.hover.dismiss(), lsp.signature,
             () => { const provider = this.language.state.getSnapshot().provider; return !!provider && (provider.pending || provider.offerText !== null); }, reconnectProvider);
         this.tools = [this.language, this.hover, this.tablePaste, this.domain, this.navigation, this.project,
             this.signature, this.rename, this.actions, this.links, this.colors];

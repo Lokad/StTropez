@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { SignatureScanner, signatureTriggerName, validateSignatureInput, validateSignatureResult } from "../fixtures/language/signature.ts";
-import { ProviderProject } from "../fixtures/language/project.ts";
 function scan(text: string, size = 16384) {
     const input = validateSignatureInput({ id: 1, document: "source", revision: 2, length: text.length, offset: text.length, delay: 0 }), scanner = new SignatureScanner();
     for (let from = 0; from < text.length; from += size) scanner.feed(text.slice(from, from + size), from);
@@ -43,15 +42,4 @@ test("input bounds and incomplete scans are rejected before worker state can be 
     const input = validateSignatureInput({ id: 1, document: "source", revision: 0, length: 10, offset: 10, delay: 0 });
     for (const patch of [{ id: 0 }, { revision: -1 }, { offset: 11 }, { length: 16777217 }, { delay: 1001 }]) assert.throws(() => validateSignatureInput({ ...input, ...patch }));
     assert.throws(() => new SignatureScanner().result(input), /Incomplete/);
-});
-test("actual project signature continuations lock mutations, require synchronized revisions and scan at most16k units per reply", () => {
-    const text = "const unchanged = 123;\r\n".repeat(2000) + "lookup('key', ", project = new ProviderProject(3);
-    const send = (operation: string, fields: Record<string, unknown> = {}) => project.handle({ version: 1, epoch: 3, sequence: project.snapshot().sequence + 1, operation, ...fields });
-    send("project-hello"); send("project-open", { document: "source", revision: 2, length: text.length });
-    for (let from = 0; from < text.length; from += 16384) send("project-chunk", { document: "source", revision: 2, from, text: text.slice(from, from + 16384) }); send("project-commit", { document: "source", revision: 2 });
-    const input = validateSignatureInput({ id: 9, document: "source", revision: 2, length: text.length, offset: text.length, delay: 0 });
-    assert.throws(() => send("project-signature", { input: { ...input, revision: 3 } }), /synchronized/); send("project-signature", { input });
-    assert.throws(() => send("project-close", { document: "source", revision: 2 }), /Complete the signature/); let work = 0, reply;
-    do { reply = send("project-signature-next", { request: input.id }); if (reply.operation.endsWith("progress")) { assert.ok((reply.work as number) - work <= 16384); work = reply.work as number; } } while (!reply.operation.endsWith("result"));
-    assert.equal(work, text.length); assert.equal(validateSignatureResult(reply.result, input).call?.argument, 1); assert.equal(project.buffer("source")!.readMetrics().textExports, 0); assert.equal(project.snapshot().signaturePending, false);
 });

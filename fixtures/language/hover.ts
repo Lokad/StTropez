@@ -28,15 +28,3 @@ export function provideHover(input: HoverInput): HoverResult {
     }
     return Object.freeze({ operation: "hover", id: input.id, revision: input.revision, range: null, text: "" });
 }
-
-/** Reject the entire response before publishing any range or text. Rendering uses textContent. */
-export function validateHoverResult(value: unknown, input: HoverInput): HoverResult | undefined {
-    if (!record(value) || value.operation !== "hover" || value.id !== input.id || value.revision !== input.revision || typeof value.text !== "string" || value.text.length > 2048) return undefined;
-    if (value.range === null) return value.text === "" ? Object.freeze({ operation: "hover", id: input.id, revision: input.revision, range: null, text: "" }) : undefined;
-    if (!record(value.range) || !integer(value.range.from) || !integer(value.range.to) || value.range.from < 0 || value.range.to <= value.range.from
-        || value.range.to > input.text.length || input.offset < value.range.from || input.offset > value.range.to || !value.text.length) return undefined;
-    const splitPair = (at: number) => at > 0 && at < input.text.length && /[\ud800-\udbff]/.test(input.text[at - 1]!) && /[\udc00-\udfff]/.test(input.text[at]!);
-    if (splitPair(value.range.from) || splitPair(value.range.to)) return undefined;
-    return Object.freeze({ operation: "hover", id: input.id, revision: input.revision,
-        range: Object.freeze({ from: value.range.from, to: value.range.to }), text: value.text });
-}
