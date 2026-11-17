@@ -11,7 +11,7 @@ export type DiffRange = Readonly<{ from: number; to: number; lineFrom: number; l
 export type DiffHunk = Readonly<{ baseline: DiffRange; working: DiffRange; whitespaceOnly: boolean }>;
 export type DiffProgress = Readonly<{ status: KernelStatus; work: number; readUnits: number; lineComparisons: number; lineEdits: number; hunks: readonly DiffHunk[]; failure: string | null }>;
 type Cache = { baseline: TextBuffer; serial: number; reference: Index | undefined; working: Index | undefined;
-    equalities?: DiffEqualitySnapshot; alphabet?: ReadonlySet<string> | null; alignment?: AlignmentPlan | undefined };
+    equalities?: DiffEqualitySnapshot; alphabet?: ReadonlySet<string> | null; alignment?: AlignmentPlan | undefined; frontier?: FrontierPlan | undefined };
 const referenceCaches = new WeakMap<DiffReferenceCache, { current: Cache | undefined }>();
 
 /** Retains reference/working metadata and bounded exact proofs from completed captures. */
@@ -20,6 +20,36 @@ export class DiffReferenceCache {
     dispose(): void { referenceCaches.delete(this); }
 }
 type Region = Readonly<{ a0: number; a1: number; b0: number; b1: number }>;
+type FrontierPoint = Readonly<{ distance: number; radius: number; origin: number; forward: Int32Array; reverse: Int32Array; seenF: number; seenR: number }>;
+type FrontierPlan = Readonly<{ working: Index; region: Region; points: readonly FrontierPoint[] }>;
+type FrontierCapture = { previous: FrontierPlan | undefined; plan?: FrontierPlan; first: boolean };
+const frontierLimits = Object.freeze({ rows: 65536, changedRows: 256, firstDistance: 16, lastDistance: 2048, comparisons: 100000 });
+
+/** A wave is reusable only while both directions remain strictly outside the changed rows.
+ * Candidate bounds are dependencies too: changing the row count can make a rejected move valid. */
+function* retainedFrontier(plan: FrontierPlan, right: Index, region: Region, stats: Stats): Generator<void, number> {
+    const old = plan.working, prior = plan.region;
+    if (tick(stats, 4)) yield;
+    if (region.a0 !== prior.a0 || region.a1 !== prior.a1 || region.b0 !== prior.b0) return -1;
+    if (old.buffer === right.buffer) return region.b1 === prior.b1 ? plan.points.length - 1 : -1;
+    const edges = yield* lineEdges(old.buffer, right.buffer, stats);
+    const from = edges.aFrom === old.to ? old.lines.size : old.buffer.lineAt(edges.aFrom);
+    const to = edges.aTo === old.to ? old.lines.size : old.buffer.lineAt(edges.aTo);
+    const end = edges.bTo === right.to ? right.lines.size : right.buffer.lineAt(edges.bTo);
+    if (from < prior.b0 || to > prior.b1 || Math.max(to - from, end - from) > frontierLimits.changedRows
+        || region.b1 !== prior.b1 + end - to) return -1;
+    for (let index = plan.points.length - 1; index >= 0; index--) {
+        const point = plan.points[index]!;
+        if (tick(stats, 3)) yield;
+        if (point.seenF < from - prior.b0 && point.seenR < prior.b1 - to && point.seenF + point.seenR < region.b1 - region.b0) return index;
+    }
+    return -1;
+}
+function* copyFrontier(forward: Int32Array, reverse: Int32Array, stats: Stats): Generator<void, readonly [Int32Array<ArrayBuffer>, Int32Array<ArrayBuffer>]> {
+    const f = new Int32Array(forward.length), r = new Int32Array(reverse.length);
+    for (let index = 0; index < f.length; index++) { f[index] = forward[index]!; r[index] = reverse[index]!; if (tick(stats, 2)) yield; }
+    return [f, r];
+}
 function* equalLine(a: Index, b: Index, ai: number, bi: number, stats: Stats, prove = true): Generator<void, boolean> {
     stats.lineComparisons++;
     if (tick(stats)) yield;
@@ -193,20 +223,43 @@ function* orderedCommonAlignment(left: Index, right: Index, region: Region, stat
     if (a0 < region.a1 || b0 < region.b1) changes.push({ a0, a1: region.a1, b0, b1: region.b1 });
     return changes;
 }
-function* bisect(a: Index, b: Index, region: Region, stats: Stats): Generator<void, readonly [number, number] | Readonly<{ changes: readonly Region[] }>> {
+function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: FrontierCapture): Generator<void, readonly [number, number] | Readonly<{ changes: readonly Region[] }>> {
     const n = region.a1 - region.a0, m = region.b1 - region.b0, maximum = Math.ceil((n + m) / 2), delta = n - m;
     let radius = 0, origin = 1, forward = new Int32Array(3).fill(-1), reverse = new Int32Array(3).fill(-1);
     if (tick(stats, 6)) yield;
     forward[origin + 1] = 0; reverse[origin + 1] = 0;
+    let resumeDistance = 0, seenF = 0, seenR = 0;
+    const points: FrontierPoint[] = [];
+    if (capture) {
+        const prior = capture.previous, retained = prior ? yield* retainedFrontier(prior, b, region, stats) : -1;
+        if (prior && retained >= 0) {
+            for (let index = 0; index <= retained; index++) { points.push(prior.points[index]!); if (tick(stats)) yield; }
+            const point = points.at(-1)!;
+            radius = point.radius; origin = point.origin; resumeDistance = point.distance; seenF = point.seenF; seenR = point.seenR;
+            [forward, reverse] = yield* copyFrontier(point.forward, point.reverse, stats);
+        }
+        capture.plan = { working: b, region, points };
+    }
     const start = (vector: Int32Array, diagonal: number): number => {
         const index = origin + diagonal, insert = vector[index + 1]!, remove = vector[index - 1]! < 0 ? -1 : vector[index - 1]! + 1;
+        if (capture) {
+            const extent = Math.max(0, insert >= 0 && insert <= n ? insert - diagonal : 0, remove >= 0 && remove <= n ? remove - diagonal : 0);
+            if (vector === forward) seenF = Math.max(seenF, extent); else seenR = Math.max(seenR, extent);
+        }
         const valid = (x: number) => x >= 0 && x <= n && x - diagonal >= 0 && x - diagonal <= m;
         return Math.max(valid(insert) ? insert : -1, valid(remove) ? remove : -1);
     };
-    for (let distance = 0; distance <= maximum; distance++) {
+    for (let distance = resumeDistance; distance <= maximum; distance++) {
+        // Eight geometric checkpoints retain at most 65,472 vector bytes for the first split.
+        if (capture && distance >= frontierLimits.firstDistance && distance <= frontierLimits.lastDistance
+            && (distance & (distance - 1)) === 0 && (points.at(-1)?.distance ?? -1) < distance) {
+            const [f, r] = yield* copyFrontier(forward, reverse, stats);
+            points.push(Object.freeze({ distance, radius, origin, forward: f, reverse: r, seenF, seenR }));
+        }
         // Preserve cheap small-edit searches and ownership proofs. Only after a bounded
         // frontier effort, try exact alphabet proofs before expanding further.
-        if (distance === 64 && Math.min(n, m) >= 64) {
+        // An old failed alphabet shortcut depends on the whole region; recheck it after an edit.
+        if ((distance === 64 || distance === resumeDistance && resumeDistance > 64) && Math.min(n, m) >= 64) {
             const changes = yield* singleTokenAlignment(a, b, region, stats);
             if (changes) return { changes };
             const ordered = yield* orderedCommonAlignment(a, b, region, stats);
@@ -226,7 +279,7 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats): Generator<vo
         }
         for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
             let x = start(forward, diagonal), y = x - diagonal;
-            if (x >= 0) { const same = yield* commonLines(a, b, { a0: region.a0 + x, a1: region.a1, b0: region.b0 + y, b1: region.b1 }, false, stats); x += same; y += same; }
+            if (x >= 0) { const same = yield* commonLines(a, b, { a0: region.a0 + x, a1: region.a1, b0: region.b0 + y, b1: region.b1 }, false, stats); x += same; y += same; if (capture) seenF = Math.max(seenF, y + 1); }
             forward[origin + diagonal] = x;
             const opposite = origin + delta - diagonal;
             if (x >= 0 && delta % 2 !== 0 && opposite >= 0 && opposite < reverse.length && reverse[opposite]! >= 0 && x >= n - reverse[opposite]!) return [region.a0 + x, region.b0 + y];
@@ -234,7 +287,7 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats): Generator<vo
         }
         for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
             let x = start(reverse, diagonal), y = x - diagonal;
-            if (x >= 0) { const same = yield* commonLines(a, b, { a0: region.a0, a1: region.a1 - x, b0: region.b0, b1: region.b1 - y }, true, stats); x += same; y += same; }
+            if (x >= 0) { const same = yield* commonLines(a, b, { a0: region.a0, a1: region.a1 - x, b0: region.b0, b1: region.b1 - y }, true, stats); x += same; y += same; if (capture) seenR = Math.max(seenR, y + 1); }
             reverse[origin + diagonal] = x;
             const opposite = origin + delta - diagonal;
             if (x >= 0 && delta % 2 === 0 && opposite >= 0 && opposite < forward.length && forward[opposite]! >= 0 && forward[opposite]! >= n - x) {
@@ -286,13 +339,15 @@ function range(buffer: TextBuffer, from: number, to: number): DiffRange {
 function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, serial = 0): Generator<void, readonly DiffHunk[]> {
     try {
         const prior = cache?.alignment; let alphabet = cache?.alphabet;
-        if (a === b) { if (cache?.serial === serial) cache.alignment = undefined; return Object.freeze([]); }
+        if (a === b) { if (cache?.serial === serial) { cache.alignment = undefined; cache.frontier = undefined; } return Object.freeze([]); }
         const left = yield* indexLines(a, stats, cache?.reference);
         if (cache?.serial === serial) cache.reference = left;
         const right = yield* indexLines(b, stats, cache?.working ?? left);
         if (cache) stats.equalities = yield* prepareEqualities(right, cache.equalities, stats);
         if (cache?.serial === serial) cache.working = right;
         const reused = prior ? yield* reuseAlignment(prior, right, stats) : undefined;
+        const frontier: FrontierCapture | undefined = cache && left.lines.size <= frontierLimits.rows && right.lines.size <= frontierLimits.rows
+            ? { previous: cache.frontier, first: true } : undefined;
         const tasks: Region[] = [{ a0: 0, a1: left.lines.size, b0: 0, b1: right.lines.size }], changes: Region[] = [];
         const append = (change: Region) => {
             const previous = changes.at(-1);
@@ -313,7 +368,9 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
                 if (matchA < 0) append({ a0, a1, b0, b1 });
                 else { tasks.push({ a0: matchA + 1, a1, b0: matchB + 1, b1 }); tasks.push({ a0, a1: matchA, b0, b1: matchB }); }
             } else {
-                const split = yield* bisect(left, right, { a0, a1, b0, b1 }, stats);
+                const capture = frontier?.first ? frontier : undefined;
+                if (frontier) frontier.first = false;
+                const split = yield* bisect(left, right, { a0, a1, b0, b1 }, stats, capture);
                 if ("changes" in split) { split.changes.forEach(append); continue; }
                 const [ai, bi] = split;
                 if ((ai === a0 && bi === b0) || (ai === a1 && bi === b1)) throw new Error("Comparison split did not make progress.");
@@ -354,6 +411,9 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
         if (cache?.serial === serial) {
             if (alphabet !== undefined) cache.alphabet = alphabet;
             cache.alignment = capturePlan && alphabet ? Object.freeze({ working: right, alphabet, changes: Object.freeze(changes), hunks: Object.freeze(regionHunks!) }) : undefined;
+            const previous = frontier?.previous, captured = frontier?.plan;
+            cache.frontier = reused ? previous && previous.working === reused.plan.working ? Object.freeze({ ...previous, working: right }) : previous
+                : captured?.points.length && stats.lineComparisons >= frontierLimits.comparisons ? Object.freeze({ ...captured, points: Object.freeze([...captured.points]) }) : undefined;
         }
         return Object.freeze(hunks);
     } finally { stats.identities.clear(); stats.equalities = undefined; stats.textProof = undefined; }

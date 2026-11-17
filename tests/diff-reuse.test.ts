@@ -298,14 +298,44 @@ test("edits to unmatched rows reuse raw alignment and re-trim exact hunks throug
         assert.ok(result.work < 10000, `${result.work} units for unchanged line alignment`);
         assert.equal(JSON.stringify(initial.hunks), retained);
     }
-    // New matches, changed row counts and unknown long tokens require fresh alignment.
+    // Changed equality/row counts re-run alignment, but can resume unaffected frontier waves.
     for (const insert of ["row 0\n", "new\nrow\n", "x".repeat(300) + "\n"]) {
         finish(baseline, working, cache);
         const capture = working.replace(at, text.indexOf("\n", at) + 1, insert);
         const result = finish(baseline, capture, cache), expected = finish(baseline, capture);
         assert.deepEqual(result.hunks, expected.hunks); assert.equal(result.lineEdits, expected.lineEdits);
         reconstruct(result, original, capture.slice(0, capture.length));
+        assert.ok(result.lineComparisons < expected.lineComparisons * 0.9, "resume a proven wave instead of repeating the entire frontier");
     }
+    cache.dispose();
+});
+
+test("frontier reuse survives cancellation and failure without publishing superseded captures", () => {
+    const original = Array.from({ length: 2000 }, (_, i) => `row ${i % 20}\n`).join("");
+    const text = original.replaceAll("row 0\n", "changed 0\n").replaceAll("row 10\n", "changed 10\n").replaceAll("row 11\n", "row 11\nrow 11\n");
+    const baseline = TextBuffer.from(original), working = TextBuffer.from(text), cache = new DiffReferenceCache();
+    const at = text.indexOf("changed ", text.length / 2) + 3, split = working.replace(at, at, "\n");
+    const expected = finish(baseline, split);
+    assert.ok(finish(baseline, working, cache).lineComparisons >= 100000, "retain an eligible expensive frontier");
+    const cancelled = new TextDiff(baseline, split, cache); assert.equal(cancelled.next(4096).status, "running"); cancelled.dispose();
+    const slice = TextBuffer.prototype.slice, failure = new Error("captured frontier read failed");
+    const failed = new TextDiff(baseline, split, cache);
+    try {
+        TextBuffer.prototype.slice = function (from, to) { if (this === split) throw failure; return slice.call(this, from, to); };
+        assert.throws(() => { while (failed.next(512).status === "running") { /* Stop at the captured read. */ } }, error => error === failure);
+        assert.equal(failed.snapshot().status, "failed");
+    } finally { TextBuffer.prototype.slice = slice; failed.dispose(); }
+    const resumed = finish(baseline, split, cache);
+    assert.deepEqual(resumed.hunks, expected.hunks);
+    assert.ok(resumed.lineComparisons < expected.lineComparisons * 0.9, "failed/cancelled captures preserve the last completed frontier");
+    finish(baseline, working, cache);
+    const old = new TextDiff(baseline, split, cache); assert.equal(old.next(4096).status, "running");
+    finish(baseline, baseline, cache); // A newer successful comparison clears both retained plans.
+    let late = old.next(512); while (late.status === "running") late = old.next(512);
+    assert.deepEqual(late.hunks, expected.hunks); old.dispose();
+    const after = finish(baseline, split, cache);
+    assert.deepEqual(after.hunks, expected.hunks);
+    assert.ok(after.lineComparisons > expected.lineComparisons * 0.95, "a stale completion cannot republish its saved frontier");
     cache.dispose();
 });
 

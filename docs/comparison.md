@@ -149,9 +149,20 @@ alphabet. A later capture reuses that alignment only when row count is unchanged
 old/new row in an ownership-proven changed window is absent from the reference. Affected
 regions receive fresh character trimming and whitespace classification; untouched later hunks
 shift by the exact UTF-16 offset delta. Retention is bounded to 65,536 rows per side and 4,096
-regions; verification checks at most 256 changed rows. Unknown tokens, new matches, changed row
-counts and insufficient ownership coverage use full alignment. Failed or cancelled jobs cannot
-publish a retained plan. Complex comparisons can require full alignment work. Dispose the cache
+regions; verification checks at most 256 changed rows. Unknown tokens, new matches and changed
+row counts require alignment rather than directly reusing the raw regions.
+
+The cache can also retain up to eight frontier checkpoints from the first bisection of an
+expensive completed comparison, with fewer than 64 KiB of vector storage. A later job can resume
+a checkpoint when the reference/trimmed region agree and ownership proves that every earlier
+move validation and equality probe stays strictly outside the changed rows in both directions.
+This includes row-count changes and new matches; affected decisions are recomputed. Verification
+bounds the changed window to 256 rows on each side and captures to 65,536 rows per side. Whole-region
+alphabet shortcuts are rechecked after an edit. Unproved or overlapping frontiers restart normally.
+Copying retained vectors is charged cooperative work; cache reuse preserves canonical hunk choices.
+
+Failed or cancelled jobs cannot publish a retained plan. Complex comparisons can require full
+alignment work. Dispose the cache
 when its owner ends. Reference replacement resets retained captures; active jobs keep their own
 captures, and late jobs cannot replace a newer cache result. The controller owns its cache.
 A disposed cache cannot start a new diff job.
