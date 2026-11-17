@@ -14,12 +14,15 @@ import { runPackageTransitions } from "./package-transitions.mjs";
 import { stageHostFixture, within } from "./package-react-host.mjs";
 import { qualifyPackageExports } from "./package-exports.mjs";
 import { consumerScenario } from "./package-scenarios.mjs";
+import { emptyConsumerDirectory } from "./package-consumer.mjs";
 
 const scenario = consumerScenario(process.argv);
 const hunkOnly = scenario === "hunk";
 const transitionsOnly = scenario === "transitions";
 const skipTransitions = process.argv.includes("--skip-transitions");
 const reusePath = process.argv.find(arg => arg.startsWith("--reuse-consumer="))?.slice("--reuse-consumer=".length);
+const consumerDirectory = process.argv.find(arg => arg.startsWith("--consumer-directory="))?.slice("--consumer-directory=".length);
+assert.ok(!consumerDirectory || !reusePath, "A new consumer directory cannot also be a reused stage.");
 const reactOnly = scenario === "react", prepareOnly = process.argv.includes("--prepare-only");
 const lspOnly = scenario === "lsp";
 const activationOnly = scenario === "activation";
@@ -41,6 +44,7 @@ const packageSha256 = createHash("sha256").update(archive).digest("hex");
 const reused = reusePath ? JSON.parse(await readFile(reusePath, "utf8")) : undefined;
 assert.ok(!transitionsOnly || (!reused && !skipTransitions), "Transition qualification requires its own install sequence.");
 if (reused) assert.equal(reused.packageSha256, packageSha256, "Staged consumer belongs to a different package; restore the selected artifact again.");
+assert.ok(!reused?.retention?.removed && reused?.retention?.state !== "removing", "Consumer was removed or is being removed; qualify a fresh stage.");
 const entries = unzipSync(archive);
 const assets = JSON.parse(strFromU8(entries["assets/manifest.json"]));
 assert.equal(strFromU8(entries["assets/UNICODE-LICENSE.txt"]), await readFile("licenses/Unicode-3.0.txt", "utf8"));
@@ -64,7 +68,8 @@ assert.ok(!/<dependency\b/.test(nuspec), "Package must not depend on managed or 
 assert.match(nuspec, /<license type="expression">MIT<\/license>/);
 
 // Separate directory, local feed and isolated restore cache; no checkout/source fallback.
-const consumer = await realpath(reused?.consumer ?? await mkdtemp(join(tmpdir(), "sttropez-consumer-")));
+const consumer = await realpath(reused?.consumer ?? (consumerDirectory
+    ? await emptyConsumerDirectory(consumerDirectory) : await mkdtemp(join(tmpdir(), "sttropez-consumer-"))));
 assert.ok(!within(project, consumer), "Consumer must remain outside the checkout.");
 if (!reused) {
 await cp("tests/fixtures/consumer", consumer, { recursive: true });
@@ -350,7 +355,7 @@ try {
         esbuild: JSON.parse(await readFile("node_modules/esbuild/package.json", "utf8")).version,
         actualText: await editor.inputValue(), storage, history, viewport, candidate, capturedSelection, navigation, wordSelection, bidi, paragraph, font, graphemes, find, caseFind, regex, folding, clipboardBoundary, selectionSets, multipleInput, comparison, readonlyIndent, findAuthority, saveReview, style, errors }, null, 2));
     console.log("Restored package: declarations, storage/mappings, modules, visible CSS and actual edit passed. Evidence: artifacts/package/");
-    console.log(`Isolated consumer retained for inspection: ${consumer}`);
+    console.log(`Isolated consumer: ${consumer}`);
     await page.close();
     }
     if (reactOnly) {
@@ -382,7 +387,7 @@ try {
     if (!reactOnly && (hunkOnly || !pilotOnly)) await runPackagedHunkPilot(browser, `http://127.0.0.1:${server.address().port}`, {
         directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), benchmark,
     });
-    console.log(`Restored integrated pilot passed in ${browserName}. Consumer retained: ${consumer}`);
+    console.log(`Restored integrated pilot passed in ${browserName}. Consumer: ${consumer}`);
 } finally {
     await browser?.close();
     stopFixture();

@@ -32,6 +32,7 @@ const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 const archivePath = "artifacts/nuget/feed/StTropez.Assets.0.0.0-local.nupkg", archive = await readFile(archivePath);
 const packageSha256 = hash(archive), reused = JSON.parse(await readFile(reusePath, "utf8"));
 assert.equal(reused.packageSha256, packageSha256, "Staged consumer belongs to a different package.");
+assert.ok(!reused.retention?.removed && reused.retention?.state !== "removing", "Consumer was removed or is being removed; qualify a fresh stage.");
 const consumer = await realpath(reused.consumer), assetRoot = await realpath(reused.assetRoot);
 assert.ok(!within(project, consumer) && within(await realpath(tmpdir()), consumer) && basename(consumer).startsWith("sttropez-consumer-"));
 assert.ok(relative(consumer, assetRoot).replaceAll("\\", "/").startsWith("obj/sttropez/"));

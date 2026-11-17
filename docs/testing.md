@@ -48,7 +48,8 @@ independently against the public source entries using `tsconfig.base.json`.
 The development project also checks the JavaScript entries listed in `tsconfig.json` and
 their imports: measurement, package scenarios, the browser harness, its server and the demo
 library catalogue, plus asset entry metadata, building, declaration finalization and shared
-Unicode generation I/O. Other scripts are outside its JavaScript checking scope.
+Unicode generation I/O and package consumer ownership. Other scripts are outside its
+JavaScript checking scope.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected
 Chromium gate and the static-demo Chromium journey. A passing CI run has that scope;
@@ -334,6 +335,19 @@ route even if library bytes match, because runtime and erased type imports must 
 The lower-level `--reuse-consumer=<metadata>` option checks the package hash and staged root.
 Lower-level `--*-only` workload flags are mutually exclusive; use the coordinator's
 `--scenarios` option to qualify multiple workloads against one restored artifact.
+
+The coordinator creates and owns one temporary consumer per run. After every selected route
+and final identity check passes, it removes that directory. Pass `--keep-consumer` to retain
+a successful run for inspection. Failures preserve the consumer; standalone preparation,
+benchmark and borrowed-stage commands retain their existing directories. Cleanup verifies the
+original directory identity and does not follow directory links into borrowed locations.
+
+Each run records scenario metadata and a retention receipt under
+`artifacts/package/qualification/<consumer-name>/`; `artifacts/package/qualification/receipt.json`
+identifies the latest run. Receipts distinguish running, kept, failed and removed consumers and
+record file-byte counts before removal. Metadata marked removed or being removed cannot be
+reused. Evidence is written outside the consumer before cleanup; historical directories are
+not swept. Counts describe file sizes, not allocated disk space.
 
 Each consuming route has its own integration purpose: public exports/declarations and CSS,
 wire protocol, framework lifetime, review, deferred activation or the actual demo host. Its
