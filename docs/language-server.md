@@ -204,6 +204,15 @@ Keep a host scope when unmounted project documents must participate. `scope.disc
 that scope's work; owner `disconnect()` and `reconnect()` change the shared connection. Scope
 disposal releases its calls, handlers and participation; owner disposal closes every scope.
 
+`scope.captureBinding(binding)` supplies an immutable `LspBindingCapture` for a synchronized
+binding without adding participation. Its `document` identifies the captured binding and
+`getSnapshot()` reads the current local Core snapshot, including edits awaiting synchronization.
+This guard survives scope request cancellation and local revisions; URI replacement, binding
+closure, registration/connection changes or scope disposal make the read return `undefined`.
+Use it with separate operation ownership and a proved edit mapping when retaining completion
+choices. It supplies no freshness guarantee for a provider result's ranges. Ordinary synchronized
+captures and captured requests retain their revision and scope-intent checks.
+
 URI identity is exact and opaque. `documentInfo` determines the URI/language pair when a document
 joins. Replace participation or the provider explicitly when configuration changes. Local revision,
 resource/document identity and wire version are separate. Local edits expire captures immediately;

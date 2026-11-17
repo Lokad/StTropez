@@ -10,6 +10,24 @@ import { LspWorkspace, createLspHoverClient, createLspCommandRunner, createLspSi
 const settled = async () => { await setImmediate(); await setImmediate(); };
 const latch = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; };
 
+test("binding captures read local revisions across request cancellation and expire with provider authority", async t => {
+    const f = fixture(t), scope = f.provider.createScope(), handle = scope.attachDocument(f.source.documentId);
+    t.after(scope.dispose); await scope.connect(); await scope.flush([handle]);
+    const exact = scope.synchronized(handle)!, binding = scope.captureBinding(handle)!, owner = f.provider.snapshot();
+    assert.equal(binding.getSnapshot(), f.workspace.document(f.source.documentId)); scope.disconnect();
+    assert.equal(exact.isCurrent(), false); assert.equal(binding.getSnapshot(), f.workspace.document(f.source.documentId));
+    const before = handle.getSnapshot(), stop = f.workspace.observeDocument(f.source.documentId).subscribe(() => {
+        assert.equal(binding.getSnapshot(), f.workspace.document(f.source.documentId)); assert.equal(handle.getSnapshot(), before);
+    }); t.after(stop); f.edit(); stop(); assert.deepEqual(f.provider.snapshot(), owner);
+    await scope.flush([handle]); await f.peers[0]!.rpc.sendRequest("client/registerCapability", {
+        registrations: [{ id: "hover", method: "textDocument/hover", registerOptions: { documentSelector: null } }] });
+    assert.equal(binding.getSnapshot(), undefined);
+    const registered = scope.captureBinding(handle)!; assert.ok(registered.getSnapshot());
+    await f.provider.reconnect(); await scope.flush([handle]); assert.equal(registered.getSnapshot(), undefined);
+    const reconnected = scope.captureBinding(handle)!; assert.ok(reconnected.getSnapshot());
+    scope.dispose(); assert.equal(reconnected.getSnapshot(), undefined); await settled(); assert.equal(f.workspace.diagnostics().leases, 0);
+});
+
 test("feature options for other documents preserve pending and completed captures without acquiring participation", async t => {
     let excludeCompanion = false, policyError: Error | undefined;
     const f = fixture(t, { features: ["textDocument/signatureHelp"], documentInfo: doc => {

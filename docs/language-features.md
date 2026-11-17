@@ -13,7 +13,7 @@ and command execution have their own [connection policy](language-server.md#comm
 
 | Feature | Client or controller | Enabled method |
 | --- | --- | --- |
-| Completion | `createLspEditor` from `sttropez/browser` | `textDocument/completion` |
+| Completion | `createLspCompletionClient`; browser `createLspEditor` | `textDocument/completion` |
 | Hover | `createLspHoverClient` | `textDocument/hover` |
 | Signature help | `createLspSignatureClient` | `textDocument/signatureHelp` |
 | Definition / references | `createLspNavigationClient` | `textDocument/definition` / `textDocument/references` |
@@ -118,11 +118,63 @@ none of this metadata grants edit authority.
 
 ### Completion
 
+`createLspCompletionClient(provider)` owns headless completion requests, decoding, resolution
+and retained choice batches. `run(document, offset, options?, prepare?)` returns `{ result,
+cancel }`; its result is an immutable `LspCompletionBatch` with `items`, `omitted`, `incomplete`,
+the local `document`/`offset`, and separate `isCurrent()` and `isBindingCurrent()` guards.
+Items use stable `sortText` order. Options capture indentation, a lazy fallback edit range and
+trigger context. `snapshot().received` counts completion-list replies admitted for decoding,
+including malformed lists; resolve replies use their separate operation.
+
+`resolve(batch, item, prepare?)` returns a cancellable operation whose result supplies a new
+`batch`, the resolved `item`, and `reason: null`. Unsupported lazy snippet syntax removes that
+choice, adds its omission to the new batch and returns `item: null` with a reason. Other decode
+failures reject the operation. Only items issued in this client's current batch are accepted.
+Publishing a replacement batch expires the old batch; neither operation applies text.
+
+`rebase(batch, document)` reads the actual current Core change and returns a replacement batch
+only for a proved single human typing insertion inside every retained choice's primary range.
+It works during document notifications without rebinding or synchronizing. Unknown changes,
+host edits, skipped revisions and expired binding authority refuse adoption. Resolution of an
+adopted choice captures and synchronizes its new revision before sending the original opaque
+wire item. The host chooses which typed characters qualify as a prefix and guards its view.
+
+Passing `retain: batch` to `run` preserves that current batch while a replacement list is
+pending. Cancelling that pending call preserves the retained choices; a new reply replaces
+them. Client `cancel()` expires all choices. Binding, URI, registration, connection and disposal
+changes cannot revive a retained batch. Diagnostics participation has an independent scope.
+
+Read completion labels without mounting a view:
+
+```ts
+import { createLspCompletionClient } from "sttropez/protocol";
+import type { LspWorkspace } from "sttropez/protocol";
+import type { DocumentSnapshot } from "sttropez";
+
+export async function completionLabels(
+    provider: LspWorkspace,
+    document: DocumentSnapshot,
+    offset: number
+) {
+    const client = createLspCompletionClient(provider);
+    try {
+        const batch = await client.run(document, offset).result;
+        return batch.isCurrent() ? batch.items.map(item => item.label) : [];
+    } finally {
+        client.dispose();
+    }
+}
+```
+
 `createLspEditor(workspace, tab, editor, options)` coordinates completion and diagnostics for
-one mounted view. It owns capture guards, input listeners, resolution and acceptance; the host
-renders its observable choices and status. `destroy()` releases that controller without disposing
+one mounted view. It uses the headless completion client and owns view guards, input listeners
+and acceptance; the host renders its observable choices and status. `destroy()` releases that controller without disposing
 the editor or provider. `request()` invokes completion explicitly; `automatic: false` disables
 automatic invocation. `canCapture` supplies an additional host readiness guard.
+Each mounted controller keeps a diagnostic scope and a completion scope; they share the
+document binding and workspace lease.
+`prepareCompletion` receives the completion request's scope after synchronization. Cancellation
+before that stage skips the callback; cancelled preparation cannot publish or retarget its result.
 
 Automatic completion follows ordinary prefix typing and advertised trigger characters after
 input settles, with one collapsed caret and no active composition. Ctrl/Cmd+Space invokes it

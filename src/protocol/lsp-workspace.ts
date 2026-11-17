@@ -21,12 +21,17 @@ export type LspWorkspaceScope = Omit<LspSessionAccess, "state"> & Readonly<{
     /** Read-only handle/snapshot validation, including Workspace edits not yet synchronized. */
     isDocumentCurrent: (document: LspDocument, snapshot: LspDocumentSnapshot) => boolean;
     captureProject: () => ReadonlyMap<string, LspDocumentCapture>;
+    /** Binding/connection authority independent of this scope's request generation; no new retention. */
+    captureBinding: (document: LspDocument) => LspBindingCapture | undefined;
     observeDiagnostics: (document: LspDocument) => Observable<LspDiagnosticState>;
     reserveCommand: () => Readonly<{ isCurrent: () => boolean; release: () => void }>;
     resolveTarget: LspTargetResolver;
     /** Route deferred host callback failures through the provider's existing onError policy. */
     reportError: (error: unknown) => void;
 }>;
+export type LspBindingCapture = Readonly<{ document: LspDocumentSnapshot;
+    /** Current local snapshot, including edits awaiting synchronization; undefined after binding authority expires. */
+    getSnapshot: () => DocumentSnapshot | undefined }>;
 export type LspDiagnosticState = Readonly<{ status: "empty" | "current" | "pending" | "expired"; result: LspDiagnostics | null;
     received: number; stale: number; invalid: number;
     /** Provider result still belongs to the synchronized source; always false for mapped pending results. */
@@ -319,6 +324,15 @@ export class LspWorkspace {
                 for (const [id, document] of [...documents]) if (!ids.has(id as DocumentId)) document.close(); return new Map(documents);
             },
             captureProject: () => { writable(); return new Map([...documents.values()].map(document => { const value = capture(document); if (!value) throw stale(); return [value.document.uri, value] as const; })); },
+            captureBinding: document => {
+                const entry = handles.get(document); if (!scope.active || !entry?.active || !this.live(entry)) return;
+                const value = this.session.synchronized(entry.binding); if (!value) return;
+                return Object.freeze({ document: value.document, getSnapshot: () => {
+                    if (!scope.active || this.disposed || handles.get(document) !== entry || !entry.active || !value.isBindingCurrent?.()) return;
+                    const current = this.workspace.observeDocument(entry.id).getSnapshot();
+                    return current?.resourceId === value.document.resourceId ? current : undefined;
+                } });
+            },
             bindDocument: snapshot => {
                 writable(); const live = this.workspace.document(snapshot.documentId as DocumentId), info = this.options.documentInfo(live);
                 if (live.resourceId !== snapshot.resourceId || live.revision !== snapshot.revision || live.buffer !== snapshot.buffer || info?.uri !== snapshot.uri || info.languageId !== snapshot.languageId) throw stale();

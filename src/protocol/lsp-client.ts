@@ -65,7 +65,7 @@ export function createLspClient(provider: LspWorkspace) {
         finally { request.pending--; if (current(request)) notify(); }
     };
     const request = (snapshots: readonly DocumentSnapshot[], origin: DocumentId, method: LspDocumentFeature,
-        params: (capture: LspDocumentCapture) => Record<string, JsonValue>, prepare?: LspPrepare) => {
+        params: (capture: LspDocumentCapture) => Record<string, JsonValue>, prepare?: LspPrepare, wireMethod?: "completionItem/resolve") => {
         if (disposed) throw new Error("LSP feature client is disposed.");
         invalidate(false);
         let reject!: (error: Error) => void;
@@ -86,12 +86,17 @@ export function createLspClient(provider: LspWorkspace) {
             if (prepare) await prepare(scope);
             validate(op);
             let capture: LspDocumentCapture | undefined, captures: ReadonlyMap<string, LspDocumentCapture> | undefined;
-            const call = scope.requestDocument(method, target, (_index, _document, value) => {
+            const captureParams = (value: LspDocumentCapture) => {
                 validate(op);
-                captures = scope.captureProject();
-                capture = value;
+                captures = scope.captureProject(); capture = value;
                 return params(value);
-            });
+            };
+            const call = wireMethod ? (() => {
+                if (!scope.canRequest(method, target)) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable.");
+                const value = scope.synchronized(target); if (!value) throw stale();
+                const body = captureParams(value); validate(op);
+                return scope.request(wireMethod, body);
+            })() : scope.requestDocument(method, target, (_index, _document, value) => captureParams(value));
             const response = await call.result;
             validate(op);
             const isGenerationCurrent = () => current(op) && scope.state.getSnapshot().phase === "ready"
