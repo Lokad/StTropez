@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { setImmediate } from "node:timers/promises";
 import { Workspace } from "../src/index.ts";
 import { DemoRecovery } from "../examples/demo/recovery.ts";
 import type { DraftStore, StoredDraft } from "../examples/hosts/draft-store.ts";
@@ -181,17 +182,21 @@ test("unsupported recovery data remains stored and cannot mutate current files",
 });
 
 test("automatic recovery exports text after the edit notification and clears its own saved draft", { timeout: 5000 }, async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
     const store = new MemoryDraftStore(); store.row = null;
     const f = fixture(store); t.after(() => f.recovery.dispose()); await ready(f.recovery);
     f.edit();
     assert.equal(f.workspace.document(f.files[0]!.resource.documentId).buffer.readMetrics().textExports, 0);
-    await new Promise<void>(resolve => {
+    const protectedDraft = new Promise<void>(resolve => {
         const stop = f.recovery.state.subscribe(() => { if (f.recovery.state.getSnapshot().status === "protected") { stop(); resolve(); } });
     });
+    t.mock.timers.runAll(); await protectedDraft;
     assert.match(JSON.stringify(store.row), /newer original a.ts/);
     assert.equal(store.writes, 1);
     // Notices for other sample slots must not trigger repeated writes of unchanged dirty files.
-    await f.recovery.refresh(); await new Promise(resolve => setTimeout(resolve, 400));
+    // Finish any queued read before advancing its timer, then settle promise-based writes.
+    await f.recovery.refresh(); await setImmediate();
+    t.mock.timers.runAll(); await setImmediate();
     assert.equal(store.writes, 1);
     const tickets = f.files.map(file => f.workspace.captureSave(file.resource));
     for (const ticket of tickets) { ticket.start(); ticket.accept({ serverVersion: "saved" }); ticket.finish(); }
@@ -202,12 +207,14 @@ test("automatic recovery exports text after the edit notification and clears its
 });
 
 test("save completion awaits exact-token cleanup of an older owned draft and preserves peer replacements", { timeout: 5000 }, async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
     for (const peer of [false, true]) {
         const store = new MemoryDraftStore(); store.row = null;
         const f = fixture(store); t.after(() => f.recovery.dispose()); await ready(f.recovery); f.edit();
-        await new Promise<void>(resolve => {
+        const protectedDraft = new Promise<void>(resolve => {
             const stop = f.recovery.state.subscribe(() => { if (f.recovery.state.getSnapshot().status === "protected") { stop(); resolve(); } });
         });
+        t.mock.timers.runAll(); await protectedDraft;
         const owned = store.row; f.edit(); // Saved text differs from the owned draft, before its next checkpoint.
         const tickets = f.files.map(file => f.workspace.captureSave(file.resource));
         for (const ticket of tickets) { ticket.start(); ticket.accept({ serverVersion: "saved" }); ticket.finish(); }
