@@ -7,12 +7,12 @@ import { EditingPresentation } from "../shared/language/presentation.ts";
 import { HostCell } from "../shared/observable.ts";
 
 type Session = { id: string; editor: TextEditor; tab: TabId; target: TabTarget; saveTarget: TabTarget; presentation: EditingPresentation;
-    provider?: ProviderController; reference?: ComparisonBaseline; find?: FindController; stopFind?: () => void; initialized: boolean };
+    provider?: ProviderController; stopProvider?: () => void; providerError?: string; reference?: ComparisonBaseline; find?: FindController; stopFind?: () => void; initialized: boolean };
 type DetachedOwner = Readonly<{ id: string; target: TabTarget; documentId: DocumentId; reference?: ComparisonBaseline }>;
 type FindCommand = Readonly<{ kind: "navigate"; direction: 1 | -1 } | { kind: "replace"; text: string }>;
 
 type SaveShortcut = (event: KeyboardEvent, control: HTMLElement, target: TabTarget, composing: () => boolean) => void;
-type LanguageSnapshot = Readonly<{ readOnlyReference: boolean; view: string | null; provider: ProviderSnapshot | null; find: FindSnapshot | null; folds: FoldingSnapshot | null; foldMessage: string; query: string; replacement: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean }>;
+type LanguageSnapshot = Readonly<{ readOnlyReference: boolean; view: string | null; provider: ProviderSnapshot | null; providerError: string | null; find: FindSnapshot | null; folds: FoldingSnapshot | null; foldMessage: string; query: string; replacement: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean }>;
 
 /** Host-owned tools follow an explicit mounted view; delayed commands never consult focus later. */
 export class HostLanguageTools {
@@ -26,7 +26,7 @@ export class HostLanguageTools {
     private stopFolds: (() => void) | undefined;
     private pendingFind: { kind: FindCommand["kind"]; session: Session; stop: () => void } | undefined;
     private foldSerial = 0;
-    private readonly cell = new HostCell<LanguageSnapshot>({ readOnlyReference: false, view: null, provider: null, find: null, folds: null, foldMessage: "", query: "", replacement: "", wholeWord: false, matchCase: true, regularExpression: false });
+    private readonly cell = new HostCell<LanguageSnapshot>({ readOnlyReference: false, view: null, provider: null, providerError: null, find: null, folds: null, foldMessage: "", query: "", replacement: "", wholeWord: false, matchCase: true, regularExpression: false });
     readonly state = this.cell.observable;
     private queryElement: HTMLInputElement | null = null;
     private replacementElement: HTMLInputElement | null = null;
@@ -41,7 +41,7 @@ export class HostLanguageTools {
     private publish(): void {
         const previous = this.cell.get(), folds = this.active?.editor.view.folding.getSnapshot() ?? null;
         this.cell.set({ ...previous, readOnlyReference: this.active?.reference !== undefined, view: this.active?.id ?? null, provider: this.active?.provider?.state.getSnapshot() ?? null,
-            find: this.active?.find?.state.getSnapshot() ?? null, folds, foldMessage: folds === previous.folds ? previous.foldMessage : "" });
+            providerError: this.active?.providerError ?? null, find: this.active?.find?.state.getSnapshot() ?? null, folds, foldMessage: folds === previous.folds ? previous.foldMessage : "" });
     }
     private activate(session: Session, initialize = true): void {
         this.detachedOwner = undefined;
@@ -69,29 +69,40 @@ export class HostLanguageTools {
         if (compatible && !this.active) this.activate(session, false);
     }
     clearRetainedView(): void { this.cancelFindCommand(); this.detachedOwner = undefined; }
-    attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void {
-        if (this.sessions.has(id)) throw new Error("Language view already mounted.");
-        const provider = this.providerFactory(this.workspace, tab, editor, { autoConnect: false, canCapture: () => this.canCapture(editor.view.documentId) });
-        const target = this.workspace.captureTab(tab), session: Session = { id, tab, target, saveTarget: target, editor, presentation, provider, initialized: false }, listeners = new AbortController();
-        this.sessions.set(id, session);
+    private attachProvider(session: Session): void {
+        const { tab, editor, presentation } = session;
+        let provider: ProviderController;
+        try { provider = this.providerFactory(this.workspace, tab, editor, { autoConnect: false, canCapture: () => this.canCapture(editor.view.documentId) }); }
+        catch (error) {
+            // Provider construction owns its partial cleanup. Local editing and Find keep their view.
+            session.providerError = error instanceof Error ? error.message : String(error);
+            if (this.active === session) this.publish();
+            return;
+        }
+        session.provider = provider; delete session.providerError;
         const update = () => {
             const state = provider.state.getSnapshot(), previous = presentation.diagnostics;
             presentation.diagnostics = { revision: state.diagnosticRevision, ranges: state.diagnostics };
             if (previous?.revision !== state.diagnosticRevision || previous.ranges !== state.diagnostics) editor.viewport.invalidate();
             if (this.active === session) this.publish();
         };
-        const unsubscribe = provider.state.subscribe(update);
+        session.stopProvider = provider.state.subscribe(update); update();
+    }
+    attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void {
+        if (this.sessions.has(id)) throw new Error("Language view already mounted.");
+        const target = this.workspace.captureTab(tab), session: Session = { id, tab, target, saveTarget: target, editor, presentation, initialized: false }, listeners = new AbortController();
+        this.sessions.set(id, session); this.attachProvider(session);
         editor.input.addEventListener("focus", () => this.activate(session), { signal: listeners.signal });
         editor.input.addEventListener("keydown", event => {
             if (event.isComposing || editor.activity().composing || event.defaultPrevented) return;
             if ((event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && (event.code === "BracketLeft" || event.code === "BracketRight")) {
                 event.preventDefault(); this.activate(session); if (event.code === "BracketLeft") this.foldSelection(); else this.expandFolds();
             } else if (this.findKey(event, session)) return;
-            else if ((event.ctrlKey || event.metaKey) && !event.altKey && event.code === "Space") { event.preventDefault(); this.activate(session); provider.request(); }
-            else if (event.altKey && event.key === "Enter" && provider.state.getSnapshot().offerText !== null) { event.preventDefault(); provider.apply("replace"); }
-            else if (event.key === "Escape" && (provider.state.getSnapshot().pending || provider.state.getSnapshot().offerText !== null)) { event.preventDefault(); provider.cancel(); }
+            else if ((event.ctrlKey || event.metaKey) && !event.altKey && event.code === "Space") { event.preventDefault(); this.activate(session); session.provider?.request(); }
+            else if (event.altKey && event.key === "Enter" && session.provider?.state.getSnapshot().offerText != null) { event.preventDefault(); session.provider.apply("replace"); }
+            else if (event.key === "Escape" && (session.provider?.state.getSnapshot().pending || session.provider?.state.getSnapshot().offerText != null)) { event.preventDefault(); session.provider?.cancel(); }
         }, { signal: listeners.signal });
-        update(); this.resume(session); return this.detachSession(session, listeners, unsubscribe);
+        this.resume(session); return this.detachSession(session, listeners);
     }
     attachReferenceFind(id: string, target: TabTarget, editor: TextEditor, presentation: EditingPresentation, baseline: ComparisonBaseline, saveTarget: TabTarget, resume = false): () => void {
         if (this.sessions.has(id)) throw new Error("Find view already mounted.");
@@ -194,7 +205,7 @@ export class HostLanguageTools {
         else if (enter) { event.preventDefault(); if (replacement) this.replaceCurrent(); else if (event.shiftKey) this.previous(); else this.next(); }
         else { event.preventDefault(); owned.session.find?.cancel(); owned.session.editor.focus(); }
     };
-    private detachSession(session: Session, listeners: AbortController, unsubscribe: () => void = () => {}): () => void {
+    private detachSession(session: Session, listeners: AbortController): () => void {
         let detached = false;
         return () => {
             if (detached) return; detached = true;
@@ -203,7 +214,7 @@ export class HostLanguageTools {
                 this.detachedOwner = Object.freeze({ id: session.id, target: session.target, documentId: session.editor.view.documentId, ...(session.reference ? { reference: session.reference } : {}) });
                 this.stopFolds?.(); this.stopFolds = undefined;
             }
-            unsubscribe(); listeners.abort(); session.stopFind?.(); session.find?.destroy();
+            session.stopProvider?.(); listeners.abort(); session.stopFind?.(); session.find?.destroy();
             const counts = session.provider?.snapshot(); if (counts) for (const key of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[key] += counts[key] ?? 0;
             session.provider?.destroy(); session.presentation.clear(); this.sessions.delete(session.id);
             if (this.active === session) this.active = undefined; this.publish();
@@ -232,7 +243,11 @@ export class HostLanguageTools {
     readonly replace = (completionId?: number): void => { this.active?.provider?.apply("replace", completionId); };
     readonly cancel = (): void => { this.active?.provider?.cancel(); };
     readonly disconnect = (): void => { this.active?.provider?.disconnect(); };
-    readonly reconnect = (): void => { if (this.active) { this.active.initialized = true; this.active.provider?.disconnect(); this.active.provider?.connect(); } };
+    readonly reconnect = (): void => {
+        const session = this.active; if (!session || session.reference) return;
+        if (!session.provider) this.attachProvider(session); else session.provider.disconnect();
+        session.initialized = true; session.provider?.connect();
+    };
     readonly setQuery = (query: string): void => { this.cancelFindCommand(); this.cell.set({ ...this.cell.get(), query }); this.ensureFind(); };
     readonly setWholeWord = (wholeWord: boolean): void => { this.cancelFindCommand(); this.cell.set({ ...this.cell.get(), wholeWord }); this.ensureFind(); };
     readonly setMatchCase = (matchCase: boolean): void => { this.cancelFindCommand(); this.cell.set({ ...this.cell.get(), matchCase }); this.ensureFind(); };

@@ -14,7 +14,7 @@ function languageActions(tools: LanguagePanelTools, state: LanguageSnapshot) {
         { label: "Replace completion", invoke: capturedCommand(tools, state, () => tools.replace(state.provider?.completionId)), disabled: !offered || !!state.provider?.pending },
         { label: "Cancel request", invoke: tools.cancel, disabled: !providerAvailable },
         { label: "Disconnect provider", invoke: tools.disconnect, disabled: !state.provider?.connected },
-        { label: "Reconnect provider", invoke: tools.reconnect, disabled: !providerAvailable },
+        { label: "Reconnect provider", invoke: tools.reconnect, disabled: !available || state.readOnlyReference },
         { label: "Find next", invoke: tools.next, disabled: !found },
         { label: "Find previous", invoke: tools.previous, disabled: !found },
         { label: "Replace current", invoke: tools.replaceCurrent, disabled: !found || state.readOnlyReference },
@@ -39,7 +39,8 @@ export function languagePanelModel(tools: LanguagePanelTools, state: LanguageSna
     return {
         label: "Language and find tools", title: "Language and find", bind: tools.toolsRef, key: tools.keyFromTools,
         help: "Ctrl+Space requests completion; Alt+Enter replaces it. Ctrl+F finds, Ctrl+H replaces, F3 moves to the next match, and Escape returns to source. Ctrl+S saves the working source.",
-        status: { label: "Language status", text: state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider?.message ?? "Focus a source view to use language actions." },
+        status: { label: "Language status", text: state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider?.message
+            ?? (state.providerError !== null ? `Language provider unavailable: ${state.providerError} Local editing and Find remain available. Use Reconnect provider to retry.` : "Focus a source view to use language actions.") },
         choices: { label: "Completion choices", identity: String(completionId), selected: state.provider?.choiceIndex ?? 0,
             items: () => labels.map((label, index) => ({ key: `${completionId}:${index}:${label}`, label,
                 invoke: capturedCommand(tools, state, () => tools.chooseCompletion(index, completionId)) } as const)) },

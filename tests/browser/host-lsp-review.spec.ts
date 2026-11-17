@@ -17,6 +17,30 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP revie
     test.beforeEach(async ({ page }) => {
          await page.goto(`/hosts/${mode}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await ready(page);
     });
+    test("rejected provider attachment retains review and retries without leaking scopes or leases", async ({ page }) => {
+        const original = ("const sa = 1; // " + "x".repeat(1000) + "\r\n").repeat(3100);
+        await seed(page, original, 0); await button(page, "Open source review").click(); await ready(page);
+        const working = field(page, "Comparison working source"), status = page.getByLabel("Language status", { exact: true });
+        await working.focus(); await expect(status).toContainText("LSP document size limit exceeded.");
+        await expect(status).toContainText("Local editing and Find remain available."); await expect(button(page, "Request completion")).toBeDisabled();
+        const before = await snapshot(page); expect(before.bindings.comparison).not.toBeNull(); expect(before.lastError).toBeNull();
+        for (let i = 0; i < 2; i++) {
+            await button(page, "Reconnect provider").click(); await expect(status).toContainText("LSP document size limit exceeded.");
+            const after = await snapshot(page);
+            expect(after.diagnostics).toMatchObject({ leases: before.diagnostics.leases, views: before.diagnostics.views, subscriptions: before.diagnostics.subscriptions });
+            expect(after.bindings.lsp).toMatchObject({ scopes: before.bindings.lsp!.scopes, documents: before.bindings.lsp!.documents, documentParticipants: before.bindings.lsp!.documentParticipants });
+        }
+        await working.press("Control+Home"); await working.pressSequentially("!"); await ready(page); expect(await source(page)).toBe("!" + original);
+        await working.press("Control+z"); await ready(page); expect(await source(page)).toBe(original);
+        await page.evaluate(() => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: "const sa" }]); });
+        await ready(page); await button(page, "Reconnect provider").click();
+        await expect.poll(async () => (await provider(page, "comparison")).connected).toBe(true); await expect(status).not.toContainText("unavailable");
+        await working.press("Control+End"); await working.press("Control+Space"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
+        await working.press("Alt+Enter"); await ready(page); expect(await source(page)).toBe("const sample");
+        await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
+        expect(final.diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 }); expect(final.hostSubscriptions).toBe(0);
+        expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, documentParticipants: 0 });
+    });
     test("LSP completion in conflict review preserves its reference and captured Save/Run identities", async ({ page }) => {
         const original = "const local = 1; // TODO", remote = "const remote = 9;\r\n"; await seed(page, original, original.length);
         await page.evaluate(text => window.hostFixture.externalWrite(text), remote); await button(page, "Save source").click(); await button(page, "Finish save").click();

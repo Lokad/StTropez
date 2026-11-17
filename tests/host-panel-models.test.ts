@@ -88,7 +88,7 @@ test("domain annotation callbacks retain session and revision when another view 
 test("language result callbacks cannot follow a newer view or diagnostic batch while rendering stays snapshot-only", () => {
     type Snapshot = Parameters<typeof languagePanelModel>[1];
     const chosen: [number, number | undefined][] = [], inserted: (number | undefined)[] = [], diagnostics: number[] = [];
-    const state: Snapshot = Object.freeze({ readOnlyReference: false, view: "primary", find: null, folds: null, foldMessage: "Captured folds", query: "sa", replacement: "sample", wholeWord: false, matchCase: true, regularExpression: false,
+    const state: Snapshot = Object.freeze({ readOnlyReference: false, view: "primary", providerError: null, find: null, folds: null, foldMessage: "Captured folds", query: "sa", replacement: "sample", wholeWord: false, matchCase: true, regularExpression: false,
         provider: Object.freeze({ message: "Captured offer", connected: true, pending: false, offerText: "sample", completionId: 17, choices: Object.freeze(["sample"]),
             diagnostics: Object.freeze([Object.freeze({ from: 5, to: 9, message: "First diagnostic" })]), diagnosticRevision: 1 }) });
     let current = state, reads = 0;

@@ -205,6 +205,11 @@ See the [table conversion example](examples.md#table-conversion) for one bounded
 
 ### Tokenization, annotations and forms
 
+Treat semantic-provider attachment as an optional host service boundary. A rejected attachment
+must retain local editing, review and Find, expose its reason, and offer an explicit retry for
+the captured view. Release partial provider scopes and document leases before reporting failure;
+the retry owns its subscriptions until that view detaches. Keep provider resource limits intact.
+
 Use the [viewport decoration contract](viewport.md#mounting-and-presentation) for source-offset classes on
 presented fragments. Cache lexical results by document identity and revision, bound requested
 source reads, and invalidate presentation when host results change. A fragment boundary is not
