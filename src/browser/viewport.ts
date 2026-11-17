@@ -4,7 +4,7 @@ import type { DocumentId, DocumentSnapshot, DocumentView, TabId, Workspace } fro
 import type { Selection } from "../core/history.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
-import type { ViewState } from "./index.ts";
+import type { ViewState } from "./view-state.ts";
 import { scrollAxis } from "./scroll.ts";
 import type { ScrollAxis } from "./scroll.ts";
 import { rowGeometry } from "./text-geometry.ts";

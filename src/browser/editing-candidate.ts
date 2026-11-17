@@ -11,7 +11,7 @@ import type { SelectionSet } from "../core/selections.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import type { TextEdit } from "../core/changes.ts";
 import type { GraphemeCursor, GraphemeIndex } from "../core/graphemes.ts";
-import type { ViewState } from "./index.ts";
+import type { ViewState } from "./view-state.ts";
 import { inputContext, inputContextUnits } from "./input-context.ts";
 import { localAsciiGraphemePoint } from "../core/grapheme-point.ts";
 import type { GraphemePoint } from "../core/grapheme-point.ts";

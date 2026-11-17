@@ -15,7 +15,7 @@ export const publicEntries = { sttropez: "src/index.ts", "sttropez/browser": "sr
 const ownerGroups = {
     "text-model": ["core/changes", "core/positions", "core/newlines", "core/text-buffer", "core/buffer-change", "core/selections", "core/snippets"],
     workspace: ["core/workspace", "core/commands", "core/agent"],
-    editor: ["core/language-edits", "core/bracket-matching", "browser/index", "browser/editing-candidate"],
+    editor: ["core/language-edits", "core/bracket-matching", "browser/text-editor", "browser/editing-candidate"],
     viewport: ["browser/viewport"],
     folding: ["core/folding", "core/fold-discovery", "browser/folding-controller", "protocol/lsp-folding"],
     search: ["core/search", "browser/find", "browser/regex-find"],
