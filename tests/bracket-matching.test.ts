@@ -3,19 +3,43 @@ import test from "node:test";
 import { BracketMatcher, TextBuffer } from "../src/index.ts";
 import type { BracketMatchCursor, BracketMatchOptions, LanguageConfiguration, PairingContext } from "../src/index.ts";
 
+function checkedCursor(matcher: BracketMatcher, buffer: TextBuffer, caret: number, options?: BracketMatchOptions): BracketMatchCursor {
+    const beforeConstruction = buffer.readMetrics(), cursor = matcher.createCursor(buffer, caret, options);
+    const checkReads = (before: ReturnType<TextBuffer["readMetrics"]>, readUnits: number) => {
+        const current = buffer.readMetrics();
+        assert.equal(current.textExports, before.textExports);
+        assert.equal(current.sliceUnits - before.sliceUnits, readUnits, "Unreported bracket-matching slice reads.");
+    };
+    const initial = cursor.snapshot(); checkReads(beforeConstruction, initial.readUnits);
+    assert.equal(initial.workUnits, 0); assert.equal(initial.readUnits, 0);
+    return {
+        snapshot: () => cursor.snapshot(),
+        next: (budget = 4096) => {
+            // These callbacks do not read source; oracle reads and other cursors stay outside this call.
+            const before = buffer.readMetrics(), prior = cursor.snapshot();
+            try { return cursor.next(budget); }
+            finally {
+                const step = cursor.snapshot(), work = step.workUnits - prior.workUnits, reads = step.readUnits - prior.readUnits;
+                checkReads(before, reads);
+                if (Number.isSafeInteger(budget) && budget >= 256) assert.ok(work <= budget + 63);
+                assert.ok(reads <= work + 256);
+            }
+        },
+        dispose: () => { const before = buffer.readMetrics(); try { cursor.dispose(); } finally { assert.deepEqual(buffer.readMetrics(), before); } }
+    };
+}
+
 function finish(cursor: BracketMatchCursor, budget = 256) {
-    let previous = cursor.snapshot();
     try {
         for (;;) {
             const step = cursor.next(budget); assert.ok(Object.isFrozen(step));
-            assert.ok(step.workUnits - previous.workUnits <= budget + 63);
             if (step.status === "ready") { assert.ok(Object.isFrozen(step.result)); return step; }
-            assert.equal(step.status, "running"); assert.equal(step.result, null); previous = step;
+            assert.equal(step.status, "running"); assert.equal(step.result, null);
         }
     } finally { cursor.dispose(); }
 }
 const match = (text: string, caret: number, configuration?: LanguageConfiguration, options?: BracketMatchOptions) =>
-    finish(new BracketMatcher(configuration).createCursor(TextBuffer.from(text), caret, options)).result!;
+    finish(checkedCursor(new BracketMatcher(configuration), TextBuffer.from(text), caret, options)).result!;
 
 test("matching follows known nested pairs in both directions and uses absolute UTF-16 offsets", () => {
     const matcher = new BracketMatcher(), pairs = [["(", ")"], ["[", "]"], ["{", "}"]] as const;
@@ -33,7 +57,7 @@ test("matching follows known nested pairs in both directions and uses absolute U
         let buffer = TextBuffer.from(text.slice(0, 3)); buffer = buffer.apply([{ from: 3, to: 3, insert: text.slice(3) }]).buffer;
         for (let caret = 0; caret <= text.length; caret++) {
             const at = expected.has(caret) ? caret : expected.has(caret - 1) ? caret - 1 : null;
-            const result = finish(matcher.createCursor(buffer, caret)).result!;
+            const result = finish(checkedCursor(matcher, buffer, caret)).result!;
             assert.equal(result.kind, at === null ? "none" : "matched"); assert.equal(result.at, at);
             assert.equal(result.match, at === null ? null : expected.get(at));
             if (at !== null) assert.equal(result.direction, expected.get(at)! > at ? 1 : -1);
@@ -54,7 +78,7 @@ test("crossed nesting and EOF are unmatched; symmetric insertion pairs do not be
 test("host veto examines each existing delimiter with its direction, exact immutable buffer and range", () => {
     const buffer = TextBuffer.from('( "[)]" x )'), calls: PairingContext[] = [];
     const matcher = new BracketMatcher({ allowPair: context => { calls.push(context); return context.from < 2 || context.from > 6; } });
-    const result = finish(matcher.createCursor(buffer, 0)); assert.equal(result.result!.match, buffer.length - 1);
+    const result = finish(checkedCursor(matcher, buffer, 0)); assert.equal(result.result!.match, buffer.length - 1);
     assert.equal(result.callbackCalls, calls.length); assert.ok(calls.some(call => call.from === 4 && call.operation === "close"));
     for (const call of calls) { assert.equal(call.buffer, buffer); assert.equal(call.to, call.from + 1); assert.ok(Object.isFrozen(call));
         assert.equal(buffer.slice(call.from, call.to), call.operation === "open" ? call.pair.open : call.pair.close); }
@@ -73,11 +97,10 @@ test("shared closing delimiters retain possible openings and eligible dual-role 
 
 test("work, depth and cooperative budgets stay explicit without whole-buffer reads", () => {
     const buffer = TextBuffer.from("(" + "x".repeat(1_000_000) + ")"), matcher = new BracketMatcher();
-    const cursor = matcher.createCursor(buffer, 0, { maxWorkUnits: 2048 }), first = cursor.next(256);
+    const cursor = checkedCursor(matcher, buffer, 0, { maxWorkUnits: 2048 }), first = cursor.next(256);
     assert.equal(first.status, "running"); assert.equal(first.result, null); assert.equal(first.workUnits, 256);
     const final = finish(cursor); assert.equal(final.result!.kind, "limited"); assert.equal(final.result!.limit, "work");
     assert.equal(final.workUnits, 2048); assert.ok(final.readUnits <= final.scannedUnits + 256);
-    assert.equal(buffer.readMetrics().textExports, 0); assert.equal(buffer.readMetrics().sliceUnits, final.readUnits);
     assert.equal(match("((x))", 0, undefined, { maxDepth: 1 }).limit, "depth");
     assert.equal(match("((x))", 0, undefined, { maxDepth: 2 }).kind, "matched");
     assert.equal(match("()", 0, undefined, { maxWorkUnits: 4 }).kind, "matched");
@@ -86,7 +109,7 @@ test("work, depth and cooperative budgets stay explicit without whole-buffer rea
     let calls = 0;
     const many = new BracketMatcher({ pairs: Array.from({ length: 1500 }, (_, i) => ({ open: String.fromCharCode(1000 + i), close: ">" })),
         allowPair: () => { calls++; return true; } });
-    const dense = many.createCursor(TextBuffer.from(">"), 0, { maxWorkUnits: 600 });
+    const dense = checkedCursor(many, TextBuffer.from(">"), 0, { maxWorkUnits: 600 });
     assert.equal(dense.next(256).status, "running"); assert.ok(calls <= 256);
     assert.equal(finish(dense).result!.limit, "work"); assert.ok(calls <= 600);
 });
@@ -94,10 +117,10 @@ test("work, depth and cooperative budgets stay explicit without whole-buffer rea
 test("configuration and cursor captures survive caller mutation and disposal; callback failures propagate", () => {
     const pairs = [{ open: "(", close: ")" }], matcher = new BracketMatcher({ pairs }), before = TextBuffer.from("(x)");
     pairs[0]!.close = "]"; pairs.push({ open: "[", close: "]" });
-    const cursor = matcher.createCursor(before, 0), edited = before.apply([{ from: 2, to: 3, insert: "]" }]).buffer;
-    assert.equal(finish(cursor).result!.match, 2); assert.equal(finish(matcher.createCursor(edited, 0)).result!.kind, "unmatched");
+    const cursor = checkedCursor(matcher, before, 0), edited = before.apply([{ from: 2, to: 3, insert: "]" }]).buffer;
+    assert.equal(finish(cursor).result!.match, 2); assert.equal(finish(checkedCursor(matcher, edited, 0)).result!.kind, "unmatched");
     assert.equal(cursor.snapshot().status, "disposed"); assert.equal(cursor.next().result, null);
-    const throwing = new BracketMatcher({ allowPair: () => { throw new Error("host failure"); } }).createCursor(before, 0);
+    const throwing = checkedCursor(new BracketMatcher({ allowPair: () => { throw new Error("host failure"); } }), before, 0);
     assert.throws(() => throwing.next(), /host failure/); assert.equal(throwing.snapshot().status, "failed");
     assert.equal(throwing.snapshot().failure, "host failure"); throwing.dispose();
     assert.ok(Object.isFrozen(matcher)); assert.ok(Object.isFrozen(matcher.configuration.pairs[0]));
@@ -108,6 +131,6 @@ test("invalid caret, limits, work budgets and pair configurations are refused", 
     for (const at of [-1, 3, .5, NaN, Infinity]) assert.throws(() => matcher.createCursor(buffer, at), RangeError);
     for (const value of [0, -1, .5, NaN, Infinity]) for (const key of ["maxWorkUnits", "maxDepth"])
         assert.throws(() => matcher.createCursor(buffer, 0, { [key]: value }), RangeError);
-    const cursor = matcher.createCursor(buffer, 0); assert.throws(() => cursor.next(255), RangeError); cursor.dispose();
+    const cursor = checkedCursor(matcher, buffer, 0); assert.throws(() => cursor.next(255), RangeError); cursor.dispose();
     assert.throws(() => new BracketMatcher({ pairs: [{ open: "\n", close: ")" }] }), RangeError);
 });
