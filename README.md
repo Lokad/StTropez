@@ -62,7 +62,7 @@ full multi-engine and package qualification have separate scopes.
 | `src/browser/` | Editor DOM, input, geometry, view controllers and browser adapters |
 | `examples/demo/` | TypeScript project demo and example-owned compiler/providers |
 | `examples/hosts/` | Plain/React host controllers, forms, deferred services and recovery |
-| `examples/playground/` | Mixed-surface workspace fixture |
+| `tests/fixtures/workspace/` | Native textarea workspace baseline |
 | `examples/editing/` | Editing, search and language-feature fixture |
 | `examples/comparison/` | Reference/working review fixture |
 | `examples/viewport/` | Read-only rendering and geometry fixture |

@@ -13,12 +13,14 @@ test("development assets follow completed watched or fixed builds, reject privat
     const previous = process.cwd(); await mkdir(join(previous, "artifacts"), { recursive: true });
     const fixture = await mkdtemp(join(previous, "artifacts/dev-server-test-"));
     const put = async (path: string, text: string) => { const file = join(fixture, path); await mkdir(dirname(file), { recursive: true }); await writeFile(file, text); };
-    for (const path of ["demo", "playground", "viewport", "editing", "comparison", "protocol"]) await put(`examples/${path}/index.html`, `<title>${path}</title>`);
+    for (const path of ["demo", "viewport", "editing", "comparison", "protocol"]) await put(`examples/${path}/index.html`, `<title>${path}</title>`);
     for (const host of ["plain", "react"]) await put(`examples/hosts/${host}.html`, `<title>${host}</title>`);
-    for (const path of ["demo/main.ts", "demo/syntax-worker.ts", "demo/language-worker.ts", "playground/main.ts", "comparison/main.ts", "editing/main.ts", "viewport/main.ts", "protocol/main.ts", "hosts/plain-main.ts", "hosts/react-main.tsx"]) await put(`examples/${path}`, "export const ready = true;");
+    for (const path of ["demo/main.ts", "demo/syntax-worker.ts", "demo/language-worker.ts", "comparison/main.ts", "editing/main.ts", "viewport/main.ts", "protocol/main.ts", "hosts/plain-main.ts", "hosts/react-main.tsx"]) await put(`examples/${path}`, "export const ready = true;");
     await put("examples/demo/index.html", '<html data-demo-provider="browser"><title>demo</title></html>');
     await put("node_modules/typescript-demo/lib/lib.es5.d.ts", "interface String {}");
     await put("node_modules/typescript-demo/lib/private.d.ts", "not a standard library");
+    await put("tests/fixtures/workspace/index.html", "<title>workspace</title>");
+    await put("tests/fixtures/workspace/main.ts", "export const ready = true;");
     await put("tests/fixtures/fonts/index.html", "<title>fonts</title>");
     await put("tests/fixtures/fonts/main.ts", "export const ready = true;");
     for (const mode of ["plain", "react"]) await put(`fixtures/hosts/${mode}-main.ts`, "export const ready = true;");
@@ -43,7 +45,7 @@ test("development assets follow completed watched or fixed builds, reject privat
         fixed = await startServer(0, { watch: false });
         assert.equal(fixed.buildMode, "development-bundle-no-watch");
         assert.equal(await (await get("/")).text(), '<html data-demo-provider="server"><title>demo</title></html>');
-        assert.equal(await (await get("/workspace/")).text(), "<title>playground</title>");
+        assert.equal(await (await get("/workspace/")).text(), "<title>workspace</title>");
         assert.equal((await get("/workspace-fixture.js")).status, 200);
         assert.equal((await get("/demo-syntax-worker.js")).status, 200);
         assert.equal((await get("/demo-language-worker.js")).status, 200);

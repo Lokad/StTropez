@@ -1,4 +1,4 @@
-@import "../../src/browser/editor.css";
+@import "../../../src/browser/editor.css";
 :root { font-family: system-ui, sans-serif; color: #d8e1ec; background: #0b111b; color-scheme: dark; }
 body { margin: 0; }
 header { display: flex; align-items: center; justify-content: space-between; padding: 24px 32px; }

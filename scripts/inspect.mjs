@@ -13,7 +13,7 @@ try {
     if (process.argv.includes("--demo-only")) { await captureDemo(harness); if (harness.errors.length) throw new Error(harness.errors.join("\n")); return; }
     await harness.page.goto("/workspace/");
     await harness.page.waitForFunction(() => window.sttropez?.ready === true);
-    await harness.page.screenshot({ path: "artifacts/inspect/playground.png", fullPage: true });
+    await harness.page.screenshot({ path: "artifacts/inspect/workspace.png", fullPage: true });
     const snapshot = await harness.page.evaluate(() => window.sttropez.snapshot());
     await writeFile("artifacts/inspect/state.json", JSON.stringify({ browser: harness.browser.version(), buildMode: harness.buildMode, snapshot, errors: harness.errors }, null, 2));
     await captureDemo(harness);
@@ -237,7 +237,7 @@ try {
     await harness.page.screenshot({ path: "artifacts/inspect/comparison-whitespace.png", fullPage: true });
     await writeFile("artifacts/inspect/comparison.json", JSON.stringify(await harness.page.evaluate(() => window.comparisonFixture.snapshot()), null, 2));
     if (harness.errors.length) throw new Error(harness.errors.join("\n"));
-    console.log("Wrote artifacts/inspect/playground.png and state.json");
+    console.log("Wrote artifacts/inspect/workspace.png and state.json");
 } finally { await harness.close(); }
 }
 await inspect();

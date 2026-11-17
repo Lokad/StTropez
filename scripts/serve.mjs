@@ -12,7 +12,7 @@ export async function startServer(port, { watch = true } = {}) {
     await writeFile("artifacts/site/index.html", (await readFile("examples/demo/index.html", "utf8"))
         .replace('data-demo-provider="browser"', 'data-demo-provider="server"'));
     await mkdir("artifacts/site/workspace", { recursive: true });
-    await copyFile("examples/playground/index.html", "artifacts/site/workspace/index.html");
+    await copyFile("tests/fixtures/workspace/index.html", "artifacts/site/workspace/index.html");
     await mkdir("artifacts/site/viewport", { recursive: true });
     await copyFile("examples/viewport/index.html", "artifacts/site/viewport/index.html");
     await mkdir("artifacts/site/editing", { recursive: true });
@@ -41,7 +41,7 @@ export async function startServer(port, { watch = true } = {}) {
             if (!failed) modules = new Map(result.outputFiles.map(file => ["/" + relative(site, file.path).replaceAll("\\", "/"), file.contents]));
             firstBuild();
         });
-    } }], entryPoints: { app: "examples/demo/main.ts", "workspace-fixture": "examples/playground/main.ts", "demo-syntax-worker": "examples/demo/syntax-worker.ts", "demo-language-worker": "examples/demo/language-worker.ts", fonts: "tests/fixtures/fonts/main.ts", comparison: "examples/comparison/main.ts", editing: "examples/editing/main.ts", viewport: "examples/viewport/main.ts",
+    } }], entryPoints: { app: "examples/demo/main.ts", "workspace-fixture": "tests/fixtures/workspace/main.ts", "demo-syntax-worker": "examples/demo/syntax-worker.ts", "demo-language-worker": "examples/demo/language-worker.ts", fonts: "tests/fixtures/fonts/main.ts", comparison: "examples/comparison/main.ts", editing: "examples/editing/main.ts", viewport: "examples/viewport/main.ts",
         "regex-worker": "src/browser/regex-worker.ts", "protocol-fixture": "examples/protocol/main.ts", "host-plain": "fixtures/hosts/plain-main.ts", "host-react": "fixtures/hosts/react-main.ts" }, outdir: "artifacts/site",
         bundle: true, format: "esm", platform: "browser", target: "es2022", sourcemap: true });
     const server = createServer((request, response) => { void handle(request, response).catch(() => { if (!response.headersSent) response.writeHead(500); response.end("Development service failed."); }); });

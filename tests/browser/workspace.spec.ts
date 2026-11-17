@@ -11,9 +11,14 @@ test("real typing and moving preserve identity through persisted transitions unt
     const before = await page.evaluate(() => window.sttropez.snapshot());
     await editor.fill("hello");
     await editor.evaluate(node => { node.dataset.retained = "yes"; });
+    // One port is pending and the second captured save is queued behind it.
+    await page.getByRole("button", { name: "Save source", exact: true }).evaluate(node => { (node as HTMLButtonElement).click(); (node as HTMLButtonElement).click(); });
+    await expect.poll(() => page.evaluate(() => window.sttropez.diagnostics().pendingSaves)).toBe(1);
+    expect(await page.evaluate(() => window.sttropez.diagnostics())).toMatchObject({ disposed: false, pendingCommands: 2, resources: 2, tabs: 3, views: 2 });
     for (let index = 0; index < 2; index++) {
         await page.evaluate(() => { window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })); window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })); });
         expect(await editor.count()).toBe(1); await expect(editor).toHaveAttribute("data-retained", "yes"); await expect(editor).toHaveValue("hello");
+        expect(await page.evaluate(() => window.sttropez.diagnostics())).toMatchObject({ disposed: false, pendingCommands: 2, pendingSaves: 1 });
     }
     await editor.press("End");
     await editor.pressSequentially(" world");
@@ -26,9 +31,26 @@ test("real typing and moving preserve identity through persisted transitions unt
     expect(after.tabs[0]?.id).toBe(before.tabs[0]?.id);
     expect(after.documents[0]?.revision).toBeGreaterThan(before.documents[0]?.revision ?? -1);
     expect(after.documents[0]?.length).toBe(11);
-    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false })));
+    const stoppedSamples = await editor.evaluate(async node => {
+        // Queue a measurement callback in this task, then hide before its first frame runs.
+        node.dispatchEvent(new InputEvent("input", { bubbles: true }));
+        if (!window.sttropez.diagnostics().frames) throw new Error("Expected a queued fixture frame.");
+        const samples = window.sttropez.sampleCount();
+        window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false }));
+        await window.sttropez.dispose(); return samples;
+    });
     await expect(page.locator("textarea")).toHaveCount(0);
+    const disposed = await page.evaluate(() => window.sttropez.diagnostics());
+    expect(disposed).toEqual({ disposed: true, pendingCommands: 0, pendingSaves: 0, frames: 0, resources: 0, documents: 0, tabs: 0, views: 0, leases: 0, subscriptions: 0,
+        history: { groups: 0, changes: 0, changedUnits: 0 } });
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false })));
+    // Retained controls no longer call into released resources or finish a deferred write.
+    for (const name of ["Save source", "Finish deferred save", "Run preview", "Move source to other pane"]) await page.getByRole("button", { name, exact: true }).click();
+    await page.getByRole("textbox", { name: "Source path", exact: true }).fill("after-disposal.csv");
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    expect(await page.evaluate(() => window.sttropez.diagnostics())).toEqual(disposed);
+    expect(await page.evaluate(() => window.sttropez.sampleCount())).toBe(stoppedSamples);
+    expect((await page.evaluate(() => window.sttropez.snapshot())).commands).toMatchObject({ pendingSaves: [], savedWrites: 0, lastRun: null, errors: [] });
 });
 
 test("deferred Save and explicit Run preserve their source/configuration targets while views move and typing continues", async ({ page }) => {

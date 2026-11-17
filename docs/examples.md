@@ -25,7 +25,7 @@ The [development server](../scripts/serve.mjs) serves these pages:
 | Route | Purpose | Entry source |
 | --- | --- | --- |
 | `/` | TypeScript editing, language tools, JavaScript output, Problems, Changes and local save/recovery | [Demo](../examples/demo/main.ts) |
-| `/workspace/` | Workspace resources, transactions and deferred service controls | [Workspace fixture](../examples/playground/main.ts) |
+| `/workspace/` | Native textarea baseline with workspace resources, transactions and deferred services | [Workspace fixture](../tests/fixtures/workspace/main.ts) |
 | `/editing/` | Bounded input, selections, commands and local highlighting | [Editing fixture](../examples/editing/main.ts) |
 | `/viewport/` | Read-only virtualized text and geometry | [Viewport fixture](../examples/viewport/main.ts) |
 | `/comparison/` | Working/reference comparison and hunk commands | [Comparison fixture](../examples/comparison/main.ts) |
