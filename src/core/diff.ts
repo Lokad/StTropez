@@ -4,16 +4,17 @@ import type { TextBuffer } from "./text-buffer.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
 import { DiffIdentities, equalLineText, knownLineHash, lineHash } from "./diff-identities.ts";
-import { commonText, getLine, indexLines, lineLength, matchingLines, offsetAt, tick } from "./diff-index.ts";
+import { commonText, getLine, lineEdges, indexLines, lineLength, matchingLines, offsetAt, tick } from "./diff-index.ts";
 import type { DiffStats, DiffIndex as Index } from "./diff-index.ts";
 type Stats = DiffStats & { identities: DiffIdentities; equalities: DiffEqualities | undefined };
 export type DiffRange = Readonly<{ from: number; to: number; lineFrom: number; lineTo: number }>;
 export type DiffHunk = Readonly<{ baseline: DiffRange; working: DiffRange; whitespaceOnly: boolean }>;
 export type DiffProgress = Readonly<{ status: KernelStatus; work: number; readUnits: number; lineComparisons: number; lineEdits: number; hunks: readonly DiffHunk[]; failure: string | null }>;
-type Cache = { baseline: TextBuffer; serial: number; reference: Index | undefined; working: Index | undefined; equalities?: DiffEqualitySnapshot };
+type Cache = { baseline: TextBuffer; serial: number; reference: Index | undefined; working: Index | undefined;
+    equalities?: DiffEqualitySnapshot; alphabet?: ReadonlySet<string> | null; alignment?: AlignmentPlan | undefined };
 const referenceCaches = new WeakMap<DiffReferenceCache, { current: Cache | undefined }>();
 
-/** Retains reference/current working metadata and bounded equality proofs from one completed capture. */
+/** Retains reference/working metadata and bounded exact proofs from completed captures. */
 export class DiffReferenceCache {
     constructor() { referenceCaches.set(this, { current: undefined }); Object.freeze(this); }
     dispose(): void { referenceCaches.delete(this); }
@@ -235,24 +236,62 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats): Generator<vo
     }
     throw new Error("Comparison search did not find a split.");
 }
+
+type AlignmentPlan = Readonly<{ working: Index; alphabet: ReadonlySet<string>; changes: readonly Region[]; hunks: readonly (DiffHunk | undefined)[] }>;
+type AlignmentReuse = Readonly<{ plan: AlignmentPlan; from: number; to: number; delta: number }>;
+/** Equal row positions and zero reference matches for every changed old/new row preserve
+ * the complete equality matrix, hence the canonical raw alignment. Character trims still
+ * depend on the new text. Ownership must cover everything outside the checked window. */
+function* reuseAlignment(plan: AlignmentPlan, right: Index, stats: Stats): Generator<void, AlignmentReuse | undefined> {
+    const old = plan.working;
+    if (tick(stats, 4)) yield;
+    if (old.lines.size !== right.lines.size) return;
+    if (old.buffer === right.buffer) return { plan, from: 0, to: 0, delta: 0 };
+    const edges = yield* lineEdges(old.buffer, right.buffer, stats);
+    const from = edges.aFrom === old.to ? old.lines.size : old.buffer.lineAt(edges.aFrom);
+    const to = edges.aTo === old.to ? old.lines.size : old.buffer.lineAt(edges.aTo);
+    const end = edges.bTo === right.to ? right.lines.size : right.buffer.lineAt(edges.bTo);
+    if (to !== end || to - from > 256 || from === 0 && to === old.lines.size) return;
+    for (let row = from; row < to; row++) for (const index of [old, right]) {
+        const token = (yield* getLine(index, row, stats)).token;
+        if (token === undefined) return;
+        stats.lineComparisons++;
+        if (tick(stats, token.length + 4)) yield;
+        if (plan.alphabet.has(token)) return;
+    }
+    return { plan, from, to, delta: edges.bTo - edges.aTo };
+}
+/** A partial alphabet cannot prove absence. Null remembers an unindexable reference. */
+function* referenceAlphabet(left: Index, stats: Stats): Generator<void, ReadonlySet<string> | null> {
+    const alphabet = new Set<string>();
+    for (let row = 0; row < left.lines.size; row++) {
+        const token = (yield* getLine(left, row, stats)).token;
+        if (token === undefined) return null;
+        alphabet.add(token); if (tick(stats, token.length + 2)) yield;
+    }
+    return alphabet;
+}
 function range(buffer: TextBuffer, from: number, to: number): DiffRange {
     const lineFrom = buffer.lineAt(from); return Object.freeze({ from, to, lineFrom, lineTo: from === to ? lineFrom : buffer.lineAt(to - 1) + 1 });
 }
 function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, serial = 0): Generator<void, readonly DiffHunk[]> {
     try {
-        if (a === b) return Object.freeze([]);
+        const prior = cache?.alignment; let alphabet = cache?.alphabet;
+        if (a === b) { if (cache?.serial === serial) cache.alignment = undefined; return Object.freeze([]); }
         const left = yield* indexLines(a, stats, cache?.reference);
         if (cache?.serial === serial) cache.reference = left;
         const right = yield* indexLines(b, stats, cache?.working ?? left);
         if (cache) stats.equalities = yield* prepareEqualities(right, cache.equalities, stats);
         if (cache?.serial === serial) cache.working = right;
+        const reused = prior ? yield* reuseAlignment(prior, right, stats) : undefined;
         const tasks: Region[] = [{ a0: 0, a1: left.lines.size, b0: 0, b1: right.lines.size }], changes: Region[] = [];
         const append = (change: Region) => {
             const previous = changes.at(-1);
             if (previous?.a1 === change.a0 && previous.b1 === change.b0) changes[changes.length - 1] = { a0: previous.a0, a1: change.a1, b0: previous.b0, b1: change.b1 };
             else changes.push(change);
         };
-        while (tasks.length) {
+        if (reused) for (const change of reused.plan.changes) { changes.push(change); if (tick(stats)) yield; }
+        while (!reused && tasks.length) {
             let { a0, a1, b0, b1 } = tasks.pop()!;
             const prefix = yield* commonLines(left, right, { a0, a1, b0, b1 }, false, stats); a0 += prefix; b0 += prefix;
             const suffix = yield* commonLines(left, right, { a0, a1, b0, b1 }, true, stats); a1 -= suffix; b1 -= suffix;
@@ -272,9 +311,21 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
                 tasks.push({ a0: ai, a1, b0: bi, b1 }); tasks.push({ a0, a1: ai, b0, b1: bi });
             }
         }
+        // Only expensive completed alignments justify a bounded full reference alphabet.
+        // Cheap sparse jobs keep their lazy indexes and clear an obsolete plan on success.
+        const capturePlan = cache && alphabet !== null && left.lines.size <= 65536 && right.lines.size <= 65536 && changes.length <= 4096
+            && (reused !== undefined || stats.lineComparisons >= 100000);
+        const regionHunks: (DiffHunk | undefined)[] | undefined = capturePlan ? [] : undefined;
         const hunks: DiffHunk[] = [];
-        for (const change of changes) {
+        for (let index = 0; index < changes.length; index++) {
+            const change = changes[index]!;
             stats.lineEdits += change.a1 - change.a0 + change.b1 - change.b0;
+            if (reused && (change.b1 <= reused.from || change.b0 >= reused.to)) {
+                let hunk = reused.plan.hunks[index];
+                if (hunk && change.b0 >= reused.to && reused.delta !== 0) hunk = Object.freeze({ baseline: hunk.baseline,
+                    working: Object.freeze({ ...hunk.working, from: hunk.working.from + reused.delta, to: hunk.working.to + reused.delta }), whitespaceOnly: hunk.whitespaceOnly });
+                if (hunk) hunks.push(hunk); regionHunks?.push(hunk); if (tick(stats, 8)) yield; continue;
+            }
             let a0 = offsetAt(left, change.a0), a1 = offsetAt(left, change.a1);
             let b0 = offsetAt(right, change.b0), b1 = offsetAt(right, change.b1);
             const prefix = yield* commonText(a, b, a0, a1, b0, b1, "start", stats); a0 += prefix; b0 += prefix;
@@ -285,9 +336,16 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
                 stats.readUnits += end - offset; if (tick(stats, end - offset)) yield;
                 if (!white) { whitespaceOnly = false; break outer; }
             }
-            if (a0 !== a1 || b0 !== b1) hunks.push(Object.freeze({ baseline: range(a, a0, a1), working: range(b, b0, b1), whitespaceOnly }));
+            const hunk = a0 !== a1 || b0 !== b1 ? Object.freeze({ baseline: range(a, a0, a1), working: range(b, b0, b1), whitespaceOnly }) : undefined;
+            if (hunk) hunks.push(hunk);
+            if (regionHunks) { regionHunks.push(hunk); if (tick(stats, 8)) yield; }
         }
+        if (capturePlan && alphabet === undefined) alphabet = yield* referenceAlphabet(left, stats);
         if (stats.equalities) { const equalities = yield* stats.equalities.finish(stats); if (cache?.serial === serial) cache.equalities = equalities; }
+        if (cache?.serial === serial) {
+            if (alphabet !== undefined) cache.alphabet = alphabet;
+            cache.alignment = capturePlan && alphabet ? Object.freeze({ working: right, alphabet, changes: Object.freeze(changes), hunks: Object.freeze(regionHunks!) }) : undefined;
+        }
         return Object.freeze(hunks);
     } finally { stats.identities.clear(); stats.equalities = undefined; stats.textProof = undefined; }
 }

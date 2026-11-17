@@ -140,8 +140,16 @@ can resolve a region directly when all shared exact short-row occurrences pair i
 Unique common tokens establish this directly. Duplicated tokens require identical complete
 sequences after excluding rows absent from the other side; unequal common occurrence counts
 or crossed order retain the general alignment. These passes examine at most 65,536 rows per
-side and decline rows without short tokens. Complex comparisons can require full alignment
-work. Dispose the cache
+side and decline rows without short tokens.
+
+An expensive completed comparison can retain its raw line regions and complete reference
+alphabet. A later capture reuses that alignment only when row count is unchanged and every
+old/new row in an ownership-proven changed window is absent from the reference. Affected
+regions receive fresh character trimming and whitespace classification; untouched later hunks
+shift by the exact UTF-16 offset delta. Retention is bounded to 65,536 rows per side and 4,096
+regions; verification checks at most 256 changed rows. Unknown tokens, new matches, changed row
+counts and insufficient ownership coverage use full alignment. Failed or cancelled jobs cannot
+publish a retained plan. Complex comparisons can require full alignment work. Dispose the cache
 when its owner ends. Reference replacement resets retained captures; active jobs keep their own
 captures, and late jobs cannot replace a newer cache result. The controller owns its cache.
 A disposed cache cannot start a new diff job.

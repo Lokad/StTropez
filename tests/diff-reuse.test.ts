@@ -273,6 +273,48 @@ test("tail-only warmup retains sparse coverage through distant edits, undo and r
     cache.dispose();
 });
 
+test("edits to unmatched rows reuse raw alignment and re-trim exact hunks through history", () => {
+    const original = Array.from({ length: 2000 }, (_, i) => `row ${i % 20}\n`).join("");
+    const text = original.replace(/^row (\d+)$/gm, (line, n: string) => Number(n) % 10 === 0 ? "changed " + n : line)
+        .replaceAll("row 11\n", "row 11\nrow 11\n");
+    const baseline = TextBuffer.from(original), working = TextBuffer.from(text), cache = new DiffReferenceCache();
+    const initial = finish(baseline, working, cache), retained = JSON.stringify(initial.hunks);
+    const at = text.indexOf("changed ", Math.floor(text.length / 2));
+    const typed = working.replace(at + 3, at + 3, "😀é\ud800"), trimmed = typed.replace(at, at + 7, " \t");
+    for (const capture of [typed, trimmed, typed, working]) {
+        const result = finish(baseline, capture, cache), expected = finish(baseline, capture);
+        assert.deepEqual(result.hunks, expected.hunks); assert.equal(result.lineEdits, expected.lineEdits);
+        reconstruct(result, original, capture.slice(0, capture.length));
+        assert.ok(result.work < 10000, `${result.work} units for unchanged line alignment`);
+        assert.equal(JSON.stringify(initial.hunks), retained);
+    }
+    // New matches, changed row counts and unknown long tokens require fresh alignment.
+    for (const insert of ["row 0\n", "new\nrow\n", "x".repeat(300) + "\n"]) {
+        finish(baseline, working, cache);
+        const capture = working.replace(at, text.indexOf("\n", at) + 1, insert);
+        const result = finish(baseline, capture, cache), expected = finish(baseline, capture);
+        assert.deepEqual(result.hunks, expected.hunks); assert.equal(result.lineEdits, expected.lineEdits);
+        reconstruct(result, original, capture.slice(0, capture.length));
+    }
+    cache.dispose();
+});
+
+test("a superseded raw alignment cannot replace a newer successful cache capture", () => {
+    const original = Array.from({ length: 2000 }, (_, i) => `row ${i % 20}\n`).join("");
+    const text = original.replaceAll("row 0\n", "changed\n").replaceAll("row 10\n", "changed ten\n").replaceAll("row 11\n", "row 11\nrow 11\n");
+    const baseline = TextBuffer.from(original), working = TextBuffer.from(text), cache = new DiffReferenceCache();
+    assert.ok(finish(baseline, working, cache).lineComparisons >= 100000);
+    const at = text.indexOf("changed", text.length / 2), changed = working.replace(at, at, "z");
+    const old = new TextDiff(baseline, changed, cache); assert.equal(old.next(256).status, "running");
+    finish(baseline, baseline, cache); // The newer successful capture has no retained change plan.
+    let stale = old.next(512); while (stale.status === "running") stale = old.next(512);
+    assert.equal(stale.status, "ready"); old.dispose();
+    const result = finish(baseline, changed, cache); assert.deepEqual(result.hunks, stale.hunks);
+    assert.ok(result.work > 100000, "the late result did not republish its cheap reusable plan");
+    const next = changed.replace(at, at, "y"), reused = finish(baseline, next, cache);
+    assert.ok(reused.work < 10000); assert.deepEqual(reused.hunks, finish(baseline, next).hunks); cache.dispose();
+});
+
 test("periodic row alignment verifies long exact runs without probing every repeated line", () => {
     for (const period of [1, 2, 3, 4]) {
         const original = Array.from({ length: 5000 }, (_, i) => `const name${i % period} = 1234567;`).join("\n");

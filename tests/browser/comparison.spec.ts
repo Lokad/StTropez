@@ -134,28 +134,31 @@ test("tab replacement expires pending work and teardown leaves only host resourc
 });
 
 test("large comparison stays virtualized, exact and cooperative during real input", async ({ page }) => {
-    for (const kind of ["long", "unique", "repeated"] as const) {
-        const length = await page.evaluate(kind => {
+    for (const kind of ["long", "unique", "repeated", "unbalanced"] as const) {
+        const { length, at } = await page.evaluate(kind => {
             const many = kind !== "long";
-            const text = many ? Array.from({ length: 10000 }, (_, i) => `row ${kind === "repeated" ? i % 20 : i}\n`).join("") : "unchanged source line\r\n".repeat(30000);
-            const working = many ? text.replace(/^row (\d+)$/gm, (line, n: string) => Number(n) % 10 === 0 ? "changed " + n : line) : text.replace("unchanged", "modified") + "tail";
+            const text = many ? Array.from({ length: 10000 }, (_, i) => `row ${kind === "unique" ? i : i % 20}\n`).join("") : "unchanged source line\r\n".repeat(30000);
+            let working = many ? text.replace(/^row (\d+)$/gm, (line, n: string) => Number(n) % 10 === 0 ? "changed " + n : line) : text.replace("unchanged", "modified") + "tail";
+            if (kind === "unbalanced") working = working.replaceAll("row 11\n", "row 11\nrow 11\n");
+            const at = kind === "unbalanced" ? working.indexOf("changed ", Math.floor(working.length / 2)) + 3 : working.length;
             const f = window.comparisonFixture; f.setText(text); f.begin("accept"); f.finish("accept"); f.setText(working);
-            f.select({ anchor: working.length, head: working.length }); f.focus(); return working.length;
+            f.select({ anchor: at, head: at }); f.focus(); return { length: working.length, at };
         }, kind);
+        if (kind === "unbalanced") await ready(page); // Retain the completed review before editing an unmatched row.
         await page.keyboard.type("x"); await ready(page);
         const state = await page.evaluate(() => window.comparisonFixture.snapshot());
         expect(state.hunks.length).toBeGreaterThan(0); expect(state.working.exports).toBe(0); expect(state.baseline!.exports).toBe(0);
         expect(await page.locator(".st-viewport-row").count()).toBeLessThan(100);
         expect(state.editor.inputUnits).toBeLessThan(2600); expect(state.working.length).toBe(length + 1);
-        expect(await page.evaluate(at => window.comparisonFixture.range(at, at + 1), length)).toBe("x");
+        expect(await page.evaluate(at => window.comparisonFixture.range(at, at + 1), at)).toBe("x");
         if (kind !== "long") {
-            expect(state.hunks.length).toBe(1001);
+            expect(state.hunks.length).toBe(kind === "unbalanced" ? 1068 : 1001);
             await page.keyboard.press("Control+z"); await ready(page);
             const undone = await page.evaluate(() => window.comparisonFixture.snapshot());
-            expect(undone.working.length).toBe(length); expect(undone.hunks.length).toBe(1000);
+            expect(undone.working.length).toBe(length); expect(undone.hunks.length).toBe(kind === "unbalanced" ? 1068 : 1000);
             await page.keyboard.press("Control+Shift+z"); await ready(page);
-            expect((await page.evaluate(() => window.comparisonFixture.snapshot())).hunks.length).toBe(1001);
-            expect(await page.evaluate(at => window.comparisonFixture.range(at, at + 1), length)).toBe("x");
+            expect((await page.evaluate(() => window.comparisonFixture.snapshot())).hunks.length).toBe(kind === "unbalanced" ? 1068 : 1001);
+            expect(await page.evaluate(at => window.comparisonFixture.range(at, at + 1), at)).toBe("x");
         }
     }
 });
