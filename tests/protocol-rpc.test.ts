@@ -6,6 +6,7 @@ import type { InitializeParams, InitializeResult } from "vscode-languageserver-p
 import type { RpcTransport } from "../src/protocol/json-rpc.ts";
 import type { JsonValue } from "../src/protocol/wire.ts";
 import { referencePeer } from "../fixtures/protocol/reference-peer.ts";
+import { channel } from "./helpers/rpc-channel.ts";
 
 import { JsonRpcConnection } from "../src/protocol/json-rpc.ts";
 import { RpcError, rpcCodes } from "../src/protocol/wire.ts";
@@ -14,17 +15,6 @@ function clock() {
     const timers = new Set<() => void>();
     return { schedule: (_ms: number, fn: () => void) => { timers.add(fn); return () => { timers.delete(fn); }; },
         fire: () => { for (const fn of [...timers]) { timers.delete(fn); fn(); } }, count: () => timers.size };
-}
-function channel() {
-    type Listener = Parameters<RpcTransport["subscribe"]>[0];
-    const listeners: (Listener | undefined)[] = [undefined, undefined], sent: unknown[][] = [[], []]; let closed = false;
-    const ports = [0, 1].map(index => Object.freeze({
-        send: (message: string) => { if (closed) throw new Error("Transport closed"); sent[index]!.push(JSON.parse(message)); queueMicrotask(() => { if (!closed) listeners[1 - index]?.message(message); }); },
-        subscribe: (listener: Listener) => { assert.equal(listeners[index], undefined); listeners[index] = listener;
-            return () => { if (listeners[index] === listener) listeners[index] = undefined; }; },
-        dispose: () => { if (closed) return; closed = true; for (const listener of listeners) listener?.close(new Error("Transport closed")); listeners.fill(undefined); },
-    }));
-    return { left: ports[0]!, right: ports[1]!, sent, listeners: () => listeners.filter(Boolean).length };
 }
 function raw() {
     let listener: Parameters<RpcTransport["subscribe"]>[0] | undefined, disposed = 0; const sent: unknown[] = [];

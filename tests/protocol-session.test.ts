@@ -4,21 +4,13 @@ import { setImmediate } from "node:timers/promises";
 import { TextDocument, ResponseError, RegistrationRequest, UnregistrationRequest, CancellationTokenSource } from "vscode-languageserver-protocol/node.js";
 import type { InitializeParams, InitializeResult, DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams } from "vscode-languageserver-protocol/node.js";
 import { referencePeer } from "../fixtures/protocol/reference-peer.ts";
+import { channel } from "./helpers/rpc-channel.ts";
 import type { RpcScheduler, RpcTransport } from "../src/protocol/json-rpc.ts";
 import type { LspSessionOptions, LspRequestContext } from "../src/protocol/index.ts";
 
 import { TextBuffer } from "../src/index.ts";
 import { LspSession, RpcError } from "../src/protocol/index.ts";
 const settled = async () => { await setImmediate(); await setImmediate(); };
-function channel() {
-    type Listener = Parameters<RpcTransport["subscribe"]>[0];
-    const listeners: (Listener | undefined)[] = [undefined, undefined], messages: unknown[][] = [[], []]; let closed = false;
-    const ports = [0, 1].map(index => Object.freeze({
-        send: (text: string) => { if (closed) throw new Error("Closed"); messages[index]!.push(JSON.parse(text)); queueMicrotask(() => { if (!closed) listeners[1 - index]?.message(text); }); },
-        subscribe: (listener: Listener) => { assert.equal(listeners[index], undefined); listeners[index] = listener; return () => { if (listeners[index] === listener) listeners[index] = undefined; }; },
-        dispose: () => { if (closed) return; closed = true; for (const listener of listeners) listener?.close(new Error("Closed")); listeners.fill(undefined); },
-    })); return { left: ports[0]!, right: ports[1]!, messages, listeners: () => listeners.filter(Boolean).length };
-}
 function fixture(t: test.TestContext, capabilities: InitializeResult["capabilities"] = { positionEncoding: "utf-16", textDocumentSync: 2, hoverProvider: true }) {
     const timers = new Set<ReturnType<typeof setTimeout>>(), peers: ReturnType<typeof peer>[] = [];
     const schedule: RpcScheduler = (ms, fn) => { const timer = setTimeout(() => { timers.delete(timer); fn(); }, ms); timers.add(timer); return () => { clearTimeout(timer); timers.delete(timer); }; };
