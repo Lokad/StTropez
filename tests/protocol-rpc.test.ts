@@ -8,7 +8,7 @@ import type { JsonValue } from "../src/protocol/wire.ts";
 import { referencePeer } from "../fixtures/protocol/reference-peer.ts";
 
 import { JsonRpcConnection } from "../src/protocol/json-rpc.ts";
-import { RpcError } from "../src/protocol/wire.ts";
+import { RpcError, rpcCodes } from "../src/protocol/wire.ts";
 
 function clock() {
     const timers = new Set<() => void>();
@@ -32,6 +32,24 @@ function raw() {
     return { port, sent, receive: (message: unknown) => listener?.message(JSON.stringify(message)), text: (text: string) => listener?.message(text), disposed: () => disposed };
 }
 const flush = async () => { await setImmediate(); await setImmediate(); };
+
+test("suppressed cancellation notifications still reject locally and release deadlines", async () => {
+    const wire = raw(), timer = clock(), errors: Error[] = [];
+    let mode: "suppress" | "throw" | "allow" = "suppress";
+    const rpc = new JsonRpcConnection(wire.port, { schedule: timer.schedule, onError: error => errors.push(error),
+        notifyCancellation: () => { if (mode === "throw") throw new Error("policy failure"); return mode === "allow"; } });
+    try {
+        const first = rpc.request("custom/first"), cancelled = assert.rejects(first.result, error => error instanceof RpcError && error.code === rpcCodes.requestCancelled);
+        first.cancel(); await cancelled; assert.equal(timer.count(), 0); assert.equal(wire.sent.length, 1);
+        const second = rpc.request("custom/deadline"), timedOut = assert.rejects(second.result, error => error instanceof RpcError && error.code === rpcCodes.timeout);
+        timer.fire(); await timedOut; assert.equal(timer.count(), 0); assert.equal(wire.sent.length, 2);
+        mode = "throw"; const third = rpc.request("custom/policy"), rejected = assert.rejects(third.result, RpcError); third.cancel(); await rejected;
+        assert.equal(wire.sent.length, 3); assert.equal(errors[0]!.message, "policy failure"); assert.equal(timer.count(), 0);
+        mode = "allow"; const last = rpc.request("custom/normal"), ending = assert.rejects(last.result, RpcError); last.cancel(); await ending;
+        assert.deepEqual(wire.sent.at(-1), { jsonrpc: "2.0", method: "$/cancelRequest", params: { id: last.id } });
+        assert.equal(rpc.snapshot().pendingRequests, 0); assert.equal(timer.count(), 0);
+    } finally { rpc.dispose(); }
+});
 
 test("RPC JSON node limits follow the message budget and accept large bounded replies", async t => {
     const wire = raw(), timer = clock(), rpc = new JsonRpcConnection(wire.port, { schedule: timer.schedule });

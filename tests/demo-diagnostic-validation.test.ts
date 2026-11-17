@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Workspace } from "../src/index.ts";
 import { LspLineIndex } from "../src/protocol/index.ts";
-import type { LspDocumentCapture } from "../src/protocol/index.ts";
+import type { LspDocumentCapture, LspWorkspaceScope } from "../src/protocol/index.ts";
 import { DemoLanguage } from "../examples/demo/language.ts";
 
 /** Exercise the host's check loop against captured provider replies without opening a server. */
@@ -21,13 +21,13 @@ async function fixture(count: number) {
     }
     const language = new DemoLanguage(workspace, files, "test", async () => { throw new Error("This fixture supplies captured replies directly."); });
     Object.assign(language, { active: true, config: { documents: Object.fromEntries(files.map(file => [file.name, { uri: `file:///${file.name}` }])), close: async () => {} },
-        scope: { flush: async () => {}, captureProject: () => captures, dispose: () => {},
+        scope: { flush: async () => {}, captureProject: () => captures, release: () => {},
             request: (_method: string, params: { uri: string; kind: string }) => {
                 calls.push(params); return { id: calls.length, cancel: () => {}, result: Promise.resolve().then(() => {
                     beforeReply(params.uri);
                     return { success: true, body: [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } }, message: `Diagnostic ${calls.length}` }] };
                 }) };
-            } } });
+            } } satisfies Pick<LspWorkspaceScope, "flush" | "captureProject" | "release"> & { request: unknown } });
     return { workspace, files, language, valid, calls, visits: () => visits,
         beforeReply: (callback: typeof beforeReply) => { beforeReply = callback; },
         check: () => (language as unknown as { check(): Promise<void> }).check(),

@@ -1,6 +1,6 @@
 import type { Observable, Workspace } from "../../src/index.ts";
 import { LspWorkspace, LspLineIndex, decodeLspDiagnostics, lspRangeOffsets } from "../../src/protocol/index.ts";
-import type { LspWorkspaceScope, RpcCall, LspSessionAccess, LspTargetResolver } from "../../src/protocol/index.ts";
+import type { LspWorkspaceScope, RpcCall, LspScopeAccess, LspTargetResolver } from "../../src/protocol/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { DemoFile } from "./project.ts";
 import type { DemoProvider, DemoProviderFactory } from "./provider-contract.ts";
@@ -138,7 +138,7 @@ export class DemoLanguage {
         if (this.timer) clearTimeout(this.timer);
         this.timer = setTimeout(() => { this.timer = undefined; void this.check(); }, 180);
     }
-    async prepareActions(session: LspSessionAccess, file: DemoFile): Promise<void> {
+    async prepareActions(session: LspScopeAccess, file: DemoFile): Promise<void> {
         const config = this.config, lifecycle = this.lifecycle;
         if (!config || !this.valid(lifecycle) || !this.files.includes(file)) throw new Error("The language service is unavailable.");
         const uri = config.documents[file.name]!.uri;
@@ -199,7 +199,7 @@ export class DemoLanguage {
         this.invalidate(true); this.owner?.disconnect(); this.publish({ status: "suspended", checking: false, message: "Language service is idle." });
     }
     retry(): Promise<LspWorkspace> {
-        this.stopProvider?.(); this.stopProvider = undefined; this.scope?.dispose(); this.scope = undefined; this.owner?.dispose(); this.owner = undefined;
+        this.stopProvider?.(); this.stopProvider = undefined; this.scope?.release(); this.scope = undefined; this.owner?.dispose(); this.owner = undefined;
         if (this.config) void this.remove(this.config); this.config = undefined; this.suspend(); return this.connect();
     }
     private remove(config: DemoProvider): Promise<void> { return config.close(); }
@@ -207,7 +207,7 @@ export class DemoLanguage {
         if (this.disposal) return this.disposal;
         const opening = this.opening, config = this.config;
         this.suspend(); this.disposed = true; this.stopWorkspace(); this.stopProvider?.(); this.diagnostics.update([]);
-        this.scope?.dispose(); this.owner?.dispose();
+        this.scope?.release(); this.owner?.dispose();
         this.scope = undefined; this.owner = undefined; this.config = undefined;
         // Public request/scope cancellation releases retention through microtasks. Finish startup
         // and host cleanup, then cross the task boundary before the project releases its resources.

@@ -11,7 +11,7 @@ import type { DemoProviderBootstrap } from "../examples/demo/provider-contract.t
 import { demoSample } from "../examples/demo/samples.ts";
 import { Workspace } from "../src/index.ts";
 import { LspWorkspace, createLspActionClient, decodeLspCompletions, decodeLspResolvedCompletion, lspCompletionPlan } from "../src/protocol/index.ts";
-import type { LspDocumentCapture, LspSessionAccess } from "../src/protocol/index.ts";
+import type { LspDocumentCapture, LspScopeAccess } from "../src/protocol/index.ts";
 import { openWebSocketTransport } from "../src/browser/index.ts";
 
 test("demo capacity reclaims idle workspaces while retaining connected clients and bounding concurrent allocation", { timeout: 15000 }, async () => {
@@ -87,7 +87,7 @@ test("real demo provider uses public workspace capture/sync over WebSocket and r
             schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
             documentInfo: document => { const info = config.documents[document.key.resource]; return info && { uri: info.uri, languageId: "typescript" }; } });
         const scope = owner.createScope(); scope.setDocuments(files.map(file => workspace.document(file.resource.documentId)));
-        await scope.connect();
+        await scope.ensureConnected();
         const source = files.find(file => file.name === "main.ts")!;
         const binding = scope.attachDocument(source.resource.documentId);
         const diagnostics = await scope.requestCommand("typescript.tsserverRequest", ["semanticDiagnosticsSync", { file: config.documents["main.ts"]!.path }, {}]).result;
@@ -102,7 +102,7 @@ test("real demo provider uses public workspace capture/sync over WebSocket and r
         await assert.rejects(scope.requestCommand("typescript.tsserverRequest", ["open", { file: config.documents["main.ts"]!.path }, {}]).result, /captured diagnostic commands/);
         await assert.rejects(scope.requestCommand("_typescript.applyRefactoring", [{ file: config.documents["main.ts"]!.path,
             refactor: "Extract Symbol", action: "constant_scope_0" }]).result, /captured diagnostic commands/);
-        owner.disconnect(); await scope.connect();
+        owner.disconnect(); await scope.ensureConnected();
         const again = await scope.requestCommand("typescript.tsserverRequest", ["semanticDiagnosticsSync", { file: config.documents["main.ts"]!.path }, {}]).result;
         assert.doesNotMatch(JSON.stringify(again), /2345/);
         owner.dispose(); owner = undefined;
@@ -127,7 +127,7 @@ test("real lazy imports, snippets and reviewed command edits use public clients 
             features: ["textDocument/completion", "textDocument/codeAction", "workspace/executeCommand"], applyEdit: true,
             documentInfo: document => ({ uri: config.documents[document.key.resource]!.uri, languageId: "typescript" }),
             schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); } });
-        const scope = owner.createScope(); scope.setDocuments(files.map(file => workspace.document(file.resource.documentId))); await scope.connect();
+        const scope = owner.createScope(); scope.setDocuments(files.map(file => workspace.document(file.resource.documentId))); await scope.ensureConnected();
         const source = files.find(file => file.name === "main.ts")!, before = workspace.document(source.resource.documentId), binding = scope.attachDocument(before.id);
         let capture: LspDocumentCapture | undefined;
         const response = await scope.requestDocument("textDocument/completion", binding, (index, _document, current) => {
@@ -223,12 +223,12 @@ test("real quick fixes use correlated diagnostic context through the public acti
             features: ["textDocument/codeAction"], diagnostics: false,
             schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
             documentInfo: document => ({ uri: config.documents[document.key.resource]!.uri, languageId: "typescript" }) });
-        const scope = owner.createScope(); scope.setDocuments(files.map(file => workspace.document(file.resource.documentId))); await scope.connect();
+        const scope = owner.createScope(); scope.setDocuments(files.map(file => workspace.document(file.resource.documentId))); await scope.ensureConnected();
         const source = files.find(file => file.name === "main.ts")!, binding = scope.attachDocument(source.resource.documentId), doc = workspace.document(source.resource.documentId), from = doc.text().indexOf("calculateTotl(");
         const request = () => scope.requestDocument("textDocument/codeAction", binding, index => ({ range: { start: index.at(from), end: index.at(from + 13) }, context: { diagnostics: [] } })).result;
         await assert.rejects(request(), /current captured diagnostics/);
         client = createLspActionClient(owner);
-        const prepare = async (session: LspSessionAccess) => {
+        const prepare = async (session: LspScopeAccess) => {
             for (const kind of ["syntactic", "semantic"]) await session.request("sttropez/diagnostics", { uri: config.documents["main.ts"]!.uri, kind }).result;
         };
         let batch = await client.run(files.map(file => workspace.document(file.resource.documentId)), doc.id, from, from + 13, prepare);

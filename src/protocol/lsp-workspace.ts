@@ -11,10 +11,17 @@ import { decodeLspDiagnostics } from "./lsp-features.ts";
 import type { LspDiagnostics } from "./lsp-features.ts";
 import type { LspTargetResolver } from "./lsp-targets.ts";
 
-export type LspSessionAccess = Pick<LspSession, "state" | "connect" | "disconnect" | "dispose" | "flush" | "bindDocument" | "synchronized" | "requestDocument" | "canRequest" | "featureOptions" | "commandNames" | "requestCommand" | "request" | "notify" | "onRequest" | "onNotification" | "snapshotOwnership">;
+export type LspScopeAccess = Pick<LspSession, "state" | "flush" | "bindDocument" | "synchronized" | "requestDocument" | "canRequest" | "featureOptions" | "commandNames" | "requestCommand" | "request" | "notify" | "onRequest" | "onNotification" | "snapshotOwnership"> & Readonly<{
+    /** Start or join the owner's shared connection; cancellation expires only this scope's wait. */
+    ensureConnected: () => Promise<void>;
+    /** Cancel this scope's intents, retaining its bindings, handlers and shared connection. */
+    cancel: () => void;
+    /** Cancel intents and release this scope's handlers and document participation. */
+    release: () => void;
+}>;
 /** Optional host custom-message preparation, inside the feature's captured request lifetime. */
-export type LspPrepare = (session: LspSessionAccess) => Promise<unknown>;
-export type LspWorkspaceScope = Omit<LspSessionAccess, "state"> & Readonly<{
+export type LspPrepare = (scope: LspScopeAccess) => Promise<unknown>;
+export type LspWorkspaceScope = Omit<LspScopeAccess, "state"> & Readonly<{
     state: Observable<LspWorkspaceSnapshot>;
     attachDocument: (id: DocumentId) => LspDocument;
     setDocuments: (documents: readonly DocumentSnapshot[]) => ReadonlyMap<string, LspDocument>;
@@ -223,6 +230,7 @@ export class LspWorkspace {
     flush(): Promise<void> { this.writable(); for (const entry of [...this.documents.values()]) this.synchronize(entry); return this.session.flush(); }
     disconnect(): void { this.writable(); this.session.disconnect(); }
     async reconnect(): Promise<void> { this.disconnect(); await this.connect(); }
+    shutdown(): Promise<void> { this.writable(); for (const entry of [...this.documents.values()]) this.synchronize(entry); return this.session.shutdown(); }
 
     createScope(): LspWorkspaceScope {
         this.writable(); if (this.scopes.size >= (this.options.maxScopes ?? wireLimits.scopes)) throw new RangeError("Provider scope limit exceeded.");
@@ -260,9 +268,9 @@ export class LspWorkspace {
             documents.set(id, document); handles.set(document, entry); entry.users.add(close); return document;
         };
         const listen = (stop: () => void) => { const release = () => { stops.delete(release); stop(); }; stops.add(release); return release; };
-        const disconnect = () => { if (!scope.active) return; scope.generation++; if (this.command?.scope === scope) this.endCommand(this.command, this.command.sent); for (const notify of [...scope.incoming]) notify(); for (const call of [...pending]) call.cancel(); };
+        const cancel = () => { if (!scope.active) return; scope.generation++; if (this.command?.scope === scope) this.endCommand(this.command, this.command.sent); for (const notify of [...scope.incoming]) notify(); for (const call of [...pending]) call.cancel(); };
         scope.close = () => {
-            if (!scope.active) return; disconnect(); scope.active = false; closedState = Object.freeze({ ...this.state.getSnapshot(), phase: "disposed", commandAvailable: false });
+            if (!scope.active) return; cancel(); scope.active = false; closedState = Object.freeze({ ...this.state.getSnapshot(), phase: "disposed", commandAvailable: false });
             for (const stop of [...stops]) stop(); for (const document of [...documents.values()]) document.close(); this.scopes.delete(scope); scope.applyEdit = undefined;
         };
         this.scopes.add(scope);
@@ -338,8 +346,8 @@ export class LspWorkspace {
                 if (live.resourceId !== snapshot.resourceId || live.revision !== snapshot.revision || live.buffer !== snapshot.buffer || info?.uri !== snapshot.uri || info.languageId !== snapshot.languageId) throw stale();
                 return attach(live.id);
             },
-            connect: async () => { writable(); const generation = scope.generation; await this.connect(); if (!current(generation)) throw cancelled(); },
-            disconnect, dispose: () => { if (!scope.active) return; this.notifications.assertWritable(); scope.close(); },
+            ensureConnected: async () => { writable(); const generation = scope.generation; await this.connect(); if (!current(generation)) throw cancelled(); },
+            cancel, release: () => { if (!scope.active) return; this.notifications.assertWritable(); scope.close(); },
             flush: async selected => { writable(); const generation = scope.generation, captured = selected && [...selected];
                 if (captured) {
                     const bindings = captured.map(document => { const entry = handles.get(document); if (!entry) throw stale(); this.synchronize(entry); return unwrap(document); });

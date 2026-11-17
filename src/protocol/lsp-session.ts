@@ -186,6 +186,7 @@ export class LspSession {
         catch (error) { void raced.catch(() => {}); throw error; } finally { this.release(stopDeadline); }
         if (!this.current(epoch)) { this.release(() => transport.dispose()); throw closed(); }
         const rpc = new JsonRpcConnection(transport, { ...this.options.rpc, schedule: this.options.schedule, onError: error => this.report(error),
+            notifyCancellation: () => this.current(epoch) && this.store.get().phase !== "stopping",
             onClose: error => { void Promise.resolve().then(() => { if (this.current(epoch)) this.drop(error); }); } });
         this.rpc = rpc; this.install(rpc, epoch); this.publish("initializing");
         const response = await rpc.request("initialize", this.initializeParams).result;

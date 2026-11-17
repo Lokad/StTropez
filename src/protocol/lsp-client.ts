@@ -43,7 +43,7 @@ export function createLspClient(provider: LspWorkspace) {
             previous.reject(cancelled());
             for (const cleanup of [...previous.cleanups]) cleanup(); previous.cleanups.clear();
         }
-        scope.disconnect();
+        scope.cancel();
         if (releaseDocuments) release();
     };
     const current = (request: Request) => !disposed && latest === request && !request.cancelled && request.generation === generation;
@@ -79,7 +79,7 @@ export function createLspClient(provider: LspWorkspace) {
             if (!target) throw new Error("LSP source is outside the captured project.");
             const connection = scope.state.getSnapshot();
             if (connection.phase === "disconnected" && connection.epoch !== 0) throw closedConnection("LSP connection requires an explicit host connect or reconnect.");
-            await scope.connect();
+            await scope.ensureConnected();
             validate(op);
             await scope.flush([...documents.values()]);
             validate(op);
@@ -172,7 +172,7 @@ export function createLspClient(provider: LspWorkspace) {
             disposed = true;
             invalidate(true);
             stop();
-            scope.dispose();
+            scope.release();
             listeners.clear();
         } });
 }

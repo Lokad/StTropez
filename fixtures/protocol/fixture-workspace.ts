@@ -1,12 +1,12 @@
 import { LspWorkspace } from "../../src/protocol/index.ts";
-import type { JsonValue, LspDocumentFeature, LspSessionAccess, LspWorkspaceOptions, LspWorkspaceScope } from "../../src/protocol/index.ts";
+import type { JsonValue, LspDocumentFeature, LspScopeAccess, LspWorkspaceOptions, LspWorkspaceScope } from "../../src/protocol/index.ts";
 import type { Workspace } from "../../src/index.ts";
 
 const commandKey = (command: string) => `workspace/executeCommand:${command}`;
 
 /** Development-peer policy travels with its request, never in connection-wide configuration. */
 export class FixtureLspWorkspace extends LspWorkspace {
-    private readonly preparations = new WeakMap<LspSessionAccess, (method: string, policy: JsonValue, replacePending: boolean) => void>();
+    private readonly preparations = new WeakMap<LspScopeAccess, (method: string, policy: JsonValue, replacePending: boolean) => void>();
     private readonly sendCommand: <T>(command: string, policy: JsonValue | undefined, send: () => T) => T;
 
     constructor(workspace: Workspace, options: LspWorkspaceOptions) {
@@ -32,14 +32,14 @@ export class FixtureLspWorkspace extends LspWorkspace {
     }
 
     /** Call synchronously inside the feature's preparation hook, before any optional await. */
-    prepareRequest(scope: LspSessionAccess, method: LspDocumentFeature | "codeAction/resolve", policy: Readonly<Record<string, JsonValue>>,
+    prepareRequest(scope: LspScopeAccess, method: LspDocumentFeature | "codeAction/resolve", policy: Readonly<Record<string, JsonValue>>,
         options: Readonly<{ replacePending?: boolean }> = {}): Promise<void> {
         return this.prepare(scope, method, policy, options.replacePending === true);
     }
-    prepareCommand(scope: LspSessionAccess, command: string, policy: Readonly<Record<string, JsonValue>>): Promise<void> {
+    prepareCommand(scope: LspScopeAccess, command: string, policy: Readonly<Record<string, JsonValue>>): Promise<void> {
         return this.prepare(scope, commandKey(command), policy, false);
     }
-    private async prepare(scope: LspSessionAccess, method: string, policy: Readonly<Record<string, JsonValue>>, replacePending: boolean): Promise<void> {
+    private async prepare(scope: LspScopeAccess, method: string, policy: Readonly<Record<string, JsonValue>>, replacePending: boolean): Promise<void> {
         const prepare = this.preparations.get(scope);
         if (!prepare) throw new Error("Request policy requires a live scope from this fixture workspace.");
         prepare(method, structuredClone(policy), replacePending);
@@ -64,12 +64,11 @@ export class FixtureLspWorkspace extends LspWorkspace {
             },
             requestCommand: (command, args, timeout, authorization) => this.sendCommand(command, take(commandKey(command)),
                 () => scope.requestCommand(command, args, timeout, authorization)),
-            disconnect: () => { pending = undefined; scope.disconnect(); },
-            dispose: () => { pending = undefined; this.preparations.delete(wrapped); scope.dispose(); },
+            cancel: () => { pending = undefined; scope.cancel(); },
+            release: () => { pending = undefined; this.preparations.delete(wrapped); scope.release(); },
         });
         this.preparations.set(wrapped, (method, policy, replacePending) => {
-            // Completion invalidates its previous intent without disconnecting this scope.
-            // Only that latest-intent owner may replace an abandoned preparation for the same method.
+            // Only the latest-intent owner may replace an abandoned policy for the same method.
             if (pending && (!replacePending || pending.method !== method)) throw new Error("A fixture request already owns this scope's pending policy.");
             pending = { method, policy };
         });

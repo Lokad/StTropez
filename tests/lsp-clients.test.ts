@@ -95,15 +95,15 @@ test("request validation binds a project once and never replaces a captured URI 
     const entered = latch<void>(), reply = latch<unknown>(); t.after(() => reply.resolve([]));
     f.peer.onRequest("textDocument/references", () => { entered.resolve(); return reply.promise; });
     const pending = run(), rejected = assert.rejects(pending, error => stale(error) || cancelled(error)); await entered.promise;
-    version++; const replacement = f.provider.createScope(); t.after(replacement.dispose);
+    version++; const replacement = f.provider.createScope(); t.after(replacement.release);
     const binding = replacement.attachDocument(f.source.documentId); await replacement.flush([binding]); reply.resolve([]); await rejected;
     assert.equal(result.isCurrent(), false); assert.equal(binding.getSnapshot().uri, `generic:1/${f.source.id}`);
     assert.equal(f.provider.snapshot().documents, 1, "Validation must not reattach the expired captured project.");
 });
 
 test("actions forward immutable diagnostic metadata only for matching current versions and placed overlapping ranges", async t => {
-    const f = clientFixture(t), client = createLspActionClient(f.provider), control = f.provider.createScope(); t.after(() => { client.dispose(); control.dispose(); });
-    const binding = control.attachDocument(f.source.documentId); await control.connect();
+    const f = clientFixture(t), client = createLspActionClient(f.provider), control = f.provider.createScope(); t.after(() => { client.dispose(); control.release(); });
+    const binding = control.attachDocument(f.source.documentId); await control.ensureConnected();
     assert.deepEqual((f.sent("initialize")[0]!.params as { capabilities: { textDocument: { publishDiagnostics: unknown } } }).capabilities.textDocument.publishDiagnostics,
         { versionSupport: true, relatedInformation: true, tagSupport: { valueSet: [1, 2] }, codeDescriptionSupport: true, dataSupport: true });
     const capture = control.synchronized(binding)!, range = { start: { line: 0, character: 6 }, end: { line: 0, character: 10 } };
@@ -150,12 +150,12 @@ test("hover supersession cancels obsolete wire work promptly and old cancellatio
 test("cancelling delayed connection settles the feature without disconnecting another scope", async t => {
     const opening = latch<void>(), f = clientFixture(t, () => opening.promise), client = createLspHoverClient(f.provider);
     t.after(() => { opening.resolve(); client.dispose(); });
-    const control = f.provider.createScope(); control.attachDocument(f.source.documentId); t.after(control.dispose);
+    const control = f.provider.createScope(); control.attachDocument(f.source.documentId); t.after(control.release);
     const call = client.run(f.document(), 6); let result: unknown;
     const observed = call.result.catch(error => { result = error; });
     call.cancel(); await settled(); assert.ok(cancelled(result)); assert.equal(f.provider.snapshot().documentParticipants, 2);
     client.dispose(); assert.equal(f.provider.snapshot().documentParticipants, 1);
-    opening.resolve(); await control.connect(); await observed;
+    opening.resolve(); await control.ensureConnected(); await observed;
     assert.equal(f.provider.snapshot().created, 1); assert.equal(control.synchronized(control.attachDocument(f.source.documentId))!.isCurrent(), true);
 });
 test("a document edit during delayed connection rejects the original position before dispatch", async t => {

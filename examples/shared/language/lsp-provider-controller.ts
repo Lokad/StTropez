@@ -1,11 +1,11 @@
 import { createLspEditor } from "../../../src/browser/index.ts";
 import type { EditingCandidate } from "../../../src/browser/index.ts";
 import type { TabId, Workspace } from "../../../src/index.ts";
-import type { LspSessionAccess, LspWorkspace } from "../../../src/protocol/index.ts";
+import type { LspScopeAccess, LspWorkspace } from "../../../src/protocol/index.ts";
 import type { ProviderController, ProviderOptions } from "./provider-contract.ts";
 
 export type LspProviderOptions = ProviderOptions & Readonly<{ provider: LspWorkspace;
-    beforeRequest?: (session: LspSessionAccess, configuration: Readonly<{ delay: number; fault?: "malformed" | "failure" }>) => Promise<unknown> }>;
+    beforeRequest?: (session: LspScopeAccess, configuration: Readonly<{ delay: number; fault?: "malformed" | "failure" }>) => Promise<unknown> }>;
 
 /** Development-only fault/delay controls around the same public editor integration. */
 export function createLspProviderController(workspace: Workspace, tabId: TabId, editor: EditingCandidate, options: LspProviderOptions): ProviderController {

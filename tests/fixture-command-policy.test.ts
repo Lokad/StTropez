@@ -48,7 +48,7 @@ async function fixture() {
 test("fixture review registration serializes acknowledgements, bounds pending work and distinguishes queued from dispatched cancellation", { timeout: 15000 }, async () => {
     const f = await fixture(), register = (registered: boolean) => f.first.request("fixture/reviewRegistration", { registered });
     try {
-        await f.first.connect(); await f.second.connect();
+        await f.first.ensureConnected(); await f.second.ensureConnected();
         const held = f.holdNext(), first = register(true), others = Array.from({ length: 63 }, () => f.second.request("fixture/reviewRegistration", { registered: true }));
         const results = Promise.allSettled([first, ...others].map(call => call.result));
         await Promise.race([held.entered, first.result.then(() => assert.fail("Registration completed before its held acknowledgement"))]);
@@ -83,7 +83,7 @@ test("fixture command policy preserves authorized arguments, request ids and can
     const authorization = { command, arguments: args, isCurrent: () => true };
     const commands = () => f.sent.filter(packet => packet.method === "workspace/executeCommand");
     try {
-        await f.first.connect(); await f.second.connect();
+        await f.first.ensureConnected(); await f.second.ensureConnected();
         const policy = { delay: 0, fault: "failure" };
         await f.owner.prepareCommand(f.first, command, policy); policy.fault = "ack";
         await f.owner.prepareCommand(f.second, command, { delay: 0 });
@@ -102,7 +102,7 @@ test("fixture command policy preserves authorized arguments, request ids and can
         assert.throws(() => f.first.requestCommand(command, [], undefined, authorization), error => error instanceof RpcError && error.code === -32601);
         assert.equal(commands().length, before);
         assert.deepEqual(await f.first.requestCommand(command).result, { documents: 0 }); assert.equal(commands().at(-1)!.params?._fixture, undefined);
-        await f.owner.prepareCommand(f.first, command, { delay: 0, fault: "failure" }); f.first.disconnect(); await f.first.connect();
+        await f.owner.prepareCommand(f.first, command, { delay: 0, fault: "failure" }); f.first.cancel(); await f.first.ensureConnected();
         assert.deepEqual(await f.first.requestCommand(command).result, { documents: 0 });
 
         await f.owner.prepareCommand(f.first, command, { delay: 1000, fault: "failure" });
@@ -110,7 +110,7 @@ test("fixture command policy preserves authorized arguments, request ids and can
         delayed.cancel(); await rejected;
         assert.ok(f.sent.some(packet => packet.method === "$/cancelRequest" && packet.params?.id === delayed.id));
         assert.equal(f.owner.state.getSnapshot().commandRequiresReconnect, true);
-        f.owner.disconnect(); await f.first.connect();
+        f.owner.disconnect(); await f.first.ensureConnected();
         assert.deepEqual(await f.first.requestCommand(command).result, { documents: 0 }); assert.equal(commands().at(-1)!.params?._fixture, undefined);
         assert.ok(f.sent.every(packet => packet.params?._fixture === undefined || packet.method === "workspace/executeCommand"));
     } finally { await f.dispose(); }

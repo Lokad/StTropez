@@ -163,6 +163,8 @@ Feature clients establish their result types through their decoders.
 String, null and safe-integer IDs are accepted; fractional and unsafe numeric IDs are refused.
 Notifications receive no replies. Late successful replies are ignored; uncorrelated error replies
 reach `onError`. Disposing the connection releases its transport, deadlines and pending work.
+`notifyCancellation` can suppress cancellation notifications while keeping local rejection and
+deadline cleanup. A throwing policy reports its failure through `onError` and sends no notification.
 
 `RpcError` carries a numeric protocol `code`, message and optional JSON `data`. Remote error
 responses reject their calls with this error; request handlers can throw it to supply a
@@ -182,6 +184,12 @@ close a binding before reusing its URI. `connect()` orders `initialize` and `ini
 UTF-16 negotiation and synchronizes eligible bindings. `shutdown()` performs the orderly
 shutdown/exit exchange. `disconnect()` retains local bindings for a new connection; `dispose()`
 releases session ownership. `LspWorkspace.dispose()` closes the connection directly.
+`LspWorkspace.shutdown()` first synchronizes its participating workspace snapshots, then uses
+the session's orderly shutdown/exit exchange. Both shutdown methods require a ready connection.
+During the exchange, new requests are refused and cancellation settles locally without sending
+further cancellation notifications. Failure closes that captured connection; it cannot close a
+replacement connection. Local bindings and scope participation survive for an explicit reconnect.
+Edits made while stopping remain local and are synchronized by that later connection.
 
 ### Feature capability queries
 
@@ -204,9 +212,32 @@ is capability metadata: a later request requires an admitted binding and current
 Use `attachDocument(id)` or `setDocuments(snapshots)` to participate. Each participating document
 has one workspace lease/observer, one protocol binding and one wire-version stream across views.
 The last participant closes that binding and releases its lease after notification delivery.
-Keep a host scope when unmounted project documents must participate. `scope.disconnect()` cancels
-that scope's work; owner `disconnect()` and `reconnect()` change the shared connection. Scope
-disposal releases its calls, handlers and participation; owner disposal closes every scope.
+Keep a host scope when unmounted project documents must participate. `LspScopeAccess` describes
+scoped request access, including host preparation callbacks. `scope.ensureConnected()` starts or
+joins the owner's shared connection; cancelling that wait does not disconnect other participants.
+`scope.cancel()` expires only that scope's intents, retaining bindings and registered handlers.
+`scope.release()` cancels its calls and releases its handlers and participation; repeated release
+is harmless. Owner `disconnect()` and `reconnect()` change the shared connection, and owner
+`dispose()` closes every scope. Orderly `shutdown()` belongs to the owner.
+
+Retain a project scope across an orderly provider restart:
+
+```ts
+import type { DocumentId } from "sttropez";
+import type { LspWorkspace } from "sttropez/protocol";
+
+export async function reconnectProject(provider: LspWorkspace, document: DocumentId) {
+    const scope = provider.createScope();
+    try {
+        scope.attachDocument(document);
+        await scope.ensureConnected();
+        await provider.shutdown();
+        await scope.ensureConnected();
+    } finally {
+        scope.release();
+    }
+}
+```
 
 `scope.captureBinding(binding)` supplies an immutable `LspBindingCapture` for a synchronized
 binding without adding participation. Its `document` identifies the captured binding and

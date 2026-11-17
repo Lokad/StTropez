@@ -21,7 +21,7 @@ test("fixture diagnostics address the requested URI and reject missing, unknown 
     const scope = owner.createScope(), pushes: { uri: string; version?: number; diagnostics: { range: unknown; message: string }[] }[] = [];
     scope.onNotification("textDocument/publishDiagnostics", value => { pushes.push(value as typeof pushes[number]); });
     try {
-        scope.setDocuments([workspace.document(first.documentId), workspace.document(second.documentId)]); await scope.connect(); await scope.flush();
+        scope.setDocuments([workspace.document(first.documentId), workspace.document(second.documentId)]); await scope.ensureConnected(); await scope.flush();
         assert.ok(workspace.edit({ documentId: second.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "// " }] }).applied);
         await scope.flush(); const secondVersion = scope.captureProject().get(uri)!.version;
         await scope.request("fixture/state").result; pushes.length = 0;
@@ -73,7 +73,7 @@ test("generic host profile joins selector registration, space-triggered lazy sni
         return { documentId: source.documentId, expectedRevision: change.target.document.revision, origin: "host", edits: change.edits, history: { kind: "refactor" } };
     }));
     try {
-        scope.setDocuments([document(), workspace.document(other.documentId)]); await scope.connect();
+        scope.setDocuments([document(), workspace.document(other.documentId)]); await scope.ensureConnected();
         const binding = scope.attachDocument(source.documentId), nonmatching = scope.attachDocument(other.documentId);
         assert.equal(scope.canRequest("textDocument/completion", binding), false);
         await scope.request("fixture/completionStyle", { style: "interactive" }).result;

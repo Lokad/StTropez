@@ -28,7 +28,7 @@ test("fixture hover policy belongs to the captured request across overlapping sc
     });
     const scope = owner.createScope(), first = createLspHoverClient(owner), second = createLspHoverClient(owner), held = gate();
     try {
-        scope.setDocuments(documents); await scope.connect();
+        scope.setDocuments(documents); await scope.ensureConnected();
         // Same-document views also need separate request ownership: a URI alone cannot key policy.
         for (const other of documents) {
             const prepared = gate(); let count = 0;
@@ -114,7 +114,7 @@ test("fixture language requests retain their own faults, module aliases and reso
         if (outcomes[1]!.status === "fulfilled") assert.ok(outcomes[1]!.value, method);
     };
     try {
-        scope.setDocuments([document]); await scope.connect();
+        scope.setDocuments([document]); await scope.ensureConnected();
         const offset = document.text().indexOf("color") + 2;
         await overlap("textDocument/completion", async (index, prepare) => {
             const session = completion[index]!; session.setDocuments([document]); await session.flush(); await prepare(session);
@@ -171,7 +171,8 @@ test("fixture language requests retain their own faults, module aliases and reso
         await assert.rejects(scope.request("documentLink/resolve", { ...values, _fixture: { delay: 0, fault: "failure" } }).result,
             error => error instanceof RpcError && error.code === -32602);
     } finally {
-        for (const client of [...signatures, ...links, ...colors, ...navigation, ...renames, ...completion, ...actions]) client.dispose(); owner.dispose(); detach();
+        for (const client of [...signatures, ...links, ...colors, ...navigation, ...renames, ...actions]) client.dispose();
+        for (const scope of completion) scope.release(); owner.dispose(); detach();
         await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
         assert.equal(workspace.diagnostics().leases, 0);
     }

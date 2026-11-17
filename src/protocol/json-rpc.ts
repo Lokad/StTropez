@@ -11,6 +11,8 @@ export type RpcScheduler = (delayMs: number, callback: () => void) => () => void
 export type RpcOptions = Readonly<{ schedule: RpcScheduler; timeoutMs?: number; maxPending?: number; maxMessageUnits?: number;
     /** Maximum JSON values per transport message, including a batch; defaults to maxMessageUnits. */
     maxJsonNodes?: number;
+    /** Whether local cancellation/deadline expiry may notify the peer; local rejection always occurs. */
+    notifyCancellation?: () => boolean;
     onError?: (error: Error) => void; onClose?: (error: Error) => void }>;
 export type RpcCall<T> = Readonly<{ id: number; result: Promise<T>; cancel: () => void }>;
 export type RpcRequestContext = Readonly<{ id: RpcId; cancelled: boolean; onCancel: (listener: () => void) => () => void }>;
@@ -81,7 +83,10 @@ export class JsonRpcConnection {
         const entry: Pending = { resolve, reject, stop: () => {} }; this.pending.set(id, entry);
         const cancel = (error: RpcError) => {
             if (this.pending.get(id) !== entry) return; this.pending.delete(id); this.release(entry.stop); reject(error);
-            this.emit({ jsonrpc: "2.0", method: "$/cancelRequest", params: { id } });
+            let notify = true;
+            try { notify = this.options.notifyCancellation?.() ?? true; }
+            catch (error) { notify = false; this.report(error instanceof Error ? error : new Error("RPC cancellation policy failed.")); }
+            if (notify) this.emit({ jsonrpc: "2.0", method: "$/cancelRequest", params: { id } });
         };
         try { entry.stop = this.options.schedule(timeoutMs, () => cancel(new RpcError(rpcCodes.timeout, "RPC request timed out."))); }
         catch (error) { this.pending.delete(id); reject(error instanceof Error ? error : new Error("RPC scheduling failed.")); }

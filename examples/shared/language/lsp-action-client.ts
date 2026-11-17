@@ -1,11 +1,11 @@
 import { createLspActionClient as createClient } from "../../../src/protocol/index.ts";
-import type { LspCommandPolicy, LspSessionAccess, LspWorkspace } from "../../../src/protocol/index.ts";
+import type { LspCommandPolicy, LspScopeAccess, LspWorkspace } from "../../../src/protocol/index.ts";
 import type { DocumentId, DocumentSnapshot } from "../../../src/index.ts";
 export type LspActionConfiguration = Readonly<{ module: string; delay: number; fault?: "malformed" | "failure" | "incomplete" | "markup" }>;
 export type LspActionOptions = Readonly<{ provider: LspWorkspace;
     commandPolicy?: LspCommandPolicy;
-    beforeRequest?: (session: LspSessionAccess, configuration: LspActionConfiguration) => Promise<unknown>;
-    beforeResolve?: (session: LspSessionAccess, configuration: LspActionConfiguration) => Promise<unknown> }>;
+    beforeRequest?: (session: LspScopeAccess, configuration: LspActionConfiguration) => Promise<unknown>;
+    beforeResolve?: (session: LspScopeAccess, configuration: LspActionConfiguration) => Promise<unknown> }>;
 export type LspActionClient = ReturnType<typeof createLspActionClient>;
 export type LspActionBatch = Awaited<ReturnType<LspActionClient["run"]>>;
 export type LspActionFactory = () => LspActionClient;

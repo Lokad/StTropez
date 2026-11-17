@@ -1,11 +1,11 @@
 import type { DocumentId, TextBuffer, Workspace } from "../../../src/index.ts";
 import { createLspNavigationClient as createClient } from "../../../src/protocol/index.ts";
-import type { LspSessionAccess, LspWorkspace } from "../../../src/protocol/index.ts";
+import type { LspScopeAccess, LspWorkspace } from "../../../src/protocol/index.ts";
 import type { NavigationInput } from "../../../fixtures/language/navigation.ts";
 import { validateNavigationInput } from "../../../fixtures/language/navigation.ts";
 import type { NavigationMetrics, NavigationService, NavigationOrigin } from "./navigation-service.ts";
 export type LspNavigationOptions = Readonly<{ provider: LspWorkspace;
-    beforeRequest?: (session: LspSessionAccess, input: NavigationInput) => Promise<unknown> }>;
+    beforeRequest?: (session: LspScopeAccess, input: NavigationInput) => Promise<unknown> }>;
 
 /** Development query/counter contracts around the exported protocol client. */
 export function createLspNavigationClient(workspace: Workspace, counts: NavigationMetrics,

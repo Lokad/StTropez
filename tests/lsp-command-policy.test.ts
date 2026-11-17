@@ -17,7 +17,7 @@ const run = async (client: ReturnType<typeof createLspActionClient>, f: ReturnTy
 
 test("the direct runner snapshots command identity and arguments before host preparation", async t => {
     const f = clientFixture(t), scope = f.provider.createScope(), runner = protocol.createLspCommandRunner(scope);
-    t.after(() => { runner.dispose(); scope.dispose(); }); await scope.connect();
+    t.after(() => { runner.dispose(); scope.release(); }); await scope.ensureConnected();
     const invocation = { title: "captured", command: "host.allowed", arguments: [{ token: 1 }] };
     await runner.runAuthorized(invocation, { ...scopeFor(f), prepare: () => { invocation.command = "other"; invocation.arguments[0]!.token = 2; } }, { kind: "server" });
     assert.deepEqual(f.sent("workspace/executeCommand")[0]!.params, { command: "host.allowed", arguments: [{ token: 1 }] });
@@ -41,7 +41,7 @@ test("host server authority captures one immutable invocation, refuses other arg
     permitted = false; assert.equal(batch.supports(first.command!), false);
     let prepared = false; await assert.rejects(batch.execute(first, { ...scopeFor(f), prepare: () => { prepared = true; } }), stale);
     assert.equal(prepared, false); assert.equal(policies, 2); assert.equal(f.provider.state.getSnapshot().commandRequiresReconnect, false);
-    const raw = f.provider.createScope(); t.after(raw.dispose);
+    const raw = f.provider.createScope(); t.after(raw.release);
     assert.throws(() => raw.requestCommand("host.allowed", [{ token: 2 }], 1000, { command: "host.allowed", arguments: [{ token: 1 }], isCurrent: () => true }), /does not match/);
     assert.equal(f.sent("workspace/executeCommand").length, 1);
 });
