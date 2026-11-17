@@ -1,13 +1,36 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer, WordCursor } from "../src/index.ts";
+const checkedCursor = (buffer: TextBuffer, offset: number, direction: -1 | 1) => {
+    const beforeConstruction = buffer.readMetrics(), cursor = new WordCursor(buffer, offset, direction);
+    const checkReads = (before: ReturnType<TextBuffer["readMetrics"]>, readUnits: number) => {
+        const current = buffer.readMetrics();
+        assert.equal(current.textExports, before.textExports);
+        assert.ok(current.sliceUnits - before.sliceUnits <= readUnits, "Unreported word-navigation slice reads.");
+    };
+    const initial = cursor.snapshot();
+    checkReads(beforeConstruction, initial.readUnits);
+    assert.equal(initial.workUnits, 0); assert.equal(initial.readUnits, 0);
+    return {
+        snapshot: () => cursor.snapshot(),
+        next: (budget = 4096) => {
+            // Measure each call independently: another cursor may read the same captured buffer.
+            const before = buffer.readMetrics(), prior = cursor.snapshot(), step = cursor.next(budget);
+            checkReads(before, step.readUnits - prior.readUnits);
+            assert.ok(step.workUnits - prior.workUnits <= budget + 256);
+            assert.ok(step.readUnits <= step.workUnits + 512);
+            return step;
+        },
+        dispose: () => { const before = buffer.readMetrics(); cursor.dispose(); assert.deepEqual(buffer.readMetrics(), before); }
+    };
+};
 const next = (buffer: TextBuffer, offset: number, direction: -1 | 1) => {
-    const cursor = new WordCursor(buffer, offset, direction); let step = cursor.next(256);
-    while (step.status === "running") { const before = step.workUnits; step = cursor.next(256); assert.ok(step.workUnits - before <= 512); }
-    assert.equal(step.status, "ready"); return step.offset!;
+    const cursor = checkedCursor(buffer, offset, direction); let step = cursor.next(256);
+    while (step.status === "running") step = cursor.next(256);
+    assert.equal(step.status, "ready"); cursor.dispose(); return step.offset!;
 };
 test("code word starts preserve Unicode letters, marks, joiners, punctuation and raw line endings", () => {
-    const empty = new WordCursor(TextBuffer.from(""), 0, 1), initial = empty.snapshot();
+    const empty = checkedCursor(TextBuffer.from(""), 0, 1), initial = empty.snapshot();
     assert.deepEqual(initial, { status: "running", offset: null, failure: null, workUnits: 0, readUnits: 0 });
     assert.ok(Object.isFrozen(initial)); assert.equal(empty.next().status, "ready"); assert.equal(empty.snapshot().offset, 0);
     assert.equal(initial.status, "running"); empty.dispose(); assert.equal(empty.snapshot().status, "disposed");
@@ -20,17 +43,16 @@ test("code word starts preserve Unicode letters, marks, joiners, punctuation and
     for (const value of ["école\r\n東京", "👩‍💻  αβ", "\t\u0301abc", "a\u200db c"]) {
         const b = TextBuffer.from(value); let at = 0; while (at < b.length) { const old = at; at = next(b, at, 1); assert.ok(at > old); }
         while (at > 0) { const old = at; at = next(b, at, -1); assert.ok(at < old); }
-        assert.equal(b.readMetrics().textExports, 0);
     }
     assert.equal(next(TextBuffer.from("👩‍💻  αβ"), 0, 1), 7);
     assert.equal(next(TextBuffer.from("👩‍💻  αβ"), 7, -1), 0);
 });
 test("arbitrarily long code words and whitespace yield across immutable piece seams without export", () => {
     const buffer = TextBuffer.from("x".repeat(1_000_000) + "  end").replace(255, 255, "😀");
-    const job = new WordCursor(buffer, 258, 1); const first = job.next(256); assert.equal(first.status, "running"); assert.ok(first.readUnits <= 768);
+    const job = checkedCursor(buffer, 258, 1); const first = job.next(256); assert.equal(first.status, "running"); assert.ok(first.readUnits <= 768);
     let step = first; while (step.status === "running") step = job.next(4096);
     assert.equal(step.offset, 1_000_004); assert.equal(next(buffer, 1_000_004, -1), 257);
-    job.dispose(); assert.equal(job.next().status, "disposed"); assert.equal(buffer.readMetrics().textExports, 0);
+    job.dispose(); assert.equal(job.next().status, "disposed");
     assert.throws(() => new WordCursor(buffer, -1, 1)); assert.throws(() => job.next(1));
 });
 
@@ -53,7 +75,6 @@ test("seeded code-word navigation agrees with an independent whole-string graphe
             assert.equal(next(buffer, offset, 1), starts.find(start => start > offset) ?? text.length, `forward ${JSON.stringify({ text, offset })}`);
             assert.equal(next(buffer, offset, -1), starts.filter(start => start < offset).at(-1) ?? 0, `backward ${JSON.stringify({ text, offset })}`);
         }
-        assert.equal(buffer.readMetrics().textExports, 0);
     }
 });
 
@@ -72,19 +93,16 @@ test("batched runs preserve ASCII transitions, interior starts and independent b
     }
     for (const token of ["x", "東京", "𐐀", "😀", "\u0301\u200d", " \t\u00a0\u2028"]) for (const budget of [256, 257, 4096]) {
         const source = TextBuffer.from(token.repeat(10000));
-        const jobs = [new WordCursor(source, 0, 1), new WordCursor(source, source.length, -1)];
-        const prior = [0, 0]; let done;
+        const jobs = [checkedCursor(source, 0, 1), checkedCursor(source, source.length, -1)];
+        let done;
         do {
             done = true;
             for (const [index, job] of jobs.entries()) {
                 const step = job.next(budget);
-                assert.ok(step.workUnits - prior[index]! <= budget + 256); assert.ok(step.readUnits <= step.workUnits + 512); prior[index] = step.workUnits;
                 if (step.status === "running") { done = false; assert.equal(step.offset, null); }
                 else assert.equal(step.offset, index === 0 ? source.length : 0);
             }
         } while (!done);
         for (const job of jobs) { job.dispose(); assert.equal(job.next().offset, null); }
-        assert.equal(source.readMetrics().textExports, 0);
     }
-    assert.equal(buffer.readMetrics().textExports, 0);
 });
