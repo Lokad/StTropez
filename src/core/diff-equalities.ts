@@ -1,3 +1,4 @@
+import { partitionPoint } from "./bound-search.ts";
 import { lineEdges, tick } from "./diff-index.ts";
 import type { DiffIndex, DiffStats } from "./diff-index.ts";
 
@@ -26,55 +27,69 @@ export function* prepareEqualities(index: DiffIndex, prior: DiffEqualitySnapshot
     if (tick(stats, mapped.length * 8)) yield;
     mapped.length = Math.min(limit, mapped.length);
     const owner = new DiffEqualities(index, mapped);
-    if (tick(stats, mapped.length * 3)) yield;
+    // Each diagonal contains at most 32 ranges; charge construction and native sorting.
+    if (tick(stats, mapped.length * 16)) yield;
     return owner;
 }
 
 export class DiffEqualities {
     private readonly ranges: EqualRange[];
     private readonly index: DiffIndex;
-    private readonly prior = new Map<number, EqualRange[]>();
-    readonly hasPrior: boolean;
+    private readonly known = new Map<number, EqualRange[]>();
+    get hasProofs(): boolean { return this.known.size > 0; }
     constructor(index: DiffIndex, prior: readonly EqualRange[]) {
-        this.index = index; this.ranges = [...prior]; this.hasPrior = prior.length > 0;
-        for (const range of prior) {
-            const diagonal = range.a - range.b, ranges = this.prior.get(diagonal);
-            if (ranges) ranges.push(range); else this.prior.set(diagonal, [range]);
-        }
+        this.index = index; this.ranges = [...prior];
+        for (const range of prior) this.bucket(range.a - range.b).push(range);
+        for (const ranges of this.known.values()) ranges.sort((a, b) => a.a - b.a);
+    }
+    private bucket(diagonal: number): EqualRange[] {
+        let ranges = this.known.get(diagonal);
+        if (!ranges) { ranges = []; this.known.set(diagonal, ranges); }
+        return ranges;
+    }
+    private add(range: EqualRange): number {
+        const ranges = this.bucket(range.a - range.b), work = ranges.length + 8;
+        const at = partitionPoint(ranges.length, i => ranges[i]!.a < range.a);
+        ranges.splice(at, 0, range); return work;
+    }
+    private forget(range: EqualRange): number {
+        const diagonal = range.a - range.b, ranges = this.known.get(diagonal)!, work = ranges.length * 2 + 3;
+        ranges.splice(ranges.indexOf(range), 1);
+        if (!ranges.length) this.known.delete(diagonal);
+        return work;
     }
     // A proof only extends the exact diagonal the existing traversal already chose.
     // Stop at its boundary; ordinary equality checks still establish the maximal run.
     match(a: number, b: number, maximum: number, reverse: boolean, stats: DiffStats): number {
-        let matched = 0;
-        const ranges = this.prior.get(a - b); stats.work++;
-        if (!ranges) return matched;
-        // At most 32 entries. The caller checks the charged checkpoint after this lookup.
-        for (const range of ranges) {
-            const offset = a - range.a;
-            if (reverse ? offset > 0 && offset <= range.length : offset >= 0 && offset < range.length)
-                matched = Math.max(matched, Math.min(maximum, reverse ? offset : range.length - offset));
-            stats.work++;
-        }
-        return matched;
+        const ranges = this.known.get(a - b); stats.work++;
+        if (!ranges) return 0;
+        // A bounded search selects one exact proof; a miss falls back to ordinary checks.
+        const at = partitionPoint(ranges.length, i => { stats.work++; return reverse ? ranges[i]!.a < a : ranges[i]!.a <= a; }) - 1;
+        if (at < 0) return 0;
+        const range = ranges[at]!, offset = a - range.a; stats.work++;
+        return offset <= range.length ? Math.min(maximum, reverse ? offset : range.length - offset) : 0;
     }
     *remember(a: number, b: number, length: number, stats: DiffStats): Generator<void, void> {
         if (length < minimumEqualRows) return;
         for (let i = this.ranges.length - 1; i >= 0; i--) {
             const prior = this.ranges[i]!; let work = 1;
+            if (a - b === prior.a - prior.b && a >= prior.a && a + length <= prior.a + prior.length) {
+                if (tick(stats)) yield; return;
+            }
             if (a - b === prior.a - prior.b && a <= prior.a + prior.length && a + length >= prior.a) {
                 const end = Math.max(a + length, prior.a + prior.length), start = Math.min(a, prior.a);
-                b -= a - start; a = start; length = end - start; work += this.ranges.length - i; this.ranges.splice(i, 1);
+                b -= a - start; a = start; length = end - start; work += this.ranges.length - i + this.forget(prior); this.ranges.splice(i, 1);
             }
             if (tick(stats, work)) yield;
         }
-        const range = Object.freeze({ a, b, length });
-        if (this.ranges.length < limit) this.ranges.push(range);
+        const range = Object.freeze({ a, b, length }); let work = limit;
+        if (this.ranges.length < limit) { this.ranges.push(range); work += this.add(range); }
         else {
             let shortest = 0;
             for (let i = 1; i < this.ranges.length; i++) { if (this.ranges[i]!.length < this.ranges[shortest]!.length) shortest = i; if (tick(stats)) yield; }
-            if (length > this.ranges[shortest]!.length) this.ranges[shortest] = range;
+            if (length > this.ranges[shortest]!.length) { work += this.forget(this.ranges[shortest]!) + this.add(range); this.ranges[shortest] = range; }
         }
-        if (tick(stats, limit)) yield;
+        if (tick(stats, work)) yield;
     }
     *finish(stats: DiffStats): Generator<void, DiffEqualitySnapshot> {
         const ranges = Object.freeze([...this.ranges]);

@@ -48,7 +48,7 @@ function* commonLines(a: Index, b: Index, region: Region, reverse: boolean, stat
         if (!(yield* equalLine(a, b, ai, bi, stats, false))) break; count++;
         // Failed frontier probes have no equal run to extend. Look up retained ranges
         // only after the first exact match, before any repeated-row text scan.
-        if (count < maximum && stats.equalities?.hasPrior) {
+        if (count < maximum && stats.equalities?.hasProofs) {
             const cached = stats.equalities.match(reverse ? region.a1 - count : region.a0 + count, reverse ? region.b1 - count : region.b0 + count, maximum - count, reverse, stats);
             if (tick(stats, 0)) yield;
             if (cached) { count += cached; continue; }

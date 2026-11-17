@@ -102,6 +102,8 @@ test("equal-row proofs stay bounded, immutable and valid across a split row", ()
     drain(owner.remember(4800, 4800, 400, stats));
     const proof = drain(owner.finish(stats)), before = JSON.stringify(proof.ranges);
     assert.ok(proof.ranges.length <= 32); assert.ok(Object.isFrozen(proof.ranges));
+    for (const range of proof.ranges) assert.equal(owner.match(range.a, range.b, range.length, false, stats), range.length);
+    assert.equal(owner.match(0, 0, 32, false, stats), 0, "evicted ranges leave the active lookup");
     const changed = original.replace(original.offsetAt(5000), original.offsetAt(5000) + 1, "changed\n");
     const next = drain(prepareEqualities(drain(indexLines(changed, stats)), proof, stats));
     const mapped = drain(next.finish(stats)); assert.ok(mapped.ranges.length <= 32);
@@ -117,6 +119,7 @@ test("equal-row proofs stay bounded, immutable and valid across a split row", ()
         assert.equal(stats.work - beforeMiss, 1, "an absent diagonal does not scan unrelated proofs");
     }
     drain(owner.remember(0, 0, 10000, stats)); assert.equal(JSON.stringify(proof.ranges), before);
+    assert.equal(owner.match(0, 0, 10000, false, stats), 10000, "new proofs are usable in the current comparison");
 });
 
 test("independent large references reuse exact equal rows without choosing different canonical hunks", () => {
@@ -257,6 +260,8 @@ test("periodic row alignment verifies long exact runs without probing every repe
         const cache = new DiffReferenceCache(); finish(baseline, working, cache);
         const changed = working.replace(0, 7, ""), result = finish(baseline, changed, cache);
         reconstruct(result, original, tail.slice(7)); assert.equal(result.hunks.length, 2);
+        assert.deepEqual(result.hunks, finish(baseline, changed).hunks);
+        assert.ok(result.readUnits < original.length * 2 + 8192, `${period}: ${result.readUnits} units; establish each long run once`);
         assert.ok(result.lineComparisons < 128, `${period}: ${result.lineComparisons}`); cache.dispose();
     }
 });

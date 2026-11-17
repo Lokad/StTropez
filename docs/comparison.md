@@ -130,6 +130,8 @@ budget and return progress without resuming work.
 argument to reuse reference metadata, the latest working index and bounded exact equal-row
 ranges from a completed comparison. Ranges retain their working capture until replaced;
 across edits, only complete rows outside an ownership-proven changed interval are reused.
+A comparison can reuse exact ranges it establishes earlier in the same job. These facts
+become available to later jobs only when the captured comparison completes successfully.
 The existing traversal chooses every split; cached equality does not choose new partitions.
 Complex comparisons can require full alignment work. Dispose the cache
 when its owner ends. Reference replacement resets retained captures; active jobs keep their own
