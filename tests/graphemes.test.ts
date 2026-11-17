@@ -44,6 +44,20 @@ test("indexed queries distinguish containing clusters and strict/inclusive bound
     assert.ok(Object.isFrozen(index)); assert.ok(Object.isFrozen(index.source)); assert.ok(Object.isFrozen(index.clusterAt(0))); assert.ok(Object.isFrozen(index.boundaries())); for (const i of [-1, .5, 6]) assert.throws(() => index.floor(i)); assert.throws(() => index.clusterIndexAt(5)); assert.throws(() => index.boundaryAt(4));
     const empty = finish(createGraphemeCursor("", { from: 0, to: 0 })); assert.equal(empty.clusterCount, 0); assert.deepEqual(empty.boundaries(), [0]); assert.equal(empty.preceding(0), null); assert.equal(empty.following(0), null);
 });
+test("paged queries retain strict and inclusive boundaries in a nonzero source range", () => {
+    const from = 7, count = 300, to = from + count * 5;
+    const cursor = createGraphemeCursor("prefix|" + "A😀\u0301B".repeat(count) + "suffix", { from, to }), index = finish(cursor); cursor.dispose();
+    const expected = [...Array.from({ length: count }, (_, i) => [from + i * 5, from + i * 5 + 1, from + i * 5 + 4]).flat(), to];
+    const reversed = [...expected].reverse();
+    assert.deepEqual(index.boundaries(), expected);
+    for (let offset = from; offset <= to; offset++) {
+        assert.equal(index.floor(offset), reversed.find(value => value <= offset));
+        assert.equal(index.ceil(offset), expected.find(value => value >= offset));
+        assert.equal(index.preceding(offset), reversed.find(value => value < offset) ?? null);
+        assert.equal(index.following(offset), expected.find(value => value > offset) ?? null);
+    }
+});
+
 test("arbitrarily long mark, ZWJ and RI sequences use linear work and suspend without exporting buffers", () => {
     for (const text of ["A" + "\u0301".repeat(90_000), "👩" + "\u0301".repeat(50_000) + "‍💻", "🇫".repeat(50_001), "\u094d" + "\u0301".repeat(90_000) + "क"]) {
         const source = TextBuffer.from(text), cursor = createGraphemeCursor(source), initial = cursor.snapshot(); assert.equal(initial.readUnits, 0); const first = cursor.next(4096); assert.equal(first.status, "running"); assert.equal(first.result, null); const index = finish(cursor, 4096); assert.ok(cursor.snapshot().workUnits < text.length * 8); assert.equal(source.readMetrics().textExports, 0); assert.equal(index.to, text.length); cursor.dispose();
