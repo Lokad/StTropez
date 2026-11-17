@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DiffReferenceCache, TextDiff, TextBuffer } from "../src/index.ts";
+import { collidingDiffLines } from "./helpers/diff-collision.ts";
 
 function diff(a: string, b: string, buffers?: readonly [TextBuffer, TextBuffer]) {
     const job = new TextDiff(buffers?.[0] ?? TextBuffer.from(a), buffers?.[1] ?? TextBuffer.from(b)); let result = job.next(512), calls = 1;
@@ -36,7 +37,7 @@ test("line alignment agrees with a dynamic-programming edit-distance oracle", ()
 
 test("imbalanced repeated-row alignment remains minimal with one shared token and exact fallbacks", () => {
     let seed = 9917; const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
-    const collision = ["F\"]:`#\"/Q\n", "S/:hvp6FJ\n"];
+    const collision = collidingDiffLines();
     for (let trial = 0; trial < 24; trial++) {
         const left = ["common é😀\r\n", "left\n", collision[0]!], right = ["common é😀\r\n", "right\n", collision[1]!];
         if (trial % 3 === 1) right[2] = left[2]!; // Two shared tokens must use the general exact algorithm.
@@ -111,8 +112,7 @@ test("failed comparison preserves its cause and cannot publish or resume a parti
 });
 
 test("equal-length hash collisions still require exact line comparison", () => {
-    // These owned synthetic strings have the same FNV-1a signature, including LF.
-    const a = "F\"]:`#\"/Q\n", b = "S/:hvp6FJ\n";
+    const [a, b] = collidingDiffLines();
     const result = diff(a, b); assert.equal(result.hunks.length, 1); assert.equal(result.lineEdits, 2);
     const surrounded = diff(`same\n${a}same\n`, `same\n${b}same\n`); assert.equal(surrounded.hunks.length, 1);
 });
@@ -167,7 +167,7 @@ test("cancelled partial reference indexing and concurrent jobs retain independen
 });
 
 test("cached alignment stays minimal through block splits, mixed endings, long rows and hash collisions", () => {
-    const collision = ["F\"]:`#\"/Q\n", "S/:hvp6FJ\n"];
+    const collision = collidingDiffLines();
     const rows = Array.from({ length: 194 }, (_, i) => `row ${i} é😀\ud800${i % 3 ? "\n" : "\r\n"}`);
     rows[63] = collision[0]!; rows[127] = "x".repeat(300) + "\r\n";
     const baselineRows = [...rows]; baselineRows[0] = "remote " + baselineRows[0];

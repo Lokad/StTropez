@@ -6,6 +6,7 @@ import { DiffLines } from "../src/core/diff-lines.ts";
 import { prepareEqualities } from "../src/core/diff-equalities.ts";
 import { indexLines } from "../src/core/diff-index.ts";
 import type { DiffStats } from "../src/core/diff-index.ts";
+import { collidingDiffLines } from "./helpers/diff-collision.ts";
 
 function finish(a: TextBuffer, b: TextBuffer, cache?: DiffReferenceCache): DiffProgress {
     const inputs = a === b ? [a] : [a, b];
@@ -155,7 +156,7 @@ test("adjacent unmatched regions remain one review hunk with unknown or collidin
     const b = ["A\r\n", "\rA\n", "\r" + longY, x, "\ud800" + x].join("");
     const result = finish(TextBuffer.from(a), TextBuffer.from(b));
     assert.equal(result.hunks.length, 2); assert.equal(result.lineEdits, distance(a, b)); reconstruct(result, a, b);
-    const ca = "F\"]:`#\"/Q\n".repeat(2), cb = "S/:hvp6FJ\n".repeat(2), collision = finish(TextBuffer.from(ca), TextBuffer.from(cb));
+    const [left, right] = collidingDiffLines(), ca = left.repeat(2), cb = right.repeat(2), collision = finish(TextBuffer.from(ca), TextBuffer.from(cb));
     assert.equal(collision.hunks.length, 1); assert.equal(collision.lineEdits, 4); reconstruct(collision, ca, cb);
 });
 
@@ -223,8 +224,7 @@ test("disjoint long-line blocks retain linear scanning and lazy hash collisions 
     const result = finish(TextBuffer.from(a), TextBuffer.from(b));
     reconstruct(result, a, b); assert.equal(result.hunks.length, 1); assert.equal(result.lineEdits, 600);
     assert.ok(result.lineComparisons < 20); assert.ok(result.readUnits < (a.length + b.length) * 2);
-    // Appending the same suffix preserves these existing synthetic FNV collisions.
-    const suffix = "x".repeat(400) + "\n", ca = ("F\"]:`#\"/Q" + suffix).repeat(2), cb = ("S/:hvp6FJ" + suffix).repeat(2);
+    const [left, right] = collidingDiffLines("long"), ca = left.repeat(2), cb = right.repeat(2);
     const collision = finish(TextBuffer.from(ca), TextBuffer.from(cb));
     assert.equal(collision.lineEdits, 4); reconstruct(collision, ca, cb);
 });
