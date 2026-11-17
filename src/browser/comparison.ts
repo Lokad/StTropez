@@ -13,6 +13,7 @@ import { createComparisonAlignment } from "./comparison-alignment.ts";
 import type { ComparisonAlignmentSnapshot } from "./comparison-alignment.ts";
 import { mountComparisonControls } from "./comparison-controls.ts";
 import { createComparisonPanes } from "./comparison-panes.ts";
+import { createCooperativeRunner } from "./cooperative-runner.ts";
 
 export type ComparisonReferenceView = Readonly<{ editor: EditingCandidate; target: TabTarget; epoch: number; version: string }>;
 export type TextComparisonSnapshot = Readonly<{
@@ -46,7 +47,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     if (options.controls !== undefined && typeof options.controls !== "boolean") throw new TypeError("Expected a default-controls preference.");
     const owner = host.ownerDocument, win = owner.defaultView;
     if (!win) throw new Error("Comparison requires an attached browser document.");
-    const controller = createComparisonController(workspace, workingTab, baseline, options);
+    const controller = createComparisonController(workspace, workingTab, baseline, options), runner = createCooperativeRunner(win);
     const root = owner.createElement("div"), panes = owner.createElement("div");
     root.className = "st-comparison"; root.setAttribute("role", "group"); root.setAttribute("aria-label", options.ariaLabel ?? "Text comparison");
     panes.className = "st-comparison-panes";
@@ -58,7 +59,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     root.append(panes); host.append(root);
     let state = controller.getSnapshot(), display: TextResourceHandle | undefined, displayTab: TabId | undefined;
     let displayTarget: TabTarget | undefined;
-    let epoch = -1, selected = -1, selectedGeneration = -1, timer: number | undefined, disposed = false;
+    let epoch = -1, selected = -1, selectedGeneration = -1, scheduled = false, disposed = false;
     let measuredGeneration = -1, steps = 0, advances = 0, maxStepMs = 0, totalStepMs = 0;
     let decoratedGeneration = -1, decoratedStatus: string | undefined;
     const referenceScope = workspace.createNotificationScope(), referenceStore = new Store<ComparisonReferenceView | undefined>(undefined, referenceScope);
@@ -144,16 +145,15 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
             referenceViewport()?.invalidate(); working.viewport.invalidate();
         }
     }
-    function schedule(): void { if (!disposed && timer === undefined) timer = win!.setTimeout(step, 0); }
+    function schedule(): void { if (!disposed && !scheduled) { runner.schedule(step); scheduled = true; } }
     function step(): void {
-        timer = undefined; if (disposed) return;
+        scheduled = false; if (disposed) return;
         const current = controller.getSnapshot();
         if (current.status === "running") {
             if (measuredGeneration !== current.generation) { measuredGeneration = current.generation; steps = advances = maxStepMs = totalStepMs = 0; }
-            const start = win!.performance.now(); let count = 0;
-            do { controller.advance(budget); count++; advances++; }
-            // Cheap advances may share a task; the elapsed-time budget still yields to input.
-            while (controller.getSnapshot().status === "running" && count < 32 && win!.performance.now() - start < 4);
+            const start = win!.performance.now();
+            runner.slice(() => { const next = controller.advance(budget); advances++; return next; },
+                next => !disposed && next.status === "running" && next.generation === current.generation, 32);
             const elapsed = win!.performance.now() - start;
             steps++; totalStepMs += elapsed; maxStepMs = Math.max(maxStepMs, elapsed);
         }
@@ -181,7 +181,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     const unsubscribe = controller.subscribe(() => { state = controller.getSnapshot(); changed(); }),
         stopMetadata = workspace.resourceForDocument(controller.view.documentId).metadata.subscribe(changed);
     function destroy(): void {
-        if (disposed) return; referenceScope.assertWritable(); disposed = true; if (timer !== undefined) win!.clearTimeout(timer);
+        if (disposed) return; referenceScope.assertWritable(); disposed = true; runner.cancel(); scheduled = false;
         try {
             unsubscribe(); stopMetadata(); scroll.dispose(); alignment.dispose();
             try { clearReference(); } finally { pair.dispose(); working.destroy(); }

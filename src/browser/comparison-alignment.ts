@@ -4,6 +4,7 @@ import type { ComparisonSnapshot } from "../core/comparison.ts";
 import type { FoldingSnapshot } from "../core/folding.ts";
 import type { TextViewport } from "./viewport.ts";
 import type { ComparisonPanes } from "./comparison-panes.ts";
+import { createCooperativeRunner } from "./cooperative-runner.ts";
 type Capture = { state: ComparisonSnapshot; reference: TextViewport; a: FoldingSnapshot; b: FoldingSnapshot };
 export type ComparisonAlignmentSnapshot = Readonly<{ enabled: boolean; status: "idle" | "building" | "waiting" | "ready" | "failed"; pending: boolean; work: number; runs: number; failure: string | undefined }>;
 let serial = 0;
@@ -11,14 +12,14 @@ let serial = 0;
 /** Cooperative, view-only publication against one immutable comparison/fold capture. */
 export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
     getComparison: () => ComparisonSnapshot, changed: () => void, referenceBusy: () => boolean) {
-    const working = panes.working, reference = () => panes.reference()?.viewport;
-    let enabled = false, disposed = false, timer: number | undefined, cursor: ComparisonRowsCursor | undefined, capture: Capture | undefined, result: ComparisonRows | undefined;
+    const working = panes.working, reference = () => panes.reference()?.viewport, runner = createCooperativeRunner(win);
+    let enabled = false, disposed = false, scheduled = false, cursor: ComparisonRowsCursor | undefined, capture: Capture | undefined, result: ComparisonRows | undefined;
     let status: "idle" | "building" | "waiting" | "ready" | "failed" = "idle", failure: string | undefined, work = 0, installedPitch = 0;
     let events: AbortController | undefined, stopObserving: (() => void) | undefined, stopReference: (() => void) | undefined;
     const pointers = new Set<number>();
     const stableInput = () => { const s = working.activity(); return !s.composing && !s.pendingCommand && !s.pendingInput && !s.pendingDragScroll && !pointers.size && !referenceBusy(); };
-    const cancel = () => { if (timer !== undefined) win.clearTimeout(timer); timer = undefined; cursor?.dispose(); cursor = undefined; };
-    const schedule = () => { if (!disposed && enabled && timer === undefined) timer = win.setTimeout(step, 0); };
+    const cancel = () => { runner.cancel(); scheduled = false; cursor?.dispose(); cursor = undefined; };
+    const schedule = () => { if (!disposed && enabled && !scheduled) { runner.schedule(step); scheduled = true; } };
     const clear = () => { working.viewport.setComparisonRows(undefined); reference()?.setComparisonRows(undefined); };
     const current = (c: Capture) => getComparison() === c.state && reference() === c.reference && working.view.folding.getSnapshot() === c.b && c.reference.view.folding.getSnapshot() === c.a;
     const pitch = (c: Capture) => Math.max(working.viewport.snapshot().naturalLineHeight, c.reference.snapshot().naturalLineHeight);
@@ -63,14 +64,16 @@ export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
         installedPitch = lineHeight; status = "ready"; changed();
     }
     function step(): void {
-        timer = undefined; if (disposed || !enabled) return;
+        scheduled = false; if (disposed || !enabled) return;
         try {
             update();
-            if (timer !== undefined) { win.clearTimeout(timer); timer = undefined; }
+            runner.cancel(); scheduled = false;
             if (!capture || !cursor || !current(capture)) return;
-            const from = win.performance.now(), start = work;
-            do { const next = cursor.next(256); work = next.work; if (next.status === "ready") { result = next.result!; cursor.dispose(); cursor = undefined; publish(capture); break; } }
-            while (work - start < 4096 && win.performance.now() - from < 4);
+            const job = cursor, planned = capture, start = work;
+            const next = runner.slice(() => { const next = job.next(256); work = next.work; return next; },
+                next => next.status === "running" && work - start < 4096 && cursor === job && capture === planned && current(planned), 16);
+            if (cursor !== job || capture !== planned || !current(planned)) { schedule(); return; }
+            if (next.status === "ready") { result = next.result!; job.dispose(); cursor = undefined; publish(planned); }
             // Progress is readable from snapshot(); it does not invalidate either pane.
             if (cursor) schedule();
         } catch (error) { cancel(); clear(); result = undefined; status = "failed"; failure = error instanceof Error ? error.message : "Row alignment failed."; changed(); }

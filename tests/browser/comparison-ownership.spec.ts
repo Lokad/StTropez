@@ -73,7 +73,7 @@ test("browser comparison work yields with large requested budgets and cancels it
         const { mountTextComparison } = await import(path + "comparison.js") as typeof import("../../src/browser/comparison.ts");
         const timeout = window.setTimeout, clear = window.clearTimeout, next = TextDiff.prototype.next;
         const clock = Object.getOwnPropertyDescriptor(performance, "now"), tasks = new Map<number, () => void>();
-        let serial = 0, now = 0, calls = 0, work = 0;
+        let serial = 0, now = 0, calls = 0, work = 0, clockRate = 1;
         window.setTimeout = ((callback: TimerHandler) => {
             if (typeof callback !== "function") throw new Error("Expected a scheduled function.");
             const id = ++serial; tasks.set(id, () => callback()); return id;
@@ -83,12 +83,14 @@ test("browser comparison work yields with large requested budgets and cancels it
         // A controlled cost per work unit exposes whether a large advance can prevent
         // the browser owner from checking its clock. No machine-speed timing assertion.
         TextDiff.prototype.next = function(budget = 32768) {
-            now += budget / 1024; calls++; work += budget;
+            now += budget / 1024 * clockRate; calls++; work += budget;
             return Object.freeze({ status: "running", work, readUnits: 0, lineComparisons: 0, lineEdits: 0, hunks: Object.freeze([]), failure: null });
         };
-        const results: { requested: number | null; calls: number; elapsed: number; work: number; pending: number; cancelled: boolean }[] = [];
+        const results: { requested: number | null; clockRate: number; calls: number; elapsed: number; work: number; pending: number; cancelled: boolean }[] = [];
         try {
-            for (const requested of [undefined, 256, Number.MAX_SAFE_INTEGER]) {
+            for (const { requested, rate } of [{ requested: undefined, rate: 1 }, { requested: 256, rate: 1 },
+                { requested: Number.MAX_SAFE_INTEGER, rate: 1 }, { requested: undefined, rate: 0 }]) {
+                clockRate = rate;
                 const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "budget", variant: "working" }, "Working", { value: "working" });
                 const tab = workspace.open({ kind: "text", documentId: source.documentId }, "working"), host = document.createElement("section"); document.body.append(host);
                 const baseline = { buffer: TextBuffer.from("baseline"), version: "one" }, before = workspace.diagnostics();
@@ -104,7 +106,7 @@ test("browser comparison work yields with large requested budgets and cancels it
                     tasks.delete(queued[0]); queued[1]();
                     const pending = tasks.size, measured = mounted.snapshot(), prior = calls; mounted.destroy();
                     for (const run of tasks.values()) run();
-                    results.push({ requested: requested ?? null, calls, elapsed: measured.maxStepMs, work, pending,
+                    results.push({ requested: requested ?? null, clockRate, calls, elapsed: measured.maxStepMs, work, pending,
                         cancelled: tasks.size === 0 && calls === prior && workspace.diagnostics().leases === 0 && workspace.diagnostics().subscriptions === 0 });
                 } finally { mounted.destroy(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
             }
@@ -115,9 +117,10 @@ test("browser comparison work yields with large requested budgets and cancels it
         return results;
     });
     expect(results).toEqual([
-        { requested: null, calls: 1, elapsed: 4, work: 4096, pending: 1, cancelled: true },
-        { requested: 256, calls: 16, elapsed: 4, work: 4096, pending: 1, cancelled: true },
-        { requested: Number.MAX_SAFE_INTEGER, calls: 1, elapsed: 4, work: 4096, pending: 1, cancelled: true },
+        { requested: null, clockRate: 1, calls: 1, elapsed: 4, work: 4096, pending: 1, cancelled: true },
+        { requested: 256, clockRate: 1, calls: 16, elapsed: 4, work: 4096, pending: 1, cancelled: true },
+        { requested: Number.MAX_SAFE_INTEGER, clockRate: 1, calls: 1, elapsed: 4, work: 4096, pending: 1, cancelled: true },
+        { requested: null, clockRate: 0, calls: 32, elapsed: 0, work: 131072, pending: 1, cancelled: true },
     ]);
 });
 declare global { interface Window { comparisonPresentation: Presentation } }

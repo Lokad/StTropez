@@ -64,8 +64,11 @@ test("alignment bounds each turn by elapsed time and work, publishes once, and c
         f.refresh(); f.alignment.update(); f.setClockStep(1); const before = f.counters().notifications; f.step();
         // Four 256-unit advances reach the elapsed-time target; progress alone does not publish.
         assert.equal(f.alignment.snapshot().work, 1024); assert.equal(f.counters().notifications, before);
+        const obsolete = [...f.tasks.values()][0]!;
         f.alignment.setEnabled(false); assert.equal(f.tasks.size, 0); assert.equal(f.working.installed(), undefined);
-        f.alignment.setEnabled(true); f.step(); f.refresh(); f.alignment.update();
+        f.alignment.setEnabled(true); const replacement = [...f.tasks]; obsolete();
+        assert.deepEqual([...f.tasks], replacement); assert.equal(f.alignment.snapshot().work, 0);
+        f.step(); f.refresh(); f.alignment.update();
         assert.equal(f.alignment.snapshot().work, 0); f.setClockStep(0); f.setComposing(true); f.drain();
         assert.equal(f.alignment.snapshot().status, "waiting"); assert.equal(f.working.installed(), undefined);
         f.setComposing(false); f.working.render(); f.drain();
