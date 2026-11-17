@@ -120,8 +120,7 @@ Positions are absolute UTF-16 offsets, including unpaired surrogates. Optional `
 bounds establish an independent segmentation context. The caller must choose a safe restart
 boundary when it needs the same result as whole-document segmentation. Rules cover CRLF,
 Hangul, combining marks, prepend characters, emoji joiners, regional indicators and Indic
-conjuncts. `unicodeGraphemeVersion`, `graphemeBreakProperty`, `indicConjunctBreak`,
-`extendedPictographic` and `defaultIgnorable` expose the associated character facts.
+conjuncts. `unicodeGraphemeVersion` identifies the Unicode data used for segmentation.
 
 The immutable index records its source, range, Unicode version, cluster count and boundary
 count. `boundaryAt` and `clusterAt` query it without materializing all boundaries. `floor`
@@ -150,8 +149,7 @@ This is a code-oriented policy, not dictionary segmentation or Unicode word-boun
 `next(maxWork)` returns `WordStep` progress with status, raw UTF-16 offset, failure and work/read
 counts. Work counts scanned UTF-16 units. Reads retain a 256-unit slice plus at most one unit
 to complete a surrogate pair. The caller supplies grapheme snapping and
-logical-line bounds where needed. `codeWordConstituentPattern` exposes the one-code-point pattern
-for host Unicode expressions; it includes marks/joiners as well as word bases.
+logical-line bounds where needed.
 
 ### Bidirectional resolution
 

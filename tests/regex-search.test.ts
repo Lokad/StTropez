@@ -1,8 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { regexMatches, regexRanges, regexReplacement } from "../src/core/regex-search.ts";
-import { codeWordConstituentPattern } from "../src/index.ts";
-import { wordConstituent } from "../src/core/words.ts";
+import { codeWordConstituentPattern, wordConstituent } from "../src/core/words.ts";
 
 test("worker regex kernel retains raw multiline, lookbehind, captures and Unicode zero-width spans", () => {
     const text = "😀 Café\r\n𐐀value = 12;\r\n𐐨value = 34;";
