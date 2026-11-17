@@ -1,3 +1,4 @@
+import { isLspUint } from "./wire.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import { BufferChangeCursor } from "../core/buffer-change.ts";
 import { positionChanges } from "../core/positions.ts";
@@ -10,7 +11,6 @@ export type LspCooperate = () => Promise<void>;
 export type LspChangeHint = Readonly<{ before: TextBuffer; mapping: PositionMapping }>;
 type Span = { from: number; to: number; insertFrom: number; insertTo: number };
 const chunkUnits = 16384;
-const uint = (value: number) => Number.isSafeInteger(value) && value >= 0 && value <= 0x7fffffff;
 function lowerBound(values: Uint32Array, key: number): number {
     let low = 0, high = values.length; while (low < high) { const middle = (low + high) >>> 1; if (values[middle]! < key) low = middle + 1; else high = middle; } return low;
 }
@@ -97,7 +97,7 @@ export class LspLineIndex {
     private readonly bare: Uint32Array;
     private constructor(buffer: TextBuffer, bare: Uint32Array) { this.buffer = buffer; this.bare = bare; Object.freeze(this); }
     static async create(buffer: TextBuffer, cooperate: LspCooperate): Promise<LspLineIndex> {
-        if (!uint(buffer.length)) throw new RangeError("Document exceeds LSP position limits.");
+        if (!isLspUint(buffer.length)) throw new RangeError("Document exceeds LSP position limits.");
         return new LspLineIndex(buffer, await scan(buffer, 0, buffer.length, cooperate));
     }
     get lineCount(): number { return this.buffer.lineCount + this.bare.length; }
@@ -114,12 +114,12 @@ export class LspLineIndex {
         throw new RangeError("Invalid LSP line.");
     }
     at(offset: number): LspPosition {
-        if (!uint(offset) || offset > this.buffer.length || interior(this.buffer, offset)) throw new RangeError("Offset is outside text or inside a CRLF pair.");
+        if (!isLspUint(offset) || offset > this.buffer.length || interior(this.buffer, offset)) throw new RangeError("Offset is outside text or inside a CRLF pair.");
         const line = this.buffer.lineAt(offset), cr = lowerBound(this.bare, offset), start = Math.max(this.buffer.offsetAt(line), cr ? this.bare[cr - 1]! + 1 : 0);
         return Object.freeze({ line: line + cr, character: offset - start });
     }
     offsetAt(position: LspPosition): number {
-        if (!position || !uint(position.line) || !uint(position.character)) throw new RangeError("Invalid UTF-16 LSP position.");
+        if (!position || !isLspUint(position.line) || !isLspUint(position.character)) throw new RangeError("Invalid UTF-16 LSP position.");
         if (position.line >= this.lineCount) return this.buffer.length;
         const from = this.start(position.line); let to = this.buffer.length;
         if (position.line + 1 < this.lineCount) { const next = this.start(position.line + 1);
@@ -128,7 +128,7 @@ export class LspLineIndex {
     }
     /** Proven batch ranges or shared-edge fallback, expanded to preserve newline/CR classification. */
     async change(after: TextBuffer, cooperate: LspCooperate, hint?: LspChangeHint): Promise<Readonly<{ index: LspLineIndex; changes: readonly LspTextChange[] }>> {
-        if (!uint(after.length)) throw new RangeError("Document exceeds LSP position limits.");
+        if (!isLspUint(after.length)) throw new RangeError("Document exceeds LSP position limits.");
         if (after === this.buffer) return Object.freeze({ index: this, changes: Object.freeze([]) });
         const planned = await spans(this.buffer, after, cooperate, hint), regions = []; let length = this.bare.length;
         for (const span of planned) {

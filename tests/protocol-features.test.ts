@@ -6,7 +6,7 @@ import { TextBuffer } from "../src/core/text-buffer.ts";
 import { Workspace, composePositionMaps, createSelectionSet, planSnippetEdit, planSnippetChoice, snippetChoiceText } from "../src/index.ts";
 import type { JsonValue, LspDocumentCapture, RpcTransport } from "../src/protocol/index.ts";
 
-import { LspLineIndex, UnsupportedLspSnippetError, decodeLspCompletions, decodeLspResolvedCompletion, rebaseLspCompletion, lspCompletionPlan, decodeLspDiagnostics, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, decodeLspApplyEdit, decodeLspCodeActions, decodeLspResolvedCodeAction, lspRangeOffsets, RpcError } from "../src/protocol/index.ts";
+import { ProtocolDecodeError, LspLineIndex, UnsupportedLspSnippetError, decodeLspCompletions, decodeLspResolvedCompletion, rebaseLspCompletion, lspCompletionPlan, decodeLspDiagnostics, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit, decodeLspApplyEdit, decodeLspCodeActions, decodeLspResolvedCodeAction, lspRangeOffsets, RpcError } from "../src/protocol/index.ts";
 import { JsonRpcConnection, decodeLspSignatureHelp, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspColor, decodeLspDocumentColors, decodeLspColorPresentations } from "../src/protocol/index.ts";
 async function captured(text = "// header\r\nconst saMORE = 1; // TODO\rb\n") {
     const buffer = TextBuffer.from(text), index = await LspLineIndex.create(buffer, async () => {}); let active = true;
@@ -20,6 +20,22 @@ function rpcIncoming(t: test.TestContext) {
     const rpc = new JsonRpcConnection(port, { schedule: () => () => {} }); t.after(() => rpc.dispose());
     return async (json: string) => { const call = rpc.request("fixture/data"); receive(`{"jsonrpc":"2.0","id":${call.id},"result":${json}}`); return call.result; };
 }
+test("decoder failures preserve host exceptions and distinguish invalid wire edits from caller validation", async () => {
+    const { capture } = await captured("alpha beta");
+    for (const error of [new TypeError("host lookup"), new RangeError("host bounds")]) {
+        assert.throws(() => decodeLspCompletions([{ label: "value" }], capture, 0, () => { throw error; }), actual => actual === error);
+        const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } };
+        assert.throws(() => decodeLspLocations([{ uri: "other:source", range }], "definition", capture, () => { throw error; }), actual => actual === error);
+        assert.throws(() => decodeLspWorkspaceEdit({ changes: { "other:source": [{ range, newText: "x" }] } }, () => { throw error; }), actual => actual === error);
+    }
+    const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } };
+    const overlapping = { label: "value", textEdit: { range, newText: "x" }, additionalTextEdits: [{ range, newText: "y" }] };
+    assert.throws(() => decodeLspCompletions([overlapping], capture, 1), ProtocolDecodeError);
+    assert.throws(() => decodeLspColorPresentations([{ label: "value", textEdit: overlapping.textEdit, additionalTextEdits: overlapping.additionalTextEdits }],
+        { from: 0, to: 3, color: { red: 0, green: 0, blue: 0, alpha: 1 } }, capture), ProtocolDecodeError);
+    assert.throws(() => decodeLspCompletions([{ label: "value" }], capture, 0, undefined, { indentation: { tabSize: 0, insertSpaces: true } }), RangeError);
+});
+
 test("opaque captures reuse bounded RPC-owned JSON without trusting host freezes or weakening snapshot limits", async t => {
     const { capture } = await captured("text"), incoming = rpcIncoming(t);
     const read = (data: unknown) => decodeLspDiagnostics({ uri: capture.document.uri, version: capture.version,
@@ -32,16 +48,16 @@ test("opaque captures reuse bounded RPC-owned JSON without trusting host freezes
     const frozen = Object.freeze({ nested: { value: 1 } }); assert.notEqual(read(frozen), frozen);
     const bounded = await incoming(JSON.stringify(Array(99_999).fill(0))); assert.equal(read(bounded), bounded);
     const wide = await incoming(JSON.stringify({ large: Array(100_000).fill(0), small: { value: 1 } })) as { large: JsonValue; small: JsonValue };
-    assert.throws(() => read(wide), TypeError); assert.throws(() => read(wide.large), TypeError); assert.equal(read(wide.small), wide.small);
+    assert.throws(() => read(wide), ProtocolDecodeError); assert.throws(() => read(wide.large), ProtocolDecodeError); assert.equal(read(wide.small), wide.small);
     let deep: JsonValue = "leaf"; for (let i = 0; i < 63; i++) deep = [deep]; deep = await incoming(JSON.stringify(deep));
-    assert.equal(read(deep), deep); assert.doesNotThrow(() => read([deep])); assert.throws(() => read([[deep]]), TypeError);
+    assert.equal(read(deep), deep); assert.doesNotThrow(() => read([deep])); assert.throws(() => read([[deep]]), ProtocolDecodeError);
     const signed = await incoming('{"value":-0}') as { value: number }, normalized = read(signed) as typeof signed;
     assert.equal(Object.is(signed.value, -0), true); assert.equal(Object.is(normalized.value, 0), true); assert.notEqual(normalized, signed);
-    const cyclic: { self?: unknown } = {}; cyclic.self = cyclic; assert.throws(() => read(cyclic), TypeError);
+    const cyclic: { self?: unknown } = {}; cyclic.self = cyclic; assert.throws(() => read(cyclic), ProtocolDecodeError);
     let calls = 0; const accessor = Object.defineProperty({}, "value", { enumerable: true, get: () => { calls++; return 1; } });
     const array = Object.defineProperty([0], "0", { enumerable: true, get: () => { calls++; return 1; } });
-    assert.throws(() => read(accessor), TypeError); assert.throws(() => read(array), TypeError); assert.equal(calls, 0);
-    assert.throws(() => read(Array(1)), TypeError); assert.throws(() => read({ value: NaN }), TypeError);
+    assert.throws(() => read(accessor), ProtocolDecodeError); assert.throws(() => read(array), ProtocolDecodeError); assert.equal(calls, 0);
+    assert.throws(() => read(Array(1)), ProtocolDecodeError); assert.throws(() => read({ value: NaN }), ProtocolDecodeError);
 });
 test("signature help validates the complete literal result and normalizes active signatures and parameters", async () => {
     const { capture, expire } = await captured("😀 call("), value = { activeSignature: 1, activeParameter: 1, signatures: [

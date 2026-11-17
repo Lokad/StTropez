@@ -22,7 +22,7 @@ const ownerGroups = {
     comparison: ["core/diff", "core/comparison", "browser/comparison"],
     unicode: ["core/words", "core/graphemes", "core/grapheme-data", "core/bidi", "core/bidi-cursor", "core/bidi-controller", "core/character-warnings", "browser/font-asset"],
     "host-integration": ["browser/input-conflict", "browser/captured-view"],
-    "language-server": ["protocol/json-rpc", "protocol/lsp-positions", "protocol/lsp-session", "protocol/lsp-workspace", "protocol/lsp-command", "browser/lsp-websocket"],
+    "language-server": ["protocol/wire", "protocol/json-rpc", "protocol/lsp-positions", "protocol/lsp-session", "protocol/lsp-workspace", "protocol/lsp-command", "browser/lsp-websocket"],
     "language-features": ["protocol/lsp-features", "protocol/lsp-code-actions", "protocol/lsp-workspace-edit", "protocol/lsp-hover", "protocol/lsp-highlights", "protocol/lsp-rename", "protocol/lsp-navigation", "protocol/lsp-actions", "protocol/lsp-language", "browser/lsp-editor", "browser/lsp-highlights", "browser/documentation"]
 };
 export const declarationOwners = Object.fromEntries(Object.entries(ownerGroups).flatMap(([page, sources]) => sources.map(source => [`src/${source}.ts`, `docs/${page}.md`])));

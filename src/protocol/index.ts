@@ -1,5 +1,7 @@
-export { JsonRpcConnection, RpcError } from "./json-rpc.ts";
-export type { JsonValue, RpcId, RpcTransport, RpcScheduler, RpcOptions, RpcCall, RpcRequestContext } from "./json-rpc.ts";
+export { JsonRpcConnection } from "./json-rpc.ts";
+export { RpcError, ProtocolDecodeError } from "./wire.ts";
+export type { JsonValue } from "./wire.ts";
+export type { RpcId, RpcTransport, RpcScheduler, RpcOptions, RpcCall, RpcRequestContext } from "./json-rpc.ts";
 export { LspLineIndex } from "./lsp-positions.ts";
 export type { LspPosition, LspRange, LspTextChange, LspCooperate, LspChangeHint } from "./lsp-positions.ts";
 export { LspSession } from "./lsp-session.ts";

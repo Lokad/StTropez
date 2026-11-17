@@ -1,6 +1,6 @@
+import { ProtocolDecodeError, staleRequest } from "./wire.ts";
 import { createLspClient } from "./lsp-client.ts";
 import { lspRangeOffsets } from "./lsp-features.ts";
-import { RpcError } from "./json-rpc.ts";
 import type { LspDocumentCapture } from "./lsp-session.ts";
 import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
@@ -12,12 +12,12 @@ const empty: readonly LspDocumentHighlight[] = Object.freeze([]);
 
 /** Complete response validation and an immutable interval index, including overlapping ranges. */
 export function decodeLspDocumentHighlights(value: unknown, capture: LspDocumentCapture): LspDocumentHighlights {
-    if (!capture.isCurrent()) throw new RpcError(-32801, "LSP highlight capture expired.");
-    if (value !== null && !Array.isArray(value)) throw new TypeError("Expected LSP document highlights.");
+    if (!capture.isCurrent()) throw staleRequest("LSP highlight capture expired.");
+    if (value !== null && !Array.isArray(value)) throw new ProtocolDecodeError("Expected LSP document highlights.");
     const items = Object.freeze((value ?? []).map((item: unknown): LspDocumentHighlight => {
-        if (!item || typeof item !== "object" || Array.isArray(item) || !("range" in item)) throw new TypeError("Malformed LSP document highlight.");
+        if (!item || typeof item !== "object" || Array.isArray(item) || !("range" in item)) throw new ProtocolDecodeError("Malformed LSP document highlight.");
         const kind = "kind" in item ? item.kind : 1;
-        if (kind !== 1 && kind !== 2 && kind !== 3) throw new TypeError("Invalid LSP highlight kind.");
+        if (kind !== 1 && kind !== 2 && kind !== 3) throw new ProtocolDecodeError("Invalid LSP highlight kind.");
         return Object.freeze({ ...lspRangeOffsets(capture.index, item.range), kind: kind === 2 ? "read" : kind === 3 ? "write" : "text" });
     }).sort((a: LspDocumentHighlight, b: LspDocumentHighlight) => a.from - b.from || a.to - b.to));
     // A subtree's maximum end lets clipped rows skip all nonintersecting occurrences, even

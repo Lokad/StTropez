@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import { CancellationTokenSource, InitializeRequest, InitializedNotification, RegistrationRequest, ResponseError } from "vscode-languageserver-protocol/node.js";
 import type { InitializeParams, InitializeResult } from "vscode-languageserver-protocol/node.js";
-import type { JsonValue, RpcTransport } from "../src/protocol/json-rpc.ts";
+import type { RpcTransport } from "../src/protocol/json-rpc.ts";
+import type { JsonValue } from "../src/protocol/wire.ts";
 import { referencePeer } from "../fixtures/protocol/reference-peer.ts";
 
-import { JsonRpcConnection, RpcError } from "../src/protocol/json-rpc.ts";
+import { JsonRpcConnection } from "../src/protocol/json-rpc.ts";
+import { RpcError } from "../src/protocol/wire.ts";
 
 function clock() {
     const timers = new Set<() => void>();

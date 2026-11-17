@@ -1,4 +1,4 @@
-import { RpcError } from "./json-rpc.ts";
+import { cancelledRequest, staleRequest } from "./wire.ts";
 import type { LspDocumentSnapshot } from "./lsp-session.ts";
 import type { LspEditTarget } from "./lsp-features.ts";
 
@@ -8,7 +8,7 @@ export type LspTargetContext = Readonly<{ purpose: "navigation" | "edit"; source
 export type LspResolvedTarget = Readonly<{ target: LspEditTarget; release: () => void }>;
 export type LspTargetResolver = (uri: string, context: LspTargetContext) => Promise<LspResolvedTarget | undefined>;
 type Lifetime = Omit<LspTargetContext, "purpose"> & Readonly<{ reportError: (error: unknown) => void }>;
-const stale = () => new RpcError(-32801, "Captured LSP target loading expired.");
+const stale = () => staleRequest("Captured LSP target loading expired.");
 
 /** Shared by read results, text edits and server edit requests. No URI I/O occurs here. */
 export function createLspTargets(captured: ReadonlyMap<string, LspEditTarget>, resolve: LspTargetResolver, lifetime: Lifetime) {
@@ -27,7 +27,7 @@ export function createLspTargets(captured: ReadonlyMap<string, LspEditTarget>, r
     // A host release may update Workspace retention, which cannot run inside commit observers.
     const release = (lease: LspResolvedTarget) => { void Promise.resolve().then(lease.release).catch(lifetime.reportError); };
     const dispose = () => {
-        if (disposed) return; disposed = true; stop(); reject(new RpcError(-32800, "LSP target loading cancelled."));
+        if (disposed) return; disposed = true; stop(); reject(cancelledRequest("LSP target loading cancelled."));
         for (const listener of [...listeners]) { try { void Promise.resolve(listener()).catch(lifetime.reportError); } catch (error) { lifetime.reportError(error); } } listeners.clear();
         for (const lease of leases) release(lease); leases.clear();
     };

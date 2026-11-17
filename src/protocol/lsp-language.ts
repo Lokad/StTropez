@@ -1,7 +1,7 @@
+import { wireLimits, jsonSnapshot } from "./wire.ts";
 import { createLspClient } from "./lsp-client.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
-import { jsonSnapshot } from "./json-rpc.ts";
-import type { JsonValue } from "./json-rpc.ts";
+import type { JsonValue } from "./wire.ts";
 import { decodeLspColor, decodeLspColorPresentations, decodeLspDocumentColors, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspSignatureHelp } from "./lsp-features.ts";
 import type { LspColor, LspDocumentColor, LspDocumentLink } from "./lsp-features.ts";
 import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
@@ -21,7 +21,7 @@ export function createLspSignatureClient(provider: LspWorkspace) {
         run: (document: DocumentSnapshot, offset: number, context: LspSignatureContext = { triggerKind: 1, isRetrigger: false }, prepare?: LspPrepare) => {
             const wireContext = jsonSnapshot(context);
             if (![1, 2, 3].includes(context.triggerKind) || typeof context.isRetrigger !== "boolean" || context.triggerCharacter !== undefined && (typeof context.triggerCharacter !== "string" || !context.triggerCharacter.length || context.triggerCharacter.length > 8)
-                || JSON.stringify(wireContext).length > 131072) throw new TypeError("Invalid signature help context.");
+                || JSON.stringify(wireContext).length > wireLimits.signatureContextUnits) throw new TypeError("Invalid signature help context.");
             const retrigger = context.isRetrigger, inherit = context.activeSignatureHelp === undefined;
             if (!retrigger) previous = undefined;
             const call = lane.request([document], document.id, "textDocument/signatureHelp", capture => {
@@ -31,7 +31,7 @@ export function createLspSignatureClient(provider: LspWorkspace) {
                 if (retrigger && inherit && previous) {
                     const inherited = { ...wireContext as Record<string, JsonValue>, activeSignatureHelp: previous.wire };
                     // Optional inherited context must not make an otherwise bounded request fail.
-                    if (JSON.stringify(inherited).length <= 131072) active = inherited;
+                    if (JSON.stringify(inherited).length <= wireLimits.signatureContextUnits) active = inherited;
                 }
                 return { position: capture.index.at(offset), context: active };
             }, prepare);

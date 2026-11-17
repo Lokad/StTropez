@@ -58,6 +58,41 @@ async function mount(page: Page, language: boolean) {
 const text = (page: Page) => page.evaluate(() => { const f = window.shadowFocus, buffer = f.workspace.document(f.source.documentId).buffer; return buffer.slice(0, buffer.length); });
 const completion = (page: Page) => page.evaluate(() => window.shadowFocus.completion!.state.getSnapshot());
 
+test("completion distinguishes host preparation failures from malformed provider replies and keeps local typing available", async ({ page }) => {
+    await page.routeWebSocket("**/lsp-fixture", client => {
+        const server = client.connectToServer(); server.onMessage(message => client.send(message));
+        client.onMessage(message => {
+            const value = JSON.parse(message.toString());
+            if (value.method === "textDocument/completion") { client.send(JSON.stringify({ jsonrpc: "2.0", id: value.id, result: [null] })); return; }
+            server.send(message);
+        });
+    });
+    const input = await mount(page, true);
+    try {
+        await expect.poll(async () => (await completion(page)).connected).toBe(true);
+        for (const failure of ["type", "range", "none"] as const) {
+            await page.evaluate(async failure => {
+                const path = "/shadow-focus/", { createLspEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+                const f = window.shadowFocus; f.completion!.destroy();
+                f.completion = createLspEditor(f.workspace, f.tab, f.editor, { provider: f.provider!, autoConnect: false, automatic: false,
+                    prepareCompletion: async () => {
+                        if (failure === "type") throw new TypeError("Host preparation failed.");
+                        if (failure === "range") throw new RangeError("Host preparation failed.");
+                    } });
+            }, failure);
+            await input.focus(); await input.press("Control+Space");
+            const expected = failure === "none" ? { failed: 0, invalid: 1, received: 1 } : { failed: 1, invalid: 0, received: 0 };
+            await expect.poll(() => page.evaluate(() => {
+                const { failed, invalid, received } = window.shadowFocus.completion!.snapshot(); return { failed, invalid, received };
+            })).toEqual(expected);
+            expect((await completion(page)).choices).toEqual([]);
+        }
+        const before = await text(page); await input.press("Control+End"); await input.press(";");
+        await expect.poll(() => text(page)).toBe(before + ";");
+        expect(await page.evaluate(() => window.shadowFocus.errors)).toEqual([]);
+    } finally { await page.evaluate(() => window.shadowFocus.dispose()); }
+});
+
 test("nested shadow focus supports occurrences, automatic completion, deferred acceptance and snippet composition", async ({ page }, info) => {
     info.annotations.push({ type: "input-qualification", description: "Composition events are synthetic; this does not qualify native IME." });
     let release: (() => void) | undefined, cancellations = 0;

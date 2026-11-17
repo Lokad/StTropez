@@ -1,9 +1,11 @@
+import { wireLimits, ProtocolDecodeError, isRecord, rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError, jsonEqual, jsonSnapshot } from "./wire.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import type { PositionMapping } from "../core/positions.ts";
 import { NotificationScope, Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
-import { JsonRpcConnection, RpcError, jsonEqual, jsonSnapshot } from "./json-rpc.ts";
-import type { JsonValue, RpcCall, RpcOptions, RpcRequestContext, RpcScheduler, RpcTransport } from "./json-rpc.ts";
+import { JsonRpcConnection } from "./json-rpc.ts";
+import type { RpcCall, RpcOptions, RpcRequestContext, RpcScheduler, RpcTransport } from "./json-rpc.ts";
+import type { JsonValue } from "./wire.ts";
 import { LspLineIndex, lspTextChanges } from "./lsp-positions.ts";
 import type { LspChangeHint, LspTextChange } from "./lsp-positions.ts";
 import { compileLspSelector } from "./lsp-selector.ts";
@@ -52,16 +54,15 @@ type SyncWaiter = { resolve: () => void; reject: (error: Error) => void; ready: 
 type Registration = { value: LspRegistration; selector: LspSelector };
 type RequestHandler = (params: unknown, context: LspRequestContext) => unknown | Promise<unknown>;
 type NotificationHandler = (params: unknown, epoch: number) => void | Promise<void>;
-const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const integer = (value: number) => Number.isSafeInteger(value) && value >= 0;
 const empty = Object.freeze({});
 function commandOptions(value: unknown): readonly string[] {
-    if (!object(value) || !Array.isArray(value.commands) || value.commands.length > 128 || value.commands.some(command => typeof command !== "string" || !command || command.length > 256)) throw new TypeError("Invalid or excessive LSP command options.");
+    if (!isRecord(value) || !Array.isArray(value.commands) || value.commands.length > wireLimits.commandsPerRegistration || value.commands.some(command => typeof command !== "string" || !command || command.length > 256)) throw new ProtocolDecodeError("Invalid or excessive LSP command options.");
     return value.commands as readonly string[];
 }
-const closed = () => new RpcError(-32097, "LSP session is not ready.");
-const stale = () => new RpcError(-32801, "Document, capability or session capture changed.");
-const cancelError = () => new RpcError(-32800, "Request cancelled.");
+const closed = () => closedConnection("LSP session is not ready.");
+const stale = () => staleRequest("Document, capability or session capture changed.");
+const cancelError = () => cancelledRequest("Request cancelled.");
 const syncMethods = ["textDocument/didOpen", "textDocument/didChange", "textDocument/didClose"];
 const reserved = (method: string) => ["initialize", "initialized", "shutdown", "exit", "client/registerCapability", "client/unregisterCapability"].includes(method) || method.startsWith("$/") || method.startsWith("textDocument/");
 const reservedIncoming = (method: string) => ["initialize", "initialized", "shutdown", "exit", "client/registerCapability", "client/unregisterCapability", ...syncMethods].includes(method) || method.startsWith("$/");
@@ -181,7 +182,7 @@ export class LspSession {
         const raced = Promise.race([opening, cancelled]);
         let stopDeadline: (() => void) | undefined;
         let transport: RpcTransport;
-        try { stopDeadline = this.options.schedule(this.options.rpc?.timeoutMs ?? 15000, () => { if (this.current(epoch)) this.drop(new RpcError(-32098, "LSP opening timed out.")); }); transport = await raced; }
+        try { stopDeadline = this.options.schedule(this.options.rpc?.timeoutMs ?? wireLimits.timeoutMs, () => { if (this.current(epoch)) this.drop(new RpcError(rpcCodes.timeout, "LSP opening timed out.")); }); transport = await raced; }
         catch (error) { void raced.catch(() => {}); throw error; } finally { this.release(stopDeadline); }
         if (!this.current(epoch)) { this.release(() => transport.dispose()); throw closed(); }
         const rpc = new JsonRpcConnection(transport, { ...this.options.rpc, schedule: this.options.schedule, onError: error => this.report(error),
@@ -189,18 +190,18 @@ export class LspSession {
         this.rpc = rpc; this.install(rpc, epoch); this.publish("initializing");
         const response = await rpc.request("initialize", this.initializeParams).result;
         if (!this.current(epoch)) throw closed();
-        if (!object(response) || !object(response.capabilities)) throw new TypeError("Malformed LSP initialize result.");
+        if (!isRecord(response) || !isRecord(response.capabilities)) throw new ProtocolDecodeError("Malformed LSP initialize result.");
         const capabilities = response.capabilities;
-        if (capabilities.positionEncoding !== undefined && capabilities.positionEncoding !== "utf-16") throw new TypeError("LSP session requires UTF-16 positions.");
+        if (capabilities.positionEncoding !== undefined && capabilities.positionEncoding !== "utf-16") throw new ProtocolDecodeError("LSP session requires UTF-16 positions.");
         const sync = capabilities.textDocumentSync;
-        if (sync !== undefined && sync !== 0 && sync !== 2 && !object(sync)) throw new TypeError("Only incremental LSP synchronization is supported.");
-        if (object(sync) && (sync.openClose !== undefined && typeof sync.openClose !== "boolean" || sync.change !== undefined && sync.change !== 0 && sync.change !== 2)) throw new TypeError("Invalid or unsupported synchronization capability.");
-        for (const provider of Object.values(providers)) if (capabilities[provider] !== undefined && typeof capabilities[provider] !== "boolean" && !object(capabilities[provider])) throw new TypeError("Malformed feature capability.");
+        if (sync !== undefined && sync !== 0 && sync !== 2 && !isRecord(sync)) throw new ProtocolDecodeError("Only incremental LSP synchronization is supported.");
+        if (isRecord(sync) && (sync.openClose !== undefined && typeof sync.openClose !== "boolean" || sync.change !== undefined && sync.change !== 0 && sync.change !== 2)) throw new ProtocolDecodeError("Invalid or unsupported synchronization capability.");
+        for (const provider of Object.values(providers)) if (capabilities[provider] !== undefined && typeof capabilities[provider] !== "boolean" && !isRecord(capabilities[provider])) throw new ProtocolDecodeError("Malformed feature capability.");
         for (const provider of Object.values(providers)) { const value = capabilities[provider];
-            if (object(value) && Object.hasOwn(value, "documentSelector")) this.staticSelectors.set(provider, compileLspSelector(value.documentSelector, this.options.pathForUri)); }
+            if (isRecord(value) && Object.hasOwn(value, "documentSelector")) this.staticSelectors.set(provider, compileLspSelector(value.documentSelector, this.options.pathForUri)); }
         if (this.features.has("workspace/executeCommand") && capabilities.executeCommandProvider !== undefined) commandOptions(capabilities.executeCommandProvider);
         this.capabilities = capabilities as Readonly<Record<string, JsonValue>>;
-        this.sync = { openClose: sync === 2 || object(sync) && sync.openClose === true, change: sync === 2 || object(sync) && sync.change === 2 };
+        this.sync = { openClose: sync === 2 || isRecord(sync) && sync.openClose === true, change: sync === 2 || isRecord(sync) && sync.change === 2 };
         rpc.notify("initialized", {}); this.cancelOpening = undefined; this.publish("ready"); this.reconcile(); await this.flush();
     }
     private install(rpc: JsonRpcConnection, epoch: number): void {
@@ -213,7 +214,7 @@ export class LspSession {
     private installRequest(rpc: JsonRpcConnection, epoch: number, method: string, handler: RequestHandler): () => void {
         return rpc.onRequest(method, (params, context) => {
             if (!this.current(epoch) || this.requests.get(method) !== handler) throw closed();
-            if (this.store.get().phase !== "ready") throw new RpcError(-32002, "Server not initialized.");
+            if (this.store.get().phase !== "ready") throw new RpcError(rpcCodes.serverNotInitialized, "Server not initialized.");
             return handler(params, Object.freeze({ ...context, get cancelled() { return context.cancelled; }, epoch, isCurrent: () => this.current(epoch) && this.store.get().phase === "ready" && !context.cancelled }));
         });
     }
@@ -227,30 +228,30 @@ export class LspSession {
         });
     }
     private register(params: unknown): null {
-        if (!object(params) || !Array.isArray(params.registrations) || !params.registrations.length || params.registrations.length > 128) throw new RpcError(-32602, "Invalid capability registrations.");
+        if (!isRecord(params) || !Array.isArray(params.registrations) || !params.registrations.length || params.registrations.length > wireLimits.registrations) throw new RpcError(rpcCodes.invalidParams, "Invalid capability registrations.");
         const next = new Map(this.registrations);
         for (const item of params.registrations) {
-            if (!object(item) || typeof item.id !== "string" || !item.id || typeof item.method !== "string" || next.has(item.id) ||
-                !syncMethods.includes(item.method) && !this.features.has(item.method as LspFeature) && !(item.method === "textDocument/documentColor" && this.features.has("textDocument/colorPresentation")) || !object(item.registerOptions)) throw new RpcError(-32602, "Unsupported or duplicate registration.");
-            if (item.method === "textDocument/didChange" && item.registerOptions.syncKind !== 2) throw new RpcError(-32602, "Only incremental changes are supported.");
-            if (item.id.length > 256 || JSON.stringify(item.registerOptions).length > 65536) throw new RpcError(-32602, "Registration options exceed their limit.");
+            if (!isRecord(item) || typeof item.id !== "string" || !item.id || typeof item.method !== "string" || next.has(item.id) ||
+                !syncMethods.includes(item.method) && !this.features.has(item.method as LspFeature) && !(item.method === "textDocument/documentColor" && this.features.has("textDocument/colorPresentation")) || !isRecord(item.registerOptions)) throw new RpcError(rpcCodes.invalidParams, "Unsupported or duplicate registration.");
+            if (item.method === "textDocument/didChange" && item.registerOptions.syncKind !== 2) throw new RpcError(rpcCodes.invalidParams, "Only incremental changes are supported.");
+            if (item.id.length > 256 || JSON.stringify(item.registerOptions).length > 65536) throw new RpcError(rpcCodes.invalidParams, "Registration options exceed their limit.");
             let selector: LspSelector;
             try {
-                if (item.method === "workspace/executeCommand") { commandOptions(item.registerOptions); if ("documentSelector" in item.registerOptions) throw new TypeError(); selector = () => true; }
+                if (item.method === "workspace/executeCommand") { commandOptions(item.registerOptions); if ("documentSelector" in item.registerOptions) throw new ProtocolDecodeError("Command registration cannot select documents."); selector = () => true; }
                 else selector = compileLspSelector(item.registerOptions.documentSelector, this.options.pathForUri);
-            } catch { throw new RpcError(-32602, "Invalid registration selector or command options."); }
+            } catch (error) { if (!(error instanceof ProtocolDecodeError)) throw error; throw new RpcError(rpcCodes.invalidParams, "Invalid registration selector or command options."); }
             const value = Object.freeze({ id: item.id, method: item.method, registerOptions: jsonSnapshot(item.registerOptions) }); next.set(item.id, { value, selector });
         }
-        if (next.size > 128 || [...next.values()].reduce((units, item) => units + JSON.stringify(item.value.registerOptions).length, 0) > 1024 * 1024) throw new RpcError(-32602, "Capability registry exceeds its limit.");
-        if (this.collectCommands(next).length > 256) throw new RpcError(-32602, "Command registry exceeds its limit.");
+        if (next.size > wireLimits.registrations || [...next.values()].reduce((units, item) => units + JSON.stringify(item.value.registerOptions).length, 0) > 1024 * 1024) throw new RpcError(rpcCodes.invalidParams, "Capability registry exceeds its limit.");
+        if (this.collectCommands(next).length > 256) throw new RpcError(rpcCodes.invalidParams, "Command registry exceeds its limit.");
         this.registrations.clear(); for (const [id, item] of next) this.registrations.set(id, item);
         this.generation++; this.publish(); this.reconcile(); return null;
     }
     private unregister(params: unknown): null {
-        if (!object(params) || !Array.isArray(params.unregisterations) || !params.unregisterations.length || params.unregisterations.length > 128) throw new RpcError(-32602, "Invalid capability unregistrations.");
+        if (!isRecord(params) || !Array.isArray(params.unregisterations) || !params.unregisterations.length || params.unregisterations.length > wireLimits.registrations) throw new RpcError(rpcCodes.invalidParams, "Invalid capability unregistrations.");
         const ids = new Set<string>();
         for (const item of params.unregisterations) {
-            if (!object(item) || typeof item.id !== "string" || ids.has(item.id) || this.registrations.get(item.id)?.value.method !== item.method) throw new RpcError(-32602, "Unknown or mismatched registration."); ids.add(item.id);
+            if (!isRecord(item) || typeof item.id !== "string" || ids.has(item.id) || this.registrations.get(item.id)?.value.method !== item.method) throw new RpcError(rpcCodes.invalidParams, "Unknown or mismatched registration."); ids.add(item.id);
         }
         for (const id of ids) this.registrations.delete(id); this.generation++; this.publish(); this.reconcile(); return null;
     }
@@ -274,14 +275,14 @@ export class LspSession {
     }
     private staticAvailable(method: LspDocumentFeature, entry: Entry): boolean {
         const provider = providers[method], capability = this.capabilities[provider], selector = this.staticSelectors.get(provider);
-        return (capability === true || object(capability)) && (!selector || this.matches(selector, entry));
+        return (capability === true || isRecord(capability)) && (!selector || this.matches(selector, entry));
     }
     /** Static and matching dynamic options only; selectors and session readiness use the request policy. */
     featureOptions(method: LspDocumentFeature, document: LspDocument): readonly Readonly<Record<string, JsonValue>>[] {
         if (!this.canRequest(method, document)) return Object.freeze([]);
         const entry = this.entry(document), capability = this.capabilities[providers[method]], values: Readonly<Record<string, JsonValue>>[] = [];
-        if (this.staticAvailable(method, entry)) { if (object(capability)) values.push(capability); else if (capability === true) values.push(empty); }
-        for (const item of this.registrations.values()) if (this.matchesRegistration(item.value.method, method) && this.matches(item.selector, entry) && object(item.value.registerOptions)) values.push(item.value.registerOptions);
+        if (this.staticAvailable(method, entry)) { if (isRecord(capability)) values.push(capability); else if (capability === true) values.push(empty); }
+        for (const item of this.registrations.values()) if (this.matchesRegistration(item.value.method, method) && this.matches(item.selector, entry) && isRecord(item.value.registerOptions)) values.push(item.value.registerOptions);
         return Object.freeze(values);
     }
     private collectCommands(registrations: ReadonlyMap<string, Registration> = this.registrations): readonly string[] {
@@ -292,12 +293,12 @@ export class LspSession {
     }
     commandNames(): readonly string[] { return this.store.get().phase === "ready" && this.features.has("workspace/executeCommand") ? this.collectCommands() : Object.freeze([]); }
     /** Explicit caller policy/confirmation is required; commands are never replayed across a session. */
-    requestCommand<T = JsonValue>(command: string, args: readonly JsonValue[] = [], timeoutMs = this.options.rpc?.timeoutMs ?? 15000, authorization?: LspCommandAuthorization): LspCommandCall<T> {
+    requestCommand<T = JsonValue>(command: string, args: readonly JsonValue[] = [], timeoutMs = this.options.rpc?.timeoutMs ?? wireLimits.timeoutMs, authorization?: LspCommandAuthorization): LspCommandCall<T> {
         this.writable();
-        const argumentsValue = jsonSnapshot(args); if (!Array.isArray(argumentsValue) || JSON.stringify(argumentsValue).length > 8192) throw new RangeError("LSP command arguments exceed their limit.");
-        if (authorization && (authorization.command !== command || !jsonEqual(authorization.arguments, argumentsValue))) throw new RpcError(-32601, "Host command authorization does not match this invocation.");
+        const argumentsValue = jsonSnapshot(args); if (!Array.isArray(argumentsValue) || JSON.stringify(argumentsValue).length > wireLimits.commandArgumentUnits) throw new RangeError("LSP command arguments exceed their limit.");
+        if (authorization && (authorization.command !== command || !jsonEqual(authorization.arguments, argumentsValue))) throw new RpcError(rpcCodes.methodNotFound, "Host command authorization does not match this invocation.");
         const permitted = authorization?.isCurrent ?? (() => this.commandNames().includes(command));
-        if (!this.features.has("workspace/executeCommand") || !permitted()) throw new RpcError(-32601, "LSP command is neither advertised nor authorized by the host.");
+        if (!this.features.has("workspace/executeCommand") || !permitted()) throw new RpcError(rpcCodes.methodNotFound, "LSP command is neither advertised nor authorized by the host.");
         const epoch = this.epoch, generation = this.generation, isCurrent = () => this.current(epoch) && this.store.get().phase === "ready" && this.generation === generation && permitted();
         const call = this.ready(epoch).request<T>("workspace/executeCommand", { command, arguments: argumentsValue }, timeoutMs);
         return Object.freeze({ id: call.id, cancel: call.cancel, isCurrent, result: call.result.then(result => { if (!isCurrent()) throw stale(); return result; }) });
@@ -408,7 +409,7 @@ export class LspSession {
     }
     private failDocument(entry: Entry, cause: unknown, epoch: number): void {
         const rpc = this.ready(epoch); if (rpc.snapshot().disposed) throw cause;
-        const snapshot = entry.snapshot, error = new RpcError(-32000, `LSP synchronization failed for ${snapshot.uri}: ${cause instanceof Error ? cause.message : String(cause)}`);
+        const snapshot = entry.snapshot, error = new RpcError(rpcCodes.pendingLimit, `LSP synchronization failed for ${snapshot.uri}: ${cause instanceof Error ? cause.message : String(cause)}`);
         if (this.remote.get(snapshot.uri)?.entry === entry) {
             rpc.notify("textDocument/didClose", { textDocument: { uri: snapshot.uri } }); this.remote.delete(snapshot.uri);
         }
@@ -438,7 +439,7 @@ export class LspSession {
         try { if (ready ? ready() : !this.dirty.size && !this.scheduled && !this.pumping) return { result: Promise.resolve(), cancel: () => {} }; }
         catch (error) { return { result: Promise.reject(error), cancel: () => {} }; }
         this.kick();
-        if (this.waiters.size >= 128) throw new RpcError(-32000, "Too many pending synchronization waits.");
+        if (this.waiters.size >= wireLimits.synchronizationWaits) throw new RpcError(rpcCodes.pendingLimit, "Too many pending synchronization waits.");
         let waiter!: SyncWaiter;
         const result = new Promise<void>((resolve, reject) => { waiter = { resolve, reject, ready }; this.waiters.add(waiter); });
         return { result, cancel: () => { if (this.waiters.delete(waiter)) waiter.reject(cancelError()); } };
@@ -456,11 +457,11 @@ export class LspSession {
                 && entry.snapshot === remote.snapshot && this.remote.get(remote.snapshot.uri) === remote });
     }
     requestDocument<T = JsonValue>(method: LspDocumentFeature, document: LspDocument, params: (index: LspLineIndex, snapshot: LspDocumentSnapshot, capture: LspDocumentCapture) => Readonly<Record<string, JsonValue>>): LspCall<T> {
-        this.writable(); this.ready(); if (this.documentCalls.size >= (this.options.rpc?.maxPending ?? 64)) throw new RpcError(-32000, "Too many pending document requests.");
+        this.writable(); this.ready(); if (this.documentCalls.size >= (this.options.rpc?.maxPending ?? wireLimits.pendingRequests)) throw new RpcError(rpcCodes.pendingLimit, "Too many pending document requests.");
         const entry = this.entry(document), snapshot = entry.snapshot, epoch = this.epoch, generation = this.generation, waiting = this.waitForSync([entry]); let cancelled = false, call: RpcCall<T> | undefined;
         const guard = () => { if (cancelled) throw cancelError(); this.ready(epoch); if (this.documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot || generation !== this.generation) throw stale(); };
         const result = (async () => { await waiting.result; guard(); const failure = this.failed(entry); if (failure) throw failure;
-            if (!this.canRequest(method, document)) throw new RpcError(-32601, "LSP feature unavailable for this document.");
+            if (!this.canRequest(method, document)) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable for this document.");
             const capture = this.synchronized(document); if (capture?.document !== snapshot) throw stale();
             const value = params(capture.index, snapshot, capture); guard(); call = this.ready(epoch).request<T>(method, { ...value, textDocument: { uri: snapshot.uri } }); const response = await call.result; guard(); return response;
         })();
@@ -470,12 +471,12 @@ export class LspSession {
     request<T = JsonValue>(method: string, params?: JsonValue): RpcCall<T> { this.writable(); if (reserved(method)) throw new TypeError("Use the LSP lifecycle or captured document API."); return this.ready().request<T>(method, params); }
     notify(method: string, params?: JsonValue): void { this.writable(); if (reserved(method)) throw new TypeError("Use the LSP lifecycle or captured document API."); this.ready().notify(method, params); }
     onRequest(method: string, handler: RequestHandler): () => void {
-        this.writable(); if (!method || method.startsWith("rpc.") || reservedIncoming(method) || method === "window/showMessageRequest" || this.requests.has(method) || this.requests.size >= 128) throw new TypeError("Reserved, duplicate or excessive LSP handler.");
+        this.writable(); if (!method || method.startsWith("rpc.") || reservedIncoming(method) || method === "window/showMessageRequest" || this.requests.has(method) || this.requests.size >= wireLimits.handlers) throw new TypeError("Reserved, duplicate or excessive LSP handler.");
         this.requests.set(method, handler); if (this.rpc) this.requestStops.set(method, this.installRequest(this.rpc, this.epoch, method, handler));
         return () => { if (this.store.get().phase === "disposed") return; this.writable(); if (this.requests.get(method) !== handler) return; this.requests.delete(method); this.release(this.requestStops.get(method)); this.requestStops.delete(method); };
     }
     onNotification(method: string, handler: NotificationHandler): () => void {
-        this.writable(); if (!method || method.startsWith("rpc.") || reservedIncoming(method) || !this.notifications.has(method) && this.notifications.size >= 128) throw new TypeError("Reserved or excessive LSP notification."); let handlers = this.notifications.get(method);
+        this.writable(); if (!method || method.startsWith("rpc.") || reservedIncoming(method) || !this.notifications.has(method) && this.notifications.size >= wireLimits.handlers) throw new TypeError("Reserved or excessive LSP notification."); let handlers = this.notifications.get(method);
         if (!handlers) { handlers = new Set(); this.notifications.set(method, handlers); if (this.rpc) this.notificationStops.set(method, this.installNotification(this.rpc, this.epoch, method)); } handlers.add(handler);
         return () => { if (this.store.get().phase === "disposed") return; this.writable(); handlers.delete(handler);
             if (!handlers.size && this.notifications.get(method) === handlers) { this.notifications.delete(method); this.release(this.notificationStops.get(method)); this.notificationStops.delete(method); } };
@@ -487,7 +488,7 @@ export class LspSession {
     }
     disconnect(): void { this.writable(); this.drop(new Error("LSP session disconnected.")); }
     private drop(error: Error, dispose = false): void {
-        const failure = error instanceof RpcError ? error : new RpcError(-32097, error.message);
+        const failure = error instanceof RpcError ? error : new RpcError(rpcCodes.closed, error.message);
         this.epoch++; this.release(this.cancelOpening); this.cancelOpening = undefined; this.connectWork = undefined;
         this.release(this.scheduled); this.scheduled = undefined; for (const pause of this.pauses) { this.release(pause.stop); pause.reject(failure); } this.pauses.clear();
         const rpc = this.rpc; this.rpc = undefined; this.release(() => rpc?.dispose(failure)); this.pumping = false; this.dirty.clear(); this.settle(failure); this.documentCalls.clear();

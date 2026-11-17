@@ -1,5 +1,5 @@
+import { staleRequest } from "./wire.ts";
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
-import { RpcError } from "./json-rpc.ts";
 import { createLspClient } from "./lsp-client.ts";
 import { decodeLspCodeActions, decodeLspResolvedCodeAction, lspCodeActionUris } from "./lsp-code-actions.ts";
 import type { LspCodeAction } from "./lsp-code-actions.ts";
@@ -47,13 +47,13 @@ export function createLspActionClient(provider: LspWorkspace, options: LspAction
                 execute: async (action: LspCodeAction, scope: LspCommandScope) => {
                     const route = action.command && routes.get(action.command);
                     if (!value.isCurrent() || busy() || !actions.includes(action) || !action.command || action.disabled
-                        || !route || !(route.isCurrent?.() ?? true) || !provider.state.getSnapshot().commandAvailable) throw new RpcError(-32801, "Captured action command is unavailable or changed.");
+                        || !route || !(route.isCurrent?.() ?? true) || !provider.state.getSnapshot().commandAvailable) throw staleRequest("Captured action command is unavailable or changed.");
                     executing = true;
                     try { return await commands().runAuthorized(action.command, scope, route); }
                     finally { executing = false; client.notify(); }
                 },
                 resolve: async (action: LspCodeAction, prepareResolve?: LspPrepare) => {
-                    if (!value.isCurrent() || busy() || !actions.includes(action) || !action.resolve) throw new RpcError(-32801, "Captured action cannot be resolved.");
+                    if (!value.isCurrent() || busy() || !actions.includes(action) || !action.resolve) throw staleRequest("Captured action cannot be resolved.");
                     const response = await value.follow("textDocument/codeAction", "codeAction/resolve", action.resolve, prepareResolve);
                     const uris = value.decode(() => lspCodeActionUris([response])); await value.resolveTargets(uris, "edit");
                     return value.decode(() => decodeLspResolvedCodeAction(response, action, value.capture, value.targetForUri));

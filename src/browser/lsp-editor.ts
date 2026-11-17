@@ -1,3 +1,4 @@
+import { ProtocolDecodeError, rpcCodes, staleRequest } from "../protocol/wire.ts";
 import { isFocused } from "./dom-focus.ts";
 import { codeWordConstituentPattern } from "../core/words.ts";
 import type { ResourceLease, ResourceMetadata, TabId, Workspace } from "../core/workspace.ts";
@@ -8,10 +9,9 @@ import type { TextBuffer } from "../core/text-buffer.ts";
 import type { FoldIndex } from "../core/folding.ts";
 import type { EditingCandidate } from "./editing-candidate.ts";
 import { RpcError, UnsupportedLspSnippetError, decodeLspCompletions, decodeLspResolvedCompletion, lspCompletionPlan, rebaseLspCompletion } from "../protocol/index.ts";
-import type { LspCall, LspCompletion, LspCompletions, LspCompletionFallback, LspDiagnostics, LspDocument, LspDocumentCapture, LspSessionAccess, LspWorkspace } from "../protocol/index.ts";
+import type { LspCall, LspCompletion, LspCompletions, LspCompletionFallback, LspDiagnostics, LspDocument, LspDocumentCapture, LspSessionAccess, LspWorkspace, JsonValue } from "../protocol/index.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
-import type { JsonValue } from "../protocol/index.ts";
 
 type Job = { id: number; revision: number; buffer: TextBuffer; caret: number; selections: SelectionSet; indentation: ReturnType<EditingCandidate["languageConfiguration"]>; authority: ResourceMetadata; folds: number; foldIndex: FoldIndex; lease: ResourceLease;
     call?: LspCall<unknown>; capture?: LspDocumentCapture; choices?: LspCompletions; visible: readonly LspCompletion[]; choice: number; cancelled: boolean; pendingList: boolean; requestGeneration: number;
@@ -147,16 +147,16 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
             lease: workspace.acquire(resource.id), choice: previous?.choice ?? 0, cancelled: false, pendingList: true, requestGeneration: 0, visible: provisionalVisible ?? Object.freeze([]), ...(provisional ? { choices: provisional } : {}), ...(previous?.capture ? { capture: previous.capture } : {}) };
         job = captured; counters.posted++; publish("LSP completion pending.");
         void (async () => {
-            if (connecting) await connecting; if (captured.requestGeneration !== 0) return; if (!current(captured)) throw new RpcError(-32801, "Completion capture changed.");
+            if (connecting) await connecting; if (captured.requestGeneration !== 0) return; if (!current(captured)) throw staleRequest("Completion capture changed.");
             if (options.prepareCompletion) await options.prepareCompletion(session);
             if (captured.requestGeneration !== 0) return;
-            if (!current(captured)) throw new RpcError(-32801, "Completion capture changed.");
+            if (!current(captured)) throw staleRequest("Completion capture changed.");
             captured.call = session.requestDocument("textDocument/completion", binding, (index, _snapshot, remote) => {
                 captured.capture = remote; return { position: index.at(selected.head), context: { triggerKind: invocation.kind, ...(invocation.kind === 2 && invocation.character ? { triggerCharacter: invocation.character } : {}) } };
             });
             const result = await captured.call.result; counters.received++;
             if (captured.requestGeneration !== 0) return;
-            if (!current(captured) || !captured.capture?.isCurrent()) throw new RpcError(-32801, "Completion capture changed.");
+            if (!current(captured) || !captured.capture?.isCurrent()) throw staleRequest("Completion capture changed.");
             const configuration = session.featureOptions("textDocument/completion", binding), commits = configuration.flatMap(option => Array.isArray(option.allCommitCharacters) ? option.allCommitCharacters.filter((value): value is string => typeof value === "string") : []);
             const choices = decodeLspCompletions(result, captured.capture, selected.head, () => wordRange(captured.capture!.document.buffer, selected.head), { resolve: configuration.some(option => option.resolveProvider === true), commitCharacters: commits, indentation: captured.indentation });
             captured.choices = Object.freeze({ ...choices, items: Object.freeze(choices.items.map((item, order) => ({ item, order })).sort((a, b) => a.item.sortText < b.item.sortText ? -1 : a.item.sortText > b.item.sortText ? 1 : a.order - b.order).map(value => value.item)) });
@@ -166,8 +166,8 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
             resolveSelected(captured);
         })().catch(error => {
             if (job !== captured || captured.requestGeneration !== 0) return; release();
-            if (error instanceof RpcError && error.code === -32801) { counters.stale++; publish("Stale LSP completion rejected."); }
-            else if (error instanceof TypeError || error instanceof RangeError) { counters.invalid++; publish("Malformed or unsupported LSP completion rejected."); }
+            if (error instanceof RpcError && error.code === rpcCodes.contentModified) { counters.stale++; publish("Stale LSP completion rejected."); }
+            else if (error instanceof ProtocolDecodeError) { counters.invalid++; publish("Malformed or unsupported LSP completion rejected."); }
             else { counters.failed++; publish("LSP provider unavailable; local editing remains available."); }
         });
     };
@@ -182,7 +182,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
         publish("Resolving the selected completion.");
         void (async () => {
             await session.flush(); if (!valid()) return;
-            const capture = session.synchronized(binding); if (!capture) throw new RpcError(-32801, "Completion resolve snapshot changed.");
+            const capture = session.synchronized(binding); if (!capture) throw staleRequest("Completion resolve snapshot changed.");
             resolution.call = session.request("completionItem/resolve", item.resolve!); const value = await resolution.call.result;
             if (!valid() || !capture.isCurrent()) return;
             const resolved = decodeLspResolvedCompletion(value, item, capture), acceptance = captured.acceptance;
@@ -205,7 +205,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
                 captured.visible = Object.freeze(captured.visible.filter(value => value !== item)); captured.choice = Math.min(captured.choice, Math.max(0, captured.visible.length - 1)); captured.id = ++completionSequence;
                 publish(`Unsupported snippet omitted: ${item.label}. ${error.message}`); resolveSelected(captured); return;
             }
-            if (error instanceof TypeError || error instanceof RangeError) counters.invalid++; else if (error instanceof RpcError && error.code === -32801) counters.stale++; else counters.failed++;
+            if (error instanceof ProtocolDecodeError) counters.invalid++; else if (error instanceof RpcError && error.code === rpcCodes.contentModified) counters.stale++; else counters.failed++;
             release(); publish("Completion resolution failed or expired; request fresh choices."); });
     };
     const apply = (mode: "insert" | "replace", completionId?: number, character?: string): boolean => {

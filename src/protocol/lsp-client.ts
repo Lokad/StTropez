@@ -1,6 +1,6 @@
+import { rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError } from "./wire.ts";
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
-import { RpcError } from "./json-rpc.ts";
-import type { JsonValue } from "./json-rpc.ts";
+import type { JsonValue } from "./wire.ts";
 import type { LspDocument, LspDocumentCapture, LspDocumentFeature, LspDocumentSnapshot } from "./lsp-session.ts";
 import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
 import { createLspTargets } from "./lsp-targets.ts";
@@ -8,8 +8,8 @@ import type { LspTargetContext } from "./lsp-targets.ts";
 
 type Request = { generation: number; pending: number; cancelled: boolean; reject: (error: Error) => void;
     cancellation: Promise<never>; cleanups: Set<() => void>; identities: ReadonlyMap<LspDocument, LspDocumentSnapshot> };
-const cancelled = () => new RpcError(-32800, "LSP feature request cancelled.");
-const stale = () => new RpcError(-32801, "Captured LSP documents changed.");
+const cancelled = () => cancelledRequest("LSP feature request cancelled.");
+const stale = () => staleRequest("Captured LSP documents changed.");
 
 /** One feature scope, one latest intent. Decoding and mutation policy remain with the caller. */
 export function createLspClient(provider: LspWorkspace) {
@@ -69,7 +69,7 @@ export function createLspClient(provider: LspWorkspace) {
             const target = documents.get(origin);
             if (!target) throw new Error("LSP source is outside the captured project.");
             const connection = scope.state.getSnapshot();
-            if (connection.phase === "disconnected" && connection.epoch !== 0) throw new RpcError(-32097, "LSP connection requires an explicit host connect or reconnect.");
+            if (connection.phase === "disconnected" && connection.epoch !== 0) throw closedConnection("LSP connection requires an explicit host connect or reconnect.");
             await scope.connect();
             validate(op);
             await scope.flush([...documents.values()]);
@@ -111,7 +111,7 @@ export function createLspClient(provider: LspWorkspace) {
                     if (prepareFollow) await prepareFollow(scope);
                     validate(op);
                     if (!isCurrent()) throw stale();
-                    if (!scope.canRequest(feature, target)) throw new RpcError(-32601, "LSP feature unavailable.");
+                    if (!scope.canRequest(feature, target)) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable.");
                     const body = { ...values as Record<string, JsonValue> };
                     delete body.textDocument;
                     const next = feature === wireMethod ? scope.requestDocument(feature, target, () => { validate(op); return body; }) : scope.request(wireMethod, values);

@@ -13,13 +13,13 @@ export type InsertionText = Readonly<{ text: string; mapping: PositionMapping;
     mapPosition: (offset: number, affinity?: Affinity) => number;
     markerIndentation: (offset: number) => InsertionMarkerIndentation | undefined }>;
 
-function validateIndentation(value: InsertionIndentation): void {
+export function validateInsertionIndentation(value: InsertionIndentation): void {
     if (!Number.isSafeInteger(value.tabSize) || value.tabSize < 1 || value.tabSize > 256 || typeof value.insertSpaces !== "boolean")
         throw new RangeError("Invalid insertion indentation.");
 }
 /** Read only leading whitespace before the insertion, in bounded source slices. */
 export function insertionContext(buffer: TextBuffer, offset: number, indentation: InsertionIndentation): InsertionContext {
-    validateIndentation(indentation);
+    validateInsertionIndentation(indentation);
     const line = buffer.lineAt(offset), start = buffer.offsetAt(line); let columns = 0;
     outer: for (let at = start; at < offset; at += 4096) {
         const value = buffer.slice(at, Math.min(offset, at + 4096));
@@ -39,7 +39,7 @@ export function adjustInsertionText(value: string, context: InsertionContext, ma
 }
 /** Transfer editor-generated newline indentation between captured insertion contexts. */
 export function reindentInsertionText(value: string, sourceColumns: number, context: InsertionContext, maxUnits = Number.MAX_SAFE_INTEGER): InsertionText {
-    validateIndentation(context);
+    validateInsertionIndentation(context);
     if (typeof value !== "string" || !Number.isSafeInteger(context.columns) || context.columns < 0
         || !Number.isSafeInteger(sourceColumns) || sourceColumns < 0
         || context.lineEnding !== "\n" && context.lineEnding !== "\r\n" || !Number.isSafeInteger(maxUnits) || maxUnits < 0)

@@ -165,6 +165,12 @@ responses reject their calls with this error; request handlers can throw it to s
 structured error response. Cancellation, expiry and transport failures also reject pending
 work, so callers must handle rejected results and release their captured intent.
 
+`ProtocolDecodeError` identifies malformed or unsupported provider data, including feature
+results and initialization capabilities. Completion counters classify these failures as
+invalid replies. Errors thrown by host callbacks retain their original identity; they are
+not decode failures. Caller configuration and local edit planning retain their validation
+errors. Cancellation and expired captures use the protocol codes carried by `RpcError`.
+
 `LspSession` is the lower-level owner for hosts without a `Workspace`. Construct it with a
 connection factory and scheduler, bind immutable buffers with `bindDocument`, and retain each
 handle for expected-revision updates or closing. An old handle cannot modify its replacement;

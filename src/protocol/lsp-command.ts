@@ -1,6 +1,6 @@
+import { cancelledRequest, staleRequest, wireLimits, jsonSnapshot } from "./wire.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
-import { jsonSnapshot, RpcError } from "./json-rpc.ts";
-import type { JsonValue } from "./json-rpc.ts";
+import type { JsonValue } from "./wire.ts";
 import { decodeLspApplyEdit, lspApplyEditUris } from "./lsp-features.ts";
 import { createLspTargets } from "./lsp-targets.ts";
 import type { LspApplyEdit, LspApplyEditResult } from "./lsp-features.ts";
@@ -55,15 +55,15 @@ export function createLspCommandRunner(session: LspWorkspaceScope, notify: () =>
     const stopState = session.state.subscribe(changed), stopApply = session.onRequest("workspace/applyEdit", (value, context) =>
         apply(active?.route.kind === "server" ? active : undefined, value, context));
     const run = async (invocation: LspCommand, scope: LspCommandScope, route: LspCommandRoute, allowEdits: boolean): Promise<LspCommandReceipt> => {
-        if (disposed || active || !scope.isCurrent() || !(route.isCurrent?.() ?? true)) throw new RpcError(-32801, "Captured command is unavailable or changed.");
+        if (disposed || active || !scope.isCurrent() || !(route.isCurrent?.() ?? true)) throw staleRequest("Captured command is unavailable or changed.");
         const argumentsValue = jsonSnapshot(invocation.arguments);
-        if (!Array.isArray(argumentsValue) || JSON.stringify(argumentsValue).length > 8192) throw new RangeError("LSP command arguments exceed their limit.");
+        if (!Array.isArray(argumentsValue) || JSON.stringify(argumentsValue).length > wireLimits.commandArgumentUnits) throw new RangeError("LSP command arguments exceed their limit.");
         const captured = Object.freeze({ ...invocation, arguments: argumentsValue as readonly JsonValue[] }), reservation = session.reserveCommand();
         const state = session.state.getSnapshot(), op: Active = { scope, route, allowEdits, epoch: state.epoch, generation: state.registrationGeneration }; active = op;
         let stopCancel = () => {};
         try {
             scope.prepare?.(); await sync(scope);
-            if (!current(op) || !scope.isCurrent() || !reservation.isCurrent()) throw new RpcError(-32801, "Captured command intent changed.");
+            if (!current(op) || !scope.isCurrent() || !reservation.isCurrent()) throw staleRequest("Captured command intent changed.");
             let value: JsonValue;
             if (route.kind === "server") {
                 op.call = session.requestCommand(captured.command, captured.arguments, 120000, { command: captured.command, arguments: captured.arguments,
@@ -76,14 +76,14 @@ export function createLspCommandRunner(session: LspWorkspaceScope, notify: () =>
                     invalidations.add(invalid); invalid(); return () => { done = true; invalidations.delete(invalid); };
                 };
                 const context: LspRequestContext = Object.freeze({ id: "host-command", epoch: op.epoch, get cancelled() { return !isCurrent(); }, isCurrent, onCancel });
-                const cancelled = new Promise<never>((_resolve, reject) => { stopCancel = onCancel(() => reject(new RpcError(-32800, "Host command cancelled."))); });
+                const cancelled = new Promise<never>((_resolve, reject) => { stopCancel = onCancel(() => reject(cancelledRequest("Host command cancelled."))); });
                 value = jsonSnapshot(await Promise.race([Promise.resolve().then(() => {
-                    if (!isCurrent()) throw new RpcError(-32801, "Captured host command changed.");
+                    if (!isCurrent()) throw staleRequest("Captured host command changed.");
                     return route.run(captured, Object.freeze({ snapshots: () => Object.freeze([...scope.snapshots()]), isCurrent, onCancel,
                         applyEdit: request => apply(op, request, context) }));
                 }), cancelled]));
             }
-            if (!current(op) || !scope.isCurrent()) throw new RpcError(-32801, "Captured command intent changed.");
+            if (!current(op) || !scope.isCurrent()) throw staleRequest("Captured command intent changed.");
             return Object.freeze({ value, decision: op.decision });
         } finally { stopCancel(); op.call?.cancel(); reservation.release(); if (active === op) active = undefined; changed(); }
     };

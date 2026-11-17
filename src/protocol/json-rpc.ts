@@ -1,4 +1,5 @@
-export type JsonValue = null | boolean | number | string | readonly JsonValue[] | Readonly<{ [key: string]: JsonValue }>;
+import { wireLimits, rpcCodes, cancelledRequest, closedConnection, RpcError, isRecord, isJson, immutableJson } from "./wire.ts";
+import type { JsonValue } from "./wire.ts";
 export type RpcId = string | number | null;
 export type RpcTransport = Readonly<{
     send: (message: string) => void;
@@ -19,52 +20,8 @@ type Message = Record<string, unknown>;
 type Pending = { resolve: (value: JsonValue) => void; reject: (error: Error) => void; stop: () => void };
 type Incoming = { context: RpcRequestContext; cancel: () => void };
 
-export class RpcError extends Error {
-    readonly code: number;
-    readonly data: JsonValue | undefined;
-    constructor(code: number, message: string, data?: JsonValue) {
-        super(message); this.name = "RpcError"; this.code = code; this.data = data;
-    }
-}
-const object = (value: unknown): value is Message => value !== null && typeof value === "object" && !Array.isArray(value);
 const has = (value: Message, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 const idValue = (value: unknown): value is RpcId => value === null || typeof value === "string" || typeof value === "number" && Number.isSafeInteger(value);
-const snapshotNodes = 100000, snapshots = new WeakMap<object, boolean>();
-/** Internal ownership proof for immutable syntax caches; it grants no snapshot-size exemption. */
-export const isCapturedJson = (value: unknown): value is object => !!value && typeof value === "object" && snapshots.has(value);
-function json(value: unknown, depth = 0, budget = { left: snapshotNodes }): value is JsonValue {
-    if (depth > 64 || --budget.left < 0) return false;
-    if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-    if (typeof value === "number") return Number.isFinite(value);
-    if (Array.isArray(value)) { for (let i = 0; i < value.length; i++) {
-        const d = Object.getOwnPropertyDescriptor(value, i); if (!d || !("value" in d) || !json(d.value, depth + 1, budget)) return false;
-    } return true; }
-    if (!object(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return false;
-    const keys = Object.keys(value); if (keys.length > budget.left) return false;
-    return keys.every(key => { const d = Object.getOwnPropertyDescriptor(value, key)!; return "value" in d && json(d.value, depth + 1, budget); });
-}
-/** Only parsed, validated JSON reaches this walk. Each reusable subtree meets snapshot bounds. */
-function freezeJson(value: JsonValue): number {
-    // JSON.stringify normalizes -0; retaining that subtree would change snapshot semantics.
-    if (!value || typeof value !== "object") return Object.is(value, -0) ? Infinity : 1;
-    let nodes = 1; for (const child of Object.values(value)) nodes += freezeJson(child);
-    Object.freeze(value); snapshots.set(value, nodes <= snapshotNodes); return nodes;
-}
-function immutable(value: JsonValue): JsonValue {
-    freezeJson(value); return value;
-}
-/** Internal shared validation/capture for host-supplied session options. */
-export function jsonSnapshot(value: unknown): JsonValue {
-    if (value && typeof value === "object" && snapshots.get(value) === true) return value as JsonValue;
-    if (!json(value)) throw new TypeError("Expected bounded JSON values.");
-    return immutable(JSON.parse(JSON.stringify(value)) as JsonValue);
-}
-/** Structural comparison for captured JSON; property order has no protocol meaning. */
-export function jsonEqual(a: unknown, b: unknown): boolean {
-    if (a === b) return true;
-    if (Array.isArray(a)) return Array.isArray(b) && a.length === b.length && a.every((value, index) => jsonEqual(value, b[index]));
-    return object(a) && object(b) && Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(key => Object.hasOwn(b, key) && jsonEqual(a[key], b[key]));
-}
 function methodName(method: string): void {
     if (!method || method.startsWith("rpc.")) throw new TypeError("Invalid application RPC method.");
 }
@@ -89,7 +46,7 @@ export class JsonRpcConnection {
 
     constructor(transport: RpcTransport, options: RpcOptions) {
         this.transport = transport; this.options = options;
-        this.timeoutMs = options.timeoutMs ?? 15000; this.maxPending = options.maxPending ?? 64; this.maxMessageUnits = options.maxMessageUnits ?? 4 * 1024 * 1024;
+        this.timeoutMs = options.timeoutMs ?? wireLimits.timeoutMs; this.maxPending = options.maxPending ?? wireLimits.pendingRequests; this.maxMessageUnits = options.maxMessageUnits ?? wireLimits.messageUnits;
         this.maxJsonNodes = options.maxJsonNodes ?? this.maxMessageUnits;
         if (![this.timeoutMs, this.maxPending, this.maxMessageUnits, this.maxJsonNodes].every(v => Number.isSafeInteger(v) && v > 0)) throw new RangeError("Invalid RPC limits.");
         this.stopListening = transport.subscribe({ message: message => this.receive(message), close: reason => this.dispose(reason) });
@@ -98,7 +55,7 @@ export class JsonRpcConnection {
     private report(error: Error): void { try { this.options.onError?.(error); } catch { /* Host diagnostics cannot interrupt protocol cleanup. */ } }
     private release(stop: () => void): void { try { stop(); } catch (error) { this.report(error instanceof Error ? error : new Error("RPC cleanup failed.")); } }
     private encode(value: unknown): string {
-        if (!json(value, 0, { left: this.maxJsonNodes })) throw new TypeError("RPC messages must contain bounded JSON values.");
+        if (!isJson(value, 0, { left: this.maxJsonNodes })) throw new TypeError("RPC messages must contain bounded JSON values.");
         const encoded = JSON.stringify(value); if (encoded.length > this.maxMessageUnits) throw new RangeError("RPC message exceeds the configured limit."); return encoded;
     }
     private emit(value: unknown): boolean {
@@ -113,11 +70,11 @@ export class JsonRpcConnection {
     }
     request<T = JsonValue>(method: string, params?: unknown, timeoutMs = this.timeoutMs): RpcCall<T> {
         methodName(method);
-        if (this.disposed) throw new RpcError(-32097, "RPC connection is closed.");
-        if (this.pending.size >= this.maxPending) throw new RpcError(-32000, "Too many pending RPC requests.");
+        if (this.disposed) throw closedConnection("RPC connection is closed.");
+        if (this.pending.size >= this.maxPending) throw new RpcError(rpcCodes.pendingLimit, "Too many pending RPC requests.");
         if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new RangeError("Invalid RPC deadline.");
         const id = ++this.serial, message = { jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) };
-        if (params !== undefined && !object(params) && !Array.isArray(params)) throw new TypeError("RPC parameters must be structured.");
+        if (params !== undefined && !isRecord(params) && !Array.isArray(params)) throw new TypeError("RPC parameters must be structured.");
         const encoded = this.encode(message);
         let resolve!: (value: JsonValue) => void, reject!: (error: Error) => void;
         const result = new Promise<JsonValue>((yes, no) => { resolve = yes; reject = no; });
@@ -126,16 +83,16 @@ export class JsonRpcConnection {
             if (this.pending.get(id) !== entry) return; this.pending.delete(id); this.release(entry.stop); reject(error);
             this.emit({ jsonrpc: "2.0", method: "$/cancelRequest", params: { id } });
         };
-        try { entry.stop = this.options.schedule(timeoutMs, () => cancel(new RpcError(-32098, "RPC request timed out."))); }
+        try { entry.stop = this.options.schedule(timeoutMs, () => cancel(new RpcError(rpcCodes.timeout, "RPC request timed out."))); }
         catch (error) { this.pending.delete(id); reject(error instanceof Error ? error : new Error("RPC scheduling failed.")); }
         if (this.pending.get(id) === entry) this.send(encoded); else this.release(entry.stop);
-        return Object.freeze({ id, result: result as Promise<T>, cancel: () => cancel(new RpcError(-32800, "Request cancelled.")) });
+        return Object.freeze({ id, result: result as Promise<T>, cancel: () => cancel(cancelledRequest("Request cancelled.")) });
     }
     notify(method: string, params?: unknown): void {
-        methodName(method); if (this.disposed) throw new RpcError(-32097, "RPC connection is closed.");
-        if (params !== undefined && !object(params) && !Array.isArray(params)) throw new TypeError("RPC parameters must be structured.");
+        methodName(method); if (this.disposed) throw closedConnection("RPC connection is closed.");
+        if (params !== undefined && !isRecord(params) && !Array.isArray(params)) throw new TypeError("RPC parameters must be structured.");
         const message = { jsonrpc: "2.0", method, ...(params === undefined ? {} : { params }) };
-        if (!this.send(this.encode(message))) throw new RpcError(-32097, "RPC transport is closed.");
+        if (!this.send(this.encode(message))) throw closedConnection("RPC transport is closed.");
     }
     onRequest(method: string, handler: RequestHandler): () => void {
         methodName(method); if (this.disposed || this.requests.has(method)) throw new Error("RPC request handler is unavailable.");
@@ -147,32 +104,32 @@ export class JsonRpcConnection {
         handlers.add(handler); return () => { handlers.delete(handler); if (!handlers.size) this.notifications.delete(method); };
     }
     private rejectJson(value: unknown): unknown {
-        const error = new RpcError(-32600, "RPC JSON structure exceeds the configured node limit or nesting limit.");
+        const error = new RpcError(rpcCodes.invalidRequest, "RPC JSON structure exceeds the configured node limit or nesting limit.");
         // The parsed envelope can identify a response even though its payload is unusable.
         // Never answer a response with another error response or leave its call waiting.
-        if (object(value) && !has(value, "method") && (has(value, "result") || has(value, "error"))) {
+        if (isRecord(value) && !has(value, "method") && (has(value, "result") || has(value, "error"))) {
             const entry = typeof value.id === "number" ? this.pending.get(value.id) : undefined;
             if (entry) { this.pending.delete(value.id as number); this.release(entry.stop); entry.reject(error); }
             else this.report(error);
             return;
         }
-        if (object(value) && typeof value.method === "string" && !has(value, "id")) { this.report(error); return; }
-        return failure(object(value) && idValue(value.id) ? value.id : null, -32600, error.message);
+        if (isRecord(value) && typeof value.method === "string" && !has(value, "id")) { this.report(error); return; }
+        return failure(isRecord(value) && idValue(value.id) ? value.id : null, rpcCodes.invalidRequest, error.message);
     }
     private receive(text: string): void {
         if (this.disposed) return;
-        if (typeof text !== "string" || text.length > this.maxMessageUnits) { this.dispose(new RpcError(-32600, "RPC message exceeds the configured limit.")); return; }
+        if (typeof text !== "string" || text.length > this.maxMessageUnits) { this.dispose(new RpcError(rpcCodes.invalidRequest, "RPC message exceeds the configured limit.")); return; }
         let value: unknown;
-        try { value = JSON.parse(text); } catch { this.emit(failure(null, -32700, "Parse error")); return; }
-        if (Array.isArray(value) && value.length > 128) { this.dispose(new RpcError(-32600, "RPC batch exceeds the configured limit.")); return; }
-        if (!json(value, 0, { left: this.maxJsonNodes })) {
+        try { value = JSON.parse(text); } catch { this.emit(failure(null, rpcCodes.parseError, "Parse error")); return; }
+        if (Array.isArray(value) && value.length > wireLimits.batchMessages) { this.dispose(new RpcError(rpcCodes.invalidRequest, "RPC batch exceeds the configured limit.")); return; }
+        if (!isJson(value, 0, { left: this.maxJsonNodes })) {
             if (Array.isArray(value)) { const replies = value.map(message => this.rejectJson(message)).filter(reply => reply !== undefined); if (replies.length) this.emit(replies); }
             else { const reply = this.rejectJson(value); if (reply !== undefined) this.emit(reply); }
             return;
         }
-        immutable(value);
+        immutableJson(value);
         if (Array.isArray(value)) {
-            if (!value.length) { this.emit(failure(null, -32600, "Invalid Request")); return; }
+            if (!value.length) { this.emit(failure(null, rpcCodes.invalidRequest, "Invalid Request")); return; }
             void Promise.all(value.map(message => this.dispatch(message))).then(replies => {
                 const responses = replies.filter(reply => reply !== undefined); if (responses.length) this.emit(responses);
             }).catch(error => this.dispose(error instanceof Error ? error : new Error("RPC batch failed.")));
@@ -181,13 +138,13 @@ export class JsonRpcConnection {
     }
     private dispatch(value: unknown): unknown | Promise<unknown> {
         if (this.disposed) return;
-        if (!object(value) || value.jsonrpc !== "2.0") return failure(null, -32600, "Invalid Request");
+        if (!isRecord(value) || value.jsonrpc !== "2.0") return failure(null, rpcCodes.invalidRequest, "Invalid Request");
         if (!has(value, "method")) {
             if (!has(value, "id") || !idValue(value.id) || has(value, "result") === has(value, "error") || has(value, "params")) {
-                this.dispose(new RpcError(-32600, "Invalid RPC response.")); return;
+                this.dispose(new RpcError(rpcCodes.invalidRequest, "Invalid RPC response.")); return;
             }
-            if (has(value, "error") && (!object(value.error) || !Number.isSafeInteger(value.error.code) || typeof value.error.message !== "string")) {
-                this.dispose(new RpcError(-32600, "Invalid RPC error response.")); return;
+            if (has(value, "error") && (!isRecord(value.error) || !Number.isSafeInteger(value.error.code) || typeof value.error.message !== "string")) {
+                this.dispose(new RpcError(rpcCodes.invalidRequest, "Invalid RPC error response.")); return;
             }
             const entry = typeof value.id === "number" ? this.pending.get(value.id) : undefined;
             const error = has(value, "error") ? value.error as Message : undefined;
@@ -198,11 +155,11 @@ export class JsonRpcConnection {
             else entry.resolve(value.result as JsonValue);
             return;
         }
-        if (typeof value.method !== "string" || !value.method || has(value, "result") || has(value, "error") || has(value, "id") && !idValue(value.id)) return failure(null, -32600, "Invalid Request");
+        if (typeof value.method !== "string" || !value.method || has(value, "result") || has(value, "error") || has(value, "id") && !idValue(value.id)) return failure(null, rpcCodes.invalidRequest, "Invalid Request");
         const id = has(value, "id") ? value.id as RpcId : undefined;
-        if (has(value, "params") && !object(value.params) && !Array.isArray(value.params)) return id === undefined ? undefined : failure(id, -32602, "Invalid params");
+        if (has(value, "params") && !isRecord(value.params) && !Array.isArray(value.params)) return id === undefined ? undefined : failure(id, rpcCodes.invalidParams, "Invalid params");
         if (id === undefined) {
-            if (value.method === "$/cancelRequest" && object(value.params) && idValue(value.params.id)) this.incoming.get(value.params.id)?.cancel();
+            if (value.method === "$/cancelRequest" && isRecord(value.params) && idValue(value.params.id)) this.incoming.get(value.params.id)?.cancel();
             for (const handler of [...this.notifications.get(value.method) ?? []]) {
                 if (this.disposed) break;
                 try { void Promise.resolve(handler(value.params)).catch(error => this.report(error instanceof Error ? error : new Error("RPC notification failed."))); }
@@ -210,9 +167,9 @@ export class JsonRpcConnection {
             }
             return;
         }
-        const handler = this.requests.get(value.method); if (!handler) return failure(id, -32601, "Method not found");
-        if (this.incoming.has(id)) { this.dispose(new RpcError(-32600, "Duplicate in-flight RPC identifier.")); return; }
-        if (this.incoming.size >= this.maxPending) return failure(id, -32000, "Too many incoming RPC requests.");
+        const handler = this.requests.get(value.method); if (!handler) return failure(id, rpcCodes.methodNotFound, "Method not found");
+        if (this.incoming.has(id)) { this.dispose(new RpcError(rpcCodes.invalidRequest, "Duplicate in-flight RPC identifier.")); return; }
+        if (this.incoming.size >= this.maxPending) return failure(id, rpcCodes.pendingLimit, "Too many incoming RPC requests.");
         let cancelled = false; const listeners = new Set<() => void>();
         const context = Object.freeze({ id, get cancelled() { return cancelled; }, onCancel: (listener: () => void) => {
             if (cancelled) listener(); else listeners.add(listener); return () => { listeners.delete(listener); };
@@ -221,17 +178,17 @@ export class JsonRpcConnection {
             for (const listener of [...listeners]) { try { listener(); } catch (error) { this.report(error instanceof Error ? error : new Error("RPC cancellation failed.")); } } listeners.clear(); } };
         this.incoming.set(id, entry);
         return Promise.resolve().then(() => {
-            if (this.disposed || context.cancelled) throw new RpcError(-32800, "Request cancelled."); return handler(value.params, context);
+            if (this.disposed || context.cancelled) throw cancelledRequest("Request cancelled."); return handler(value.params, context);
         }).then(result => {
-            if (context.cancelled) throw new RpcError(-32800, "Request cancelled.");
+            if (context.cancelled) throw cancelledRequest("Request cancelled.");
             const reply = { jsonrpc: "2.0", id, result: result === undefined ? null : result }; this.encode(reply); return reply;
-        }).catch(error => context.cancelled ? failure(id, -32800, "Request cancelled.")
-            : error instanceof RpcError ? failure(id, error.code, error.message, error.data) : failure(id, -32603, "Internal error"))
+        }).catch(error => context.cancelled ? failure(id, rpcCodes.requestCancelled, "Request cancelled.")
+            : error instanceof RpcError ? failure(id, error.code, error.message, error.data) : failure(id, rpcCodes.internalError, "Internal error"))
             .finally(() => { if (this.incoming.get(id) === entry) this.incoming.delete(id); listeners.clear(); });
     }
     snapshot() { return Object.freeze({ disposed: this.disposed, pendingRequests: this.pending.size, incomingRequests: this.incoming.size,
         requestHandlers: this.requests.size, notificationHandlers: [...this.notifications.values()].reduce((n, handlers) => n + handlers.size, 0) }); }
-    dispose(reason: Error = new RpcError(-32097, "RPC connection is closed.")): void {
+    dispose(reason: Error = closedConnection("RPC connection is closed.")): void {
         if (this.disposed) return; this.disposed = true; this.release(this.stopListening);
         for (const entry of this.pending.values()) { this.release(entry.stop); entry.reject(reason); } this.pending.clear();
         for (const entry of this.incoming.values()) entry.cancel(); this.incoming.clear(); this.requests.clear(); this.notifications.clear();

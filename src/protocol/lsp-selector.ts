@@ -1,3 +1,4 @@
+import { ProtocolDecodeError, isRecord } from "./wire.ts";
 /** Text-document selectors only; notebook and file-watcher registration are not advertised. */
 export type LspSelectorDocument = Readonly<{ uri: string; languageId: string }>;
 /** Stable URI-to-path policy for a binding's lifetime; rebind or reconnect after changing that policy. */
@@ -5,8 +6,7 @@ export type LspUriPath = (uri: string) => string;
 export type LspSelector = (document: LspSelectorDocument) => boolean;
 type Token = Readonly<{ kind: "literal"; value: string } | { kind: "any" } | { kind: "star" } | { kind: "glob" } | { kind: "directory" } |
     { kind: "class"; negate: boolean; ranges: readonly (readonly [number, number])[] }>;
-const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
-function invalid(): never { throw new TypeError("Unsupported or malformed text-document selector."); }
+function invalid(): never { throw new ProtocolDecodeError("Unsupported or malformed text-document selector."); }
 
 /** Opaque URI identity is preserved. A host can replace path decoding/case policy explicitly. */
 export function lspUriPath(uri: string): string {
@@ -86,7 +86,7 @@ export function compileLspSelector(value: unknown, pathForUri: LspUriPath = lspU
     if (!Array.isArray(value) || value.length > 32) invalid();
     const filters = value.map((input: unknown) => {
         const filter = typeof input === "string" ? { language: input } : input;
-        if (!record(filter) || "notebook" in filter || !["language", "scheme", "pattern"].some(key => key in filter)) invalid();
+        if (!isRecord(filter) || "notebook" in filter || !["language", "scheme", "pattern"].some(key => key in filter)) invalid();
         for (const key of ["language", "scheme", "pattern"]) if (key in filter && (typeof filter[key] !== "string" || !filter[key] || (filter[key] as string).length > 256)) invalid();
         const patterns = filter.pattern === undefined ? undefined : alternatives(filter.pattern as string).map(tokens);
         return (document: LspSelectorDocument): boolean => {

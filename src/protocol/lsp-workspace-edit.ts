@@ -1,6 +1,6 @@
+import { wireLimits, staleRequest } from "./wire.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, EditOrigin, EditRequest, Workspace } from "../core/workspace.ts";
 import type { EditKind } from "../core/history.ts";
-import { RpcError } from "./json-rpc.ts";
 import type { LspWorkspaceEdit } from "./lsp-features.ts";
 
 export type LspWorkspaceEditOptions = Readonly<{
@@ -20,14 +20,14 @@ export type LspWorkspaceEditOptions = Readonly<{
  * Returns updated snapshots only for documents whose buffers changed; an empty edit succeeds.
  */
 export function applyLspWorkspaceEdit(workspace: Workspace, edit: LspWorkspaceEdit, options: LspWorkspaceEditOptions): readonly DocumentSnapshot[] {
-    if (!edit.isCurrent()) throw new RpcError(-32801, "LSP workspace edit capture expired.");
+    if (!edit.isCurrent()) throw staleRequest("LSP workspace edit capture expired.");
     if (options.view && !workspace.ownsDocumentView(options.view)) throw new Error("LSP edit view does not belong to this workspace.");
     const identities = new Set<DocumentId>(), before: DocumentSnapshot[] = [], requests: EditRequest[] = [];
     for (const change of edit.documents) {
         const target = change.target, captured = target.document, document = workspace.document(captured.documentId as DocumentId);
         if (!target.isCurrent() || target.index.buffer !== captured.buffer || document.resourceId !== captured.resourceId
             || document.revision !== captured.revision || document.buffer !== captured.buffer) {
-            throw new RpcError(-32801, "LSP edit target differs from its captured working resource.");
+            throw staleRequest("LSP edit target differs from its captured working resource.");
         }
         if (identities.has(document.id)) throw new TypeError("An LSP edit must name each document once.");
         identities.add(document.id);
@@ -60,20 +60,20 @@ export type LspWorkspaceEditPreview = Readonly<{ count: number; page: number; no
  * Previewing does not establish currentness or grant edit authority.
  */
 export function previewLspWorkspaceEdit(edit: LspWorkspaceEdit, title: (documentId: string) => string, page = 0): LspWorkspaceEditPreview {
-    if (!Number.isSafeInteger(page) || page < 0 || !Number.isSafeInteger((page + 1) * 64)) throw new RangeError("Invalid LSP edit preview page.");
-    const first = page * 64, last = first + 64, notes: LspWorkspaceEditNote[] = [];
+    if (!Number.isSafeInteger(page) || page < 0 || !Number.isSafeInteger((page + 1) * wireLimits.editPreviewSize)) throw new RangeError("Invalid LSP edit preview page.");
+    const first = page * wireLimits.editPreviewSize, last = first + wireLimits.editPreviewSize, notes: LspWorkspaceEditNote[] = [];
     let count = 0;
     for (const change of edit.documents) {
         const from = Math.max(0, first - count), to = Math.min(change.edits.length, last - count);
         count += change.edits.length;
         if (from >= to) continue;
-        const doc = change.target.document, label = title(doc.documentId).slice(0, 128);
+        const doc = change.target.document, label = title(doc.documentId).slice(0, wireLimits.previewLabelUnits);
         for (let i = from; i < to; i++) {
             const at = change.edits[i]!;
             notes.push(Object.freeze({ document: doc.documentId, resource: doc.resourceId, title: label, revision: doc.revision, from: at.from, to: at.to,
                 before: doc.buffer.slice(at.from, Math.min(at.to, at.from + 256)) + (at.to - at.from > 256 ? "…" : ""),
                 insert: at.insert.slice(0, 256), insertUnits: at.insert.length,
-                context: doc.buffer.slice(Math.max(0, at.from - 32), Math.min(at.to, at.from + 128)) + (at.to - at.from > 128 ? "…" : "")
+                context: doc.buffer.slice(Math.max(0, at.from - 32), Math.min(at.to, at.from + wireLimits.previewContextUnits)) + (at.to - at.from > wireLimits.previewContextUnits ? "…" : "")
                     + doc.buffer.slice(at.to, Math.min(doc.buffer.length, at.to + 32)) }));
         }
     }

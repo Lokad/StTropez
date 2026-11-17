@@ -1,11 +1,12 @@
+import { wireLimits, ProtocolDecodeError, rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError } from "./wire.ts";
 import type { DocumentId, DocumentSnapshot, ResourceLease, Workspace } from "../core/workspace.ts";
 import { NotificationScope, Store } from "../core/observable.ts";
 import { anchoredRange } from "../core/positions.ts";
 import type { Observable } from "../core/observable.ts";
 import { LspSession } from "./lsp-session.ts";
 import type { LspDocument, LspDocumentCapture, LspDocumentSnapshot, LspRequestContext, LspSessionOptions, LspSessionSnapshot } from "./lsp-session.ts";
-import { RpcError } from "./json-rpc.ts";
-import type { JsonValue, RpcCall } from "./json-rpc.ts";
+import type { RpcCall } from "./json-rpc.ts";
+import type { JsonValue } from "./wire.ts";
 import { decodeLspDiagnostics } from "./lsp-features.ts";
 import type { LspDiagnostics } from "./lsp-features.ts";
 import type { LspTargetResolver } from "./lsp-targets.ts";
@@ -45,8 +46,8 @@ type Handler = Parameters<LspSession["onRequest"]>[1];
 type DocumentEntry = { id: DocumentId; binding: LspDocument; lease: ResourceLease; active: boolean; queued: boolean; stop: () => void; users: Set<() => void>; diagnostics: Store<LspDiagnosticState> };
 type Scope = { active: boolean; generation: number; close: () => void; applyEdit: Handler | undefined; incoming: Set<() => void> };
 type CommandIntent = { scope: Scope; epoch: number; generation: number; registrationGeneration: number; sent: boolean; cancelled: boolean; listeners: Set<() => void> };
-const stale = () => new RpcError(-32801, "Captured provider participation changed.");
-const cancelled = () => new RpcError(-32800, "Provider feature scope was cancelled.");
+const stale = () => staleRequest("Captured provider participation changed.");
+const cancelled = () => cancelledRequest("Provider feature scope was cancelled.");
 
 /** One explicitly owned provider connection and synchronization stream per workspace/configuration.
  * Feature scopes own requests and document participation; they never own the shared transport.
@@ -76,7 +77,7 @@ export class LspWorkspace {
 
     constructor(workspace: Workspace, options: LspWorkspaceOptions) {
         this.workspace = workspace; this.options = options;
-        if (!Number.isSafeInteger(options.maxScopes ?? 128) || (options.maxScopes ?? 128) < 1) throw new RangeError("Invalid provider scope limit.");
+        if (!Number.isSafeInteger(options.maxScopes ?? wireLimits.scopes) || (options.maxScopes ?? wireLimits.scopes) < 1) throw new RangeError("Invalid provider scope limit.");
         this.notifications = workspace.createNotificationScope(error => this.report(error));
         this.session = new LspSession({ ...options, connect: async context => {
             const transport = await options.connect(context); this.created++; let released = false;
@@ -109,7 +110,8 @@ export class LspWorkspace {
                 const result = decodeLspDiagnostics(value, Object.freeze({ ...sent, isCurrent }));
                 entry.diagnostics.set(Object.freeze({ ...previous, status: "current", result, received: previous.received + 1, isCurrent, isPlacementCurrent: isCurrent }), this.changed);
             } catch (error) {
-                const key = error instanceof RpcError && error.code === -32801 ? "stale" : "invalid";
+                if (!(error instanceof ProtocolDecodeError) && !(error instanceof RpcError && error.code === rpcCodes.contentModified)) throw error;
+                const key = error instanceof RpcError && error.code === rpcCodes.contentModified ? "stale" : "invalid";
                 entry.diagnostics.set(Object.freeze({ ...previous, [key]: previous[key] + 1 }), this.changed);
             }
             this.queueDelivery();
@@ -134,7 +136,7 @@ export class LspWorkspace {
     }
     private snapshotState(): LspWorkspaceSnapshot { const state = this.session.state.getSnapshot(), commandRequiresReconnect = this.quarantinedEpoch === state.epoch;
         return Object.freeze({ ...state, commandAvailable: state.phase === "ready" && !this.command && !commandRequiresReconnect, commandRequiresReconnect }); }
-    private writable(): void { this.notifications.assertWritable(); if (this.disposed) throw new RpcError(-32097, "Provider owner is disposed."); }
+    private writable(): void { this.notifications.assertWritable(); if (this.disposed) throw closedConnection("Provider owner is disposed."); }
     private deliver(): void { this.notificationQueued = false; const changed = this.changed; this.changed = new Set(); if (changed.size) this.notifications.deliver([...changed]); }
     private queueDelivery(): void { if (!this.notificationQueued) { this.notificationQueued = true; void Promise.resolve().then(() => this.deliver()).catch(error => this.report(error)); } }
     private expireDiagnostics(entry: DocumentEntry): void {
@@ -210,7 +212,7 @@ export class LspWorkspace {
     async reconnect(): Promise<void> { this.disconnect(); await this.connect(); }
 
     createScope(): LspWorkspaceScope {
-        this.writable(); if (this.scopes.size >= (this.options.maxScopes ?? 128)) throw new RangeError("Provider scope limit exceeded.");
+        this.writable(); if (this.scopes.size >= (this.options.maxScopes ?? wireLimits.scopes)) throw new RangeError("Provider scope limit exceeded.");
         const scope: Scope = { active: true, generation: 0, close: () => {}, applyEdit: undefined, incoming: new Set() }, documents = new Map<string, LspDocument>();
         const handles = new Map<LspDocument, DocumentEntry>(), pending = new Set<{ cancel: () => void }>(), stops = new Set<() => void>();
         const documentCalls = new Map<LspDocument, Set<{ cancel: () => void }>>();
@@ -254,7 +256,7 @@ export class LspWorkspace {
         const state: Observable<LspWorkspaceSnapshot> = Object.freeze({ getSnapshot: () => closedState ?? this.state.getSnapshot(), subscribe: listener => { writable(); return listen(this.state.subscribe(listener)); } });
         const reserve = (): CommandIntent => {
             writable(); const state = this.session.state.getSnapshot();
-            if (state.phase !== "ready" || this.command || this.quarantinedEpoch === state.epoch) throw new RpcError(-32801, "Provider command lane requires an available captured intent or fresh connection.");
+            if (state.phase !== "ready" || this.command || this.quarantinedEpoch === state.epoch) throw staleRequest("Provider command lane requires an available captured intent or fresh connection.");
             const intent: CommandIntent = { scope, epoch: state.epoch, generation: scope.generation, registrationGeneration: state.registrationGeneration, sent: false, cancelled: false, listeners: new Set() };
             this.command = intent; this.store.set(this.snapshotState(), this.changed); this.queueDelivery(); return intent;
         };
@@ -347,11 +349,11 @@ export class LspWorkspace {
             onNotification: (method, handler) => { writable(); return listen(this.session.onNotification(method, (value, epoch) => { if (scope.active) return handler(value, epoch); })); },
             requestCommand: <T = JsonValue>(command: string, args: readonly JsonValue[] = [], timeoutMs?: number, authorization?: Parameters<LspSession["requestCommand"]>[3]) => {
                 writable(); const reserved = this.command;
-                if (reserved && (reserved.scope !== scope || reserved.sent || !this.commandCurrent(reserved))) throw new RpcError(-32801, "Provider command lane is unavailable.");
+                if (reserved && (reserved.scope !== scope || reserved.sent || !this.commandCurrent(reserved))) throw staleRequest("Provider command lane is unavailable.");
                 const intent = reserved ?? reserve(); intent.sent = true; let waiting = true;
                 try {
                     const raw = this.session.requestCommand<T>(command, args, timeoutMs, authorization), call = track({ ...raw, cancel: () => { if (waiting) this.endCommand(intent, true); raw.cancel(); } });
-                    const result = call.result.then(value => { waiting = false; return value; }, error => { waiting = false; if (error instanceof RpcError && error.code === -32098) this.endCommand(intent, true); throw error; })
+                    const result = call.result.then(value => { waiting = false; return value; }, error => { waiting = false; if (error instanceof RpcError && error.code === rpcCodes.timeout) this.endCommand(intent, true); throw error; })
                         .finally(() => this.endCommand(intent, false, false));
                     return Object.freeze({ ...call, result, isCurrent: () => scope.active && scope.generation === intent.generation && !intent.cancelled && raw.isCurrent() });
                 } catch (error) { this.endCommand(intent, false); throw error; }

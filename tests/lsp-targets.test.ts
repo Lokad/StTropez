@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { clientFixture, latch, protocol, settled } from "./helpers/lsp-client.ts";
 import type { LspResolvedTarget, LspTargetContext } from "../src/protocol/index.ts";
-const { createLspNavigationClient, createLspRenameClient, createLspActionClient, LspLineIndex, RpcError } = protocol;
+const { createLspNavigationClient, createLspRenameClient, createLspActionClient, LspLineIndex, RpcError, ProtocolDecodeError } = protocol;
 const uri = "host+opaque:unopened%2Fmodule";
 const range = { start: { line: 0, character: 6 }, end: { line: 0, character: 10 } };
 const stale = (error: unknown) => error instanceof RpcError && error.code === -32801;
@@ -98,9 +98,9 @@ test("malformed location and edit tails reject before any host loading", async t
     const navigation = createLspNavigationClient(f.provider), rename = createLspRenameClient(f.provider); t.after(() => { navigation.dispose(); rename.dispose(); });
     const source = f.document();
     f.peer.onRequest("textDocument/definition", () => [{ uri, range }, { uri, range: { start: { line: -1, character: 0 }, end: range.end } }]);
-    await assert.rejects(navigation.run([source], source.id, 0, "definition"), TypeError);
+    await assert.rejects(navigation.run([source], source.id, 0, "definition"), ProtocolDecodeError);
     f.peer.onRequest("textDocument/rename", () => ({ changes: { [uri]: [{ range, newText: "value" }, { range, newText: 42 }] } }));
-    await assert.rejects(rename.run([source], source.id, 0, "value"), TypeError); assert.equal(loads, 0);
+    await assert.rejects(rename.run([source], source.id, 0, "value"), ProtocolDecodeError); assert.equal(loads, 0);
 });
 
 test("rename and resolved actions retain unloaded null-version edit targets through atomic host application", async t => {
