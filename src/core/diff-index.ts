@@ -3,8 +3,8 @@ import { DiffLines } from "./diff-lines.ts";
 import type { DiffLine } from "./diff-lines.ts";
 
 export type DiffStats = { work: number; yielded: number; readUnits: number; lineComparisons: number; lineEdits: number };
-export type DiffIndex = Readonly<{ buffer: TextBuffer; from: number; to: number; lines: DiffLines }>;
-type Edges = Readonly<{ aFrom: number; bFrom: number; aTo: number; bTo: number }>;
+export type DiffIndex = Readonly<{ buffer: TextBuffer; to: number; lines: DiffLines }>;
+type Edges = Readonly<{ aFrom: number; aTo: number; bTo: number }>;
 export const tick = (stats: DiffStats, units = 1): boolean => { stats.work += units; if (stats.work - stats.yielded < 256) return false; stats.yielded = stats.work; return true; };
 function* ownedEdge(a: TextBuffer, b: TextBuffer, from: number, to: number, otherFrom: number, otherTo: number, side: "start" | "end", stats: DiffStats): Generator<void, number> {
     let length = 0;
@@ -14,15 +14,15 @@ function* ownedEdge(a: TextBuffer, b: TextBuffer, from: number, to: number, othe
 /** Ownership proves which complete row slots may reuse metadata across revisions. */
 function* lineEdges(a: TextBuffer, b: TextBuffer, stats: DiffStats): Generator<void, Edges> {
     const prefix = yield* ownedEdge(a, b, 0, a.length, 0, b.length, "start", stats);
-    if (prefix === a.length && prefix === b.length) return { aFrom: a.length, bFrom: b.length, aTo: a.length, bTo: b.length };
+    if (prefix === a.length && prefix === b.length) return { aFrom: a.length, aTo: a.length, bTo: b.length };
     const suffix = yield* ownedEdge(a, b, prefix, a.length, prefix, b.length, "end", stats);
-    const aFrom = a.offsetAt(a.lineAt(prefix)), bFrom = b.offsetAt(b.lineAt(prefix));
+    const aFrom = a.offsetAt(a.lineAt(prefix));
     let aTo = a.length - suffix, bTo = b.length - suffix;
     if (a.offsetAt(a.lineAt(aTo)) !== aTo || b.offsetAt(b.lineAt(bTo)) !== bTo) {
         const al = a.lineAt(aTo) + 1, bl = b.lineAt(bTo) + 1;
         aTo = al < a.lineCount ? a.offsetAt(al) : a.length; bTo = bl < b.lineCount ? b.offsetAt(bl) : b.length;
     }
-    return { aFrom, bFrom, aTo, bTo };
+    return { aFrom, aTo, bTo };
 }
 export function* commonText(a: TextBuffer, b: TextBuffer, from: number, to: number, otherFrom: number, otherTo: number, side: "start" | "end", stats: DiffStats,
     inspected?: (text: string, matchedBefore: number) => void): Generator<void, number> {
@@ -73,7 +73,7 @@ export function* indexLines(buffer: TextBuffer, stats: DiffStats, prior?: DiffIn
         lines = prior.lines.slice(0, prefix).concat(DiffLines.gap(suffix - prefix)).concat(prior.lines.slice(oldSuffix, prior.lines.size));
         if (tick(stats, 256)) yield;
     }
-    return Object.freeze({ buffer, from: 0, to: buffer.length, lines });
+    return Object.freeze({ buffer, to: buffer.length, lines });
 }
 /** Count whole equal row tokens without materializing their metadata. */
 export function* matchingLines(a: DiffIndex, b: DiffIndex, a0: number, a1: number, b0: number, b1: number, reverse: boolean, stats: DiffStats, exact = false): Generator<void, number> {

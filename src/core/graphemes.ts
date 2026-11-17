@@ -14,8 +14,6 @@ export class GraphemeLimitError extends Error {
     readonly limit: "operations" | "clusters";
     constructor(limit: "operations" | "clusters") { super(`Grapheme segmentation exceeded its ${limit} limit.`); this.name = "GraphemeLimitError"; this.limit = limit; }
 }
-const owned = new WeakSet<GraphemeIndex>();
-export const ownedGraphemeIndex = (value: unknown): value is GraphemeIndex => typeof value === "object" && value !== null && owned.has(value as GraphemeIndex);
 let publish: (source: GraphemeSource, from: number, to: number, blocks: readonly (readonly number[])[], count: number) => GraphemeIndex;
 const range = (length: number, from: number, to: number) => { if (![from, to].every(Number.isSafeInteger) || from < 0 || from > to || to > length) throw new RangeError("Invalid grapheme range."); };
 
@@ -24,7 +22,7 @@ export class GraphemeIndex {
     readonly source: GraphemeSource; readonly from: number; readonly to: number; readonly clusterCount: number; readonly boundaryCount: number; readonly unicodeVersion = unicodeGraphemeVersion;
     readonly #blocks: readonly (readonly number[])[];
     private constructor(source: GraphemeSource, from: number, to: number, blocks: readonly (readonly number[])[], count: number) {
-        this.source = source; this.from = from; this.to = to; this.#blocks = blocks; this.boundaryCount = count; this.clusterCount = count - 1; owned.add(this); Object.freeze(this);
+        this.source = source; this.from = from; this.to = to; this.#blocks = blocks; this.boundaryCount = count; this.clusterCount = count - 1; Object.freeze(this);
     }
     boundaryAt(index: number): number { range(this.boundaryCount, index, index + 1); return this.#blocks[Math.floor(index / 256)]![index % 256]!; }
     clusterAt(index: number): GraphemeRange { range(this.clusterCount, index, index + 1); return Object.freeze({ from: this.boundaryAt(index), to: this.boundaryAt(index + 1) }); }
