@@ -7,9 +7,8 @@ import { referencePeer } from "../fixtures/protocol/reference-peer.ts";
 import type { RpcScheduler, RpcTransport } from "../src/protocol/json-rpc.ts";
 import type { LspSessionOptions, LspRequestContext } from "../src/protocol/index.ts";
 
-const { TextBuffer } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE
-    ? new URL("../index.js", new URL(process.env.STTROPEZ_PROTOCOL_TEST_MODULE, import.meta.url)).href : "../src/index.ts") as typeof import("../src/index.ts");
-const { LspSession, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
+import { TextBuffer } from "../src/index.ts";
+import { LspSession, RpcError } from "../src/protocol/index.ts";
 const settled = async () => { await setImmediate(); await setImmediate(); };
 function channel() {
     type Listener = Parameters<RpcTransport["subscribe"]>[0];

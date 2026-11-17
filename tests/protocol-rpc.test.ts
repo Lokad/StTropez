@@ -6,8 +6,7 @@ import type { InitializeParams, InitializeResult } from "vscode-languageserver-p
 import type { JsonValue, RpcTransport } from "../src/protocol/json-rpc.ts";
 import { referencePeer } from "../fixtures/protocol/reference-peer.ts";
 
-// The same interoperability assertions can exercise an isolated restored compiled protocol entry.
-const { JsonRpcConnection, RpcError } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/json-rpc.ts") as typeof import("../src/protocol/json-rpc.ts");
+import { JsonRpcConnection, RpcError } from "../src/protocol/json-rpc.ts";
 
 function clock() {
     const timers = new Set<() => void>();

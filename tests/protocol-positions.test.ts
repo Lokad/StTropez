@@ -5,9 +5,8 @@ import type { TextBuffer as Buffer } from "../src/core/text-buffer.ts";
 import type { PositionMapping } from "../src/core/positions.ts";
 import type { LspLineIndex as LineIndex } from "../src/protocol/index.ts";
 
-const { TextBuffer, PositionMap, composePositionMaps } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE
-    ? new URL("../index.js", new URL(process.env.STTROPEZ_PROTOCOL_TEST_MODULE, import.meta.url)).href : "../src/index.ts") as typeof import("../src/index.ts");
-const { LspLineIndex } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../src/protocol/index.ts") as typeof import("../src/protocol/index.ts");
+import { TextBuffer, PositionMap, composePositionMaps } from "../src/index.ts";
+import { LspLineIndex } from "../src/protocol/index.ts";
 const cooperate = async () => {};
 function apply(text: string, changes: readonly { range: { start: { line: number; character: number }; end: { line: number; character: number } }; text: string }[]): string {
     for (const change of changes) text = TextDocument.applyEdits(TextDocument.create("fixture:document", "fixture", 1, text), [{ range: change.range, newText: change.text }]);

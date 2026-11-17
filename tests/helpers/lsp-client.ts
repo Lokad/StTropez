@@ -4,10 +4,10 @@ import { setImmediate } from "node:timers/promises";
 import { referencePeer } from "../../fixtures/protocol/reference-peer.ts";
 import type { LspTargetResolver, LspWorkspaceOptions, RpcTransport } from "../../src/protocol/index.ts";
 
-const { Workspace } = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE
-    ? new URL("../index.js", new URL(process.env.STTROPEZ_PROTOCOL_TEST_MODULE, import.meta.url)).href : "../../src/index.ts") as typeof import("../../src/index.ts");
+import { Workspace } from "../../src/index.ts";
 
-export const protocol = await import(process.env.STTROPEZ_PROTOCOL_TEST_MODULE ?? "../../src/protocol/index.ts") as typeof import("../../src/protocol/index.ts");
+import * as protocol from "../../src/protocol/index.ts";
+export { protocol };
 export const settled = async () => { await setImmediate(); await setImmediate(); };
 export const latch = <T>() => {
     let resolve!: (value: T) => void;
