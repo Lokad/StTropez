@@ -160,6 +160,17 @@ test("large comparison stays virtualized, exact and cooperative during real inpu
             expect((await page.evaluate(() => window.comparisonFixture.snapshot())).hunks.length).toBe(kind === "unbalanced" ? 1068 : 1001);
             expect(await page.evaluate(at => window.comparisonFixture.range(at, at + 1), at)).toBe("x");
         }
+        if (kind === "unbalanced") {
+            for (const [command, split] of [["Enter", true], ["Backspace", false], ["Control+z", true], ["Control+Shift+z", false]] as const) {
+                await page.keyboard.press(command); await ready(page);
+                const edited = await page.evaluate(() => window.comparisonFixture.snapshot());
+                expect(edited.working.length).toBe(length + 1 + Number(split));
+                expect(edited.selection).toMatchObject({ anchor: at + 1 + Number(split), head: at + 1 + Number(split) });
+                expect(edited.hunks).toHaveLength(1068);
+                expect(edited.working.exports).toBe(0); expect(edited.baseline!.exports).toBe(0);
+                expect(await page.evaluate(at => window.comparisonFixture.range(at, at + 2), at)).toBe(split ? "x\n" : "xn");
+            }
+        }
     }
 });
 

@@ -249,8 +249,8 @@ test("many separated changes retain exact alignment and bounded work for unique 
         [100000, 100000, 100, "ordered", 1000, 13000000, 15000000],
         [10000, 10000, 10, "ordered", 1000, 800000, 600000],
         [10000, 20, 10, "ordered", 1000, 1100000, 850000],
-        [10000, 20, 10, "extra", 1068, 13000000, 16000000],
-        [10000, 20, 10, "crossed", 1500, 18000000, 23000000]
+        [10000, 20, 10, "extra", 1068, 10000000, 10000000],
+        [10000, 20, 10, "crossed", 1500, 14000000, 14000000]
     ] as const) {
         const source = Array.from({ length: count }, (_, i) => `row ${i % period}\n`).join(""), baseline = TextBuffer.from(source);
         let text = source.replace(/^row (\d+)$/gm, (line, n: string) => Number(n) % stride === 0 ? "changed " + n : line);

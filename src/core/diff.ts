@@ -39,6 +39,15 @@ function* equalLine(a: Index, b: Index, ai: number, bi: number, stats: Stats, pr
 function* commonLines(a: Index, b: Index, region: Region, reverse: boolean, stats: Stats): Generator<void, number> {
     let count = 0;
     const maximum = Math.min(region.a1 - region.a0, region.b1 - region.b0);
+    if (maximum) {
+        // Cached inequality proves zero common rows before any structural span work.
+        // Equal hashes and missing metadata retain the exact span/row checks below.
+        const firstA = a.lines.at(reverse ? region.a1 - 1 : region.a0), firstB = b.lines.at(reverse ? region.b1 - 1 : region.b0);
+        const ah = firstA && knownLineHash(firstA), bh = firstB && knownLineHash(firstB);
+        const unequal = firstA && firstB && (firstA.length !== firstB.length || ah !== undefined && bh !== undefined && ah !== bh);
+        if (tick(stats)) yield;
+        if (unequal) { stats.lineComparisons++; return 0; }
+    }
     while (count < maximum) {
         if (count % 64 === 0) {
             const proved = yield* matchingLines(a, b, reverse ? region.a0 : region.a0 + count, reverse ? region.a1 - count : region.a1,

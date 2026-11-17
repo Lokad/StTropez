@@ -167,6 +167,8 @@ A disposed cache cannot start a new diff job.
 
 Shared-storage edge proofs charge one work unit per node-pair decision, including branch
 descents and unproved leaves. Text reads and line alignment retain their separate work charges.
+Cached first-row lengths or known hashes can reject equality before an edge proof; each probe
+charges one work unit. Matching hashes never establish text equality.
 Work budgets bound cooperative work units, not elapsed time. Allocation, publication, rendering
 and individual batches can exceed a scheduling target. Browser `snapshot()` exposes work and
 presentation state; the [clock glossary](README.md#glossary) defines its advance-loop timings.
