@@ -13,9 +13,9 @@ test("development assets follow completed watched or fixed builds, reject privat
     const previous = process.cwd(); await mkdir(join(previous, "artifacts"), { recursive: true });
     const fixture = await mkdtemp(join(previous, "artifacts/dev-server-test-"));
     const put = async (path: string, text: string) => { const file = join(fixture, path); await mkdir(dirname(file), { recursive: true }); await writeFile(file, text); };
-    for (const path of ["demo", "playground", "probes", "viewport", "editing", "comparison", "protocol"]) await put(`examples/${path}/index.html`, `<title>${path}</title>`);
+    for (const path of ["demo", "playground", "viewport", "editing", "comparison", "protocol"]) await put(`examples/${path}/index.html`, `<title>${path}</title>`);
     for (const host of ["plain", "react"]) await put(`examples/hosts/${host}.html`, `<title>${host}</title>`);
-    for (const path of ["demo/main.ts", "demo/syntax-worker.ts", "demo/language-worker.ts", "playground/main.ts", "comparison/main.ts", "editing/main.ts", "viewport/main.ts", "protocol/main.ts", "probes/main.ts", "hosts/plain-main.ts", "hosts/react-main.tsx"]) await put(`examples/${path}`, "export const ready = true;");
+    for (const path of ["demo/main.ts", "demo/syntax-worker.ts", "demo/language-worker.ts", "playground/main.ts", "comparison/main.ts", "editing/main.ts", "viewport/main.ts", "protocol/main.ts", "hosts/plain-main.ts", "hosts/react-main.tsx"]) await put(`examples/${path}`, "export const ready = true;");
     await put("examples/demo/index.html", '<html data-demo-provider="browser"><title>demo</title></html>');
     await put("node_modules/typescript-demo/lib/lib.es5.d.ts", "interface String {}");
     await put("node_modules/typescript-demo/lib/private.d.ts", "not a standard library");
@@ -57,7 +57,7 @@ test("development assets follow completed watched or fixed builds, reject privat
         const worker = await get("/regex-worker.js"); assert.equal(worker.status, 200); assert.match(worker.headers.get("content-type")!, /javascript/); assert.match(await worker.text(), /worker-first/);
         const head = await get("/regex-worker.js", { method: "HEAD" }); assert.equal(head.status, 200); assert.ok(Number(head.headers.get("content-length")) > 0); assert.equal(await head.text(), "");
         assert.match((await get("/app.css")).headers.get("content-type")!, /css/); assert.equal((await get("/app.js.map")).status, 200);
-        for (const path of ["/private.txt", "/%2e%2e%5cprivate.txt", "/%2e%2e/private.txt", "/not-an-entry.js"]) assert.equal((await get(path)).status, 404);
+        for (const path of ["/probes/", "/probe.js", "/probe.css", "/private.txt", "/%2e%2e%5cprivate.txt", "/%2e%2e/private.txt", "/not-an-entry.js"]) assert.equal((await get(path)).status, 404);
         assert.equal((await get("/%zz")).status, 400); assert.equal((await get("/app.js", { method: "POST" })).status, 405);
         await put("src/browser/regex-worker.ts", 'globalThis.postMessage("worker-changed");'); await until("watch publishes changed worker", (r, text) => r.status === 200 && text.includes("worker-changed"));
         await put("src/browser/regex-worker.ts", "export const = ;"); await until("invalid build refuses stale assets", (r, text) => r.status === 503 && text === "Development build failed.");

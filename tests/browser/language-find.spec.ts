@@ -114,5 +114,7 @@ test("visible highlighting reuses unchanged lines and native glyph selection sur
     expect(new Set(colors).size).toBe(3);
     const point = await page.evaluate(() => window.editingFixture.coords(9)!); await page.mouse.click(point.left, point.top + point.height / 2);
     expect((await snapshot(page)).primary.selection.head).toBe(9);
+    await page.keyboard.press("End"); await page.keyboard.type("x"); await ready(page);
+    await expect(page.locator("#primary .st-token-comment")).toHaveText("// TODOx");
     expect(page.workers()).toEqual([]);
 });

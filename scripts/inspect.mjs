@@ -17,10 +17,6 @@ try {
     const snapshot = await harness.page.evaluate(() => window.sttropez.snapshot());
     await writeFile("artifacts/inspect/state.json", JSON.stringify({ browser: harness.browser.version(), buildMode: harness.buildMode, snapshot, errors: harness.errors }, null, 2));
     await captureDemo(harness);
-    await harness.page.goto("/probes/");
-    await harness.page.waitForFunction(() => window.probe?.ready);
-    await harness.page.screenshot({ path: "artifacts/inspect/probes.png", fullPage: true });
-    await writeFile("artifacts/inspect/probes.json", JSON.stringify(await harness.page.evaluate(() => ({ events: window.probe.events() })), null, 2));
     for (const editor of ["native", "candidate"]) for (const mode of ["plain", "react"]) {
         const name = `host-${mode}${editor === "candidate" ? "-candidate" : ""}`;
         await harness.page.goto(`/hosts/${mode}/?editor=${editor}`);

@@ -7,6 +7,24 @@ test.beforeEach(async ({ page }) => {
     await page.goto("/editing/"); await ready(page);
 });
 
+test("trusted replacement input preserves UTF-16 selection across a surrogate pair", async ({ page }) => {
+    await page.evaluate(() => window.editingFixture.setText("a😀b")); await ready(page);
+    const input = page.getByRole("textbox", { name: "Primary source", exact: true });
+    await input.focus();
+    await input.evaluate(node => {
+        const input = node as HTMLTextAreaElement;
+        input.setSelectionRange(1, 3);
+        for (const type of ["beforeinput", "input"]) input.addEventListener(type, event => {
+            input.setAttribute(`data-${type}-trusted`, String(event.isTrusted));
+        }, { once: true });
+    });
+    await input.press("x"); await ready(page);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 3))).toBe("axb");
+    expect((await state(page)).primary.selection).toMatchObject({ anchor: 2, head: 2 });
+    expect(await input.evaluate(node => [(node as HTMLTextAreaElement).selectionStart, (node as HTMLTextAreaElement).selectionEnd])).toEqual([2, 2]);
+    for (const type of ["beforeinput", "input"]) await expect(input).toHaveAttribute(`data-${type}-trusted`, "true");
+});
+
 test("failed command turns release input and report the cause before later typing", async ({ page }) => {
     const text = "abcdefghij\n".repeat(80), source = page.getByRole("textbox", { name: "Primary source", exact: true });
     for (const failure of ["inline-decoration", "deferred-decoration", "queued-transform", "committed-transform", "committed-tail", "language-policy"] as const) {

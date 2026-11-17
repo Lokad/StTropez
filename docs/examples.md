@@ -29,7 +29,6 @@ The [development server](../scripts/serve.mjs) serves these pages:
 | `/editing/` | Bounded input, selections, commands and local highlighting | [Editing fixture](../examples/editing/main.ts) |
 | `/viewport/` | Read-only virtualized text and geometry | [Viewport fixture](../examples/viewport/main.ts) |
 | `/comparison/` | Working/reference comparison and hunk commands | [Comparison fixture](../examples/comparison/main.ts) |
-| `/probes/` | Input surfaces, local tokenization and a workspace workload | [Boundary probes](../examples/probes/main.ts) |
 | `/protocol/` | JSON-RPC/WebSocket transport interoperability | [Protocol fixture](../examples/protocol/main.ts) |
 | `/fonts/` | Registered-font rendering and geometry | [Font fixture](../tests/fixtures/fonts/main.ts) |
 | `/hosts/plain/` | Two source views, forms, review and deferred services | [Plain host](../examples/hosts/plain-main.ts) |
@@ -391,9 +390,9 @@ Text edits map folds and clear stale notes. Imports use one captured shared undo
 
 ## Server-free editing fixtures
 
-The `/editing/` and `/probes/` fixtures use a local keyword/number/comment tokenizer,
+The `/editing/` fixture uses a local keyword/number/comment tokenizer,
 without a worker or language server. Editing views cache up to 128 visible fragments;
-this is not a full grammar or multiline lexer. Their tests cover typing, selection,
+this is not a full grammar or multiline lexer. Its tests cover typing, selection,
 history, find and lifecycle independently of a provider.
 
 The plain/React development hosts use the synthetic LSP peer described above. Its

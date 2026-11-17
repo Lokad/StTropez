@@ -66,7 +66,6 @@ full multi-engine and package qualification have separate scopes.
 | `examples/editing/` | Editing, search and language-feature fixture |
 | `examples/comparison/` | Reference/working review fixture |
 | `examples/viewport/` | Read-only rendering and geometry fixture |
-| `examples/probes/` | Input, provider and workspace probes |
 | `examples/protocol/` | Protocol integration fixture |
 | `examples/shared/` | Shared host presentation, readiness and lifecycle helpers |
 | `fixtures/` | Deterministic text/workspace workloads and language/protocol peers |

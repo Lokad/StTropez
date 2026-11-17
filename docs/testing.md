@@ -138,7 +138,6 @@ limited to identities, revisions, activity and bounded counters.
 | Hook | Fixture purpose |
 | --- | --- |
 | `window.sttropez` | Workspace setup/readiness, document/tab metadata and synthetic corpora |
-| `window.probe` | Input/provider event and workspace counters |
 | `window.editingFixture` | Editor/view state, bounded input/viewport activity, explicit source ranges and disposal |
 | `window.comparisonFixture` | Reference/working captures, hunk ranges, tickets and view lifetime |
 | `window.hostFixture` | Plain/React resources, deferred service decisions, recovery metadata, view attachment and disposal |
