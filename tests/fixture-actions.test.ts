@@ -6,6 +6,7 @@ import { Workspace } from "../src/index.ts";
 import { openWebSocketTransport } from "../src/browser/index.ts";
 import { JsonRpcConnection, LspWorkspace, RpcError, createLspActionClient } from "../src/protocol/index.ts";
 import type { JsonValue, LspWorkspaceEdit } from "../src/protocol/index.ts";
+import { isRecord } from "../src/protocol/wire.ts";
 
 async function fixture() {
     const server = createServer(), detach = attachProtocolFixture(server);
@@ -50,16 +51,18 @@ test("fixture action retention falls back to eager edits and expires only the ch
     const f = await fixture(), rpc = new JsonRpcConnection(await openWebSocketTransport(f.endpoint), {
         schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
     });
-    type Action = Record<string, JsonValue>;
+    const actionObject = (value: JsonValue | undefined) => {
+        assert.ok(isRecord(value)); return value;
+    };
     const uri = (index: number) => `host+fixture:source-${index}`;
     const open = (index: number) => rpc.notify("textDocument/didOpen", { textDocument: { uri: uri(index), languageId: "fixture", version: 1, text: "const sample = 1; // TODO" } });
     const discover = async (index = 0, policy?: JsonValue) => {
-        const actions = await rpc.request<Action[]>("textDocument/codeAction", { textDocument: { uri: uri(index) },
+        const actions = await rpc.request("textDocument/codeAction", { textDocument: { uri: uri(index) },
             range: { start: { line: 0, character: 21 }, end: { line: 0, character: 25 } }, context: { diagnostics: [] },
             ...(policy === undefined ? {} : { _fixture: policy }) }).result;
-        return actions[2]!;
+        assert.ok(Array.isArray(actions)); return actionObject(actions[2]);
     };
-    const resolve = (action: Action) => rpc.request<Action>("codeAction/resolve", action).result;
+    const resolve = async (action: ReturnType<typeof actionObject>) => actionObject(await rpc.request("codeAction/resolve", action).result);
     const expired = (error: unknown) => error instanceof RpcError && error.code === -32602;
     try {
         await rpc.request("initialize", { processId: null, rootUri: null, capabilities: { workspace: { workspaceEdit: { documentChanges: true } },
@@ -84,7 +87,7 @@ test("fixture action retention falls back to eager edits and expires only the ch
         const delayed = discover(0, { delay: 100 }), stale = assert.rejects(delayed, error => error instanceof RpcError && error.code === -32801 && error.message.includes("source changed"));
         rpc.notify("textDocument/didClose", { textDocument: { uri: uri(0) } }); open(0); await stale;
         assert.ok((await resolve(await discover())).edit);
-        const synchronization = await rpc.request<{ failures: string[] }>("fixture/synchronization").result;
+        const synchronization = actionObject(await rpc.request("fixture/synchronization").result);
         assert.deepEqual(synchronization.failures, []);
     } finally { rpc.dispose(); await f.dispose(); }
 });

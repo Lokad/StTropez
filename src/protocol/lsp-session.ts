@@ -308,14 +308,14 @@ export class LspSession {
     }
     commandNames(): readonly string[] { return this.store.get().phase === "ready" && this.features.has("workspace/executeCommand") ? this.collectCommands() : Object.freeze([]); }
     /** Explicit caller policy/confirmation is required; commands are never replayed across a session. */
-    requestCommand<T = JsonValue>(command: string, args: readonly JsonValue[] = [], timeoutMs = this.options.rpc?.timeoutMs ?? wireLimits.timeoutMs, authorization?: LspCommandAuthorization): LspCommandCall<T> {
+    requestCommand(command: string, args: readonly JsonValue[] = [], timeoutMs = this.options.rpc?.timeoutMs ?? wireLimits.timeoutMs, authorization?: LspCommandAuthorization): LspCommandCall<JsonValue> {
         this.writable();
         const argumentsValue = jsonSnapshot(args); if (!Array.isArray(argumentsValue) || JSON.stringify(argumentsValue).length > wireLimits.commandArgumentUnits) throw new RangeError("LSP command arguments exceed their limit.");
         if (authorization && (authorization.command !== command || !jsonEqual(authorization.arguments, argumentsValue))) throw new RpcError(rpcCodes.methodNotFound, "Host command authorization does not match this invocation.");
         const permitted = authorization?.isCurrent ?? (() => this.commandNames().includes(command));
         if (!this.features.has("workspace/executeCommand") || !permitted()) throw new RpcError(rpcCodes.methodNotFound, "LSP command is neither advertised nor authorized by the host.");
         const epoch = this.epoch, generation = this.generation, isCurrent = () => this.current(epoch) && this.store.get().phase === "ready" && this.generation === generation && permitted();
-        const call = this.ready(epoch).request<T>("workspace/executeCommand", { command, arguments: argumentsValue }, timeoutMs);
+        const call = this.ready(epoch).request("workspace/executeCommand", { command, arguments: argumentsValue }, timeoutMs);
         return Object.freeze({ id: call.id, cancel: call.cancel, isCurrent, result: call.result.then(result => { if (!isCurrent()) throw stale(); return result; }) });
     }
     private entry(handle: LspDocument): Entry { const entry = this.handles.get(handle); if (!entry || this.documents.get(entry.snapshot.uri) !== entry) throw stale(); return entry; }
@@ -471,19 +471,19 @@ export class LspSession {
             isCurrent: () => this.store.get().phase === "ready" && this.epoch === epoch && this.generation === generation && this.documents.get(remote.snapshot.uri) === entry
                 && entry.snapshot === remote.snapshot && this.remote.get(remote.snapshot.uri) === remote });
     }
-    requestDocument<T = JsonValue>(method: LspDocumentFeature, document: LspDocument, params: (index: LspLineIndex, snapshot: LspDocumentSnapshot, capture: LspDocumentCapture) => Readonly<Record<string, JsonValue>>): LspCall<T> {
+    requestDocument(method: LspDocumentFeature, document: LspDocument, params: (index: LspLineIndex, snapshot: LspDocumentSnapshot, capture: LspDocumentCapture) => Readonly<Record<string, JsonValue>>): LspCall<JsonValue> {
         this.writable(); this.ready(); if (this.documentCalls.size >= (this.options.rpc?.maxPending ?? wireLimits.pendingRequests)) throw new RpcError(rpcCodes.pendingLimit, "Too many pending document requests.");
-        const entry = this.entry(document), snapshot = entry.snapshot, epoch = this.epoch, generation = this.generation, waiting = this.waitForSync([entry]); let cancelled = false, call: RpcCall<T> | undefined;
+        const entry = this.entry(document), snapshot = entry.snapshot, epoch = this.epoch, generation = this.generation, waiting = this.waitForSync([entry]); let cancelled = false, call: RpcCall<JsonValue> | undefined;
         const guard = () => { if (cancelled) throw cancelError(); this.ready(epoch); if (this.documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot || generation !== this.generation) throw stale(); };
         const result = (async () => { await waiting.result; guard(); const failure = this.failed(entry); if (failure) throw failure;
             if (!this.canRequest(method, document)) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable for this document.");
             const capture = this.synchronized(document); if (capture?.document !== snapshot) throw stale();
-            const value = params(capture.index, snapshot, capture); guard(); call = this.ready(epoch).request<T>(method, { ...value, textDocument: { uri: snapshot.uri } }); const response = await call.result; guard(); return response;
+            const value = params(capture.index, snapshot, capture); guard(); call = this.ready(epoch).request(method, { ...value, textDocument: { uri: snapshot.uri } }); const response = await call.result; guard(); return response;
         })();
         const handle = Object.freeze({ result, cancel: () => { cancelled = true; waiting.cancel(); call?.cancel(); } }); this.documentCalls.add(handle);
         void result.then(() => { this.documentCalls.delete(handle); }, () => { this.documentCalls.delete(handle); }); return handle;
     }
-    request<T = JsonValue>(method: string, params?: JsonValue): RpcCall<T> { this.writable(); if (reserved(method)) throw new TypeError("Use the LSP lifecycle or captured document API."); return this.ready().request<T>(method, params); }
+    request(method: string, params?: JsonValue): RpcCall<JsonValue> { this.writable(); if (reserved(method)) throw new TypeError("Use the LSP lifecycle or captured document API."); return this.ready().request(method, params); }
     notify(method: string, params?: JsonValue): void { this.writable(); if (reserved(method)) throw new TypeError("Use the LSP lifecycle or captured document API."); this.ready().notify(method, params); }
     onRequest(method: string, handler: RequestHandler): () => void {
         this.writable(); if (!method || method.startsWith("rpc.") || reservedIncoming(method) || method === "window/showMessageRequest" || this.requests.has(method) || this.requests.size >= wireLimits.handlers) throw new TypeError("Reserved, duplicate or excessive LSP handler.");

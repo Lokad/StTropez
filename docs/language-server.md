@@ -156,6 +156,10 @@ connection factory.
 `JsonRpcConnection` supplies bidirectional requests, notifications, correlated responses,
 structured errors, bounded batches, cancellation and deadlines. Calls expose an ID, a result
 promise and `cancel()`. Responses are immutable JSON snapshots; handlers have removal functions.
+Raw `request`, `requestDocument` and `requestCommand` results have type `JsonValue`, including
+session and workspace-scope calls. Validate the method-specific shape before using it; a caller
+cannot supply a type argument to assert that an unchecked response has a particular schema.
+Feature clients establish their result types through their decoders.
 String, null and safe-integer IDs are accepted; fractional and unsafe numeric IDs are refused.
 Notifications receive no replies. Late successful replies are ignored; uncorrelated error replies
 reach `onError`. Disposing the connection releases its transport, deadlines and pending work.

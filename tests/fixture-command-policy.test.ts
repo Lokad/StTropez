@@ -94,7 +94,8 @@ test("fixture command policy preserves authorized arguments, request ids and can
         await assert.rejects(failed.result, error => error instanceof RpcError && error.code === -32001);
         assert.deepEqual(commands().map(packet => packet.params?._fixture), [{ delay: 0 }, { delay: 0, fault: "failure" }]);
         assert.ok(commands().every(packet => JSON.stringify(packet.params?.arguments) === JSON.stringify(args)));
-        const receipt = await f.first.request<{ arguments: JsonValue[] }>("fixture/lastCommand").result; assert.deepEqual(receipt.arguments, args);
+        const receipt = await f.first.request("fixture/lastCommand").result;
+        assert.ok(receipt !== null && typeof receipt === "object" && "arguments" in receipt); assert.deepEqual(receipt.arguments, args);
 
         await f.owner.prepareCommand(f.first, command, { delay: 0, fault: "failure" });
         const before = commands().length;

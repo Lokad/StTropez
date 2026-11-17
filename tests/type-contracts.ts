@@ -1,5 +1,6 @@
 import type { DocumentSnapshot, DocumentView, Observable, ResourceHandle, ResourceSnapshot, SaveSubmission } from "../src/index.ts";
 import type { FontAssetSnapshot } from "../src/browser/index.ts";
+import type { JsonRpcConnection, JsonValue, LspDocument, LspSession, LspWorkspaceScope } from "../src/protocol/index.ts";
 
 import type { GraphemeIndex, GraphemeProgress } from "../src/index.ts";
 
@@ -48,4 +49,25 @@ export function documentReadContract(document: DocumentSnapshot, view: DocumentV
     view.getSnapshot().selection.head = 0;
     // @ts-expect-error A published map's coordinate dimensions are immutable.
     if (document.change) document.change.mapping.oldLength = 0;
+}
+
+/** Raw responses establish JSON validity, not a method-specific schema. */
+export function protocolResponseContract(rpc: JsonRpcConnection, session: LspSession, scope: LspWorkspaceScope, document: LspDocument): void {
+    const raw: Promise<JsonValue>[] = [rpc.request("custom/value").result];
+    // @ts-expect-error A raw RPC response cannot acquire a caller-selected schema.
+    rpc.request<{ title: string }>("custom/value");
+    for (const owner of [session, scope]) {
+        raw.push(owner.request("custom/value").result, owner.requestCommand("custom/command").result,
+            owner.requestDocument("textDocument/hover", document, () => ({})).result);
+        // @ts-expect-error Session and scope custom responses are JSON until decoded.
+        const title: Promise<{ title: string }> = owner.request("custom/value").result;
+        // @ts-expect-error Document requests cannot assert an unchecked result type.
+        owner.requestDocument<{ title: string }>("textDocument/hover", document, () => ({}));
+        // @ts-expect-error Command authorization does not validate its result schema.
+        owner.requestCommand<{ title: string }>("custom/command");
+        // @ts-expect-error Custom requests do not accept unchecked type arguments.
+        owner.request<{ title: string }>("custom/value");
+        void title;
+    }
+    void raw;
 }

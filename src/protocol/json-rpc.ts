@@ -68,7 +68,7 @@ export class JsonRpcConnection {
         try { this.transport.send(text); return true; }
         catch (error) { this.dispose(error instanceof Error ? error : new Error("RPC transport failed.")); return false; }
     }
-    request<T = JsonValue>(method: string, params?: unknown, timeoutMs = this.timeoutMs): RpcCall<T> {
+    request(method: string, params?: unknown, timeoutMs = this.timeoutMs): RpcCall<JsonValue> {
         methodName(method);
         if (this.disposed) throw closedConnection("RPC connection is closed.");
         if (this.pending.size >= this.maxPending) throw new RpcError(rpcCodes.pendingLimit, "Too many pending RPC requests.");
@@ -86,7 +86,7 @@ export class JsonRpcConnection {
         try { entry.stop = this.options.schedule(timeoutMs, () => cancel(new RpcError(rpcCodes.timeout, "RPC request timed out."))); }
         catch (error) { this.pending.delete(id); reject(error instanceof Error ? error : new Error("RPC scheduling failed.")); }
         if (this.pending.get(id) === entry) this.send(encoded); else this.release(entry.stop);
-        return Object.freeze({ id, result: result as Promise<T>, cancel: () => cancel(cancelledRequest("Request cancelled.")) });
+        return Object.freeze({ id, result, cancel: () => cancel(cancelledRequest("Request cancelled.")) });
     }
     notify(method: string, params?: unknown): void {
         methodName(method); if (this.disposed) throw closedConnection("RPC connection is closed.");

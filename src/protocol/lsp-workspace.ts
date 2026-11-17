@@ -351,9 +351,9 @@ export class LspWorkspace {
             canRequest: (method, document) => scope.active && handles.get(document)?.active === true && this.session.canRequest(method, unwrap(document)),
             featureOptions: (method, document) => scope.active && handles.get(document)?.active ? this.session.featureOptions(method, unwrap(document)) : Object.freeze([]),
             commandNames: () => scope.active ? this.session.commandNames() : Object.freeze([]),
-            requestDocument: <T = JsonValue>(method: Parameters<LspSession["requestDocument"]>[0], document: LspDocument, params: Parameters<LspSession["requestDocument"]>[2]) => {
+            requestDocument: (method: Parameters<LspSession["requestDocument"]>[0], document: LspDocument, params: Parameters<LspSession["requestDocument"]>[2]) => {
                 writable(); const generation = scope.generation, entry = handles.get(document); if (!entry) throw stale(); this.synchronize(entry);
-                const raw = this.session.requestDocument<T>(method, unwrap(document), (index, snapshot, captured) => {
+                const raw = this.session.requestDocument(method, unwrap(document), (index, snapshot, captured) => {
                     const value = Object.freeze({ ...captured, isBindingCurrent: () => current(generation) && handles.has(document) && entry.active && (captured.isBindingCurrent?.() ?? captured.isCurrent()),
                         isCurrent: () => current(generation) && handles.has(document) && this.live(entry) && captured.isCurrent() }); return params(index, snapshot, value);
                 });
@@ -361,7 +361,7 @@ export class LspWorkspace {
                 const calls = documentCalls.get(document) ?? new Set(); documentCalls.set(document, calls); calls.add(call);
                 const settled = () => { calls.delete(call); if (!calls.size) documentCalls.delete(document); }; void call.result.then(settled, settled); return call;
             },
-            request: <T = JsonValue>(method: string, params?: JsonValue): RpcCall<T> => { writable(); return track(this.session.request<T>(method, params)); },
+            request: (method: string, params?: JsonValue): RpcCall<JsonValue> => { writable(); return track(this.session.request(method, params)); },
             notify: (method, params) => { writable(); this.session.notify(method, params); },
             onRequest: (method, handler) => {
                 writable(); if (method !== "workspace/applyEdit") return listen(this.session.onRequest(method, scopedHandler(handler)));
@@ -369,12 +369,12 @@ export class LspWorkspace {
                 return listen(() => { if (scope.applyEdit === handler) scope.applyEdit = undefined; });
             },
             onNotification: (method, handler) => { writable(); return listen(this.session.onNotification(method, (value, epoch) => { if (scope.active) return handler(value, epoch); })); },
-            requestCommand: <T = JsonValue>(command: string, args: readonly JsonValue[] = [], timeoutMs?: number, authorization?: Parameters<LspSession["requestCommand"]>[3]) => {
+            requestCommand: (command: string, args: readonly JsonValue[] = [], timeoutMs?: number, authorization?: Parameters<LspSession["requestCommand"]>[3]) => {
                 writable(); const reserved = this.command;
                 if (reserved && (reserved.scope !== scope || reserved.sent || !this.commandCurrent(reserved))) throw staleRequest("Provider command lane is unavailable.");
                 const intent = reserved ?? reserve(); intent.sent = true; let waiting = true;
                 try {
-                    const raw = this.session.requestCommand<T>(command, args, timeoutMs, authorization), call = track({ ...raw, cancel: () => { if (waiting) this.endCommand(intent, true); raw.cancel(); } });
+                    const raw = this.session.requestCommand(command, args, timeoutMs, authorization), call = track({ ...raw, cancel: () => { if (waiting) this.endCommand(intent, true); raw.cancel(); } });
                     const result = call.result.then(value => { waiting = false; return value; }, error => { waiting = false; if (error instanceof RpcError && error.code === rpcCodes.timeout) this.endCommand(intent, true); throw error; })
                         .finally(() => this.endCommand(intent, false, false));
                     return Object.freeze({ ...call, result, isCurrent: () => scope.active && scope.generation === intent.generation && !intent.cancelled && raw.isCurrent() });
