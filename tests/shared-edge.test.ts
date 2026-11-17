@@ -3,6 +3,18 @@ import test from "node:test";
 import { TextBuffer } from "../src/index.ts";
 
 const last = (values: Iterable<number>) => [...values].at(-1) ?? 0;
+test("shared edges checkpoint structural descents and unproved leaves without advancing the proof", () => {
+    const a = TextBuffer.from("x".repeat(2000)), b = a.replace(1000, 1000, "y".repeat(65)).replace(1000, 1065, "");
+    for (const side of ["start", "end"] as const) {
+        assert.deepEqual([...a.sharedEdge(b, side)], [0, 1000, 2000]);
+        assert.deepEqual([...a.sharedEdge(TextBuffer.from("x".repeat(2000)), side)], [0]);
+        assert.deepEqual([...a.sharedEdge(a, side)], [2000]);
+    }
+    const iterator = a.sharedEdge(b, "start")[Symbol.iterator]();
+    assert.deepEqual(iterator.next(), { value: 0, done: false }); iterator.return?.();
+    assert.equal(iterator.next().done, true); assert.deepEqual(a.readMetrics(), { textExports: 0, sliceUnits: 0 });
+});
+
 test("shared edges prove owned spans without text reads, including split backing and reversed ranges", () => {
     const original = "a\r\n😀é\n".repeat(10000), a = TextBuffer.from(original), b = a.replace(30001, 30003, "changed");
     assert.equal(last(a.sharedEdge(b, "start")), 30001);
@@ -28,7 +40,7 @@ test("fragmented shared-edge proofs remain exact through edits, balancing, parti
             for (const range of [{ from: 0, to: text.length, otherFrom: 0, otherTo: nextText.length }, { from: af, to: at, otherFrom: bf, otherTo: bt }]) {
                 let prior = 0;
                 for (const count of buffer.sharedEdge(next, side, range)) {
-                    assert.ok(count > prior && count <= Math.min(range.to - range.from, range.otherTo - range.otherFrom)); prior = count;
+                    assert.ok(count >= prior && count <= Math.min(range.to - range.from, range.otherTo - range.otherFrom)); prior = count;
                     assert.equal(side === "start" ? text.slice(range.from, range.from + count) : text.slice(range.to - count, range.to),
                         side === "start" ? nextText.slice(range.otherFrom, range.otherFrom + count) : nextText.slice(range.otherTo - count, range.otherTo));
                 }

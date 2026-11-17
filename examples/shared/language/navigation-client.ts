@@ -66,7 +66,7 @@ export function createNavigationClient(clock: Pick<Window, "setTimeout" | "clear
                 if (old) {
                     if (doc.revision <= old.revision) throw new Error("Provider document versions must increase.");
                     const cursor = new BufferChangeCursor(old.buffer, buffer);
-                    try { for (;;) { const step = cursor.next(); counts.planningTurns++; if (step.done) { ({ from, to, insertFrom, insertTo } = step.result!); break; } await yieldPlanning(); } } finally { cursor.dispose(); }
+                    try { for (;;) { const step = cursor.next(); counts.planningTurns++; if (step.status === "ready") { ({ from, to, insertFrom, insertTo } = step.result!); break; } await yieldPlanning(); } } finally { cursor.dispose(); }
                 }
                 const units = insertTo - insertFrom;
                 ack(await exchange(old ? "project-change" : "project-open", { document: doc.document, revision: doc.revision, length: doc.length,

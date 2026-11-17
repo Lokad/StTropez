@@ -42,7 +42,7 @@ navigation applies the [Unicode boundary rules](unicode.md).
 | `text()` | Explicitly materializes the whole buffer |
 | `replace(from, to, insert)` | Returns the buffer from a single-edit application |
 | `equals(other)` | Exact content equality, skipping shared backing ranges where possible |
-| `sharedEdge(other, side, range?)` | Iterates cumulative prefix/suffix lengths proved by immutable storage identity |
+| `sharedEdge(other, side, range?)` | Iterates cumulative proved prefix/suffix lengths at structural work checkpoints |
 
 An empty document has one line; a trailing LF adds an empty last line. A lone CR is ordinary
 text for line indexing. Range endpoints must be safe integers between zero and `length`, in
@@ -206,8 +206,8 @@ export function* planTransfer(before: TextBuffer, after: TextBuffer): Generator<
     const cursor = new BufferChangeCursor(before, after);
     try {
         for (;;) {
-            const step = cursor.next(64);
-            if (step.done && step.result) return step.result;
+            const step = cursor.next(256);
+            if (step.status === "ready" && step.result) return step.result;
             yield; // The caller schedules the next advance.
         }
     } finally {
@@ -216,8 +216,19 @@ export function* planTransfer(before: TextBuffer, after: TextBuffer): Generator<
 }
 ```
 
+`BufferChangeProgress` has `status` (`running`, `ready`, `failed`, `disposed`), cumulative
+`workUnits`, `result` and `failure`. `snapshot()` reads immutable progress without advancing.
+One unit is one node-pair decision: proving shared storage, descending a branch or stopping at
+an unproved leaf. `next()` defaults to 256 units and accepts safe integers of at least 256;
+checkpoints every 256 units can overshoot a requested budget by up to 255. Budgets measure
+structural work, not elapsed time or UTF-16 length. Only `ready` publishes a span. Failures
+throw their original cause and retain a failed snapshot; `dispose()` clears result/failure
+and closes captured iterators. Terminal advances validate their budget and do no work.
+
 `sharedEdge` accepts `"start"` or `"end"` and optional `{ from, to, otherFrom, otherTo }` ranges.
-Equal text without shared storage need not yield a proof. Close an interrupted iterator and
+It yields a cumulative proof length after each node-pair decision. Lengths never decrease,
+but may repeat, including zero; an empty range yields nothing. Equal text without shared
+storage need not prove any span. Close an interrupted iterator and
 dispose an abandoned change cursor to release captured buffers. These proofs do not authorize
 updates to a live resource.
 

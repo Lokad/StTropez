@@ -143,6 +143,8 @@ A disposed cache cannot start a new diff job.
 | Reversion | Inserted hunk text is materialized and the final workspace transaction runs synchronously |
 | Selected-change preview | At most 160 source UTF-16 units per side, with visible whitespace markers and truncation |
 
+Shared-storage edge proofs charge one work unit per node-pair decision, including branch
+descents and unproved leaves. Text reads and line alignment retain their separate work charges.
 Work budgets bound cooperative work units, not elapsed time. Allocation, publication, rendering
 and individual batches can exceed a scheduling target. Browser `snapshot()` exposes work and
 presentation state; the [clock glossary](README.md#glossary) defines its advance-loop timings.

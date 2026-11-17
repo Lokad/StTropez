@@ -125,10 +125,11 @@ function* sharedEdge(a: Root, b: Root, side: "start" | "end", range: PairRange):
         const xf = side === "start" ? x.from : x.to - length, yf = side === "start" ? y.from : y.to - length;
         const same = x.node === y.node && xf === yf || x.node.kind === "leaf" && y.node.kind === "leaf"
             && x.node.piece.backing === y.node.piece.backing && x.node.piece.from + xf === y.node.piece.from + yf;
-        if (same) { matched += length; consume(left, length); consume(right, length); yield matched; }
-        else if (x.node.kind === "leaf" && y.node.kind === "leaf") return;
+        if (same) { matched += length; consume(left, length); consume(right, length); }
+        else if (x.node.kind === "leaf" && y.node.kind === "leaf") { yield matched; return; }
         else if (x.node.kind === "branch" && (y.node.kind === "leaf" || x.node.height >= y.node.height)) descend(left);
         else descend(right);
+        yield matched;
     }
 }
 function* pieces(root: Root, from = 0, to = root?.length ?? 0): Generator<Pick<Piece, "backing" | "from" | "length">> {
@@ -270,7 +271,8 @@ export class TextBuffer {
         return offset + node.piece.backing.lines[node.piece.firstLine + line - 1]! - node.piece.from + 1;
     }
     /** Cumulative equal edge lengths proved only by immutable node/backing identity.
-     * Each advance visits bounded tree paths; unrelated but equal text may prove no span.
+     * Each yield charges one node-pair decision: a proof, branch descent or unproved leaf.
+     * Lengths are nondecreasing, including repeated zeroes; equal text may prove no span.
      * Ranges use raw UTF-16. Iteration retains captures until it ends or is closed.
      */
     sharedEdge(other: TextBuffer, side: "start" | "end", range: PairRange = { from: 0, to: this.length, otherFrom: 0, otherTo: other.length }): Iterable<number> {

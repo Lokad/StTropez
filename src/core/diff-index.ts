@@ -8,7 +8,7 @@ type Edges = Readonly<{ aFrom: number; bFrom: number; aTo: number; bTo: number }
 export const tick = (stats: DiffStats, units = 1): boolean => { stats.work += units; if (stats.work - stats.yielded < 256) return false; stats.yielded = stats.work; return true; };
 function* ownedEdge(a: TextBuffer, b: TextBuffer, from: number, to: number, otherFrom: number, otherTo: number, side: "start" | "end", stats: DiffStats): Generator<void, number> {
     let length = 0;
-    for (const proved of a.sharedEdge(b, side, { from, to, otherFrom, otherTo })) { length = proved; if (tick(stats, 64)) yield; }
+    for (const proved of a.sharedEdge(b, side, { from, to, otherFrom, otherTo })) { length = proved; if (tick(stats)) yield; }
     return length;
 }
 /** Ownership proves which complete row slots may reuse metadata across revisions. */

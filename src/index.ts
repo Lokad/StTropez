@@ -7,7 +7,7 @@ export { importText, exportText } from "./core/newlines.ts";
 export type { ImportedText, LineEnding } from "./core/newlines.ts";
 export { TextBuffer } from "./core/text-buffer.ts";
 export { BufferChangeCursor } from "./core/buffer-change.ts";
-export type { BufferChangeSpan } from "./core/buffer-change.ts";
+export type { BufferChangeSpan, BufferChangeProgress } from "./core/buffer-change.ts";
 export type { BufferChange, BufferReadMetrics, BufferRetention } from "./core/text-buffer.ts";
 export { LiteralSearch } from "./core/search.ts";
 export type { SearchMatch, SearchStep, LiteralSearchOptions } from "./core/search.ts";

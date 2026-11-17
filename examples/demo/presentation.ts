@@ -116,7 +116,7 @@ export class DemoPresentation {
             if (this.disposed || job !== this.job) return;
             try {
                 const step = planner.next();
-                if (step.done) { planner.dispose(); this.planner = undefined; this.beginUpload(capture, job, step.result!, previous.job); }
+                if (step.status === "ready") { planner.dispose(); this.planner = undefined; this.beginUpload(capture, job, step.result!, previous.job); }
                 else this.timer = window.setTimeout(() => { this.timer = undefined; advance(); }, 0);
             } catch { this.fail(); }
         };

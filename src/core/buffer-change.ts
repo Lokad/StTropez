@@ -1,23 +1,25 @@
 import type { TextBuffer } from "./text-buffer.ts";
+import { kernelCursor } from "./kernel-cursor.ts";
+import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
 export type BufferChangeSpan = Readonly<{ from: number; to: number; insertFrom: number; insertTo: number }>;
+export type BufferChangeProgress = Readonly<{ status: KernelStatus; workUnits: number; result: BufferChangeSpan | null; failure: string | null }>;
+type Work = { units: number };
 /** Unproved text remains inside one streamed replacement; no character scan or export. */
-function* plan(before: TextBuffer, after: TextBuffer): Generator<void, BufferChangeSpan | undefined> {
+function* plan(before: TextBuffer, after: TextBuffer, work: Work): Generator<void, BufferChangeSpan> {
     let from = 0, suffix = 0;
-    for (const count of before.sharedEdge(after, "start")) { from = count; yield; }
-    for (const count of before.sharedEdge(after, "end", { from, to: before.length, otherFrom: from, otherTo: after.length })) { suffix = count; yield; }
+    for (const count of before.sharedEdge(after, "start")) { from = count; if (++work.units % 256 === 0) yield; }
+    for (const count of before.sharedEdge(after, "end", { from, to: before.length, otherFrom: from, otherTo: after.length })) { suffix = count; if (++work.units % 256 === 0) yield; }
     return Object.freeze({ from, to: before.length - suffix, insertFrom: from, insertTo: after.length - suffix });
 }
+/** Charges one structural node-pair decision per unit, with checkpoints every 256 units. */
 export class BufferChangeCursor {
-    private iterator: Generator<void, BufferChangeSpan | undefined> | undefined;
-    private result: BufferChangeSpan | undefined;
-    private disposed = false;
-    constructor(before: TextBuffer, after: TextBuffer) { this.iterator = plan(before, after); }
-    next(budget = 64): Readonly<{ done: boolean; steps: number; result?: BufferChangeSpan }> {
-        if (this.disposed) throw new Error("Project change cursor is disposed.");
-        if (!Number.isSafeInteger(budget) || budget < 1 || budget > 1024) throw new RangeError("Invalid project planning budget.");
-        let steps = 0;
-        while (this.iterator && steps < budget) { const step = this.iterator.next(); steps++; if (step.done) { this.result = step.value; this.iterator = undefined; } }
-        return Object.freeze({ done: this.iterator === undefined, steps, ...(this.result ? { result: this.result } : {}) });
+    readonly #driver: KernelCursor<BufferChangeProgress>;
+    constructor(before: TextBuffer, after: TextBuffer) {
+        const work = { units: 0 };
+        this.#driver = kernelCursor(plan(before, after, work), () => work.units,
+            (status, result, failure): BufferChangeProgress => Object.freeze({ status, workUnits: work.units, result, failure }), "Buffer change");
     }
-    dispose(): void { this.disposed = true; this.iterator?.return(undefined); this.iterator = undefined; this.result = undefined; }
+    next(budget = 256): BufferChangeProgress { return this.#driver.next(budget); }
+    snapshot(): BufferChangeProgress { return this.#driver.snapshot(); }
+    dispose(): void { this.#driver.dispose(); }
 }

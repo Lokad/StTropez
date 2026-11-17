@@ -28,7 +28,7 @@ async function scan(buffer: TextBuffer, from: number, to: number, cooperate: Lsp
 }
 async function replacement(before: TextBuffer, after: TextBuffer, cooperate: LspCooperate) {
     const cursor = new BufferChangeCursor(before, after); let from = 0, to = 0, end = 0;
-    try { for (;;) { const step = cursor.next(); if (step.done) {
+    try { for (;;) { const step = cursor.next(); if (step.status === "ready") {
                 const span = step.result!; from = Math.max(0, span.from - 1); to = Math.min(before.length, span.to + 1); end = span.insertTo + to - span.to; break;
             } await cooperate(); } } finally { cursor.dispose(); }
     if (interior(before, from) || interior(after, from)) from--;
