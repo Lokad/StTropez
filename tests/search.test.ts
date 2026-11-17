@@ -3,8 +3,16 @@ import assert from "node:assert/strict";
 import { LiteralSearch, TextBuffer } from "../src/index.ts";
 import type { LiteralSearchOptions } from "../src/index.ts";
 function all(buffer: TextBuffer, query: string, budget = 3, options?: LiteralSearchOptions) {
+    let previous = buffer.readMetrics(); // Include construction in the first measured advance.
     const cursor = new LiteralSearch(buffer, query, options), matches = [];
-    for (;;) { const step = cursor.next(budget, 2); assert.ok(step.readUnits <= budget); matches.push(...step.matches); if (step.done) return matches; }
+    for (;;) {
+        const step = cursor.next(budget, 2), current = buffer.readMetrics();
+        assert.equal(current.textExports, previous.textExports);
+        // Chunk traversal is charged by the cursor; materialized boundary reads also have buffer counters.
+        assert.ok(current.sliceUnits - previous.sliceUnits <= step.readUnits, "Unreported literal-search slice reads.");
+        assert.ok(step.readUnits <= budget); previous = current;
+        matches.push(...step.matches); if (step.done) return matches;
+    }
 }
 test("literal search crosses piece/step boundaries, preserves UTF-16/newlines and does not export", () => {
     const tail = "x".repeat(128), buffer = TextBuffer.from("a😀\r\néa😀\r\n" + tail).replace(1, 1, "_").replace(2, 2, "!");
@@ -14,7 +22,6 @@ test("literal search crosses piece/step boundaries, preserves UTF-16/newlines an
         if (query) for (let from = text.indexOf(query); from >= 0; from = text.indexOf(query, from + query.length)) expected.push({ from, to: from + query.length });
         for (const budget of [1, 3, 128, 32768]) assert.deepEqual(all(buffer, query, budget), expected);
     }
-    assert.equal(buffer.diagnostics().textExports, 0);
     assert.deepEqual(all(TextBuffer.from("aaaaa"), "aa"), [{ from: 0, to: 2 }, { from: 2, to: 4 }]);
 });
 
@@ -34,7 +41,6 @@ test("whole-word search checks Unicode neighbours outside scan bounds and preser
     const pending = new LiteralSearch(buffer, "cat", { wholeWord: true }); pending.next(3); pending.dispose();
     assert.deepEqual(pending.next(1), { done: true, scanned: 3, readUnits: 0, matches: [] });
     assert.throws(() => new LiteralSearch(buffer, "cat", { wholeWord: "yes" as unknown as boolean }), TypeError);
-    assert.equal(buffer.readMetrics().textExports, 0);
 });
 
 test("fragmented whole-word scans agree with an independent flat code-point oracle at tiny budgets", () => {
@@ -59,7 +65,6 @@ test("fragmented whole-word scans agree with an independent flat code-point orac
         const query = ["cat", "a!a", "é", "😀", "漢", "e\u0301"][next() % 6]!;
         assert.deepEqual(all(buffer, query, 1 + next() % 9, { wholeWord: true }), oracle(text, query));
     }
-    assert.equal(buffer.readMetrics().textExports, 0);
 });
 test("adversarial prefixes, match/read budgets, ranged scans and disposal stay explicit", context => {
     const query = "aaaaab", buffer = TextBuffer.from("a".repeat(100_000) + "b"), cursor = new LiteralSearch(buffer, query, { from: 4 });
@@ -89,7 +94,6 @@ test("seeded fragmented snapshots agree with the platform literal-search oracle"
         for (let offset = text.indexOf(query); offset >= 0; offset = text.indexOf(query, offset + query.length)) expected.push({ from: offset, to: offset + query.length });
         assert.deepEqual(all(buffer, query, 1 + next() % 17), expected);
     }
-    assert.equal(buffer.diagnostics().textExports, 0);
 });
 
 test("case-insensitive literals preserve raw spans across pieces and tiny read budgets", () => {
@@ -107,7 +111,6 @@ test("case-insensitive literals preserve raw spans across pieces and tiny read b
     const pending = new LiteralSearch(TextBuffer.from("𐐀"), "𐐨", { matchCase: false }); pending.next(1); pending.dispose();
     assert.deepEqual(pending.next(1), { done: true, scanned: 1, readUnits: 0, matches: [] });
     assert.throws(() => new LiteralSearch(buffer, "k", { matchCase: "no" as unknown as boolean }), TypeError);
-    assert.equal(buffer.readMetrics().textExports, 0);
 });
 
 test("fragmented caseless whole-word scans agree with an independent Unicode regex oracle", () => {
@@ -132,5 +135,4 @@ test("fragmented caseless whole-word scans agree with an independent Unicode reg
     const ranged = TextBuffer.from("xKy K!");
     assert.deepEqual(all(ranged, "k", 1, { matchCase: false, wholeWord: true, from: 1, to: 2 }), []);
     assert.deepEqual(all(ranged, "k", 1, { matchCase: false, wholeWord: true, from: 4, to: 5 }), [{ from: 4, to: 5 }]);
-    assert.equal(buffer.readMetrics().textExports, 0);
 });
