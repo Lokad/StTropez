@@ -1,5 +1,5 @@
 import { HostCell } from "../shared/observable.ts";
-import { Workspace, WorkspaceCommands } from "../../src/index.ts";
+import { createAgentReview, Workspace, WorkspaceCommands } from "../../src/index.ts";
 import type { AgentRequest, ComparisonBaseline, DocumentId, DocumentView, TabId, TextEdit, TextResourceHandle } from "../../src/index.ts";
 import { HostSourceReview, type SaveConflict } from "./source-review.ts";
 import { HostLayout } from "./layout.ts";
@@ -29,7 +29,7 @@ export class HostController {
     readonly transfer = new HostTransfer(this.workspace, this.commands, task => { void this.track(task); });
     readonly runResources = new RunResources(this.workspace, this.source, this.connection, this.transfer.resource);
     readonly instruction = new TransferInstruction(this);
-    readonly review = this.workspace.agentState(this.source.id);
+    readonly review = createAgentReview(this.workspace, this.source);
     private readonly presentation = new HostLayout(this.workspace, this.source, this.connection.id);
     readonly formTab = this.presentation.formTab;
     private readonly activityCell = new HostCell<Activity>({ writes: 0, acknowledgements: 0, ackAttempts: 0, pendingRuns: 0, completedRuns: 0, background: 0, errors: 0, lastSavedRevision: null, lastRun: null, ordering: Object.freeze([]) });
@@ -121,14 +121,14 @@ export class HostController {
     readonly inspectRecovery = (): void => { this.recoveryCell.set({ ...this.recoveryCell.get(), visible: true }); };
     readonly discardRecovery = (): void => { this.recoveryCell.set({ visible: false, items: [] }); };
     recoveryText(): string | null { return this.recoveryCell.get().items.at(-1)?.attemptedText ?? null; }
-    readonly associate = (): void => this.safe(() => { this.workspace.associateAgent(this.source.id, "synthetic-agent"); });
+    readonly associate = (): void => this.safe(() => { this.review.associate("synthetic-agent"); });
     readonly requestAgent = (): void => this.safe(() => {
         if (!this.sourceInputReady()) return;
         const configuration = this.connection.getSnapshot();
         if (configuration.state !== "ready") throw new Error("Configuration not ready.");
         const before = this.workspace.document(this.source.documentId);
         const baseline = Object.freeze({ buffer: before.buffer, version: `reference:before-proposal-r${before.revision}` });
-        const request = this.workspace.beginAgentRequest(this.source, { configurationRevision: configuration.revision, path: configuration.value().path });
+        const request = this.review.beginRequest({ configurationRevision: configuration.revision, path: configuration.value().path });
         this.pendingAgent = request;
         void this.track(this.services.proposal(request).then(text => {
             const start = performance.now();
@@ -145,13 +145,13 @@ export class HostController {
     readonly offerNewerProposal = (): void => this.safe(() => {
         const review = this.review.getSnapshot(), document = this.workspace.document(this.source.documentId);
         if (!review.association || !review.proposal) throw new Error("A proposal is required.");
-        const result = this.workspace.offerAgentProposal(this.workspace.captureProposal(this.source.id),
+        const result = this.review.offer(this.review.captureProposal(),
             { id: review.proposal.target.id, revision: review.proposal.target.revision + 1,
                 edits: [{ from: 0, to: document.text().length, insert: "newer agent proposal" }] });
         if (!result.applied) throw new Error(result.reason);
     });
-    readonly interrupt = (): void => this.safe(() => { this.workspace.interruptAgent(this.source.id); });
-    readonly detach = (): void => this.safe(() => { this.workspace.detachAgent(this.source.id); });
+    readonly interrupt = (): void => this.safe(() => { this.review.interrupt(); });
+    readonly detach = (): void => this.safe(() => { this.review.detach(); });
     readonly save = (): void => this.safe(this.sourceReview.save);
     /** Synthetic external writer; never updates the local document or its known saved version. */
     externalWrite(text: string): void {
@@ -169,7 +169,7 @@ export class HostController {
     readonly retryAcknowledgement = (): void => this.safe(() => {
         const acknowledgement = this.review.getSnapshot().acknowledgements[0];
         if (!acknowledgement) return;
-        void this.track(this.commands.acknowledge(this.source.id, acknowledgement.id, { acknowledge: this.services.acknowledge }).catch(error => this.reportError(error)));
+        void this.track(this.review.acknowledge(acknowledgement.id, { acknowledge: this.services.acknowledge }, error => this.reportError(error)).catch(error => this.reportError(error)));
     });
     readonly run = async (): Promise<void> => {
         if (this.disposed || !this.sourceInputReady()) return;
@@ -252,8 +252,8 @@ export class HostController {
         this.configurationSave.dispose(); this.transfer.save.dispose(); this.runResources.dispose(); this.instruction.dispose();
         this.inputCaptureGuards.clear();
         if (this.timer !== undefined) clearInterval(this.timer); this.timer = undefined;
-        this.workspace.interruptAgent(this.source.id);
-        this.workspace.detachAgent(this.source.id);
+        this.review.interrupt();
+        this.review.detach();
         this.services.dispose();
         this.updateActivity({ pendingRuns: 0 });
         this.presentation.dispose(); this.loadedSlot.dispose();

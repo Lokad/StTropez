@@ -65,7 +65,7 @@ let serverVersion: string | null = null, savedWrites = 0, lastSavedRevision: num
 let lastRun: Readonly<{ sourceRevision: number; configurationRevision: number; sourceLength: number; pathLength: number }> | null = null;
 const save = document.createElement("button"); save.textContent = "Save source";
 save.addEventListener("click", () => {
-    void commands.save(source, { save: submission => new Promise(resolve => pendingSaves.push({ submission, finish: resolve })) })
+    void commands.save(workspace.captureSave(source), { save: submission => new Promise(resolve => pendingSaves.push({ submission, finish: resolve })) })
         .then(outcome => { if (outcome.kind === "saved") lastSavedRevision = outcome.receipt.submission.revision; });
 });
 const finish = document.createElement("button"); finish.textContent = "Finish deferred save";

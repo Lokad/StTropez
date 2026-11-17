@@ -70,7 +70,7 @@ test("explicit consecutive groups, origins, standalone intents and saved boundar
     replace("abcd", "typing", "typing-one"); replace("abcde", "typing", "typing-one");
     assert.equal(state.getSnapshot().undoDepth, 1);
     const commands = new WorkspaceCommands(workspace);
-    const saved = await commands.save(source, { save: async () => ({ kind: "saved", serverVersion: "v1" }) }); assert.equal(saved.kind, "saved");
+    const saved = await commands.save(workspace.captureSave(source), { save: async () => ({ kind: "saved", serverVersion: "v1" }) }); assert.equal(saved.kind, "saved");
     replace("abcdef", "typing", "typing-one"); assert.equal(state.getSnapshot().undoDepth, 2);
     const beforeUndo = document().revision; assert.equal(undo().applied, true);
     assert.equal(document().text(), "abcde"); assert.equal(source.metadata.getSnapshot().dirty, false); assert.ok(document().revision > beforeUndo);
@@ -114,7 +114,7 @@ test("typing grouping is local to its document while unrelated live traffic and 
         replace(`abc${"x".repeat(index)}`, "typing", "continuous");
         workspace.edit({ documentId: other.documentId, expectedRevision: workspace.document(other.documentId).revision,
             origin: "host", history: { kind: "live" }, edits: [{ from: 0, to: 1, insert: String(index) }] });
-        await commands.save(other, { save: async () => ({ kind: "saved", serverVersion: `v${index}` }) });
+        await commands.save(workspace.captureSave(other), { save: async () => ({ kind: "saved", serverVersion: `v${index}` }) });
     }
     assert.equal(state.getSnapshot().undoDepth, 1); assert.equal(workspace.observeHistory(other.documentId).getSnapshot().undoDepth, 3);
     undo(); assert.equal(document().text(), "abc"); assert.equal(source.metadata.getSnapshot().dirty, false);
@@ -261,7 +261,7 @@ test("no-op/malformed/stale edits publish no history or text and reject foreign 
 test("canonical saves and deferred receipts remain exact through undo and redo, with reload as a history boundary", async () => {
     const { workspace, source, document, replace, undo, redo, state } = fixture();
     replace("local"); const commands = new WorkspaceCommands(workspace);
-    const saved = await commands.save(source, { save: async () => ({ kind: "saved", serverVersion: "v1", canonical: "LOCAL" }) });
+    const saved = await commands.save(workspace.captureSave(source), { save: async () => ({ kind: "saved", serverVersion: "v1", canonical: "LOCAL" }) });
     assert.ok(saved.kind === "saved" && saved.receipt.canonicalApplied); undo(); assert.equal(document().text(), "local"); assert.equal(source.metadata.getSnapshot().dirty, true);
     redo(); assert.equal(document().text(), "LOCAL"); assert.equal(source.metadata.getSnapshot().dirty, false);
     replace("next"); const ticket = workspace.captureSave(source); ticket.start(); undo();

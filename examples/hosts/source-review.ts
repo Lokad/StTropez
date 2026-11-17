@@ -1,4 +1,4 @@
-import { TextBuffer } from "../../src/index.ts";
+import { createAgentReview, TextBuffer } from "../../src/index.ts";
 import type { ComparisonBaseline, Observable, Operation, SavePort, SaveReview, SaveSubmission, TabTarget, TextResourceHandle, Workspace, WorkspaceCommands } from "../../src/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import { ReviewVariants } from "./variants.ts";
@@ -76,7 +76,7 @@ export class HostSourceReview {
         if (!this.ports.inputReady()) return;
         const conflictId = this.conflictCell.get()?.id;
         let captured: SaveSubmission<string> | undefined;
-        this.ports.track(this.commands.save(this.source, { save: submission => { captured = submission; return this.ports.save(submission); } }, review)
+        this.ports.track(this.commands.save(createAgentReview(this.workspace, this.source).captureSave(review), { save: submission => { captured = submission; return this.ports.save(submission); } })
             .then(result => {
                 if (!this.disposed && result.kind === "saved") {
                     this.variants.remember(this.savedReference);

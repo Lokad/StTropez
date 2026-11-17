@@ -1,7 +1,7 @@
 import { Workspace, TextBuffer, TextDiff, WordCursor, BidiCursor, createBidiIndexController, resolveBidi, importText, exportText, anchoredRange, composePositionMaps, createGraphemeCursor } from "sttropez";
 import { inputConflictEvent, createFontAssetController, createFindController, createRegexFindBackend, mountTextComparison, mountTextEditor, mountTextViewport, mountEditingCandidate } from "sttropez/browser";
 import { fontFixture } from "./font-fixture.js";
-import { DiffReferenceCache, WorkspaceCommands } from "sttropez";
+import { createAgentReview, DiffReferenceCache, WorkspaceCommands } from "sttropez";
 import { createSelectionSet, planSelectionEdits } from "sttropez";
 import type { ResourceVisibility, SaveReview } from "sttropez";
 import type { FindReason, InputConflictDetail, PresentedLine, TextComparisonSnapshot } from "sttropez/browser";
@@ -253,21 +253,29 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
     },
     saveReview: async () => {
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "retry", variant: "working" }, "Retry", { value: "base", serverVersion: "v0" });
-        model.edit({ documentId: source.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 4, insert: "merged" }] });
+        const agent = createAgentReview(model, source); agent.associate("consumer-agent");
+        const request = agent.beginRequest({ purpose: "review" });
+        request.accept({ id: "proposal", revision: 1, edits: [{ from: 0, to: 4, insert: "merged" }] }); request.finish();
         const commands = new WorkspaceCommands(model);
-        await commands.save(source, { save: async () => ({ kind: "conflict", serverVersion: "v1" }) });
+        await commands.save(agent.captureSave(), { save: async () => ({ kind: "conflict", serverVersion: "v1" }) });
         const baselineBefore = source.metadata.getSnapshot().serverVersion;
         const review: SaveReview = { target: model.captureResource(source.id), expectedRevision: source.getSnapshot().revision, expectedServerVersion: "v1" };
         let precondition: string | null = null;
-        const saved = await commands.save(source, { save: async submission => {
+        const saved = await commands.save(agent.captureSave(review), { save: async submission => {
             precondition = submission.expectedServerVersion;
+            if (submission.proposal?.id !== "proposal") throw new Error("Compiled review lost its captured proposal.");
             model.edit({ documentId: source.documentId, expectedRevision: submission.revision, origin: "human", edits: [{ from: 6, to: 6, insert: " later" }] });
             return { kind: "saved", serverVersion: "v2" };
-        } }, review);
+        } });
         const textAfter = model.document(source.documentId).text(), dirtyAfter = source.metadata.getSnapshot().dirty;
         model.undo({ documentId: source.documentId, expectedRevision: source.getSnapshot().revision });
+        if (saved.kind !== "saved" || !saved.receipt.acknowledgementId) throw new Error("Compiled review did not retain an acknowledgement.");
+        const acknowledgement = await agent.acknowledge(saved.receipt.acknowledgementId, { acknowledge: async submission => {
+            if (submission.receipt !== saved.receipt || submission.receipt.submission.value !== "merged") throw new Error("Compiled acknowledgement lost the exact saved receipt.");
+        } });
         return { baselineBefore, precondition, saved: saved.kind, textAfter, dirtyAfter, cleanAfterUndo: !source.metadata.getSnapshot().dirty,
-            serverVersion: source.metadata.getSnapshot().serverVersion, leases: model.ownership(source.id).leases };
+            serverVersion: source.metadata.getSnapshot().serverVersion, leases: model.ownership(source.id).leases,
+            acknowledgement: acknowledgement.kind, proposalRetired: agent.getSnapshot().proposal === null };
     },
     graphemes: () => {
         const buffer = TextBuffer.from("🇦🇧👩‍💻\r\n"), cursor = createGraphemeCursor(buffer);

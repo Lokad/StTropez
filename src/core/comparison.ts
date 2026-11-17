@@ -1,4 +1,5 @@
 import { TextBuffer } from "./text-buffer.ts";
+import { createAgentReview } from "./agent.ts";
 import { DiffReferenceCache, TextDiff } from "./diff.ts";
 import type { DiffHunk, DiffProgress } from "./diff.ts";
 import { Store } from "./observable.ts";
@@ -113,12 +114,12 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
         const capture = Object.freeze({ baselineEpoch: current.baseline.epoch, baselineVersion: current.baseline.version,
             working: current.working, serverVersion: resource.metadata.getSnapshot().serverVersion,
             generation: current.generation, tab: target, selectionSet: view.getSnapshot().selectionSet });
-        const agent = workspace.agentState(resource.id).getSnapshot(), refresh = refreshGeneration, acceptance = acceptanceGeneration,
+        const agent = createAgentReview(workspace, resource).getSnapshot(), refresh = refreshGeneration, acceptance = acceptanceGeneration,
             policy = reversionPolicyGeneration, generation = ++reversionGeneration;
         const lease = workspace.acquire(resource.id); let finished = false;
         const finish = () => { scope.assertWritable(); if (finished) return; finished = true; pending.delete(finish); lease.release(); };
         pending.add(finish);
-        const ownerCurrent = () => { const current = workspace.agentState(resource.id).getSnapshot();
+        const ownerCurrent = () => { const current = createAgentReview(workspace, resource).getSnapshot();
             return current.association?.id === agent.association?.id && current.association?.generation === agent.association?.generation
                 && current.request?.id === agent.request?.id && current.proposalGeneration === agent.proposalGeneration; };
         const isCurrent = () => !finished && canAccept() && policy === reversionPolicyGeneration && generation === reversionGeneration && refresh === refreshGeneration && acceptance === acceptanceGeneration

@@ -1,3 +1,4 @@
+import { createAgentReview } from "../../src/index.ts";
 import type { ComparisonBaseline, Observable, Operation, TabTarget, TextResourceHandle, Workspace } from "../../src/index.ts";
 import { HostCell } from "../shared/observable.ts";
 
@@ -38,7 +39,7 @@ export class ReviewVariants {
     }
     private watchOwner(): void {
         if (this.unsubscribeOwner) return;
-        const agent = this.workspace.agentState(this.source.id); let previous = agent.getSnapshot();
+        const agent = createAgentReview(this.workspace, this.source); let previous = agent.getSnapshot();
         const unsubscribeAgent = agent.subscribe(() => { const current = agent.getSnapshot();
             if (current.association?.id !== previous.association?.id || current.association?.generation !== previous.association?.generation
                 || current.request?.id !== previous.request?.id || current.proposalGeneration !== previous.proposalGeneration) this.ownerGeneration++;

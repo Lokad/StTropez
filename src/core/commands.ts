@@ -1,15 +1,13 @@
-import type { ResourceHandle, ResourceId, ResourceKey, ResourceTarget, SaveReceipt, SaveReview, SaveSubmission, Workspace } from "./workspace.ts";
+import type { ResourceHandle, ResourceId, ResourceKey, ResourceTarget, SaveReceipt, SaveSubmission, SaveTicket, Workspace } from "./workspace.ts";
 import { snapshotValue } from "./values.ts";
 import type { Immutable, SnapshotValue } from "./values.ts";
-import type { AcknowledgementSubmission } from "./agent.ts";
 
 export type SaveResponse<T> = Readonly<{ kind: "saved"; serverVersion: string; canonical?: T } | { kind: "conflict"; serverVersion: string }>;
-export type SavePort<T> = Readonly<{ save: (submission: SaveSubmission<T>) => Promise<SaveResponse<T>> }>;
-export type SaveOutcome<T> = Readonly<{ kind: "saved"; receipt: SaveReceipt<T> } | { kind: "conflict"; serverVersion: string } | { kind: "failed" }>;
+export type SavePort<T, S extends SaveSubmission<T> = SaveSubmission<T>> = Readonly<{ save: (submission: S) => Promise<SaveResponse<T>> }>;
+export type SaveOutcome<T, R extends SaveReceipt<T> = SaveReceipt<T>> = Readonly<{ kind: "saved"; receipt: R } | { kind: "conflict"; serverVersion: string } | { kind: "failed" }>;
 export type CapturedResource<T> = Readonly<{ target: ResourceTarget; key: ResourceKey; revision: number; value: Immutable<T>; serverVersion: string | null }>;
 export type RunSubmission<S, C, P> = Readonly<{ source: CapturedResource<S>; configuration: CapturedResource<C>; settings: Immutable<P> }>;
 export type RunPort<S, C, P, R> = Readonly<{ run: (submission: RunSubmission<S, C, P>) => Promise<R> }>;
-export type AcknowledgementPort = Readonly<{ acknowledge: (submission: AcknowledgementSubmission) => Promise<void> }>;
 
 /** Host-injected command orchestration. No networking, storage, navigation or execution policy. */
 export class WorkspaceCommands {
@@ -19,11 +17,11 @@ export class WorkspaceCommands {
     constructor(workspace: Workspace, onError: (error: unknown) => void = () => {}) {
         this.workspace = workspace; this.onError = onError;
     }
-    /** Content is captured at invocation, server preconditions at serialized submission. */
-    save<T extends SnapshotValue>(resource: ResourceHandle<T>, port: SavePort<T>, review?: SaveReview): Promise<SaveOutcome<T>> {
-        const ticket = this.workspace.captureSave(resource, review);
-        const previous = this.saves.get(resource.id) ?? Promise.resolve();
-        const result = previous.then(async (): Promise<SaveOutcome<T>> => {
+    /** Execute an explicitly captured ticket; server preconditions are captured at serialized submission. */
+    save<T extends SnapshotValue, S extends SaveSubmission<T>, R extends SaveReceipt<T>>(ticket: SaveTicket<T, S, R>, port: SavePort<T, S>): Promise<SaveOutcome<T, R>> {
+        if (!this.workspace.resolveResource(ticket.target)) throw new Error("Save ticket belongs to another workspace or a released resource.");
+        const previous = this.saves.get(ticket.target.id) ?? Promise.resolve();
+        const result = previous.then(async (): Promise<SaveOutcome<T, R>> => {
             try {
                 const response = await port.save(ticket.start());
                 if (response.kind === "conflict") {
@@ -39,20 +37,9 @@ export class WorkspaceCommands {
             } finally { ticket.finish(); }
         });
         const tail = result.then(() => {});
-        this.saves.set(resource.id, tail);
-        void tail.then(() => { if (this.saves.get(resource.id) === tail) this.saves.delete(resource.id); });
+        this.saves.set(ticket.target.id, tail);
+        void tail.then(() => { if (this.saves.get(ticket.target.id) === tail) this.saves.delete(ticket.target.id); });
         return result;
-    }
-    async acknowledge(resourceId: ResourceId, acknowledgementId: string, port: AcknowledgementPort): Promise<Readonly<{ kind: "acknowledged"; retired: boolean } | { kind: "failed" }>> {
-        const ticket = this.workspace.beginAcknowledgement(resourceId, acknowledgementId);
-        try {
-            await port.acknowledge(ticket.submission);
-            const result = ticket.accept();
-            return result.accepted ? { kind: "acknowledged", retired: result.retired } : { kind: "failed" };
-        } catch (error) {
-            ticket.fail(); try { this.onError(error); } catch { /* Receipt remains independently retryable. */ }
-            return { kind: "failed" };
-        } finally { ticket.finish(); }
     }
     /** Host chooses save-before-run policy. Running itself captures immutable inputs and never saves. */
     async run<S extends SnapshotValue, C extends SnapshotValue, P extends SnapshotValue, R>(

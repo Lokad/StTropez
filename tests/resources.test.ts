@@ -98,6 +98,10 @@ test("a non-text panel traverses load failure, retry, ownership and release with
     value.path = "later host mutation";
     const ready = form.getSnapshot(); assert.ok(ready.state === "ready"); assert.equal(ready.value().path, "loaded.csv");
     assert.equal(workspace.getSnapshot().documents.length, 0);
+    const ordinary = workspace.acquire(form.id), protectedWork = workspace.acquire(form.id, { preventReload: true });
+    assert.throws(() => workspace.beginLoad(form)); protectedWork.release(); protectedWork.release();
+    const refresh = workspace.beginLoad(form); refresh.accept({ value: { path: "refreshed.csv" } });
+    assert.equal(workspace.ownership(form.id).leases, 1); ordinary.release();
     workspace.releaseResource(form.id); assert.equal(form.getSnapshot().state, "released");
 });
 
@@ -314,8 +318,8 @@ test("two queued saves capture exact contents; canonical replies and close/reope
     const commands = new WorkspaceCommands(workspace), responses = [deferred<SaveResponse<string>>(), deferred<SaveResponse<string>>()];
     const calls: SaveSubmission<string>[] = [];
     const port = { save: (submission: SaveSubmission<string>) => { calls.push(submission); return responses[calls.length - 1]!.promise; } };
-    edit("first"); const first = commands.save(source, port);
-    edit("second"); const second = commands.save(source, port);
+    edit("first"); const first = commands.save(workspace.captureSave(source), port);
+    edit("second"); const second = commands.save(workspace.captureSave(source), port);
     edit("human correction"); workspace.move(tab, "right"); workspace.close(tab);
     assert.throws(() => workspace.releaseResource(source.id, true));
     assert.throws(() => workspace.beginLoad(source));
@@ -338,15 +342,15 @@ test("canonical saves apply only without later edits or a revoked edit capabilit
     const { workspace, source, edit } = fixture();
     const errors: unknown[] = [], commands = new WorkspaceCommands(workspace, error => errors.push(error));
     edit("local");
-    const saved = await commands.save(source, { save: async () => ({ kind: "saved", serverVersion: "v1", canonical: "LOCAL" }) });
+    const saved = await commands.save(workspace.captureSave(source), { save: async () => ({ kind: "saved", serverVersion: "v1", canonical: "LOCAL" }) });
     assert.equal(saved.kind, "saved"); assert.equal(workspace.document(source.documentId).text(), "LOCAL"); assert.equal(source.metadata.getSnapshot().dirty, false);
     edit("retry");
-    const conflict = await commands.save(source, { save: async () => ({ kind: "conflict", serverVersion: "remote" }) });
+    const conflict = await commands.save(workspace.captureSave(source), { save: async () => ({ kind: "conflict", serverVersion: "remote" }) });
     assert.equal(conflict.kind, "conflict"); assert.equal(source.metadata.getSnapshot().saveStatus, "conflict"); assert.equal(source.metadata.getSnapshot().serverVersion, "v1");
-    const failed = await commands.save(source, { save: async () => { throw new Error("Synthetic transport failure"); } });
+    const failed = await commands.save(workspace.captureSave(source), { save: async () => { throw new Error("Synthetic transport failure"); } });
     assert.equal(failed.kind, "failed"); assert.equal(errors.length, 1); assert.equal(workspace.ownership(source.id).leases, 0);
     const response = deferred<SaveResponse<string>>();
-    const pending = commands.save(source, { save: () => response.promise }); await Promise.resolve();
+    const pending = commands.save(workspace.captureSave(source), { save: () => response.promise }); await Promise.resolve();
     workspace.setCapabilities(source.id, { edit: [], save: true, run: true });
     response.resolve({ kind: "saved", serverVersion: "v2", canonical: "RETRY" }); await pending;
     assert.equal(workspace.document(source.documentId).text(), "retry"); assert.equal(source.metadata.getSnapshot().dirty, true);
@@ -393,13 +397,13 @@ test("save permission is rechecked before queued submission, and host error reco
     let calls = 0, errors = 0;
     const commands = new WorkspaceCommands(workspace, () => { errors++; edit("host recovery"); throw new Error("Reporter failure"); });
     edit("unsaved");
-    const pending = commands.save(source, { save: async () => { calls++; return { kind: "saved", serverVersion: "unexpected" }; } });
+    const pending = commands.save(workspace.captureSave(source), { save: async () => { calls++; return { kind: "saved", serverVersion: "unexpected" }; } });
     workspace.setCapabilities(source.id, { edit: ["human", "host"], save: false, run: true });
     assert.equal((await pending).kind, "failed"); assert.equal(calls, 0); assert.equal(errors, 1);
     assert.equal(workspace.document(source.documentId).text(), "host recovery");
     assert.equal(source.metadata.getSnapshot().serverVersion, "v0"); assert.equal(workspace.ownership(source.id).leases, 0);
     workspace.setCapabilities(source.id, { edit: ["human", "host"], save: true, run: true });
-    const retry = await commands.save(source, { save: async () => ({ kind: "saved", serverVersion: "v1" }) });
+    const retry = await commands.save(workspace.captureSave(source), { save: async () => ({ kind: "saved", serverVersion: "v1" }) });
     assert.equal(retry.kind, "saved"); assert.equal(source.metadata.getSnapshot().dirty, false);
 });
 

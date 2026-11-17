@@ -56,7 +56,7 @@ export function mountPackagedPilot(host: HTMLElement, original: string) {
         const port = { save: (submission: SaveSubmission<string>) => new Promise<SaveResponse<string>>((resolve, reject) => {
             pending.set(submission.id, { submission, resolve, reject }); render();
         }) };
-        try { command = reviewed ? commands.save(source, port, { target: workspace.captureResource(source.id), expectedRevision: document.revision, expectedServerVersion: expected! }) : commands.save(source, port); }
+        try { command = reviewed ? commands.save(workspace.captureSave(source, { target: workspace.captureResource(source.id), expectedRevision: document.revision, expectedServerVersion: expected! }), port) : commands.save(workspace.captureSave(source), port); }
         catch (error) { pendingCommands--; errors.push(String(error)); render(); return; }
         void command.then(outcome => {
             if (outcome.kind === "saved") {

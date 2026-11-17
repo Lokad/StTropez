@@ -12,9 +12,6 @@ import { collapseFoldRegion, createFoldRegions, foldingSnapshot, mapFoldRegions,
 import type { DocumentFolding, FoldingSnapshot, FoldVersion } from "./folding.ts";
 import { equalValue, snapshotValue } from "./values.ts";
 import type { Immutable, SnapshotValue } from "./values.ts";
-import { emptyAgentState, sameProposal } from "./agent.ts";
-import type { AcknowledgementState, AcknowledgementSubmission, AcknowledgementTicket, AgentAssociation, AgentRequest,
-    AgentSnapshot, ProposalGuard, ProposalTarget, ProposedEdits } from "./agent.ts";
 
 export type ResourceId = string & { readonly resourceId: unique symbol };
 export type DocumentId = string & { readonly documentId: unique symbol };
@@ -78,20 +75,20 @@ export type LoadOperation<T> = Operation & Readonly<{
 export type CloseIntent = Readonly<{ tab: TabTarget; resource: ResourceTarget; revision: number; dirty: boolean }>;
 export type CloseOperation = Operation & Readonly<{ intent: CloseIntent; complete: (decision: "keep-open" | "close") => boolean }>;
 export type SaveSubmission<T> = Readonly<{ id: string; target: ResourceTarget; key: ResourceKey;
-    revision: number; value: Immutable<T>; expectedServerVersion: string | null; proposal: ProposalTarget | null }>;
+    revision: number; value: Immutable<T>; expectedServerVersion: string | null }>;
 /** Host-confirmed remote version for saving the explicitly reviewed local revision. No baseline adoption. */
 export type SaveReview = Readonly<{ target: ResourceTarget; expectedRevision: number; expectedServerVersion: string }>;
 export type SaveReceipt<T> = Readonly<{ submission: SaveSubmission<T>; savedValue: Immutable<T>; serverVersion: string;
-    canonicalApplied: boolean; acknowledgementId: string | null }>;
-export type SaveTicket<T> = Readonly<{ target: ResourceTarget; revision: number; value: Immutable<T>;
-    start: () => SaveSubmission<T>; accept: (response: Readonly<{ serverVersion: string; canonical?: T }>) => SaveReceipt<T>;
+    canonicalApplied: boolean }>;
+export type SaveTicket<T, S extends SaveSubmission<T> = SaveSubmission<T>, R extends SaveReceipt<T> = SaveReceipt<T>> = Readonly<{ target: ResourceTarget; revision: number; value: Immutable<T>;
+    start: () => S; accept: (response: Readonly<{ serverVersion: string; canonical?: T }>, options?: Readonly<{ applyCanonical?: boolean }>) => R;
     conflict: () => void; fail: () => void; finish: () => void }>;
 export type EditRequest = Readonly<{
     documentId: DocumentId; expectedRevision: number; edits: readonly TextEdit[]; origin: EditOrigin; lease?: EditLease;
     history?: Readonly<{ kind: EditKind; group?: string }>; view?: DocumentView; selection?: Selection; selectionSet?: SelectionSet;
 }>;
 export type ChangeResult = Readonly<{ applied: true; revision: number } | { applied: false;
-    reason: "missing-resource" | "missing-document" | "stale-revision" | "not-ready" | "read-only" | "edit-locked" | "stale-proposal" | "stale-association" | "history-empty" | "history-blocked" }>;
+    reason: "missing-resource" | "missing-document" | "stale-revision" | "not-ready" | "read-only" | "edit-locked" | "history-empty" | "history-blocked" }>;
 export type EditResult = ChangeResult;
 export type BatchEditResult = Readonly<{ applied: true; revisions: readonly Readonly<{ documentId: DocumentId; revision: number }>[] }
     | { applied: false; reason: Extract<ChangeResult, { applied: false }>["reason"] }>;
@@ -109,10 +106,7 @@ type ResourceRecord = {
     buffer: TextBuffer | null; savedBuffer: TextBuffer | null; change: DocumentChange | null; history: Store<HistorySnapshot>;
     views: Map<ViewId, ViewRecord>;
     leases: Set<symbol>; operations: Map<string | symbol, Operation>; nextOperation: number;
-    saveReservations: number; saving: symbol | null;
-    editLease: EditLease | null; agent: Store<AgentSnapshot>; proposalLease: ResourceLease | null;
-    agentRequest: Readonly<{ operation: Operation; lease: EditLease }> | null;
-    acknowledgements: Map<string, { submission: AcknowledgementSubmission; state: AcknowledgementState; lease: ResourceLease }>;
+    saveReservations: number; reloadReservations: number; saving: symbol | null; editLease: EditLease | null;
 };
 const defaultCapabilities: Capabilities = Object.freeze({ edit: Object.freeze(["human", "agent", "host"] as const), save: true, run: true });
 function capabilities(value: Capabilities): Capabilities {
@@ -142,8 +136,6 @@ function viewSnapshot(documentId: DocumentId, revision: number, selectionSet: Se
 /** Framework-free resource ownership and versioned transactions. All I/O is supplied by a host. */
 export class Workspace {
     private readonly lifetime = Symbol("workspace");
-    private readonly agentLane = Symbol("agent-request");
-    private readonly acknowledgementLane = Symbol("acknowledgement");
     private nextId = 0;
     private nextTransaction = 0;
     private readonly history: TextHistory;
@@ -186,7 +178,7 @@ export class Workspace {
     }
 
     /** Controller notifications share this workspace's write guard, with their own listeners/error policy. */
-    createNotificationScope(onListenerError: (error: unknown) => void = () => {}): NotificationScope {
+    createNotificationScope(onListenerError?: (error: unknown) => void): NotificationScope {
         return new NotificationScope(onListenerError, this.scope);
     }
 
@@ -236,8 +228,7 @@ export class Workspace {
             document: new Store<DocumentSnapshot | undefined>(undefined, this.scope), saved: buffer ? undefined : value,
             buffer, savedBuffer: buffer, change: null, history: new Store<HistorySnapshot>(this.history.snapshot(documentId ?? ""), this.scope), views: new Map(),
             leases: new Set(), operations: new Map(), nextOperation: 0,
-            saveReservations: 0, saving: null, editLease: null, agent: new Store(emptyAgentState, this.scope), proposalLease: null,
-            agentRequest: null, acknowledgements: new Map() };
+            saveReservations: 0, reloadReservations: 0, saving: null, editLease: null };
         this.records.set(id, record); this.resourceKeys.add(identity); this.handles.set(handle, record);
         if (documentId !== null) this.documents.set(documentId, record);
         const changed = new Set<Store<unknown>>();
@@ -375,6 +366,8 @@ export class Workspace {
         this.syncHistory(changed); if (changed.size) { if (actual.length) this.publish(changed); else this.scope.deliver([...changed]); }
         return Object.freeze({ applied: true, revisions: Object.freeze(prepared.map(change => Object.freeze({ documentId: change.request.documentId, revision: change.record.state.get().revision }))) });
     }
+    /** End grouping without creating an undo entry or changing the document revision. */
+    sealHistory(id: DocumentId): void { this.scope.assertWritable(); this.document(id); this.history.seal(id); }
     undo(request: HistoryRequest): BatchEditResult { return this.moveHistory(request, "undo"); }
     redo(request: HistoryRequest): BatchEditResult { return this.moveHistory(request, "redo"); }
     private moveHistory(request: HistoryRequest, direction: "undo" | "redo"): BatchEditResult {
@@ -483,177 +476,24 @@ export class Workspace {
         return lease;
     }
 
-    agentState(id: ResourceId): Observable<AgentSnapshot> {
-        const record = this.requireResource(id);
-        if (record.documentId === null) throw new Error("Agent review requires a text resource.");
-        return record.agent.observable;
-    }
-    associateAgent(id: ResourceId, associationId: string): AgentAssociation {
-        this.scope.assertWritable();
-        const record = this.requireResource(id), state = record.agent.get();
-        if (record.documentId === null || record.state.get().state !== "ready" || typeof associationId !== "string" || !associationId) throw new Error("Expected a ready text resource and association ID.");
-        if (state.association !== null) {
-            if (state.association.id === associationId) return state.association;
-            throw new Error("Explicitly detach the existing association before taking over.");
-        }
-        const association = Object.freeze({ id: associationId, generation: ++record.nextOperation });
-        const changed = new Set<Store<unknown>>();
-        record.agent.set(Object.freeze({ ...state, association, lastResult: "none" }), changed);
-        this.publish(changed); return association;
-    }
-    interruptAgent(id: ResourceId): void {
-        this.scope.batch(() => {
-            const record = this.requireResource(id), changed = new Set<Store<unknown>>();
-            if (this.interruptRequest(record, changed)) this.publish(changed);
-        });
-    }
-    detachAgent(id: ResourceId): void {
-        this.scope.batch(() => {
-            const record = this.requireResource(id), changed = new Set<Store<unknown>>();
-            this.interruptRequest(record, changed);
-            record.proposalLease?.release(); record.proposalLease = null;
-            record.agent.set(Object.freeze({ ...record.agent.get(), association: null, proposal: null,
-                proposalGeneration: record.agent.get().proposalGeneration + 1 }), changed);
-            this.publish(changed);
-        });
-    }
-    private interruptRequest(record: ResourceRecord, changed: Set<Store<unknown>>): boolean {
-        const request = record.agentRequest;
-        if (request === null) return false;
-        request.operation.cancel(); request.lease.release(); record.agentRequest = null;
-        record.agent.set(Object.freeze({ ...record.agent.get(), request: null, lastResult: "interrupted" }), changed);
-        return true;
-    }
-    beginAgentRequest<T extends SnapshotValue>(source: TextResourceHandle, context: T): AgentRequest<T> {
-        return this.scope.batch(() => this.startAgentRequest(source, context));
-    }
-    private startAgentRequest<T extends SnapshotValue>(source: TextResourceHandle, context: T): AgentRequest<T> {
-        const record = this.handles.get(source), state = record?.state.get(), review = record?.agent.get();
-        if (!record || record.documentId === null || state?.state !== "ready" || !review?.association
-            || review.request || review.proposal || record.acknowledgements.size || record.saveReservations) throw new Error("Agent request requires an associated resource with settled saves, proposals and acknowledgements.");
-        const copiedContext = snapshotValue(context), changed = new Set<Store<unknown>>();
-        // Validate before acquiring either lease; a rejected start publishes nothing.
-        if (record.editLease || !state.metadata.capabilities.edit.includes("agent")) throw new Error("Agent editing is unavailable.");
-        const operation = this.operation(source.id, this.agentLane);
-        const lease = this.acquireEditLease(source.id, review.association.id, "agent");
-        const id = `request-${++this.nextId}`;
-        const input = Object.freeze({ id, association: review.association, context: copiedContext,
-            source: Object.freeze({ target: operation.target, key: state.metadata.key, revision: state.revision,
-                value: state.value() as string, serverVersion: state.metadata.serverVersion }) });
-        record.agentRequest = { operation, lease };
-        record.agent.set(Object.freeze({ ...review, request: Object.freeze({ id, documentRevision: state.revision }), lastResult: "none" }), changed);
-        this.publish(changed);
-        const settle = (result: AgentSnapshot["lastResult"]) => this.scope.batch(() => {
-            if (record.agentRequest?.operation === operation) {
-                const changes = new Set<Store<unknown>>();
-                record.agentRequest = null; lease.release();
-                record.agent.set(Object.freeze({ ...record.agent.get(), request: null, lastResult: result }), changes);
-                this.publish(changes);
-            }
-            operation.finish();
-        });
-        return Object.freeze({ ...operation, input, accept: (proposal: ProposedEdits) => this.scope.batch(() => {
-            try {
-                this.scope.assertWritable();
-                if (!operation.isCurrent() || record.agentRequest?.operation !== operation) {
-                    settle("stale"); return { applied: false, reason: "stale-association" } as const;
-                }
-                const changes = new Set<Store<unknown>>();
-                const result = this.applyProposal(record, input.association, state.revision, review.proposalGeneration, proposal, changes, lease);
-                record.agentRequest = null; lease.release();
-                record.agent.set(Object.freeze({ ...record.agent.get(), request: null, lastResult: result.applied ? "proposed" : "stale" }), changes);
-                this.publish(changes); return result;
-            } catch (error) { settle("failed"); throw error; }
-            finally { operation.finish(); }
-        }), fail: () => settle("failed"), finish: () => settle("interrupted"),
-        cancel: () => {
-            this.scope.assertWritable();
-            if (record.agentRequest?.operation === operation) this.interruptAgent(source.id);
-            else operation.cancel();
-        } });
-    }
-    /** Explicit versioned incoming review update; a request callback must use its captured request ticket. */
-    captureProposal(id: ResourceId): ProposalGuard {
-        const record = this.requireResource(id), state = record.state.get(), review = record.agent.get();
-        if (record.documentId === null || state.state !== "ready" || !review.association) throw new Error("A ready associated text resource is required.");
-        return Object.freeze({ target: this.captureResource(id), association: review.association, documentRevision: state.revision, generation: review.proposalGeneration });
-    }
-    offerAgentProposal(guard: ProposalGuard, proposal: ProposedEdits): ChangeResult {
-        this.scope.assertWritable();
-        if (!this.resolveResource(guard.target)) return { applied: false, reason: "missing-resource" };
-        const record = this.requireResource(guard.target.id), changed = new Set<Store<unknown>>();
-        const result = this.applyProposal(record, guard.association, guard.documentRevision, guard.generation, proposal, changed);
-        if (result.applied) this.publish(changed); return result;
-    }
-    private applyProposal(record: ResourceRecord, association: AgentAssociation, revision: number, generation: number, proposal: ProposedEdits,
-        changed: Set<Store<unknown>>, lease?: EditLease): ChangeResult {
-        const review = record.agent.get(), current = record.state.get();
-        if (record.documentId === null || !review.association || review.association.id !== association.id
-            || review.association.generation !== association.generation) return { applied: false, reason: "stale-association" };
-        if (review.proposalGeneration !== generation) return { applied: false, reason: "stale-proposal" };
-        if (typeof proposal.id !== "string" || !proposal.id || !Number.isSafeInteger(proposal.revision) || proposal.revision < 1) throw new RangeError("Proposal identity and positive revision are required.");
-        if (review.proposal?.target.id === proposal.id && proposal.revision <= review.proposal.target.revision) return { applied: false, reason: "stale-proposal" };
-        const refusal = this.validateEdit(record, revision, "agent", lease);
-        if (refusal) return refusal;
-        if (current.state !== "ready") return { applied: false, reason: "not-ready" };
-        const before = record.buffer!, result = before.apply(proposal.edits);
-        if (result.buffer !== before) {
-            const text = this.prepareText(record, result.buffer, result.mapping);
-            this.history.record([Object.freeze({ documentId: record.documentId, before, after: result.buffer, mapping: result.mapping,
-                units: result.changedUnits, selection: null })], "agent", "proposal");
-            this.commitText(text, "agent", "proposal", ++this.nextTransaction, changed); this.syncHistory(changed);
-        } else this.history.seal(record.documentId);
-        const nextRevision = record.state.get().revision;
-        record.proposalLease ??= this.acquire(record.handle.id);
-        const target = Object.freeze({ association: review.association, id: proposal.id, revision: proposal.revision, generation: generation + 1 });
-        record.agent.set(Object.freeze({ ...review, proposal: Object.freeze({ target, baseDocumentRevision: revision, documentRevision: nextRevision }),
-            proposalGeneration: generation + 1, lastResult: "proposed" }), changed);
-        return { applied: true, revision: nextRevision };
-    }
-    beginAcknowledgement(id: ResourceId, acknowledgementId: string): AcknowledgementTicket {
-        this.scope.assertWritable(); const record = this.requireResource(id), entry = record.acknowledgements.get(acknowledgementId);
-        if (!entry || [...record.acknowledgements.keys()][0] !== acknowledgementId || entry.state.status === "sending") throw new Error("Acknowledge the earliest pending receipt once at a time.");
-        const operation = this.operation(id, this.acknowledgementLane), changed = new Set<Store<unknown>>();
-        entry.state = Object.freeze({ ...entry.state, status: "sending" }); this.syncAcknowledgements(record, changed); this.publish(changed);
-        let settled = false;
-        const fail = () => {
-            this.scope.assertWritable();
-            if (!settled && operation.isCurrent()) {
-                settled = true; const changes = new Set<Store<unknown>>();
-                entry.state = Object.freeze({ ...entry.state, status: "failed" }); this.syncAcknowledgements(record, changes); this.publish(changes);
-            }
-        };
-        return Object.freeze({ submission: entry.submission, accept: () => {
-            this.scope.assertWritable();
-            if (settled || !operation.isCurrent() || record.acknowledgements.get(acknowledgementId) !== entry) return Object.freeze({ accepted: false, retired: false });
-            settled = true; const changes = new Set<Store<unknown>>(), review = record.agent.get();
-            const retired = review.proposal !== null && sameProposal(review.proposal.target, entry.submission.proposal);
-            record.acknowledgements.delete(acknowledgementId); entry.lease.release();
-            if (retired) {
-                record.proposalLease?.release(); record.proposalLease = null;
-                record.agent.set(Object.freeze({ ...review, proposal: null, proposalGeneration: review.proposalGeneration + 1 }), changes);
-            }
-            this.syncAcknowledgements(record, changes); this.publish(changes);
-            return Object.freeze({ accepted: true, retired });
-        }, fail, finish: () => { fail(); operation.finish(); } });
-    }
-    private syncAcknowledgements(record: ResourceRecord, changed: Set<Store<unknown>>): void {
-        record.agent.set(Object.freeze({ ...record.agent.get(), acknowledgements: Object.freeze([...record.acknowledgements.values()].map(entry => entry.state)) }), changed);
-    }
-
-    acquire(id: ResourceId): ResourceLease {
+    /** Retain ownership; preventReload also protects captured work from replacement by a load. */
+    acquire(id: ResourceId, options: Readonly<{ preventReload?: boolean }> = {}): ResourceLease {
         this.scope.assertWritable();
         const record = this.requireResource(id), lease = Symbol("resource-lease");
-        record.leases.add(lease);
+        const preventReload = options.preventReload ?? false;
+        if (typeof preventReload !== "boolean") throw new TypeError("preventReload must be a boolean.");
+        record.leases.add(lease); if (preventReload) record.reloadReservations++;
         return Object.freeze({ resourceId: id, active: () => record.leases.has(lease), release: () => {
-            this.scope.assertWritable(); record.leases.delete(lease); this.scheduleRelease(id);
+            this.scope.assertWritable();
+            if (record.leases.delete(lease) && preventReload) record.reloadReservations--;
+            this.scheduleRelease(id);
         } });
     }
-    ownership(id: ResourceId): Readonly<{ leases: number; tabs: number }> {
+    ownership(id: ResourceId): Readonly<{ leases: number; tabs: number; saves: number }> {
         const record = this.requireResource(id);
-        return Object.freeze({ leases: record.leases.size, tabs: this.tabs.get().filter(tab => this.surfaceResource(tab.surface) === id).length });
+        return Object.freeze({ leases: record.leases.size, saves: record.saveReservations, tabs: this.tabs.get().filter(tab => this.surfaceResource(tab.surface) === id).length });
     }
-    beginOperation(id: ResourceId, lane: string, presentation?: TabTarget): Operation {
+    beginOperation(id: ResourceId, lane: string | symbol, presentation?: TabTarget): Operation {
         return this.operation(id, lane, presentation);
     }
     private operation(id: ResourceId, lane: string | symbol, presentation?: TabTarget): Operation {
@@ -684,7 +524,7 @@ export class Workspace {
         this.scope.assertWritable();
         const record = this.handles.get(handle);
         if (!record || record.state.get().state === "released") throw new Error("Unknown resource.");
-        if (record.metadata.get().dirty || record.saveReservations || record.editLease || record.agent.get().proposal || record.acknowledgements.size) throw new Error("Cannot refresh local, locked or pending work.");
+        if (record.metadata.get().dirty || record.saveReservations || record.editLease || record.reloadReservations) throw new Error("Cannot refresh local, locked or pending work.");
         const operation = this.beginOperation(handle.id, "load");
         const state = record.state.get();
         this.commitRecord(record, { state: "loading", revision: state.revision, metadata: { ...state.metadata, state: "loading", failure: null } });
@@ -736,7 +576,6 @@ export class Workspace {
         if (record.documentId !== null) this.history.seal(record.documentId);
         const value = initial.value() as Immutable<T>, revision = initial.revision, id = `save-${++this.nextId}`;
         const capturedBuffer = record.buffer;
-        const proposal = record.agent.get().proposal?.target ?? null;
         let finished = false, settled = false, submission: SaveSubmission<T> | undefined;
         record.saveReservations++;
         const requireStarted = () => {
@@ -756,10 +595,11 @@ export class Workspace {
             if (reviewedVersion !== undefined && current.metadata.serverVersion !== initial.metadata.serverVersion) throw new Error("Saved baseline changed after review capture.");
             record.saving = marker;
             submission = Object.freeze({ id, target, key: initial.metadata.key, revision, value,
-                expectedServerVersion: reviewedVersion ?? current.metadata.serverVersion, proposal });
+                expectedServerVersion: reviewedVersion ?? current.metadata.serverVersion });
             status("saving"); return submission;
-        }, accept: (response: Readonly<{ serverVersion: string; canonical?: T }>) => {
+        }, accept: (response: Readonly<{ serverVersion: string; canonical?: T }>, options: Readonly<{ applyCanonical?: boolean }> = {}) => {
             const submitted = requireStarted();
+            if (options.applyCanonical !== undefined && typeof options.applyCanonical !== "boolean") throw new TypeError("applyCanonical must be a boolean.");
             if (typeof response.serverVersion !== "string") throw new TypeError("Save receipt requires a server version.");
             const savedValue = response.canonical === undefined ? value : snapshotValue(response.canonical);
             if (record.documentId !== null && typeof savedValue !== "string") throw new TypeError("Canonical text must be a string.");
@@ -767,16 +607,14 @@ export class Workspace {
             if (current.state !== "ready") throw new Error("Saved resource is no longer ready.");
             const savedBuffer = capturedBuffer ? response.canonical === undefined || savedValue === value ? capturedBuffer : TextBuffer.from(savedValue as string) : null;
             const canonicalApplied = current.revision === revision && current.metadata.capabilities.edit.includes("host")
-                && record.editLease === null && (proposal === null ? record.agent.get().proposal === null
-                    : record.agent.get().proposal !== null && sameProposal(proposal, record.agent.get().proposal!.target))
+                && record.editLease === null && options.applyCanonical !== false
                 && (savedBuffer ? !record.buffer!.equals(savedBuffer) : !equalValue(current.value(), savedValue));
             const canonical = savedBuffer && canonicalApplied ? record.buffer!.apply([textDifference(current.value() as string, savedValue as string)!]) : undefined;
             const text = canonical ? this.prepareText(record, canonical.buffer, canonical.mapping) : undefined;
             if (canonical) this.history.record([Object.freeze({ documentId: record.documentId!, before: record.buffer!, after: canonical.buffer,
                 mapping: canonical.mapping, units: canonical.changedUnits, selection: null })], "host", "canonical");
             record.saved = savedBuffer ? undefined : savedValue; record.savedBuffer = savedBuffer; settled = true;
-            const acknowledgementId = proposal === null ? null : `ack-${id}`;
-            const receipt = Object.freeze({ submission: submitted, savedValue, serverVersion: response.serverVersion, canonicalApplied, acknowledgementId });
+            const receipt = Object.freeze({ submission: submitted, savedValue, serverVersion: response.serverVersion, canonicalApplied });
             const changed = new Set<Store<unknown>>();
             if (savedBuffer) {
                 if (text) this.commitText(text, "host", "canonical", ++this.nextTransaction, changed);
@@ -789,12 +627,6 @@ export class Workspace {
                     saveStatus: record.saveReservations > 1 ? "saving" : "idle" }, current.revision + (canonicalApplied ? 1 : 0), nextValue), changed);
             }
             if (record.documentId !== null) this.history.seal(record.documentId); this.syncHistory(changed);
-            if (acknowledgementId !== null && proposal !== null) {
-                const ack = Object.freeze({ id: acknowledgementId, target, proposal, receipt: receipt as SaveReceipt<string> });
-                record.acknowledgements.set(acknowledgementId, { submission: ack, lease: this.acquire(handle.id),
-                    state: Object.freeze({ id: acknowledgementId, proposal, submittedRevision: revision, serverVersion: response.serverVersion, status: "pending" }) });
-                this.syncAcknowledgements(record, changed);
-            }
             this.publish(changed); return receipt;
         }, conflict: () => { requireStarted(); settled = true; status("conflict"); },
         fail: () => { this.scope.assertWritable(); if (!finished && !settled) { settled = true; status("failed"); } },
@@ -879,7 +711,6 @@ export class Workspace {
         if (record.documentId !== null) this.history.forget(record.documentId);
         this.records.delete(id); this.resourceKeys.delete(resourceKeyIdentity(state.metadata.key)); this.deferredReleases.delete(id);
         const changed = new Set<Store<unknown>>();
-        record.agent.set(emptyAgentState, changed);
         this.setRecord(record, { state: "released", revision: state.revision,
             metadata: { ...state.metadata, state: "released", dirty: false, failure: null } }, changed);
         if (record.documentId !== null) this.documents.delete(record.documentId);

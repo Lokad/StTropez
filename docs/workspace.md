@@ -202,6 +202,8 @@ proposal, live update, replacement and canonical response. An explicit group joi
 consecutive compatible edits with the same document, origin, kind, group and initiating view.
 Core grouping has no timer. Selection movement, undo/redo and that document's save
 capture/settlement seal its group; unrelated background documents do not split it.
+`sealHistory(documentId)` explicitly ends grouping without creating an undo entry or changing
+the document revision. Review uses it for accepted proposals that leave text unchanged.
 Multi-document transactions form standalone shared units.
 
 Editing after undo invalidates dependent redo units. Reload or release clears the affected
@@ -233,7 +235,8 @@ History is in memory; persistence and recovery belong to the host.
 
 Omitting an initial value creates a loading resource. `beginLoad(handle)` returns a guarded
 load; `accept({ value, serverVersion })` or `fail(message)` settles it. A newer load supersedes
-the earlier generation. Refresh is refused for dirty, locked, proposed or pending saved work.
+the earlier generation. Refresh is refused for dirty or locked content, reserved saves and
+leases acquired with `preventReload: true`.
 An accepted text load advances the revision, clears linked history, resets live selections
 to the start and clears folds. The host rediscovers folds for the loaded text.
 
@@ -243,6 +246,11 @@ workspace data. `releaseResource` refuses retained resources and requires an exp
 decision for dirty data; released handles become content-free tombstones.
 `releaseResourceWhenUnowned` requests release after the final owner leaves. It rechecks
 ownership after notification delivery; unsaved changes cancel a request that disallows discard.
+
+An ordinary lease permits reload. Use `acquire(id, { preventReload: true })` when replacing
+content would invalidate retained work, and release that lease when the work settles.
+`ownership(id)` reports lease, tab and reserved-save counts. A failed visible save status can
+coexist with another reserved save; use the ownership count when deciding whether saves settled.
 
 `acquireEditLease(id, owner, origin)` additionally grants exclusive edit ownership. Edits must
 provide the matching lease object and satisfy current capabilities; knowing the origin or
@@ -296,8 +304,9 @@ host decision; `captureClose` supplies a bare intent without retaining an operat
 
 ### Save, conflicts and Run
 
-Keep one `WorkspaceCommands` coordinator for related commands. A save captures exact content
-and revision immediately, even when queued behind another save. The serialized submission
+Keep one `WorkspaceCommands` coordinator for related commands. `captureSave(resource, review?)`
+captures exact content and revision immediately. Pass that ticket to `commands.save(ticket, port)`,
+even when it will queue behind another save. The serialized submission
 uses the latest known saved server version as its conditional-write precondition. Workspace
 also prevents simultaneous active write tickets from different coordinators.
 
@@ -311,8 +320,8 @@ export function bindSave(
 ) {
     const commands = new WorkspaceCommands(workspace, onError);
     return {
-        save: () => commands.save(source, port),
-        saveReviewed: (review: SaveReview) => commands.save(source, port, review)
+        save: () => commands.save(workspace.captureSave(source), port),
+        saveReviewed: (review: SaveReview) => commands.save(workspace.captureSave(source, review), port)
     };
 }
 ```
@@ -324,9 +333,10 @@ return `failed`. The callback cannot prevent lease cleanup. A failed or conflict
 preserves local content and the previous saved baseline.
 
 A successful `SaveReceipt` retains the immutable submission, canonical saved value, resulting
-server version and optional acknowledgement ID. Canonical content replaces the working value
-only when the submitted revision, host edit permission, edit lock and captured proposal
-permit it. Otherwise the saved baseline advances while later local content stays intact.
+server version and whether canonical content was applied. Canonical content replaces the working
+value only when the submitted revision, host edit permission and edit lock permit it.
+`ticket.accept(response, { applyCanonical: false })` also suppresses replacement while adopting
+the returned saved baseline. Otherwise the baseline advances while later local content stays intact.
 Dirty means content differs from that baseline; undoing back to it clears dirty even though
 the revision increases. Canonical text changes form separate undo units.
 
@@ -336,7 +346,10 @@ or another reserved save; submission also rejects an intervening saved-version c
 reviewed version is the write precondition, not an adopted baseline. Another remote change
 can cause another conflict. The host owns fetching, comparison, merge choices and retry policy.
 Low-level `captureSave` exposes `start`, `accept`, `conflict`, `fail` and `finish` for hosts
-that implement their own coordinator; always finish its ticket after settlement.
+that implement their own coordinator; always finish its ticket after settlement. The command
+coordinator finishes tickets it accepts. A ticket rejected synchronously by a different workspace's
+coordinator stays its caller's responsibility. Typed ticket extensions preserve their submission
+and receipt types through the same queue.
 
 `WorkspaceCommands.run(source, configuration, settings, port)` captures immutable resource
 targets, keys, revisions, values and server versions plus copied settings. It checks Run
@@ -345,15 +358,19 @@ the returned promise. These callbacks perform no built-in networking, storage or
 
 ### Agent review
 
-An association, request, proposal and document revision are independent. `agentState(id)`
-exposes association, pending request, proposal and acknowledgement queue. `associateAgent`
-attaches an opaque host ID; a different association requires `detachAgent` first.
+An association, request, proposal and document revision are independent.
+`createAgentReview(workspace, source)` returns the same `AgentReview` handle for the same live
+text resource. Its observable snapshot exposes association, request, proposal and acknowledgement
+queue. `associate(id)` attaches an opaque host ID; a different association requires `detach()` first.
+The handle composes public workspace leases, operations, edits and save tickets. Workspace
+resource records do not own review state or apply review-specific save/load policy.
 
-`beginAgentRequest` requires a ready associated text resource, agent edit permission, settled
+`review.beginRequest(context)` requires a ready associated text resource, agent edit permission, settled
 saves and no pending request, proposal or acknowledgement. It captures immutable source/context
 and an exclusive agent edit lease. Deliver through that request's `accept` method:
 
 ```ts
+import { createAgentReview } from "sttropez";
 import type { AgentInput, ProposedEdits, SnapshotValue,
     TextResourceHandle, Workspace } from "sttropez";
 
@@ -361,7 +378,7 @@ export async function requestProposal<T extends SnapshotValue>(
     workspace: Workspace, source: TextResourceHandle, context: T,
     propose: (input: AgentInput<T>, cancelled: () => boolean) => Promise<ProposedEdits>
 ) {
-    const request = workspace.beginAgentRequest(source, context);
+    const request = createAgentReview(workspace, source).beginRequest(context);
     try {
         return request.accept(await propose(request.input, request.isCancelled));
     } catch (error) {
@@ -373,29 +390,42 @@ export async function requestProposal<T extends SnapshotValue>(
 }
 ```
 
-Delivery, failure or interruption releases the edit lock. `interruptAgent` permits human
+Delivery, failure or interruption releases the edit lock. `review.interrupt()` permits human
 corrections immediately while cancelled work retains its operation lease until settlement.
 Late replies cannot target a newer request or association. For unsolicited versioned updates,
-capture `captureProposal` before awaiting and pass that guard to `offerAgentProposal`.
+capture `review.captureProposal()` before awaiting and pass that guard to `review.offer`.
 Request callbacks must keep their original request ticket. Proposal retirement advances its
 generation even when text is unchanged, preventing an old offer from reviving it.
 
 A proposal records its association generation, own generation, opaque ID/revision, base
 document revision and resulting document revision. Older/equal versions of that proposal
 are rejected. Human corrections use ordinary edits without rewriting proposal identity.
-A successful save of the proposal/corrections creates an acknowledgement retaining the exact
-receipt; later typing or proposals cannot alter it.
+For review-managed source, capture all saves with `review.captureSave(saveReview?)` and pass
+the returned ticket to the shared command coordinator. Ordinary `workspace.captureSave` does
+not attach proposal policy. `AgentSaveSubmission` includes the captured proposal;
+`AgentSaveReceipt` adds its acknowledgement ID. A successful save of proposal/corrections creates
+an acknowledgement retaining that exact receipt; later typing or proposals cannot alter it.
+An older ticket cannot apply canonical content over a newer proposal, even when the newer
+proposal leaves text unchanged. Its returned saved baseline advances.
 
-`WorkspaceCommands.acknowledge(resourceId, acknowledgementId, port)` sends the earliest pending
+`review.acknowledge(acknowledgementId, port, onError?)` sends the earliest pending
 entry. Failure preserves the save and immutable acknowledgement for retry; retry does not save
 again. The host service must make retries idempotent. Acknowledgement retires only a matching
 association/proposal generation, ID and revision, and never edits text. An older receipt can
-be acknowledged without retiring a newer proposal.
+be acknowledged without retiring a newer proposal. Port failures return `failed` and invoke
+the optional error callback; callback exceptions cannot prevent ticket cleanup. Hosts with
+their own coordinator can use `beginAcknowledgement(id)` and always finish its ticket.
 
 Proposals and acknowledgements retain resources after views close. Detach ends the association
 and proposal ownership without discarding text; saved acknowledgements keep their original
 recipient and remain retryable. The next request captures current corrected text and the saved
 server version once proposals, saves and acknowledgements have settled.
+
+The review handle has no background subscription or lifetime lease of its own. Each caller
+owns its subscriptions; request tickets, proposals and saved receipts own their respective
+leases. Detach is not a discard of pending acknowledgements. Release the resource only after
+those owners settle; a retained review handle then reads an empty snapshot. Review subscribers
+also receive source-metadata notifications and may read the same review snapshot on those calls.
 
 ### Observables
 
@@ -410,7 +440,7 @@ to `WorkspaceOptions.onListenerError` when supplied and cannot stop other listen
 back a committed transaction. Error-reporter exceptions are contained.
 
 `createNotificationScope(onListenerError?)` returns a controller notification scope sharing the
-workspace's write guard. Its `batch(action)` defers notifications from the workspace and related
+workspace's write guard and, by default, its listener-error policy. Its `batch(action)` defers notifications from the workspace and related
 scopes until the outermost synchronous action returns or throws. State commits immediately;
 the batch does not roll back writes, combine history transactions or await asynchronous work.
 Use `editDocuments` when several document edits must validate and commit as one transaction.

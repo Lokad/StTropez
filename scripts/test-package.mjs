@@ -315,7 +315,7 @@ try {
     assert.equal(remountedComparison.viewId, retainedComparison.viewId); assert.deepEqual(remountedComparison.selection, retainedComparison.selection);
     const saveReview = await page.evaluate(() => window.consumer.saveReview());
     assert.deepEqual(saveReview, { baselineBefore: "v0", precondition: "v1", saved: "saved", textAfter: "merged later", dirtyAfter: true,
-        cleanAfterUndo: true, serverVersion: "v2", leases: 0 });
+        cleanAfterUndo: true, serverVersion: "v2", leases: 0, acknowledgement: "acknowledged", proposalRetired: true });
     const bidi = await page.evaluate(() => window.consumer.bidi());
     assert.deepEqual(bidi.levels, [0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0]);
     assert.deepEqual(bidi.order, [0, 1, 2, 3, 6, 5, 4, 7, 8, 9, 10]);

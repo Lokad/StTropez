@@ -7,8 +7,9 @@ export class NotificationScope {
     private readonly delivery: { depth: number; batches: number; pending: Deliveries };
     private subscriptions = 0;
     private readonly onListenerError: (error: unknown) => void;
-    constructor(onListenerError: (error: unknown) => void, parent?: NotificationScope) {
-        this.onListenerError = onListenerError; this.delivery = parent?.delivery ?? { depth: 0, batches: 0, pending: new Map() };
+    constructor(onListenerError?: (error: unknown) => void, parent?: NotificationScope) {
+        this.onListenerError = onListenerError ?? parent?.onListenerError ?? (() => {});
+        this.delivery = parent?.delivery ?? { depth: 0, batches: 0, pending: new Map() };
     }
     assertWritable(): void {
         if (this.delivery.depth) throw new Error("Reentrant mutation during notification; queue the command in the host.");

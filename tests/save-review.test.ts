@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Workspace, WorkspaceCommands } from "../src/index.ts";
+import { createAgentReview, Workspace, WorkspaceCommands } from "../src/index.ts";
 import type { SaveResponse, SaveReview, SaveSubmission } from "../src/index.ts";
 
 function fixture() {
@@ -12,11 +12,11 @@ function fixture() {
 
 test("reviewed retry preserves the old baseline until a receipt, then keeps later typing and canonical dirty semantics", async () => {
     const { workspace, source, edit, commands } = fixture(); edit("merged  ");
-    const failed = await commands.save(source, { save: async submission => { assert.equal(submission.expectedServerVersion, "v0"); return { kind: "conflict", serverVersion: "v1" }; } });
+    const failed = await commands.save(workspace.captureSave(source), { save: async submission => { assert.equal(submission.expectedServerVersion, "v0"); return { kind: "conflict", serverVersion: "v1" }; } });
     assert.equal(failed.kind, "conflict"); assert.equal(source.metadata.getSnapshot().serverVersion, "v0");
     const revision = source.getSnapshot().revision;
     let resolve!: (value: SaveResponse<string>) => void, submission: SaveSubmission<string> | undefined;
-    const saving = commands.save(source, { save: value => { submission = value; return new Promise(done => { resolve = done; }); } }, { target: workspace.captureResource(source.id), expectedRevision: revision, expectedServerVersion: "v1" });
+    const saving = commands.save(workspace.captureSave(source, { target: workspace.captureResource(source.id), expectedRevision: revision, expectedServerVersion: "v1" }), { save: value => { submission = value; return new Promise(done => { resolve = done; }); } });
     await Promise.resolve(); assert.equal(submission!.expectedServerVersion, "v1"); assert.equal(submission!.value, "merged  ");
     assert.equal(source.metadata.getSnapshot().serverVersion, "v0");
     edit("merged   later"); resolve({ kind: "saved", serverVersion: "v2", canonical: "merged" });
@@ -32,7 +32,7 @@ test("reviewed retry preserves the old baseline until a receipt, then keeps late
 test("another remote change rejects a reviewed retry without adopting either remote version", async () => {
     const { workspace, source, edit, commands } = fixture(); edit("local");
     const reviewed = { target: workspace.captureResource(source.id), expectedRevision: source.getSnapshot().revision, expectedServerVersion: "v1" };
-    const result = await commands.save(source, { save: async submission => { assert.equal(submission.expectedServerVersion, "v1"); return { kind: "conflict", serverVersion: "v2" }; } }, reviewed);
+    const result = await commands.save(workspace.captureSave(source, reviewed), { save: async submission => { assert.equal(submission.expectedServerVersion, "v1"); return { kind: "conflict", serverVersion: "v2" }; } });
     assert.deepEqual(result, { kind: "conflict", serverVersion: "v2" }); assert.equal(source.metadata.getSnapshot().serverVersion, "v0");
     assert.equal(workspace.document(source.documentId).text(), "local");
     edit("base"); assert.equal(source.metadata.getSnapshot().dirty, false); assert.equal(workspace.ownership(source.id).leases, 0);
@@ -64,15 +64,14 @@ test("a review version is copied at capture and an intervening local receipt exp
 });
 
 test("reviewed writes retain proposal identity and independently retryable acknowledgement receipts", async () => {
-    const { workspace, source, edit, commands } = fixture(); workspace.associateAgent(source.id, "agent");
-    const request = workspace.beginAgentRequest(source, null);
+    const { workspace, source, edit, commands } = fixture(); createAgentReview(workspace, source).associate("agent");
+    const request = createAgentReview(workspace, source).beginRequest(null);
     assert.equal(request.accept({ id: request.input.id, revision: 1, edits: [{ from: 0, to: 4, insert: "proposal" }] }).applied, true); request.finish();
-    edit("corrected"); const proposal = workspace.agentState(source.id).getSnapshot().proposal!.target;
-    const result = await commands.save(source, { save: async submission => { assert.deepEqual(submission.proposal, proposal); return { kind: "saved", serverVersion: "v2" }; } },
-        { target: workspace.captureResource(source.id), expectedRevision: source.getSnapshot().revision, expectedServerVersion: "v1" });
-    assert.equal(result.kind, "saved"); assert.equal(workspace.agentState(source.id).getSnapshot().acknowledgements.length, 1);
-    const acknowledgement = workspace.agentState(source.id).getSnapshot().acknowledgements[0]!;
-    await commands.acknowledge(source.id, acknowledgement.id, { acknowledge: async () => {} });
+    edit("corrected"); const proposal = createAgentReview(workspace, source).getSnapshot().proposal!.target;
+    const result = await commands.save(createAgentReview(workspace, source).captureSave({ target: workspace.captureResource(source.id), expectedRevision: source.getSnapshot().revision, expectedServerVersion: "v1" }), { save: async submission => { assert.deepEqual(submission.proposal, proposal); return { kind: "saved", serverVersion: "v2" }; } });
+    assert.equal(result.kind, "saved"); assert.equal(createAgentReview(workspace, source).getSnapshot().acknowledgements.length, 1);
+    const acknowledgement = createAgentReview(workspace, source).getSnapshot().acknowledgements[0]!;
+    await createAgentReview(workspace, source).acknowledge(acknowledgement.id, { acknowledge: async () => {} });
     assert.equal(workspace.ownership(source.id).leases, 0); assert.equal(workspace.document(source.documentId).text(), "corrected");
 });
 
@@ -80,11 +79,11 @@ test("typed resources use the reviewed precondition without acquiring a text doc
     const workspace = new Workspace(), commands = new WorkspaceCommands(workspace);
     const form = workspace.createResource({ scope: "review", resource: "form", variant: "working" }, "Form", { value: { path: "base.csv" }, serverVersion: "v0" });
     workspace.updateResource(form, { expectedRevision: 0, origin: "human", value: { path: "merged.csv" } });
-    const result = await commands.save(form, { save: async submission => {
+    const result = await commands.save(workspace.captureSave(form, { target: workspace.captureResource(form.id), expectedRevision: 1, expectedServerVersion: "v1" }), { save: async submission => {
         assert.equal(submission.expectedServerVersion, "v1");
         workspace.updateResource(form, { expectedRevision: 1, origin: "human", value: { path: "later.csv" } });
         return { kind: "saved", serverVersion: "v2" };
-    } }, { target: workspace.captureResource(form.id), expectedRevision: 1, expectedServerVersion: "v1" });
+    } });
     assert.equal(result.kind, "saved"); const final = form.getSnapshot(); assert.equal(final.state, "ready");
     if (final.state === "ready") assert.deepEqual(final.value(), { path: "later.csv" });
     assert.equal(final.metadata.dirty, true); assert.equal(workspace.diagnostics().documents, 0); assert.equal(workspace.ownership(form.id).leases, 0);

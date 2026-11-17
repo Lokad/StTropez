@@ -64,10 +64,10 @@ export class FormSave<T extends SnapshotValue> {
     private submit(review?: SaveReview): void {
         this.publish({ pending: true, message: `Saving captured ${this.policy.noun}…` }); if (this.disposed) return;
         try {
-            const task = this.commands.save(this.resource, { save: submission => {
+            const task = this.commands.save(this.workspace.captureSave(this.resource, review), { save: submission => {
                 if (this.disposed) throw new Error(`${this.policy.title} save was interrupted.`);
                 return new Promise<SaveResponse<T>>((resolve, reject) => { this.request = { submission, resolve, reject }; this.publish({ message: `${this.policy.title} request captured. Editing and Run remain independent.` }); });
-            } }, review).then(result => {
+            } }).then(result => {
                 if (this.disposed) return;
                 if (result.kind === "saved") { this.reviewed = undefined; this.publish({ pending: false, conflict: null, preview: null, message: `Captured ${this.policy.noun} saved. Later edits are retained.` }); }
                 else if (result.kind === "conflict") { this.reviewed = undefined; this.publish({ pending: false, conflict: { version: result.serverVersion, value: null }, preview: null, message: `${this.policy.title} save conflicted. Current values are retained; review the remote ${this.policy.noun}.` }); }
