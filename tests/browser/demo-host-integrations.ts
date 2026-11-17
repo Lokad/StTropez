@@ -54,6 +54,8 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
     await page.locator("#sample").selectOption("host");
     const source = page.getByRole("textbox", { name: "workflow.rules", exact: true });
     const notes = page.locator(".demo-source-note"), inventory = notes.filter({ hasText: "Inventory source" });
+    const foldsReady = () => expect(page.locator("#folding-status")).toHaveText(/^\d+ folds · \d+ collapsed$/);
+    const inventoryFold = (surface: Locator) => surface.getByRole("button", { name: /^(Collapse|Expand) lines 3–/ });
     await expect(page.locator("#language-status")).toHaveText("Host language · no language server");
     await expect(page.locator("#editor .demo-token-keyword").first()).toHaveText("dataset");
     expect(await source.evaluate(node => node.getRootNode() instanceof ShadowRoot)).toBe(true);
@@ -76,7 +78,7 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
     await source.press("Control+Home"); await page.keyboard.insertText("# Prefix\n");
     await expect(inventory).toHaveAttribute("data-line", "4");
     await source.press("Control+z"); await expect(inventory).toHaveAttribute("data-line", "3");
-    await page.locator("#editor .st-fold-button").first().click(); await expect(inventory).toContainText("folded");
+    await foldsReady(); await inventoryFold(page.locator("#editor")).click(); await expect(inventory).toContainText("folded");
     // The note opens a captured resource and Back retains the source's selection and fold choices.
     const origin = await selection(), obsoleteNote = await inventory.elementHandle(); expect(obsoleteNote).not.toBeNull();
     await inventory.click(); await expect(page.getByRole("textbox", { name: "inventory.csv", exact: true })).toBeFocused(); await expect(notes).toHaveCount(0);
@@ -84,7 +86,7 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
     expect(await selection()).toEqual(origin);
     await obsoleteNote!.evaluate(node => (node as HTMLButtonElement).click()); await obsoleteNote!.dispose();
     await expect(source).toBeFocused(); await expect(page.getByRole("textbox", { name: "inventory.csv", exact: true })).toHaveCount(0);
-    await page.locator("#editor .st-fold-button").first().click(); await expect(inventory).not.toContainText("folded");
+    await foldsReady(); await inventoryFold(page.locator("#editor")).click(); await expect(inventory).not.toContainText("folded");
 
     await source.press("Control+f"); await page.locator("#find-query").fill("quantity < 10");
     await expect(page.locator("#find-status")).toHaveText("1 matches"); await page.locator("#find-next").click(); await page.locator("#find-close").click();
@@ -132,10 +134,15 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
     const reviewed = await working.inputValue();
     await working.press("Control+End"); await page.keyboard.type("# review"); await expect(working).toHaveValue(reviewed + "# review");
     await expect(baseline).toHaveValue(reviewed); await working.press("Control+z"); await expect(working).toHaveValue(reviewed);
-    await panes.first().locator(".st-fold-button").first().click();
+    // Text/history and comparison readiness do not imply fold discovery has finished.
+    await foldsReady();
+    const savedFold = inventoryFold(panes.first()), workingFold = inventoryFold(panes.last());
+    await expect(savedFold).toHaveAttribute("aria-expanded", "true");
+    await savedFold.click(); await expect(savedFold).toHaveAttribute("aria-expanded", "false");
     await expect(panes.first().locator('.st-fold-button[aria-expanded="false"]')).toHaveCount(1);
     await expect(panes.last().locator('.st-fold-button[aria-expanded="false"]')).toHaveCount(0);
-    await panes.last().locator(".st-fold-button").first().click(); await expect(inventory).toContainText("folded");
+    await expect(workingFold).toHaveAttribute("aria-expanded", "true");
+    await workingFold.click(); await expect(workingFold).toHaveAttribute("aria-expanded", "false"); await expect(inventory).toContainText("folded");
     await expect(notes).toHaveCount(2); await page.locator('[data-panel="javascript"]').click();
 
     // Offscreen notes disappear and reappear at mapped positions without entering source text.
