@@ -1,5 +1,6 @@
 import { Store } from "../core/observable.ts";
 import { isFocused } from "./dom-focus.ts";
+import { createCooperativeRunner } from "./cooperative-runner.ts";
 import type { DocumentId, TabId, Workspace } from "../core/workspace.ts";
 import { createLspHighlightClient } from "../protocol/lsp-highlights.ts";
 import type { LspDocumentHighlight } from "../protocol/lsp-highlights.ts";
@@ -19,7 +20,7 @@ export function createLspHighlightController(workspace: Workspace, tabId: TabId,
     const client = createLspHighlightClient(options.provider), empty: readonly LspDocumentHighlight[] = Object.freeze([]);
     const notifications = workspace.createNotificationScope(), cell = new Store<LspHighlightSnapshot>(Object.freeze({ status: "idle", documentId,
         revision: workspace.document(documentId).revision, caret: null, items: empty }), notifications);
-    const events = new AbortController(); let disposed = false, generation = 0, timer: number | undefined;
+    const events = new AbortController(), runner = createCooperativeRunner(win); let disposed = false, generation = 0;
     let result: Awaited<ReturnType<typeof client.run>["result"]> | undefined;
     const available = () => !disposed && !editor.activity().disposed && workspace.ownsDocumentView(view) && !!workspace.resolveTab(target);
     const focused = () => isFocused(editor.input);
@@ -28,10 +29,10 @@ export function createLspHighlightController(workspace: Workspace, tabId: TabId,
         const changed = new Set<Store<unknown>>(); cell.set(Object.freeze({ status, documentId, revision, caret, items: result?.items ?? empty }), changed); notifications.deliver([...changed]);
     };
     const cancel = () => {
-        generation++; if (timer !== undefined) win.clearTimeout(timer); timer = undefined;
+        generation++; runner.cancel();
         result = undefined; client.cancel();
     };
-    const later = (work: () => void, ms: number) => { timer = win.setTimeout(() => { timer = undefined; work(); }, ms); };
+    const later = (work: () => void, ms: number) => { runner.schedule(work, ms); };
     const start = (token: number, deadline: number) => {
         if (token !== generation || !available() || !focused() || options.provider.state.getSnapshot().phase !== "ready") return;
         if (busy()) { if (win.performance.now() < deadline) later(() => start(token, deadline), 16); else publish("idle"); return; }
