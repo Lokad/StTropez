@@ -13,6 +13,8 @@ test("nested collapsed rows keep independent child state and index visible rows 
     const foreign = ranges.map(r => ({ ...r })), copied = new FoldIndex(buffer.lineCount, foreign);
     foreign[0]!.collapsed = false; assert.equal(copied.regions[0]!.collapsed, true);
     assert.throws(() => new FoldIndex(buffer.lineCount, Object.freeze([Object.freeze({ ...ranges[0]!, lineTo: 999 })])), /row interval/);
+    const crossing = Object.freeze(ranges.map((r, i) => Object.freeze(i ? { ...r, to: buffer.length, lineTo: buffer.lineCount } : { ...r })));
+    assert.throws(() => new FoldIndex(buffer.lineCount, crossing), /Crossing fold rows/);
     assert.equal(index.visibleLineCount, 3); assert.deepEqual([0, 1, 2].map(row => index.lineAt(row)), [0, 4, 5]);
     assert.deepEqual([0, 1, 2, 3, 4, 5].map(line => index.rowAt(line)), [0, 0, 0, 0, 1, 2]);
     assert.equal(index.hiddenBy(2)?.id, "outer"); assert.equal(index.headerAt(1)?.id, "inner");

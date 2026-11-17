@@ -1,6 +1,7 @@
 import type { TextBuffer } from "./text-buffer.ts";
 import type { FoldRange, FoldRegion } from "./folding.ts";
 import { prepareFoldRanges } from "./folding.ts";
+import { appendNestedFold } from "./fold-nesting.ts";
 
 export type DiscoveredFold = Readonly<{ from: number; to: number; group?: string }>;
 const discoveredRows = new WeakMap<TextBuffer, WeakMap<DiscoveredFold, Readonly<{ lineFrom: number; lineTo: number }>>>();
@@ -60,18 +61,17 @@ export function reconcileFoldRanges(buffer: TextBuffer, discovered: readonly Dis
         return { ...value, ...(discoveredRows.get(buffer)?.get(value) ?? { lineFrom: buffer.lineAt(value.from), lineTo: buffer.lineAt(value.to - 1) + 1 }) };
     }).sort((a, b) => a.lineFrom - b.lineFrom || b.lineTo - a.lineTo);
     const prior = new Map(previous.map(value => [value.lineFrom, value])), ids = new Set(previous.map(value => value.id));
-    const ranges: FoldRange[] = [], regions: FoldRegion[] = [], stack: number[] = [], assigned = new Set<string>(); let last = -1, serial = 0;
+    const ranges: FoldRange[] = [], regions: FoldRegion[] = [], stack: typeof sorted = [], assigned = new Set<string>(); let last = -1, serial = 0;
     for (const item of sorted) {
         if (item.lineTo < item.lineFrom + 2 || item.lineFrom === last) continue;
-        while (stack.length && item.lineFrom >= stack.at(-1)!) stack.pop();
-        if (stack.length && item.lineTo > stack.at(-1)!) continue;
+        if (!appendNestedFold(stack, item)) continue;
         const old = prior.get(item.lineFrom); let id = old?.group === item.group ? old?.id : undefined;
         if (!id) { do { id = `discovered-${++serial}`; } while (ids.has(id)); ids.add(id); }
         if (typeof id !== "string" || id.length > 256 || assigned.has(id)) throw new TypeError("Expected unique fold identities.");
         assigned.add(id);
         ranges.push(Object.freeze({ id, from: item.from, to: item.to, ...(item.group === undefined ? {} : { group: item.group }) }));
         regions.push(Object.freeze({ ...ranges.at(-1)!, lineFrom: item.lineFrom, lineTo: item.lineTo, collapsed: false }));
-        last = item.lineFrom; stack.push(item.lineTo);
+        last = item.lineFrom;
     }
     Object.freeze(ranges); prepareFoldRanges(buffer, ranges, regions); return ranges;
 }

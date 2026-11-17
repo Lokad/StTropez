@@ -4,6 +4,7 @@ import type { PositionMapping } from "./positions.ts";
 import type { SelectionSet } from "./selections.ts";
 import type { Observable } from "./observable.ts";
 import { partitionPoint } from "./bound-search.ts";
+import { appendNestedFold } from "./fold-nesting.ts";
 
 /** Host-owned raw anchors include a visible header and at least one complete body row. */
 export type FoldRange = Readonly<{ id: string; from: number; to: number; collapsed?: boolean; group?: string }>;
@@ -68,8 +69,7 @@ export function createFoldRegions(buffer: TextBuffer, ranges: readonly FoldRange
     const stack: FoldRegion[] = [];
     for (let i = 0; i < regions.length; i++) {
         const r = regions[i]!; if (i && regions[i - 1]!.lineFrom === r.lineFrom) throw new RangeError("A fold header has one identity.");
-        while (stack.length && r.lineFrom >= stack.at(-1)!.lineTo) stack.pop();
-        if (stack.length && r.lineTo > stack.at(-1)!.lineTo) throw new RangeError("Fold regions must nest or remain disjoint."); stack.push(r);
+        if (!appendNestedFold(stack, r)) throw new RangeError("Fold regions must nest or remain disjoint.");
     }
     const result = owned.has(previous) && sameFoldRegions(previous, regions) ? previous : regions.length ? retain(regions) : empty;
     prepareFoldRanges(buffer, result, result); return result;
@@ -81,7 +81,7 @@ export function mapFoldRegions(buffer: TextBuffer, mapping: PositionMapping, reg
     if (edges && metadata!.maxTo <= edges.prefix) return regions;
     const suffix = edges ? mapping.oldLength - edges.suffix : Infinity;
     const units = mapping.newLength - mapping.oldLength, lines = previous ? buffer.lineCount - previous.lineCount : 0;
-    const mapped: FoldRegion[] = [], headers = new Map<number, number>(), stack: number[] = [];
+    const mapped: FoldRegion[] = [], headers = new Map<number, number>(), stack: FoldRegion[] = [];
     for (const r of regions) {
         let next: FoldRegion | undefined;
         if (edges && r.to <= edges.prefix) next = r;
@@ -98,14 +98,13 @@ export function mapFoldRegions(buffer: TextBuffer, mapping: PositionMapping, reg
         if (!next) continue;
         const existing = headers.get(next.lineFrom);
         if (existing !== undefined) { mapped[existing] = Object.freeze({ ...mapped[existing]!, collapsed: false }); continue; }
-        while (stack.length && next.lineFrom >= mapped[stack.at(-1)!]!.lineTo) stack.pop();
-        const parent = stack.at(-1);
-        if (parent !== undefined && next.lineTo > mapped[parent]!.lineTo) {
+        if (!appendNestedFold(stack, next)) {
             // Removing a boundary newline can merge formerly disjoint headers. Do not
             // publish a crossing projection or keep the merged boundary hidden.
+            const parent = headers.get(stack.at(-1)!.lineFrom)!;
             mapped[parent] = Object.freeze({ ...mapped[parent]!, collapsed: false }); continue;
         }
-        headers.set(next.lineFrom, mapped.length); stack.push(mapped.length); mapped.push(next);
+        headers.set(next.lineFrom, mapped.length); mapped.push(next);
     }
     return sameFoldRegions(regions, mapped) ? regions : mapped.length ? retain(mapped) : empty;
 }
@@ -156,15 +155,15 @@ export class FoldIndex {
             this.visibleLineCount = lineCount - (previous.lineCount - previous.visibleLineCount);
             this.collapsedCount = previous.collapsedCount; this.#hidden = previous.#hidden; Object.freeze(this); return;
         }
-        const hidden: Hidden[] = []; let removed = 0, prior = -1, collapsed = 0; const stack: number[] = [], ids = new Set<string>();
+        const hidden: Hidden[] = []; let removed = 0, prior = -1, collapsed = 0; const stack: FoldRegion[] = [], ids = new Set<string>();
         for (const r of this.regions) {
             if (!metadata) {
                 if (typeof r.id !== "string" || !r.id.length || r.id.length > 256 || ids.has(r.id) || !integer(r.from) || !integer(r.to) || r.from >= r.to
                     || typeof r.collapsed !== "boolean" || !integer(r.lineFrom) || !integer(r.lineTo) || r.lineFrom <= prior || r.lineTo > lineCount || r.lineTo <= r.lineFrom + 1) throw new RangeError("Invalid fold row interval.");
                 if (r.group !== undefined && (typeof r.group !== "string" || !r.group)) throw new TypeError("Expected a nonempty fold group.");
                 ids.add(r.id);
-                prior = r.lineFrom; while (stack.length && r.lineFrom >= stack.at(-1)!) stack.pop();
-                if (stack.length && r.lineTo > stack.at(-1)!) throw new RangeError("Crossing fold rows."); stack.push(r.lineTo);
+                prior = r.lineFrom;
+                if (!appendNestedFold(stack, r)) throw new RangeError("Crossing fold rows.");
             }
             if (r.collapsed) collapsed++;
             if (!r.collapsed || hidden.length && r.lineFrom < hidden.at(-1)!.to) continue;
