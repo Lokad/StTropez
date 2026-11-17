@@ -7,6 +7,8 @@ type Leaf = Block | Gap;
 type Branch = Readonly<{ kind: "branch"; height: number; size: number; left: Node; right: Node }>;
 type Node = Leaf | Branch;
 type Root = Node | null;
+type LocatedBlock = Readonly<{ from: number; entries: readonly DiffLine[] }>;
+type Memo = { root: Root; last: LocatedBlock | undefined };
 function leaf(entries: readonly DiffLine[]): Block {
     if (!entries.length || entries.length > 64) throw new RangeError("Invalid comparison line block.");
     return Object.freeze({ kind: "leaf", height: 1, size: entries.length, entries: Object.freeze([...entries]) });
@@ -22,27 +24,30 @@ function split(root: Root, at: number): readonly [Root, Root] {
     const [middle, right] = split(root.right, at - root.left.size); return [join(root.left, middle), right];
 }
 
-/** Sparse line slots. Memoization never changes the captured source or row coordinates. */
+/** Sparse line slots. The private memo fills immutable nodes without changing source or row coordinates. */
 export class DiffLines {
-    #root: Root;
-    #last: Readonly<{ from: number; entries: readonly DiffLine[] }> | undefined;
-    constructor(root: Root = null) { this.#root = root; Object.freeze(this); }
+    readonly #memo: Memo;
+    constructor(root: Root = null) { this.#memo = { root, last: undefined }; Object.freeze(this); }
     static gap(size: number): DiffLines {
         if (!Number.isSafeInteger(size) || size < 0) throw new RangeError("Invalid comparison line count.");
         return new DiffLines(size ? gap(size) : null);
     }
-    get size(): number { return this.#root?.size ?? 0; }
-    concat(other: DiffLines): DiffLines { return new DiffLines(join(this.#root, other.#root)); }
+    get size(): number { return this.#memo.root?.size ?? 0; }
+    concat(other: DiffLines): DiffLines { return new DiffLines(join(this.#memo.root, other.#memo.root)); }
     slice(from: number, to: number): DiffLines {
         if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > this.size) throw new RangeError("Invalid comparison line range.");
-        const [left] = split(this.#root, to), [, result] = split(left, from); return new DiffLines(result);
+        const [left] = split(this.#memo.root, to), [, result] = split(left, from); return new DiffLines(result);
     }
     at(index: number): DiffLine | undefined {
+        const block = this.#block(index); return block?.entries[index - block.from];
+    }
+    #block(index: number): LocatedBlock | undefined {
         if (!Number.isSafeInteger(index) || index < 0 || index >= this.size) throw new RangeError("Invalid comparison line.");
-        if (this.#last && index >= this.#last.from && index < this.#last.from + this.#last.entries.length) return this.#last.entries[index - this.#last.from];
-        let node = this.#root!, from = 0;
+        const memo = this.#memo, last = memo.last;
+        if (last && index >= last.from && index < last.from + last.entries.length) return last;
+        let node = memo.root!, from = 0;
         while (node.kind === "branch") { if (index < node.left.size) node = node.left; else { index -= node.left.size; from += node.left.size; node = node.right; } }
-        if (node.entries) { this.#last = { from, entries: node.entries }; return node.entries[index]; }
+        if (node.entries) { const block = { from, entries: node.entries }; memo.last = block; return block; }
         return undefined;
     }
     /** Exact known-row proof within the current immutable metadata leaves. Reads no source. */
@@ -52,14 +57,15 @@ export class DiffLines {
             || otherFrom < 0 || otherTo < otherFrom || otherTo > other.size) throw new RangeError("Invalid comparison metadata range.");
         if (from === to || otherFrom === otherTo) return 0;
         const ai = reverse ? to - 1 : from, bi = reverse ? otherTo - 1 : otherFrom;
-        const left = this.at(ai), a = this.#last!, right = other.at(bi), b = other.#last!;
+        const a = this.#block(ai), b = other.#block(bi);
+        if (!a || !b) return 0;
         const same = (left: DiffLine | undefined, right: DiffLine | undefined) => {
             if (!left || !right || left.length !== right.length) return false;
             const a = identity(left), b = identity(right);
             return a !== undefined && b !== undefined ? a === b : left.token !== undefined && left.token === right.token;
         };
-        if (!same(left, right)) return 0;
         const al = ai - a.from, bl = bi - b.from;
+        if (!same(a.entries[al], b.entries[bl])) return 0;
         const maximum = Math.min(to - from, otherTo - otherFrom,
             reverse ? al + 1 : a.entries.length - al, reverse ? bl + 1 : b.entries.length - bl);
         const direction = reverse ? -1 : 1; let count = 1;
@@ -73,7 +79,7 @@ export class DiffLines {
     materialize(from: number, to: number, entries: readonly DiffLine[]): void {
         if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > this.size) throw new RangeError("Invalid comparison line range.");
         if (entries.length !== to - from) throw new RangeError("Invalid comparison metadata block.");
-        const [before] = split(this.#root, from), [, after] = split(this.#root, to), middle = leaf(entries);
-        this.#root = join(join(before, middle), after); this.#last = { from, entries: middle.entries };
+        const memo = this.#memo, [before] = split(memo.root, from), [, after] = split(memo.root, to), middle = leaf(entries);
+        memo.root = join(join(before, middle), after); memo.last = { from, entries: middle.entries };
     }
 }

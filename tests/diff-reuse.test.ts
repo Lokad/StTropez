@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { DiffReferenceCache, TextBuffer, TextDiff } from "../src/index.ts";
 import type { DiffProgress } from "../src/index.ts";
+import { DiffLines } from "../src/core/diff-lines.ts";
 
 function finish(a: TextBuffer, b: TextBuffer, cache?: DiffReferenceCache): DiffProgress {
     const job = new TextDiff(a, b, cache); let prior = 0, result = job.next(512), calls = 0;
@@ -26,6 +27,34 @@ function distance(a: string, b: string): number {
         ? rows[i - 1]![j - 1]! + 1 : Math.max(rows[i - 1]![j]!, rows[i]![j - 1]!);
     return left.length + right.length - rows[left.length]![right.length]! * 2;
 }
+
+test("sparse line metadata retains exact runs across gaps, shifted copies and memo changes", () => {
+    const entries = (text: string) => [...text].map(token => Object.freeze({ length: 1, hash: undefined, token }));
+    const original = entries("abcd"), changed = entries("wxyz"), lines = DiffLines.gap(12);
+    lines.materialize(2, 6, original);
+    const slice = lines.slice(1, 8), shifted = DiffLines.gap(3).concat(slice).concat(DiffLines.gap(2));
+    lines.materialize(8, 12, original);
+    const unknown = () => undefined;
+    for (const reverse of [false, true]) {
+        assert.equal(lines.matching(lines, 2, 6, 8, 12, reverse, unknown), 4);
+        lines.at(2); // A cached known block must not turn a gap into a proof.
+        assert.equal(lines.matching(shifted, 0, 1, 4, 5, reverse, () => assert.fail("Gap has no identity")), 0);
+        assert.equal(lines.matching(shifted, 2, 3, 0, 1, reverse, () => assert.fail("Gap has no identity")), 0);
+        let calls = 0;
+        const identity = () => { calls++; lines.at(8); shifted.at(7); return undefined; };
+        // Ranges extend past the captured block; both directions stop at its boundary.
+        const count = reverse ? lines.matching(shifted, 1, 6, 3, 8, true, identity)
+            : lines.matching(shifted, 2, 7, 4, 9, false, identity);
+        assert.equal(count, 4); assert.equal(calls, 8);
+    }
+    lines.at(2); lines.materialize(2, 6, changed);
+    assert.equal(lines.at(2), changed[0]); assert.equal(slice.at(1), original[0]); assert.equal(shifted.at(4), original[0]);
+    assert.equal(lines.matching(shifted, 2, 6, 4, 8, false, unknown), 0);
+    slice.materialize(1, 5, changed);
+    assert.equal(slice.at(1), changed[0]); assert.equal(shifted.at(4), original[0]);
+    assert.equal(lines.matching(slice, 2, 6, 1, 5, true, unknown), 4);
+    assert.equal(lines.size, 12); assert.equal(slice.size, 7); assert.equal(shifted.size, 12);
+});
 
 test("shared proofs preserve backing-independent alignment ties, Enter splits and final-token semantics", () => {
     for (const original of ["", "A\n", "A\nA\n", "x", "x\n", "a\r\nb\r\n", "😀é\n\ud800\r", "x".repeat(2000)]) {

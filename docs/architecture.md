@@ -142,6 +142,10 @@ from versioned commands; unchanged snapshots retain identity. Hosts subscribe at
 resource/document/field scope they need. A coarse workspace snapshot materializes its inventory
 on demand, so callers requesting that aggregate pay its traversal cost.
 
+Comparison line metadata uses a private mutable memo over immutable tree nodes. Sliced and
+concatenated indexes share those nodes while retaining independent memos. A block lookup returns
+its captured coordinates and entries; matching does not depend on a preceding row lookup.
+
 Observers read published state. Commands run outside notification delivery, including nested
 controller notifications. Listener failures are reported without preventing other delivery.
 The detailed batching, callback and write-guard rules belong to
