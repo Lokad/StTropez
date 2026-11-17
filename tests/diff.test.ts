@@ -73,10 +73,41 @@ test("comparison yields within a long line, never exports full text and cancels 
     const job = new TextDiff(a, b); let result = job.next(512);
     while (result.status === "running" && result.readUnits === 0) result = job.next(512);
     assert.equal(result.status, "running"); assert.ok(result.readUnits <= 1024);
-    job.dispose(); result = job.next(512); assert.equal(result.status, "cancelled"); assert.equal(result.hunks.length, 0);
+    job.dispose(); result = job.next(512); assert.equal(result.status, "disposed"); assert.equal(result.hunks.length, 0);
     assert.equal(a.readMetrics().textExports, 0); assert.equal(b.readMetrics().textExports, 0);
     assert.throws(() => job.next(1), RangeError);
     const same = new TextDiff(a, a).next(512); assert.equal(same.status, "ready"); assert.equal(same.work, 0);
+});
+
+test("comparison snapshots do not advance work and the default retains its charged-work budget", () => {
+    const a = TextBuffer.from("x".repeat(1_000_000)), b = TextBuffer.from("x".repeat(999_999) + "y");
+    const job = new TextDiff(a, b), explicit = new TextDiff(a, b), initial = job.snapshot();
+    assert.deepEqual(initial, { status: "running", work: 0, readUnits: 0, lineComparisons: 0, lineEdits: 0, hunks: [], failure: null });
+    assert.ok(Object.isFrozen(initial)); assert.equal(a.readMetrics().sliceUnits + b.readMetrics().sliceUnits, 0);
+    const first = job.next(); assert.deepEqual(first, explicit.next(32_768));
+    assert.equal(first.status, "running"); assert.ok(first.work >= 32_768 && first.work <= 32_768 + 768);
+    assert.deepEqual(job.snapshot(), first); assert.equal(initial.work, 0);
+    job.dispose(); explicit.dispose(); assert.equal(job.snapshot().status, "disposed");
+    const same = new TextDiff(a, a), ready = same.next(); assert.equal(ready.status, "ready"); assert.deepEqual(ready.hunks, []);
+    same.dispose(); assert.equal(same.snapshot().status, "disposed"); assert.deepEqual(ready.hunks, []);
+});
+
+test("failed comparison preserves its cause and cannot publish or resume a partial result", t => {
+    const baseline = TextBuffer.from("abc\n".repeat(20_000)), working = TextBuffer.from("def\n".repeat(20_000));
+    const cache = new DiffReferenceCache(), job = new TextDiff(baseline, working, cache), cause = new Error("Read failed.");
+    const slice = TextBuffer.prototype.slice;
+    const fault = t.mock.method(TextBuffer.prototype, "slice", function(this: TextBuffer, from: number, to: number) {
+        if (this === working) throw cause;
+        return slice.call(this, from, to);
+    });
+    assert.throws(() => { while (job.next(256).status === "running") { /* Run to the injected working read. */ } }, error => error === cause);
+    const failed = job.next(256);
+    assert.equal(failed.status, "failed"); assert.deepEqual(failed.hunks, []); assert.equal(failed.failure, cause.message);
+    fault.mock.restore(); assert.deepEqual(job.next(256), failed);
+    const fresh = new TextDiff(baseline, working, cache); let ready = fresh.next();
+    while (ready.status === "running") ready = fresh.next();
+    assert.equal(ready.status, "ready"); assert.equal(ready.hunks.length, 1); assert.equal(ready.lineEdits, 40_000);
+    job.dispose(); fresh.dispose(); cache.dispose();
 });
 
 test("equal-length hash collisions still require exact line comparison", () => {

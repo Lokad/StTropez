@@ -117,8 +117,16 @@ export function* compareText(reference: TextBuffer, working: TextBuffer): Genera
 }
 ```
 
-`DiffProgress` carries immutable hunks, status (`running`, `ready`, `cancelled`), work, read units,
-line comparisons and line edit count. `DiffReferenceCache` can be passed as the third `TextDiff`
+`DiffProgress` carries immutable hunks, status (`running`, `ready`, `failed`, `disposed`), work,
+read units, line comparisons, line edit count and a failure message. `TextDiff.snapshot()`
+reads progress without advancing. Only `ready` publishes completed hunks; an empty array is
+a valid completed comparison. Execution failures throw their original cause, record `failed`
+and publish no partial hunks. Completion, failure and disposal release temporary line identities.
+`dispose()` clears the cursor's hunks and failure and is idempotent; hunks retained by the caller
+stay valid. Reentrant advancement or disposal throws. Terminal `next()` calls validate the
+budget and return progress without resuming work.
+
+`DiffReferenceCache` can be passed as the third `TextDiff`
 argument to reuse reference metadata and the latest completed working index. Dispose the cache
 when its owner ends. Reference replacement resets both captures; active jobs keep their own
 captures, and late jobs cannot replace a newer cache result. The controller owns its cache.

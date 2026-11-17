@@ -1,12 +1,13 @@
 import type { TextBuffer } from "./text-buffer.ts";
-import { validateWorkBudget } from "./kernel-cursor.ts";
+import { kernelCursor } from "./kernel-cursor.ts";
+import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
 import { DiffIdentities, equalLineText, knownLineHash, lineHash } from "./diff-identities.ts";
 import { commonText, getLine, indexLines, lineLength, matchingLines, offsetAt, tick } from "./diff-index.ts";
 import type { DiffStats, DiffIndex as Index } from "./diff-index.ts";
 type Stats = DiffStats & { identities: DiffIdentities };
 export type DiffRange = Readonly<{ from: number; to: number; lineFrom: number; lineTo: number }>;
 export type DiffHunk = Readonly<{ baseline: DiffRange; working: DiffRange; whitespaceOnly: boolean }>;
-export type DiffProgress = Readonly<{ status: "running" | "ready" | "cancelled"; work: number; readUnits: number; lineComparisons: number; lineEdits: number; hunks: readonly DiffHunk[] }>;
+export type DiffProgress = Readonly<{ status: KernelStatus; work: number; readUnits: number; lineComparisons: number; lineEdits: number; hunks: readonly DiffHunk[]; failure: string | null }>;
 type Cache = { baseline: TextBuffer; serial: number; reference: Index | undefined; working: Index | undefined };
 const referenceCaches = new WeakMap<DiffReferenceCache, { current: Cache | undefined }>();
 
@@ -160,77 +161,72 @@ function range(buffer: TextBuffer, from: number, to: number): DiffRange {
     const lineFrom = buffer.lineAt(from); return Object.freeze({ from, to, lineFrom, lineTo: from === to ? lineFrom : buffer.lineAt(to - 1) + 1 });
 }
 function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, serial = 0): Generator<void, readonly DiffHunk[]> {
-    if (a === b) return Object.freeze([]);
-    const left = yield* indexLines(a, stats, cache?.reference);
-    if (cache?.serial === serial) cache.reference = left;
-    const right = yield* indexLines(b, stats, cache?.working ?? left);
-    if (cache?.serial === serial) cache.working = right;
-    const tasks: Region[] = [{ a0: 0, a1: left.lines.size, b0: 0, b1: right.lines.size }], changes: Region[] = [];
-    const append = (change: Region) => {
-        const previous = changes.at(-1);
-        if (previous?.a1 === change.a0 && previous.b1 === change.b0) changes[changes.length - 1] = { a0: previous.a0, a1: change.a1, b0: previous.b0, b1: change.b1 };
-        else changes.push(change);
-    };
-    while (tasks.length) {
-        let { a0, a1, b0, b1 } = tasks.pop()!;
-        const prefix = yield* commonLines(left, right, { a0, a1, b0, b1 }, false, stats); a0 += prefix; b0 += prefix;
-        const suffix = yield* commonLines(left, right, { a0, a1, b0, b1 }, true, stats); a1 -= suffix; b1 -= suffix;
-        if (a0 === a1 && b0 === b1) continue;
-        if (a0 === a1 || b0 === b1 || a1 - a0 > 1 && b1 - b0 > 1 && (yield* disjoint(left, right, { a0, a1, b0, b1 }, stats))) {
-            append({ a0, a1, b0, b1 });
-        } else if (a1 - a0 === 1 || b1 - b0 === 1) {
-            let matchA = -1, matchB = -1;
-            outer: for (let ai = a0; ai < a1; ai++) for (let bi = b0; bi < b1; bi++) if (yield* equalLine(left, right, ai, bi, stats)) { matchA = ai; matchB = bi; break outer; }
-            if (matchA < 0) append({ a0, a1, b0, b1 });
-            else { tasks.push({ a0: matchA + 1, a1, b0: matchB + 1, b1 }); tasks.push({ a0, a1: matchA, b0, b1: matchB }); }
-        } else {
-            const split = yield* bisect(left, right, { a0, a1, b0, b1 }, stats);
-            if ("changes" in split) { split.changes.forEach(append); continue; }
-            const [ai, bi] = split;
-            if ((ai === a0 && bi === b0) || (ai === a1 && bi === b1)) throw new Error("Comparison split did not make progress.");
-            tasks.push({ a0: ai, a1, b0: bi, b1 }); tasks.push({ a0, a1: ai, b0, b1: bi });
+    try {
+        if (a === b) return Object.freeze([]);
+        const left = yield* indexLines(a, stats, cache?.reference);
+        if (cache?.serial === serial) cache.reference = left;
+        const right = yield* indexLines(b, stats, cache?.working ?? left);
+        if (cache?.serial === serial) cache.working = right;
+        const tasks: Region[] = [{ a0: 0, a1: left.lines.size, b0: 0, b1: right.lines.size }], changes: Region[] = [];
+        const append = (change: Region) => {
+            const previous = changes.at(-1);
+            if (previous?.a1 === change.a0 && previous.b1 === change.b0) changes[changes.length - 1] = { a0: previous.a0, a1: change.a1, b0: previous.b0, b1: change.b1 };
+            else changes.push(change);
+        };
+        while (tasks.length) {
+            let { a0, a1, b0, b1 } = tasks.pop()!;
+            const prefix = yield* commonLines(left, right, { a0, a1, b0, b1 }, false, stats); a0 += prefix; b0 += prefix;
+            const suffix = yield* commonLines(left, right, { a0, a1, b0, b1 }, true, stats); a1 -= suffix; b1 -= suffix;
+            if (a0 === a1 && b0 === b1) continue;
+            if (a0 === a1 || b0 === b1 || a1 - a0 > 1 && b1 - b0 > 1 && (yield* disjoint(left, right, { a0, a1, b0, b1 }, stats))) {
+                append({ a0, a1, b0, b1 });
+            } else if (a1 - a0 === 1 || b1 - b0 === 1) {
+                let matchA = -1, matchB = -1;
+                outer: for (let ai = a0; ai < a1; ai++) for (let bi = b0; bi < b1; bi++) if (yield* equalLine(left, right, ai, bi, stats)) { matchA = ai; matchB = bi; break outer; }
+                if (matchA < 0) append({ a0, a1, b0, b1 });
+                else { tasks.push({ a0: matchA + 1, a1, b0: matchB + 1, b1 }); tasks.push({ a0, a1: matchA, b0, b1: matchB }); }
+            } else {
+                const split = yield* bisect(left, right, { a0, a1, b0, b1 }, stats);
+                if ("changes" in split) { split.changes.forEach(append); continue; }
+                const [ai, bi] = split;
+                if ((ai === a0 && bi === b0) || (ai === a1 && bi === b1)) throw new Error("Comparison split did not make progress.");
+                tasks.push({ a0: ai, a1, b0: bi, b1 }); tasks.push({ a0, a1: ai, b0, b1: bi });
+            }
         }
-    }
-    const hunks: DiffHunk[] = [];
-    for (const change of changes) {
-        stats.lineEdits += change.a1 - change.a0 + change.b1 - change.b0;
-        let a0 = offsetAt(left, change.a0), a1 = offsetAt(left, change.a1);
-        let b0 = offsetAt(right, change.b0), b1 = offsetAt(right, change.b1);
-        const prefix = yield* commonText(a, b, a0, a1, b0, b1, "start", stats); a0 += prefix; b0 += prefix;
-        const suffix = yield* commonText(a, b, a0, a1, b0, b1, "end", stats); a1 -= suffix; b1 -= suffix;
-        let whitespaceOnly = true;
-        outer: for (const [buffer, from, to] of [[a, a0, a1], [b, b0, b1]] as const) for (let offset = from; offset < to; offset += 256) {
-            const end = Math.min(to, offset + 256), white = /^\s*$/u.test(buffer.slice(offset, end));
-            stats.readUnits += end - offset; if (tick(stats, end - offset)) yield;
-            if (!white) { whitespaceOnly = false; break outer; }
+        const hunks: DiffHunk[] = [];
+        for (const change of changes) {
+            stats.lineEdits += change.a1 - change.a0 + change.b1 - change.b0;
+            let a0 = offsetAt(left, change.a0), a1 = offsetAt(left, change.a1);
+            let b0 = offsetAt(right, change.b0), b1 = offsetAt(right, change.b1);
+            const prefix = yield* commonText(a, b, a0, a1, b0, b1, "start", stats); a0 += prefix; b0 += prefix;
+            const suffix = yield* commonText(a, b, a0, a1, b0, b1, "end", stats); a1 -= suffix; b1 -= suffix;
+            let whitespaceOnly = true;
+            outer: for (const [buffer, from, to] of [[a, a0, a1], [b, b0, b1]] as const) for (let offset = from; offset < to; offset += 256) {
+                const end = Math.min(to, offset + 256), white = /^\s*$/u.test(buffer.slice(offset, end));
+                stats.readUnits += end - offset; if (tick(stats, end - offset)) yield;
+                if (!white) { whitespaceOnly = false; break outer; }
+            }
+            if (a0 !== a1 || b0 !== b1) hunks.push(Object.freeze({ baseline: range(a, a0, a1), working: range(b, b0, b1), whitespaceOnly }));
         }
-        if (a0 !== a1 || b0 !== b1) hunks.push(Object.freeze({ baseline: range(a, a0, a1), working: range(b, b0, b1), whitespaceOnly }));
-    }
-    return Object.freeze(hunks);
+        return Object.freeze(hunks);
+    } finally { stats.identities.clear(); }
 }
 
 /** Exact line alignment with bounded cooperative steps and linear-space bisection. */
 export class TextDiff {
-    private iterator: Generator<void, readonly DiffHunk[]> | undefined;
-    private readonly stats: Stats = { work: 0, yielded: 0, readUnits: 0, lineComparisons: 0, lineEdits: 0, identities: new DiffIdentities() };
-    private status: DiffProgress["status"] = "running";
-    private hunks: readonly DiffHunk[] = Object.freeze([]);
+    private readonly driver: KernelCursor<DiffProgress>;
     constructor(baseline: TextBuffer, working: TextBuffer, cache?: DiffReferenceCache) {
         const state = cache === undefined ? undefined : referenceCaches.get(cache);
         if (cache !== undefined && !state) throw new Error("Reference cache is disposed or foreign.");
         const current = state?.current?.baseline === baseline ? state.current : { baseline, serial: 0, reference: undefined, working: undefined };
         if (state) state.current = current;
-        this.iterator = compare(baseline, working, this.stats, current, ++current.serial);
+        const stats: Stats = { work: 0, yielded: 0, readUnits: 0, lineComparisons: 0, lineEdits: 0, identities: new DiffIdentities() };
+        const empty: readonly DiffHunk[] = Object.freeze([]);
+        this.driver = kernelCursor(compare(baseline, working, stats, current, ++current.serial), () => stats.work,
+            (status, result, failure): DiffProgress => Object.freeze({ status, work: stats.work, readUnits: stats.readUnits,
+                lineComparisons: stats.lineComparisons, lineEdits: stats.lineEdits, hunks: result ?? empty, failure }), "Comparison");
     }
-    next(workBudget = 32_768): DiffProgress {
-        validateWorkBudget(workBudget, "Comparison");
-        const start = this.stats.work;
-        try {
-            while (this.iterator && this.stats.work - start < workBudget) {
-                const step = this.iterator.next(); if (step.done) { this.hunks = step.value; this.status = "ready"; this.iterator = undefined; this.stats.identities.clear(); }
-            }
-        } catch (error) { this.dispose(); throw error; }
-        return Object.freeze({ status: this.status, work: this.stats.work, readUnits: this.stats.readUnits, lineComparisons: this.stats.lineComparisons, lineEdits: this.stats.lineEdits, hunks: this.hunks });
-    }
-    dispose(): void { this.iterator?.return(Object.freeze([])); this.iterator = undefined; this.stats.identities.clear(); this.hunks = Object.freeze([]); this.status = "cancelled"; }
+    next(workBudget = 32_768): DiffProgress { return this.driver.next(workBudget); }
+    snapshot(): DiffProgress { return this.driver.snapshot(); }
+    dispose(): void { this.driver.dispose(); }
 }
