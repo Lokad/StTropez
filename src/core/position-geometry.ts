@@ -1,4 +1,5 @@
 import type { Affinity, PositionMapping } from "./positions.ts";
+import { partitionPoint } from "./bound-search.ts";
 
 /** Integer-position domains are half open; only their final sentinel may be MAX_SAFE_INTEGER + 1. */
 export type PositionPiece = Readonly<{ from: number; to: number; offset: number; slope: 0 | 1; deleted: boolean }>;
@@ -10,9 +11,7 @@ const sideIndex = (side: Affinity): number => side === "before" ? 0 : 1;
 export const pieceOffset = (piece: PositionPiece, offset: number): number => piece.offset + (offset - piece.from) * piece.slope;
 
 export function pieceAt(pieces: readonly PositionPiece[], offset: number): number {
-    let low = 0, high = pieces.length;
-    while (low < high) { const mid = low + Math.floor((high - low) / 2); if (pieces[mid]!.to <= offset) low = mid + 1; else high = mid; }
-    return low;
+    return partitionPoint(pieces.length, index => pieces[index]!.to <= offset);
 }
 function append(pieces: PositionPiece[], piece: PositionPiece): void {
     const last = pieces.at(-1);
@@ -46,8 +45,7 @@ function pointSet(spans: readonly PositionSpan[]): readonly PositionSpan[] {
     return Object.freeze(result.map(span => Object.freeze(span)));
 }
 export function covered(spans: readonly PositionSpan[], from: number, to: number): boolean {
-    let low = 0, high = spans.length;
-    while (low < high) { const mid = low + Math.floor((high - low) / 2); if (spans[mid]!.from <= from) low = mid + 1; else high = mid; }
+    const low = partitionPoint(spans.length, index => spans[index]!.from <= from);
     return low > 0 && to <= spans[low - 1]!.to;
 }
 
@@ -91,11 +89,10 @@ function composePoints(first: readonly PositionPiece[], second: readonly Positio
 
 /** First original position whose mapped value is >= value (or > value for strict). */
 function preimage(pieces: readonly PositionPiece[], value: number, strict = false): number {
-    let low = 0, high = pieces.length;
-    while (low < high) {
-        const mid = low + Math.floor((high - low) / 2), end = pieceOffset(pieces[mid]!, pieces[mid]!.to - 1);
-        if (end < value || strict && end === value) low = mid + 1; else high = mid;
-    }
+    const low = partitionPoint(pieces.length, index => {
+        const piece = pieces[index]!, end = pieceOffset(piece, piece.to - 1);
+        return end < value || strict && end === value;
+    });
     const piece = pieces[low];
     return !piece ? pieces.at(-1)!.to : piece.slope ? piece.from + Math.max(0, value - piece.offset + (strict ? 1 : 0)) : piece.from;
 }

@@ -2,6 +2,7 @@ import { validateTextEdits } from "./changes.ts";
 import type { TextEdit } from "./changes.ts";
 import { batchGeometry, composeGeometry, geometryInvalidates, geometryPieces, pieceAt, pieceOffset } from "./position-geometry.ts";
 import type { MappingGeometry } from "./position-geometry.ts";
+import { partitionPoint } from "./bound-search.ts";
 
 export type Affinity = "before" | "after";
 export type MappedPosition = Readonly<{ offset: number; deleted: boolean }>;
@@ -106,12 +107,11 @@ class ChangePositionMap implements PositionMapping {
                 low = next; step *= 2;
             }
         }
-        while (low < high) {
-            const middle = low + Math.floor((high - low) / 2), from = this.changes[middle]!.from;
-            if (from < offset || from === offset && side === "after") low = middle + 1;
-            else high = middle;
-        }
-        return low - 1;
+        const base = low;
+        return base + partitionPoint(high - base, index => {
+            const from = this.changes[base + index]!.from;
+            return from < offset || from === offset && side === "after";
+        }) - 1;
     }
     mapRange(range: AnchoredRange): AnchoredRange | undefined {
         validateRange(this.oldLength, range.from, range.to, range.fromAffinity ?? "after", range.toAffinity ?? "before", range.onDelete ?? "collapse");
