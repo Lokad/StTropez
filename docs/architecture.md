@@ -98,7 +98,7 @@ During composition, the input owner retains the captured revision, complete sele
 native LF mapping. Commit or recovery resolves that capture before projection refresh. Delayed
 word/grapheme/navigation commands share that owner's identity, input-order and authority guards.
 Their computation can use headless cursors without creating an independent mutable input owner.
-Editing commands, fold discovery, comparison and find share a private runner for bounded iteration
+Editing commands, fold discovery, comparison, find and bracket highlighting share a private runner for bounded iteration
 and timer continuations. Their owners retain capture validation, iterator disposal, failure
 handling and commit/publication authority. Range navigation keeps its callback continuation
 with the input owner.

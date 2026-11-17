@@ -359,7 +359,7 @@ defines interaction-specific readiness and continuous text/color checks.
 | Language planning | Yields across 256-range/line batches and bounded whitespace scans; the final transaction scales with the changed content |
 | Bracket matching | Default 100,000 total work units and 1,024 nesting levels; positive safe-integer limits; at most 256-unit read windows |
 | Bracket cursor advance | Budget at least 256; checkpoint overshoot at most 63 work units; host callback work is separate |
-| Browser bracket task | Checks between 256-unit advances; stops after 4 ms or 4,096 work units; one advance/callback can exceed the scheduling target |
+| Browser bracket task | Checks between 256-unit advances; stops after 16 advances, 4 ms or 4,096 work units; one advance/callback can exceed the scheduling target |
 | Ordinary reads | Typing, navigation, scrolling and metadata updates do not export the whole document; copying/large edits can require proportional work |
 
 Scheduling bounds are not interaction-latency guarantees. [Viewport limits](viewport.md#rendering-limits)

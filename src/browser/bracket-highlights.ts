@@ -3,6 +3,7 @@ import type { BracketMatchCursor, BracketMatchOptions, BracketMatchProgress, Bra
 import type { ResolvedLanguageConfiguration } from "../core/language-edits.ts";
 import { Store } from "../core/observable.ts";
 import { isFocused } from "./dom-focus.ts";
+import { createCooperativeRunner } from "./cooperative-runner.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentId, DocumentView, TabId, Workspace } from "../core/workspace.ts";
 import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.ts";
@@ -18,11 +19,11 @@ const empty: readonly InlineDecoration[] = Object.freeze([]);
 export function mountBracketHighlights(workspace: Workspace, tabId: TabId, view: DocumentView, viewport: TextViewport, input: HTMLTextAreaElement,
     configuration: () => ResolvedLanguageConfiguration, idle: () => boolean, initial: boolean | BracketMatchOptions = false) {
     const target = workspace.captureTab(tabId), documentId = view.documentId, win = input.ownerDocument.defaultView!;
-    const notifications = workspace.createNotificationScope();
+    const notifications = workspace.createNotificationScope(), runner = createCooperativeRunner(win);
     const cell = new Store<BracketHighlightSnapshot>(Object.freeze({ status: "disabled", documentId, revision: workspace.document(documentId).revision,
         caret: null, result: null, failure: null, workUnits: 0, readUnits: 0, callbackCalls: 0 }), notifications);
     let disposed = false, limits: Required<BracketMatchOptions> | undefined, matcher: BracketMatcher | undefined, language: ResolvedLanguageConfiguration | undefined;
-    let timer: number | undefined, events: AbortController | undefined;
+    let events: AbortController | undefined;
     const stops: (() => void)[] = [];
     type Job = { cursor: BracketMatchCursor; current: () => boolean; revision: number; caret: number; running: boolean };
     let job: Job | undefined, current: (() => boolean) | undefined, decorations = empty, first = empty, second = empty;
@@ -43,24 +44,23 @@ export function mountBracketHighlights(workspace: Workspace, tabId: TabId, view:
         notifications.deliver([...changed]);
     };
     const cancel = () => {
-        if (timer !== undefined) win.clearTimeout(timer); timer = undefined;
+        runner.cancel();
         const captured = job; job = undefined; if (captured && !captured.running) captured.cursor.dispose();
     };
     const advance = (captured: Job) => {
         if (job !== captured) return;
-        timer = undefined;
         if (!captured.current()) { refresh(); return; }
         captured.running = true; let progress: BracketMatchProgress;
         try {
-            const start = win.performance.now(), work = captured.cursor.snapshot().workUnits;
-            do { progress = captured.cursor.next(256); }
-            while (job === captured && progress.status === "running" && progress.workUnits - work < 4096 && win.performance.now() - start < 4);
+            const work = captured.cursor.snapshot().workUnits;
+            progress = runner.slice(() => captured.cursor.next(256),
+                next => job === captured && next.status === "running" && next.workUnits - work < 4096, 16);
         } catch { progress = captured.cursor.snapshot(); }
         finally { captured.running = false; }
         if (job !== captured || !captured.current()) {
             captured.cursor.dispose(); if (job === captured) refresh(); return;
         }
-        if (progress.status === "running") timer = win.setTimeout(() => advance(captured), 0);
+        if (progress.status === "running") runner.schedule(() => advance(captured));
         else { job = undefined; captured.cursor.dispose(); publish(progress.status === "ready" ? "ready" : "failed", captured.revision, captured.caret, progress); }
     };
     function refresh(force = false) {
@@ -76,7 +76,7 @@ export function mountBracketHighlights(workspace: Workspace, tabId: TabId, view:
             current: () => available() && idle() && configuration() === configured && workspace.document(documentId).revision === document.revision
                 && workspace.document(documentId).buffer === document.buffer && view.getSnapshot().selectionSet === selections };
         current = captured.current; job = captured; publish("pending", document.revision, selected.head);
-        timer = win.setTimeout(() => advance(captured), 0);
+        runner.schedule(() => advance(captured));
     }
     const observed = () => refresh();
     const configure = (value: boolean | BracketMatchOptions): boolean => {
