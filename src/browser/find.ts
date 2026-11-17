@@ -1,5 +1,5 @@
 import { LiteralSearch } from "../core/search.ts";
-import type { DocumentSnapshot, EditResult, TabId, Workspace } from "../core/workspace.ts";
+import type { DocumentSnapshot, DocumentView, EditResult, TabId, Workspace } from "../core/workspace.ts";
 import { unchangedPositionEdges } from "../core/positions.ts";
 import { FindIndex } from "../core/find-index.ts";
 import { LiteralFindRepair } from "./find-index.ts";
@@ -9,11 +9,23 @@ import type { Observable } from "../core/observable.ts";
 import type { SearchMatch, SearchStep } from "../core/search.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { Store } from "../core/observable.ts";
-import type { TextEditor } from "./text-editor.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 const literalBudget = Object.freeze({ units: 4096, matches: 1024, calls: 32 });
 export type FindOptions = Readonly<{ wholeWord?: boolean; matchCase?: boolean; regularExpression?: boolean }>;
 export type FindConfiguration = Readonly<{ regularExpression?: FindBackend; regularExpressionDelayMs?: number }>;
+type FindEvents = Pick<EventTarget, "addEventListener" | "removeEventListener">;
+/** View operations consumed by find. A mounted TextEditor satisfies this contract directly. */
+export type FindHost = Readonly<{
+    view: DocumentView;
+    element: Readonly<{ ownerDocument: FindEvents & Readonly<{ defaultView: Readonly<{
+        performance: Pick<Performance, "now">;
+        setTimeout: (work: () => void, delay: number) => number; clearTimeout: (timer: number) => void;
+    }> | null }> }>;
+    input: FindEvents & Readonly<{ readOnly: boolean }>;
+    activity: () => Readonly<{ disposed: boolean; composing: boolean }>;
+    viewport: Readonly<{ revealOffset: (offset: number) => void }>;
+    focus: () => void;
+}>;
 /** Stable cause of the last published notice, independent of its display message. */
 export type FindReason = "editing-unavailable" | "composition-active" | "backend-unavailable" | "search-failed"
     | "replacement-failed" | "view-unavailable" | "cancelled" | "replaced" | Extract<EditResult, { applied: false }>["reason"];
@@ -29,7 +41,7 @@ function isAsync<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
 }
 
 /** Host-rendered find UI; scanning/planning yield, while replacement uses one captured transaction. */
-export function createFindController(workspace: Workspace, tabId: TabId, editor: TextEditor, configuration: FindConfiguration = {}): FindController {
+export function createFindController(workspace: Workspace, tabId: TabId, editor: FindHost, configuration: FindConfiguration = {}): FindController {
     const backend = configuration.regularExpression, regexDelay = configuration.regularExpressionDelayMs ?? 80;
     if (!Number.isFinite(regexDelay) || regexDelay < 0 || regexDelay > 1000) throw new RangeError("Invalid regular-expression query delay.");
     if (backend !== undefined && (typeof backend?.search !== "function" || typeof backend.replace !== "function" || typeof backend.dispose !== "function")) throw new TypeError("Expected a find backend.");

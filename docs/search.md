@@ -43,6 +43,9 @@ destroying its editor.
 
 `createFindController` requires the workspace, tab and editor to identify the same live text view. It captures
 the tab generation and retains a resource lease; focus changes never redirect its commands.
+Its `FindHost` contract requires the view, owner-document events and clock, input composition
+events and read-only state, disposed/composing activity, offset reveal and focus. `TextEditor`
+satisfies this contract directly; find does not require editing commands or viewport navigation internals.
 `FindSnapshot` is immutable and includes query/options, revision, status, count, scan frontier,
 source length, current match index, match version, reason, message and component timings.
 
