@@ -4,6 +4,7 @@ import { openHarness } from "./browser-harness.mjs";
 import { corpus } from "../fixtures/workloads.ts";
 import { distribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
 import { typeHostSuffix } from "./host-typing.mjs";
+import { installHostReferenceProbe } from "./host-reference-probe.mjs";
 
 const source = await sourceIdentity(), smoke = process.env.STTROPEZ_HOST_SMOKE === "1", warmup = smoke ? 0 : 3, measured = smoke ? 1 : 10;
 const writer = await createReportWriter("artifacts/bench/hosts", smoke ? "smoke" : "full");
@@ -12,21 +13,14 @@ const harness = await openHarness(), cases = [];
 const snapshot = () => harness.page.evaluate(() => window.hostFixture.snapshot());
 const click = name => harness.page.getByRole("button", { name, exact: true }).click();
 const clock = () => harness.page.evaluate(() => performance.now());
-async function ready() {
-    await harness.page.waitForFunction(() => {
-        const s = window.hostFixture?.snapshot(); return s && s.bindings.activeViews === 2
-            && s.bindings.views.every(view => !view.metrics || !view.metrics.pendingDragScroll && !view.metrics.viewport.pending && view.metrics.viewport.revision === s.source.revision)
-            && (!s.bindings.comparison || s.bindings.comparison.status === "ready" && s.bindings.comparison.workingRevision === s.source.revision
-                && s.bindings.comparison.workingViewport.revision === s.source.revision && !s.bindings.comparison.input.pendingDragScroll && !s.bindings.comparison.workingViewport.pending
-                && s.bindings.comparison.referenceViewport && !s.bindings.comparison.referenceViewport.pending);
-    });
-}
+const ready = () => harness.page.evaluate(() => window.hostReferenceProbe.waitSourceReady());
 try {
     for (const editor of ["native", "candidate"]) for (const host of ["plain", "react"]) for (const corpusId of editor === "candidate" ? ["normal", "lines-10000", "lines-100000"] : ["normal", "lines-10000"]) {
         const original = corpus(corpusId).trimEnd(), proposal = `agent ${original}`, corrected = `fixed ${proposal}`, samples = [];
         for (let iteration = 0; iteration < warmup + measured; iteration++) {
             activeCase = { editor, host, corpus: corpusId, iteration, stage: "mount" };
-            await harness.page.goto(new URL(`/hosts/${host}/?editor=${editor}`, harness.page.url()).href); await ready();
+            await harness.page.goto(new URL(`/hosts/${host}/?editor=${editor}`, harness.page.url()).href);
+            await harness.page.evaluate(installHostReferenceProbe); await ready();
             await harness.page.evaluate(text => { const s = window.hostFixture.snapshot(); window.hostFixture.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original); await ready();
             assert.equal(await harness.page.locator("textarea.st-input-context").count(), editor === "candidate" ? 2 : 0);
             assert.equal(await harness.page.locator("textarea.st-editor").count(), editor === "native" ? 2 : 0);
@@ -111,7 +105,7 @@ try {
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
     await writer.write({ schemaVersion: 3, status: "passed", created: new Date().toISOString(), source, smoke,
         environment: { ...environment(), browser: harness.browser.version(), viewport: { width: 1440, height: 900 } }, cases, errors: harness.errors,
-        note: "Synthetic complete host workflows with two source editor views, an immutable-reference/editable-working comparison after proposal delivery, a typed form and 20Hz activity. Candidate cases include 100,000 lines. Three warmups and ten measured fresh-page workflows per condition unless explicitly smoke mode. Workflow/disposal proxies include automation transport, controls, local deferred service settlement, RAF/readiness polling, completed diff work and current comparison viewports. No imposed network delay or physical presentation is measured. Proposal transaction timing covers synchronous request acceptance and workspace/view notification, excluding host navigation/rendered-frame readiness. Observed input-handler samples are only selected candidate keystrokes; ordinary input has its separate report. Full working/reference text oracles are outside timing. Explicit service capture can export exact whole text; routine candidate rendering and diagnostics remain bounded. Review step metrics describe the latest diff generation, not the longest call across the workflow. Desktop diagnostic measurements establish no production tail, retention, native-device or renderer-selection guarantee." });
+        note: "Synthetic complete host workflows with two source editor views, an immutable-reference/editable-working comparison after proposal delivery, a typed form and 20Hz activity. Candidate cases include 100,000 lines. Three warmups and ten measured fresh-page workflows per condition unless explicitly smoke mode. Workflow/disposal proxies include automation transport, controls, local deferred service settlement, RAF/readiness polling, complete source/review editor settlement and the displayed reference version over two frames. Native source views have null candidate metrics; review is optional before proposal delivery. No imposed network delay or physical presentation is measured. Proposal transaction timing covers synchronous request acceptance and workspace/view notification, excluding host navigation/rendered-frame readiness. Observed input-handler samples are only selected candidate keystrokes; ordinary input has its separate report. Full working/reference text oracles are outside timing. Explicit service capture can export exact whole text; routine candidate rendering and diagnostics remain bounded. Review step metrics describe the latest diff generation, not the longest call across the workflow. Desktop diagnostic measurements establish no production tail, retention, native-device or renderer-selection guarantee." });
 } catch (error) {
     const observed = await harness.page.evaluate(() => { const f = window.hostFixture; if (!f) return null; const s = f.snapshot();
         return { snapshot: s, head: f.range(0, Math.min(s.source.length, 80)), tail: f.range(Math.max(0, s.source.length - 100), s.source.length) }; }).catch(failure => ({ observationError: String(failure) }));

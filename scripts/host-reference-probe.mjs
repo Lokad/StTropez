@@ -6,10 +6,15 @@ export function installHostReferenceProbe() {
         .find(heading => heading.textContent?.startsWith("Baseline · "))?.textContent ?? null;
     // Share the browser fixtures' live-owner checks, including complete selections, folds,
     // both reference/working inputs, alignment and scroll. The remaining checks own this scene.
-    const isReady = (state = fixture.snapshot()) => fixture.settled === true && state.bindings.activeViews === 2
-        && state.bindings.views.every(v => v.metrics?.viewport.revision === state.source.revision)
-        && state.bindings.comparison?.status === "ready" && state.bindings.comparison.workingRevision === state.source.revision
-        && referenceLabel() === `Baseline · ${state.bindings.comparison.baseline?.version}`;
+    const isSourceReady = (state = fixture.snapshot()) => fixture.settled === true && state.bindings.activeViews === 2
+        && state.bindings.views.length === 2
+        && state.bindings.views.every(v => v.metrics === null || v.metrics?.viewport.revision === state.source.revision)
+        && (!state.bindings.comparison || state.bindings.comparison.status === "ready"
+            && state.bindings.comparison.workingRevision === state.source.revision
+            && referenceLabel() === `Baseline · ${state.bindings.comparison.baseline?.version}`);
+    // Full candidate-review measurements require both candidate metrics and an actual review.
+    const isReady = (state = fixture.snapshot()) => isSourceReady(state)
+        && state.bindings.views.every(v => v.metrics != null) && state.bindings.comparison != null;
     // These phase observations retain their narrower clocks; only isReady gates completion.
     const facts = state => {
         const c = state.bindings.comparison, views = state.bindings.views;
@@ -24,18 +29,20 @@ export function installHostReferenceProbe() {
         const reference = c?.referenceViewport && !c.referenceViewport.pending && referenceLabel() === `Baseline · ${c.baseline?.version}`;
         return { rendered: !!rendered, scans: !!scans, caret: !!caret, drag: !!drag, input: !!input, comparison: !!comparison, reference: !!reference };
     };
-    function waitReady() {
+    function waitForReady(predicate, scene) {
         return new Promise((resolve, reject) => {
             let frames = 0, frame;
-            const timer = setTimeout(() => { cancelAnimationFrame(frame); reject(new Error("Host reference setup readiness timed out.")); }, 20000);
-            const check = () => { const state = fixture.snapshot();
-                try { frames = isReady(state) ? frames + 1 : 0; }
+            const timer = setTimeout(() => { cancelAnimationFrame(frame); reject(new Error(`Host ${scene} setup readiness timed out.`)); }, 20000);
+            const check = () => { let state;
+                try { state = fixture.snapshot(); frames = predicate(state) ? frames + 1 : 0; }
                 catch (error) { clearTimeout(timer); reject(error); return; }
                 if (frames < 2) { frame = requestAnimationFrame(check); return; }
                 clearTimeout(timer); resolve(state);
             }; frame = requestAnimationFrame(check);
         });
     }
+    const waitReady = () => waitForReady(isReady, "reference");
+    const waitSourceReady = () => waitForReady(isSourceReady, "source");
     function arm({ kind, operation, text = "", replaceSelection = false, caretOffset = text.length }) {
         active?.abort();
         const before = fixture.snapshot(), prior = before.bindings.views.find(v => v.id === "primary"), initial = before.bindings.comparison;
@@ -179,5 +186,5 @@ export function installHostReferenceProbe() {
                 primarySelection: state.bindings.views.find(v => v.id === "primary").selection, secondarySelection: state.bindings.views.find(v => v.id === "secondary").selection });
         }; frame = requestAnimationFrame(check);
     }
-    globalThis.hostReferenceProbe = Object.freeze({ isReady, waitReady, arm, read: () => active.promise, snapshot: () => active?.snapshot(), abort: () => active?.abort() });
+    globalThis.hostReferenceProbe = Object.freeze({ isSourceReady, waitSourceReady, isReady, waitReady, arm, read: () => active.promise, snapshot: () => active?.snapshot(), abort: () => active?.abort() });
 }

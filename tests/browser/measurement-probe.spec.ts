@@ -4,6 +4,8 @@ const { installHostReferenceProbe } = await import(new URL("../../scripts/host-r
 type Result = { kind: string; transactions: number; insertedUnits: number; revision: number; commandToFullReviewReadyProxyMs: number | null;
     lastInputToFullReviewReadyProxyMs: number | null; records: { trusted?: boolean; keydownHandlerMs?: number; inputHandlerMs?: number; workingRenderProxyMs: number | null }[] };
 type Probe = { arm: (options: { kind: string; text?: string; caretOffset?: number; operation?: string; replaceSelection?: boolean }) => void;
+    isSourceReady: (state?: ReturnType<Window["hostFixture"]["snapshot"]>) => boolean;
+    waitSourceReady: () => Promise<unknown>;
     isReady: (state?: ReturnType<Window["hostFixture"]["snapshot"]>) => boolean;
     waitReady: () => Promise<unknown>; read: () => Promise<Result>; snapshot: () => { finished: boolean; failure?: string; records: unknown[] } };
 declare global { interface Window { hostReferenceProbe: Probe } }
@@ -17,6 +19,26 @@ async function mount(page: Page, host: string) {
     await page.getByRole("button", { name: "Finish review acceptance", exact: true }).click();
     expect((await page.evaluate(() => window.hostReferenceProbe.read())).kind).toBe("reference");
 }
+
+test("source readiness supports native views and optional review without weakening full review", async ({ page }) => {
+    for (const editor of ["native", "candidate"]) {
+        await page.goto(`/hosts/plain/?editor=${editor}`); await ready(page);
+        await page.evaluate(installHostReferenceProbe);
+        const settle = () => page.evaluate(() => window.hostReferenceProbe.waitSourceReady());
+        const scene = () => page.evaluate(() => ({ source: window.hostReferenceProbe.isSourceReady(), review: window.hostReferenceProbe.isReady() }));
+        await settle(); expect(await scene()).toEqual({ source: true, review: false });
+        await page.getByRole("button", { name: "Open source review", exact: true }).click(); await settle();
+        expect(await scene()).toEqual({ source: true, review: editor === "candidate" });
+        expect(await page.evaluate(() => {
+            const f = window.hostFixture;
+            f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: 0, head: 1 }]);
+            return { source: window.hostReferenceProbe.isSourceReady(), review: window.hostReferenceProbe.isReady() };
+        })).toEqual({ source: false, review: false });
+        await settle(); expect(await scene()).toEqual({ source: true, review: editor === "candidate" });
+        await page.evaluate(() => window.hostFixture.dispose());
+        expect(await scene()).toEqual({ source: false, review: false });
+    }
+});
 
 test("review measurements await full selections, folds, queued input and reference work", async ({ page }) => {
     await mount(page, "plain");
@@ -93,6 +115,7 @@ test("review measurement propagates terminal settlement failure and releases the
         document.documentElement.dataset.failSettlement = "true";
     });
     await page.evaluate(installHostReferenceProbe);
+    await expect(page.evaluate(() => window.hostReferenceProbe.waitSourceReady())).rejects.toThrow("terminal alignment failure");
     await expect(page.evaluate(() => window.hostReferenceProbe.waitReady())).rejects.toThrow("terminal alignment failure");
     await page.evaluate(() => {
         delete document.documentElement.dataset.failSettlement;

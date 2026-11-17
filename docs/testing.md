@@ -216,6 +216,12 @@ revision and displayed reference version. Folding, navigation, table-paste and l
 measurements also use this predicate; provider and host-service gates remain operation-specific.
 Complete selection sets, fold generations, reference input, alignment and scroll must settle;
 phase render observations remain narrower. Terminal alignment failure rejects the wait.
+Generic host and save/conflict workflows use `isSourceReady`/`waitSourceReady` before review
+is mounted and with native textarea source views. They require two settled source views and,
+when present, the complete settled comparison and displayed reference version. Native source
+metrics are null; they do not satisfy the full `isReady` predicate. Conflict input points
+require a review, capture `beforeinput` on the intended input, and check exact revision, text and
+selection over two frames. Missing origins and terminal failures reject with listener/frame cleanup.
 The standalone installed consumer stages the same fixture helper with public package imports;
 its strict consumer compile and isolation checks exclude library source.
 

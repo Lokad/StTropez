@@ -4,23 +4,19 @@ import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
 import { corpus } from "../fixtures/workloads.ts";
 import { typeHostSuffix } from "./host-typing.mjs";
+import { installHostReferenceProbe } from "./host-reference-probe.mjs";
 
 const source = await sourceIdentity(), smoke = process.env.STTROPEZ_CONFLICT_SMOKE === "1", warmup = smoke ? 0 : 3, measured = smoke ? 1 : 10;
 const writer = await createReportWriter("artifacts/bench/save-conflicts", smoke ? "smoke" : "full");
 const harness = await openHarness(), cases = [], snapshot = () => harness.page.evaluate(() => window.hostFixture.snapshot());
 const click = name => harness.page.getByRole("button", { name, exact: true }).click();
-async function ready() {
-    await harness.page.waitForFunction(() => { const s = window.hostFixture?.snapshot(), c = s?.bindings.comparison;
-        return s && s.bindings.activeViews === 2 && s.bindings.views.every(v => !v.metrics || !v.metrics.pendingDragScroll && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision)
-            && (!c || c.status === "ready" && c.workingRevision === s.source.revision && !c.input.pendingDragScroll && !c.workingViewport.pending && c.workingViewport.revision === s.source.revision
-                && c.referenceViewport && !c.referenceViewport.pending); });
-    await harness.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-}
+const ready = () => harness.page.evaluate(() => window.hostReferenceProbe.waitSourceReady());
 try {
     for (const editor of ["native", "candidate"]) for (const host of ["plain", "react"]) for (const corpusId of editor === "candidate" ? ["normal", "lines-100000", "unique-lines-100000", "single-line"] : ["normal"]) {
         const original = (corpusId === "unique-lines-100000" ? Array.from({ length: 100000 }, (_, index) => `const value${String(index).padStart(6, "0")} = 123;\n`).join("") : corpus(corpusId)).trimEnd(), remote = `remote ${original}`, samples = [];
         for (let iteration = 0; iteration < warmup + measured; iteration++) {
-            await harness.page.goto(new URL(`/hosts/${host}/?editor=${editor}`, harness.page.url()).href); await ready();
+            await harness.page.goto(new URL(`/hosts/${host}/?editor=${editor}`, harness.page.url()).href);
+            await harness.page.evaluate(installHostReferenceProbe); await ready();
             await harness.page.evaluate(({ original, remote }) => { const f = window.hostFixture, s = f.snapshot();
                 f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: original }]); f.externalWrite(remote); }, { original, remote });
             await ready(); const before = await snapshot(), input = harness.page.getByRole("textbox", { name: "Primary source", exact: true });
@@ -35,33 +31,43 @@ try {
             await harness.page.evaluate(() => window.hostFixture.finishConflictReview()); await ready();
             const reviewWithTypingActionProxyMs = performance.now() - reviewStart;
             assert.equal(await input.evaluate(node => node.ownerDocument.activeElement === node), true);
-            await harness.page.evaluate(() => {
+            await harness.page.evaluate(editor => {
                 const input = document.querySelector('textarea[aria-label="Primary source"]'), before = window.hostFixture.snapshot();
                 globalThis.conflictInputMeasurement = new Promise((resolve, reject) => {
-                    let start, frames = 0;
-                    const timeout = setTimeout(() => reject(new Error("Conflict input readiness timed out.")), 10000);
-                    document.addEventListener("beforeinput", () => { start = performance.now(); }, { once: true, capture: true });
+                    const listeners = new AbortController();
+                    let start, frames = 0, frame, finished = false;
+                    const cleanup = () => { finished = true; listeners.abort(); cancelAnimationFrame(frame); clearTimeout(timeout); };
+                    const fail = error => { if (finished) return; cleanup(); reject(error); };
+                    const timeout = setTimeout(() => fail(new Error("Conflict input readiness timed out.")), 10000);
+                    document.addEventListener("beforeinput", event => {
+                        if (event.target === input && start === undefined) start = performance.now();
+                    }, { capture: true, signal: listeners.signal });
                     input.addEventListener("input", () => {
+                        if (start === undefined) { fail(new Error("Conflict input missed its beforeinput origin.")); return; }
                         const check = () => {
-                            const f = window.hostFixture, s = f.snapshot(), c = s.bindings.comparison, view = s.bindings.views.find(v => v.id === "primary");
-                            if (!c || c.status !== "ready" || c.workingRevision !== s.source.revision || c.workingViewport.revision !== s.source.revision
-                                || c.input.pendingDragScroll || c.workingViewport.pending || !c.referenceViewport || c.referenceViewport.pending
-                                || s.bindings.views.some(v => v.metrics && (v.metrics.pendingDragScroll || v.metrics.viewport.pending || v.metrics.viewport.revision !== s.source.revision))) {
-                                frames = 0; requestAnimationFrame(check); return;
-                            }
-                            if (s.source.revision !== before.source.revision + 1 || s.source.length !== before.source.length + 1
-                                || f.range(before.source.length, s.source.length) !== "z" || view.selection.anchor !== s.source.length || view.selection.head !== s.source.length) {
-                                clearTimeout(timeout); reject(new Error("Conflict input had incorrect text, revision or selection.")); return;
-                            }
-                            if (++frames < 2) { requestAnimationFrame(check); return; }
-                            clearTimeout(timeout); resolve({ inputHandlerMs: view.metrics?.lastInputMs ?? null, inputToReviewReadyProxyMs: performance.now() - start,
-                                wholeTextExports: s.source.exports, sourceContextUnits: view.metrics?.inputUnits ?? null, comparisonContextUnits: c.input.inputUnits,
-                                sourceRows: view.metrics?.viewport.rows ?? null, comparisonRows: c.workingViewport.rows + c.referenceViewport.rows,
-                                diffWork: c.work, workingViewportRenders: c.workingViewport.renders, referenceViewportRenders: c.referenceViewport.renders });
-                        }; requestAnimationFrame(check);
-                    }, { once: true });
+                            if (finished) return;
+                            try {
+                                const f = window.hostFixture, s = f.snapshot(), c = s.bindings.comparison, view = s.bindings.views.find(v => v.id === "primary");
+                                if (!c || !(editor === "candidate" ? window.hostReferenceProbe.isReady(s) : window.hostReferenceProbe.isSourceReady(s))) {
+                                    frames = 0; frame = requestAnimationFrame(check); return;
+                                }
+                                if (s.source.revision !== before.source.revision + 1 || s.source.length !== before.source.length + 1
+                                    || f.range(before.source.length, s.source.length) !== "z" || view.selection.anchor !== s.source.length || view.selection.head !== s.source.length) {
+                                    fail(new Error("Conflict input had incorrect text, revision or selection.")); return;
+                                }
+                                if (++frames < 2) { frame = requestAnimationFrame(check); return; }
+                                const inputToReviewReadyProxyMs = performance.now() - start;
+                                cleanup(); resolve({ inputHandlerMs: view.metrics?.lastInputMs ?? null, inputToReviewReadyProxyMs,
+                                    wholeTextExports: s.source.exports, sourceContextUnits: view.metrics?.inputUnits ?? null, comparisonContextUnits: c.input.inputUnits,
+                                    sourceRows: view.metrics?.viewport.rows ?? null, comparisonRows: c.workingViewport.rows + c.referenceViewport.rows,
+                                    diffWork: c.work, workingViewportRenders: c.workingViewport.renders, referenceViewportRenders: c.referenceViewport.renders });
+                            } catch (error) { fail(error); }
+                        }; frame = requestAnimationFrame(check);
+                    }, { once: true, signal: listeners.signal });
                 });
-            });
+                // The next automation call consumes the result; handle early rejection meanwhile.
+                globalThis.conflictInputMeasurement.catch(() => {});
+            }, editor);
             const pointStart = performance.now(); await harness.page.keyboard.type("z");
             const point = await harness.page.evaluate(() => globalThis.conflictInputMeasurement); point.completeActionProxyMs = performance.now() - pointStart;
             if (editor === "candidate") { assert.equal(point.wholeTextExports, 0); assert.ok(point.sourceContextUnits < 2600); assert.ok(point.sourceRows < 100); }
@@ -110,6 +116,6 @@ try {
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
     await writer.write({ schemaVersion: 1, status: "passed", created: new Date().toISOString(), source, smoke,
         environment: { ...environment(), browser: harness.browser.version(), viewport: { width: 1440, height: 900 } }, cases, errors: harness.errors,
-        note: "Deferred local conflict/review/retry workflows with two source views, immutable remote reference, editable comparison and 20Hz host traffic. External writer setup is outside the workflow clock. No network or imposed service delay. Stage timings include automation controls, typing while waiting, settlement and completed comparison/view readiness. Point input begins at document-capture beforeinput and ends after exact text/revision/primary selection and all working viewports plus diff are current for two frames. Complete point action begins before keyboard automation and includes transport and returning the readiness result. Adapter-handler elapsed time is separate; the native baseline has no corresponding handler timer. These elapsed clocks do not measure process CPU time. Full text/reference oracles are outside timing. Three warmups and ten fresh-page measured workflows per condition unless explicitly smoke. Neither proxy measures physical presentation; this diagnostic does not qualify native IME, contextual long-line geometry, production tails or adoption budgets." });
+        note: "Deferred local conflict/review/retry workflows with two source views, immutable remote reference, editable comparison and 20Hz host traffic. External writer setup is outside the workflow clock. No network or imposed service delay. Stage timings include automation controls, typing while waiting, settlement and completed comparison/view readiness. Setup permits absent review and native source metrics. Point input requires review, begins at document-capture beforeinput on the intended input and ends after exact text/revision/primary selection, complete source/reference/working editor settlement and the displayed reference version are current for two frames. Complete point action begins before keyboard automation and includes transport and returning the readiness result. Adapter-handler elapsed time is separate; the native baseline has no corresponding handler timer. These elapsed clocks do not measure process CPU time. Full text/reference oracles are outside timing. Three warmups and ten fresh-page measured workflows per condition unless explicitly smoke. Neither proxy measures physical presentation; this diagnostic does not qualify native IME, contextual long-line geometry, production tails or adoption budgets." });
 } catch (error) { await writer.write({ status: "failed", source, smoke, cases, error: String(error), browserErrors: harness.errors }); throw error; }
 finally { await harness.close(); }
