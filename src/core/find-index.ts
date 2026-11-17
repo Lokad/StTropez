@@ -1,4 +1,5 @@
 import type { SearchMatch } from "./search.ts";
+import { partitionPoint } from "./bound-search.ts";
 
 type Page = { values: readonly number[]; begin: number; size: number; shift: number; end: number };
 const pageSize = 1024;
@@ -12,9 +13,7 @@ export class FindIndex {
     private length = 0;
     get count(): number { return this.length; }
     private pageAt(index: number): number {
-        let low = 0, high = this.pages.length;
-        while (low < high) { const mid = Math.floor((low + high) / 2); if (this.pages[mid]!.end <= index) low = mid + 1; else high = mid; }
-        return low;
+        return partitionPoint(this.pages.length, at => this.pages[at]!.end <= index);
     }
     at(index: number): SearchMatch {
         if (!Number.isSafeInteger(index) || index < 0 || index >= this.length) throw new RangeError("Invalid match index.");
@@ -22,15 +21,13 @@ export class FindIndex {
         return { from: page.values[at]! + page.shift, to: page.values[at + 1]! + page.shift };
     }
     lowerBound(offset: number): number {
-        let low = 0, high = this.pages.length;
-        while (low < high) {
-            const mid = Math.floor((low + high) / 2), page = this.pages[mid]!;
-            if (page.values[(page.begin + page.size - 1) * 2]! + page.shift < offset) low = mid + 1; else high = mid;
-        }
-        const page = this.pages[low]; if (!page) return this.length;
-        low = 0; high = page.size;
-        while (low < high) { const mid = Math.floor((low + high) / 2); if (page.values[(page.begin + mid) * 2]! + page.shift < offset) low = mid + 1; else high = mid; }
-        return page.end - page.size + low;
+        const at = partitionPoint(this.pages.length, index => {
+            const page = this.pages[index]!;
+            return page.values[(page.begin + page.size - 1) * 2]! + page.shift < offset;
+        });
+        const page = this.pages[at]; if (!page) return this.length;
+        return page.end - page.size + partitionPoint(page.size,
+            index => page.values[(page.begin + index) * 2]! + page.shift < offset);
     }
     append(match: SearchMatch): void {
         let page = this.pages.at(-1);

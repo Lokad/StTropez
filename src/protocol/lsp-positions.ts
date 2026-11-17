@@ -1,6 +1,7 @@
 import { isLspUint } from "./wire.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import { BufferChangeCursor } from "../core/buffer-change.ts";
+import { partitionPoint } from "../core/bound-search.ts";
 import { positionChanges } from "../core/positions.ts";
 import type { PositionMapping } from "../core/positions.ts";
 
@@ -12,7 +13,7 @@ export type LspChangeHint = Readonly<{ before: TextBuffer; mapping: PositionMapp
 type Span = { from: number; to: number; insertFrom: number; insertTo: number };
 const chunkUnits = 16384;
 function lowerBound(values: Uint32Array, key: number): number {
-    let low = 0, high = values.length; while (low < high) { const middle = (low + high) >>> 1; if (values[middle]! < key) low = middle + 1; else high = middle; } return low;
+    return partitionPoint(values.length, index => values[index]! < key);
 }
 function interior(buffer: TextBuffer, offset: number): boolean {
     return offset > 0 && offset < buffer.length && buffer.slice(offset - 1, offset + 1) === "\r\n";

@@ -2,6 +2,7 @@ import { validateTextEdits } from "./changes.ts";
 import type { TextEdit } from "./changes.ts";
 import { PositionMap } from "./positions.ts";
 import { joinTrees } from "./avl.ts";
+import { partitionPoint } from "./bound-search.ts";
 
 type LineIndex = Readonly<Uint32Array | Float64Array>;
 type Backing = Readonly<{ text: string; lines: LineIndex; gaps: LineIndex; gapBase: number }>;
@@ -25,9 +26,7 @@ function readCounters(buffer: TextBuffer) {
     return value;
 }
 function lowerBound(values: ArrayLike<number>, target: number): number {
-    let low = 0, high = values.length;
-    while (low < high) { const middle = low + Math.floor((high - low) / 2); if (values[middle]! < target) low = middle + 1; else high = middle; }
-    return low;
+    return partitionPoint(values.length, index => values[index]! < target);
 }
 function piece(backing: Backing, from: number, length: number): Leaf {
     const firstLine = lowerBound(backing.lines, from), breaks = lowerBound(backing.lines, from + length) - firstLine;
