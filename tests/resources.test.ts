@@ -44,6 +44,31 @@ test("typed resources need no document, isolate scopes/variants and expose immut
     assert.equal(foreign.resolveResource(workspace.captureResource(form.id)), undefined);
 });
 
+test("typed resource equality preserves no-op identity and compares independently copied saved values", () => {
+    const workspace = new Workspace(), shared = { number: -0 };
+    const form = workspace.createResource({ scope: "test", resource: "equality", variant: "working" }, "Form",
+        { value: { left: shared, right: shared }, serverVersion: "v0" });
+    const initial = form.getSnapshot(); assert.ok(initial.state === "ready");
+    shared.number = 1;
+    assert.ok(Object.is(initial.value().left.number, -0)); assert.ok(Object.is(initial.value().right.number, -0));
+    const seen: { revision: number; dirty: boolean }[] = [];
+    const stop = form.subscribe(() => { const state = form.getSnapshot(); seen.push({ revision: state.revision, dirty: state.metadata.dirty }); });
+    try {
+        // Key order and aliasing in the caller's graph are not resource changes.
+        assert.deepEqual(workspace.updateResource(form, { expectedRevision: 0, origin: "human",
+            value: { right: { number: -0 }, left: { number: -0 } } }), { applied: true, revision: 0 });
+        assert.equal(form.getSnapshot(), initial); assert.deepEqual(seen, []);
+        assert.deepEqual(workspace.updateResource(form, { expectedRevision: 0, origin: "human",
+            value: { left: { number: -0 }, right: { number: 0 } } }), { applied: true, revision: 1 });
+        assert.deepEqual(seen, [{ revision: 1, dirty: true }]);
+        assert.deepEqual(workspace.updateResource(form, { expectedRevision: 1, origin: "human",
+            value: { right: { number: -0 }, left: { number: -0 } } }), { applied: true, revision: 2 });
+        assert.deepEqual(seen, [{ revision: 1, dirty: true }, { revision: 2, dirty: false }]);
+        assert.equal(form.metadata.getSnapshot().serverVersion, "v0");
+        assert.equal(workspace.ownership(form.id).leases, 0);
+    } finally { stop(); }
+});
+
 test("typed array snapshots reject accessors without invoking code or publishing partial state", () => {
     const workspace = new Workspace(), key = { scope: "test", resource: "array", variant: "working" };
     const handle = workspace.createResource({ ...key, resource: "existing" }, "Array", { value: { rows: [1, 2] } });
