@@ -1,6 +1,7 @@
 import { applyTextEdits } from "./changes.ts";
 import { lineEnding } from "./language-edits.ts";
 import { PositionMap } from "./positions.ts";
+import { partitionPoint } from "./bound-search.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import type { Affinity, PositionMapping } from "./positions.ts";
 
@@ -80,13 +81,10 @@ export function reindentInsertionText(value: string, sourceColumns: number, cont
     });
     const mapping = new PositionMap(value.length, edits), breaks = changes.filter(change => typeof change.insert === "string");
     const preceding = <T extends { from: number }>(items: readonly T[], offset: number): T | undefined => {
-        let low = 0, high = items.length;
-        while (low < high) { const mid = Math.floor((low + high) / 2); if (items[mid]!.from <= offset) low = mid + 1; else high = mid; }
-        return items[low - 1];
+        return items[partitionPoint(items.length, index => items[index]!.from <= offset) - 1];
     };
     const sourceColumn = (run: typeof runs[number], offset: number) => {
-        let low = 0, high = run.tabEnds.length / 2;
-        while (low < high) { const mid = Math.floor((low + high) / 2); if (run.tabEnds[mid * 2]! <= offset) low = mid + 1; else high = mid; }
+        const low = partitionPoint(run.tabEnds.length / 2, index => run.tabEnds[index * 2]! <= offset);
         return low ? run.tabEnds[(low - 1) * 2 + 1]! + offset - run.tabEnds[(low - 1) * 2]! : offset - run.from;
     };
     const mapPosition = (offset: number, affinity: Affinity = "after"): number => {

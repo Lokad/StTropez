@@ -1,6 +1,7 @@
 import type { Affinity } from "./positions.ts";
 import type { TextEdit } from "./changes.ts";
 import type { InsertionIndentation } from "./insertion-text.ts";
+import { partitionPoint } from "./bound-search.ts";
 
 type Line = { from: number; body: number; to: number; end: number; columns: number };
 const columns = (text: string, from: number, to: number, tabSize: number) => {
@@ -31,11 +32,7 @@ export function snippetFieldMapper(source: string, tabSize: number): (target: st
     if (source === target) return { map: offset => offset, indentEdit: edit => edit };
     const sourceLines = left ??= lines(source, tabSize), right = lines(target, tabSize);
     if (sourceLines.length !== right.length || sourceLines.some((line, index) => source.slice(line.body, line.to) !== target.slice(right[index]!.body, right[index]!.to))) return;
-    const lineAt = (offset: number) => {
-        let low = 0, high = sourceLines.length;
-        while (low < high) { const mid = Math.floor((low + high) / 2); if (sourceLines[mid]!.from <= offset) low = mid + 1; else high = mid; }
-        return low - 1;
-    };
+    const lineAt = (offset: number) => partitionPoint(sourceLines.length, index => sourceLines[index]!.from <= offset) - 1;
     return {
         map: (offset, affinity = "after") => {
             if (!Number.isSafeInteger(offset) || offset < 0 || offset > source.length) throw new RangeError("Snippet position leaves its field.");

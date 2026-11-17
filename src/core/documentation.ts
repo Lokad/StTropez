@@ -1,3 +1,5 @@
+import { partitionPoint } from "./bound-search.ts";
+
 /** Provider/host content retains its format; literal text is never inferred to be Markdown. */
 export type DocumentationPart = Readonly<{ kind: "plaintext" | "markdown"; value: string } | { kind: "code"; value: string; language: string }>;
 export type DocumentationContent = readonly DocumentationPart[];
@@ -38,8 +40,7 @@ function parseInline(value: string): readonly DocumentationInline[] {
         i = end - 1;
     }
     const next = (token: string, at: number, end: number) => {
-        const values = closing.get(token) ?? []; let low = 0, high = values.length;
-        while (low < high) { const middle = (low + high) >>> 1; if (values[middle]! <= at) low = middle + 1; else high = middle; }
+        const values = closing.get(token) ?? [], low = partitionPoint(values.length, index => values[index]! <= at);
         const found = values[low]; return found !== undefined && found + token.length <= end ? found : undefined;
     };
     const parse = (from: number, to: number, depth: number, allowLinks: boolean): readonly DocumentationInline[] => {
