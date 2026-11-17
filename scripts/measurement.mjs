@@ -3,15 +3,28 @@ import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { arch, cpus, freemem, totalmem, platform, release, loadavg } from "node:os";
 
+/**
+ * @param {readonly number[]} samples
+ * @returns {{samples: readonly number[], n: number, max: number, p50: number, p95: number, statistic: "max" | "p95"}}
+ */
 export function distribution(samples) {
-    if (!samples.length || samples.some(sample => !Number.isFinite(sample) || sample < 0)) throw new Error("Missing or invalid timing samples.");
-    const sorted = [...samples].sort((a, b) => a - b);
-    const percentile = fraction => sorted[Math.ceil(sorted.length * fraction) - 1];
-    return { samples, n: samples.length, max: sorted.at(-1), p50: percentile(.5), p95: percentile(.95),
-        statistic: samples.length < 20 ? "max" : "p95" };
+    const sorted = [...samples];
+    // Validate the captured values; iteration materializes missing array elements.
+    if (!sorted.length || sorted.some(sample => !Number.isFinite(sample) || sample < 0)) throw new Error("Missing or invalid timing samples.");
+    sorted.sort((a, b) => a - b);
+    /** @param {0.5 | 0.95 | 1} fraction */
+    const percentile = fraction => {
+        // These nearest ranks are within the validated, non-empty array.
+        return /** @type {number} */ (sorted[Math.ceil(sorted.length * fraction) - 1]);
+    };
+    return { samples, n: sorted.length, max: percentile(1), p50: percentile(.5), p95: percentile(.95),
+        statistic: sorted.length < 20 ? "max" : "p95" };
 }
 
-/** Small batches describe their observed maximum, not an inferred latency tail. */
+/**
+ * Small batches describe their observed maximum, not an inferred latency tail.
+ * @param {Pick<ReturnType<typeof distribution>, "n" | "p50" | "p95" | "max">} value
+ */
 export function timingSummary({ n, p50, p95, max }) { return { n, p50, max, ...(n >= 20 ? { p95 } : {}) }; }
 
 export async function sourceIdentity() {

@@ -1,9 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-
-const { consumerScenario } = await import(new URL("../scripts/package-scenarios.mjs", import.meta.url).href) as {
-    consumerScenario(args: readonly string[]): string;
-};
+import { consumerScenario } from "../scripts/package-scenarios.mjs";
 const modes = ["lsp", "react", "pilot", "hunk", "activation", "workspace", "transitions"];
 
 test("package workload selection retains the full route and each explicit single scenario", () => {

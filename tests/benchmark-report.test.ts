@@ -2,13 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { distribution, timingSummary } from "../scripts/measurement.mjs";
 type Report = { status: string; variant?: string; observations: number[] };
 const { createReportWriter } = await import(new URL("../scripts/benchmark-report.mjs", import.meta.url).href) as {
     createReportWriter(directory: string, variant: string): Promise<{ file: string; latest: string; write(report: Report): Promise<void> }>;
-};
-const { distribution, timingSummary } = await import(new URL("../scripts/measurement.mjs", import.meta.url).href) as {
-    distribution(samples: number[]): { samples: number[]; n: number; max: number; p50: number; p95: number; statistic: string };
-    timingSummary(value: ReturnType<typeof distribution>): { n: number; p50: number; max: number; p95?: number };
 };
 
 test("smoke, in-progress and failed reports preserve completed evidence and terminal records", async () => {
@@ -43,5 +40,6 @@ test("small measurement batches report n and maximum while larger batches expose
         assert.deepEqual(timingSummary(result), { n, max: n, p50: Math.ceil(n / 2), ...(n >= 20 ? { p95: Math.ceil(n * .95) } : {}) });
         assert.deepEqual(result.samples, samples); assert.equal(samples[0], n);
     }
-    for (const samples of [[], [-1], [NaN], [Infinity]]) assert.throws(() => distribution(samples), /invalid/);
+    const partial = Array<number>(3); partial[0] = 1; partial[2] = 2;
+    for (const samples of [[], [-1], [NaN], [Infinity], Array<number>(2), partial]) assert.throws(() => distribution(samples), /invalid/);
 });

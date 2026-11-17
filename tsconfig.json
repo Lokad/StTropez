@@ -2,10 +2,12 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "types": ["node"],
+    "allowJs": true,
+    "checkJs": true,
     "incremental": true,
     "tsBuildInfoFile": "artifacts/types/development.tsbuildinfo"
   },
-  "include": ["fixtures/**/*.ts", "examples/**/*.ts", "examples/**/*.tsx", "experiments/**/*.ts", "tests/**/*.ts", "playwright*.ts"],
+  "include": ["fixtures/**/*.ts", "examples/**/*.ts", "examples/**/*.tsx", "experiments/**/*.ts", "tests/**/*.ts", "playwright*.ts", "scripts/measurement.mjs", "scripts/package-scenarios.mjs"],
   "references": [
     { "path": "./tsconfig.core.json" },
     { "path": "./tsconfig.protocol.json" },

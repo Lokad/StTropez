@@ -45,6 +45,8 @@ one checking project. Compiler declarations and incremental state stay under `ar
 run `npm run typecheck` after a fresh checkout and pass `-- --force` to force a full recheck.
 The package build emits its own declarations to `dist`, and documentation examples compile
 independently against the public source entries using `tsconfig.base.json`.
+The development project also checks the measurement and package-scenario JavaScript helpers
+listed in `tsconfig.json`; the other scripts are outside its JavaScript checking scope.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected
 Chromium gate and the static-demo Chromium journey. A passing CI run has that scope;
