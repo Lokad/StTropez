@@ -117,9 +117,48 @@ function* singleTokenAlignment(left: Index, right: Index, region: Region, stats:
     if (a0 < region.a1 || b0 < region.b1) changes.push({ a0, a1: region.a1, b0, b1: region.b1 });
     return changes;
 }
-/** Unique common tokens in increasing order define the only longest common subsequence.
- * Unknown, duplicated or crossed matches retain the general alignment and its tie choices. */
-function* orderedUniqueAlignment(left: Index, right: Index, region: Region, stats: Stats): Generator<void, readonly Region[] | undefined> {
+/** Matching every common occurrence fixes its pairing, even when tokens repeat.
+ * The caller supplies the complete left alphabet and bounds both region sizes. */
+function* completeCommonAlignment(left: Index, right: Index, region: Region, rows: ReadonlyMap<string, number>, stats: Stats): Generator<void, readonly Region[] | undefined> {
+    const rightTokens = new Set<string>();
+    for (let bi = region.b0; bi < region.b1; bi++) {
+        const token = (yield* getLine(right, bi, stats)).token;
+        if (token === undefined) return;
+        rightTokens.add(token); if (tick(stats, token.length + 4)) yield;
+    }
+    const changes: Region[] = []; let a0 = region.a0, b0 = region.b0, ai = a0, bi = b0;
+    for (;;) {
+        let leftToken: string | undefined, rightToken: string | undefined;
+        while (ai < region.a1) {
+            const token = (yield* getLine(left, ai, stats)).token;
+            if (token === undefined) return;
+            if (tick(stats, token.length + 4)) yield;
+            if (rightTokens.has(token)) { leftToken = token; break; }
+            ai++;
+        }
+        while (bi < region.b1) {
+            const token = (yield* getLine(right, bi, stats)).token;
+            if (token === undefined) return;
+            if (tick(stats, token.length + 4)) yield;
+            if (rows.has(token)) { rightToken = token; break; }
+            bi++;
+        }
+        if (ai === region.a1 || bi === region.b1) {
+            if (ai !== region.a1 || bi !== region.b1) return;
+            break;
+        }
+        stats.lineComparisons++;
+        if (tick(stats, Math.max(leftToken!.length, rightToken!.length) + 4)) yield;
+        if (leftToken !== rightToken) return;
+        if (a0 < ai || b0 < bi) changes.push({ a0, a1: ai, b0, b1: bi });
+        a0 = ++ai; b0 = ++bi; if (tick(stats, 4)) yield;
+    }
+    if (a0 < region.a1 || b0 < region.b1) changes.push({ a0, a1: region.a1, b0, b1: region.b1 });
+    return changes;
+}
+/** Unique common tokens establish a complete ordered match directly. Duplicates require
+ * matching both complete common sequences; unknown or crossed matches retain the frontier. */
+function* orderedCommonAlignment(left: Index, right: Index, region: Region, stats: Stats): Generator<void, readonly Region[] | undefined> {
     if (Math.max(region.a1 - region.a0, region.b1 - region.b0) > 65536) return;
     const rows = new Map<string, number>();
     for (let ai = region.a0; ai < region.a1; ai++) {
@@ -135,7 +174,8 @@ function* orderedUniqueAlignment(left: Index, right: Index, region: Region, stat
         const ai = rows.get(token); stats.lineComparisons++;
         if (tick(stats, token.length + 4)) yield;
         if (ai === undefined) continue;
-        if (ai < a0) return; // Includes -1, repeated working tokens and crossed pairs.
+        if (ai === -1) return yield* completeCommonAlignment(left, right, region, rows, stats);
+        if (ai < a0) return; // Repeated working tokens or crossed unique pairs.
         if (a0 < ai || b0 < bi) changes.push({ a0, a1: ai, b0, b1: bi });
         a0 = ai + 1; b0 = bi + 1;
         if (tick(stats, 4)) yield;
@@ -159,8 +199,8 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats): Generator<vo
         if (distance === 64 && Math.min(n, m) >= 64) {
             const changes = yield* singleTokenAlignment(a, b, region, stats);
             if (changes) return { changes };
-            const unique = yield* orderedUniqueAlignment(a, b, region, stats);
-            if (unique) return { changes: unique };
+            const ordered = yield* orderedCommonAlignment(a, b, region, stats);
+            if (ordered) return { changes: ordered };
         }
         if (distance > radius) {
             // Only visited diagonals need storage. Retain both parities and their empty

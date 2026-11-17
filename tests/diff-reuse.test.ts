@@ -235,20 +235,24 @@ test("independent remote references reuse working metadata across shifted suffix
 });
 
 test("many separated changes retain exact alignment and bounded work for unique and repeated rows", () => {
-    for (const [count, period, stride, coldLimit, warmLimit] of [
-        [100000, 100000, 100, 13000000, 15000000],
-        [10000, 10000, 10, 800000, 600000],
-        [10000, 20, 10, 7400000, 9300000]
+    for (const [count, period, stride, variation, hunks, coldLimit, warmLimit] of [
+        [100000, 100000, 100, "ordered", 1000, 13000000, 15000000],
+        [10000, 10000, 10, "ordered", 1000, 800000, 600000],
+        [10000, 20, 10, "ordered", 1000, 1100000, 850000],
+        [10000, 20, 10, "extra", 1068, 13000000, 16000000],
+        [10000, 20, 10, "crossed", 1500, 18000000, 23000000]
     ] as const) {
         const source = Array.from({ length: count }, (_, i) => `row ${i % period}\n`).join(""), baseline = TextBuffer.from(source);
-        const text = source.replace(/^row (\d+)$/gm, (line, n: string) => Number(n) % stride === 0 ? "changed " + n : line);
+        let text = source.replace(/^row (\d+)$/gm, (line, n: string) => Number(n) % stride === 0 ? "changed " + n : line);
+        if (variation === "extra") text = text.replaceAll("row 11\n", "row 11\nrow 11\n");
+        if (variation === "crossed") text = text.replaceAll("row 11\nrow 12\n", "row 12\nrow 11\n");
         const working = TextBuffer.from(text), cache = new DiffReferenceCache();
         const cold = finish(baseline, working, cache), changed = working.replace(working.length, working.length, "z");
         const warm = finish(baseline, changed, cache), fresh = finish(baseline, changed);
         assert.deepEqual(warm.hunks, fresh.hunks); reconstruct(warm, source, text + "z");
-        assert.equal(cold.hunks.length, 1000); assert.equal(warm.hunks.length, 1001);
-        assert.ok(cold.work < coldLimit, `${count}/${period}: ${cold.work} cold units`);
-        assert.ok(warm.work < warmLimit, `${count}/${period}: ${warm.work} warm units`);
+        assert.equal(cold.hunks.length, hunks); assert.equal(warm.hunks.length, hunks + 1);
+        assert.ok(cold.work < coldLimit, `${count}/${period}/${variation}: ${cold.work} cold units`);
+        assert.ok(warm.work < warmLimit, `${count}/${period}/${variation}: ${warm.work} warm units`);
         cache.dispose();
     }
 });
