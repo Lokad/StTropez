@@ -4,6 +4,13 @@ export function installHostReferenceProbe() {
     let active;
     const referenceLabel = () => [...document.querySelectorAll('.st-comparison[aria-label="Source review"] .st-comparison-panes h3')]
         .find(heading => heading.textContent?.startsWith("Baseline · "))?.textContent ?? null;
+    // Share the browser fixtures' live-owner checks, including complete selections, folds,
+    // both reference/working inputs, alignment and scroll. The remaining checks own this scene.
+    const isReady = (state = fixture.snapshot()) => fixture.settled === true && state.bindings.activeViews === 2
+        && state.bindings.views.every(v => v.metrics?.viewport.revision === state.source.revision)
+        && state.bindings.comparison?.status === "ready" && state.bindings.comparison.workingRevision === state.source.revision
+        && referenceLabel() === `Baseline · ${state.bindings.comparison.baseline?.version}`;
+    // These phase observations retain their narrower clocks; only isReady gates completion.
     const facts = state => {
         const c = state.bindings.comparison, views = state.bindings.views;
         const rendered = views.every(v => v.metrics && !v.metrics.viewport.pending && v.metrics.viewport.revision === state.source.revision
@@ -15,14 +22,15 @@ export function installHostReferenceProbe() {
         const input = views.every(v => !v.metrics.pendingInput && !v.metrics.pendingCommand) && c && !c.input.pendingInput && !c.input.pendingCommand;
         const comparison = c?.status === "ready" && c.workingRevision === state.source.revision;
         const reference = c?.referenceViewport && !c.referenceViewport.pending && referenceLabel() === `Baseline · ${c.baseline?.version}`;
-        return { rendered: !!rendered, scans: !!scans, caret: !!caret, drag: !!drag, input: !!input, comparison: !!comparison, reference: !!reference,
-            full: !!(state.bindings.activeViews === 2 && rendered && scans && caret && drag && input && comparison && reference) };
+        return { rendered: !!rendered, scans: !!scans, caret: !!caret, drag: !!drag, input: !!input, comparison: !!comparison, reference: !!reference };
     };
     function waitReady() {
         return new Promise((resolve, reject) => {
             let frames = 0, frame;
             const timer = setTimeout(() => { cancelAnimationFrame(frame); reject(new Error("Host reference setup readiness timed out.")); }, 20000);
-            const check = () => { const state = fixture.snapshot(); frames = facts(state).full ? frames + 1 : 0;
+            const check = () => { const state = fixture.snapshot();
+                try { frames = isReady(state) ? frames + 1 : 0; }
+                catch (error) { clearTimeout(timer); reject(error); return; }
                 if (frames < 2) { frame = requestAnimationFrame(check); return; }
                 clearTimeout(timer); resolve(state);
             }; frame = requestAnimationFrame(check);
@@ -45,6 +53,7 @@ export function installHostReferenceProbe() {
         promise.catch(() => {});
         const cleanup = () => { finished = true; listeners.abort(); stops.forEach(stop => stop()); cancelAnimationFrame(frame); clearTimeout(timer); };
         const fail = message => { if (finished) return; failure = message; cleanup(); reject(new Error(message)); };
+        const ready = state => { try { return isReady(state); } catch (error) { fail(String(error?.message ?? error)); return false; } };
         const timer = setTimeout(() => fail(`Host reference ${kind} readiness timed out.`), 20000);
         active = { promise, abort: () => fail("Host reference observation superseded before completion."), snapshot: () => ({
             kind, expectedText: text, caretOffset, start, pendingStart, finished, failure, nativeInputUnits: insertedUnits, transactions: transactions(),
@@ -82,7 +91,7 @@ export function installHostReferenceProbe() {
         }
         // The immutable reference has its own candidate surface; observe the three working inputs here.
         const roots = [...document.querySelectorAll(".st-editing-candidate")].filter(root => root.querySelector("textarea")?.readOnly === false);
-        if (roots.length !== 3 || !facts(before).full || !node) { fail("Reference experiment requires three ready bounded working views."); return; }
+        if (roots.length !== 3 || !ready(before) || !node) { fail("Reference experiment requires three ready bounded working views."); return; }
         for (const id of ["primary", "secondary", "comparison"]) stops.push(fixture.onSourceRender(id, observe));
         if (kind === "reference") {
             const label = operation === "identity" ? "Finish review acceptance" : "Finish reference refresh";
@@ -129,7 +138,8 @@ export function installHostReferenceProbe() {
         }
         const check = () => {
             if (finished) return; observe(); const state = fixture.snapshot(), c = state.bindings.comparison;
-            frames = start !== undefined && model(state) && facts(state).full ? frames + 1 : 0;
+            frames = start !== undefined && model(state) && ready(state) ? frames + 1 : 0;
+            if (finished) return;
             if (frames < 2) { frame = requestAnimationFrame(check); return; }
             if (state.source.id !== before.source.id || state.bindings.mounts !== before.bindings.mounts || c.viewId !== initial.viewId
                 || kind !== "reference" && (document.activeElement !== node || state.source.exports !== 0)
@@ -169,5 +179,5 @@ export function installHostReferenceProbe() {
                 primarySelection: state.bindings.views.find(v => v.id === "primary").selection, secondarySelection: state.bindings.views.find(v => v.id === "secondary").selection });
         }; frame = requestAnimationFrame(check);
     }
-    globalThis.hostReferenceProbe = Object.freeze({ waitReady, arm, read: () => active.promise, snapshot: () => active?.snapshot(), abort: () => active?.abort() });
+    globalThis.hostReferenceProbe = Object.freeze({ isReady, waitReady, arm, read: () => active.promise, snapshot: () => active?.snapshot(), abort: () => active?.abort() });
 }

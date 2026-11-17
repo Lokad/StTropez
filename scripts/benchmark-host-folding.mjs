@@ -4,23 +4,18 @@ import { performance } from "node:perf_hooks";
 import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
 import { corpus } from "../fixtures/workloads.ts";
+import { installHostReferenceProbe } from "./host-reference-probe.mjs";
 
 const source = await sourceIdentity(), writer = await createReportWriter("artifacts/bench/host-folding", "full");
 const harness = await openHarness(), page = harness.page, warmup = 2, measured = 10;
 const report = { schemaVersion: 1, created: new Date().toISOString(), source,
     environment: { ...environment(), browser: harness.browser.version(), viewport: { width: 1440, height: 900 } }, cases: [], status: "running", active: null,
     scope: "One/1000 captured folds on normal/100k source, one active caret, independent secondary and immutable comparison, 20Hz host traffic. ArrowDown skips hidden rows; typing on the next visible header/footer and shared undo preserve raw text. No closed navigation experiment or prior score rerun.",
-    clocks: "keydownHandlerMs/inputHandlerMs are adapter handlers. Readiness starts at captured keydown; typing also records beforeinput-to-readiness (includes beforeinput work). Readiness requires every working view, complete sets, fold generations, caret/scans, immutable reference, comparison and two RAFs. Later language results are outside this gate; an actual worker reply is required before the points. CompleteActionProxyMs includes browser automation, excluding listener setup/oracles. Workflow includes setup, fold creation, controls, oracles, undo and disposal; it has no point-action budget. No CPU, physical display, OS input or native IME claim.",
+    clocks: "keydownHandlerMs/inputHandlerMs are adapter handlers. Readiness starts at captured keydown; typing also records beforeinput-to-readiness (includes beforeinput work). The shared live-owner predicate requires every working/reference editor, complete sets, fold generations, pending input/commands, caret/scans, alignment/scroll and comparison; the point confirms the immutable reference and two RAFs. Later language results are outside this gate; an actual worker reply is required before the points. CompleteActionProxyMs includes browser automation, excluding listener setup/oracles. Workflow includes setup, fold creation, controls, oracles, undo and disposal; it has no point-action budget. No CPU, physical display, OS input or native IME claim.",
     retention: "Every raw warmup/measured workflow is retained, including completed points of a failed workflow. A partial report is written on failure; no automatic retries." };
 const save = () => writer.write(report);
 const click = name => page.getByRole("button", { name, exact: true }).click();
-const ready = () => page.waitForFunction(() => {
-    const s = window.hostFixture?.snapshot(), c = s?.bindings.comparison;
-    return s?.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingDragScroll && !v.metrics.pendingWord && !v.metrics.pendingGrapheme
-        && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision && v.metrics.viewport.selectionSet === v.selectionSet && v.metrics.viewport.foldGeneration === v.foldGeneration)
-        && c?.status === "ready" && !c.input.pendingCaret && !c.input.pendingWord && !c.input.pendingGrapheme && !c.input.pendingDragScroll && !c.workingViewport.pending
-        && c.workingRevision === s.source.revision && c.workingViewport.selectionSet === c.selectionSet && c.workingViewport.foldGeneration === c.foldGeneration && !c.referenceViewport.pending;
-});
+const ready = () => page.evaluate(() => globalThis.hostReferenceProbe.waitReady());
 const equals = text => page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false;
     for (let from = 0; from < text.length; from += 32768) if (f.range(from, Math.min(text.length, from + 32768)) !== text.slice(from, from + 32768)) return false; return true;
 }, text);
@@ -34,11 +29,10 @@ async function point(kind, expected) {
             const timeout = setTimeout(() => fail("Fold point did not reach complete review readiness."), 20000);
             const check = () => {
                 if (finished) return; const s = window.hostFixture.snapshot(), c = s.bindings.comparison, p = s.bindings.views.find(v => v.id === "primary");
-                const full = s.bindings.views.every(v => !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.pendingDragScroll && !v.metrics.viewport.pending
-                    && v.metrics.viewport.revision === s.source.revision && v.metrics.viewport.selectionSet === v.selectionSet && v.metrics.viewport.foldGeneration === v.foldGeneration)
-                    && c?.status === "ready" && c.baseline?.version === prior.bindings.comparison.baseline?.version && c.referenceViewport.revision === prior.bindings.comparison.referenceViewport.revision
-                    && !c.input.pendingCaret && !c.input.pendingWord && !c.input.pendingGrapheme && !c.input.pendingDragScroll && !c.workingViewport.pending
-                    && c.workingRevision === s.source.revision && c.workingViewport.selectionSet === c.selectionSet && c.workingViewport.foldGeneration === c.foldGeneration && !c.referenceViewport.pending;
+                let full;
+                try { full = globalThis.hostReferenceProbe.isReady(s); }
+                catch (error) { fail(String(error?.message ?? error)); return; }
+                full &&= c.baseline?.version === prior.bindings.comparison.baseline?.version && c.referenceViewport.revision === prior.bindings.comparison.referenceViewport.revision;
                 if (!full) { frames = 0; requestAnimationFrame(check); return; }
                 if (s.source.revision !== prior.source.revision + (kind === "typing" ? 1 : 0) || s.source.length !== expected.length || p.selection.anchor !== expected.head || p.selection.head !== expected.head
                     || p.metrics.viewport.collapsedFolds !== expected.foldCount || p.metrics.viewport.visibleLines !== expected.foldCount + 1 || s.source.exports !== 0 || kind === "typing" && (inputStart === undefined || p.metrics.inputEvents !== before.inputEvents + 1)) {
@@ -74,6 +68,7 @@ try {
         for (let iteration = 0; iteration < warmup + measured; iteration++) {
             const started = performance.now(), sample = { iteration, warmup: iteration < warmup, status: "running", navigation: null, typing: null }; group.raw.push(sample); report.active = { host, corpus: id, iteration };
             await page.goto(new URL(`/hosts/${host}/?editor=candidate`, page.url()).href);
+            await page.evaluate(installHostReferenceProbe);
             await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
             await click("Open source review"); await ready(); await click("Capture review acceptance"); await click("Finish review acceptance"); await ready();
             const input = page.getByRole("textbox", { name: "Primary source", exact: true }); await input.focus();

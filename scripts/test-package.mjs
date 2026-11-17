@@ -11,7 +11,7 @@ import { chromium, firefox, webkit } from "@playwright/test";
 import { runPackagedPilot } from "./package-pilot.mjs";
 import { runPackagedHunkPilot } from "./package-hunk-pilot.mjs";
 import { runPackageTransitions } from "./package-transitions.mjs";
-import { within } from "./package-react-host.mjs";
+import { stageHostFixture, within } from "./package-react-host.mjs";
 import { qualifyPackageExports } from "./package-exports.mjs";
 
 const hunkOnly = process.argv.includes("--hunk-only");
@@ -95,6 +95,7 @@ for (const asset of assets.assets) {
 // The host already owns TypeScript/esbuild. Paths are an explicit frontend bridge.
 const exportsResolution = reused?.exportsResolution ?? await qualifyPackageExports(project, consumer, assetRoot);
 const reactHost = reactOnly ? await (await import("./package-react-host.mjs")).stagePackagedReactHost(project, consumer) : undefined;
+const readinessFixture = !lspOnly && !deferredOnly ? await stageHostFixture(project, consumer, "examples/shared/readiness.ts", "readiness.ts") : undefined;
 const compilerOptions = { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true,
     skipLibCheck: false, noEmit: true, types: [], paths: {
         sttropez: [join(assetRoot, "index.d.ts")], "sttropez/browser": [join(assetRoot, "browser/index.d.ts")],
@@ -144,7 +145,7 @@ await writeFile("artifacts/package/restored-consumer.json", JSON.stringify({ sch
     packageSha256, consumer, assetRoot, reusedStage: !!reused, exportsResolution,
     browser: browserName, mode: prepareOnly ? "prepare-only" : benchmark ? "benchmark" : pilotOnly ? "pilot" : "full", scenario: lspOnly ? "lsp" : workspaceOnly ? "workspace" : activationOnly ? "activation" : reactOnly ? "react" : hunkOnly ? "hunk" : pilotOnly ? "recovery" : "all", corpus,
     declarations: { files: compilerFiles, strict: true, skipLibCheck: false, passed: true, ...(reactHost ? { inputs: typeInputs } : {}) },
-    inputs: Object.keys(bundle.metafile.inputs).sort(), assets,
+    inputs: Object.keys(bundle.metafile.inputs).sort(), assets, readinessFixture,
     ...(deferredOnly ? { activationOutputs } : {}),
     ...(reactHost ? { reactHost: { sources: reactHost.sources, hostPackages: reactHost.hostPackages,
         strictMode: true, nodeEnvironment: "development", librarySourceCompilation: false,

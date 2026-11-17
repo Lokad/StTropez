@@ -4,6 +4,7 @@ const { installHostReferenceProbe } = await import(new URL("../../scripts/host-r
 type Result = { kind: string; transactions: number; insertedUnits: number; revision: number; commandToFullReviewReadyProxyMs: number | null;
     lastInputToFullReviewReadyProxyMs: number | null; records: { trusted?: boolean; keydownHandlerMs?: number; inputHandlerMs?: number; workingRenderProxyMs: number | null }[] };
 type Probe = { arm: (options: { kind: string; text?: string; caretOffset?: number; operation?: string; replaceSelection?: boolean }) => void;
+    isReady: (state?: ReturnType<Window["hostFixture"]["snapshot"]>) => boolean;
     waitReady: () => Promise<unknown>; read: () => Promise<Result>; snapshot: () => { finished: boolean; failure?: string; records: unknown[] } };
 declare global { interface Window { hostReferenceProbe: Probe } }
 
@@ -16,6 +17,93 @@ async function mount(page: Page, host: string) {
     await page.getByRole("button", { name: "Finish review acceptance", exact: true }).click();
     expect((await page.evaluate(() => window.hostReferenceProbe.read())).kind).toBe("reference");
 }
+
+test("review measurements await full selections, folds, queued input and reference work", async ({ page }) => {
+    await mount(page, "plain");
+    const settle = () => page.evaluate(() => window.hostReferenceProbe.waitReady());
+    const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
+    await page.evaluate(() => {
+        const f = window.hostFixture, s = f.snapshot();
+        f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: "header\n  one\n  two\nfooter\n" }]);
+    }); await settle();
+    expect(await page.evaluate(() => {
+        const f = window.hostFixture, before = f.snapshot(), old = before.bindings.views.find(v => v.id === "secondary")!;
+        f.selectSourceSet("secondary", before.source.revision, [old.selection, { anchor: 10, head: 12 }]);
+        const next = f.snapshot().bindings.views.find(v => v.id === "secondary")!;
+        return { primaryUnchanged: JSON.stringify(old.selection) === JSON.stringify(next.selection),
+            staleSet: next.selectionSet !== next.metrics!.viewport.selectionSet, ready: window.hostReferenceProbe.isReady() };
+    })).toEqual({ primaryUnchanged: true, staleSet: true, ready: false });
+    await settle();
+    await page.evaluate(() => {
+        const f = window.hostFixture;
+        f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 19 }]);
+    }); await settle(); await primary.focus();
+    expect(await page.getByRole("button", { name: "Fold selected lines", exact: true }).evaluate(node => {
+        (node as HTMLButtonElement).click(); const v = window.hostFixture.snapshot().bindings.views.find(v => v.id === "primary")!;
+        return { staleFold: v.foldGeneration !== v.metrics!.viewport.foldGeneration, ready: window.hostReferenceProbe.isReady() };
+    })).toEqual({ staleFold: true, ready: false });
+    await settle();
+
+    const reference = page.getByRole("textbox", { name: "Comparison baseline source", exact: true });
+    await reference.evaluate(node => node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
+    await settle(); // Composition alone is not scheduled editor work or native-device qualification.
+    expect(await page.getByRole("checkbox", { name: "Align review rows", exact: true }).evaluate(node => {
+        (node as HTMLInputElement).click(); const c = window.hostFixture.snapshot().bindings.comparison!;
+        return { pending: c.work.alignment.pending, ready: window.hostReferenceProbe.isReady() };
+    })).toEqual({ pending: true, ready: false });
+    await reference.evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { data: "", bubbles: true })));
+    await settle();
+
+    await page.evaluate(() => {
+        const f = window.hostFixture, s = f.snapshot();
+        f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: "a".repeat(262144) + "\ntail" }]);
+        f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 0 }]);
+    }); await settle();
+    for (const name of ["Capture review acceptance", "Finish review acceptance"]) {
+        await page.getByRole("button", { name, exact: true }).click(); await settle();
+    }
+    await primary.focus(); await settle();
+    expect(await primary.evaluate(node => {
+        node.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, bubbles: true, cancelable: true }));
+        const command = window.hostFixture.snapshot().bindings.views.find(v => v.id === "primary")!.metrics!.pendingCommand;
+        const commandReady = window.hostReferenceProbe.isReady();
+        const input = new InputEvent("beforeinput", { inputType: "insertText", data: "q", bubbles: true, cancelable: true }); node.dispatchEvent(input);
+        return { command, commandReady, captured: input.defaultPrevented,
+            input: window.hostFixture.snapshot().bindings.views.find(v => v.id === "primary")!.metrics!.pendingInput, ready: window.hostReferenceProbe.isReady() };
+    })).toEqual({ command: true, commandReady: false, captured: true, input: true, ready: false });
+    await settle(); expect(await page.evaluate(() => window.hostFixture.range(262142, 262150))).toBe("aa\nqtail");
+    expect(await reference.evaluate(node => {
+        node.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+        return { pending: window.hostFixture.snapshot().bindings.comparison!.referenceInput!.pendingCommand, ready: window.hostReferenceProbe.isReady() };
+    })).toEqual({ pending: true, ready: false });
+    await settle();
+    expect(await page.evaluate(() => { window.hostFixture.dispose(); return window.hostReferenceProbe.isReady(); })).toBe(false);
+});
+
+test("review measurement propagates terminal settlement failure and releases the observation", async ({ page }) => {
+    await mount(page, "plain"); await page.getByRole("textbox", { name: "Primary source", exact: true }).focus();
+    await page.evaluate(() => window.hostReferenceProbe.waitReady());
+    // Inject only the owner's terminal signal; do not add a runtime fault switch.
+    await page.evaluate(() => {
+        const original = window.hostFixture;
+        window.hostFixture = { ...original, get settled(): boolean {
+            if (document.documentElement.dataset.failSettlement) throw new Error("terminal alignment failure");
+            return original.settled;
+        } };
+        document.documentElement.dataset.failSettlement = "true";
+    });
+    await page.evaluate(installHostReferenceProbe);
+    await expect(page.evaluate(() => window.hostReferenceProbe.waitReady())).rejects.toThrow("terminal alignment failure");
+    await page.evaluate(() => {
+        delete document.documentElement.dataset.failSettlement;
+        window.hostReferenceProbe.arm({ kind: "input", text: "q" });
+        document.documentElement.dataset.failSettlement = "true";
+    });
+    await page.keyboard.type("q");
+    await expect(page.evaluate(() => window.hostReferenceProbe.read())).rejects.toThrow("terminal alignment failure");
+    expect(await page.evaluate(() => window.hostReferenceProbe.snapshot())).toMatchObject({ finished: true, failure: "terminal alignment failure", records: [{}] });
+    await page.evaluate(() => window.hostFixture.dispose());
+});
 
 for (const host of ["plain", "react"]) test(`${host} Enter measurements separate command clocks, raw newline units and transactions`, async ({ page }) => {
     await mount(page, host); const input = page.getByRole("textbox", { name: "Primary source", exact: true });

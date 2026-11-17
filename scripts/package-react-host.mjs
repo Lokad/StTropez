@@ -22,14 +22,36 @@ export async function consumerCompilerRoots(project) {
     return roots;
 }
 
-/** Reuse the development host; the consumer never receives checkout library sources. */
-export async function stagePackagedReactHost(project, consumer) {
-    const publicImports = new Map([
+const publicImports = new Map([
         ["src/index.ts", "sttropez"],
         ["src/browser/index.ts", "sttropez/browser"],
         ["src/protocol/index.ts", "sttropez/protocol"],
         ["src/browser/editor.css", "sttropez/editor.css"],
-    ]);
+]);
+
+/** Stage only host fixtures, resolving every library import through a public package entry. */
+export async function stageHostFixture(project, consumer, path, destination = join("host-fixtures", path)) {
+    assert.ok((path.startsWith("examples/") || path.startsWith("fixtures/protocol/") || path.startsWith("fixtures/language/")) && !path.includes(".."), `Unexpected host fixture: ${path}`);
+    const original = resolve(project, path), text = await readFile(original, "utf8"), imports = [];
+    // Include type-only imports erased from the emitted graph; reject private library imports.
+    const staged = text.replace(/(["'])((?:\.\.\/)+src\/[^"']+)\1/g, (_match, quote, specifier) => {
+        const target = resolve(dirname(original), specifier);
+        assert.ok(within(project, target), `Host import escaped project: ${specifier}`);
+        const local = relative(project, target).replaceAll("\\", "/"), replacement = publicImports.get(local);
+        assert.ok(replacement, `Host imported a private library module: ${local}`);
+        imports.push({ original: specifier, restored: replacement });
+        return quote + replacement + quote;
+    });
+    const output = join(consumer, destination);
+    assert.ok(within(consumer, output));
+    await mkdir(dirname(output), { recursive: true });
+    await writeFile(output, staged);
+    const hash = value => createHash("sha256").update(value).digest("hex");
+    return { path, stagedPath: relative(consumer, output).replaceAll("\\", "/"), sourceSha256: hash(text), stagedSha256: hash(staged), publicImports: imports };
+}
+
+/** Reuse the development host; the consumer never receives checkout library sources. */
+export async function stagePackagedReactHost(project, consumer) {
     const entryPoints = {
         "host-react": "host-fixtures/examples/hosts/react-main.tsx",
         "provider-worker": "host-fixtures/examples/probes/provider-worker.ts",
@@ -49,27 +71,7 @@ export async function stagePackagedReactHost(project, consumer) {
         } }],
     });
     const sources = [];
-    for (const path of Object.keys(graph.metafile.inputs).sort()) {
-        assert.ok((path.startsWith("examples/") || path.startsWith("fixtures/protocol/") || path.startsWith("fixtures/language/")) && !path.includes(".."), `Unexpected host fixture: ${path}`);
-        const original = resolve(project, path), text = await readFile(original, "utf8"), imports = [];
-        // Includes type-only imports erased from the emitted graph. Existing fixture
-        // imports use quoted relative public paths; private library imports must fail.
-        const staged = text.replace(/(["'])((?:\.\.\/)+src\/[^"']+)\1/g, (_match, quote, specifier) => {
-            const target = resolve(dirname(original), specifier);
-            assert.ok(within(project, target), `Host import escaped project: ${specifier}`);
-            const local = relative(project, target).replaceAll("\\", "/");
-            const replacement = publicImports.get(local);
-            assert.ok(replacement, `Host imported a private library module: ${local}`);
-            imports.push({ original: specifier, restored: replacement });
-            return quote + replacement + quote;
-        });
-        const output = join(consumer, "host-fixtures", path);
-        assert.ok(within(consumer, output));
-        await mkdir(dirname(output), { recursive: true });
-        await writeFile(output, staged);
-        const hash = value => createHash("sha256").update(value).digest("hex");
-        sources.push({ path, stagedPath: relative(consumer, output).replaceAll("\\", "/"), sourceSha256: hash(text), stagedSha256: hash(staged), publicImports: imports });
-    }
+    for (const path of Object.keys(graph.metafile.inputs).sort()) sources.push(await stageHostFixture(project, consumer, path));
     const shim = "host-fixtures/styles.d.ts";
     await writeFile(join(consumer, shim), 'declare module "*.css";\n');
     const reactTypes = await realpath(join(project, "node_modules/@types/react")), reactDomTypes = await realpath(join(project, "node_modules/@types/react-dom"));

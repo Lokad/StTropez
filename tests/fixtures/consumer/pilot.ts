@@ -2,6 +2,7 @@ import { TextBuffer, Workspace, WorkspaceCommands } from "sttropez";
 import type { ComparisonBaseline, SaveOutcome, SaveResponse, SaveSubmission, Selection } from "sttropez";
 import { mountEditingCandidate, mountTextComparison } from "sttropez/browser";
 import type { EditingCandidate, TextComparison } from "sttropez/browser";
+import { comparisonSettled, editorSettled } from "./readiness.js";
 
 /** A host-owned local fixture. Every editor/model import resolves from the restored package. */
 export function mountPackagedPilot(host: HTMLElement, original: string) {
@@ -84,6 +85,8 @@ export function mountPackagedPilot(host: HTMLElement, original: string) {
     const subscriptions = [workspace.observeDocument(source.documentId).subscribe(render), source.metadata.subscribe(render)];
     const timer = win.setInterval(() => { background++; progress.value = background % 100; }, 50); render();
     const fixture = {
+        get settled() { return !disposed && !!primary && !!peer && !!comparison
+            && editorSettled(primary) && editorSettled(peer) && comparisonSettled(comparison); },
         onSourceRender: (id: "primary" | "secondary" | "comparison", listener: () => void) => {
             const editor = id === "primary" ? primary : id === "secondary" ? peer : comparison?.working;
             if (!editor) throw new Error("Source viewport is not mounted.");

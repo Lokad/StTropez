@@ -210,7 +210,13 @@ text input with the distinct [clock definitions](README.md#glossary).
 Inapplicable command/input clocks are null. Full review readiness includes pending input and
 commands, working/reference views, caret/scans and comparison settlement over two frames.
 Exact text, transaction counts and undo/redo are checked independently of inserted UTF-16 units.
-The probe retains partial observations on failure.
+The probe retains partial observations on failure. Its `isReady` predicate composes the same
+live-owner `settled` checks used by browser specs, plus the expected working views, source
+revision and displayed reference version. The folding benchmark uses this predicate too.
+Complete selection sets, fold generations, reference input, alignment and scroll must settle;
+phase render observations remain narrower. Terminal alignment failure rejects the wait.
+The standalone installed consumer stages the same fixture helper with public package imports;
+its strict consumer compile and isolation checks exclude library source.
 
 These benchmarks use `scripts/benchmark-report.mjs`: each variant retains a unique run under
 `artifacts/bench/<benchmark>/<variant>/runs/`; only a successful run updates that variant's
