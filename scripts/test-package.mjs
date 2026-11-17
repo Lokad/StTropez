@@ -178,7 +178,7 @@ try {
     page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     assert.deepEqual(await page.evaluate(() => window.consumer.protocolExports()), { connection: "function", websocket: "function" });
-    assert.deepEqual(await page.evaluate(() => window.consumer.editorExports()), { mount: "function", root: "DIV", input: "TEXTAREA", removed: [] });
+    assert.deepEqual(await page.evaluate(() => window.consumer.editorExports()), { mount: "function", root: "DIV", input: "TEXTAREA", removed: [], privateNavigation: [] });
     const notice = await page.request.get(`http://127.0.0.1:${server.address().port}/UNICODE-LICENSE.txt`);
     assert.equal(notice.status(), 200); assert.equal(await notice.text(), await readFile("licenses/Unicode-3.0.txt", "utf8"));
     const license = await page.request.get(`http://127.0.0.1:${server.address().port}/LICENSE.txt`);
@@ -273,7 +273,6 @@ try {
     await multipleEditor.press("Shift+ArrowLeft"); await page.waitForFunction(() => !window.consumer.multipleInput().pending);
     const multipleNavigation = await page.evaluate(() => window.consumer.multipleInput());
     assert.deepEqual(multipleNavigation.selectionSet.ranges.map(({ anchor, head }) => ({ anchor, head })), [{ anchor: 2, head: 1 }, { anchor: 6, head: 5 }]);
-    const multipleColumn = await page.evaluate(() => window.consumer.multipleColumn(1)); assert.equal(multipleColumn.caret.offset, 1); assert.ok(multipleColumn.column > 0);
     await multipleEditor.press("Escape"); await page.waitForFunction(() => !window.consumer.multipleInput().pending);
     assert.deepEqual((await page.evaluate(() => window.consumer.multipleInput())).selectionSet.ranges, [multipleNavigation.selectionSet.ranges[multipleNavigation.selectionSet.primary]]);
     await page.evaluate(() => window.consumer.prepareMultipleEnd()); await page.waitForFunction(() => !window.consumer.multipleInput().pending);
@@ -281,8 +280,11 @@ try {
     const multipleLiteralEnd = await page.evaluate(() => window.consumer.multipleInput());
     assert.equal(multipleLiteralEnd.text, "a\r\nb\r"); assert.equal(multipleLiteralEnd.exports, 0);
     assert.deepEqual(multipleLiteralEnd.selectionSet.ranges.map(({ anchor, head }) => ({ anchor, head })), [{ anchor: 1, head: 1 }, { anchor: 5, head: 5 }]);
+    await multipleEditor.press("ArrowUp"); await page.waitForFunction(() => !window.consumer.multipleInput().pending);
+    const multipleVertical = await page.evaluate(() => window.consumer.multipleInput());
+    assert.deepEqual(multipleVertical.selectionSet.ranges.map(({ anchor, head }) => ({ anchor, head })), [{ anchor: 0, head: 0 }, { anchor: 1, head: 1 }]);
     const multipleReleased = await page.evaluate(() => window.consumer.finishMultipleInput()); assert.deepEqual(multipleReleased, { views: 0, leases: 0 });
-    const multipleInput = { before: multipleBefore, after: multipleAfter, undone: multipleUndone, navigation: multipleNavigation, column: multipleColumn, literalEnd: multipleLiteralEnd, released: multipleReleased };
+    const multipleInput = { before: multipleBefore, after: multipleAfter, undone: multipleUndone, navigation: multipleNavigation, vertical: multipleVertical, literalEnd: multipleLiteralEnd, released: multipleReleased };
     await page.evaluate(() => window.consumer.replaceAll("packed"));
     await page.waitForFunction(() => window.consumer.findState().status === "ready" && window.consumer.findState().count === 0);
     assert.equal(await page.evaluate(() => window.consumer.text()), "edited packed package");

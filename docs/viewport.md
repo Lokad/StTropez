@@ -90,19 +90,9 @@ by document/view identity. [Folding](folding.md) describes projection and select
 `rowBounds(line)` returns `RenderedRowBounds`. These APIs use client coordinates, including
 inherited CSS zoom. Returned positions carry their document revision. Unmounted ranges and
 stale projections can return `undefined`; `coordsAt` snaps a grapheme interior by affinity.
-Scrolling and navigation columns use local CSS units.
-
-`moveVisual(offset, affinity, direction)` finds the next visual caret position;
-`collapseVisual(from, to, direction)` finds the visual edge of a selection. Direction is `-1`
-or `1`. These geometry queries do not scroll or expand folds. Use `revealOffset` to reveal the
-result after applying a selection change. Stale projections can return `undefined`.
-
-`columnAt(offset, affinity?)` obtains a logical horizontal column independent of scrolling;
-`caretAtColumn(line, column)` returns the closest measured offset, affinity and revision. Stale
-projections return `undefined`; a hidden destination line has no caret-at-column result.
-`prepareNavigationRows(lines)` prepares at most 64 valid source rows and returns a cleanup
-function for that temporary measurement batch. Release it after command completion or
-cancellation. These APIs share the contextual long-line geometry limits below.
+Scrolling uses local CSS units. The [editor](editor.md) owns keyboard navigation, preferred
+columns and temporary measurement batches. For explicit host navigation, update the captured
+view's selection and use `revealOffset` to reveal it.
 
 `activity()` returns a reused immutable `ViewportActivity` containing painted revision,
 selection set, fold/alignment identities, row generation, pending-frame state and disposal.

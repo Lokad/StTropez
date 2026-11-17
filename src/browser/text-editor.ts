@@ -20,7 +20,7 @@ import type { NativeInsertionTarget } from "./input-target.ts";
 import type { InputContext } from "./input-context.ts";
 import { inputConflictEvent } from "./input-conflict.ts";
 import type { InputConflictDetail } from "./input-conflict.ts";
-import { mountTextViewport } from "./viewport.ts";
+import { mountViewport } from "./viewport.ts";
 import type { LineClass, LineDecorator, TextViewport } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
 import { planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
@@ -84,11 +84,11 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId);
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId);
-    let viewport: TextViewport, brackets: ReturnType<typeof mountBracketHighlights> | undefined, warnings: ReturnType<typeof mountCharacterWarnings> | undefined;
-    try { viewport = mountTextViewport(host, workspace, tabId, { ...options, view, decorate: line => {
+    let viewport: TextViewport, navigation: ReturnType<typeof mountViewport>["navigation"], brackets: ReturnType<typeof mountBracketHighlights> | undefined, warnings: ReturnType<typeof mountCharacterWarnings> | undefined;
+    try { const mounted = mountViewport(host, workspace, tabId, { ...options, view, decorate: line => {
         const own = brackets?.decorate(line), flagged = warnings?.decorate(line), host = options.decorate?.(line);
         return own?.length || flagged?.length ? [...(host ?? emptyDecorations), ...(own ?? emptyDecorations), ...(flagged ?? emptyDecorations)] : host ?? emptyDecorations;
-    } }); }
+    } }); viewport = mounted.viewport; navigation = mounted.navigation; }
     catch (error) { if (!options.view) view.dispose(); throw error; }
     const root = viewport.element;
     root.style.tabSize = String(language.tabSize);
@@ -577,8 +577,8 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
             }
             const direction = key === "ArrowLeft" ? -1 : 1;
             const point = !extend && range.anchor !== range.head
-                ? viewport.collapseVisual(Math.min(range.anchor, range.head), Math.max(range.anchor, range.head), direction)
-                : viewport.moveVisual(range.head, range.headAffinity ?? "after", direction);
+                ? navigation.collapseVisual(Math.min(range.anchor, range.head), Math.max(range.anchor, range.head), direction)
+                : navigation.moveVisual(range.head, range.headAffinity ?? "after", direction);
             if (point) { visualMoves++; done(moved(range, point.offset, extend, point.affinity)); return; }
             if (!extend && range.anchor !== range.head) { done(moved(range, direction < 0 ? Math.min(range.anchor, range.head) : Math.max(range.anchor, range.head), false)); return; }
             withGraphemes(capture, range.head, direction, "grapheme", at => done(moved(range, direction < 0 ? at.preceding ?? range.head : at.following ?? range.head, extend)), navigationTurn);
@@ -590,7 +590,7 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
                     if (!extend && range.anchor !== range.head) lines.add(buffer.lineAt(range.anchor));
                     else { const row = foldIndex.rowAt(line); if (row) lines.add(foldIndex.lineAt(row - 1)); if (row + 1 < foldIndex.visibleLineCount) lines.add(foldIndex.lineAt(row + 1)); }
                 }
-                return viewport.prepareNavigationRows([...lines]);
+                return navigation.prepareNavigationRows([...lines]);
             } } : {}) });
         }, shortHorizontal);
     }
@@ -606,11 +606,11 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
         navigationPreparationMs = win.performance.now() - began;
         let index = 0, pageDelta = 0;
         eachRange(capture, "grapheme", (range, done) => {
-            const at = index++, line = buffer.lineAt(range.head), row = viewport.visualRowAt(line), next = viewport.navigationLine(line, direction, count, page);
-            if (at === capture.selectionSet.primary) pageDelta = (viewport.visualRowAt(next) - row) * state.lineHeight;
+            const at = index++, line = buffer.lineAt(range.head), row = navigation.visualRowAt(line), next = navigation.navigationLine(line, direction, count, page);
+            if (at === capture.selectionSet.primary) pageDelta = (navigation.visualRowAt(next) - row) * state.lineHeight;
             if (next === line) { columns.push(undefined); done(moved(range, direction < 0 ? 0 : buffer.length, extend)); return; }
-            const column = prior?.[at] ?? viewport.columnAt(range.head, range.headAffinity);
-            const hit = column === undefined ? undefined : viewport.caretAtColumn(next, column);
+            const column = prior?.[at] ?? navigation.columnAt(range.head, range.headAffinity);
+            const hit = column === undefined ? undefined : navigation.caretAtColumn(next, column);
             columns.push(column); done(hit ? moved(range, hit.offset, extend, hit.affinity) : range);
         }, ranges => {
             if (page) viewport.scrollTo({ top: state.scrollTop + pageDelta });
@@ -631,8 +631,8 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
             preferred = { selections, revision: capture.revision, layout, columns: nextColumns };
         }, { validLayout: () => navigationLayout() === layout, navigation: true, inline, ...(capture.selectionSet.ranges.length > 1 ? {
             ...(capture.selectionSet.ranges.length <= commandBudget.inlineRanges ? { batchSize: commandBudget.shortRangeBatch } : {}),
-            prepare: (ranges: readonly Selection[]) => viewport.prepareNavigationRows([...new Set(ranges.flatMap(range => {
-                const line = buffer.lineAt(range.head); return [line, viewport.navigationLine(line, direction, count, page)];
+            prepare: (ranges: readonly Selection[]) => navigation.prepareNavigationRows([...new Set(ranges.flatMap(range => {
+                const line = buffer.lineAt(range.head); return [line, navigation.navigationLine(line, direction, count, page)];
             }))]) } : {}) });
         }, capture => shortVertical(capture, direction, page));
     }

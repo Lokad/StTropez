@@ -37,7 +37,9 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
     protocolExports: () => ({ connection: typeof JsonRpcConnection, websocket: typeof openWebSocketTransport }),
     editorExports: () => ({ mount: typeof browserApi.mountTextEditor,
         root: sourceEditor.element.tagName, input: sourceEditor.input.tagName,
-        removed: ["mountEditingCandidate", "mountTextareaEditor"].filter(name => name in browserApi) }),
+        removed: ["mountEditingCandidate", "mountTextareaEditor", "mountViewport"].filter(name => name in browserApi),
+        privateNavigation: ["visualRowAt", "navigationLine", "moveVisual", "collapseVisual", "columnAt", "caretAtColumn", "prepareNavigationRows"]
+            .filter(name => name in viewport || name in sourceEditor.viewport) }),
     clipboardBoundary: () => {
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "clipboard-boundary", variant: "working" }, "Source", { value: "before\r\nend" });
         const tab = model.open({ kind: "text", documentId: source.documentId }, "clipboard"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
@@ -98,9 +100,9 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
             editor.viewport.revealOffset(at, { horizontal: "nearest", vertical: "nearest" }); await wait();
             if (view.folding.getSnapshot().index.collapsedCount || !editor.viewport.coordsAt(at)) throw new Error("Compiled explicit selection did not reveal its row.");
             if (model.document(source.documentId).buffer.readMetrics().textExports) throw new Error("Compiled folding exported the source value.");
-            if (retired.viewport.coordsAt(0) !== undefined || retired.viewport.columnAt(0) !== undefined) throw new Error("Retired compiled geometry remained active.");
+            if (retired.viewport.coordsAt(0) !== undefined) throw new Error("Retired compiled geometry remained active.");
         } finally { editor.destroy(); other.destroy(); host.remove(); otherHost.remove(); view.dispose(); peer.dispose(); model.close(tab); model.releaseResource(source.id, true); }
-        if (editor.viewport.coordsAt(0) !== undefined || editor.viewport.columnAt(0) !== undefined || editor.viewport.caretAtColumn(0, 0) !== undefined) throw new Error("Released compiled geometry queried a missing source.");
+        if (editor.viewport.coordsAt(0) !== undefined) throw new Error("Released compiled geometry queried a missing source.");
         const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled fold resources leaked.");
         return { units: original.length, visibleRows: 2, independentViews: true, capturedVersions: true, completeSets: true, navigation: true,
             mappedUndo: true, retainedRemount: true, freshRestore: true, newerStatePreserved: true, revealedSelection: true, zeroCompleteExports: true,
@@ -138,8 +140,8 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
             editor.view.setSelection(model.document(source.documentId).revision, { anchor: 0, head: 0 });
             for (const head of [0, 2, 3, 4, 5, 6, 7, 8, 9, 0]) { find.next(); await new Promise(resolve => setTimeout(resolve, 0));
                 if (editor.view.getSnapshot().selection.head !== head) throw new Error("Compiled zero-width navigation lost a raw position."); }
-            editor.viewport.flush(); const point = editor.viewport.coordsAt(4), column = editor.viewport.columnAt(4);
-            if (!point || point.offset !== 4 || column === undefined || !editor.viewport.caretAtColumn(1, column)) throw new Error("Compiled CRLF caret has no painted or vertical position.");
+            editor.viewport.flush(); const point = editor.viewport.coordsAt(4);
+            if (!point || point.offset !== 4) throw new Error("Compiled CRLF caret has no painted position.");
             find.replaceAll("|"); await wait("ready"); exact("|😀|x|\r|\n|l|a|s|t|");
             find.setQuery("("); await wait("failed"); exact("|😀|x|\r|\n|l|a|s|t|");
             if (model.document(source.documentId).buffer.readMetrics().textExports) throw new Error("Compiled regex exported the model value.");
@@ -229,9 +231,6 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
     multipleInput: () => { const { model, source, editor } = multipleInput!, document = model.document(source.documentId), state = editor.snapshot(), viewport = editor.viewport.snapshot();
         return { text: document.buffer.slice(0, document.buffer.length), selectionSet: editor.view.getSnapshot().selectionSet, revision: document.revision,
             pending: state.pendingCaret || state.pendingGrapheme || state.pendingWord || viewport.pending, commits: state.commits, exports: document.buffer.readMetrics().textExports }; },
-    multipleColumn: (offset: number) => { const editor = multipleInput!.editor, release = editor.viewport.prepareNavigationRows([0]);
-        try { const column = editor.viewport.columnAt(offset); return { column, caret: column === undefined ? undefined : editor.viewport.caretAtColumn(0, column) }; }
-        finally { release(); } },
     prepareMultipleEnd: () => { const { model, source, editor } = multipleInput!, before = model.document(source.documentId);
         const result = model.edit({ documentId: source.documentId, expectedRevision: before.revision, origin: "human",
             edits: [{ from: 0, to: before.buffer.length, insert: "a\r\nb\r" }], view: editor.view,

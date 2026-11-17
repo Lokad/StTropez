@@ -35,6 +35,16 @@ export type ViewportSnapshot = ViewportActivity & Readonly<{ selection: Selectio
     physicalHeight: number; physicalWidth: number }>;
 export type ViewportInputBinding = Readonly<{ setComposing: (active: boolean) => boolean;
     setTabEscape: (active: boolean) => boolean; dispose: () => void }>;
+
+type ViewportNavigation = Readonly<{
+    visualRowAt: (line: number) => number;
+    navigationLine: (line: number, direction: -1 | 1, count: number, page: boolean) => number;
+    moveVisual: (offset: number, affinity: Affinity, direction: -1 | 1) => CaretRectangle | undefined;
+    collapseVisual: (from: number, to: number, direction: -1 | 1) => CaretRectangle | undefined;
+    columnAt: (offset: number, affinity?: Affinity) => number | undefined;
+    caretAtColumn: (line: number, column: number) => Readonly<Pick<CaretRectangle, "offset" | "affinity" | "revision">> | undefined;
+    prepareNavigationRows: (lines: readonly number[]) => () => void;
+}>;
 export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentView;
     /** Observe completed paints and consumed scheduled renders, including unchanged paints. */
     onRender: (listener: () => void) => () => void;
@@ -51,16 +61,9 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     captureView: () => ViewState; restoreView: (state: ViewState) => void;
     scrollTo: (position: Readonly<{ top?: number; left?: number }>) => void;
     setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean;
-    visualRowAt: (line: number) => number;
-    navigationLine: (line: number, direction: -1 | 1, count: number, page: boolean) => number;
     coordsAt: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
     rowBounds: (line: number) => RenderedRowBounds | undefined;
     hitTest: (clientX: number, clientY: number) => CaretRectangle | undefined;
-    moveVisual: (offset: number, affinity: Affinity, direction: -1 | 1) => CaretRectangle | undefined;
-    collapseVisual: (from: number, to: number, direction: -1 | 1) => CaretRectangle | undefined;
-    columnAt: (offset: number, affinity?: Affinity) => number | undefined;
-    caretAtColumn: (line: number, column: number) => Readonly<Pick<CaretRectangle, "offset" | "affinity" | "revision">> | undefined;
-    prepareNavigationRows: (lines: readonly number[]) => () => void;
     flush: () => void;
     invalidate: () => void;
     /** Immutable painted identities and scheduled-work state; reused while unchanged. Does not flush or measure layout. */
@@ -95,6 +98,12 @@ export type RevealOptions = Readonly<{ horizontal?: "center" | "nearest"; vertic
 export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId: TabId,
     options: Readonly<{ ariaLabel?: string; view?: DocumentView; decorate?: LineDecorator; lineClass?: LineClass;
         columnRulers?: readonly number[]; highlightCurrentLine?: boolean; fontLigatures?: boolean; scrollBeyondLastLine?: boolean }> = {}): TextViewport {
+    return mountViewport(host, workspace, tabId, options).viewport;
+}
+
+/** Internal mount: keyboard navigation shares the viewport lifetime without entering its public handle. */
+export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: TabId,
+    options: NonNullable<Parameters<typeof mountTextViewport>[3]> = {}): Readonly<{ viewport: TextViewport; navigation: ViewportNavigation }> {
     let columns = resolveColumnRulers(options.columnRulers);
     let highlightCurrentLine = options.highlightCurrentLine === undefined ? false : options.highlightCurrentLine;
     if (typeof highlightCurrentLine !== "boolean") throw new TypeError("Current-line highlighting must be boolean.");
@@ -635,7 +644,10 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             aligned: renderedAlignmentId !== null, alignmentId: renderedAlignmentId, rowGeneration, pending, disposed });
     }
     schedule();
-    return Object.freeze({ element: root, view, activity,
+    const viewport: TextViewport = Object.freeze({
+        element: root,
+        view,
+        activity,
         onRender: listener => observe("render", listener),
         bindInput: focus => {
             if (disposed || !workspace.resolveTab(target) || inputOwner) throw new Error("Viewport requires one current input owner.");
@@ -685,7 +697,6 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             if (scrollBeyondLastLine === enabled) return true;
             scrollBeyondLastLine = enabled; schedule(); return true;
         },
-        prepareNavigationRows,
         invalidate,
         coordsAt: coordinates,
         rowBounds: (line: number) => {
@@ -707,46 +718,9 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             }
             return element ? geometry(element).nearest(clientX) : undefined;
         },
-        moveVisual: (offset: number, affinity: Affinity, direction: -1 | 1) => rowForOffset(offset, measured => {
-            const before = measured.point(offset, "before"), after = measured.point(offset, "after"); if (!before || !after) return;
-            if (before.offset !== offset && after.offset !== offset) return direction * before.left > direction * after.left ? before : after;
-            const next = measured.visual(offset, affinity, direction); if (next) return next;
-            const buffer = workspace.document(documentId).buffer, source = view.folding.getSnapshot().index, at = source.rowAt(buffer.lineAt(offset)) + direction * measured.flow;
-            if (at < 0 || at >= source.visibleLineCount) return measured.edge(direction);
-            const line = source.lineAt(at);
-            return rowForOffset(buffer.offsetAt(line), neighbor => neighbor.edge(direction < 0 ? 1 : -1));
-        }),
-        collapseVisual: (from: number, to: number, direction: -1 | 1) => rowForOffset(from, first => direction * first.flow < 0
-            ? first.edge(direction, from, to) : rowForOffset(to, last => last.edge(direction, from, to))),
-        columnAt: (offset: number, affinity: Affinity = "after") => {
-            if (disposed || !workspace.resolveTab(target)) return;
-            const document = workspace.observeDocument(documentId).getSnapshot();
-            if (document?.revision !== renderedRevision || view.folding.getSnapshot().generation !== renderedFoldGeneration) return;
-            const visible = coordinates(offset, affinity), rectangle = clientBox(root);
-            if (visible) return (visible.left - rectangle.left) / rectangle.zoom + left;
-            const originalLine = document.buffer.lineAt(offset), hidden = renderedIndex.hiddenBy(originalLine), line = hidden?.lineFrom ?? originalLine;
-            const projected = hidden ? row(document.buffer, line).to : offset, scroll = Math.max(0, padding + (projected - document.buffer.offsetAt(line)) * columnWidth - width / 2);
-            return withRow(line, scroll, projected, false, measured => { const point = measured.point(projected, affinity); return point && (point.left - rectangle.left) / rectangle.zoom + left; });
-        },
-        caretAtColumn: (line: number, column: number) => {
-            if (disposed || !workspace.resolveTab(target)) return;
-            const document = workspace.observeDocument(documentId).getSnapshot();
-            if (document?.revision !== renderedRevision || view.folding.getSnapshot().generation !== renderedFoldGeneration) return;
-            if (!Number.isSafeInteger(line) || line < 0 || line >= document.buffer.lineCount || !Number.isFinite(column)) throw new RangeError("Invalid navigation column.");
-            if (renderedIndex.hiddenBy(line)) return;
-            const scroll = column < left || column > left + width ? Math.max(0, column - width / 2) : left;
-            return withRow(line, scroll, undefined, false, measured => { const point = measured.nearest(column);
-                return Object.freeze({ offset: point.offset, affinity: point.affinity, revision: point.revision }); });
-        },
         flush,
         scrollTo: setScroll,
         setComparisonRows,
-        visualRowAt: line => renderedIndex.rowAt(line),
-        navigationLine: (line, direction, count, page) => {
-            if (!Number.isSafeInteger(count) || count < 1 || direction !== -1 && direction !== 1) throw new RangeError("Invalid row navigation.");
-            const index = page ? renderedIndex : view.folding.getSnapshot().index, at = Math.max(0, Math.min(index.visibleLineCount - 1, index.rowAt(line) + direction * count));
-            return "nextLine" in index ? index.nextLine(at, direction) : index.lineAt(at);
-        },
         captureView: () => { const { selection, selectionSet } = view.getSnapshot();
             // Ref replay may recapture an intermediate unaligned paint. Always retain source
             // coordinates, and prefer an anchor that has not yet reached its first paint.
@@ -801,5 +775,47 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
             renderedIndex = emptyIndex; renderedFoldGeneration = -1; foldButtons.clear(); foldLayer.replaceChildren();
             renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; navigationReadUnits = 0; navigationRows = 0; layer.replaceChildren(); root.replaceChildren(); root.remove();
             if (!options.view) view.dispose();
-        } });
+        }
+    });
+    const navigation: ViewportNavigation = Object.freeze({
+        prepareNavigationRows,
+        moveVisual: (offset: number, affinity: Affinity, direction: -1 | 1) => rowForOffset(offset, measured => {
+            const before = measured.point(offset, "before"), after = measured.point(offset, "after"); if (!before || !after) return;
+            if (before.offset !== offset && after.offset !== offset) return direction * before.left > direction * after.left ? before : after;
+            const next = measured.visual(offset, affinity, direction); if (next) return next;
+            const buffer = workspace.document(documentId).buffer, source = view.folding.getSnapshot().index, at = source.rowAt(buffer.lineAt(offset)) + direction * measured.flow;
+            if (at < 0 || at >= source.visibleLineCount) return measured.edge(direction);
+            const line = source.lineAt(at);
+            return rowForOffset(buffer.offsetAt(line), neighbor => neighbor.edge(direction < 0 ? 1 : -1));
+        }),
+        collapseVisual: (from: number, to: number, direction: -1 | 1) => rowForOffset(from, first => direction * first.flow < 0
+            ? first.edge(direction, from, to) : rowForOffset(to, last => last.edge(direction, from, to))),
+        columnAt: (offset: number, affinity: Affinity = "after") => {
+            if (disposed || !workspace.resolveTab(target)) return;
+            const document = workspace.observeDocument(documentId).getSnapshot();
+            if (document?.revision !== renderedRevision || view.folding.getSnapshot().generation !== renderedFoldGeneration) return;
+            const visible = coordinates(offset, affinity), rectangle = clientBox(root);
+            if (visible) return (visible.left - rectangle.left) / rectangle.zoom + left;
+            const originalLine = document.buffer.lineAt(offset), hidden = renderedIndex.hiddenBy(originalLine), line = hidden?.lineFrom ?? originalLine;
+            const projected = hidden ? row(document.buffer, line).to : offset, scroll = Math.max(0, padding + (projected - document.buffer.offsetAt(line)) * columnWidth - width / 2);
+            return withRow(line, scroll, projected, false, measured => { const point = measured.point(projected, affinity); return point && (point.left - rectangle.left) / rectangle.zoom + left; });
+        },
+        caretAtColumn: (line: number, column: number) => {
+            if (disposed || !workspace.resolveTab(target)) return;
+            const document = workspace.observeDocument(documentId).getSnapshot();
+            if (document?.revision !== renderedRevision || view.folding.getSnapshot().generation !== renderedFoldGeneration) return;
+            if (!Number.isSafeInteger(line) || line < 0 || line >= document.buffer.lineCount || !Number.isFinite(column)) throw new RangeError("Invalid navigation column.");
+            if (renderedIndex.hiddenBy(line)) return;
+            const scroll = column < left || column > left + width ? Math.max(0, column - width / 2) : left;
+            return withRow(line, scroll, undefined, false, measured => { const point = measured.nearest(column);
+                return Object.freeze({ offset: point.offset, affinity: point.affinity, revision: point.revision }); });
+        },
+        visualRowAt: line => renderedIndex.rowAt(line),
+        navigationLine: (line, direction, count, page) => {
+            if (!Number.isSafeInteger(count) || count < 1 || direction !== -1 && direction !== 1) throw new RangeError("Invalid row navigation.");
+            const index = page ? renderedIndex : view.folding.getSnapshot().index, at = Math.max(0, Math.min(index.visibleLineCount - 1, index.rowAt(line) + direction * count));
+            return "nextLine" in index ? index.nextLine(at, direction) : index.lineAt(at);
+        }
+    });
+    return Object.freeze({ viewport, navigation });
 }

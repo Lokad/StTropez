@@ -383,7 +383,7 @@ test("current-line presentation follows the primary caret through input, folding
         working.view.setSelection(f.workspace.document(working.view.documentId).revision, { anchor: 6, head: 6 }); working.viewport.flush();
         const row = current(working)!, backdrop = working.element.querySelector(".st-current-line-background")!, background = backdrop.getBoundingClientRect();
         const result = { workingClass, referenceDefault, referenceClass, referenceReadOnly: reference.input.readOnly, padding: working.viewport.snapshot().paddingRows,
-            line: row.getAttribute("data-line"), visual: working.viewport.visualRowAt(1), topError: Math.abs(background.top - row.getBoundingClientRect().top),
+            line: row.getAttribute("data-line"), rowGap: (working.viewport.rowBounds(1)!.top - working.viewport.rowBounds(0)!.top) / working.viewport.snapshot().lineHeight, topError: Math.abs(background.top - row.getBoundingClientRect().top),
             height: background.height, lineHeight: working.viewport.snapshot().lineHeight,
             edges: getComputedStyle(backdrop).boxShadow, fill: getComputedStyle(backdrop, "::before").backgroundColor };
         working.viewport.configureCurrentLineHighlight(false); working.viewport.flush();
@@ -392,7 +392,7 @@ test("current-line presentation follows the primary caret through input, folding
     expect(aligned.workingClass).toContain("st-comparison-line-working"); expect(aligned.workingClass).toContain("st-current-line");
     expect(aligned.referenceClass).toContain("st-comparison-line-baseline"); expect(aligned.referenceClass).toContain("st-current-line");
     expect(aligned).toMatchObject({ referenceDefault: false, referenceReadOnly: true, line: "1", disabled: true, referenceRetained: "1" });
-    expect(aligned.padding).toBeGreaterThan(0); expect(aligned.visual).toBeGreaterThan(1); expect(aligned.topError).toBeLessThan(.1);
+    expect(aligned.padding).toBeGreaterThan(0); expect(aligned.rowGap).toBeGreaterThan(1); expect(aligned.topError).toBeLessThan(.1);
     expect(Math.abs(aligned.height - aligned.lineHeight)).toBeLessThan(.1);
     expect(aligned.edges).toContain("inset"); expect(aligned.fill).not.toBe("rgba(0, 0, 0, 0)");
     await info.attach("current-line-review", { body: await page.screenshot(), contentType: "image/png" });
