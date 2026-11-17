@@ -2,17 +2,17 @@ import { ComparisonRowsCursor } from "../core/comparison-rows.ts";
 import type { ComparisonRows } from "../core/comparison-rows.ts";
 import type { ComparisonSnapshot } from "../core/comparison.ts";
 import type { FoldingSnapshot } from "../core/folding.ts";
-import type { TextViewport } from "./viewport.ts";
+import type { MountedTextEditor } from "./text-editor.ts";
 import type { ComparisonPanes } from "./comparison-panes.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
-type Capture = { state: ComparisonSnapshot; reference: TextViewport; a: FoldingSnapshot; b: FoldingSnapshot };
+type Capture = { state: ComparisonSnapshot; reference: MountedTextEditor; a: FoldingSnapshot; b: FoldingSnapshot };
 export type ComparisonAlignmentSnapshot = Readonly<{ enabled: boolean; status: "idle" | "building" | "waiting" | "ready" | "failed"; pending: boolean; work: number; runs: number; failure: string | undefined }>;
 let serial = 0;
 
 /** Cooperative, view-only publication against one immutable comparison/fold capture. */
 export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
     getComparison: () => ComparisonSnapshot, changed: () => void, referenceBusy: () => boolean) {
-    const working = panes.working, reference = () => panes.reference()?.viewport, runner = createCooperativeRunner(win);
+    const workingMount = panes.working, working = workingMount.editor, reference = panes.reference, runner = createCooperativeRunner(win);
     let enabled = false, disposed = false, scheduled = false, cursor: ComparisonRowsCursor | undefined, capture: Capture | undefined, result: ComparisonRows | undefined;
     let status: "idle" | "building" | "waiting" | "ready" | "failed" = "idle", failure: string | undefined, work = 0, installedPitch = 0;
     let events: AbortController | undefined, stopObserving: (() => void) | undefined, stopReference: (() => void) | undefined;
@@ -20,15 +20,15 @@ export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
     const stableInput = () => { const s = working.activity(); return !s.composing && !s.pendingCommand && !s.pendingInput && !s.pendingDragScroll && !pointers.size && !referenceBusy(); };
     const cancel = () => { runner.cancel(); scheduled = false; cursor?.dispose(); cursor = undefined; };
     const schedule = () => { if (!disposed && enabled && !scheduled) { runner.schedule(step); scheduled = true; } };
-    const clear = () => { working.viewport.setComparisonRows(undefined); reference()?.setComparisonRows(undefined); };
-    const current = (c: Capture) => getComparison() === c.state && reference() === c.reference && working.view.folding.getSnapshot() === c.b && c.reference.view.folding.getSnapshot() === c.a;
-    const pitch = (c: Capture) => Math.max(working.viewport.snapshot().naturalLineHeight, c.reference.snapshot().naturalLineHeight);
+    const clear = () => { workingMount.setComparisonRows(undefined); reference()?.setComparisonRows(undefined); };
+    const current = (c: Capture) => getComparison() === c.state && reference() === c.reference && working.view.folding.getSnapshot() === c.b && c.reference.editor.view.folding.getSnapshot() === c.a;
+    const pitch = (c: Capture) => Math.max(working.viewport.snapshot().naturalLineHeight, c.reference.editor.viewport.snapshot().naturalLineHeight);
     function listen(): void {
         stopObserving = panes.observe({ render: () => {
             if (enabled && (!capture || !current(capture) || result && (status === "waiting" && stableInput() || pitch(capture) !== installedPitch))) schedule();
         }, fold: schedule, compositionend: schedule, pointerdown: (_view, event) => { if (enabled) pointers.add((event as PointerEvent).pointerId); } });
         stopReference = panes.onReferenceChange(previous => {
-            cancel(); previous?.viewport.setComparisonRows(undefined); clear(); pointers.clear(); capture = undefined; result = undefined; installedPitch = 0; update();
+            cancel(); previous?.setComparisonRows(undefined); clear(); pointers.clear(); capture = undefined; result = undefined; installedPitch = 0; update();
         });
         events = new AbortController();
         const releasePointer = (event: PointerEvent) => { if (pointers.delete(event.pointerId)) schedule(); };
@@ -49,7 +49,7 @@ export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
         }
         if (!capture || !current(capture)) {
             cancel(); clear(); result = undefined; installedPitch = 0; work = 0; failure = undefined;
-            capture = { state, reference: next, a: next.view.folding.getSnapshot(), b: working.view.folding.getSnapshot() };
+            capture = { state, reference: next, a: next.editor.view.folding.getSnapshot(), b: working.view.folding.getSnapshot() };
             cursor = new ComparisonRowsCursor(state.baseline.buffer, state.working.buffer, state.hunks, capture.a.index, capture.b.index);
             status = "building"; schedule(); changed();
         } else if (result && (status === "waiting" || pitch(capture) !== installedPitch)) publish(capture);
@@ -57,9 +57,9 @@ export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
     function publish(c: Capture): void {
         if (!result || !current(c) || !c.state.working) return;
         if (!stableInput()) { if (status !== "waiting") { status = "waiting"; changed(); } return; }
-        const lineHeight = pitch(c), id = ++serial, a = c.reference.view.getSnapshot();
-        const baseline = c.reference.setComparisonRows({ documentId: c.reference.view.documentId, revision: a.revision, foldGeneration: c.a.generation, id, lineHeight, index: result.baseline });
-        const source = working.viewport.setComparisonRows({ documentId: working.view.documentId, revision: c.state.working.revision, foldGeneration: c.b.generation, id, lineHeight, index: result.working });
+        const lineHeight = pitch(c), id = ++serial, a = c.reference.editor.view.getSnapshot();
+        const baseline = c.reference.setComparisonRows({ documentId: c.reference.editor.view.documentId, revision: a.revision, foldGeneration: c.a.generation, id, lineHeight, index: result.baseline });
+        const source = workingMount.setComparisonRows({ documentId: working.view.documentId, revision: c.state.working.revision, foldGeneration: c.b.generation, id, lineHeight, index: result.working });
         if (!baseline || !source) { clear(); capture = undefined; result = undefined; schedule(); return; }
         installedPitch = lineHeight; status = "ready"; changed();
     }

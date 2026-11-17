@@ -67,12 +67,20 @@ export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextArea
     activity: () => TextEditorActivity;
     snapshot: () => TextEditorActivity & Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number; maxQueuedInputTurnMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; queuedInputUnits: number; wordScanSteps: number; maxWordScanStepMs: number; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number }>;
     destroy: () => void }>;
+export type MountedTextEditor = Readonly<{ editor: TextEditor; setComparisonRows: ReturnType<typeof mountViewport>["setComparisonRows"] }>;
+
 let nextMount = 0;
 const emptyDecorations = Object.freeze([]);
 
 /** Text editor with bounded native input and virtualized rendering. Native IME qualification is separate. */
 export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: TabId,
     options: TextEditorOptions = {}): TextEditor {
+    return mountEditor(host, workspace, tabId, options).editor;
+}
+
+/** Private pane mount; the comparison capability belongs to this exact editor lifetime. */
+export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabId,
+    options: TextEditorOptions = {}): MountedTextEditor {
     let language = resolveLanguageConfiguration(options.language);
     const bracketOptions = options.bracketMatching === undefined || options.bracketMatching === false ? false
         : bracketMatchLimits(options.bracketMatching === true ? {} : options.bracketMatching);
@@ -84,11 +92,11 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId);
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId);
-    let viewport: TextViewport, navigation: ReturnType<typeof mountViewport>["navigation"], brackets: ReturnType<typeof mountBracketHighlights> | undefined, warnings: ReturnType<typeof mountCharacterWarnings> | undefined;
+    let setComparisonRows: MountedTextEditor["setComparisonRows"], viewport: TextViewport, navigation: ReturnType<typeof mountViewport>["navigation"], brackets: ReturnType<typeof mountBracketHighlights> | undefined, warnings: ReturnType<typeof mountCharacterWarnings> | undefined;
     try { const mounted = mountViewport(host, workspace, tabId, { ...options, view, decorate: line => {
         const own = brackets?.decorate(line), flagged = warnings?.decorate(line), host = options.decorate?.(line);
         return own?.length || flagged?.length ? [...(host ?? emptyDecorations), ...(own ?? emptyDecorations), ...(flagged ?? emptyDecorations)] : host ?? emptyDecorations;
-    } }); viewport = mounted.viewport; navigation = mounted.navigation; }
+    } }); viewport = mounted.viewport; navigation = mounted.navigation; setComparisonRows = mounted.setComparisonRows; }
     catch (error) { if (!options.view) view.dispose(); throw error; }
     const root = viewport.element;
     root.style.tabSize = String(language.tabSize);
@@ -963,7 +971,7 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
     brackets = mountBracketHighlights(workspace, tabId, view, viewport, input, () => language,
         () => { const state = activity(); return !state.disposed && !state.composing && !state.pendingInput && !state.pendingCommand; }, bracketOptions);
     warnings = mountCharacterWarnings(workspace, tabId, view, viewport, warningOptions);
-    return Object.freeze({ element: root, input, view, viewport, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
+    const editor: TextEditor = Object.freeze({ element: root, input, view, viewport, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
         captureInsertion: (kind = "paste") => {
             if (kind !== "paste" && kind !== "replace") throw new TypeError("Unknown captured insertion kind.");
             hostInsertion?.cancel();
@@ -1016,4 +1024,5 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, tabId: 
             viewport.destroy();
             if (!options.view) view.dispose();
         } });
+    return Object.freeze({ editor, setComparisonRows });
 }

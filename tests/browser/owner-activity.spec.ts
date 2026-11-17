@@ -3,7 +3,7 @@ import { build } from "esbuild";
 import { basename } from "node:path";
 
 test("owner activity retains immutable captures without collecting metrics and follows pending work", async ({ page }, testInfo) => {
-    const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/index.ts", readiness: "examples/shared/readiness.ts",
+    const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/text-editor.ts", readiness: "examples/shared/readiness.ts",
         rows: "src/core/comparison-rows.ts" }, outdir: "artifacts/owner-activity", bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
     const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
     await page.route("**/owner-activity/**", route => {
@@ -14,13 +14,13 @@ test("owner activity retains immutable captures without collecting metrics and f
     const result = await page.evaluate(async () => {
         const path = "/owner-activity/";
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
-        const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const { mountEditor } = await import(path + "browser.js") as typeof import("../../src/browser/text-editor.ts");
         const { editorSettled, viewportSettled } = await import(path + "readiness.js") as typeof import("../../examples/shared/readiness.ts");
         const { ComparisonRowsCursor } = await import(path + "rows.js") as typeof import("../../src/core/comparison-rows.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "activity", variant: "text" }, "Activity", { value: "const sample = 123;\n".repeat(100) });
         const tab = workspace.open({ kind: "text", documentId: source.documentId }, "activity"), host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
-        const editor = mountTextEditor(host, workspace, tab), viewport = editor.viewport;
+        const { editor, setComparisonRows } = mountEditor(host, workspace, tab), viewport = editor.viewport;
         const forbidden = () => { throw new Error("Readiness collected metrics"); };
         const readyViewport = { ...viewport, snapshot: forbidden }, readyEditor = { ...editor, viewport: readyViewport, snapshot: forbidden };
         const ready = () => editorSettled(readyEditor), frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
@@ -62,17 +62,17 @@ test("owner activity retains immutable captures without collecting metrics and f
             await settle(); state("fold painted");
             const folds = editor.view.folding.getSnapshot(), cursor = new ComparisonRowsCursor(buffer, buffer, Object.freeze([]), folds.index, folds.index);
             let alignment = cursor.next(4096); while (!alignment.result) alignment = cursor.next(4096); cursor.dispose();
-            viewport.setComparisonRows({ documentId: source.documentId, revision: 1, foldGeneration: folds.generation, id: 42,
+            setComparisonRows({ documentId: source.documentId, revision: 1, foldGeneration: folds.generation, id: 42,
                 lineHeight: viewport.snapshot().lineHeight, index: alignment.result.working }); state("alignment queued");
             await settle(); state("alignment painted");
-            viewport.setComparisonRows(undefined); await settle(); state("alignment cleared");
+            setComparisonRows(undefined); await settle(); state("alignment cleared");
             const insertion = editor.captureInsertion()!; state("insertion captured"); insertion.cancel(); state("insertion cancelled");
             editor.input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); state("composition queued");
             await settle(); state("composition painted");
             editor.input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })); await settle(); state("composition ended");
             const held = editor.captureInsertion()!;
             editor.destroy(); state("disposed");
-            return { polling, states, selectionStale, foldStale, insertionAborted: held.signal.aborted,
+            return { comparisonSetterExposed: "setComparisonRows" in viewport, polling, states, selectionStale, foldStale, insertionAborted: held.signal.aborted,
                 oldCapturesUnchanged: !idleInput.disposed && !idleViewport.disposed && idleViewport.revision === 0 && idleViewport.alignmentId === null,
                 disposedStable: editor.activity() === editor.activity() && viewport.activity() === viewport.activity() };
         } finally { editor.destroy(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
@@ -80,7 +80,7 @@ test("owner activity retains immutable captures without collecting metrics and f
     await testInfo.attach("owner-activity", { body: JSON.stringify(result), contentType: "application/json" });
     expect(result.polling).toEqual({ metricCaptures: 2000, metricValueReads: 1000, activityCaptures: 2, valueReads: 0, layoutReads: 0,
         inputStable: true, viewportStable: true, frozen: true });
-    expect(result).toMatchObject({ selectionStale: true, foldStale: true, insertionAborted: true, oldCapturesUnchanged: true, disposedStable: true });
+    expect(result).toMatchObject({ comparisonSetterExposed: false, selectionStale: true, foldStale: true, insertionAborted: true, oldCapturesUnchanged: true, disposedStable: true });
     for (const name of ["mount", "selection queued", "revision queued", "fold queued", "alignment queued", "composition queued"])
         expect(result.states[name], name).toMatchObject({ ready: false, painted: { pending: true, disposed: false } });
     for (const name of ["selection painted", "revision painted", "fold painted", "alignment painted", "alignment cleared", "insertion cancelled", "composition painted", "composition ended"])

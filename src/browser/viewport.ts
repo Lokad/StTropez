@@ -60,7 +60,6 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     configureScrollBeyondLastLine: (enabled: boolean) => boolean;
     captureView: () => ViewState; restoreView: (state: ViewState) => void;
     scrollTo: (position: Readonly<{ top?: number; left?: number }>) => void;
-    setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean;
     coordsAt: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
     rowBounds: (line: number) => RenderedRowBounds | undefined;
     hitTest: (clientX: number, clientY: number) => CaretRectangle | undefined;
@@ -101,9 +100,9 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     return mountViewport(host, workspace, tabId, options).viewport;
 }
 
-/** Internal mount: keyboard navigation shares the viewport lifetime without entering its public handle. */
+/** Internal mount: navigation and comparison publication share the viewport lifetime. */
 export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: TabId,
-    options: NonNullable<Parameters<typeof mountTextViewport>[3]> = {}): Readonly<{ viewport: TextViewport; navigation: ViewportNavigation }> {
+    options: NonNullable<Parameters<typeof mountTextViewport>[3]> = {}): Readonly<{ viewport: TextViewport; navigation: ViewportNavigation; setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean }> {
     let columns = resolveColumnRulers(options.columnRulers);
     let highlightCurrentLine = options.highlightCurrentLine === undefined ? false : options.highlightCurrentLine;
     if (typeof highlightCurrentLine !== "boolean") throw new TypeError("Current-line highlighting must be boolean.");
@@ -720,7 +719,6 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         },
         flush,
         scrollTo: setScroll,
-        setComparisonRows,
         captureView: () => { const { selection, selectionSet } = view.getSnapshot();
             // Ref replay may recapture an intermediate unaligned paint. Always retain source
             // coordinates, and prefer an anchor that has not yet reached its first paint.
@@ -817,5 +815,5 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
             return "nextLine" in index ? index.nextLine(at, direction) : index.lineAt(at);
         }
     });
-    return Object.freeze({ viewport, navigation });
+    return Object.freeze({ viewport, navigation, setComparisonRows });
 }

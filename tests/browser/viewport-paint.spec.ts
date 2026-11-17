@@ -14,13 +14,13 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
     const result = await page.evaluate(async () => {
         const path = "/viewport-paint/";
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
-        const { mountTextViewport } = await import(path + "viewport.js") as typeof import("../../src/browser/viewport.ts");
+        const { mountViewport } = await import(path + "viewport.js") as typeof import("../../src/browser/viewport.ts");
         const { ComparisonRowsCursor } = await import(path + "rows.js") as typeof import("../../src/core/comparison-rows.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "paint-captures", variant: "text" }, "Paint", { value: "const sample = 123;\r\n".repeat(100000) });
         const tab = workspace.open({ kind: "text", documentId: source.documentId }, "paint"), host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
         let calls = 0, notices = 0, shade = "paint-a";
-        const viewport = mountTextViewport(host, workspace, tab, { decorate: line => { calls++; return [{ from: line.from, to: line.to, className: shade }]; } });
+        const { viewport, setComparisonRows } = mountViewport(host, workspace, tab, { decorate: line => { calls++; return [{ from: line.from, to: line.to, className: shade }]; } });
         viewport.onRender(() => notices++);
         const input = viewport.bindInput(() => {});
         const observer = new MutationObserver(() => {}); observer.observe(viewport.element, { subtree: true, childList: true, attributes: true, characterData: true });
@@ -53,10 +53,10 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
             const folded = viewport.snapshot().collapsedFolds, folds = viewport.view.folding.getSnapshot(), buffer = documentState().buffer;
             const cursor = new ComparisonRowsCursor(buffer, buffer, Object.freeze([]), folds.index, folds.index); let aligned = cursor.next(4096);
             while (!aligned.result) aligned = cursor.next(4096); cursor.dispose();
-            changes.push(work("comparison rows", () => { viewport.setComparisonRows({ documentId: source.documentId, revision: 1, foldGeneration: folds.generation,
+            changes.push(work("comparison rows", () => { setComparisonRows({ documentId: source.documentId, revision: 1, foldGeneration: folds.generation,
                 id: 1, lineHeight: middle.lineHeight + 4, index: aligned.result!.working }); }));
             const alignment = viewport.snapshot().alignmentId;
-            changes.push(work("clear comparison", () => { viewport.setComparisonRows(undefined); }));
+            changes.push(work("clear comparison", () => { setComparisonRows(undefined); }));
             changes.push(work("synchronous font", () => { viewport.element.style.fontSize = "18px"; }));
             const wider = viewport.snapshot().columnWidth > middle.columnWidth;
             changes.push(work("synchronous resize", () => { host.style.width = "450px"; host.style.height = "150px"; }));

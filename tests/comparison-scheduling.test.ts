@@ -32,22 +32,22 @@ function fixture(count = 5000) {
             aligned: !!installed, alignmentId: installed?.id ?? null, pending: false, disposed: false, scrollTop: top, verticalExtent: count * 40, height: 200 }; };
         const value = { view: current, element, snapshot: read, activity: read,
             onRender: (listener: () => void) => { rendered.addEventListener("render", listener); return () => rendered.removeEventListener("render", listener); },
-            setComparisonRows: (rows: ViewportComparisonRows | undefined) => { installed = rows; return true; },
             scrollTo: ({ top: next }: { top?: number }) => { if (next !== undefined) top = next; }, flush: () => {} } as unknown as TextViewport;
-        return { value, element, installed: () => installed, render: () => rendered.dispatchEvent(new Event("render")), renderListeners: () => getEventListeners(rendered, "render").length,
+        return { value, element, setComparisonRows: (rows: ViewportComparisonRows | undefined) => { installed = rows; return true; }, installed: () => installed, render: () => rendered.dispatchEvent(new Event("render")), renderListeners: () => getEventListeners(rendered, "render").length,
             scroll: (to: number) => { top = to; element.dispatchEvent(new Event("scroll")); } };
     }
     const working = viewport(view), reference = viewport(refView);
     const editor = { view, viewport: working.value, input: new EventTarget(), activity: () => ({ composing, pendingInput: false, pendingCommand: false, pendingDragScroll: false }) } as unknown as TextEditor;
     let compositions = 0, focuses = 0;
     const baselineEditor = { view: refView, viewport: reference.value, input: new EventTarget(), focus: () => { focuses++; } } as unknown as TextEditor;
-    const panes = createComparisonPanes(editor, () => { compositions++; }); panes.setReference(baselineEditor);
+    const baselineMount = { editor: baselineEditor, setComparisonRows: reference.setComparisonRows };
+    const panes = createComparisonPanes({ editor, setComparisonRows: working.setComparisonRows }, () => { compositions++; }); panes.setReference(baselineMount);
     const alignment = createComparisonAlignment(win, panes, () => state, () => notifications++, () => false);
     const step = () => { const entry = tasks.entries().next().value; assert.ok(entry, "Expected scheduled work"); tasks.delete(entry[0]); entry[1](); };
     const drain = () => { let turns = 0; while (tasks.size) { assert.ok(++turns < 1000, "Scheduler failed to settle"); step(); } return turns; };
     return { workspace, view, refView, win, working, reference, editor, baselineEditor, panes, alignment, tasks, step, drain, state: () => state,
         counters: () => ({ reads, notifications, compositions, focuses }), setClockStep: (value: number) => { clockStep = value; },
-        setComposing: (value: boolean) => { composing = value; }, setReference: (value: TextViewport | undefined) => { panes.setReference(value ? baselineEditor : undefined); },
+        setComposing: (value: boolean) => { composing = value; }, setReference: (value: TextViewport | undefined) => { panes.setReference(value ? baselineMount : undefined); },
         refresh: () => { state = Object.freeze({ ...state, generation: state.generation + 1 }); },
         dispose: () => { alignment.dispose(); panes.dispose(); view.dispose(); refView.dispose(); assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().subscriptions, 0);
             for (const input of [editor.input, baselineEditor.input]) for (const type of ["compositionstart", "compositionend"]) assert.equal(getEventListeners(input, type).length, 0); } };

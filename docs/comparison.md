@@ -258,6 +258,7 @@ with change colors. The host owns syntax/search state and calls the appropriate 
 `rowsAligned` is true and `scrollLinked` is omitted, scrolling is linked. Use
 `setScrollLinked(boolean)` and `setRowsAligned(boolean)` to change them. Enabling alignment
 also enables linking; linking can then be disabled independently.
+The comparison mount owns row publication for its captured working and reference panes.
 
 Linked scrolling projects vertical positions through the completed diff and each pane's folds.
 Unchanged rows keep their fractional position; changed rows interpolate between captured bounds,

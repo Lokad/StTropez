@@ -7,7 +7,7 @@ import type { ComparisonPanes } from "./comparison-panes.ts";
 /** Optional view-only coordination; completed comparison identity owns each queued frame. */
 export function createComparisonScroll(win: Window, panes: ComparisonPanes,
     snapshot: () => ComparisonSnapshot, canSync: () => boolean) {
-    const working = panes.working.viewport, reference = () => panes.reference()?.viewport;
+    const working = panes.working.editor.viewport, reference = () => panes.reference()?.editor.viewport;
     let linked = false, disposed = false, paused = false, frame: number | undefined, leader = working, prior: ComparisonSnapshot | undefined;
     let workingRows = -1, referenceRows = -1;
     let stopObserving: (() => void) | undefined, stopReference: (() => void) | undefined;
@@ -94,7 +94,7 @@ export function createComparisonScroll(win: Window, panes: ComparisonPanes,
                     input: view => request(view), pointerdown: view => request(view) });
                 stopReference = panes.onReferenceChange(previous => {
                     cancel(); paused = false; leader = working;
-                    if (previous) { positions.delete(previous.viewport); paintedRows.delete(previous.viewport); }
+                    if (previous) { positions.delete(previous.editor.viewport); paintedRows.delete(previous.editor.viewport); }
                     const next = reference(); if (next) remember(next); update();
                 });
                 update();
