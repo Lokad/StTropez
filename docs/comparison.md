@@ -13,19 +13,21 @@ provide a bounded container as described in [Getting started](getting-started.md
 ```ts
 import type { ComparisonBaseline, TabId, Workspace } from "sttropez";
 import { mountTextComparison } from "sttropez/browser";
+import type { TextComparisonOptions } from "sttropez/browser";
 
 export function showChanges(
     host: HTMLElement, workspace: Workspace, tab: TabId, reference: ComparisonBaseline
 ) {
-    return mountTextComparison(host, workspace, tab, reference, {
+    const options: TextComparisonOptions = {
         ariaLabel: "Review changes",
         rowsAligned: true
-    }); // Call destroy() when the review attachment ends.
+    };
+    return mountTextComparison(host, workspace, tab, reference, options); // Call destroy() when the review attachment ends.
 }
 ```
 
-The returned `TextComparison` exposes the working editor, `controller`, reference-view access
-and presentation commands. Its built-in controls navigate changes, revert a selected change,
+The mount accepts `TextComparisonOptions`. The returned `TextComparison` exposes the working
+editor, `controller`, reference-view access and presentation commands. Its built-in controls navigate changes, revert a selected change,
 link scrolling and align rows. Supply `view` to retain a host-owned working `DocumentView`
 across mounts. Destroying the comparison disposes only views it creates.
 `ariaLabel` defaults to `"Text comparison"`. Set `controls: false` to mount only the two panes,

@@ -50,6 +50,7 @@ export type {
     ViewId, WorkspaceOptions, WorkspaceSnapshot,
 } from "./core/workspace.ts";
 export type { Observable } from "./core/observable.ts";
+export type { DocumentationContent, DocumentationPart } from "./core/documentation.ts";
 export type { Immutable, SnapshotValue } from "./core/values.ts";
 export { WorkspaceCommands } from "./core/commands.ts";
 export type { CapturedResource, RunPort, RunSubmission, SaveOutcome, SavePort, SaveResponse } from "./core/commands.ts";

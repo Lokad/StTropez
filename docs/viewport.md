@@ -12,13 +12,15 @@ Load the packaged CSS and give the host element a bounded height and width, as d
 ```ts
 import type { TabId, Workspace } from "sttropez";
 import { mountTextViewport } from "sttropez/browser";
+import type { TextViewportOptions } from "sttropez/browser";
 
 export function showPreview(host: HTMLElement, workspace: Workspace, tab: TabId) {
-    const viewport = mountTextViewport(host, workspace, tab, {
+    const options: TextViewportOptions = {
         ariaLabel: "Source preview",
         columnRulers: [80, 120],
         highlightCurrentLine: true
-    });
+    };
+    const viewport = mountTextViewport(host, workspace, tab, options);
     viewport.revealOffset(0, { horizontal: "nearest", vertical: "nearest" });
     return viewport; // Call destroy() when the host detaches this projection.
 }
@@ -32,7 +34,8 @@ does not dispose the supplied view; a view created by the mount is disposed with
 
 ### Mounting and presentation
 
-`mountTextViewport` requires a tab identifying a text surface. A supplied view must belong to that document and
+`mountTextViewport` accepts `TextViewportOptions` and requires a tab identifying a text surface.
+A supplied view must belong to that document and
 workspace. The mount captures the tab generation; replacing the tab clears its projection
 instead of redirecting it to the replacement document.
 

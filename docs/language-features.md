@@ -257,6 +257,8 @@ format. A hover does not need a range to be useful. The host owns placement, foc
 
 `mountDocumentation` from `sttropez/browser` renders `DocumentationContent` into its own appended
 subtree. `setContent` reuses an unchanged immutable array; `dispose` removes the view and listeners.
+`DocumentationContent` and `DocumentationPart` are headless types exported from `sttropez`,
+`sttropez/browser` and `sttropez/protocol`.
 The renderer supports plaintext, paragraphs, emphasis/strong emphasis, flat ordered/unordered
 lists, inline code, fenced code and inline links. Code language labels are metadata. It creates
 text nodes and elements without inserting provider HTML or loading images/embedded content.
@@ -269,7 +271,7 @@ too. Replacing content or disposing the view retires old buttons. This recipe us
 actions as its destination allowlist:
 
 ```ts
-import type { DocumentationContent } from "sttropez/protocol";
+import type { DocumentationContent } from "sttropez";
 import { mountDocumentation } from "sttropez/browser";
 
 export function createHelpView(

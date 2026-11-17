@@ -2,7 +2,7 @@ export type { ViewState } from "./view-state.ts";
 export { inputConflictEvent } from "./input-conflict.ts";
 export type { InputConflictDetail } from "./input-conflict.ts";
 export { mountTextViewport } from "./viewport.ts";
-export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealOptions, TextViewport, ViewportActivity, ViewportSnapshot, ViewportInputBinding } from "./viewport.ts";
+export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealOptions, TextViewport, TextViewportOptions, ViewportActivity, ViewportSnapshot, ViewportInputBinding } from "./viewport.ts";
 export { mountTextEditor } from "./text-editor.ts";
 export type { BracketHighlights, BracketHighlightSnapshot } from "./bracket-highlights.ts";
 export type { CharacterWarningHighlights, CharacterWarningCapture } from "./character-warnings.ts";
@@ -27,7 +27,7 @@ export type { FindBackend, FindQueryCapture, FindSearchCursor, FindPlanCursor, F
 export { createRegexFindBackend } from "./regex-find.ts";
 export type { RegexFindBackendOptions } from "./regex-find.ts";
 export { mountTextComparison } from "./comparison.ts";
-export type { TextComparison, TextComparisonSnapshot, ComparisonReferenceView } from "./comparison.ts";
+export type { TextComparison, TextComparisonOptions, TextComparisonSnapshot, ComparisonReferenceView } from "./comparison.ts";
 export type { ComparisonAlignmentSnapshot } from "./comparison-alignment.ts";
 export { createFontAssetController } from "./font-asset.ts";
 export type { FontAssetController, FontAssetSnapshot, FontAssetVersion, FontLoadOperation, FontLoadResult } from "./font-asset.ts";

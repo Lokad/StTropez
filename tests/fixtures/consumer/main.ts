@@ -5,7 +5,7 @@ import { fontFixture } from "./font-fixture.js";
 import { createAgentReview, DiffReferenceCache, WorkspaceCommands } from "sttropez";
 import { createSelectionSet, planSelectionEdits } from "sttropez";
 import type { ResourceVisibility, SaveReview } from "sttropez";
-import type { FindReason, InputConflictDetail, PresentedLine, TextComparisonSnapshot } from "sttropez/browser";
+import type { FindReason, InputConflictDetail, PresentedLine, TextComparisonOptions, TextComparisonSnapshot, TextViewportOptions } from "sttropez/browser";
 import { JsonRpcConnection } from "sttropez/protocol";
 import { openWebSocketTransport } from "sttropez/browser";
 const workspace = new Workspace();
@@ -14,7 +14,7 @@ const tabId = workspace.open({ kind: "text", documentId }, "main");
 const host = document.getElementById("editor");
 if (!host) throw new Error("Missing editor host.");
 const sourceEditor = mountTextEditor(host, workspace, tabId);
-const viewport = mountTextViewport(document.getElementById("viewport")!, workspace, tabId, { ariaLabel: "Restored viewport" });
+const viewport = mountTextViewport(document.getElementById("viewport")!, workspace, tabId, { ariaLabel: "Restored viewport" } satisfies TextViewportOptions);
 const candidate = mountTextEditor(document.getElementById("candidate")!, workspace, tabId, { ariaLabel: "Restored candidate", decorate: line => {
     const from = line.text.indexOf("restored"); return from < 0 ? [] : [{ from: line.from + from, to: line.from + from + 8, className: "consumer-token" }];
 } });
@@ -23,7 +23,7 @@ const comparisonResource = workspace.createTextResourceFromBuffer({ scope: "cons
 const comparisonTab = workspace.open({ kind: "text", documentId: comparisonResource.documentId }, "review");
 const comparisonView = workspace.createDocumentView(comparisonResource.documentId);
 const reviewDecorate = (line: PresentedLine) => [{ from: line.from, to: line.to, className: "consumer-review-token" }];
-const reviewOptions = { view: comparisonView, workingDecorate: reviewDecorate, baselineDecorate: reviewDecorate };
+const reviewOptions: TextComparisonOptions = { view: comparisonView, workingDecorate: reviewDecorate, baselineDecorate: reviewDecorate };
 let comparison = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonTab, { buffer: TextBuffer.from("baseline\r\n"), version: "reference-1" }, reviewOptions);
 function mountMultipleInput() {
     const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "multiple-input", variant: "working" }, "Multiple input", { value: "abcd" });
