@@ -10,6 +10,7 @@ import { chromium, firefox, webkit } from "@playwright/test";
 import { strFromU8, unzipSync } from "fflate";
 import ts from "typescript-demo";
 import { moduleSpecifiers } from "./module-specifiers.mjs";
+import { listenPackageServer, closePackageServer, closePackageResources } from "./package-host.mjs";
 import { libraryModules, libraryCss } from "./library-entries.mjs";
 import { attachDemoProvider } from "../examples/demo/provider-server.ts";
 import { runDemoWalkthrough, runDemoConflict, runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoHighlights, runDemoDocumentation, runDemoActions } from "../tests/browser/demo-walkthrough.ts";
@@ -147,8 +148,9 @@ if (!prepareOnly) {
         response.end(await readFile(join(site, file)));
     })().catch(error => { console.error(error); if (!response.headersSent) response.writeHead(500); response.end(); }); });
     const provider = attachDemoProvider(server); let browser, browserServer;
+    const failures = [];
     try {
-        await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+        await listenPackageServer(server);
         if (measureOnly) {
             // Keep a public process owner so a blocked renderer cannot delay campaign cancellation.
             browserServer = await chromium.launchServer({ headless: true, host: "127.0.0.1" });
@@ -162,11 +164,13 @@ if (!prepareOnly) {
             finally { try { await context.close(); } finally { errors.dispose(); errors.assertClean(); } }
         }
         evidence.journeys = journeys;
-    } finally {
-        await browser?.close(); await browserServer?.close(); await provider.close();
-        await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
-        evidence.providerAfterClose = provider.snapshot();
-        assert.deepEqual(evidence.providerAfterClose, { projects: 0, connections: 0, processes: 0, removals: 0 });
+    } catch (error) { failures.push(error); }
+    finally {
+        await closePackageResources([() => browser?.close(), () => browserServer?.close(), () => provider.close(),
+            () => closePackageServer(server), () => {
+                evidence.providerAfterClose = provider.snapshot();
+                assert.deepEqual(evidence.providerAfterClose, { projects: 0, connections: 0, processes: 0, removals: 0 });
+            }], failures);
     }
 }
 await checkStage(); assert.equal((await sourceIdentity()).sha256, source.sha256, "Source changed during qualification.");

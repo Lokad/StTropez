@@ -9,6 +9,7 @@ import { zipSync, strFromU8, strToU8 } from "fflate";
 import { chromium, firefox, webkit } from "@playwright/test";
 import { sourceIdentity, environment } from "./measurement.mjs";
 import { within, consumerCompilerRoots } from "./package-react-host.mjs";
+import { listenPackageServer, closePackageServer, closePackageResources } from "./package-host.mjs";
 
 const sha = bytes => createHash("sha256").update(bytes).digest("hex");
 async function files(root, prefix = "") {
@@ -48,9 +49,8 @@ export async function runPackageTransitions({ project, consumer, entries, assets
         if (!file) { response.writeHead(404).end(); return; }
         response.writeHead(200, { "Content-Type": path.endsWith(".js") ? "text/javascript" : path.endsWith(".css") ? "text/css" : "text/html", "Cache-Control": "no-store" }); response.end(file);
     });
-    await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-    const url = `http://127.0.0.1:${server.address().port}`;
     let browser, retainedPage;
+    const failures = [];
     const verifyPayload = async (root, manifest, bytes) => {
         assert.equal(sha(await readFile(join(root, "manifest.json"))), sha(bytes));
         for (const asset of manifest.assets) { const actual = await readFile(join(root, asset.path)); assert.equal(actual.length, asset.bytes, asset.path); assert.equal(sha(actual), asset.sha256, asset.path); }
@@ -63,6 +63,8 @@ export async function runPackageTransitions({ project, consumer, entries, assets
     const snapshot = page => page.evaluate(() => window.transitionFixture.snapshot());
     const release = async page => { const diagnostics = await page.evaluate(() => window.transitionFixture.dispose()); assert.deepEqual(diagnostics, { ...diagnostics, views: 0, leases: 0, subscriptions: 0 }); await page.close(); };
     try {
+        await listenPackageServer(server);
+        const url = `http://127.0.0.1:${server.address().port}`;
         browser = await ({ chromium, firefox, webkit })[browserName].launch();
         for (const [index, kind] of ["a", "b", "a", "base"].entries()) {
             const version = versions[kind], property = `-p:StTropezTestVersion=${version}`, manifest = manifests[kind], payload = kind === "a" ? payloads.a : entries, manifestBytes = payload["assets/manifest.json"];
@@ -112,5 +114,8 @@ export async function runPackageTransitions({ project, consumer, entries, assets
             limits: "Controlled local evaluation versions of this payload; fixture-only optional worker. Qualifies NuGet restore/stage transitions and isolated frontend usability, not arbitrary released-version compatibility, publishing, native input or display latency." };
         await mkdir("artifacts/package", { recursive: true }); await writeFile(`artifacts/package/transitions-${browserName}.json`, JSON.stringify(report, null, 2));
         console.log("Local package transitions A→B→A and identical-payload root reuse passed; old stages and live source remain intact."); return report;
-    } finally { await retainedPage?.close(); await browser?.close(); await new Promise(resolve => server.close(resolve)); }
+    } catch (error) { failures.push(error); }
+    finally {
+        await closePackageResources([() => retainedPage?.close(), () => browser?.close(), () => closePackageServer(server)], failures);
+    }
 }

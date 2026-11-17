@@ -15,6 +15,7 @@ import { stageHostFixture, within } from "./package-react-host.mjs";
 import { qualifyPackageExports } from "./package-exports.mjs";
 import { consumerScenario } from "./package-scenarios.mjs";
 import { emptyConsumerDirectory } from "./package-consumer.mjs";
+import { listenPackageServer, closePackageServer, closePackageResources } from "./package-host.mjs";
 
 const scenario = consumerScenario(process.argv);
 const hunkOnly = scenario === "hunk";
@@ -172,9 +173,10 @@ const server = createServer(async (request, response) => {
     response.end(await readFile(join(consumer, "site", file)));
 });
 const stopFixture = lspOnly || reactHost ? (await import("../fixtures/protocol/fixture-server.ts")).attachProtocolFixture(server) : () => {};
-await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 let browser;
+const failures = [];
 try {
+    await listenPackageServer(server);
     browser = await ({ chromium, firefox, webkit })[browserName].launch();
     if (!pilotOnly) {
     const page = await browser.newPage();
@@ -388,10 +390,9 @@ try {
         directory: "artifacts/package", packageSha256: createHash("sha256").update(archive).digest("hex"), benchmark,
     });
     console.log(`Restored integrated pilot passed in ${browserName}. Consumer: ${consumer}`);
-} finally {
-    await browser?.close();
-    stopFixture();
-    await new Promise(resolve => server.close(resolve));
+} catch (error) { failures.push(error); }
+finally {
+    await closePackageResources([() => browser?.close(), stopFixture, () => closePackageServer(server)], failures);
 }
 }
 }

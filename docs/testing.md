@@ -48,7 +48,7 @@ independently against the public source entries using `tsconfig.base.json`.
 The development project also checks the JavaScript entries listed in `tsconfig.json` and
 their imports: measurement, package scenarios, the browser harness, its server and the demo
 library catalogue, plus asset entry metadata, building, declaration finalization and shared
-Unicode generation I/O and package consumer ownership. Other scripts are outside its
+Unicode generation I/O and package consumer/HTTP lifecycle ownership. Other scripts are outside its
 JavaScript checking scope.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected
@@ -348,6 +348,11 @@ identifies the latest run. Receipts distinguish running, kept, failed and remove
 record file-byte counts before removal. Metadata marked removed or being removed cannot be
 reused. Evidence is written outside the consumer before cleanup; historical directories are
 not swept. Counts describe file sizes, not allocated disk space.
+
+Package routes acquire their HTTP listener inside the cleanup scope. Teardown attempts each
+page/browser/provider/server close in its declared order even if a prior close rejects. A sole
+failure is preserved; multiple workload/cleanup failures are reported together with the original
+workload error first. This does not impose a timeout on a close operation that never settles.
 
 Each consuming route has its own integration purpose: public exports/declarations and CSS,
 wire protocol, framework lifetime, review, deferred activation or the actual demo host. Its
