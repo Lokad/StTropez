@@ -1,6 +1,6 @@
 import { staleRequest } from "./wire.ts";
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
-import { createLspClient } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle } from "./lsp-client.ts";
 import { decodeLspCodeActions, decodeLspResolvedCodeAction, lspCodeActionUris } from "./lsp-code-actions.ts";
 import type { LspCodeAction } from "./lsp-code-actions.ts";
 import type { LspCommand } from "./lsp-command-value.ts";
@@ -16,7 +16,8 @@ export function createLspActionClient(provider: LspWorkspace, options: LspAction
     let executing = false, runner: ReturnType<typeof createLspCommandRunner> | undefined;
     const commands = () => runner ??= createLspCommandRunner(session, client.notify);
     const busy = () => executing || client.isBusy();
-    return Object.freeze({ state: client.state, subscribe: client.subscribe, cancel: () => { runner?.cancel(); client.cancel(); },
+    return Object.freeze({ ...lspFeatureHandle(client, ["textDocument/codeAction"], { isBusy: busy,
+        cancel: () => { runner?.cancel(); client.cancel(); }, dispose: () => { runner?.dispose(); client.dispose(); } }),
         run: async (snapshots: readonly DocumentSnapshot[], origin: DocumentId, from: number, to: number, prepare?: LspPrepare) => {
             if (executing) throw new Error("A confirmed action command is still running.");
             const value = await client.request(snapshots, origin, "textDocument/codeAction", capture => {
@@ -59,6 +60,5 @@ export function createLspActionClient(provider: LspWorkspace, options: LspAction
                     return value.decode(() => decodeLspResolvedCodeAction(response, action, value.capture, value.targetForUri));
                 } });
         },
-        snapshot: () => Object.freeze({ ...client.snapshot(), busy: busy(), version: "LSP3.17" }),
-        dispose: () => { runner?.dispose(); client.dispose(); } });
+        snapshot: () => Object.freeze({ ...client.snapshot(), busy: busy(), version: "LSP3.17" }) });
 }

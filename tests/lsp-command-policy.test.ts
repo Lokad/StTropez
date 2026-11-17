@@ -88,7 +88,8 @@ test("cancelling a hanging host handler rejects its late edits and permits a fre
     f.peer.onRequest("textDocument/codeAction", () => [{ title: "host", command: "host.local" }]);
     const batch = await run(client, f), pending = batch.execute(batch.actions[0]!, scopeFor(f));
     const rejected = assert.rejects(pending, error => error instanceof RpcError && error.code === -32800);
-    await entered.promise; client.cancel(); await rejected; await cancelled.promise;
+    await entered.promise; assert.equal(client.isBusy(), true); client.cancel(); await rejected; await cancelled.promise;
+    assert.equal(client.isBusy(), false);
     captured!.onCancel(() => { throw new Error("Late host cancellation failure"); }); await settled();
     assert.deepEqual(f.errors.splice(0), ["Host cancellation failure", "Late host cancellation failure"]);
     assert.equal(captured!.isCurrent(), false); assert.equal((await captured!.applyEdit({ edit: { changes: {} } })).applied, false);

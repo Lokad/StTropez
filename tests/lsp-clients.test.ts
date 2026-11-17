@@ -7,6 +7,48 @@ const { createLspHoverClient, createLspNavigationClient, createLspRenameClient, 
 const stale = (error: unknown) => error instanceof RpcError && error.code === -32801;
 const cancelled = (error: unknown) => error instanceof RpcError && error.code === -32800;
 
+test("public feature handles share read-only options, busy state and disposal", async t => {
+    type Fixture = ReturnType<typeof clientFixture>;
+    const cases = [
+        ["hover", (f: Fixture) => { const client = createLspHoverClient(f.provider); return { client, run: () => client.run(f.document(), 0).result }; }],
+        ["foldingRange", (f: Fixture) => { const client = protocol.createLspFoldingClient(f.provider); return { client, run: () => client.run(f.document()).result }; }],
+        ["documentHighlight", (f: Fixture) => { const client = protocol.createLspHighlightClient(f.provider); return { client, run: () => client.run(f.document(), 0).result }; }],
+        ["definition", (f: Fixture) => { const client = createLspNavigationClient(f.provider); return { client, run: () => client.run([f.document()], f.document().id, 0, "definition") }; }],
+        ["rename", (f: Fixture) => { const client = createLspRenameClient(f.provider); return { client, run: () => client.run([f.document()], f.document().id, 0, "next") }; }],
+        ["codeAction", (f: Fixture) => { const client = createLspActionClient(f.provider); return { client, run: () => client.run([f.document()], f.document().id, 0, 0) }; }],
+        ["signatureHelp", (f: Fixture) => { const client = protocol.createLspSignatureClient(f.provider); return { client, run: () => client.run(f.document(), 0).result }; }],
+        ["documentLink", (f: Fixture) => { const client = protocol.createLspLinkClient(f.provider); return { client, run: () => client.run(f.document()) }; }],
+        ["documentColor", (f: Fixture) => { const client = protocol.createLspColorClient(f.provider); return { client, run: () => client.run(f.document()) }; }]
+    ] as const;
+    for (const [name, create] of cases) await t.test(name, async t => {
+        const f = clientFixture(t), { client, run } = create(f), entered = latch<void>(), answer = latch<unknown>();
+        t.after(() => { answer.resolve(null); client.dispose(); });
+        assert.ok(Object.isFrozen(client)); assert.equal(client.isBusy(), false); assert.deepEqual(client.options(f.document()), []);
+        let notifications = 0; const stop = client.subscribe(() => { notifications++; }); t.after(stop);
+        await f.provider.connect(); const before = f.provider.snapshot();
+        const options = client.options(f.document()); assert.equal(options.length, 1); assert.ok(Object.isFrozen(options));
+        assert.deepEqual(f.provider.snapshot(), before); assert.equal(f.workspace.diagnostics().leases, 0);
+        f.peer.onRequest(`textDocument/${name}`, () => { entered.resolve(); return answer.promise; });
+        const pending = run(); void pending.catch(() => {}); assert.equal(client.isBusy(), true); await entered.promise;
+        const busy = f.provider.snapshot(); assert.equal(client.options(f.workspace.document(f.other.documentId)).length, 1);
+        assert.equal(client.isBusy(), true); assert.deepEqual(f.provider.snapshot(), busy);
+        answer.resolve(name === "documentColor" ? [] : null); await pending; assert.equal(client.isBusy(), false); assert.ok(notifications > 0);
+        client.cancel(); client.dispose(); client.dispose(); assert.equal(client.isBusy(), false); assert.equal(client.snapshot().disposed, true);
+        assert.throws(() => client.options(f.document()), /disposed/); assert.throws(() => client.subscribe(() => {}), /disposed/);
+        await settled(); assert.equal(f.provider.snapshot().documents, 0); assert.equal(f.workspace.diagnostics().leases, 0);
+    });
+});
+
+test("multi-method handles query their declared methods and reject another client's method", async t => {
+    const f = clientFixture(t), navigation = createLspNavigationClient(f.provider), color = protocol.createLspColorClient(f.provider);
+    t.after(() => { navigation.dispose(); color.dispose(); }); await f.provider.connect();
+    assert.equal(navigation.options(f.document(), "textDocument/references").length, 1);
+    assert.equal(color.options(f.document(), "textDocument/colorPresentation").length, 1);
+    // @ts-expect-error Navigation does not expose another client's options.
+    assert.throws(() => navigation.options(f.document(), "textDocument/rename"), TypeError);
+    assert.equal(f.provider.snapshot().documents, 0);
+});
+
 test("request validation binds a project once and never replaces a captured URI during a held reply", async t => {
     let mappings = 0, version = 0;
     const f = clientFixture(t, undefined, undefined, doc => { mappings++; return { uri: `generic:${version}/${doc.resourceId}`, languageId: "generic" }; }),
@@ -67,7 +109,9 @@ test("hover supersession cancels obsolete wire work promptly and old cancellatio
     t.after(() => { answer.resolve({ contents: "cleanup" }); client.dispose(); }); let calls = 0;
     f.peer.onRequest("textDocument/hover", () => ++calls === 1 ? (entered.resolve(), answer.promise) : ({ contents: "replacement" }));
     const first = client.run(f.document(), 0), rejected = assert.rejects(first.result, cancelled); await entered.promise;
+    assert.equal(client.isBusy(), true);
     const next = await client.run(f.document(), 6).result; await rejected; first.cancel(); await settled();
+    assert.equal(client.isBusy(), false);
     assert.equal(f.sent("$/cancelRequest").length, 1); assert.equal(f.provider.snapshot().protocol.pendingRequests, 0); assert.equal(next!.isCurrent(), true);
     answer.resolve({ contents: "late" }); await settled(); assert.equal(next!.text, "replacement");
 });

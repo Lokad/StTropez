@@ -30,6 +30,15 @@ work and published results; `dispose` ends participation. Connection and synchro
 ownership follow the [shared scope contract](language-server.md#workspace-ownership-and-synchronization).
 Headless clients do not capture browser selections, focus or host edit permission.
 
+Each headless feature client exposes `state`, `subscribe`, `snapshot`, `isBusy`, `options`,
+`cancel` and `dispose`. `isBusy()` covers pending requests and follow-up work; the action client
+also includes confirmed command execution. `options(document)` is a
+[read-only capability query](language-server.md#feature-capability-queries) for the client's
+primary method. Navigation accepts an optional second argument of `textDocument/definition`
+(the default) or `textDocument/references`; colors accept `textDocument/documentColor`
+(the default) or `textDocument/colorPresentation`. Other methods are rejected. Options queries
+and new subscriptions on a disposed client throw; `dispose()` is idempotent.
+
 For a mounted completion controller, retain the published list ID in each host action. This
 prevents a delayed click from selecting an item in a replacement list:
 

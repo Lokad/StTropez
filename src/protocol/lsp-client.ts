@@ -161,3 +161,14 @@ export function createLspClient(provider: LspWorkspace) {
             listeners.clear();
         } });
 }
+
+/** Common public controls over the existing request owner; feature state stays with its client. */
+export function lspFeatureHandle<Method extends LspDocumentFeature>(client: ReturnType<typeof createLspClient>,
+    methods: readonly [Method, ...Method[]], controls: Partial<Pick<ReturnType<typeof createLspClient>, "isBusy" | "cancel" | "dispose">> = {}) {
+    return Object.freeze({ state: client.state, subscribe: client.subscribe, snapshot: client.snapshot,
+        isBusy: controls.isBusy ?? client.isBusy, cancel: controls.cancel ?? client.cancel, dispose: controls.dispose ?? client.dispose,
+        options: (document: DocumentSnapshot, method: Method = methods[0]) => {
+            if (!methods.includes(method)) throw new TypeError("Method is outside this LSP feature client.");
+            return client.options(document, method);
+        } });
+}

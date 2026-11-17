@@ -1,5 +1,5 @@
 import { ProtocolDecodeError, staleRequest } from "./wire.ts";
-import { createLspClient } from "./lsp-client.ts";
+import { createLspClient, lspFeatureHandle } from "./lsp-client.ts";
 import type { LspDocumentCapture } from "./lsp-session.ts";
 import type { LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
@@ -26,7 +26,7 @@ export function decodeLspFoldingRanges(value: unknown, capture: LspDocumentCaptu
 
 export function createLspFoldingClient(provider: LspWorkspace) {
     const client = createLspClient(provider);
-    return Object.freeze({ state: client.state, subscribe: client.subscribe, snapshot: client.snapshot, cancel: client.cancel, dispose: client.dispose,
+    return Object.freeze({ ...lspFeatureHandle(client, ["textDocument/foldingRange"]),
         run: (document: DocumentSnapshot, prepare?: LspPrepare) => {
             const call = client.request([document], document.id, "textDocument/foldingRange", () => ({}), prepare);
             return Object.freeze({ cancel: call.cancel, result: call.result.then(value => value.decode(() =>
