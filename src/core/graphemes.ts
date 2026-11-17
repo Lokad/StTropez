@@ -2,7 +2,7 @@ import type { TextBuffer } from "./text-buffer.ts";
 import { graphemeProperties, unicodeGraphemeVersion } from "./grapheme-data.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelStatus } from "./kernel-cursor.ts";
-import { utf16CodePointAt } from "./utf16.ts";
+import { readUtf16Window } from "./utf16.ts";
 
 export type GraphemeSource = Readonly<{ kind: "buffer"; buffer: TextBuffer }> | Readonly<{ kind: "string"; text: string }>;
 export type GraphemeRange = Readonly<{ from: number; to: number }>;
@@ -44,20 +44,18 @@ type Counters = { phase: "scan" | "publish"; scanned: number; reads: number; poi
 const control = (gcb: number) => gcb >= 1 && gcb <= 3;
 function* segment(source: GraphemeSource, from: number, to: number, maxOperations: number, maxClusters: number, c: Counters): Generator<void, GraphemeIndex | null> {
     const tick = (n = 1) => { c.work += n; if (c.work > maxOperations) throw new GraphemeLimitError("operations"); }, pause = () => { if (c.work - c.yielded < 256) return false; c.yielded = c.work; return true; };
-    const blocks: (readonly number[])[] = []; let pending: number[] = [];
+    const blocks: (readonly number[])[] = [], textSource = source.kind === "buffer" ? source.buffer : source.text; let pending: number[] = [];
     const boundary = (at: number) => { if (c.boundaries > maxClusters) throw new GraphemeLimitError("clusters"); pending.push(at); c.boundaries++; c.clusters = c.boundaries - 1; if (pending.length === 256) { blocks.push(Object.freeze(pending)); pending = []; } };
     c.phase = "publish"; tick(); if (pause()) yield; boundary(from);
     let offset = from, windowFrom = from, window = "", previous = -1, regionalCount = 0, emojiExtends = false, previousZwjAfterEmoji = false, linker = false;
     while (offset < to) {
         c.phase = "scan"; let cp: number, width: number;
         if (offset >= windowFrom + window.length) {
-            windowFrom = offset; const end = Math.min(to, offset + 256); window = source.kind === "buffer" ? source.buffer.slice(offset, end) : source.text.slice(offset, end); let reads = window.length;
-            const last = window.charCodeAt(window.length - 1); if (last >= 0xd800 && last <= 0xdbff && end < to) { const tail = source.kind === "buffer" ? source.buffer.slice(end, end + 1) : source.text.slice(end, end + 1); reads++; const low = tail.charCodeAt(0); if (low >= 0xdc00 && low <= 0xdfff) window += tail; }
-            c.reads += reads;
+            const chunk = readUtf16Window(textSource, offset, to); windowFrom = chunk.from; window = chunk.text; c.reads += chunk.readUnits;
             // A surrogate peek can make a window 257 units. Charge it across exact quanta.
-            for (let remaining = reads; remaining > 0;) { const n = Math.min(remaining, 256 - (c.work - c.yielded)); tick(n); remaining -= n; if (pause()) yield; }
+            for (let remaining = chunk.readUnits; remaining > 0;) { const n = Math.min(remaining, 256 - (c.work - c.yielded)); tick(n); remaining -= n; if (pause()) yield; }
         }
-        cp = utf16CodePointAt(window, offset - windowFrom); width = cp > 0xffff ? 2 : 1;
+        cp = window.codePointAt(offset - windowFrom)!; width = cp > 0xffff ? 2 : 1;
         tick(); if (pause()) yield; const properties = graphemeProperties(cp), current = properties & 15, incb = properties >>> 4 & 3, pictographic = !!(properties & 64);
         let breaks = previous >= 0;
         if (previous === 1 && current === 2) breaks = false; // GB3

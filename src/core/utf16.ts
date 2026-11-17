@@ -2,9 +2,18 @@ export const highSurrogate = (unit: number): boolean => unit >= 0xd800 && unit <
 export const lowSurrogate = (unit: number): boolean => unit >= 0xdc00 && unit <= 0xdfff;
 /** Whether a raw offset separates a valid surrogate pair; string edges never split one. */
 export const splitsSurrogatePair = (text: string, offset: number): boolean => highSurrogate(text.charCodeAt(offset - 1)) && lowSurrogate(text.charCodeAt(offset));
-/** Internal bounded window reader. A clipped trailing high surrogate stays a raw code unit. */
-export function utf16CodePointAt(text: string, index: number): number {
-    const first = text.charCodeAt(index);
-    if (!highSurrogate(first) || index + 1 >= text.length) return first;
-    const second = text.charCodeAt(index + 1); return lowSurrogate(second) ? 0x10000 + (first - 0xd800) * 1024 + second - 0xdc00 : first;
+
+/** Read at most 256 units toward a validated bound, plus one in-range surrogate peek.
+ * Raw range edges stay clipped. readUnits includes an unsuccessful peek as well. */
+export function readUtf16Window(source: { slice(from: number, to: number): string }, start: number, bound: number, direction: -1 | 1 = 1): Readonly<{ from: number; to: number; text: string; readUnits: number }> {
+    let from = direction < 0 ? Math.max(bound, start - 256) : start, to = direction < 0 ? start : Math.min(bound, start + 256);
+    let text = source.slice(from, to), readUnits = text.length;
+    if (direction > 0 && to < bound && highSurrogate(text.charCodeAt(text.length - 1))) {
+        const next = source.slice(to, to + 1); readUnits++;
+        if (lowSurrogate(next.charCodeAt(0))) { text += next; to++; }
+    } else if (direction < 0 && from > bound && lowSurrogate(text.charCodeAt(0))) {
+        const previous = source.slice(from - 1, from); readUnits++;
+        if (highSurrogate(previous.charCodeAt(0))) { text = previous + text; from--; }
+    }
+    return { from, to, text, readUnits };
 }

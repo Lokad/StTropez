@@ -1,5 +1,5 @@
 import type { TextBuffer } from "./text-buffer.ts";
-import { highSurrogate as high, lowSurrogate as low } from "./utf16.ts";
+import { readUtf16Window } from "./utf16.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
 
@@ -23,15 +23,7 @@ const spaceControl = (code: number): boolean => code >= 9 && code <= 13 || code 
 function* units(buffer: TextBuffer, start: number, direction: -1 | 1, counters: Counters, bounds: Readonly<{ from: number; to: number }>): Generator<Unit> {
     let offset = start;
     while (direction < 0 ? offset > bounds.from : offset < bounds.to) {
-        let from = direction < 0 ? Math.max(bounds.from, offset - 256) : offset, to = direction < 0 ? offset : Math.min(bounds.to, offset + 256);
-        let text = buffer.slice(from, to); counters.reads += text.length;
-        if (direction > 0 && to < bounds.to && high(text.charCodeAt(text.length - 1))) {
-            const next = buffer.slice(to, to + 1); counters.reads++;
-            if (low(next.charCodeAt(0))) { text += next; to++; }
-        } else if (direction < 0 && from > bounds.from && low(text.charCodeAt(0))) {
-            const previous = buffer.slice(from - 1, from); counters.reads++;
-            if (high(previous.charCodeAt(0))) { text = previous + text; from--; }
-        }
+        const { from, to, text, readUnits } = readUtf16Window(buffer, offset, direction < 0 ? bounds.from : bounds.to, direction); counters.reads += readUnits;
         // matchAll owns its iteration state, so suspended cursors cannot interfere. Reverse
         // traversal retains only this bounded window, including at most one paired surrogate.
         const runs = text.matchAll(runExpression);

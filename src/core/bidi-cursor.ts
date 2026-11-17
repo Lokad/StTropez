@@ -2,7 +2,7 @@ import { bidiBracket, bidiClass } from "./bidi-data.ts";
 import type { BidiClass } from "./bidi-data.ts";
 import type { BidiDirection, BidiParagraph, BidiText } from "./bidi.ts";
 import type { TextBuffer } from "./text-buffer.ts";
-import { utf16CodePointAt } from "./utf16.ts";
+import { readUtf16Window } from "./utf16.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
 
@@ -170,13 +170,11 @@ function makeIndex(from: number, to: number, levels: readonly (number | null)[],
 function* build(source: TextBuffer | string, from: number, to: number, direction: BidiDirection, c: Counters): Generator<void, BidiIndex> {
     const points: number[] = [], offsets: number[] = [], types: BidiClass[] = []; let offset = from;
     while (offset < to) {
-        let end = Math.min(to, offset + 256), text = source.slice(offset, end); c.reads += text.length;
-        const last = text.charCodeAt(text.length - 1);
-        if (last >= 0xd800 && last <= 0xdbff && end < to) { const next = source.slice(end, end + 1); c.reads++; if (next.charCodeAt(0) >= 0xdc00 && next.charCodeAt(0) <= 0xdfff) { text += next; end++; } }
+        const chunk = readUtf16Window(source, offset, to), text = chunk.text; c.reads += chunk.readUnits;
         for (let i = 0; i < text.length;) {
-            const cp = utf16CodePointAt(text, i), width = cp > 0xffff ? 2 : 1;
+            const cp = text.codePointAt(i)!, width = cp > 0xffff ? 2 : 1;
             points.push(cp); offsets.push(offset + i); types.push(bidiClass(cp)); i += width; c.scanned += width; if (spent(c, width)) yield;
-        } offset = end;
+        } offset = chunk.to;
     }
     const levels: (number | null)[] = [], order: number[] = [], inverse: number[] = [], paragraphs: BidiParagraph[] = []; let first = 0; c.phase = "resolve";
     for (let end = 0; end <= points.length; end++) {

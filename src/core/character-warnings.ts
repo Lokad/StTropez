@@ -1,7 +1,7 @@
 import { bidiClass } from "./bidi-data.ts";
 import { defaultIgnorable } from "./grapheme-data.ts";
 import type { TextBuffer } from "./text-buffer.ts";
-import { highSurrogate, lowSurrogate, utf16CodePointAt } from "./utf16.ts";
+import { highSurrogate, lowSurrogate } from "./utf16.ts";
 
 export const characterWarningKinds = Object.freeze(["bidi-control", "invisible", "bom", "non-breaking-space", "unusual-space"] as const);
 export type CharacterWarningKind = typeof characterWarningKinds[number];
@@ -83,7 +83,7 @@ export class CharacterWarnings {
         const warnings: CharacterWarning[] = []; let at = 0, limit: CharacterWarningBatch["limit"] = null;
         while (start + at < end) {
             if (at >= budget.maxUnits) { limit = "units"; break; }
-            const codePoint = utf16CodePointAt(text, at), size = codePoint > 0xffff ? 2 : 1;
+            const codePoint = text.codePointAt(at)!, size = codePoint > 0xffff ? 2 : 1;
             if (at + size > budget.maxUnits) { limit = "units"; break; }
             const kind = this.kind(codePoint, start + at);
             if (kind) {
