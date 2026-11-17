@@ -66,7 +66,7 @@ try {
             assert.equal(state.document.revision - before.document.revision, name.startsWith("delete") ? 1 : 0);
             assert.equal(state.document.length, name === "delete-forward" ? 4 : name === "delete-backward" ? 6 : before.document.length);
             assert.equal(state.document.exports, 0); assert.equal(state.primary.conflicts, 0); assert.ok(state.primary.inputUnits <= 2600);
-            assert.equal(await harness.page.locator("textarea.st-editor").count(), 0);
+            assert.equal(await harness.page.locator("textarea.st-textarea-baseline").count(), 0);
             if (name.startsWith("delete")) assert.equal(await harness.page.evaluate(length => window.editingFixture.range(0, length), state.document.length), name === "delete-forward" ? "tail" : "  tail");
             if (!name.startsWith("page")) { assert.ok(state.primary.wordScanSteps > 1); assert.ok(Number.isFinite(state.primary.maxWordScanStepMs)); }
             if (trial >= 3) samples.push({ keyToFrameReadyProxyMs: sample.keyToFrameReadyProxyMs, document: state.document, primary: state.primary, history: state.history });

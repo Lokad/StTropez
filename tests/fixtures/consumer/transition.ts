@@ -1,10 +1,10 @@
 import { Workspace } from "sttropez";
-import { mountEditingCandidate } from "sttropez/browser";
+import { mountTextEditor } from "sttropez/browser";
 
 const workspace = new Workspace();
 const resource = workspace.createTextResource({ scope: "package", resource: "transition", variant: "working" }, "Staged source", { value: "staged source\r\n" });
 const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "transition");
-const editor = mountEditingCandidate(document.getElementById("editor")!, workspace, tab, { ariaLabel: "Staged source" });
+const editor = mountTextEditor(document.getElementById("editor")!, workspace, tab, { ariaLabel: "Staged source" });
 let disposed = false;
 const fixture = {
     snapshot: () => ({ text: workspace.document(resource.documentId).buffer.slice(0, workspace.document(resource.documentId).buffer.length),

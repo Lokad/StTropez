@@ -267,7 +267,7 @@ export async function proveCompiledTextDrag(browser, baseUrl) {
         return state.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.viewport.pending
             && v.metrics.viewport.revision === (v.documentId === target.documentId ? target.revision : state.source.revision) && v.metrics.viewport.selectionSet === v.selectionSet)
             && (!comparison || comparison.status === "ready" && !comparison.input.pendingCaret && !comparison.workingViewport.pending && !comparison.referenceViewport?.pending); });
-    const point = (name, offset) => page.locator(`.st-editing-candidate:has(> textarea[aria-label="${name}"])`).evaluate((element, offset) => {
+    const point = (name, offset) => page.locator(`.st-editor:has(> textarea[aria-label="${name}"])`).evaluate((element, offset) => {
         const row = [...element.querySelectorAll(".st-viewport-row")].find(row => Number(row.dataset.from) <= offset && Number(row.dataset.to) > offset);
         if (!row) throw new Error("Compiled drag point is not rendered.");
         let local = offset - Number(row.dataset.from); const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);

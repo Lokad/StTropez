@@ -97,7 +97,7 @@ export function installHostReferenceProbe() {
             for (const key of ["rendered", "scans", "caret", "drag", "input", "comparison", "reference"]) if (current[key]) phases[`${key}At`] ??= now;
         }
         // The immutable reference has its own candidate surface; observe the three working inputs here.
-        const roots = [...document.querySelectorAll(".st-editing-candidate")].filter(root => root.querySelector("textarea")?.readOnly === false);
+        const roots = [...document.querySelectorAll(".st-editor")].filter(root => root.querySelector("textarea")?.readOnly === false);
         if (roots.length !== 3 || !ready(before) || !node) { fail("Reference experiment requires three ready bounded working views."); return; }
         for (const id of ["primary", "secondary", "comparison"]) stops.push(fixture.onSourceRender(id, observe));
         if (kind === "reference") {

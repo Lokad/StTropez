@@ -1,6 +1,6 @@
 import { exportText, textDifference } from "../../src/index.ts";
 import type { TabId } from "../../src/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { TextEditor } from "../../src/browser/index.ts";
 import type { HostController } from "./controller.ts";
 import type { InstructionCapture } from "./instruction.ts";
 import type { InstructionField } from "./instruction-syntax.ts";
@@ -10,7 +10,7 @@ export type InstructionViewState = { generation: number; fields: Partial<Record<
 type InputCapture = Readonly<{ model: InstructionCapture; raw: string; projection: ReturnType<typeof exportText> }>;
 type Field = { key: InstructionField; node: HTMLTextAreaElement; capture: InputCapture | undefined; composing: boolean; ignored: boolean };
 
-export function mountInstructionWidget(host: HTMLElement, lane: HTMLElement, editor: EditingCandidate, controller: HostController, tabId: TabId, memory: InstructionViewState) {
+export function mountInstructionWidget(host: HTMLElement, lane: HTMLElement, editor: TextEditor, controller: HostController, tabId: TabId, memory: InstructionViewState) {
     const owner = host.ownerDocument, win = owner.defaultView!, model = controller.instruction, target = controller.workspace.captureTab(tabId), listeners = new AbortController();
     let frame: number | undefined, panel: HTMLDivElement | undefined, fieldListeners: AbortController | undefined, fields: Field[] = [], status: HTMLOutputElement | undefined;
     let copy: HTMLButtonElement | undefined, finish: HTMLButtonElement | undefined, cancel: HTMLButtonElement | undefined;

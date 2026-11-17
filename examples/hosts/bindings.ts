@@ -1,6 +1,6 @@
-import { inputConflictEvent, mountEditingCandidate, mountTextComparison, mountTextEditor } from "../../src/browser/index.ts";
-import type { EditingCandidate, MountedEditor, TextComparison, ViewportSnapshot, ViewState } from "../../src/browser/index.ts";
-import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId, TabTarget } from "../../src/index.ts";
+import { inputConflictEvent, mountTextEditor, mountTextComparison } from "../../src/browser/index.ts";
+import type { TextEditor, TextComparison, ViewportSnapshot, ViewState } from "../../src/browser/index.ts";
+import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../shared/language/presentation.ts";
 import { comparisonSettled, editorSettled } from "../shared/readiness.ts";
@@ -22,18 +22,22 @@ import { mountInstructionWidget } from "./instruction-widget.ts";
 import type { InstructionViewState } from "./instruction-widget.ts";
 
 export type HostEditor = "native" | "candidate";
-type BoundEditor = MountedEditor & Readonly<{ metrics: () => null | ReturnType<EditingCandidate["snapshot"]> & Readonly<{ viewport: ViewportSnapshot }> }>;
-type ViewTool = Readonly<{ attach(id: string, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation): () => void }>;
+export type NativeEditorMount = (host: HTMLElement, workspace: Workspace, tabId: TabId,
+    options: Readonly<{ ariaLabel?: string; view?: DocumentView }>) => Readonly<{ element: HTMLTextAreaElement; view: DocumentView;
+        captureView: () => ViewState; restoreView: (state: ViewState) => void; destroy: () => void }>;
+type BoundEditor = ReturnType<NativeEditorMount> & Readonly<{ metrics: () => null | ReturnType<TextEditor["snapshot"]> & Readonly<{ viewport: ViewportSnapshot }> }>;
+type ViewTool = Readonly<{ attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void }>;
 export function hostEditor(): HostEditor { return new URLSearchParams(location.search).get("editor") === "candidate" ? "candidate" : "native"; }
 
 /** Stable refs own editor descendants; the controller and resource IDs survive every detach. */
 export class ViewBindings {
     private readonly controller: HostController;
+    private readonly mountNative: NativeEditorMount | undefined;
     private instructionMount: ReturnType<typeof mountInstructionWidget> | undefined;
     private readonly instructionMemory: InstructionViewState = { generation: 0, fields: {}, focus: undefined };
     private readonly stopInputCapture: () => void;
     private readonly stopDocumentCleanup: () => void;
-    private readonly mounted = new Map<string, { editor: BoundEditor; documentId: DocumentId; candidate: EditingCandidate | undefined }>();
+    private readonly mounted = new Map<string, { editor: BoundEditor; documentId: DocumentId; candidate: TextEditor | undefined }>();
     readonly editor: HostEditor;
     private readonly lspOwner: LspWorkspace | undefined;
     private readonly states = new Map<string, Map<DocumentId, ViewState>>();
@@ -213,13 +217,14 @@ export class ViewBindings {
         const editor = id === "comparison" ? this.review?.working : this.mounted.get(id)?.candidate;
         return editor?.configureLanguage(configuration) ?? false;
     }
-    constructor(controller: HostController, editor: HostEditor = "native") {
-        this.controller = controller; this.editor = editor;
+    constructor(controller: HostController, editor: HostEditor = "candidate", mountNative?: NativeEditorMount) {
+        if (editor === "native" && !mountNative) throw new Error("The native source control requires a fixture mount.");
+        this.controller = controller; this.editor = editor; this.mountNative = mountNative;
         this.tablePaste = new HostTablePaste(controller.workspace, editor === "candidate");
         this.domain = new HostDomainTools(controller.workspace, documentId => !this.tablePaste.hasPendingInput(documentId) && !(this.review?.working.view.documentId === documentId && (this.review.working.activity().pendingInput || this.review.working.activity().composing))
             && ![...this.mounted.values()].some(value => { const activity = value.candidate?.activity(); return value.documentId === documentId && (activity?.pendingInput || activity?.composing); }));
         const canCapture = (documentId: DocumentId) => {
-            const busy = (activity: ReturnType<EditingCandidate["activity"]> | undefined) => activity && (activity.pendingInput || activity.pendingCommand || activity.composing);
+            const busy = (activity: ReturnType<TextEditor["activity"]> | undefined) => activity && (activity.pendingInput || activity.pendingCommand || activity.composing);
             return !this.tablePaste.hasPendingInput(documentId) && !(this.review?.working.view.documentId === documentId && busy(this.review.working.activity())) && ![...this.mounted.values()].some(value => value.documentId === documentId && busy(value.candidate?.activity()));
         };
         const lsp = hostLspFactories(controller.workspace);
@@ -281,7 +286,7 @@ export class ViewBindings {
             revision: this.controller.workspace.document(view.documentId).revision,
             offset: selection.head, affinity: selection.headAffinity ?? "after" } } : {}) };
     }
-    private presentNavigationDocument(documentId: DocumentId): EditingCandidate | undefined {
+    private presentNavigationDocument(documentId: DocumentId): TextEditor | undefined {
         if (this.editor !== "candidate") return;
         const previous = this.mounted.get("secondary"), host = previous?.editor.element.closest<HTMLDivElement>(".editor-host"), activity = previous?.candidate?.activity();
         if (!previous || !host?.isConnected || activity?.composing || activity?.pendingInput || activity?.pendingCommand) return;
@@ -306,11 +311,11 @@ export class ViewBindings {
                 const presentation = new EditingPresentation();
                 const surface = id === "primary" && this.editor === "candidate" ? host.ownerDocument.createElement("div") : host;
                 if (surface !== host) { surface.className = "host-instruction-source"; host.append(surface); scope.defer(() => surface.remove()); }
-                const candidate = this.editor === "candidate" ? mountEditingCandidate(surface, workspace, tabId, { ariaLabel, view, decorate: presentation.decorate }) : undefined;
+                const candidate = this.editor === "candidate" ? mountTextEditor(surface, workspace, tabId, { ariaLabel, view, decorate: presentation.decorate }) : undefined;
                 const mounted: BoundEditor = candidate ? { element: candidate.input, view, captureView: candidate.captureView,
                     restoreView: candidate.restoreView, destroy: candidate.destroy,
                     metrics: () => ({ ...candidate.snapshot(), viewport: candidate.viewport.snapshot() }) }
-                    : { ...mountTextEditor(host, workspace, tabId, { ariaLabel, view }), metrics: () => null };
+                    : { ...this.mountNative!(host, workspace, tabId, { ariaLabel, view }), metrics: () => null };
                 scope.defer(mounted.destroy);
                 const lane = surface !== host ? host.ownerDocument.createElement("div") : undefined;
                 if (lane) { lane.className = "host-instruction-lane"; lane.hidden = true; host.append(lane); scope.defer(() => lane.remove()); }
@@ -328,7 +333,7 @@ export class ViewBindings {
             } catch (error) { scope.rollback(error); }
         };
     }
-    private attachTools(scope: CleanupScope, id: string, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation): void {
+    private attachTools(scope: CleanupScope, id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): void {
         for (const tool of this.tools) scope.defer(tool.attach(id, tab, editor, presentation));
     }
     private detach(id: string): void {

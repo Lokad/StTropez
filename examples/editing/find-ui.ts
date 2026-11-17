@@ -1,9 +1,9 @@
 import { createFindController, createRegexFindBackend } from "../../src/browser/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { TextEditor } from "../../src/browser/index.ts";
 import type { TabId, Workspace } from "../../src/index.ts";
 import type { EditingPresentation } from "../shared/language/presentation.ts";
 
-export function mountFindUI(workspace: Workspace, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation) {
+export function mountFindUI(workspace: Workspace, tab: TabId, editor: TextEditor, presentation: EditingPresentation) {
     const owner = editor.element.ownerDocument;
     const find = createFindController(workspace, tab, editor, { regularExpression: createRegexFindBackend({ clock: owner.defaultView!,
         createWorker: () => new Worker("/regex-worker.js", { type: "module" }) }) }), listeners = new AbortController();

@@ -38,6 +38,9 @@ The [development server](../scripts/serve.mjs) serves these pages:
 For either host, append `?editor=candidate` to use the bounded editor. The bare route and
 `?editor=native` use the whole-value textarea source baseline; their comparison working pane
 uses the bounded editor. Append `&language=lsp` to select the shared LSP fixture provider.
+The [textarea baseline](../fixtures/textarea-editor.ts) and its CSS are fixture assets, outside
+the library and NuGet package. Development entrypoints inject that mount into the shared hosts;
+installed consumers start the host with the public `mountTextEditor` implementation.
 Without that flag, the host uses the [internal worker fixtures](#worker-protocol-v1).
 The development WebSocket endpoint `/lsp-fixture` is a fixture service, not an HTML page.
 

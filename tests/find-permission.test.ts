@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Workspace } from "../src/index.ts";
 import { createFindController } from "../src/browser/find.ts";
-import type { EditingCandidate } from "../src/browser/index.ts";
+import type { TextEditor } from "../src/browser/index.ts";
 
 for (const change of ["permission", "lease", "read-only"] as const) test(`queued replacement respects ${change} changes and requires explicit retry`, () => {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "find", resource: "authority", variant: "working" }, "Source", { value: "cat cat" });
@@ -10,7 +10,7 @@ for (const change of ["permission", "lease", "read-only"] as const) test(`queued
     let serial = 0; const tasks = new Map<number, () => void>();
     const owner = Object.assign(new EventTarget(), { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), activity: () => ({ disposed: false, composing: false }),
-        viewport: { revealOffset: () => {} }, focus: () => {} } as unknown as EditingCandidate;
+        viewport: { revealOffset: () => {} }, focus: () => {} } as unknown as TextEditor;
     const find = createFindController(workspace, tab, editor), drain = () => { while (tasks.size) { const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); } };
     try {
         find.setQuery("cat"); drain(); view.setSelections(0, [{ anchor: 0, head: 3 }, { anchor: 7, head: 7 }]);

@@ -2,7 +2,7 @@ import { ready,test,expect} from "./fixtures.ts";
 import type {Page} from "@playwright/test";
 const snapshot=(page:Page)=>page.evaluate(()=>window.hostFixture.snapshot());
 const primary=(s:Awaited<ReturnType<typeof snapshot>>)=>s.bindings.views.find(v=>v.id==="primary")!;
-const root=(page:Page)=>page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"])');
+const root=(page:Page)=>page.locator('.st-editor:has(> textarea[aria-label="Primary source"])');
 const input=(page:Page)=>page.getByRole("textbox",{name:"Primary source",exact:true});
 async function waitForReview(page: Page): Promise<void> {
     await ready(page);

@@ -5,13 +5,13 @@ import type { DocumentId, TabId, Workspace } from "../core/workspace.ts";
 import { createLspHighlightClient } from "../protocol/lsp-highlights.ts";
 import type { LspDocumentHighlight } from "../protocol/lsp-highlights.ts";
 import type { LspWorkspace } from "../protocol/lsp-workspace.ts";
-import type { EditingCandidate } from "./editing-candidate.ts";
+import type { TextEditor } from "./text-editor.ts";
 
 export type LspHighlightSnapshot = Readonly<{ status: "idle" | "pending" | "ready" | "unavailable" | "disposed";
     documentId: DocumentId; revision: number; caret: number | null; items: readonly LspDocumentHighlight[] }>;
 
 /** Advisory occurrences for one captured view. Never changes text, selection, focus or connection policy. */
-export function createLspHighlightController(workspace: Workspace, tabId: TabId, editor: EditingCandidate,
+export function createLspHighlightController(workspace: Workspace, tabId: TabId, editor: TextEditor,
     options: Readonly<{ provider: LspWorkspace; delayMs?: number }>) {
     const target = workspace.captureTab(tabId), view = editor.view, documentId = view.documentId, win = editor.element.ownerDocument.defaultView!;
     const tab = workspace.resolveTab(target), delay = options.delayMs ?? 150;

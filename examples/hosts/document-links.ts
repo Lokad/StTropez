@@ -1,13 +1,13 @@
 import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, TextBuffer, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
 import { createNavigationClient } from "../shared/language/navigation-client.ts";
 import { navigationMetrics } from "../shared/language/navigation-service.ts";
 import { linkLimits, validateLinksInput } from "../../fixtures/language/links.ts";
 import type { LinksInput, LinksResult, ModuleLink } from "../../fixtures/language/links.ts";
 import { validDomainModule } from "../../fixtures/language/domain.ts";
 import { HostCell } from "../shared/observable.ts";
-type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
+type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
 type Source = { document: DocumentSnapshot; authority: string };
 export type HostModuleLink = ModuleLink & Readonly<{ resolvable?: boolean }>;
 export type LinkBackend = Readonly<{ links: (input: LinksInput, buffer: TextBuffer, progress: (work: number) => void) => Promise<Omit<LinksResult, "links"> & Readonly<{ links: readonly HostModuleLink[] }>>;
@@ -25,7 +25,7 @@ let serial = 0;
 export class HostDocumentLinks {
     private readonly workspace: Workspace;
     private readonly canCapture: (id: DocumentId) => boolean;
-    private readonly present: (id: DocumentId) => EditingCandidate | undefined;
+    private readonly present: (id: DocumentId) => TextEditor | undefined;
     private readonly aliases = new Map<string, DocumentId>();
     private generation = 0;
     private companion: DocumentId | undefined;
@@ -47,7 +47,7 @@ export class HostDocumentLinks {
     private readonly cell = new HostCell<DocumentLinksSnapshot>({ available: false, connected: false, disconnected: false, pending: false, token: null, requestView: null, status: "idle", message: "Focus a candidate source to discover module links.", work: 0, total: 0, count: 0, page: 0, links: [], canReturn: false });
     readonly state = this.cell.observable;
     private readonly reconnectProvider: (() => void) | undefined;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, factory?: LinkBackendFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.factory = factory; }
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, factory?: LinkBackendFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider; this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.factory = factory; }
     private available(s: Session): boolean {
         const tab = this.workspace.resolveTab(s.target);
         return !this.disposed && this.sessions.get(s.token) === s && s.editor.element.isConnected && !s.editor.activity().disposed && this.workspace.ownsDocumentView(s.editor.view)
@@ -90,7 +90,7 @@ export class HostDocumentLinks {
         const events = new AbortController(); this.listEvents = events;
         list.addEventListener("keydown", event => { if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return; const origin = this.job?.origin; event.preventDefault(); event.stopPropagation(); this.cancel(); if (origin && this.available(origin)) origin.editor.focus(); }, { signal: events.signal });
     };
-    attach(id: string, tab: TabId, editor: EditingCandidate): () => void {
+    attach(id: string, tab: TabId, editor: TextEditor): () => void {
         const s = { token: ++serial, id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { if (this.active !== s && this.job?.resolving !== undefined) this.cancel(); this.active = s; this.publish(); }, { signal: events.signal });
         editor.input.addEventListener("keydown", event => {

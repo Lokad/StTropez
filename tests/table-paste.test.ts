@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Workspace } from "../src/index.ts";
-import type { EditingCandidate } from "../src/browser/index.ts";
+import type { TextEditor } from "../src/browser/index.ts";
 import { HostTablePaste } from "../examples/hosts/table-paste.ts";
 import { captureInsertion } from "../src/browser/captured-insertion.ts";
 
@@ -14,7 +14,7 @@ function fixture() {
     const editor = { view, input, element: { ownerDocument: owner, isConnected: true }, activity: () => ({ composing, disposed: false }), captureView: () => {},
         captureInsertion: () => captureInsertion(workspace, workspace.captureTab(tab), view, () => !composing,
             (plan, revision) => workspace.edit({ documentId: source.documentId, expectedRevision: revision, edits: plan.edits, selectionSet: plan.selectionSet, origin: "human", view, history: { kind: "paste" } }).applied, () => {}),
-        focus: () => { throw new Error("Table paste must not focus a later editor."); } } as unknown as EditingCandidate;
+        focus: () => { throw new Error("Table paste must not focus a later editor."); } } as unknown as TextEditor;
     const tools = new HostTablePaste(workspace), detach = tools.attach("primary", tab, editor); tools.setEnabled(true);
     const text = () => { const b = workspace.document(source.documentId).buffer; return b.slice(0, b.length); };
     const paste = (plain: string) => { const event = Object.assign(new Event("paste", { cancelable: true }), { clipboardData: { getData: (type: string) => type === "text/plain" ? plain : "" } }); input.dispatchEvent(event); assert.equal(event.defaultPrevented, true); };

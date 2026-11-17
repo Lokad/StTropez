@@ -291,7 +291,7 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     await source.press("Tab"); await expect(source).toHaveValue("\ta\n\tb\n");
     await page.getByRole("button", { name: "Compare", exact: true }).click();
     await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
-    expect(await page.locator(".st-comparison .st-editing-candidate").evaluateAll(nodes => nodes.map(node => getComputedStyle(node).tabSize))).toEqual(["4", "4"]);
+    expect(await page.locator(".st-comparison .st-editor").evaluateAll(nodes => nodes.map(node => getComputedStyle(node).tabSize))).toEqual(["4", "4"]);
     await page.getByRole("textbox", { name: "Comparison working source", exact: true }).press("Control+z");
     await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toHaveValue("a\nb\n");
     await page.getByRole("button", { name: "JavaScript", exact: true }).click();

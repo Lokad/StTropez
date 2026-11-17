@@ -1,10 +1,10 @@
 import type { TabId, Workspace } from "../../src/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { TextEditor } from "../../src/browser/index.ts";
 import { createProviderController } from "../shared/language/provider-controller.ts";
 import type { EditingPresentation } from "../shared/language/presentation.ts";
 
 /** The editing playground renders its own controls around the shared host service. */
-export function mountProviderUI(workspace: Workspace, tabId: TabId, editor: EditingCandidate, presentation: EditingPresentation) {
+export function mountProviderUI(workspace: Workspace, tabId: TabId, editor: TextEditor, presentation: EditingPresentation) {
     const provider = createProviderController(workspace, tabId, editor), owner = editor.element.ownerDocument, listeners = new AbortController();
     const status = owner.getElementById("provider-status")!, choices = owner.getElementById("completion-choices")!, list = owner.getElementById("provider-diagnostics")!;
     const render = () => {

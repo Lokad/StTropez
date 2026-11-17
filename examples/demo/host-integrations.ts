@@ -1,4 +1,4 @@
-import type { InlineDecoration, PresentedLine, EditingCandidate } from "../../src/browser/index.ts";
+import type { InlineDecoration, PresentedLine, TextEditor } from "../../src/browser/index.ts";
 import type { LanguageConfiguration } from "../../src/index.ts";
 import type { DemoFile, DemoProject } from "./project.ts";
 import { HostTablePaste } from "../hosts/table-paste.ts";
@@ -17,7 +17,7 @@ export function hostDecorations(line: PresentedLine): readonly InlineDecoration[
         className: match[0].startsWith("#") ? "demo-token-comment" : match[0].startsWith('"') ? "demo-token-string" : /^\d/.test(match[0]) ? "demo-token-number" : "demo-token-keyword" }));
 }
 
-function mountNotes(model: HostSourceNotes, project: DemoProject, file: DemoFile, editor: EditingCandidate, open: (target: DemoSymbolTarget) => void) {
+function mountNotes(model: HostSourceNotes, project: DemoProject, file: DemoFile, editor: TextEditor, open: (target: DemoSymbolTarget) => void) {
     const owner = editor.element.ownerDocument, layer = owner.createElement("div"), events = new AbortController(), nodes = new Map<number, HTMLElement>();
     const origin = project.workspace.captureTab(file.tab);
     // Sample-owned linkage: note labels and file names are host policy, not editor syntax.
@@ -65,7 +65,7 @@ function mountNotes(model: HostSourceNotes, project: DemoProject, file: DemoFile
 }
 
 /** The sample composes the public editor hooks; formatting, UI and note content stay in the host. */
-export function mountHostIntegrations(project: DemoProject, file: DemoFile, editor: EditingCandidate,
+export function mountHostIntegrations(project: DemoProject, file: DemoFile, editor: TextEditor,
     controls: Readonly<{ mode: HTMLSelectElement; insert: HTMLButtonElement; annotate: HTMLButtonElement; status: HTMLElement }>, open: (target: DemoSymbolTarget) => void) {
     const table = new HostTablePaste(project.workspace), events = new AbortController(), model = project.notesFor(file);
     const stopNotes = mountNotes(model, project, file, editor, open), detach = table.attach("source", file.tab, editor);

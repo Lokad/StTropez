@@ -12,10 +12,10 @@ Attach indentation and marker discovery to an existing editor:
 import { discoverIndentationFolds } from "sttropez";
 import type { TabId, Workspace } from "sttropez";
 import { createFoldingController } from "sttropez/browser";
-import type { EditingCandidate } from "sttropez/browser";
+import type { TextEditor } from "sttropez/browser";
 
 export function attachFolding(
-    workspace: Workspace, tab: TabId, editor: EditingCandidate
+    workspace: Workspace, tab: TabId, editor: TextEditor
 ) {
     return createFoldingController(workspace, tab, editor, document =>
         discoverIndentationFolds(document.buffer, {

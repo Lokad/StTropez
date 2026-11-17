@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 
 const state = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const selection = (s: Awaited<ReturnType<typeof state>>, id = "primary") => s.bindings.views.find(v => v.id === id)!.selection;
-const root = (page: Page) => page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"])');
+const root = (page: Page) => page.locator('.st-editor:has(> textarea[aria-label="Primary source"])');
 async function waitForReview(page: Page): Promise<void> {
     await ready(page);
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.activeViews === 2 && s.bindings.comparison !== null && [...document.querySelectorAll(".st-comparison h3")].some(h => h.textContent === `Baseline · ${s.bindings.comparison?.baseline?.version}`)); });

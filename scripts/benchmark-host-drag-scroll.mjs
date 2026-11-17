@@ -9,7 +9,7 @@ const source=await sourceIdentity(),smoke=process.env.STTROPEZ_DRAG_SMOKE==="1",
 const directory="artifacts/bench/host-drag-scroll",cases=[],displays=[],h=await openHarness(),page=h.page,scene=createHostScene(page);let activeCase;
 const distribution=values=>({...measuredDistribution(values),max:Math.max(...values)});
 const snapshot=scene.snapshot,primary=s=>s.bindings.views.find(v=>v.id==="primary");
-const input=()=>page.getByRole("textbox",{name:"Primary source",exact:true}),root=()=>page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"])');
+const input=()=>page.getByRole("textbox",{name:"Primary source",exact:true}),root=()=>page.locator('.st-editor:has(> textarea[aria-label="Primary source"])');
 const click=name=>page.getByRole("button",{name,exact:true}).click(),ready=scene.ready;
 const exact=scene.exactText;
 async function dispose(){if(!scene.mounted)return;await page.mouse.up();await scene.dispose();}

@@ -43,7 +43,7 @@ for (const host of ["plain", "react"]) {
         await input(page).focus(); await button(page, "Discover domain regions").click(); await waitForDomain(page);
         expect((await snapshot(page)).bindings.domain.sessions.find(v => v.id === "primary")).toMatchObject({ annotations: 1000, folds: 1000 });
         const notes = page.getByRole("list", { name: "Domain annotations", exact: true }); await expect(notes.getByRole("button")).toHaveCount(64);
-        const primary = page.locator(".st-editing-candidate").filter({ has: input(page) });
+        const primary = page.locator(".st-editor").filter({ has: input(page) });
         for (const index of [0, 500, 999]) {
             await page.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: at, head: at }]); }, starts[index]! + 3);
             await input(page).focus(); await input(page).press("ArrowRight"); await waitForDomain(page);

@@ -27,12 +27,12 @@ the event, then convert against a retained insertion target. The size limits bel
 host policy; the converter also needs its own structural limits and cooperative scheduler.
 
 ```ts
-import type { CapturedInsertion, EditingCandidate } from "sttropez/browser";
+import type { CapturedInsertion, TextEditor } from "sttropez/browser";
 
 type ClipboardText = Readonly<{ text: string; html: string }>;
 
 export function attachConvertedPaste(
-    editor: EditingCandidate,
+    editor: TextEditor,
     convert: (input: ClipboardText, signal: AbortSignal) => Promise<string>,
     report: (message: string) => void
 ): () => void {
@@ -113,11 +113,11 @@ through editor destruction, because destruction can emit uncommitted composition
 
 ```ts
 import { inputConflictEvent } from "sttropez/browser";
-import type { EditingCandidate } from "sttropez/browser";
+import type { TextEditor } from "sttropez/browser";
 import type { DocumentId } from "sttropez";
 
 export function ownInputRecovery(
-    editor: EditingCandidate,
+    editor: TextEditor,
     validateAndRetain: (documentId: DocumentId, detail: unknown) => void
 ): () => void {
     const documentId = editor.view.documentId;
@@ -137,9 +137,9 @@ intended editor in each action; detach the catalogue's controls with that editor
 
 ```ts
 import type { EditingCommand } from "sttropez";
-import type { EditingCandidate } from "sttropez/browser";
+import type { TextEditor } from "sttropez/browser";
 
-export function editingActions(editor: EditingCandidate) {
+export function editingActions(editor: TextEditor) {
     const entries: readonly Readonly<{ label: string; command: EditingCommand }>[] = [
         { label: "Toggle line comment", command: "line-comment" },
         { label: "Indent selection", command: "indent" }

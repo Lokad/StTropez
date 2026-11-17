@@ -57,7 +57,7 @@ for (const host of ["plain", "react"]) test(`${host} bounded long-context reveal
     // Match the reproduced editing session: focus precedes programmatic range setup.
     await input.focus();
     const visible = (target = input) => target.evaluate(node => {
-        const root = node.closest<HTMLElement>(".st-editing-candidate")!, caret = root.querySelector<HTMLElement>(".st-input-caret")!;
+        const root = node.closest<HTMLElement>(".st-editor")!, caret = root.querySelector<HTMLElement>(".st-input-caret")!;
         const r = root.getBoundingClientRect(), c = caret.getBoundingClientRect();
         return !caret.hidden && c.left >= r.left && c.left < r.left + root.clientWidth && c.top >= r.top && c.top < r.top + root.clientHeight;
     });
@@ -68,13 +68,13 @@ for (const host of ["plain", "react"]) test(`${host} bounded long-context reveal
         await input.press("ArrowRight"); await waitForReview(page); await expect.poll(visible).toBe(true);
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 2048, head: 2048 });
         await page.getByRole("region", { name: "Primary source", exact: true }).scrollIntoViewIfNeeded(); await waitForReview(page);
-        const point = await input.evaluate(node => { const r = node.closest(".st-editing-candidate")!.querySelector(".st-input-caret")!.getBoundingClientRect();
+        const point = await input.evaluate(node => { const r = node.closest(".st-editor")!.querySelector(".st-input-caret")!.getBoundingClientRect();
             return { x: r.left - .25, y: r.top + r.height / 2 }; });
         expect(point.y).toBeGreaterThanOrEqual(0); expect(point.y).toBeLessThan(page.viewportSize()!.height);
         await page.mouse.click(point.x, point.y); await waitForReview(page); await expect(input).toBeFocused();
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toMatchObject({ anchor: 2048, head: 2048 });
         const beforeLayout = await snapshot(page), primary = beforeLayout.bindings.views.find(v => v.id === "primary")!;
-        await input.evaluate(node => { const root = node.closest<HTMLElement>(".st-editing-candidate")!; root.style.width = "160px"; root.style.setProperty("--st-font-size", "20px"); });
+        await input.evaluate(node => { const root = node.closest<HTMLElement>(".st-editor")!; root.style.width = "160px"; root.style.setProperty("--st-font-size", "20px"); });
         await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.width).toBe(160);
         await waitForReview(page); await expect.poll(visible).toBe(true);
         const resized = await snapshot(page); expect(resized.source).toEqual(beforeLayout.source); expect(resized.history).toEqual(beforeLayout.history);
@@ -83,13 +83,13 @@ for (const host of ["plain", "react"]) test(`${host} bounded long-context reveal
         expect(resized.bindings.comparison!.baseline).toEqual(beforeLayout.bindings.comparison!.baseline);
         expect(resized.bindings.views.find(v => v.id === "secondary")!.metrics!.viewport.scrollLeft).toBe(beforeLayout.bindings.views.find(v => v.id === "secondary")!.metrics!.viewport.scrollLeft);
         await page.getByRole("region", { name: "Primary source", exact: true }).scrollIntoViewIfNeeded(); await waitForReview(page);
-        const resizedPoint = await input.evaluate(node => { const r = node.closest(".st-editing-candidate")!.querySelector(".st-input-caret")!.getBoundingClientRect(); return { x: r.left - .25, y: r.top + r.height / 2 }; });
+        const resizedPoint = await input.evaluate(node => { const r = node.closest(".st-editor")!.querySelector(".st-input-caret")!.getBoundingClientRect(); return { x: r.left - .25, y: r.top + r.height / 2 }; });
         expect(resizedPoint.y).toBeGreaterThanOrEqual(0); expect(resizedPoint.y).toBeLessThan(page.viewportSize()!.height);
         await page.mouse.click(resizedPoint.x, resizedPoint.y); await waitForReview(page); await expect(input).toBeFocused();
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection.head).toBe(2048);
         const beforePendingLayout = await snapshot(page);
         await input.evaluate(node => {
-            const root = node.closest<HTMLElement>(".st-editing-candidate")!;
+            const root = node.closest<HTMLElement>(".st-editor")!;
             // The viewport queues its caret callback before this host layout change.
             const stop = window.hostFixture.onSourceRender("primary", () => { stop(); root.style.width = "140px"; root.style.setProperty("--st-font-size", "24px"); });
             window.hostFixture.setSourceReadOnly(true);
@@ -104,20 +104,20 @@ for (const host of ["plain", "react"]) test(`${host} bounded long-context reveal
         // A host control can own focus while an editor changes size; that editor must not pan.
         await page.getByRole("textbox", { name: "Configuration path", exact: true }).focus(); await waitForReview(page);
         const inactiveLeft = (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollLeft;
-        await input.evaluate(node => { const root = node.closest<HTMLElement>(".st-editing-candidate")!; root.style.width = "180px"; root.style.setProperty("--st-font-size", "18px"); });
+        await input.evaluate(node => { const root = node.closest<HTMLElement>(".st-editor")!; root.style.width = "180px"; root.style.setProperty("--st-font-size", "18px"); });
         await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.width).toBe(180); await waitForReview(page);
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollLeft).toBe(inactiveLeft);
         await expect(page.getByRole("textbox", { name: "Configuration path", exact: true })).toBeFocused();
         await input.evaluate(node => (node as HTMLElement).focus({ preventScroll: true }));
         // A deliberately offscreen caret must not pull manual scrolling back during a later resize.
-        await input.evaluate(node => { node.closest<HTMLElement>(".st-editing-candidate")!.scrollLeft = 0; });
+        await input.evaluate(node => { node.closest<HTMLElement>(".st-editor")!.scrollLeft = 0; });
         await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollLeft).toBe(0); await waitForReview(page);
         expect(await visible()).toBe(false);
-        await input.evaluate(node => { const root = node.closest<HTMLElement>(".st-editing-candidate")!; root.style.width = "220px"; root.style.setProperty("--st-font-size", "16px"); });
+        await input.evaluate(node => { const root = node.closest<HTMLElement>(".st-editor")!; root.style.width = "220px"; root.style.setProperty("--st-font-size", "16px"); });
         await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.width).toBe(220); await waitForReview(page);
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollLeft).toBe(0); expect(await visible()).toBe(false);
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet).toEqual(primary.selectionSet);
-        await input.evaluate(node => { const root = node.closest<HTMLElement>(".st-editing-candidate")!; root.style.width = ""; root.style.removeProperty("--st-font-size"); });
+        await input.evaluate(node => { const root = node.closest<HTMLElement>(".st-editor")!; root.style.width = ""; root.style.removeProperty("--st-font-size"); });
         await input.press("Control+End"); await waitForReview(page); await expect.poll(visible).toBe(true);
         await input.pressSequentially("z"); await waitForReview(page); await expect.poll(visible).toBe(true);
         expect(await page.evaluate(n => window.hostFixture.range(0, n), original.length + 1)).toBe(original + "z");

@@ -1,19 +1,19 @@
 import type { Affinity, TabId, Workspace } from "../../src/index.ts";
-import type { DocumentationContent, EditingCandidate } from "../../src/browser/index.ts";
+import type { DocumentationContent, TextEditor } from "../../src/browser/index.ts";
 import { createHoverController } from "../shared/language/hover-controller.ts";
 import type { HoverSnapshot } from "../shared/language/hover-controller.ts";
 import { HostCell } from "../shared/observable.ts";
-type Session = { id: string; editor: EditingCandidate; controller: ReturnType<typeof createHoverController>;
+type Session = { id: string; editor: TextEditor; controller: ReturnType<typeof createHoverController>;
     affinity: Affinity; offset: number; overTarget: boolean; scheduled: boolean; cancelTimers: () => void };
 export type HoverPresentation = Readonly<{ visible: boolean; view: string | null; left: number; top: number; status: HoverSnapshot["status"]; text: string; message: string; content?: DocumentationContent }>;
-export type HoverControllerFactory = (workspace: Workspace, tab: TabId, editor: EditingCandidate, canCapture: () => boolean) => ReturnType<typeof createHoverController>;
+export type HoverControllerFactory = (workspace: Workspace, tab: TabId, editor: TextEditor, canCapture: () => boolean) => ReturnType<typeof createHoverController>;
 
 /** Host-owned presentation follows an explicit view; pointer inspection never changes focus. */
 export class HostHoverTools {
     private readonly workspace: Workspace;
     private readonly allowInspect: (kind: "pointer" | "keyboard") => boolean;
     private readonly createController: HoverControllerFactory;
-    private readonly canCapture: (document: EditingCandidate["view"]["documentId"]) => boolean;
+    private readonly canCapture: (document: TextEditor["view"]["documentId"]) => boolean;
     private readonly sessions = new Map<string, Session>();
     private readonly cell = new HostCell<HoverPresentation>({ visible: false, view: null, left: 0, top: 0, status: "idle", text: "", message: "" });
     private current: Session | undefined;
@@ -24,7 +24,7 @@ export class HostHoverTools {
     private retired = { created: 0, posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0, postedUnits: 0 };
     readonly state = this.cell.observable;
     constructor(workspace: Workspace, allowInspect: (kind: "pointer" | "keyboard") => boolean = () => true,
-        options: Readonly<{ createController?: HoverControllerFactory; canCapture?: (document: EditingCandidate["view"]["documentId"]) => boolean }> = {}) {
+        options: Readonly<{ createController?: HoverControllerFactory; canCapture?: (document: TextEditor["view"]["documentId"]) => boolean }> = {}) {
         this.workspace = workspace; this.allowInspect = allowInspect; this.createController = options.createController ?? ((workspace, tab, editor) => createHoverController(workspace, tab, editor)); this.canCapture = options.canCapture ?? (() => true);
     }
     private clearDismiss(): void { this.cancelDismiss?.(); this.cancelDismiss = undefined; }
@@ -83,7 +83,7 @@ export class HostHoverTools {
         const selected = session.editor.view.getSnapshot();
         return this.inspect(session, selected.revision, selected.selection.head, selected.selection.headAffinity ?? "after", "keyboard");
     }
-    attach(id: string, tab: TabId, editor: EditingCandidate): () => void {
+    attach(id: string, tab: TabId, editor: TextEditor): () => void {
         if (this.sessions.has(id)) throw new Error("Hover view already mounted.");
         const controller = this.createController(this.workspace, tab, editor, () => this.canCapture(editor.view.documentId)), listeners = new AbortController(), win = editor.element.ownerDocument.defaultView!;
         let pointerTimer: number | undefined, chordTimer: number | undefined, chord = false, key: string | undefined;

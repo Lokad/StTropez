@@ -328,7 +328,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(complete);
         await popup.click(); await expect(field(page)).toBeFocused(); await expect(popup).toBeVisible(); await popup.dispatchEvent("scroll");
         expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(complete);
-        const at = await page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"]) .st-viewport-row').first().evaluate(row => {
+        const at = await page.locator('.st-editor:has(> textarea[aria-label="Primary source"]) .st-viewport-row').first().evaluate(row => {
             const node = document.createTreeWalker(row, NodeFilter.SHOW_TEXT).nextNode()!, range = document.createRange(); range.setStart(node, 1); range.setEnd(node, 2);
             const box = range.getBoundingClientRect(); return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
         });

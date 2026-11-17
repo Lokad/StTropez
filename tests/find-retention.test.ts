@@ -6,7 +6,7 @@ import { unchangedPositionEdges } from "../src/core/positions.ts";
 import { FindIndex } from "../src/core/find-index.ts";
 import { LiteralFindRepair } from "../src/browser/find-index.ts";
 import { createFindController } from "../src/browser/find.ts";
-import type { EditingCandidate } from "../src/browser/editing-candidate.ts";
+import type { TextEditor } from "../src/browser/text-editor.ts";
 
 const options = { matchCase: true, wholeWord: false };
 function scan(buffer: TextBuffer, query: string, settings = options) {
@@ -107,7 +107,7 @@ function fixture(text: string, clock: Pick<Performance, "now"> = performance) {
     const tab = workspace.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>(); let serial = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance: clock,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
-    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), activity: () => ({ composing: false, disposed: false }), viewport: { revealOffset: () => {} }, focus: () => {} } as unknown as EditingCandidate;
+    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), activity: () => ({ composing: false, disposed: false }), viewport: { revealOffset: () => {} }, focus: () => {} } as unknown as TextEditor;
     const find = createFindController(workspace, tab, editor), document = () => workspace.document(documentId);
     const step = () => { const entry = tasks.entries().next().value; assert.ok(entry); tasks.delete(entry[0]); entry[1](); };
     const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 1000); step(); } assert.deepEqual(errors, []); };

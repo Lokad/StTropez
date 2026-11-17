@@ -3,7 +3,7 @@ import { createFoldRegions } from "../core/folding.ts";
 import { reconcileFoldRanges } from "../core/fold-discovery.ts";
 import type { DiscoveredFold } from "../core/fold-discovery.ts";
 import type { DocumentSnapshot, TabId, Workspace } from "../core/workspace.ts";
-import type { EditingCandidate } from "./editing-candidate.ts";
+import type { TextEditor } from "./text-editor.ts";
 import type { FoldRegion } from "../core/folding.ts";
 import { commandBudget, createCooperativeRunner } from "./cooperative-runner.ts";
 import type { KernelCursor, KernelStatus } from "../core/kernel-cursor.ts";
@@ -17,7 +17,7 @@ export type FoldingStatus = Readonly<{ status: "pending" | "ready" | "failed" | 
     groups: readonly string[]; message: string }>;
 
 /** One discovery policy for one retained view. Providers own syntax; the editor owns fold projection. */
-export function createFoldingController(workspace: Workspace, tabId: TabId, editor: EditingCandidate, discover: FoldDiscovery,
+export function createFoldingController(workspace: Workspace, tabId: TabId, editor: TextEditor, discover: FoldDiscovery,
     options: Readonly<{ delayMs?: number }> = {}) {
     const target = workspace.captureTab(tabId), view = editor.view, win = editor.element.ownerDocument.defaultView!;
     const tab = workspace.resolveTab(target);

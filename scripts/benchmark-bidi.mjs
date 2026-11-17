@@ -57,7 +57,7 @@ try {
             await harness.page.keyboard.press(key); const sample = await harness.page.evaluate(() => globalThis.bidiMeasurement);
             assert.equal(sample.visualMoves, 1); assert.equal(sample.revisionDelta, 0); assert.equal(sample.document.exports, 0); assert.equal(sample.document.length, config.text.length);
             assert.equal(sample.partialRows, 0); assert.ok(sample.inputUnits <= 2600); assert.ok(sample.deltaX * (key === "ArrowLeft" ? -1 : 1) > .25);
-            assert.ok(Number.isFinite(sample.handlerMs)); assert.equal(await harness.page.locator("textarea.st-editor").count(), 0);
+            assert.ok(Number.isFinite(sample.handlerMs)); assert.equal(await harness.page.locator("textarea.st-textarea-baseline").count(), 0);
             if (trial >= 3) samples.push({ key, ...sample });
         }
         cases.push({ name: config.name, direction: config.direction, units: config.text.length, width: config.width, warmup: 3, measured: samples.length,

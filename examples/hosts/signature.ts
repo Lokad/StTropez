@@ -1,7 +1,7 @@
 import type { DocumentId, DocumentSnapshot, TabId, TabTarget, TextBuffer, Workspace } from "../../src/index.ts";
 import type { LspSignatureContext } from "../../src/protocol/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, DocumentationContent, EditingCandidate } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, DocumentationContent, TextEditor } from "../../src/browser/index.ts";
 import { createNavigationClient } from "../shared/language/navigation-client.ts";
 import { navigationMetrics } from "../shared/language/navigation-service.ts";
 import { signatureTriggerName, validateSignatureInput } from "../../fixtures/language/signature.ts";
@@ -14,7 +14,7 @@ export type SignatureBackend = Readonly<{ signature: (input: SignatureInput, buf
     snapshot: () => Readonly<{ connected: boolean; busy: boolean; transport?: string }>; dispose: () => void; faultIdle?: () => boolean;
     trigger?: (document: DocumentSnapshot, character: string, retrigger: boolean) => boolean; isCurrent?: () => boolean }>;
 export type SignatureBackendFactory = (clock: Window, changed: () => void) => SignatureBackend;
-type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate; stop: () => void };
+type Session = { token: number; id: string; target: TabTarget; editor: TextEditor; stop: () => void };
 type Job = { session: Session; input: SignatureInput; capture: CapturedViewRequest;
     timer: number; invalid: boolean; ready: boolean; result?: SignaturePresentation };
 export type SignatureSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; visible: boolean; pending: boolean;
@@ -152,7 +152,7 @@ export class HostSignatureTools {
             }).catch(error => { if (this.job !== job) return; this.counts.failed++; this.armed = false; this.clear("failed", error instanceof Error ? error.message : "Signature provider failed; local editing remains available."); });
         } catch (error) { this.counts.failed++; this.armed = false; this.clear("failed", error instanceof Error ? error.message : "Signature help is unavailable."); }
     }
-    attach(id: string, tab: TabId, editor: EditingCandidate): () => void {
+    attach(id: string, tab: TabId, editor: TextEditor): () => void {
         const s: Session = { token: ++sessionSerial, id, target: this.workspace.captureTab(tab), editor, stop: () => {} }, events = new AbortController(), win = editor.element.ownerDocument.defaultView!;
         this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { if (this.active !== s) { this.dismiss(); this.active = s; this.publish(); } }, { signal: events.signal });

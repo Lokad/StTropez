@@ -1,9 +1,9 @@
 import { characterWarningLabel } from "../../src/index.ts";
 import type { Workspace } from "../../src/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { TextEditor } from "../../src/browser/index.ts";
 
 /** Explicit inspection of a small source neighborhood, using only public editor/host APIs. */
-export function inspectCharacters(editor: EditingCandidate, workspace: Workspace, host: HTMLElement): void {
+export function inspectCharacters(editor: TextEditor, workspace: Workspace, host: HTMLElement): void {
     const document = workspace.document(editor.view.documentId), caret = editor.view.getSnapshot().selection.head;
     const capture = editor.characterWarnings.query(Math.max(0, caret - 64), Math.min(document.buffer.length, caret + 64));
     host.replaceChildren(); const note = host.ownerDocument.createElement("p"); host.append(note);

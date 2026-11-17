@@ -4,7 +4,7 @@ import type { Selection } from "../../src/index.ts";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
-const root = (page: Page) => page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"])');
+const root = (page: Page) => page.locator('.st-editor:has(> textarea[aria-label="Primary source"])');
 const coords = (ranges: readonly Selection[]) => ranges.map(({ anchor, head }) => ({ anchor, head }));
 
 async function select(page: Page, ranges: readonly Selection[], primary = 0): Promise<void> {

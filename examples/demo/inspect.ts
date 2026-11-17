@@ -1,5 +1,5 @@
 import type { Workspace } from "../../src/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { TextEditor } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import { createLspHoverClient } from "../shared/language/lsp-hover-client.ts";
 import { createHoverController } from "../shared/language/hover-controller.ts";
@@ -13,7 +13,7 @@ import { canOpenDemoHelp } from "./diagnostics.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 
 /** Reuses captured popup controllers; the host owns explicit external-help opening. */
-export function mountDemoInspection(scope: CleanupScope, workspace: Workspace, file: DemoFile, editor: EditingCandidate, provider: LspWorkspace,
+export function mountDemoInspection(scope: CleanupScope, workspace: Workspace, file: DemoFile, editor: TextEditor, provider: LspWorkspace,
     valid: () => boolean, completionOpen: () => boolean, cancelCompletion: () => void, beforeInspect: () => void = () => {}) {
     const host = document.createElement("div"); scope.defer(() => host.remove());
     host.className = "demo-language-popups"; document.body.append(host);

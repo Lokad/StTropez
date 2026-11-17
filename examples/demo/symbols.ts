@@ -1,5 +1,5 @@
 import type { DocumentId, Workspace } from "../../src/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { TextEditor } from "../../src/browser/index.ts";
 import { createLspNavigationClient } from "../../src/protocol/index.ts";
 import type { LspLocation, LspWorkspace } from "../../src/protocol/index.ts";
 import { HostRenameTools } from "../hosts/rename.ts";
@@ -10,7 +10,7 @@ import type { CleanupScope } from "../shared/cleanup-scope.ts";
 export type DemoSymbolTarget = Readonly<{ documentId: DocumentId; revision: number; from: number; to: number }>;
 
 /** Host presentation around validated public results. Navigation may replace this editor view. */
-export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: EditingCandidate,
+export function mountDemoSymbols(scope: CleanupScope, workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: TextEditor,
     provider: LspWorkspace, valid: () => boolean, dismissOther: () => void, open: (target: DemoSymbolTarget) => void) {
     const events = new AbortController(); let disposed = false;
     scope.defer(() => { disposed = true; events.abort(); });

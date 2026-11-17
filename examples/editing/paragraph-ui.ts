@@ -1,9 +1,9 @@
 import { createBidiIndexController } from "../../src/index.ts";
 import type { TabId, Workspace } from "../../src/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { TextEditor } from "../../src/browser/index.ts";
 
 /** Development host for the paragraph index. Exact global glyph layout remains a separate stage. */
-export function mountParagraphUI(workspace: Workspace, tabId: TabId, editor: EditingCandidate) {
+export function mountParagraphUI(workspace: Workspace, tabId: TabId, editor: TextEditor) {
     const controller = createBidiIndexController(workspace, tabId), owner = editor.element.ownerDocument, win = owner.defaultView!, listeners = new AbortController();
     const startButton = owner.getElementById("paragraph-start") as HTMLButtonElement, cancelButton = owner.getElementById("paragraph-cancel") as HTMLButtonElement, output = owner.getElementById("paragraph-status")!;
     let timer: number | undefined, disposed = false, maxStepMs = 0, advances = 0, turns = 0;

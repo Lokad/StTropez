@@ -11,10 +11,10 @@ Create one controller for an editor attachment. This example enables both search
 ```ts
 import type { TabId, Workspace } from "sttropez";
 import { createFindController, createRegexFindBackend } from "sttropez/browser";
-import type { EditingCandidate } from "sttropez/browser";
+import type { TextEditor } from "sttropez/browser";
 
 export function attachFind(
-    workspace: Workspace, tab: TabId, editor: EditingCandidate, workerUrl: URL
+    workspace: Workspace, tab: TabId, editor: TextEditor, workerUrl: URL
 ) {
     const clock = editor.element.ownerDocument.defaultView;
     if (!clock) throw new Error("The editor needs an attached browser window.");

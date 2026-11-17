@@ -23,7 +23,7 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
             });
             await p.goto(baseUrl + (large ? "/?large=1" : "/")); await p.waitForFunction(() => !!window.activationFixture); const original = await text();
             assert.equal(original.length, large ? 2_400_044 : 116, "Restored workspace corpus size changed");
-            assert.deepEqual(requests.filter(s => /\.(js|css)$/.test(s)), ["/activation.js"]); assert.equal(await p.locator(".st-editing-candidate").count(), 0);
+            assert.deepEqual(requests.filter(s => /\.(js|css)$/.test(s)), ["/activation.js"]); assert.equal(await p.locator(".st-editor").count(), 0);
             await button("Read only").click(); await ready(); const firstReading = await snap(); assert.equal(await p.evaluate(() => window.activationFixture.snapshot().phase), "reading"); assert.equal(firstReading.readOnly, true); assert.equal(firstReading.peer.readOnly, true);
             await retainPackagedPage(p, "reading");
             assert.equal(await p.getByLabel("Background activity", { exact: true }).textContent(), "Background activity: 0");
@@ -33,7 +33,7 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
             assert.equal(initial.readOnly, false); assert.equal(initial.peer.readOnly, false); assert.deepEqual(initial.selections, firstReading.selections); assert.deepEqual(initial.peer.selections, firstReading.peer.selections);
             for (const [after, before] of [[initial, firstReading], [initial.peer, firstReading.peer]]) { assert.equal(after.revision, before.revision); assert.deepEqual(after.history, before.history); }
             assert.equal(initial.workspace.documents.length, 102); assert.equal(initial.diagnostics.resources, 102); assert.equal(initial.diagnostics.tabs, 103); assert.equal(initial.diagnostics.views, 2);
-            assert.equal(initial.workspace.documents.filter(d => !d.cachedView && d.key !== "peer").length, 100); assert.equal(await p.locator(".st-editing-candidate").count(), 2);
+            assert.equal(initial.workspace.documents.filter(d => !d.cachedView && d.key !== "peer").length, 100); assert.equal(await p.locator(".st-editor").count(), 2);
             const baselineSubscriptions = initial.diagnostics.subscriptions, baselineNodes = await p.locator("body *").count(), peerOriginal = await apiText(doc("peer").resourceId);
             await primary.press("Control+Home"); await primary.pressSequentially("A"); await ready(); assert.equal(await text(), "A" + original); const primaryHandlerMs = (await snap()).input.lastInputMs;
             assert.equal(await p.evaluate(() => window.activationFixture.select([{ anchor: 0, head: 0 }, { anchor: 3, head: 1 }], 1)), true); await ready(); const sourceState = await snap();
@@ -48,7 +48,7 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
             for (let i = 0; i < 10; i++) {
                 await select.selectOption(i % 2 ? two.resourceId : one.resourceId); await ready(); const s = await snap();
                 assert.equal(s.diagnostics.resources, 102); assert.equal(s.diagnostics.subscriptions, baselineSubscriptions); assert.equal(s.diagnostics.views, 4); assert.ok(s.viewport.rows < 100 && s.peer.viewport.rows < 100);
-                assert.equal(await p.locator(".st-editing-candidate").count(), 2); maxNodes = Math.max(maxNodes, await p.locator("body *").count());
+                assert.equal(await p.locator(".st-editor").count(), 2); maxNodes = Math.max(maxNodes, await p.locator("body *").count());
             }
             assert.ok(maxNodes <= baselineNodes + 20); await select.selectOption(doc("source").resourceId); await ready(); assert.deepEqual((await snap()).selections, sourceState.selections); assert.deepEqual((await snap()).history, sourceState.history);
             await select.selectOption(doc("peer").resourceId); await ready(); await primary.press("Control+End"); await primary.pressSequentially("Q"); await ready(); await select.selectOption(doc("source").resourceId); await ready(); await peer.press("Control+z"); await ready(); assert.equal(await apiText(doc("peer").resourceId), "P" + peerOriginal);
@@ -80,7 +80,7 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
             await select.selectOption(beforeReading.resourceId); await ready(); assert.deepEqual((await snap()).selections, liveReading.selections);
             await p.screenshot({ path: `${directory}/workspace-reading-${large ? "100k-" : ""}${engine}.png` });
             await button("Edit").click(); await ready(); assert.equal((await snap()).readOnly, false); assert.equal((await snap()).peer.readOnly, false);
-            const beforePreview = await snap(), retained = await text(); await button("Show snapshot").click(); assert.equal(await p.evaluate(() => window.activationFixture.snapshot().phase), "preview"); const dormant = await snap(); assert.equal(dormant.diagnostics.subscriptions, 0); assert.equal(await p.locator(".st-editing-candidate").count(), 0); assert.equal(await p.locator(".activation-workspace").count(), 0);
+            const beforePreview = await snap(), retained = await text(); await button("Show snapshot").click(); assert.equal(await p.evaluate(() => window.activationFixture.snapshot().phase), "preview"); const dormant = await snap(); assert.equal(dormant.diagnostics.subscriptions, 0); assert.equal(await p.locator(".st-editor").count(), 0); assert.equal(await p.locator(".activation-workspace").count(), 0);
             const reader = p.locator("#text"), savedRange = await reader.evaluateHandle(() => { const s = window.getSelection(); return { anchor: s.anchorNode, anchorOffset: s.anchorOffset, head: s.focusNode, headOffset: s.focusOffset }; });
             try {
                 await reader.press("Control+Home"); await reader.press("Shift+ArrowRight"); await reader.press("Escape");
@@ -113,7 +113,7 @@ export async function runPackagedWorkspace(browser, baseUrl, { directory, packag
             assert.equal(await reader.evaluate(node => { const e = new KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true, cancelable: true }); node.dispatchEvent(e); return e.defaultPrevented; }), false);
             const stopped = (await snap()).workspace.ticks; await p.waitForTimeout(120); assert.equal((await snap()).workspace.ticks, stopped); assert.equal(await text(), finalText); assert.deepEqual(errors, []);
             cases.push({ large, initiallyInactive: 100, activeViews: 2, progressHz: 20, baselineNodes, maxNodes, baselineSubscriptions, dormant: dormant.diagnostics, final, primaryHandlerMs, peerHandlerMs, requests, errors, oneOriginalLength: oneOriginal.length });
-        } catch (error) { await p.screenshot({ path: `${directory}/workspace-${engine}-failure.png` }); const layout = await p.evaluate(() => [...document.querySelectorAll('#editor,.workspace-panes,.workspace-panes > div,.st-editing-candidate')].map(node => { const s = getComputedStyle(node), r = node.getBoundingClientRect(); return { name: node.id || node.className, display: s.display, height: s.height, width: r.width, minHeight: s.minHeight, columns: s.gridTemplateColumns, rows: s.gridTemplateRows }; }));
+        } catch (error) { await p.screenshot({ path: `${directory}/workspace-${engine}-failure.png` }); const layout = await p.evaluate(() => [...document.querySelectorAll('#editor,.workspace-panes,.workspace-panes > div,.st-editor')].map(node => { const s = getComputedStyle(node), r = node.getBoundingClientRect(); return { name: node.id || node.className, display: s.display, height: s.height, width: r.width, minHeight: s.minHeight, columns: s.gridTemplateColumns, rows: s.gridTemplateRows }; }));
             await writeFile(`${directory}/workspace-${engine}-failure.json`, JSON.stringify({ large, error: String(error.stack ?? error), snapshot: await snap(), layout, errors, requests }, null, 2)); throw error; }
         finally { await context.close(); }
     }

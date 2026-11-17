@@ -1,11 +1,9 @@
-export { mountTextEditor } from "./text-editor.ts";
-export type { MountedEditor } from "./text-editor.ts";
 export type { ViewState } from "./view-state.ts";
 export { inputConflictEvent } from "./input-conflict.ts";
 export type { InputConflictDetail } from "./input-conflict.ts";
 export { mountTextViewport } from "./viewport.ts";
 export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealOptions, TextViewport, ViewportActivity, ViewportSnapshot, ViewportComparisonRows, ViewportInputBinding } from "./viewport.ts";
-export { mountEditingCandidate } from "./editing-candidate.ts";
+export { mountTextEditor } from "./text-editor.ts";
 export type { BracketHighlights, BracketHighlightSnapshot } from "./bracket-highlights.ts";
 export type { CharacterWarningHighlights, CharacterWarningCapture } from "./character-warnings.ts";
 export { createFoldingController } from "./folding-controller.ts";
@@ -19,7 +17,7 @@ export type { DocumentationOptions, DocumentationView } from "./documentation.ts
 export type { DocumentationContent, DocumentationPart } from "../core/documentation.ts";
 export type { LspHighlightSnapshot, LspHighlightController } from "./lsp-highlights.ts";
 export type { LspEditorController, LspEditorOptions, LspEditorSnapshot, LspEditorDiagnostic, LspEditorSnippet } from "./lsp-editor.ts";
-export type { EditingCandidate, EditingActivity, CandidateEdit, CandidateEditTransform } from "./editing-candidate.ts";
+export type { TextEditor, TextEditorActivity, TextEditorEdit, TextEditorEditTransform, TextEditorOptions } from "./text-editor.ts";
 export type { CapturedInsertion } from "./captured-insertion.ts";
 export { captureViewRequest } from "./captured-view.ts";
 export type { CapturedViewRequest, CapturedViewOptions } from "./captured-view.ts";

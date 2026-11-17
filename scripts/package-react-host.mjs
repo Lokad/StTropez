@@ -53,7 +53,7 @@ export async function stageHostFixture(project, consumer, path, destination = jo
 /** Reuse the development host; the consumer never receives checkout library sources. */
 export async function stagePackagedReactHost(project, consumer) {
     const entryPoints = {
-        "host-react": "host-fixtures/examples/hosts/react-main.tsx",
+        "host-react": "host-fixtures/react-entry.ts",
         "provider-worker": "host-fixtures/examples/probes/provider-worker.ts",
     };
     // Seed contracts whose type-only imports disappear from the bundle graph.
@@ -72,6 +72,7 @@ export async function stagePackagedReactHost(project, consumer) {
     });
     const sources = [];
     for (const path of Object.keys(graph.metafile.inputs).sort()) sources.push(await stageHostFixture(project, consumer, path));
+    await writeFile(join(consumer, entryPoints["host-react"]), 'import { startReactHost } from "./examples/hosts/react-main.tsx";\nstartReactHost();\n');
     const shim = "host-fixtures/styles.d.ts";
     await writeFile(join(consumer, shim), 'declare module "*.css";\n');
     const reactTypes = await realpath(join(project, "node_modules/@types/react")), reactDomTypes = await realpath(join(project, "node_modules/@types/react-dom"));

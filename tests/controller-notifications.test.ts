@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createFoldingController } from "../src/browser/folding-controller.ts";
 import { createLspHighlightController } from "../src/browser/lsp-highlights.ts";
-import type { EditingCandidate } from "../src/browser/editing-candidate.ts";
+import type { TextEditor } from "../src/browser/text-editor.ts";
 import { clientFixture } from "./helpers/lsp-client.ts";
 
 for (const kind of ["folding", "highlights"] as const) test(`${kind} commands reject listener reentry while internal revision refresh remains available`, t => {
@@ -10,7 +10,7 @@ for (const kind of ["folding", "highlights"] as const) test(`${kind} commands re
     const tasks = new Map<number, () => void>(); let serial = 0;
     const owner = { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } };
     const editor = { view, element: Object.assign(new EventTarget(), { ownerDocument: owner }), input: Object.assign(new EventTarget(), { getRootNode: () => owner }),
-        activity: () => ({ disposed: false, composing: false }), viewport: { revealOffset: () => {} }, focus: () => {} } as unknown as EditingCandidate;
+        activity: () => ({ disposed: false, composing: false }), viewport: { revealOffset: () => {} }, focus: () => {} } as unknown as TextEditor;
     const controller = kind === "folding" ? createFoldingController(f.workspace, tab, editor, () => [])
         : createLspHighlightController(f.workspace, tab, editor, { provider: f.provider });
     const commands = [controller.refresh, controller.dispose];

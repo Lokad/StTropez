@@ -8,7 +8,7 @@ import {createHostScene} from "./host-scene.mjs";
 const source=await sourceIdentity(),smoke=process.env.STTROPEZ_WORD_SELECTION_SMOKE==="1",inspect=process.env.STTROPEZ_WORD_SELECTION_INSPECT==="1",warmup=smoke?0:3,measured=smoke?1:10;
 assert.ok(!inspect||smoke,"Screenshots are a separate smoke inspection, never a tail campaign.");
 const directory="artifacts/bench/host-word-selection",cases=[],displays=[],images=[],h=await openHarness(),page=h.page,scene=createHostScene(page);let activeCase;
-const distribution=values=>({...measuredDistribution(values),max:Math.max(...values)}),snapshot=scene.snapshot,primary=s=>s.bindings.views.find(v=>v.id==="primary"),input=()=>page.getByRole("textbox",{name:"Primary source",exact:true}),root=()=>page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"])');
+const distribution=values=>({...measuredDistribution(values),max:Math.max(...values)}),snapshot=scene.snapshot,primary=s=>s.bindings.views.find(v=>v.id==="primary"),input=()=>page.getByRole("textbox",{name:"Primary source",exact:true}),root=()=>page.locator('.st-editor:has(> textarea[aria-label="Primary source"])');
 const click=name=>page.getByRole("button",{name,exact:true}).click(),ready=scene.ready,exact=scene.exactText,dispose=scene.dispose;
 async function picture(host,corpus,stage){const path=directory+"/inspect/"+host+"-"+corpus+"-"+stage+".png";await mkdir(directory+"/inspect",{recursive:true});await page.screenshot({path,fullPage:true});await writeFile(path.replace(".png",".json"),JSON.stringify({source:source.sha256,state:await snapshot(),physicalDisplayQualified:false},null,2));images.push({host,corpus,stage,path,sha256:createHash("sha256").update(await readFile(path)).digest("hex")});}
 try{

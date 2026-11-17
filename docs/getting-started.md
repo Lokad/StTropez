@@ -22,7 +22,7 @@ In your application's TypeScript entry point:
 
 ```ts
 import { Workspace } from "sttropez";
-import { mountEditingCandidate } from "sttropez/browser";
+import { mountTextEditor } from "sttropez/browser";
 
 export function openDocument(host: HTMLElement) {
     const workspace = new Workspace();
@@ -30,7 +30,7 @@ export function openDocument(host: HTMLElement) {
         { scope: "example", resource: "main.ts", variant: "working" },
         "main.ts", { value: "const answer = 42;\n" });
     const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "main");
-    const editor = mountEditingCandidate(host, workspace, tab, {
+    const editor = mountTextEditor(host, workspace, tab, {
         ariaLabel: "Source code",
         language: { tabSize: 4, insertSpaces: true, lineComment: "//", enter: "keep" }
     });

@@ -2,7 +2,7 @@ import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, Tex
 import type { LspWorkspaceEdit } from "../../src/protocol/index.ts";
 import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../../src/protocol/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
 import { navigationMetrics } from "../shared/language/navigation-service.ts";
 import { createRenameBackend } from "../shared/language/rename-backend.ts";
 import type { RenameBackend } from "../shared/language/rename-backend.ts";
@@ -14,7 +14,7 @@ import type { RenameCapture } from "../../fixtures/language/rename.ts";
 import type { LspRenameFactory } from "../shared/language/lsp-rename-client.ts";
 import { HostCell } from "../shared/observable.ts";
 
-type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
+type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
 type Job = { origin: Session; capture: RenameCapture; viewCapture: CapturedViewRequest; documents: Map<string, DocumentSnapshot>; authority: Map<string, string>;
     leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; locations: readonly NavigationLocation[]; workspaceEdit?: LspWorkspaceEdit; name?: string };
 export type RenameNote = Readonly<{ ordinal: number; document: string; resource: string; title: string; revision: number; from: number; to: number; line: number; column: number; context: string; before?: string; after?: string }>;
@@ -26,7 +26,7 @@ let sessionSerial = 0;
 export class HostRenameTools {
     private readonly workspace: Workspace;
     private readonly canCapture: (id: DocumentId) => boolean;
-    private readonly present: (id: DocumentId) => EditingCandidate | undefined;
+    private readonly present: (id: DocumentId) => TextEditor | undefined;
     private readonly sessions = new Map<number, Session>();
     private active: Session | undefined;
     private job: Job | undefined;
@@ -46,7 +46,7 @@ export class HostRenameTools {
     private readonly cell = new HostCell<RenameSnapshot>({ available: false, connected: false, disconnected: false, pending: false, status: "idle", message: "Focus a source and prepare a rename preview.", name: "", symbol: "", token: null, canApply: false, work: 0, total: 0, count: 0, page: 0, locations: [], changes: [] });
     readonly state = this.cell.observable;
     private readonly reconnectProvider: (() => void) | undefined;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, backendFactory?: LspRenameFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider;
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, backendFactory?: LspRenameFactory, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider;
         this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory; this.usesLsp = backendFactory !== undefined;
     }
     private validName(name: string): boolean { return this.usesLsp ? name.length > 0 && name.length <= 256 && !/[\u0000-\u001f\u007f]/.test(name) : renameName(name); }
@@ -124,7 +124,7 @@ export class HostRenameTools {
             event.preventDefault(); event.stopPropagation(); this.cancel(); if (this.available(origin)) origin.editor.focus();
         }, { signal: events.signal });
     };
-    attach(id: string, tab: TabId, editor: EditingCandidate): () => void {
+    attach(id: string, tab: TabId, editor: TextEditor): () => void {
         const s: Session = { token: ++sessionSerial, id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
         editor.input.addEventListener("keydown", event => {

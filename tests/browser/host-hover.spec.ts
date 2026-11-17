@@ -6,7 +6,7 @@ const primary = (page: Page) => page.getByRole("textbox", { name: "Primary sourc
 const tooltip = (page: Page) => page.getByRole("tooltip");
 
 async function point(page: Page): Promise<{ x: number; y: number }> {
-    return page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"]) .st-viewport-row').first().evaluate(row => {
+    return page.locator('.st-editor:has(> textarea[aria-label="Primary source"]) .st-viewport-row').first().evaluate(row => {
         const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT), node = walker.nextNode(); if (!node) throw new Error("No rendered source word.");
         const range = document.createRange(); range.setStart(node, 1); range.setEnd(node, 2); const box = range.getBoundingClientRect(); return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
     });
@@ -25,7 +25,7 @@ for (const host of ["plain", "react"]) {
         await page.evaluate(() => window.hostFixture.externalWrite("remote")); await primary(page).press("Control+s");
         await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1); await page.evaluate(() => window.hostFixture.finishSave());
         await expect(page.getByRole("region", { name: "Save conflict", exact: true })).toBeVisible();
-        await expect.poll(async () => { const popup = await tooltip(page).boundingBox(), root = await page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"])').boundingBox(); return popup && root ? popup.y - root.y : -1; }).toBeGreaterThan(0);
+        await expect.poll(async () => { const popup = await tooltip(page).boundingBox(), root = await page.locator('.st-editor:has(> textarea[aria-label="Primary source"])').boundingBox(); return popup && root ? popup.y - root.y : -1; }).toBeGreaterThan(0);
         await tooltip(page).click(); expect(await primary(page).evaluate(node => node.ownerDocument.activeElement === node)).toBe(true);
         await primary(page).press("Escape"); await expect(tooltip(page)).toBeHidden(); expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet).toEqual(selected);
         expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).source.revision).toBe(before.source.revision);

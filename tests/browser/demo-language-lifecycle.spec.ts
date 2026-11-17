@@ -20,13 +20,13 @@ test("language mounting releases partial owners, preserves failures and rejects 
         const { DemoProject } = await import(path + "project.js") as typeof import("../../examples/demo/project.ts");
         const { selectDemoProvider } = await import(path + "provider.js") as typeof import("../../examples/demo/provider.ts");
         const { mountDemoLanguage } = await import(path + "language.js") as typeof import("../../examples/demo/language-view.ts");
-        const { mountEditingCandidate } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const project = await DemoProject.open("pricing", () => true, selectDemoProvider("server"));
         const provider = await project.language.connect();
         if (project.language.state.getSnapshot().checking) await new Promise<void>(resolve => {
             const stop = project.language.state.subscribe(() => { if (!project.language.state.getSnapshot().checking) { stop(); resolve(); } });
         });
-        const file = project.files[0]!, editor = mountEditingCandidate(document.querySelector<HTMLDivElement>("#mount")!, project.workspace, file.tab, { view: file.view });
+        const file = project.files[0]!, editor = mountTextEditor(document.querySelector<HTMLDivElement>("#mount")!, project.workspace, file.tab, { view: file.view });
         const frames = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
         const ownership = () => {
             const { resources, documents, tabs, views, leases, subscriptions } = project.workspace.diagnostics();

@@ -235,7 +235,7 @@ export async function runPackagedHunkPilot(browser, baseUrl, { directory, packag
                 await page.evaluate(() => { window.hostFixture.dispose(); window.hostFixture.release(); });
                 const released = await snapshot();
                 for (const field of ["resources", "documents", "views", "tabs", "leases", "subscriptions"]) assert.equal(released.diagnostics[field], 0);
-                assert.equal(released.diagnostics.history.groups, 0); assert.equal(await page.locator(".st-editing-candidate").count(), 0);
+                assert.equal(released.diagnostics.history.groups, 0); assert.equal(await page.locator(".st-editor").count(), 0);
                 const sample = { ...currentSample, sourceLength: original.length, workflowAutomationProxyMs: performance.now() - began,
                     trustedInputEvents: 18, savePreconditions: [first, oldSave, nextSave], viewIds, comparisonViewId,
                     beforeRevert, beforeReceipt, receipt, beforeHunkUndo, saved, redone, beforeRemount, remounted, final, released };

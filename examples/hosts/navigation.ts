@@ -1,13 +1,13 @@
 import type { DocumentId, DocumentSnapshot, ResourceLease, SelectionSet, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
 import { createNavigationClient } from "../shared/language/navigation-client.ts";
 import type { NavigationMetrics, SyncFault, NavigationService, NavigationServiceFactory } from "../shared/language/navigation-service.ts";
 import { navigationLimits, navigationSymbol, validateNavigationInput } from "../../fixtures/language/navigation.ts";
 import type { NavigationInput, NavigationLocation } from "../../fixtures/language/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
 
-type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
+type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
 type Source = { document: DocumentSnapshot; authority: string };
 type Job = { id: number; origin: Session; capture: CapturedViewRequest; input: NavigationInput; sources: Map<string, Source>; targets: Map<string, Session>;
     leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; navigated: boolean; locations: readonly NavigationLocation[]; serviceCurrent?: () => boolean };
@@ -20,7 +20,7 @@ let sessionSerial = 0;
 export class HostNavigationTools {
     private readonly workspace: Workspace;
     private readonly canCapture: (id: DocumentId) => boolean;
-    private readonly present: (id: DocumentId) => EditingCandidate | undefined;
+    private readonly present: (id: DocumentId) => TextEditor | undefined;
     private readonly sessions = new Map<number, Session>();
     private active: Session | undefined;
     private job: Job | undefined;
@@ -40,7 +40,7 @@ export class HostNavigationTools {
     private readonly worker: NavigationMetrics = { created: 0, posted: 0, received: 0, transferred: 0, maxChunk: 0, completed: 0, failed: 0, terminated: 0,
         opened: 0, changed: 0, closed: 0, reused: 0, snapshotUnits: 0, deltaUnits: 0, planningTurns: 0, rejected: 0 };
     private readonly reconnectProvider: (() => void) | undefined;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined,
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined,
         createService: NavigationServiceFactory = { positionQueries: false, create: (clock, counts, changed) => createNavigationClient(clock, counts, undefined, changed) }, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider;
         this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.createService = createService;
     }
@@ -89,7 +89,7 @@ export class HostNavigationTools {
     readonly cancel = (): void => { if (this.job) this.metrics.cancelled++; this.clear("idle", "Symbol navigation dismissed."); };
     readonly disconnect = (): void => { this.cancel(); this.dropClient(); this.disconnected = true; this.publish({ status: "disconnected", message: "Navigation provider disconnected; local editing remains available." }); };
     readonly reconnect = (): void => { this.cancel(); this.dropClient(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ status: "idle", message: "Request fresh navigation with current resources." }); };
-    attach(id: string, tab: TabId, editor: EditingCandidate): () => void {
+    attach(id: string, tab: TabId, editor: TextEditor): () => void {
         const session: Session = { token: ++sessionSerial, id, target: this.workspace.captureTab(tab), editor }, listeners = new AbortController(); this.sessions.set(session.token, session);
         editor.input.addEventListener("focus", () => { this.active = session; this.publish(); }, { signal: listeners.signal });
         editor.input.addEventListener("keydown", event => {

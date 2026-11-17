@@ -10,7 +10,7 @@ const source=await sourceIdentity(),smoke=process.env.STTROPEZ_POINTER_SMOKE==="
 const distribution=values=>({...measuredDistribution(values),max:Math.max(...values)}),directory="artifacts/bench/host-pointer";
 const h=await openHarness(),page=h.page,scene=createHostScene(page),cases=[],displays=[];let activeCase;
 const snapshot=scene.snapshot,click=name=>page.getByRole("button",{name,exact:true}).click();
-const ready=scene.ready,root=()=>page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"])');
+const ready=scene.ready,root=()=>page.locator('.st-editor:has(> textarea[aria-label="Primary source"])');
 const exact=scene.exactText,dispose=scene.dispose;
 try{for(const host of ["plain","react"])for(const corpus of ["unicode-crlf","lines-100000"])for(const cancellation of ["capture-loss","synthetic-cancel"]){
     const original=Array(corpus==="unicode-crlf"?60:100000).fill("const sample = '😀 é';").join("\r\n"),samples=[];
@@ -34,12 +34,12 @@ try{for(const host of ["plain","react"])for(const corpus of ["unicode-crlf","lin
         if(iteration===0)displays.push({host,corpus,cancellation,...await root().evaluate(node=>{const s=getComputedStyle(node);return {fontFamily:s.fontFamily,fontSize:s.fontSize,fontWeight:s.fontWeight,fontStyle:s.fontStyle,lineHeight:s.lineHeight,letterSpacing:s.letterSpacing,width:node.clientWidth,height:node.clientHeight,devicePixelRatio};})});
         const before=await snapshot(),setupSaveExports=before.source.exports;assert.equal(setupSaveExports,1);assert.equal(before.source.dirty,false);assert.equal(before.bindings.comparison.referenceIsWorkingBuffer,false);
         activeCase.stage="gesture";const workflowStart=performance.now();await page.mouse.move(points.start.x,points.start.y);await page.mouse.down();await page.mouse.move(points.start.x+.5,points.start.y);
-        await page.waitForFunction(()=>Number(document.querySelector('textarea[aria-label="Primary source"]').closest(".st-editing-candidate").dataset.pointerGot)>0);
+        await page.waitForFunction(()=>Number(document.querySelector('textarea[aria-label="Primary source"]').closest(".st-editor").dataset.pointerGot)>0);
         const pointer=Number(await root().getAttribute("data-pointer-id"));assert.equal(await root().evaluate((node,id)=>node.hasPointerCapture(id),pointer),true);
         if(cancellation==="capture-loss")await root().evaluate((node,id)=>node.releasePointerCapture(id),pointer);
         else await root().evaluate((node,id)=>node.dispatchEvent(new PointerEvent("pointercancel",{pointerId:id,bubbles:true})),pointer);
         assert.equal(await root().evaluate((node,id)=>node.hasPointerCapture(id),pointer),false);
-        await page.mouse.move(10,10);await page.mouse.up();await page.waitForFunction(()=>Number(document.querySelector('textarea[aria-label="Primary source"]').closest(".st-editing-candidate").dataset.pointerLost)>0);
+        await page.mouse.move(10,10);await page.mouse.up();await page.waitForFunction(()=>Number(document.querySelector('textarea[aria-label="Primary source"]').closest(".st-editor").dataset.pointerLost)>0);
         await page.mouse.move(points.hover.x,points.hover.y);await ready();const gestureActionProxyMs=performance.now()-workflowStart,retained=await snapshot(),primary=retained.bindings.views.find(v=>v.id==="primary");
         assert.equal(primary.selection.anchor,2);assert.equal(primary.selection.head,2);assert.equal(retained.source.revision,before.source.revision);assert.deepEqual(retained.history,before.history);
         assert.equal(retained.source.exports,setupSaveExports);

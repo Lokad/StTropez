@@ -4,16 +4,16 @@ import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import type { Page } from "@playwright/test";
 import type { Workspace, TextResourceHandle, TabId } from "../../src/index.ts";
-import type { EditingCandidate, InputConflictDetail, LspEditorController, LspHighlightController } from "../../src/browser/index.ts";
+import type { TextEditor, InputConflictDetail, LspEditorController, LspHighlightController } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 
-type Fixture = { workspace: Workspace; source: TextResourceHandle; tab: TabId; editor: EditingCandidate;
+type Fixture = { workspace: Workspace; source: TextResourceHandle; tab: TabId; editor: TextEditor;
     provider?: LspWorkspace; completion?: LspEditorController; highlights?: LspHighlightController;
     errors: string[]; cancellations: string[]; dispose: () => Promise<void> };
 declare global { interface Window { shadowFocus: Fixture } }
 let modules: Map<string, string>, css: string;
 test.beforeAll(async () => {
-    const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/index.ts", protocol: "src/protocol/index.ts" },
+    const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/index.ts", protocol: "src/protocol/index.ts", baseline: "fixtures/textarea-editor.ts" },
         outdir: "artifacts/shadow-focus", bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
     modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text])); css = await readFile("src/browser/editor.css", "utf8");
 });
@@ -26,7 +26,7 @@ async function mount(page: Page, language: boolean) {
     await page.goto("/viewport/");
     await page.evaluate(async ({ css, language }) => {
         const path = "/shadow-focus/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
-        const { mountEditingCandidate, createLspEditor, createLspHighlightController, openWebSocketTransport } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const { mountTextEditor, createLspEditor, createLspHighlightController, openWebSocketTransport } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const { LspWorkspace, RpcError } = await import(path + "protocol.js") as typeof import("../../src/protocol/index.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "focus", resource: "source", variant: "text" }, "Source", { value: "sample sample\ns" });
         const tab = workspace.open({ kind: "text", documentId: source.documentId }, "source");
@@ -34,7 +34,7 @@ async function mount(page: Page, language: boolean) {
         outside.id = "shadow-focus-outside"; outside.textContent = "Outside"; document.body.append(outside, outer); outer.attachShadow({ mode: "open" }).append(inner);
         const tree = inner.attachShadow({ mode: "closed" }), style = document.createElement("style"), host = document.createElement("section");
         style.textContent = css; host.style.cssText = "height:240px;width:600px"; tree.append(style, host);
-        const editor = mountEditingCandidate(host, workspace, tab, { ariaLabel: "Shadow source" }), errors: string[] = [], cancellations: string[] = [];
+        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Shadow source" }), errors: string[] = [], cancellations: string[] = [];
         // A cancelled request may already be removed when its peer's cancellation reply arrives.
         // The protocol reports that late reply; keep it distinct from unexpected diagnostics.
         const report = (error: unknown) => { if (error instanceof RpcError && error.code === -32800) cancellations.push(error.message); else errors.push(String(error)); };
@@ -153,9 +153,11 @@ test("public input recovery reaches retained listeners inside a closed root befo
     try {
         const result = await page.evaluate(async () => {
             const path = "/shadow-focus/browser.js";
-            const { inputConflictEvent, mountTextEditor } = await import(path) as typeof import("../../src/browser/index.ts");
+            const { inputConflictEvent } = await import(path) as typeof import("../../src/browser/index.ts");
+            const baselinePath = "/shadow-focus/baseline.js";
+            const { mountTextareaEditor } = await import(baselinePath) as typeof import("../../fixtures/textarea-editor.ts");
             const f = window.shadowFocus, host = f.editor.element.parentElement!, listeners = new AbortController();
-            const native = mountTextEditor(host, f.workspace, f.tab), received: { detail: InputConflictDetail; frozen: boolean; bubbles: boolean; composed: boolean }[] = [];
+            const native = mountTextareaEditor(host, f.workspace, f.tab), received: { detail: InputConflictDetail; frozen: boolean; bubbles: boolean; composed: boolean }[] = [];
             let inside = 0, outside = 0;
             host.addEventListener(inputConflictEvent, () => inside++, { signal: listeners.signal });
             document.addEventListener(inputConflictEvent, () => outside++, { signal: listeners.signal });

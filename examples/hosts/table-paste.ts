@@ -1,10 +1,10 @@
 import type { DocumentId, TabId, TabTarget, Workspace } from "../../src/index.ts";
-import type { CapturedInsertion, EditingCandidate } from "../../src/browser/index.ts";
+import type { CapturedInsertion, TextEditor } from "../../src/browser/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import { TableTextFormatter, tableLimits, tsvTokens } from "../shared/table-text.ts";
 import { htmlTableTokens } from "./table-html.ts";
 
-type Session = { id: string; editor: EditingCandidate; target: TabTarget };
+type Session = { id: string; editor: TextEditor; target: TabTarget };
 type Job = { session: Session; insertion: CapturedInsertion; plain: string; html: string;
     formatter?: TableTextFormatter; timer?: number; started: number };
 export type TablePasteSnapshot = Readonly<{ available: boolean; enabled: boolean; status: "idle" | "converting" | "applied" | "cancelled" | "failed"; view: string | null;
@@ -94,7 +94,7 @@ export class HostTablePaste {
         } catch (error) { this.fail(error instanceof Error && error.message.length <= 256 ? error.message : "Table conversion failed."); }
         finally { this.maxTurnMs = Math.max(this.maxTurnMs, win.performance.now() - began); }
     }
-    attach(id: string, tab: TabId, editor: EditingCandidate): () => void {
+    attach(id: string, tab: TabId, editor: TextEditor): () => void {
         if (this.sessions.has(id)) throw new Error("Table paste view is already mounted.");
         const session = { id, editor, target: this.workspace.captureTab(tab) }, listeners = new AbortController(); this.sessions.set(id, session);
         editor.input.addEventListener("paste", event => { const began = editor.element.ownerDocument.defaultView!.performance.now();

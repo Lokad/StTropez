@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createLspHighlightController } from "../src/browser/lsp-highlights.ts";
-import type { EditingCandidate } from "../src/browser/editing-candidate.ts";
+import type { TextEditor } from "../src/browser/text-editor.ts";
 import { clientFixture } from "./helpers/lsp-client.ts";
 
 test("occurrences coalesce refreshes and bound busy retries from the actual debounce turn", { timeout: 10000 }, async t => {
@@ -15,7 +15,7 @@ test("occurrences coalesce refreshes and bound busy retries from the actual debo
             clearTimeout: (id: number) => { tasks.delete(id); } } };
         Object.assign(input, { getRootNode: () => owner });
         const editor = { view, input, element: Object.assign(new EventTarget(), { ownerDocument: owner }),
-            activity: () => ({ disposed: false, composing: false, pendingCommand: busy }) } as unknown as EditingCandidate;
+            activity: () => ({ disposed: false, composing: false, pendingCommand: busy }) } as unknown as TextEditor;
         const fire = (delay: number, elapsed = delay) => {
             assert.equal(tasks.size, 1); const [id, task] = tasks.entries().next().value!;
             assert.equal(task.delay, delay); assert.ok(elapsed >= delay); tasks.delete(id); time += elapsed; task.run();

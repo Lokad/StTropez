@@ -1,6 +1,6 @@
 import { anchoredRange } from "../../../src/index.ts";
 import type { ResourceLease, Selection, TabId, Workspace } from "../../../src/index.ts";
-import type { EditingCandidate } from "../../../src/browser/index.ts";
+import type { TextEditor } from "../../../src/browser/index.ts";
 import type { Diagnostic, ProviderOptions, ProviderSnapshot } from "./provider-contract.ts";
 import type { ProviderInput, ProviderResult } from "../../../fixtures/language/provider.ts";
 import { validateProviderResult } from "../../../fixtures/language/provider.ts";
@@ -8,7 +8,7 @@ import { HostCell } from "../observable.ts";
 type Pending = Readonly<{ input: ProviderInput; from: number; selection: Selection; lease: ResourceLease; startsInWord: boolean; endsInWord: boolean }>;
 
 /** Synthetic host service shared by fixtures. No DOM controls or authoritative source mirror. */
-export function createProviderController(workspace: Workspace, tabId: TabId, editor: EditingCandidate, options: ProviderOptions = {}) {
+export function createProviderController(workspace: Workspace, tabId: TabId, editor: TextEditor, options: ProviderOptions = {}) {
     const target = workspace.captureTab(tabId), documentId = editor.view.documentId, resource = workspace.resourceForDocument(documentId);
     const tab = workspace.resolveTab(target);
     if (tab?.surface.kind !== "text" || tab.surface.documentId !== documentId || !workspace.ownsDocumentView(editor.view)) throw new Error("Provider requires the captured document view.");

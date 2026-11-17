@@ -1,5 +1,6 @@
 import { Workspace, TextBuffer, TextDiff, WordCursor, BidiCursor, createBidiIndexController, resolveBidi, importText, exportText, anchoredRange, composePositionMaps, createGraphemeCursor } from "sttropez";
-import { inputConflictEvent, createFontAssetController, createFindController, createRegexFindBackend, mountTextComparison, mountTextEditor, mountTextViewport, mountEditingCandidate } from "sttropez/browser";
+import { inputConflictEvent, createFontAssetController, createFindController, createRegexFindBackend, mountTextComparison, mountTextViewport, mountTextEditor } from "sttropez/browser";
+import * as browserApi from "sttropez/browser";
 import { fontFixture } from "./font-fixture.js";
 import { createAgentReview, DiffReferenceCache, WorkspaceCommands } from "sttropez";
 import { createSelectionSet, planSelectionEdits } from "sttropez";
@@ -12,9 +13,9 @@ const documentId = workspace.createDocument({ scope: "consumer", resource: "sour
 const tabId = workspace.open({ kind: "text", documentId }, "main");
 const host = document.getElementById("editor");
 if (!host) throw new Error("Missing editor host.");
-mountTextEditor(host, workspace, tabId);
+const sourceEditor = mountTextEditor(host, workspace, tabId);
 const viewport = mountTextViewport(document.getElementById("viewport")!, workspace, tabId, { ariaLabel: "Restored viewport" });
-const candidate = mountEditingCandidate(document.getElementById("candidate")!, workspace, tabId, { ariaLabel: "Restored candidate", decorate: line => {
+const candidate = mountTextEditor(document.getElementById("candidate")!, workspace, tabId, { ariaLabel: "Restored candidate", decorate: line => {
     const from = line.text.indexOf("restored"); return from < 0 ? [] : [{ from: line.from + from, to: line.from + from + 8, className: "consumer-token" }];
 } });
 const find = createFindController(workspace, tabId, candidate);
@@ -27,17 +28,20 @@ let comparison = mountTextComparison(document.getElementById("comparison")!, wor
 function mountMultipleInput() {
     const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "multiple-input", variant: "working" }, "Multiple input", { value: "abcd" });
     const tab = model.open({ kind: "text", documentId: source.documentId }, "multiple-input"), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
-    const editor = mountEditingCandidate(host, model, tab, { ariaLabel: "Restored multiple input" }); editor.focus();
+    const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored multiple input" }); editor.focus();
     editor.view.setSelections(0, [{ anchor: 0, head: 1 }, { anchor: 4, head: 3 }], 1);
     return { model, source, tab, host, editor };
 }
 let multipleInput: ReturnType<typeof mountMultipleInput> | undefined;
 Object.assign(window, { consumer: { text: () => workspace.document(documentId).text(),
     protocolExports: () => ({ connection: typeof JsonRpcConnection, websocket: typeof openWebSocketTransport }),
+    editorExports: () => ({ mount: typeof browserApi.mountTextEditor,
+        root: sourceEditor.element.tagName, input: sourceEditor.input.tagName,
+        removed: ["mountEditingCandidate", "mountTextareaEditor"].filter(name => name in browserApi) }),
     clipboardBoundary: () => {
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "clipboard-boundary", variant: "working" }, "Source", { value: "before\r\nend" });
         const tab = model.open({ kind: "text", documentId: source.documentId }, "clipboard"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
-        const editor = mountEditingCandidate(host, model, tab), original = "before\r\nend";
+        const editor = mountTextEditor(host, model, tab), original = "before\r\nend";
         try {
             editor.view.setSelections(0, [{ anchor: 3, head: 1 }, { anchor: 10, head: 8 }], 1); const selections = editor.view.getSnapshot().selectionSet;
             for (const type of ["copy", "cut", "paste"] as const) {
@@ -59,8 +63,8 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "folding", variant: "working" }, "Folded source", { value: original });
         const tab = model.open({ kind: "text", documentId: source.documentId }, "folded"), view = model.createDocumentView(source.documentId), peer = model.createDocumentView(source.documentId);
         const host = document.createElement("div"), otherHost = document.createElement("div"); host.style.height = "180px"; otherHost.style.height = "180px"; document.body.append(host, otherHost);
-        let editor = mountEditingCandidate(host, model, tab, { view, ariaLabel: "Restored folding" });
-        const other = mountEditingCandidate(otherHost, model, tab, { view: peer, ariaLabel: "Restored fold peer" });
+        let editor = mountTextEditor(host, model, tab, { view, ariaLabel: "Restored folding" });
+        const other = mountTextEditor(otherHost, model, tab, { view: peer, ariaLabel: "Restored fold peer" });
         const wait = async () => { const deadline = performance.now() + 10000;
             while ([editor, other].some(e => { const s = e.snapshot(), p = e.viewport.snapshot(); return s.pendingCaret || s.pendingWord || s.pendingGrapheme || s.pendingDragScroll || p.pending
                 || p.revision !== model.document(source.documentId).revision || p.selectionSet !== e.view.getSnapshot().selectionSet || p.foldGeneration !== e.view.folding.getSnapshot().generation; })) {
@@ -81,10 +85,10 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
             if (editor.viewport.snapshot().visibleLines !== 2) throw new Error("Compiled folded edit exposed hidden rows.");
             model.undo({ documentId: source.documentId, expectedRevision: 1 }); await wait(); exact();
             const saved = editor.captureView(), retired = editor; editor.destroy();
-            editor = mountEditingCandidate(host, model, tab, { view, ariaLabel: "Restored folding" }); editor.restoreView(saved); editor.focus(); await wait();
+            editor = mountTextEditor(host, model, tab, { view, ariaLabel: "Restored folding" }); editor.restoreView(saved); editor.focus(); await wait();
             if (editor.viewport.snapshot().visibleLines !== 2 || view.getSnapshot().selectionSet.ranges.length !== 2) throw new Error("Compiled remount lost folds or complete selections.");
             const fresh = model.createDocumentView(source.documentId), freshHost = document.createElement("div"); freshHost.style.height = "180px"; document.body.append(freshHost);
-            const restored = mountEditingCandidate(freshHost, model, tab, { view: fresh });
+            const restored = mountTextEditor(freshHost, model, tab, { view: fresh });
             try {
                 restored.restoreView(saved); restored.viewport.flush(); if (fresh.folding.getSnapshot().index.visibleLineCount !== 2) throw new Error("Compiled fresh view did not restore captured folds.");
                 const current = fresh.folding.getSnapshot(); fresh.folding.setCollapsed(current, "body", false); restored.restoreView(saved);
@@ -108,7 +112,7 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "regex", variant: "working" }, "Regex", { value: original });
         const tab = model.open({ kind: "text", documentId: source.documentId }, "regex"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
         let workers = 0;
-        const editor = mountEditingCandidate(host, model, tab, { ariaLabel: "Restored regex" }), find = createFindController(model, tab, editor, {
+        const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored regex" }), find = createFindController(model, tab, editor, {
             regularExpression: createRegexFindBackend({ clock: window, createWorker: () => { workers++; return new Worker("/regex-worker.js", { type: "module" }); } }) });
         const wait = async (status: "ready" | "failed") => {
             const deadline = performance.now() + 30000;
@@ -150,7 +154,7 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
         for (const change of ["permission", "lease"] as const) {
             const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "find-authority", variant: "working" }, "Captured find", { value: "cat cat" });
             const tab = model.open({ kind: "text", documentId: source.documentId }, "find"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
-            const editor = mountEditingCandidate(host, model, tab, { ariaLabel: "Restored captured find" }), find = createFindController(model, tab, editor);
+            const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored captured find" }), find = createFindController(model, tab, editor);
             const ready = async () => { for (let turn = 0; find.state.getSnapshot().status !== "ready"; turn++) {
                 if (turn >= 1000) throw new Error("Compiled find did not settle."); await new Promise<void>(resolve => setTimeout(resolve, 1)); } };
             try {
@@ -188,7 +192,7 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
             const destinations = kind === "many-carets" ? heads.map(head => head + 12) : [1000001], text = kind === "paste-word" ? "😀é\r\n" : "😀é";
             const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: kind, variant: "working" }, kind, { value: original });
             const tab = model.open({ kind: "text", documentId: source.documentId }, kind), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
-            const editor = mountEditingCandidate(host, model, tab, { ariaLabel: "Restored ordered input" }), recovered: string[] = [];
+            const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored ordered input" }), recovered: string[] = [];
             editor.input.addEventListener(inputConflictEvent, event => recovered.push((event as CustomEvent<InputConflictDetail>).detail.attemptedText));
             const ready = async () => { for (let turn = 0; ; turn++) { const s = editor.snapshot();
                 if (!s.pendingInput && !s.pendingWord && !s.pendingGrapheme && !s.pendingCaret && !editor.viewport.snapshot().pending) return;
@@ -238,7 +242,7 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
     readonlyIndent: async (outdent: boolean) => {
         const model = new Workspace(), text = "    const sample = 1;\r\n".repeat(1024), source = model.createTextResource({ scope: "consumer", resource: "readonly-indent", variant: "working" }, "Locked command", { value: text });
         const tab = model.open({ kind: "text", documentId: source.documentId }, "locked-command"), host = document.createElement("div"); host.style.height = "200px"; document.body.append(host);
-        const editor = mountEditingCandidate(host, model, tab, { ariaLabel: "Restored locked command" });
+        const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored locked command" });
         try {
             editor.view.setSelection(0, { anchor: 0, head: text.length }); model.setCapabilities(source.id, { edit: ["host"], save: true, run: true });
             const before = model.observeHistory(source.documentId).getSnapshot(); let lockedAtHandler = false;
@@ -355,7 +359,7 @@ Object.assign(window, { consumer: { text: () => workspace.document(documentId).t
         const restored = model.document(source.documentId).buffer.slice(0, 4), restoredSet = view.getSnapshot().selectionSet;
         const alias = view.getSnapshot().selection === restoredSet.ranges[restoredSet.primary];
         const tab = model.open({ kind: "text", documentId: source.documentId }, "sets"), container = document.createElement("div"); document.body.append(container);
-        const mounts = [mountTextEditor(container, model, tab, { view }), mountEditingCandidate(container, model, tab, { view }), mountTextViewport(container, model, tab, { view })];
+        const mounts = [mountTextEditor(container, model, tab, { view }), mountTextViewport(container, model, tab, { view })];
         const states = mounts.map(editor => editor.captureView());
         const browserSelections = mounts.map((editor, index) => {
             const state = states[index]!; view.setSelection(2, { anchor: 0, head: 0 });

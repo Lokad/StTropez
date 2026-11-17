@@ -13,14 +13,14 @@ edits made while detached, instead of overwriting them with cached selections:
 
 ```ts
 import type { DocumentView, TabId, Workspace } from "sttropez";
-import { mountEditingCandidate } from "sttropez/browser";
+import { mountTextEditor } from "sttropez/browser";
 import type { ViewState } from "sttropez/browser";
 
 export function attachSource(
     host: HTMLElement, workspace: Workspace, tab: TabId,
     view: DocumentView, saved?: ViewState
 ) {
-    const editor = mountEditingCandidate(host, workspace, tab, {
+    const editor = mountTextEditor(host, workspace, tab, {
         view, ariaLabel: "Source",
         language: {
             tabSize: 4, insertSpaces: true, lineComment: "//",
@@ -50,7 +50,8 @@ view identity. Mounting another resource requires that resource's own view and c
 
 ### Mounting and presentation
 
-`mountEditingCandidate(host, workspace, tabId, options)` returns an `EditingCandidate`. The tab
+`mountTextEditor(host, workspace, tabId, options)` accepts `TextEditorOptions` and returns a
+`TextEditor`. The tab
 must identify a text surface; a supplied view must belong to that document and workspace. The
 mount captures tab generation and document identity. Replacing a tab invalidates the old target
 instead of redirecting input to the replacement. Omitting `view` creates a mount-owned view.
@@ -288,8 +289,8 @@ final model validation; the host owns any asynchronous selection/lifecycle guard
 
 ### Edit transforms
 
-`registerEditTransform(transform)` installs one `CandidateEditTransform` and returns its removal
-function. A disposed editor or occupied slot throws. `CandidateEdit` contains `expectedRevision`,
+`registerEditTransform(transform)` installs one `TextEditorEditTransform` and returns its removal
+function. A disposed editor or occupied slot throws. `TextEditorEdit` contains `expectedRevision`,
 proposed original-coordinate edits, resulting `selectionSet`, history `kind` and optional
 `adjustNewlines` when the newline command supplied contextual indentation.
 
@@ -358,7 +359,7 @@ the retained view's mapped whole set when combining it with saved scroll state. 
 restoration. Editing reveals the primary caret at the nearest edge on both axes and preserves
 scroll when the caret fits; explicit host navigation can request a centered reveal.
 
-`activity()` returns a reused immutable `EditingActivity` without measuring layout, collecting
+`activity()` returns a reused immutable `TextEditorActivity` without measuring layout, collecting
 metrics or flushing work. It distinguishes composition/disposal from `pendingInput`,
 `pendingCommand`, `pendingCaret`, `pendingWord`, `pendingGrapheme` and `pendingDragScroll`.
 A focus/blur caret frame is distinct from unfinished selection/navigation. Compare the viewport's
@@ -385,16 +386,6 @@ defines interaction-specific readiness and continuous text/color checks.
 
 Scheduling bounds are not interaction-latency guarantees. [Viewport limits](viewport.md#rendering-limits)
 govern long contextual lines and geometry; [Unicode](unicode.md) owns grapheme/bidi behavior.
-
-### Whole-value text adapter
-
-`mountTextEditor(host, workspace, tabId, { ariaLabel?, view? })` exposes a native textarea baseline
-as `MountedEditor`: `element`, `view`, `captureView`, `restoreView` and `destroy`. It shares model
-history and view retention but projects the whole document and edits only the primary range.
-Its native LF projection maps selection/replacements back to raw source; explicit unrelated
-edits preserve CRLF. Rendering and whole-value differences require document-sized work. Use it
-only where that cost and native-control behavior suit the host. The bounded editor above is the
-implementation used by the main demo and comparison working views.
 
 ## Host responsibilities
 

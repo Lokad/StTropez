@@ -6,7 +6,7 @@ const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot
 
 async function rectangle(input: Locator, offset: number) {
     return input.evaluate((input, offset) => {
-        const root = input.closest(".st-editing-candidate")!, row = [...root.querySelectorAll<HTMLElement>(".st-viewport-row")]
+        const root = input.closest(".st-editor")!, row = [...root.querySelectorAll<HTMLElement>(".st-viewport-row")]
             .find(v => offset >= Number(v.dataset.from) && offset < Number(v.dataset.to));
         if (!row) throw new Error(`Source offset ${offset} is not painted.`);
         let remaining = offset - Number(row.dataset.from); const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
@@ -20,7 +20,7 @@ async function rectangle(input: Locator, offset: number) {
 }
 async function caret(input: Locator, offset: number, secondary = false): Promise<void> {
     const expected = await rectangle(input, offset), actual = await input.evaluate((input, secondary) => {
-        const node = input.closest(".st-editing-candidate")!.querySelector<HTMLElement>(secondary ? ".st-input-secondary-caret" : ".st-input-caret")!;
+        const node = input.closest(".st-editor")!.querySelector<HTMLElement>(secondary ? ".st-input-secondary-caret" : ".st-input-caret")!;
         const box = node.getBoundingClientRect(), anchor = input.getBoundingClientRect();
         return { hidden: node.hidden, left: box.left, top: box.top, height: box.height, anchorHeight: anchor.height };
     }, secondary);
@@ -38,7 +38,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     for (const zoom of [1.5, .75]) {
         await source(page).evaluate((input, zoom) => {
             document.documentElement.style.zoom = "1.25";
-            const root = input.closest<HTMLElement>(".st-editing-candidate")!;
+            const root = input.closest<HTMLElement>(".st-editor")!;
             root.parentElement!.style.zoom = String(zoom / 1.25); root.style.border = "2px solid transparent";
             if (zoom < 1) Object.defineProperty(root, "currentCSSZoom", { value: undefined, configurable: true });
         }, zoom);
@@ -52,7 +52,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
         await source(page).press("Control+Home"); await source(page).press("ArrowDown"); await ready(page);
         const from = line.length + 5, to = line.length + 12, a = await rectangle(source(page), from), b = await rectangle(source(page), to);
         const marker = await source(page).evaluate((input, point) => {
-            const root = input.closest(".st-editing-candidate")!, dataTransfer = new DataTransfer(); dataTransfer.setData("text/plain", "external");
+            const root = input.closest(".st-editor")!, dataTransfer = new DataTransfer(); dataTransfer.setData("text/plain", "external");
             Object.defineProperty(dataTransfer, "effectAllowed", { value: "copy" });
             root.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, clientX: point.x, clientY: point.y, dataTransfer }));
             const marker = root.querySelector(".st-text-drop-caret"); if (!marker) throw new Error("Missing drop marker.");
@@ -88,21 +88,21 @@ for (const host of ["plain", "react"]) test(`${host} scroll boundary keeps the d
     const line = "0123456789abcdef Δ😀 xyz\r\n", text = line.repeat(80), offset = line.length * 20 + 8, input = source(page);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text);
     for (const zoom of [1, 1.5]) {
-        await input.evaluate((input, zoom) => { const root = input.closest<HTMLElement>(".st-editing-candidate")!;
+        await input.evaluate((input, zoom) => { const root = input.closest<HTMLElement>(".st-editor")!;
             root.parentElement!.style.zoom = String(zoom); root.style.border = "2px solid transparent"; }, zoom);
         await page.evaluate(offset => { const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: offset, head: offset }); }, offset);
         await input.focus();
-        const first = await input.evaluate(input => { const root = input.closest<HTMLElement>(".st-editing-candidate")!;
+        const first = await input.evaluate(input => { const root = input.closest<HTMLElement>(".st-editor")!;
             root.scrollTop = window.hostFixture.snapshot().bindings.views.find(v => v.id === "primary")!.metrics!.viewport.lineHeight * 20; return root.scrollTop; });
         await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollTop).toBeCloseTo(first, 3); await ready(page);
         const glyph = await rectangle(input, offset);
-        const last = await input.evaluate((input, { glyph, zoom }) => { const root = input.closest<HTMLElement>(".st-editing-candidate")!, box = root.getBoundingClientRect();
+        const last = await input.evaluate((input, { glyph, zoom }) => { const root = input.closest<HTMLElement>(".st-editor")!, box = root.getBoundingClientRect();
             const current = (glyph.top - box.top) / zoom - root.clientTop, desired = root.clientHeight - glyph.height / zoom - 1;
             root.scrollTop += current - desired; return root.scrollTop;
         }, { glyph, zoom });
         await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.metrics!.viewport.scrollTop).toBeCloseTo(last, 3); await ready(page);
         await caret(input, offset);
-        const anchor = await input.evaluate((input, zoom) => { const root = input.closest<HTMLElement>(".st-editing-candidate")!, box = root.getBoundingClientRect(), at = input.getBoundingClientRect();
+        const anchor = await input.evaluate((input, zoom) => { const root = input.closest<HTMLElement>(".st-editor")!, box = root.getBoundingClientRect(), at = input.getBoundingClientRect();
             return { top: at.top, bottom: at.bottom, low: box.top + root.clientTop * zoom, high: box.top + (root.clientTop + root.clientHeight) * zoom };
         }, zoom);
         expect(anchor.top).toBeGreaterThanOrEqual(anchor.low); expect(anchor.bottom).toBeLessThanOrEqual(anchor.high);

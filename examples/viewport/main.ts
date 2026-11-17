@@ -1,7 +1,9 @@
+import { mountTextareaEditor } from "../../fixtures/textarea-editor.ts";
 import { Workspace } from "../../src/index.ts";
 import type { Selection, TextEdit } from "../../src/index.ts";
-import { mountTextViewport, mountTextEditor } from "../../src/browser/index.ts";
-import type { MountedEditor, ViewState } from "../../src/browser/index.ts";
+import { mountTextViewport } from "../../src/browser/index.ts";
+import type { ViewState } from "../../src/browser/index.ts";
+import type { TextareaEditor } from "../../fixtures/textarea-editor.ts";
 import { corpus, corpusIds } from "../../fixtures/workloads.ts";
 import type { CorpusId } from "../../fixtures/workloads.ts";
 import { viewportSettled } from "../shared/readiness.ts";
@@ -13,7 +15,7 @@ const primaryTab = workspace.open({ kind: "text", documentId: source.documentId 
 const pane = (name: string) => document.getElementById(name)!;
 const views = { primary: mountTextViewport(pane("primary"), workspace, primaryTab, { ariaLabel: "Primary text viewport" }),
     secondary: mountTextViewport(pane("secondary"), workspace, secondaryTab, { ariaLabel: "Secondary text viewport" }) };
-let native: MountedEditor | undefined, ticks = 0, timer: ReturnType<typeof setInterval> | undefined, disposed = false;
+let native: TextareaEditor | undefined, ticks = 0, timer: ReturnType<typeof setInterval> | undefined, disposed = false;
 const listeners = new AbortController();
 function edit(expectedRevision: number, edits: readonly TextEdit[]) {
     return workspace.edit({ documentId: source.documentId, expectedRevision, edits, origin: "host", history: { kind: "live" } });
@@ -25,7 +27,7 @@ function load(id: CorpusId) {
 }
 function toggleNative() {
     if (native) { native.destroy(); native = undefined; pane("native-host").hidden = true; }
-    else { pane("native-host").hidden = false; native = mountTextEditor(pane("native-host"), workspace, primaryTab, { ariaLabel: "Native text control" }); }
+    else { pane("native-host").hidden = false; native = mountTextareaEditor(pane("native-host"), workspace, primaryTab, { ariaLabel: "Native text control" }); }
 }
 function background(active: boolean) {
     if (timer !== undefined) clearInterval(timer); timer = undefined;

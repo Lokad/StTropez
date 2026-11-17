@@ -14,13 +14,13 @@ test("owner activity retains immutable captures without collecting metrics and f
     const result = await page.evaluate(async () => {
         const path = "/owner-activity/";
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
-        const { mountEditingCandidate } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const { editorSettled, viewportSettled } = await import(path + "readiness.js") as typeof import("../../examples/shared/readiness.ts");
         const { ComparisonRowsCursor } = await import(path + "rows.js") as typeof import("../../src/core/comparison-rows.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "activity", variant: "text" }, "Activity", { value: "const sample = 123;\n".repeat(100) });
         const tab = workspace.open({ kind: "text", documentId: source.documentId }, "activity"), host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
-        const editor = mountEditingCandidate(host, workspace, tab), viewport = editor.viewport;
+        const editor = mountTextEditor(host, workspace, tab), viewport = editor.viewport;
         const forbidden = () => { throw new Error("Readiness collected metrics"); };
         const readyViewport = { ...viewport, snapshot: forbidden }, readyEditor = { ...editor, viewport: readyViewport, snapshot: forbidden };
         const ready = () => editorSettled(readyEditor), frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));

@@ -1,6 +1,6 @@
 import { Workspace } from "sttropez";
 import type { DocumentId, DocumentSnapshot, TextEdit } from "sttropez";
-import { createLspEditor, mountEditingCandidate, openWebSocketTransport } from "sttropez/browser";
+import { createLspEditor, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
 import { LspWorkspace, applyLspWorkspaceEdit, previewLspWorkspaceEdit, createLspActionClient, createLspColorClient, createLspHoverClient, createLspLinkClient, createLspNavigationClient, createLspRenameClient, createLspSignatureClient } from "sttropez/protocol";
 import type { LspWorkspaceEdit } from "sttropez/protocol";
 
@@ -8,7 +8,7 @@ const workspace = new Workspace();
 const source = workspace.createTextResource({ scope: "consumer", resource: "source", variant: "working" }, "Source", { value: 'const saMORE = 1; // TODO\r\ncatalogue;\r\nlookup("a", );\r\nimport "sample-utils";\r\nconst color = "#abc";' });
 const companion = workspace.createTextResource({ scope: "consumer", resource: "companion", variant: "working" }, "Companion", { value: "const catalogue = 1;\r\ncatalogue;\r\n" });
 const tab = workspace.open({ kind: "text", documentId: source.documentId }, "source");
-const editor = mountEditingCandidate(document.getElementById("editor")!, workspace, tab, { ariaLabel: "Public LSP source" });
+const editor = mountTextEditor(document.getElementById("editor")!, workspace, tab, { ariaLabel: "Public LSP source" });
 const endpoint = new URL("/lsp-fixture", location.href); endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
 const provider = new LspWorkspace(workspace, {
     initializationOptions: { fixtureModuleUris: [{ module: "sample-utils", uri: `consumer+opaque:project/${encodeURIComponent(companion.id)}` }] },

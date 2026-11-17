@@ -1,6 +1,7 @@
+import { mountTextareaEditor } from "../../fixtures/textarea-editor.ts";
 import { Workspace, WorkspaceCommands } from "../../src/index.ts";
 import type { SaveResponse, SaveSubmission } from "../../src/index.ts";
-import { inputConflictEvent, mountTextEditor } from "../../src/browser/index.ts";
+import { inputConflictEvent } from "../../src/browser/index.ts";
 import type { InputConflictDetail } from "../../src/browser/index.ts";
 import "./style.css";
 import { corpus, corpusIds } from "../../fixtures/workloads.ts";
@@ -23,7 +24,7 @@ type Connection = Readonly<{ path: string; format: "csv" }>;
 const connection = workspace.createResource<Connection>({ scope: "demo", resource: "connection", variant: "working" },
     "Connection", { value: { path: "incoming/sample.csv", format: "csv" } });
 const panelTab = workspace.open({ kind: "panel", resourceId: connection.id, panelType: "connection" }, "right");
-const editor = mountTextEditor(element("left"), workspace, sourceTab);
+const editor = mountTextareaEditor(element("left"), workspace, sourceTab);
 const conflicts: { reason: string; attemptedLength: number }[] = [];
 editor.element.addEventListener(inputConflictEvent, event => {
     const detail = (event as CustomEvent<InputConflictDetail>).detail;
@@ -40,7 +41,7 @@ description.textContent = "A host-owned form beside the text surface. Both parti
 panel.append(heading, label, description);
 const secondaryHost = document.createElement("div"); secondaryHost.style.height = "180px";
 panel.append(secondaryHost);
-const secondary = mountTextEditor(secondaryHost, workspace, secondaryTab, { ariaLabel: "Secondary source view" });
+const secondary = mountTextareaEditor(secondaryHost, workspace, secondaryTab, { ariaLabel: "Secondary source view" });
 element("right").append(panel);
 sourcePath.addEventListener("input", () => {
     const snapshot = connection.getSnapshot();

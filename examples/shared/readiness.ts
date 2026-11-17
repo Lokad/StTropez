@@ -1,4 +1,4 @@
-import type { EditingCandidate, TextComparison, TextViewport } from "../../src/browser/index.ts";
+import type { TextEditor, TextComparison, TextViewport } from "../../src/browser/index.ts";
 
 // Fixture-only completion checks. Provider requests and native composition sessions have
 // their own owners; neither is evidence that the editor's scheduled work is still pending.
@@ -10,7 +10,7 @@ export function viewportSettled(viewport: TextViewport): boolean {
         && painted.foldGeneration === viewport.view.folding.getSnapshot().generation;
 }
 
-export function editorSettled(editor: EditingCandidate): boolean {
+export function editorSettled(editor: TextEditor): boolean {
     const input = editor.activity();
     return !input.disposed && !input.pendingInput && !input.pendingCommand && !input.pendingCaret
         && !input.pendingWord && !input.pendingGrapheme && !input.pendingDragScroll && viewportSettled(editor.viewport);

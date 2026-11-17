@@ -1,7 +1,7 @@
 import { createFoldRegions, createSelectionSet, FoldIndex } from "../../src/index.ts";
 import type { DocumentId, DocumentView, FoldRange, FoldingSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
 import { DomainAnnotationIndex, FixtureDomainProvider, validateDomainResult } from "../../fixtures/language/domain.ts";
 import type { DomainAnnotation, DomainInput, DomainProvider } from "../../fixtures/language/domain.ts";
 import type { EditingPresentation } from "../shared/language/presentation.ts";
@@ -9,7 +9,7 @@ import { HostCell } from "../shared/observable.ts";
 
 type OwnedFold = { id: string; from: number; to: number };
 type ViewData = { revision: number; owned: Map<string, OwnedFold>; annotations: readonly DomainAnnotation[]; index: DomainAnnotationIndex };
-type Session = { token: string; id: string; editor: EditingCandidate; target: TabTarget; presentation: EditingPresentation; data: ViewData };
+type Session = { token: string; id: string; editor: TextEditor; target: TabTarget; presentation: EditingPresentation; data: ViewData };
 type Job = { session: Session; input: DomainInput; folds: FoldingSnapshot; capture: CapturedViewRequest | undefined; authority: string; lease: ResourceLease | undefined; abort: AbortController; timeout: number; invalid: boolean };
 export type DomainSnapshot = Readonly<{ available: boolean; editable: boolean; view: string | null; token: string | null; revision: number | null;
     status: "idle" | "running" | "ready" | "applied" | "cancelled" | "failed"; message: string; work: number; total: number; pendingView: string | null;
@@ -70,7 +70,7 @@ export class HostDomainTools {
         if (changed) session.editor.viewport.invalidate();
         if (this.active === session) this.publish();
     }
-    attach(id: string, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation): () => void {
+    attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void {
         const token = `domain-session-${++nextSession}`, revision = this.workspace.document(editor.view.documentId).revision;
         const data = this.data.get(editor.view) ?? { revision, owned: new Map<string, OwnedFold>(), annotations: noAnnotations, index: new DomainAnnotationIndex(noAnnotations) };
         this.data.set(editor.view, data); const session = { token, id, editor, presentation, data, target: this.workspace.captureTab(tab) }, listeners = new AbortController(); this.sessions.set(token, session);

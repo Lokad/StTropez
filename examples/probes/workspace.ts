@@ -1,5 +1,6 @@
+import { mountTextareaEditor } from "../../fixtures/textarea-editor.ts";
 import { Workspace } from "../../src/index.ts";
-import { mountTextEditor } from "../../src/browser/index.ts";
+
 import { corpus, workspaceWorkload } from "../../fixtures/workloads.ts";
 
 // M0 stress recipe for the native baseline. Annotations are host overlays, not editor decorations.
@@ -13,7 +14,7 @@ export function mountWorkspaceProbe(host: HTMLElement) {
     }
     const tabs = [workspace.open({ kind: "text", documentId: source }, "left"), workspace.open({ kind: "text", documentId: source }, "right")];
     const panes = tabs.map(() => { const pane = document.createElement("div"); host.append(pane); return pane; });
-    const views = tabs.map((tab, index) => mountTextEditor(panes[index]!, workspace, tab));
+    const views = tabs.map((tab, index) => mountTextareaEditor(panes[index]!, workspace, tab));
     const annotations = Object.freeze(Array.from({ length: workspaceWorkload.annotations }, (_, index) =>
         Object.freeze({ from: index % corpus("normal").length, message: "Synthetic annotation", revision: 0 })));
     let ticks = 0, notifications = 0, disposed = false;

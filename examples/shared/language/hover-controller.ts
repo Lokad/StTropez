@@ -1,5 +1,5 @@
 import type { FoldIndex, ResourceLease, SelectionSet, TabId, Workspace } from "../../../src/index.ts";
-import type { DocumentationContent, EditingCandidate } from "../../../src/browser/index.ts";
+import type { DocumentationContent, TextEditor } from "../../../src/browser/index.ts";
 import { HostCell } from "../observable.ts";
 import { validateHoverResult } from "../../../fixtures/language/hover.ts";
 import type { HoverInput } from "../../../fixtures/language/hover.ts";
@@ -10,7 +10,7 @@ export type HoverSnapshot = Readonly<{ status: "idle" | "pending" | "ready" | "e
     message: string; revision: number | null; range: Readonly<{ from: number; to: number }> | null; text: string; content?: DocumentationContent }>;
 
 /** Host-owned read-only service. Its worker lane is independent of completion/diagnostics. */
-export function createHoverController(workspace: Workspace, tabId: TabId, editor: EditingCandidate, options: Readonly<{ createWorker?: () => Worker; backend?: HoverBackend; canCapture?: () => boolean }> = {}) {
+export function createHoverController(workspace: Workspace, tabId: TabId, editor: TextEditor, options: Readonly<{ createWorker?: () => Worker; backend?: HoverBackend; canCapture?: () => boolean }> = {}) {
     const target = workspace.captureTab(tabId), documentId = editor.view.documentId, resource = workspace.resourceForDocument(documentId), tab = workspace.resolveTab(target);
     if (tab?.surface.kind !== "text" || tab.surface.documentId !== documentId || !workspace.ownsDocumentView(editor.view)) throw new Error("Hover requires the captured document view.");
     const win = editor.element.ownerDocument.defaultView!, counts = { created: 0, posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0, postedUnits: 0 };

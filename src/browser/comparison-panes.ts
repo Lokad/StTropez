@@ -1,15 +1,15 @@
-import type { EditingCandidate } from "./editing-candidate.ts";
+import type { TextEditor } from "./text-editor.ts";
 import type { TextViewport } from "./viewport.ts";
 
 type Kind = "render" | "fold" | "scroll" | "input" | "pointerdown" | "compositionend" | "resize";
 type Callback = (pane: TextViewport, event?: Event) => void;
-type Binding = { editor: EditingCandidate; base: AbortController; stops: Map<Kind, () => void> };
+type Binding = { editor: TextEditor; base: AbortController; stops: Map<Kind, () => void> };
 type Registration = { callback: Callback };
 export type ComparisonPanes = ReturnType<typeof createComparisonPanes>;
 
 /** One attachment owner and one native/fold observation per pane and requested event kind. */
-export function createComparisonPanes(working: EditingCandidate, compositionChanged: () => void) {
-    const listeners = new Map<Kind, Set<Registration>>(), replacements = new Set<(previous: EditingCandidate | undefined) => void>();
+export function createComparisonPanes(working: TextEditor, compositionChanged: () => void) {
+    const listeners = new Map<Kind, Set<Registration>>(), replacements = new Set<(previous: TextEditor | undefined) => void>();
     let reference: Binding | undefined, disposed = false, resize: ResizeObserver | undefined;
     const source = bind(working, false);
     const current = (binding: Binding) => !disposed && (binding === source || binding === reference);
@@ -34,7 +34,7 @@ export function createComparisonPanes(working: EditingCandidate, compositionChan
         });
         return () => events.abort();
     }
-    function bind(editor: EditingCandidate, baseline: boolean): Binding {
+    function bind(editor: TextEditor, baseline: boolean): Binding {
         const binding: Binding = { editor, base: new AbortController(), stops: new Map() };
         try {
             for (const type of ["compositionstart", "compositionend"]) editor.input.addEventListener(type, compositionChanged, { signal: binding.base.signal });
@@ -64,14 +64,14 @@ export function createComparisonPanes(working: EditingCandidate, compositionChan
     }
     return Object.freeze({ working,
         reference: () => reference?.editor,
-        setReference(editor: EditingCandidate | undefined): void {
+        setReference(editor: TextEditor | undefined): void {
             if (disposed || reference?.editor === editor) return;
             const previous = reference; if (previous) unbind(previous); reference = undefined;
             if (editor) reference = bind(editor, true);
             for (const listener of [...replacements]) if (replacements.has(listener)) listener(previous?.editor);
         },
         observe,
-        onReferenceChange(listener: (previous: EditingCandidate | undefined) => void): () => void {
+        onReferenceChange(listener: (previous: TextEditor | undefined) => void): () => void {
             if (disposed) return () => {}; replacements.add(listener); return () => { replacements.delete(listener); };
         },
         dispose(): void {

@@ -1,5 +1,5 @@
 import { createLspEditor, createLspHighlightController } from "../../src/browser/index.ts";
-import type { EditingCandidate, InlineDecoration, PresentedLine, LspEditorController, LspHighlightController } from "../../src/browser/index.ts";
+import type { TextEditor, InlineDecoration, PresentedLine, LspEditorController, LspHighlightController } from "../../src/browser/index.ts";
 import type { Workspace } from "../../src/index.ts";
 import type { DemoFile } from "./project.ts";
 import type { DemoLanguage } from "./language.ts";
@@ -10,7 +10,7 @@ import { mountDemoActions } from "./actions.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
 
 /** Contextual completion UI around the public editor controller. It never changes text itself. */
-export function mountDemoLanguage(workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: EditingCandidate, language: DemoLanguage,
+export function mountDemoLanguage(workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: TextEditor, language: DemoLanguage,
     open: (target: DemoSymbolTarget) => void, reportError: (error: unknown) => void) {
     const scope = new CleanupScope(); let disposed = false;
     const destroy = () => { disposed = true; scope.dispose(); };

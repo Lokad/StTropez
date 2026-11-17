@@ -4,9 +4,9 @@ import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import type { Page } from "@playwright/test";
 import type { Workspace, ResourceId, TabId } from "../../src/index.ts";
-import type { CharacterWarningCapture, EditingCandidate } from "../../src/browser/index.ts";
+import type { CharacterWarningCapture, TextEditor } from "../../src/browser/index.ts";
 
-type Fixture = { workspace: Workspace; editor: EditingCandidate; tab: TabId; resource: ResourceId; host: HTMLElement;
+type Fixture = { workspace: Workspace; editor: TextEditor; tab: TabId; resource: ResourceId; host: HTMLElement;
     set: (text: string, caret?: number) => void; capture?: CharacterWarningCapture };
 declare global { interface Window { warningFixture: Fixture } }
 let modules: Map<string, string>, css: string;
@@ -24,15 +24,15 @@ async function fixture(page: Page, text = "a\u00a0b\u200bc", enabled = false) {
     await page.goto("/warning-fixture/");
     await page.evaluate(async ({ text, enabled }) => {
         const path = "/warning-fixture/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
-        const { mountEditingCandidate } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "warnings", variant: "text" }, "Warnings", { value: text });
         const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "warnings"), host = document.createElement("section");
         host.style.cssText = "height:240px;width:600px"; document.body.append(host);
         const before = workspace.diagnostics();
-        try { mountEditingCandidate(host, workspace, tab, { characterWarnings: { allow: ["two"] } }); throw new Error("Invalid allow-list accepted."); }
+        try { mountTextEditor(host, workspace, tab, { characterWarnings: { allow: ["two"] } }); throw new Error("Invalid allow-list accepted."); }
         catch (error) { if (!(error instanceof TypeError)) throw error; }
         if (workspace.diagnostics().views !== before.views || host.childNodes.length) throw new Error("Invalid mount leaked a view or DOM.");
-        const editor = mountEditingCandidate(host, workspace, tab, { ariaLabel: "Warning source", characterWarnings: enabled,
+        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Warning source", characterWarnings: enabled,
             decorate: line => [{ from: line.from, to: line.to, className: "fixture-color" }] });
         window.warningFixture = { workspace, editor, tab, resource: resource.id, host,
             set: (text, caret = 0) => { const document = workspace.document(resource.documentId);

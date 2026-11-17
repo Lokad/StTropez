@@ -21,6 +21,7 @@ test("development assets follow completed watched builds, reject private paths a
     await put("node_modules/typescript-demo/lib/private.d.ts", "not a standard library");
     await put("tests/fixtures/fonts/index.html", "<title>fonts</title>");
     await put("tests/fixtures/fonts/main.ts", "export const ready = true;");
+    for (const mode of ["plain", "react"]) await put(`fixtures/hosts/${mode}-main.ts`, "export const ready = true;");
     await put("examples/demo/main.ts", 'import "./theme.css"; export const ready = true;');
     await put("examples/demo/theme.css", "body { color: blue; }");
     await put("src/browser/regex-worker.ts", 'globalThis.postMessage("worker-first");');

@@ -3,7 +3,8 @@ import { test, expect } from "./fixtures.ts";
 
 for (const mode of ["plain", "react"] as const) test(`${mode} boots without fixture installation and retains cached-page state until final hide`, async ({ page }, testInfo) => {
     testInfo.annotations.push({ type: "page-transition-policy", description: "Synthetic persisted/final pagehide events exercise host policy; real back/forward-cache eligibility is not asserted." });
-    const result = await build({ entryPoints: [`examples/hosts/${mode}-main.${mode === "react" ? "tsx" : "ts"}`],
+    const start = mode === "react" ? "startReactHost" : "startPlainHost";
+    const result = await build({ stdin: { contents: `import { ${start} } from "./examples/hosts/${mode}-main.${mode === "react" ? "tsx" : "ts"}"; ${start}();`, resolveDir: process.cwd(), loader: "ts" },
         outfile: `artifacts/host-lifecycle/${mode}.js`, bundle: true, format: "esm", platform: "browser", target: "es2022", write: false,
         plugins: [{ name: "omit-fixture-installation", setup(builder) {
             builder.onLoad({ filter: /[\\/]hosts[\\/]harness\.ts$/ }, () => ({ contents: "export function installHostHarness() {}", loader: "ts" }));

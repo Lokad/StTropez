@@ -72,13 +72,13 @@ Attach completion and diagnostics to an existing mounted editor:
 
 ```ts
 import type { TabId, Workspace } from "sttropez";
-import { createLspEditor, type EditingCandidate } from "sttropez/browser";
+import { createLspEditor, type TextEditor } from "sttropez/browser";
 import type { LspWorkspace } from "sttropez/protocol";
 
 export function attachLanguage(
     workspace: Workspace,
     tab: TabId,
-    editor: EditingCandidate,
+    editor: TextEditor,
     provider: LspWorkspace,
     onError: (error: unknown) => void
 ) {

@@ -1,6 +1,6 @@
 import { discoverIndentationFolds } from "../../src/index.ts";
 import { createFoldingController } from "../../src/browser/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { TextEditor } from "../../src/browser/index.ts";
 import { createLspFoldingClient } from "../../src/protocol/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import type { DemoProject, DemoFile } from "./project.ts";
@@ -11,7 +11,7 @@ export function initializeDemoFolds(project: DemoProject, file: DemoFile): void 
     const ranges = project.sample.initialFolds?.[file.name], state = file.view.folding.getSnapshot();
     if (ranges && state.revision === 0 && state.generation === 0 && project.baseline(file).version === "sample") file.view.folding.setRanges(state, ranges);
 }
-export function mountDemoFolding(project: DemoProject, file: DemoFile, editor: EditingCandidate, tabSize: () => number) {
+export function mountDemoFolding(project: DemoProject, file: DemoFile, editor: TextEditor, tabSize: () => number) {
     let owner: LspWorkspace | undefined, client: ReturnType<typeof createLspFoldingClient> | undefined, disposed = false;
     const controller = createFoldingController(project.workspace, file.tab, editor, async (document, signal) => {
         if (project.sample.id === "outline" || project.sample.id === "host") return discoverIndentationFolds(document.buffer, outlineFolds(tabSize()));

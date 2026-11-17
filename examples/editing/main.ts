@@ -1,7 +1,7 @@
 import { Workspace } from "../../src/index.ts";
 import type { EditingCommand, LanguageConfiguration, FoldRange, Selection, TextEdit } from "../../src/index.ts";
-import { inputConflictEvent, mountEditingCandidate, createFoldingController } from "../../src/browser/index.ts";
-import type { CandidateEditTransform, FoldDiscovery, FoldCommand, FoldingController, InputConflictDetail } from "../../src/browser/index.ts";
+import { inputConflictEvent, mountTextEditor, createFoldingController } from "../../src/browser/index.ts";
+import type { TextEditorEditTransform, FoldDiscovery, FoldCommand, FoldingController, InputConflictDetail } from "../../src/browser/index.ts";
 import { corpus, corpusIds } from "../../fixtures/workloads.ts";
 import { EditingPresentation } from "../shared/language/presentation.ts";
 import { editorSettled } from "../shared/readiness.ts";
@@ -16,11 +16,11 @@ const primaryTab = workspace.open({ kind: "text", documentId: source.documentId 
 const pane = (id: string) => document.getElementById(id)!;
 const presentation = { primary: new EditingPresentation(), secondary: new EditingPresentation() };
 let failDecoration = false;
-const editors = { primary: mountEditingCandidate(pane("primary"), workspace, primaryTab, { ariaLabel: "Primary source", readOnly: new URLSearchParams(location.search).has("readonly"), decorate: slice => {
+const editors = { primary: mountTextEditor(pane("primary"), workspace, primaryTab, { ariaLabel: "Primary source", readOnly: new URLSearchParams(location.search).has("readonly"), decorate: slice => {
     if (failDecoration) { failDecoration = false; throw new Error("Fixture decoration failure"); }
     return presentation.primary.decorate(slice);
 } }),
-    secondary: mountEditingCandidate(pane("secondary"), workspace, secondaryTab, { ariaLabel: "Secondary source", decorate: presentation.secondary.decorate }) };
+    secondary: mountTextEditor(pane("secondary"), workspace, secondaryTab, { ariaLabel: "Secondary source", decorate: presentation.secondary.decorate }) };
 const findUI = mountFindUI(workspace, primaryTab, editors.primary, presentation.primary), provider = mountProviderUI(workspace, primaryTab, editors.primary, presentation.primary);
 const paragraph = mountParagraphUI(workspace, primaryTab, editors.primary);
 const listeners = new AbortController(); let disposed = false;
@@ -45,7 +45,7 @@ const fixture = { ready: true, setText, edit, select, history,
     get settled() { return !disposed && editorSettled(editors.primary) && editorSettled(editors.secondary); },
     failNextDecoration: () => { failDecoration = true; editors.primary.viewport.invalidate(); },
     captureInsertion: () => editors.primary.captureInsertion(),
-    registerEditTransform: (transform: CandidateEditTransform) => editors.primary.registerEditTransform(transform),
+    registerEditTransform: (transform: TextEditorEditTransform) => editors.primary.registerEditTransform(transform),
     discoverFolds: (discover: FoldDiscovery) => { foldingController?.dispose(); foldingController = createFoldingController(workspace, primaryTab, editors.primary, discover, { delayMs: 0 }); },
     foldCommand: (command: FoldCommand, group?: string) => foldingController?.runCommand(command, group),
     refreshFolds: () => foldingController?.refresh(), foldStatus: () => foldingController?.state.getSnapshot(),

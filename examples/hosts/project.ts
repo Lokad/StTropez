@@ -1,6 +1,6 @@
 import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
 import { navigationMetrics } from "../shared/language/navigation-service.ts";
 import { createProjectBackend } from "../shared/language/project-backend.ts";
 import type { ProjectBackend } from "../shared/language/project-backend.ts";
@@ -13,7 +13,7 @@ import type { LspProjectFactory } from "../shared/language/lsp-project-client.ts
 import type { LspCommandReceipt, LspCommandScope } from "../../src/protocol/index.ts";
 import { applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../../src/protocol/index.ts";
 import type { LspWorkspaceEditNote } from "../../src/protocol/index.ts";
-type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
+type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
 type Job = { origin: Session; input: ProjectCommand; documents: Map<string, DocumentSnapshot>; revisions: Map<string, number>; authority: Map<string, string>;
     leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; applied: boolean; capture: CapturedViewRequest | undefined;
     review?: Review; providerCurrent?: () => boolean; externalCancel?: () => void; changes: ProjectSnapshot["changes"] };
@@ -22,7 +22,7 @@ export type ProjectReview = Readonly<{ token: number; label: string; count: numb
 export type ProjectActionReceipt = Readonly<{ success: boolean; applied: boolean; reason: string; changes: ProjectSnapshot["changes"] }>;
 export type ProjectActionHandle = Readonly<{ cancel: () => void; applied: () => boolean; result: Promise<ProjectActionReceipt> }>;
 export type ProjectActionEditPolicy = (request: LspApplyEdit) => "apply" | "review" | "decline";
-export type ProjectActionIntent = Readonly<{ editor: EditingCandidate; sources: readonly Readonly<{ document: DocumentSnapshot; authority: string }>[];
+export type ProjectActionIntent = Readonly<{ editor: TextEditor; sources: readonly Readonly<{ document: DocumentSnapshot; authority: string }>[];
     edit: LspWorkspaceEdit | null; isCurrent: () => boolean; subscribe: (listener: () => void) => () => void; cancel: () => void;
     execute: (scope: LspCommandScope) => Promise<LspCommandReceipt> }>;
 export type ProjectSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; registered: boolean; pending: boolean;
@@ -32,7 +32,7 @@ let sessionSerial = 0;
 export class HostProjectTools {
     private readonly workspace: Workspace;
     private readonly canCapture: (id: DocumentId) => boolean;
-    private readonly present: (id: DocumentId) => EditingCandidate | undefined;
+    private readonly present: (id: DocumentId) => TextEditor | undefined;
     private changes: ProjectSnapshot["changes"] = [];
     private readonly sessions = new Map<number, Session>();
     private active: Session | undefined;
@@ -54,7 +54,7 @@ export class HostProjectTools {
     private readonly metrics = { requested: 0, serverRequests: 0, applied: 0, rejected: 0, cancelled: 0, failed: 0 };
     private readonly cell = new HostCell<ProjectSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, registered: false, pending: false, status: "idle", message: "Focus a candidate source to use workspace provider commands.", view: null, changes: [], review: null });
     readonly state = this.cell.observable;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, backendFactory?: LspProjectFactory, provider?: LspWorkspace, actionEditPolicy?: ProjectActionEditPolicy, reconnectProvider?: () => void) {
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, backendFactory?: LspProjectFactory, provider?: LspWorkspace, actionEditPolicy?: ProjectActionEditPolicy, reconnectProvider?: () => void) {
         this.reconnectProvider = reconnectProvider;
         this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory; this.provider = provider; this.usesLsp = backendFactory !== undefined || provider !== undefined; this.actionEditPolicy = actionEditPolicy;
     }
@@ -158,7 +158,7 @@ export class HostProjectTools {
     readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ status: "idle", message: "Workspace provider disconnected; local editing remains available." }); };
     private readonly reconnectProvider: (() => void) | undefined;
     readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ status: "idle", message: "Register again with current working snapshots." }); };
-    attach(id: string, tab: TabId, editor: EditingCandidate): () => void {
+    attach(id: string, tab: TabId, editor: TextEditor): () => void {
         const session = { token: ++sessionSerial, id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(session.token, session);
         editor.input.addEventListener("focus", () => { this.active = session; this.publish(); }, { signal: events.signal });
         for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.job?.documents.has(editor.view.documentId)) this.cancel(); }, { signal: events.signal });
@@ -248,7 +248,7 @@ export class HostProjectTools {
             else { this.metrics.rejected++; this.finishReview(job, review, { applied: false, failureReason: error instanceof Error ? error.message : "Provider edits refused." }); this.publish({ message: "Provider edit batch refused without application." }); }
         }
     }
-    canRunAction(editor: EditingCandidate): boolean { return this.usesLsp && !this.disposed && !this.job && !this.provider?.state.getSnapshot().commandRequiresReconnect && [...this.sessions.values()].some(session => session.editor === editor && this.available(session)); }
+    canRunAction(editor: TextEditor): boolean { return this.usesLsp && !this.disposed && !this.job && !this.provider?.state.getSnapshot().commandRequiresReconnect && [...this.sessions.values()].some(session => session.editor === editor && this.available(session)); }
     /** Transfer a confirmed action to the existing review owner, independent of later focus. */
     beginAction(intent: ProjectActionIntent): ProjectActionHandle | undefined {
         const origin = [...this.sessions.values()].find(session => session.editor === intent.editor && this.available(session));

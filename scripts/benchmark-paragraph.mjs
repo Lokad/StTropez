@@ -55,7 +55,7 @@ try {
             const sample = await harness.page.evaluate(() => globalThis.paragraphMeasurement);
             assert.equal(sample.revisionDelta, 0); assert.equal(sample.document.exports, 0); assert.equal(sample.level, 1); assert.ok(sample.runningFrames > 0);
             assert.equal(sample.paragraph.progress.scannedUnits, sample.document.length); assert.deepEqual(sample.paragraph.range, { from: 0, to: sample.document.length }); assert.equal(sample.paragraph.pending, false);
-            assert.ok(sample.paragraph.turns > 1); assert.ok(sample.primary.inputUnits <= 2600); assert.equal(await harness.page.locator("textarea.st-editor").count(), 0);
+            assert.ok(sample.paragraph.turns > 1); assert.ok(sample.primary.inputUnits <= 2600); assert.equal(await harness.page.locator("textarea.st-textarea-baseline").count(), 0);
             for (const view of [sample.primary, sample.secondary]) assert.ok(view.viewport.textUnits <= view.viewport.rows * (Math.max(512, Math.ceil(view.viewport.width / view.viewport.columnWidth)) + 80));
             if (trial >= 3) samples.push(sample);
         }

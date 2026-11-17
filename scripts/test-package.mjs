@@ -178,6 +178,7 @@ try {
     page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     assert.deepEqual(await page.evaluate(() => window.consumer.protocolExports()), { connection: "function", websocket: "function" });
+    assert.deepEqual(await page.evaluate(() => window.consumer.editorExports()), { mount: "function", root: "DIV", input: "TEXTAREA", removed: [] });
     const notice = await page.request.get(`http://127.0.0.1:${server.address().port}/UNICODE-LICENSE.txt`);
     assert.equal(notice.status(), 200); assert.equal(await notice.text(), await readFile("licenses/Unicode-3.0.txt", "utf8"));
     const license = await page.request.get(`http://127.0.0.1:${server.address().port}/LICENSE.txt`);
@@ -194,8 +195,8 @@ try {
     const storage = await page.evaluate(() => window.consumer.storage());
     assert.deepEqual(storage, { original: "a😀\nb", exported: "aX\r\nb", readMetrics: { textExports: 1, sliceUnits: 0 }, batch: { text: "X\r\nYb", mappedEnd: 5, lineOffset: 3 }, lineCount: 2, lineOffset: 3, mappedEnd: 4,
         anchor: { from: 2, to: 4, fromAffinity: "after", toAffinity: "before", onDelete: "collapse" } });
-    const style = await editor.evaluate(element => { const style = getComputedStyle(element); return { color: style.color, background: style.backgroundColor, padding: style.paddingTop }; });
-    assert.deepEqual(style, { color: "rgb(225, 231, 239)", background: "rgb(19, 27, 39)", padding: "20px" });
+    const style = await page.locator("#editor .st-viewport").evaluate(element => { const style = getComputedStyle(element); return { color: style.color, background: style.backgroundColor, padding: style.paddingTop }; });
+    assert.deepEqual(style, { color: "rgb(225, 231, 239)", background: "rgb(19, 27, 39)", padding: "0px" });
     const candidateInput = page.getByRole("textbox", { name: "Restored candidate" });
     await candidateInput.focus(); await candidateInput.press("Control+Home"); await candidateInput.press("!");
     assert.equal(await page.evaluate(() => window.consumer.text()), "!edited restored package");
@@ -223,7 +224,7 @@ try {
     await candidateInput.press("Control+Shift+ArrowRight");
     assert.deepEqual(await page.evaluate(() => { const s = window.consumer.captureCandidate(); return { anchor: s.anchor, head: s.head }; }), { anchor: 7, head: 16 });
     await page.waitForFunction(() => document.querySelector("#candidate .consumer-token")?.textContent === "restored");
-    const wordPoint = await page.locator("#candidate .st-editing-candidate").evaluate(element => {
+    const wordPoint = await page.locator("#candidate .st-editor").evaluate(element => {
         const row = element.querySelector(".st-viewport-row"), walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT), nodes = []; let node;
         while (node = walker.nextNode()) nodes.push(node);
         const locate = offset => { for (const node of nodes) { if (offset <= node.length) return { node, offset }; offset -= node.length; } throw new Error("Missing restored word."); };
@@ -257,7 +258,7 @@ try {
     assert.equal(selectionSets.changed, "XbcX"); assert.equal(selectionSets.restored, "abcd");
     assert.deepEqual(selectionSets.restoredSet, selectionSets.before); assert.equal(selectionSets.after.ranges.length, 2); assert.equal(selectionSets.after.primary, 1);
     assert.equal(selectionSets.alias, true); assert.equal(selectionSets.views, 0); assert.equal(selectionSets.leases, 0);
-    assert.equal(selectionSets.browserSelections.length, 3);
+    assert.equal(selectionSets.browserSelections.length, 2);
     for (const state of selectionSets.browserSelections) {
         assert.deepEqual(state.captured, selectionSets.before); assert.deepEqual(state.fullSet, selectionSets.before);
         assert.equal(state.legacy.ranges.length, 1); assert.equal(state.legacy.ranges[0].anchor, 2); assert.equal(state.legacy.ranges[0].head, 2);

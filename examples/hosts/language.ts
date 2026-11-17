@@ -1,5 +1,5 @@
 import { createFindController, createRegexFindBackend } from "../../src/browser/index.ts";
-import type { EditingCandidate, FindController, FindSnapshot } from "../../src/browser/index.ts";
+import type { TextEditor, FindController, FindSnapshot } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, DocumentId, FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { createProviderController } from "../shared/language/provider-controller.ts";
 import type { ProviderController, ProviderFactory, ProviderSnapshot } from "../shared/language/provider-contract.ts";
@@ -7,7 +7,7 @@ import type { JsonValue } from "../../src/protocol/index.ts";
 import { EditingPresentation } from "../shared/language/presentation.ts";
 import { HostCell } from "../shared/observable.ts";
 
-type Session = { id: string; editor: EditingCandidate; tab: TabId; target: TabTarget; saveTarget: TabTarget; presentation: EditingPresentation;
+type Session = { id: string; editor: TextEditor; tab: TabId; target: TabTarget; saveTarget: TabTarget; presentation: EditingPresentation;
     provider?: ProviderController; reference?: ComparisonBaseline; find?: FindController; stopFind?: () => void; initialized: boolean };
 type DetachedOwner = Readonly<{ id: string; target: TabTarget; documentId: DocumentId; reference?: ComparisonBaseline }>;
 type FindCommand = Readonly<{ kind: "navigate"; direction: 1 | -1 } | { kind: "replace"; text: string }>;
@@ -70,7 +70,7 @@ export class HostLanguageTools {
         if (compatible && !this.active) this.activate(session, false);
     }
     clearRetainedView(): void { this.cancelFindCommand(); this.detachedOwner = undefined; }
-    attach(id: string, tab: TabId, editor: EditingCandidate, presentation: EditingPresentation): () => void {
+    attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void {
         if (this.sessions.has(id)) throw new Error("Language view already mounted.");
         const provider = this.providerFactory(this.workspace, tab, editor, { autoConnect: false, canCapture: () => this.canCapture(editor.view.documentId) });
         const target = this.workspace.captureTab(tab), session: Session = { id, tab, target, saveTarget: target, editor, presentation, provider, initialized: false }, listeners = new AbortController();
@@ -94,7 +94,7 @@ export class HostLanguageTools {
         }, { signal: listeners.signal });
         update(); this.resume(session); return this.detachSession(session, listeners, unsubscribe);
     }
-    attachReferenceFind(id: string, target: TabTarget, editor: EditingCandidate, presentation: EditingPresentation, baseline: ComparisonBaseline, saveTarget: TabTarget, resume = false): () => void {
+    attachReferenceFind(id: string, target: TabTarget, editor: TextEditor, presentation: EditingPresentation, baseline: ComparisonBaseline, saveTarget: TabTarget, resume = false): () => void {
         if (this.sessions.has(id)) throw new Error("Find view already mounted.");
         const tab = this.workspace.resolveTab(target);
         if (tab?.surface.kind !== "text" || tab.surface.documentId !== editor.view.documentId || !this.workspace.ownsDocumentView(editor.view)

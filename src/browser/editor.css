@@ -7,21 +7,6 @@
 .st-documentation .st-documentation-link { color: inherit; text-decoration: underline; }
 .st-documentation button.st-documentation-link { display: inline; border: 0; border-radius: 0; background: none; padding: 0; font: inherit; cursor: pointer; }
 .st-documentation > :last-child { margin-bottom: 0; }
-.st-editor {
-    display: block;
-    box-sizing: border-box;
-    width: 100%;
-    height: 100%;
-    padding: 20px;
-    resize: none;
-    border: 0;
-    outline-offset: -3px;
-    color: var(--st-foreground, #e1e7ef);
-    background: var(--st-background, #131b27);
-    font: var(--st-font-size, 14px)/var(--st-line-height, 1.6) var(--st-font, ui-monospace, Consolas, monospace);
-    tab-size: 4;
-}
-
 .st-viewport {
     direction: ltr;
     position: relative;
@@ -57,7 +42,7 @@
 .st-matching-bracket { background: var(--st-bracket-background, #397e8440); outline: 1px solid var(--st-bracket-border, #5cb9b3); outline-offset: -1px; }
 .st-character-warning { background: var(--st-character-warning-background, #d89b2430); outline: 1px dotted var(--st-character-warning-border, #e9ad43); }
 .st-viewport-selected { background: var(--st-selection, #24496b); }
-.st-editing-candidate { cursor: text; user-select: none; }
+.st-editor { cursor: text; user-select: none; }
 .st-input-context { position: absolute; width: 1px; min-height: 1px; box-sizing: border-box; padding: 0; margin: 0; border: 0; resize: none; overflow: hidden;
     font: inherit; line-height: inherit; tab-size: inherit; direction: var(--st-text-direction, ltr); opacity: 0; }
 .st-composing .st-input-context { width: 240px; max-width: 40%; opacity: 1; color: inherit; background: var(--st-background, #131b27); }

@@ -66,7 +66,7 @@ test("failed command turns release input and report the cause before later typin
 test("read-only Tab traverses surrounding host controls in both directions", async ({ page }) => {
     await page.goto("/editing/?readonly"); await ready(page);
     await page.evaluate(() => {
-        const root = document.querySelector("#primary .st-editing-candidate")!;
+        const root = document.querySelector("#primary .st-editor")!;
         const before = document.createElement("button"), after = document.createElement("button");
         before.textContent = "Before source"; after.textContent = "After source"; root.before(before); root.after(after);
     });
@@ -214,7 +214,7 @@ test("a read-only view keeps bounded navigation and Find while its peer retains 
         selected.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 77, pointerType: "mouse", button: 0, clientX: rect.left + 1, clientY: rect.top + rect.height / 2 }));
         const data = new DataTransfer(); Object.defineProperty(data, "effectAllowed", { value: "uninitialized", writable: true });
         const start = new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: data }); root.dispatchEvent(start);
-        const target = document.querySelector("#secondary .st-editing-candidate")!, box = target.getBoundingClientRect();
+        const target = document.querySelector("#secondary .st-editor")!, box = target.getBoundingClientRect();
         for (const type of ["dragover", "drop"]) target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: data, clientX: box.left + 15, clientY: box.top + 15 }));
         document.dispatchEvent(new Event("dragend")); return { refused: start.defaultPrevented, effect: data.effectAllowed };
     });

@@ -9,7 +9,7 @@ import type { Observable } from "../core/observable.ts";
 import type { SearchMatch, SearchStep } from "../core/search.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { Store } from "../core/observable.ts";
-import type { EditingCandidate } from "./editing-candidate.ts";
+import type { TextEditor } from "./text-editor.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 const literalBudget = Object.freeze({ units: 4096, matches: 1024, calls: 32 });
 export type FindOptions = Readonly<{ wholeWord?: boolean; matchCase?: boolean; regularExpression?: boolean }>;
@@ -29,7 +29,7 @@ function isAsync<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
 }
 
 /** Host-rendered find UI; scanning/planning yield, while replacement uses one captured transaction. */
-export function createFindController(workspace: Workspace, tabId: TabId, editor: EditingCandidate, configuration: FindConfiguration = {}): FindController {
+export function createFindController(workspace: Workspace, tabId: TabId, editor: TextEditor, configuration: FindConfiguration = {}): FindController {
     const backend = configuration.regularExpression, regexDelay = configuration.regularExpressionDelayMs ?? 80;
     if (!Number.isFinite(regexDelay) || regexDelay < 0 || regexDelay > 1000) throw new RangeError("Invalid regular-expression query delay.");
     if (backend !== undefined && (typeof backend?.search !== "function" || typeof backend.replace !== "function" || typeof backend.dispose !== "function")) throw new TypeError("Expected a find backend.");

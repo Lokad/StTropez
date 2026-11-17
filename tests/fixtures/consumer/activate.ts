@@ -1,13 +1,13 @@
 import { Workspace } from "sttropez";
 import type { Selection, TabId, TextResourceHandle } from "sttropez";
-import { createFindController, createRegexFindBackend, mountEditingCandidate } from "sttropez/browser";
-import type { EditingCandidate, FindController, ViewState } from "sttropez/browser";
+import { createFindController, createRegexFindBackend, mountTextEditor } from "sttropez/browser";
+import type { TextEditor, FindController, ViewState } from "sttropez/browser";
 
 /** Loaded only by an explicit host action; model/history outlive individual DOM attachments. */
 export function createActivationSession(original: string, selection: Selection, shared?: Readonly<{ workspace: Workspace; source: TextResourceHandle; tab: () => TabId | undefined; label?: string; focus?: boolean }>) {
     const workspace = shared?.workspace ?? new Workspace(), source = shared?.source ?? workspace.createTextResource({ scope: "activation", resource: "source", variant: "working" }, "Source", { value: original });
     const ownTab = shared ? undefined : workspace.open({ kind: "text", documentId: source.documentId }, "source"), view = workspace.createDocumentView(source.documentId, selection), history = workspace.observeHistory(source.documentId);
-    let editor: EditingCandidate | undefined, find: FindController | undefined, stopFind: (() => void) | undefined, viewState: ViewState | undefined;
+    let editor: TextEditor | undefined, find: FindController | undefined, stopFind: (() => void) | undefined, viewState: ViewState | undefined;
     let disposed = false, mounts = 0, workers = 0;
     const busy = () => { const s = editor?.snapshot(); return !!s && (s.composing || s.pendingInput || s.pendingCommand || s.pendingWord || s.pendingGrapheme || s.pendingDragScroll); };
     const unmount = () => { if (busy()) return false; stopFind?.(); stopFind = undefined; find?.destroy(); find = undefined;
@@ -20,7 +20,7 @@ export function createActivationSession(original: string, selection: Selection, 
             const current = view.getSnapshot().selection;
             const changed = selection && (selection.anchor !== current.anchor || selection.head !== current.head);
             if (changed) view.setSelection(workspace.document(source.documentId).revision, selection);
-            editor = mountEditingCandidate(host, workspace, tab, { ariaLabel: shared?.label ?? "Activated source", view, readOnly }); mounts++;
+            editor = mountTextEditor(host, workspace, tab, { ariaLabel: shared?.label ?? "Activated source", view, readOnly }); mounts++;
             if (viewState) editor.restoreView({ ...viewState, ...view.getSnapshot().selection, selectionSet: view.getSnapshot().selectionSet });
             if (changed || !viewState) editor.viewport.revealOffset(view.getSnapshot().selection.head);
             find = createFindController(workspace, tab, editor, { regularExpression: createRegexFindBackend({ clock: host.ownerDocument.defaultView!,

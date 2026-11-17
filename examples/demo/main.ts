@@ -1,5 +1,5 @@
-import { mountEditingCandidate, mountTextComparison, createFindController, createFoldingController } from "../../src/browser/index.ts";
-import type { EditingCandidate, FindController, TextComparison, FoldingController } from "../../src/browser/index.ts";
+import { mountTextEditor, mountTextComparison, createFindController, createFoldingController } from "../../src/browser/index.ts";
+import type { TextEditor, FindController, TextComparison, FoldingController } from "../../src/browser/index.ts";
 import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
 import { selectDemoProvider } from "./provider.ts";
@@ -24,7 +24,7 @@ const projects = new Map<SampleId, DemoProject>(), activeFiles = new Map<SampleI
 const listeners = new AbortController(), sample = element("sample") as HTMLSelectElement;
 const openProvider = selectDemoProvider(new URL(location.href).searchParams.get("provider") ?? document.documentElement.dataset.demoProvider ?? "browser");
 for (const choice of sampleChoices) { const option = document.createElement("option"); option.value = choice.id; option.textContent = choice.title; sample.append(option); }
-let project: DemoProject | undefined, active: DemoFile | undefined, editor: EditingCandidate | undefined;
+let project: DemoProject | undefined, active: DemoFile | undefined, editor: TextEditor | undefined;
 let comparison: TextComparison | undefined, find: FindController | undefined;
 let output: ReturnType<typeof mountDemoOutput> | undefined;
 let panel: "javascript" | "problems" | "changes" = "javascript", disposed = false, opening = 0;
@@ -39,7 +39,7 @@ let stopRender: (() => void) | undefined;
 let reviewLabel: HTMLSpanElement | undefined;
 let hostIntegrations: ReturnType<typeof mountHostIntegrations> | undefined;
 const hostLanguage = () => project?.sample.id === "outline" || project?.sample.id === "host";
-function configurePresentation(view: EditingCandidate | undefined): void {
+function configurePresentation(view: TextEditor | undefined): void {
     if (!view) return;
     view.viewport.configureColumnRulers(field("view-rulers").checked ? [80, 120] : []);
     view.viewport.configureCurrentLineHighlight(field("view-current-line").checked);
@@ -48,7 +48,7 @@ function configurePresentation(view: EditingCandidate | undefined): void {
 }
 let referencePresentation: DemoPresentation | undefined;
 let problemPage = 0, problemBatch: unknown;
-function refreshBrackets(captured: EditingCandidate | undefined) {
+function refreshBrackets(captured: TextEditor | undefined) {
     // Plain-source notifications may run inside a Workspace publication; retain the owning view.
     if (captured) queueMicrotask(() => { if (!captured.activity().disposed) captured.bracketMatching.refresh(); });
 }
@@ -247,7 +247,7 @@ function detachView(): void {
     element("editor").replaceChildren(); element("panel-content").replaceChildren();
     if (metadataFrame !== undefined) cancelAnimationFrame(metadataFrame); metadataFrame = undefined;
 }
-function openLocation(capturedProject: DemoProject, file: DemoFile, capturedEditor: EditingCandidate, target: DemoSymbolTarget): void {
+function openLocation(capturedProject: DemoProject, file: DemoFile, capturedEditor: TextEditor, target: DemoSymbolTarget): void {
     const state = capturedEditor.activity();
     if (disposed || project !== capturedProject || editor !== capturedEditor || state.disposed || state.composing || state.pendingInput || state.pendingCommand) return;
     const destination = capturedProject.files.find(file => file.resource.documentId === target.documentId);
@@ -258,7 +258,7 @@ function openLocation(capturedProject: DemoProject, file: DemoFile, capturedEdit
     mountFile(destination, true); destination.view.setSelection(target.revision, { anchor: target.from, head: target.to });
     editor?.viewport.revealOffset(target.from); editor?.focus();
 }
-function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEditor: EditingCandidate) {
+function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEditor: TextEditor) {
     languageViewFailure = undefined;
     if (capturedProject.sample.id === "outline" || capturedProject.sample.id === "host") return;
     const report = (error: unknown) => {
@@ -320,7 +320,7 @@ function mountFile(file: DemoFile, focus = false): void {
         });
         stopReference = () => { referenceSyncActive = false; unsubscribeReference(); }; configureReference();
     } else {
-        editor = mountEditingCandidate(surface, project.workspace, file.tab,
+        editor = mountTextEditor(surface, project.workspace, file.tab,
             { view: file.view, ariaLabel: file.name, decorate: line => [...(project?.sample.id === "host" ? hostDecorations(line) : presentation.decorate(line)), ...(languageView?.decorate(line) ?? [])] });
         renderProblems();
     }
@@ -365,8 +365,8 @@ function mountFile(file: DemoFile, focus = false): void {
     renderMetadata(); renderLanguage(); renderOutput(); if (focus) editor.focus();
 }
 // View IDs are local to a Workspace; each sample owns a separate workspace.
-const savedViews = new Map<DemoFile["view"], ReturnType<EditingCandidate["captureView"]>>();
-const locations: { project: DemoProject; file: DemoFile; revision: number; selected: ReturnType<DemoFile["view"]["getSnapshot"]>["selectionSet"]; view: ReturnType<EditingCandidate["captureView"]> }[] = [];
+const savedViews = new Map<DemoFile["view"], ReturnType<TextEditor["captureView"]>>();
+const locations: { project: DemoProject; file: DemoFile; revision: number; selected: ReturnType<DemoFile["view"]["getSnapshot"]>["selectionSet"]; view: ReturnType<TextEditor["captureView"]> }[] = [];
 function goBack(): void {
     if (!project || !editor || editor.activity().composing || editor.activity().pendingInput || editor.activity().pendingCommand) return;
     let index = locations.length - 1; while (index >= 0 && locations[index]!.project !== project) index--; if (index < 0) return;

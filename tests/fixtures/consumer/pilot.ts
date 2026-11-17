@@ -1,7 +1,7 @@
 import { TextBuffer, Workspace, WorkspaceCommands } from "sttropez";
 import type { ComparisonBaseline, SaveOutcome, SaveResponse, SaveSubmission, Selection } from "sttropez";
-import { mountEditingCandidate, mountTextComparison } from "sttropez/browser";
-import type { EditingCandidate, TextComparison } from "sttropez/browser";
+import { mountTextEditor, mountTextComparison } from "sttropez/browser";
+import type { TextEditor, TextComparison } from "sttropez/browser";
 import { comparisonSettled, editorSettled } from "./readiness.js";
 
 /** A host-owned local fixture. Every editor/model import resolves from the restored package. */
@@ -25,7 +25,7 @@ export function mountPackagedPilot(host: HTMLElement, original: string) {
         title.textContent = label; node.className = "pilot-editor"; section.append(title, node); editors.append(section); return node; };
     const primaryHost = editorHost("Source"), peerHost = editorHost("Independent source view"), comparisonHost = owner.createElement("div");
     root.append(heading, controls, status, message, progress, editors, comparisonHost); host.append(root);
-    let primary: EditingCandidate | undefined, peer: EditingCandidate | undefined, comparison: TextComparison | undefined;
+    let primary: TextEditor | undefined, peer: TextEditor | undefined, comparison: TextComparison | undefined;
     let unsubscribeComparison = () => {}, mounts = 0, disposed = false, released = false, background = 0, pendingCommands = 0, reportedFailures = 0, trustedInputEvents = 0, untrustedInputEvents = 0;
     root.addEventListener("input", event => { if (event.isTrusted) trustedInputEvents++; else untrustedInputEvents++; }, { signal: listeners.signal });
     let reviewedVersion: string | null = null, remote: ComparisonBaseline | null = null, savedReference: ComparisonBaseline | null = null;
@@ -75,8 +75,8 @@ export function mountPackagedPilot(host: HTMLElement, original: string) {
     const reviewedSave = button("Save reviewed source", () => startSave(true));
     const showSaved = button("Show saved reference", () => { if (savedReference) refreshReference(savedReference); });
     function mountViews(baseline: ComparisonBaseline): void {
-        primary = mountEditingCandidate(primaryHost, workspace, tab, { view: primaryView, ariaLabel: "Primary source" });
-        peer = mountEditingCandidate(peerHost, workspace, tab, { view: peerView, ariaLabel: "Secondary source" });
+        primary = mountTextEditor(primaryHost, workspace, tab, { view: primaryView, ariaLabel: "Primary source" });
+        peer = mountTextEditor(peerHost, workspace, tab, { view: peerView, ariaLabel: "Secondary source" });
         comparison = mountTextComparison(comparisonHost, workspace, tab, baseline, { view: reviewView, ariaLabel: "Source review" });
         unsubscribeComparison = comparison.controller.subscribe(render); mounts++;
     }

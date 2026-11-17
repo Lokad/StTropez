@@ -1,6 +1,6 @@
 import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../src/index.ts";
 import { captureViewRequest } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, EditingCandidate } from "../../src/browser/index.ts";
+import type { CapturedViewRequest, TextEditor } from "../../src/browser/index.ts";
 import { navigationMetrics } from "../shared/language/navigation-service.ts";
 import { createActionBackend } from "../shared/language/action-backend.ts";
 import type { ActionBackend, ActionProviderBatch } from "../shared/language/action-backend.ts";
@@ -12,7 +12,7 @@ import { RpcError, applyLspWorkspaceEdit, previewLspWorkspaceEdit } from "../../
 import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
 import type { LspActionFactory } from "../shared/language/lsp-action-client.ts";
 import type { HostProjectTools, ProjectActionHandle } from "./project.ts";
-type Session = { token: number; id: string; target: TabTarget; editor: EditingCandidate };
+type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
 type Job = { origin: Session; input: ActionInput; document: DocumentSnapshot; capture: CapturedViewRequest;
     sources: Map<DocumentId, Readonly<{ document: DocumentSnapshot; authority: string }>>; leases: ResourceLease[];
     stops: (() => void)[]; timer: number; invalid: boolean; ready: boolean; result: ActionResult | undefined;
@@ -28,7 +28,7 @@ let serial = 0;
 export class HostActionsTools {
     private readonly workspace: Workspace;
     private readonly canCapture: (id: DocumentId) => boolean;
-    private readonly present: (id: DocumentId) => EditingCandidate | undefined;
+    private readonly present: (id: DocumentId) => TextEditor | undefined;
     private readonly sessions = new Map<number, Session>();
     private active: Session | undefined;
     private job: Job | undefined;
@@ -52,7 +52,7 @@ export class HostActionsTools {
     private readonly cell = new HostCell<ActionsSnapshot>({ available: false, connected: false, disconnected: false, reconnectRequired: false, pending: false, canApply: false, token: null, module: "sample-utils", status: "idle", message: "Focus a candidate source to preview a module-import action.", title: "", disabled: null, work: 0, total: 0, command: null, edits: [], changed: null, changes: [], choices: [], choice: null, choicePage: 0, resolving: false, page: 0, editCount: 0 });
     readonly state = this.cell.observable;
     private readonly reconnectProvider: (() => void) | undefined;
-    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => EditingCandidate | undefined, backendFactory?: LspActionFactory, reviewOwner?: HostProjectTools, provider?: LspWorkspace, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider;
+    constructor(workspace: Workspace, canCapture: (id: DocumentId) => boolean, present: (id: DocumentId) => TextEditor | undefined, backendFactory?: LspActionFactory, reviewOwner?: HostProjectTools, provider?: LspWorkspace, reconnectProvider?: () => void) { this.reconnectProvider = reconnectProvider;
         this.provider = provider;
         this.workspace = workspace; this.canCapture = canCapture; this.present = present; this.backendFactory = backendFactory; this.reviewOwner = reviewOwner; this.usesLsp = backendFactory !== undefined;
         this.stopReviewOwner = this.usesLsp ? reviewOwner?.state.subscribe(() => this.publish()) : undefined;
@@ -139,7 +139,7 @@ export class HostActionsTools {
             else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) { event.preventDefault(); this.request(); }
         }, { signal: events.signal });
     };
-    attach(id: string, tab: TabId, editor: EditingCandidate): () => void {
+    attach(id: string, tab: TabId, editor: TextEditor): () => void {
         const s = { token: ++serial, id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
         editor.input.addEventListener("keydown", event => {

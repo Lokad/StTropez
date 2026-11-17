@@ -22,7 +22,7 @@ try {
             await scene.mount(host, editor); await ready();
             await harness.page.evaluate(text => { const s = window.hostFixture.snapshot(); window.hostFixture.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original); await ready();
             assert.equal(await harness.page.locator("textarea.st-input-context").count(), editor === "candidate" ? 2 : 0);
-            assert.equal(await harness.page.locator("textarea.st-editor").count(), editor === "native" ? 2 : 0);
+            assert.equal(await harness.page.locator("textarea.st-textarea-baseline").count(), editor === "native" ? 2 : 0);
             const before = await snapshot(); if (editor === "candidate") assert.equal(before.source.exports, 0);
             const start = await clock();
             activeCase.stage = "proposal";

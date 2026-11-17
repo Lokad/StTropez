@@ -14,13 +14,13 @@ test("input refresh reuses bounded projections while repairing native state and 
     const result = await page.evaluate(async () => {
         const path = "/input-context-reuse/";
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
-        const { mountEditingCandidate } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const { inputContext } = await import(path + "context.js") as typeof import("../../src/browser/input-context.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "context-reuse", variant: "text" }, "Context",
             { value: "const row = '東京 😀';\r\n".repeat(100000) });
         const tab = workspace.open({ kind: "text", documentId: source.documentId }, "context"), host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
-        const editor = mountEditingCandidate(host, workspace, tab), input = editor.input, target = workspace.captureTab(tab);
+        const editor = mountTextEditor(host, workspace, tab), input = editor.input, target = workspace.captureTab(tab);
         const doc = () => workspace.document(source.documentId), refresh = () => input.dispatchEvent(new KeyboardEvent("keyup", { key: "Tab", bubbles: true }));
         const settle = async () => { for (let i = 0; i < 60; i++) {
             await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));

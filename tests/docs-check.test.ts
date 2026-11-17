@@ -67,7 +67,7 @@ test("documentation links resolve rendered headings, references and repository p
 });
 
 test("documentation policy checks API structure and authored prose while retaining real identifiers and commands", () => {
-    const valid = "# API\n\nPurpose.\n\n## Use\n\n```ts\nexport const now = 'pilot';\n```\n\n## Contract\n\n`mountEditingCandidate`, `?editor=candidate`, `bench:pilot` and `now` keep their names.\nThe budget is 4 ms; F12 opens developer tools.\n\n## Host responsibilities\n\nDispose resources.\n\n## Not covered\n\nSee [support](README.md#support-matrix).";
+    const valid = "# API\n\nPurpose.\n\n## Use\n\n```ts\nexport const now = 'pilot';\n```\n\n## Contract\n\n`mountTextEditor`, `?editor=candidate`, `bench:pilot` and `now` keep their names.\nThe budget is 4 ms; F12 opens developer tools.\n\n## Host responsibilities\n\nDispose resources.\n\n## Not covered\n\nSee [support](README.md#support-matrix).";
     assert.deepEqual(auditPage(parseDocumentation("docs/api.md", valid), { api: true }), []);
     const prose = parseDocumentation("docs/api.md", "# API\n\nThe operation\nprevi**ous**ly returned data.\n\nM3 delivered 12 tests passed on 2026-11-16 at commit abc1234.");
     const issues = auditPage(prose);

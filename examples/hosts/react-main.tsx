@@ -29,7 +29,10 @@ import { configurationFormModel, formSavePanelModel, formSaveKey } from "./confi
 import { transferFormModel, runPanelModel } from "./transfer-panel.ts";
 import "./style.css";
 
-const controller = new HostController(), bindings = new ViewBindings(controller, hostEditor());
+import type { NativeEditorMount } from "./bindings.ts";
+
+export function startReactHost(mountNative?: NativeEditorMount) {
+const controller = new HostController(), bindings = new ViewBindings(controller, mountNative ? hostEditor() : "candidate", mountNative);
 const draft = new HostDraftRecovery(controller, createBrowserDraftStore(window)); draft.attachNavigation(window);
 const counters = { form: 0, metadata: 0 };
 const formCommitted = () => { counters.form++; };
@@ -244,3 +247,5 @@ const mount = () => {
 const lifecycle = new HostLifecycle(window, document.getElementById("recover")!, { controller, bindings, draft, mount, unmount });
 lifecycle.start();
 installHostHarness(controller, bindings, "react", lifecycle, () => ({ ...counters }), draft);
+
+}

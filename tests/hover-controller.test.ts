@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Workspace } from "../src/index.ts";
-import type { EditingCandidate } from "../src/browser/index.ts";
+import type { TextEditor } from "../src/browser/index.ts";
 import { createHoverController } from "../examples/shared/language/hover-controller.ts";
 import { provideHover } from "../fixtures/language/hover.ts";
 import type { HoverInput } from "../fixtures/language/hover.ts";
@@ -35,7 +35,7 @@ function fixture(text = "const café", backend?: HoverBackend) {
     const workspace = new Workspace(), documentId = workspace.createDocument({ scope: "hover", resource: "source", variant: "working" }, "Source", text), tab = workspace.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId);
     const timers = new Map<number, () => void>(), workers: FixtureWorker[] = []; let serial = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { setTimeout: (work: () => void) => { timers.set(++serial, work); return serial; }, clearTimeout: (id: number) => timers.delete(id) } });
-    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), activity: () => ({ composing: false, disposed: false }), focus: () => { throw new Error("Hover must not focus an editor."); } } as unknown as EditingCandidate;
+    const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), activity: () => ({ composing: false, disposed: false }), focus: () => { throw new Error("Hover must not focus an editor."); } } as unknown as TextEditor;
     const hover = createHoverController(workspace, tab, editor, { ...(backend ? { backend } : {}), createWorker: () => { const worker = new FixtureWorker(); workers.push(worker); return worker as unknown as Worker; } });
     return { workspace, documentId, tab, view, hover, timers, workers, leasesBefore: workspace.diagnostics().leases, finish: () => { hover.destroy(); view.dispose(); workspace.close(tab); assert.equal(timers.size, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().subscriptions, 0); } };
 }

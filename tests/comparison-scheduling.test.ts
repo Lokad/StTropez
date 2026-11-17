@@ -6,7 +6,7 @@ import type { ComparisonSnapshot, DocumentView } from "../src/index.ts";
 import { createComparisonAlignment } from "../src/browser/comparison-alignment.ts";
 import { createComparisonScroll } from "../src/browser/comparison-scroll.ts";
 import { createComparisonPanes } from "../src/browser/comparison-panes.ts";
-import type { EditingCandidate } from "../src/browser/editing-candidate.ts";
+import type { TextEditor } from "../src/browser/text-editor.ts";
 import type { TextViewport, ViewportComparisonRows } from "../src/browser/viewport.ts";
 
 function fixture(count = 5000) {
@@ -38,9 +38,9 @@ function fixture(count = 5000) {
             scroll: (to: number) => { top = to; element.dispatchEvent(new Event("scroll")); } };
     }
     const working = viewport(view), reference = viewport(refView);
-    const editor = { view, viewport: working.value, input: new EventTarget(), activity: () => ({ composing, pendingInput: false, pendingCommand: false, pendingDragScroll: false }) } as unknown as EditingCandidate;
+    const editor = { view, viewport: working.value, input: new EventTarget(), activity: () => ({ composing, pendingInput: false, pendingCommand: false, pendingDragScroll: false }) } as unknown as TextEditor;
     let compositions = 0, focuses = 0;
-    const baselineEditor = { view: refView, viewport: reference.value, input: new EventTarget(), focus: () => { focuses++; } } as unknown as EditingCandidate;
+    const baselineEditor = { view: refView, viewport: reference.value, input: new EventTarget(), focus: () => { focuses++; } } as unknown as TextEditor;
     const panes = createComparisonPanes(editor, () => { compositions++; }); panes.setReference(baselineEditor);
     const alignment = createComparisonAlignment(win, panes, () => state, () => notifications++, () => false);
     const step = () => { const entry = tasks.entries().next().value; assert.ok(entry, "Expected scheduled work"); tasks.delete(entry[0]); entry[1](); };

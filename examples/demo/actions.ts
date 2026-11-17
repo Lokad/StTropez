@@ -1,5 +1,5 @@
 import type { Workspace } from "../../src/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { TextEditor } from "../../src/browser/index.ts";
 import type { LspCodeAction, LspWorkspace } from "../../src/protocol/index.ts";
 import { HostActionsTools } from "../hosts/code-actions.ts";
 import { HostProjectTools } from "../hosts/project.ts";
@@ -11,7 +11,7 @@ import type { DemoLanguage } from "./language.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 
 /** Contextual presentation; the existing action controller owns captures, validation and history. */
-export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file: DemoFile, editor: EditingCandidate, provider: LspWorkspace,
+export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file: DemoFile, editor: TextEditor, provider: LspWorkspace,
     language: DemoLanguage, valid: () => boolean, dismissOther: () => void) {
     const events = new AbortController(); let disposed = false, commandAction = false;
     scope.defer(() => { disposed = true; events.abort(); });

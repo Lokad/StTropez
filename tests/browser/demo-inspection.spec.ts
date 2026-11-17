@@ -43,7 +43,7 @@ test("real type inspection works from Code, keyboard and pointer without changin
     await source.focus(); await expect(page.locator("#editor .demo-occurrence-read")).toHaveCount(2);
     await page.evaluate(point => {
         document.getElementById("walkthrough-toggle")!.focus();
-        document.querySelector("#editor .st-editing-candidate")!.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: point.x, clientY: point.y }));
+        document.querySelector("#editor .st-editor")!.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: point.x, clientY: point.y }));
     }, point);
     await expect(hover(page)).toContainText("calculateTotal(items: readonly CartItem[]"); await expect(page.locator("#walkthrough-toggle")).toBeFocused();
     await expect(page.locator("#files")).not.toContainText("●");

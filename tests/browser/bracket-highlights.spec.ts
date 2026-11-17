@@ -4,9 +4,9 @@ import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import type { Page } from "@playwright/test";
 import type { Workspace, ResourceId, TabId } from "../../src/index.ts";
-import type { EditingCandidate } from "../../src/browser/index.ts";
+import type { TextEditor } from "../../src/browser/index.ts";
 
-type Fixture = { workspace: Workspace; editor: EditingCandidate; tab: TabId; resource: ResourceId; host: HTMLElement; calls: number; allowed: boolean;
+type Fixture = { workspace: Workspace; editor: TextEditor; tab: TabId; resource: ResourceId; host: HTMLElement; calls: number; allowed: boolean;
     set: (text: string, caret: number) => void; select: (caret: number) => void; states: string[]; stop?: () => void };
 declare global { interface Window { bracketFixture: Fixture } }
 let modules: Map<string, string>, css: string;
@@ -24,16 +24,16 @@ async function fixture(page: Page, shadow = false) {
     await page.goto("/bracket-fixture/");
     await page.evaluate(async ({ shadow, css }) => {
         const path = "/bracket-fixture/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
-        const { mountEditingCandidate } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "brackets", variant: "text" }, "Brackets", { value: "(a) [b]" });
         const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "brackets"), container = document.createElement("div"); document.body.append(container);
         const root = shadow ? container.attachShadow({ mode: "open" }) : container, style = document.createElement("style"), host = document.createElement("section");
         style.textContent = css + ".fixture-color { color: rgb(160, 30, 120) }"; host.style.cssText = "height:240px;width:600px"; root.append(style, host);
         const before = workspace.diagnostics();
-        try { mountEditingCandidate(host, workspace, tab, { bracketMatching: { maxWorkUnits: 0 } }); throw new Error("Invalid matching limits accepted."); }
+        try { mountTextEditor(host, workspace, tab, { bracketMatching: { maxWorkUnits: 0 } }); throw new Error("Invalid matching limits accepted."); }
         catch (error) { if (!(error instanceof RangeError)) throw error; }
         if (workspace.diagnostics().views !== before.views || host.childNodes.length) throw new Error("Invalid mount leaked a view or DOM.");
-        const editor = mountEditingCandidate(host, workspace, tab, { ariaLabel: "Bracket source", decorate: line => [{ from: line.from, to: line.to, className: "fixture-color" }] });
+        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Bracket source", decorate: line => [{ from: line.from, to: line.to, className: "fixture-color" }] });
         const f: Fixture = { workspace, editor, tab, resource: resource.id, host, calls: 0, allowed: false, states: [],
             set: (text, caret) => { const document = workspace.document(resource.documentId);
                 const result = workspace.edit({ documentId: resource.documentId, expectedRevision: document.revision, origin: "host", view: editor.view,

@@ -12,7 +12,7 @@ try {
             && !state.primary.viewport.pending && !state.secondary.viewport.pending; });
     await ready();
     assert.equal(await harness.page.locator("textarea.st-input-context").count(), 2);
-    assert.equal(await harness.page.locator("textarea.st-editor").count(), 0, "Whole-value fallback satisfied the candidate measurement.");
+    assert.equal(await harness.page.locator("textarea.st-textarea-baseline").count(), 0, "Whole-value fallback satisfied the candidate measurement.");
     const cases = [];
     for (const corpus of corpusIds) for (const position of ["start", "middle", "end"]) {
         await harness.page.evaluate(corpus => window.editingFixture.load(corpus), corpus); await ready();
@@ -74,7 +74,7 @@ try {
     });
     assert.equal((await sourceIdentity()).sha256, source.sha256);
     const report = { schemaVersion: 2, created: new Date().toISOString(), source, environment: { ...environment(), browser: harness.browser.version(), display },
-        runtime: "bounded-editing-candidate", activeViews: 2, features: { visibleLineTokens: true, find: "idle", provider: "connected; no pending requests" }, cases, errors: harness.errors,
+        runtime: "bounded-text-editor", activeViews: 2, features: { visibleLineTokens: true, find: "idle", provider: "connected; no pending requests" }, cases, errors: harness.errors,
         note: "Actual automated keyboard insertion through bounded native context into core history and two DOM views. Input-handler elapsed time covers the adapter input-event handler, model commit, context refresh and synchronous work invoked within that span, including browser work if triggered there. It excludes beforeinput, native work before the handler and later scheduled work; it is not process CPU time. Beforeinput-to-frame-ready requires exact inserted text, revision, primary selection and both rendered view revisions across two consecutive animation frames. Complete-action proxy starts before the automation keyboard call and ends after the same readiness promise returns, including transport and settlement. Neither proxy measures physical presentation. No IME/native-device or long contextual-line qualification follows." };
     await mkdir("artifacts/bench/editing", { recursive: true }); await writeFile("artifacts/bench/editing/latest.json", JSON.stringify(report, null, 2));
     console.log(JSON.stringify(cases.map(item => ({ corpus: item.corpus, position: item.position, inputP95: item.inputHandlerMs.p95, frameProxyP95: item.beforeInputToFrameProxyMs.p95,

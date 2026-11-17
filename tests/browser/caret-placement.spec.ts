@@ -24,7 +24,7 @@ for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} care
         const style = document.createElement("style"); style.textContent = css; tree.append(style, host);
         host.style.cssText = "height:220px;width:800px;position:fixed;top:10px;left:10px";
         const viewport = mountTextViewport(host, workspace, tab), root = viewport.element, input = document.createElement("textarea");
-        root.classList.add("st-editing-candidate"); input.className = "st-input-context"; root.append(input);
+        root.classList.add("st-editor"); input.className = "st-input-context"; root.append(input);
         const binding = viewport.bindInput(() => input.focus({ preventScroll: true }));
         let composing = false, queries = 0, reveals = 0;
         const layer = mountInputCaret(root, input, viewport.view, { ...viewport,
