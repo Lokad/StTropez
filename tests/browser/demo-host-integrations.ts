@@ -132,7 +132,8 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
     for (const pane of [panes.first(), panes.last()]) await expect(pane.locator(".demo-token-keyword").first()).toHaveCSS("color", "rgb(196, 167, 250)");
     for (const pane of [panes.first(), panes.last()]) for (const [name, value] of Object.entries(typography)) await expect(pane.locator(".st-viewport-row").first()).toHaveCSS(name, value);
     const reviewed = await working.inputValue();
-    await working.press("Control+End"); await page.keyboard.type("# review"); await expect(working).toHaveValue(reviewed + "# review");
+    // One input owns this history check; typing pauses may legitimately create several groups.
+    await working.press("Control+End"); await page.keyboard.insertText("# review"); await expect(working).toHaveValue(reviewed + "# review");
     await expect(baseline).toHaveValue(reviewed); await working.press("Control+z"); await expect(working).toHaveValue(reviewed);
     // Text/history and comparison readiness do not imply fold discovery has finished.
     await foldsReady();
