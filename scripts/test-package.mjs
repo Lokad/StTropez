@@ -294,6 +294,9 @@ try {
         assert.equal(result.lockedAtHandler, true); assert.equal(result.revision, 0); assert.equal(result.sameText, true);
         assert.equal(result.undoAfter, result.undoBefore); assert.equal(result.exports, 0); readonlyIndent.push(result);
     }
+    await page.getByRole("checkbox", { name: "Align review rows", exact: true }).check();
+    await page.waitForFunction(() => { const s = window.consumer.comparison(); return s.status === "ready" && !s.working.pending && s.reference && !s.reference.pending
+        && s.working.aligned && s.reference.aligned && s.working.alignmentId === s.reference.alignmentId; });
     const comparison = await page.evaluate(() => window.consumer.comparison()); assert.equal(comparison.count, 1);
     assert.equal(comparison.internalBaseline, true);
     assert.equal(await page.locator("#comparison .consumer-review-token.st-comparison-added").textContent(), "working");

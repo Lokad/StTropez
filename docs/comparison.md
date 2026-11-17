@@ -136,7 +136,8 @@ A disposed cache cannot start a new diff job.
 | --- | --- |
 | `TextDiff.next`, controller `advance` | Default budget 32,768; safe integer at least 256; invalid budgets throw before progress changes |
 | Browser `workBudget` | Default 4,096; validates the same range, then caps each advance at 4,096 |
-| Browser scheduling | Up to 32 advances per task, stopping after an advance reaches the cooperative 4 ms target |
+| Browser diff scheduling | Up to 32 advances per task, stopping after an advance reaches the cooperative 4 ms target |
+| Browser row alignment | 256 charged units per advance; at most 4,096 per task, checking the cooperative 4 ms target after each advance |
 | Source reads | Bounded chunks and reusable immutable line metadata; no whole-document string export for comparison |
 | Worst-case work | Difficult repeated-line inputs can require quadratic alignment work; unproved equal spans can require linear reads |
 | Reversion | Inserted hunk text is materialized and the final workspace transaction runs synchronously |
@@ -242,6 +243,11 @@ line height. The grid reuses the completed diff and does not perform another tex
 stay independent: a row hidden on one side becomes padding there; a row hidden on both is omitted.
 Padding contains no source text, clipboard content or focusable controls. Clicking it selects
 an adjacent source boundary; arrows skip it and Page commands follow the visual grid.
+
+Alignment charges one work unit per collapsed-fold boundary, comparison hunk or processed
+span. Unchanged and padded spans stay compact regardless of their row count; expanded folds
+and hidden nested folds require no alignment traversal. Progress exposes cumulative work.
+Both panes use the completed grid; partial row indexes are not installed.
 
 Both features wait for current comparison/view captures and settled input/navigation. Alignment
 also waits for pointer gestures. Edits, reference/fold changes, disable and disposal cancel stale

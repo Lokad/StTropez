@@ -69,7 +69,7 @@ export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
             if (timer !== undefined) { win.clearTimeout(timer); timer = undefined; }
             if (!capture || !cursor || !current(capture)) return;
             const from = win.performance.now(), start = work;
-            do { const next = cursor.next(64); work = next.work; if (next.result) { result = next.result; cursor.dispose(); cursor = undefined; publish(capture); break; } }
+            do { const next = cursor.next(256); work = next.work; if (next.status === "ready") { result = next.result!; cursor.dispose(); cursor = undefined; publish(capture); break; } }
             while (work - start < 4096 && win.performance.now() - from < 4);
             // Progress is readable from snapshot(); it does not invalidate either pane.
             if (cursor) schedule();

@@ -2,6 +2,8 @@ import type { DiffHunk } from "./diff.ts";
 import { FoldIndex } from "./folding.ts";
 import type { FoldRegion } from "./folding.ts";
 import type { TextBuffer } from "./text-buffer.ts";
+import { kernelCursor } from "./kernel-cursor.ts";
+import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
 
 type Side = "baseline" | "working";
 type Run = Readonly<{ row: number; length: number; baseline: number | null; working: number | null; baselineAnchor: number; workingAnchor: number }>;
@@ -74,11 +76,13 @@ function bounds(a: TextBuffer, b: TextBuffer, h: DiffHunk): Span {
     const partial = h.baseline.to !== a.offsetAt(ae) || h.working.to !== b.offsetAt(be);
     return { a0: a.lineAt(h.baseline.from), a1: ae + Number(partial), b0: b.lineAt(h.working.from), b1: be + Number(partial) };
 }
-function* plan(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af: FoldIndex, bf: FoldIndex): Generator<void, ComparisonRows> {
+type Work = { units: number };
+const checkpoint = (work: Work) => ++work.units % 256 === 0;
+function* plan(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af: FoldIndex, bf: FoldIndex, work: Work): Generator<void, ComparisonRows> {
     const ah: Hidden[] = [], bh: Hidden[] = [];
     for (const [folds, hidden] of [[af, ah], [bf, bh]] as const) for (const r of folds.collapsedRegions()) {
         hidden.push({ from: r.lineFrom + 1, to: r.lineTo, header: r.lineFrom });
-        yield;
+        if (checkpoint(work)) yield;
     }
     const runs: Run[] = [], ar: Run[] = [], br: Run[] = []; let rows = 0, ai = 0, bi = 0, ac = 0, bc = 0;
     const visible = (line: number | null, length: number, side: Side) => {
@@ -102,7 +106,7 @@ function* plan(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af: Fol
                 runs.push(run); if (run.baseline !== null) ar.push(run); if (run.working !== null) br.push(run);
                 rows += count; if (!Number.isSafeInteger(rows)) throw new RangeError("Too many aligned rows.");
             }
-            at += count; yield;
+            at += count; if (checkpoint(work)) yield;
         }
     }
     function* flush(span: Span): Generator<void> {
@@ -114,9 +118,9 @@ function* plan(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af: Fol
     for (const h of hunks) {
         if (h.baseline.from < endA || h.working.from < endB) throw new RangeError("Unordered comparison hunks.");
         const span = bounds(a, b, h); endA = h.baseline.to; endB = h.working.to;
+        if (checkpoint(work)) yield;
         if (pending && (span.a0 <= pending.a1 || span.b0 <= pending.b1)) { pending.a1 = Math.max(pending.a1, span.a1); pending.b1 = Math.max(pending.b1, span.b1); }
         else { if (pending) yield* flush(pending); pending = span; }
-        yield;
     }
     if (pending) yield* flush(pending);
     if (a.lineCount - ac !== b.lineCount - bc) throw new Error("Comparison suffix rows disagree.");
@@ -125,24 +129,17 @@ function* plan(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af: Fol
     return Object.freeze({ baseline: new ComparisonRowIndex(a, af, runs, ar, "baseline", rows), working: new ComparisonRowIndex(b, bf, runs, br, "working", rows), rowCount: rows, runCount: runs.length });
 }
 
-/** Work depends on hunk/hidden boundaries, never on expanded folds or unchanged/padded rows. */
+export type ComparisonRowsProgress = Readonly<{ status: KernelStatus; work: number; result: ComparisonRows | null; failure: string | null }>;
+/** Charges collapsed-fold, hunk and span operations, independent of expanded folds or unchanged/padded row counts. */
 export class ComparisonRowsCursor {
-    #iterator: Generator<void, ComparisonRows> | undefined;
-    #result: ComparisonRows | undefined;
-    #work = 0;
-    #disposed = false;
+    readonly #driver: KernelCursor<ComparisonRowsProgress>;
     constructor(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af = new FoldIndex(a.lineCount, []), bf = new FoldIndex(b.lineCount, [])) {
         if (!Object.isFrozen(hunks) || af.lineCount !== a.lineCount || bf.lineCount !== b.lineCount) throw new Error("Expected captured comparison/fold coordinates.");
-        this.#iterator = plan(a, b, hunks, af, bf);
+        const work = { units: 0 };
+        this.#driver = kernelCursor(plan(a, b, hunks, af, bf, work), () => work.units,
+            (status, result, failure): ComparisonRowsProgress => Object.freeze({ status, work: work.units, result, failure }), "Alignment");
     }
-    next(budget = 256): Readonly<{ work: number; result?: ComparisonRows }> {
-        if (this.#disposed) throw new Error("Alignment cursor is disposed.");
-        if (!Number.isSafeInteger(budget) || budget < 1 || budget > 4096) throw new RangeError("Invalid alignment budget.");
-        for (let step = 0; this.#iterator && step < budget; step++) {
-            const next = this.#iterator.next();
-            if (next.done) { this.#result = next.value; this.#iterator = undefined; } else this.#work++;
-        }
-        return Object.freeze({ work: this.#work, ...(this.#result ? { result: this.#result } : {}) });
-    }
-    dispose(): void { this.#disposed = true; this.#iterator = undefined; this.#result = undefined; }
+    next(budget = 256): ComparisonRowsProgress { return this.#driver.next(budget); }
+    snapshot(): ComparisonRowsProgress { return this.#driver.snapshot(); }
+    dispose(): void { this.#driver.dispose(); }
 }
