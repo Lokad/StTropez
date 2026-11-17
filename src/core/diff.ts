@@ -117,6 +117,32 @@ function* singleTokenAlignment(left: Index, right: Index, region: Region, stats:
     if (a0 < region.a1 || b0 < region.b1) changes.push({ a0, a1: region.a1, b0, b1: region.b1 });
     return changes;
 }
+/** Unique common tokens in increasing order define the only longest common subsequence.
+ * Unknown, duplicated or crossed matches retain the general alignment and its tie choices. */
+function* orderedUniqueAlignment(left: Index, right: Index, region: Region, stats: Stats): Generator<void, readonly Region[] | undefined> {
+    if (Math.max(region.a1 - region.a0, region.b1 - region.b0) > 65536) return;
+    const rows = new Map<string, number>();
+    for (let ai = region.a0; ai < region.a1; ai++) {
+        const token = (yield* getLine(left, ai, stats)).token;
+        if (token === undefined) return;
+        rows.set(token, rows.has(token) ? -1 : ai);
+        if (tick(stats, token.length + 4)) yield;
+    }
+    const changes: Region[] = []; let a0 = region.a0, b0 = region.b0;
+    for (let bi = region.b0; bi < region.b1; bi++) {
+        const token = (yield* getLine(right, bi, stats)).token;
+        if (token === undefined) return;
+        const ai = rows.get(token); stats.lineComparisons++;
+        if (tick(stats, token.length + 4)) yield;
+        if (ai === undefined) continue;
+        if (ai < a0) return; // Includes -1, repeated working tokens and crossed pairs.
+        if (a0 < ai || b0 < bi) changes.push({ a0, a1: ai, b0, b1: bi });
+        a0 = ai + 1; b0 = bi + 1;
+        if (tick(stats, 4)) yield;
+    }
+    if (a0 < region.a1 || b0 < region.b1) changes.push({ a0, a1: region.a1, b0, b1: region.b1 });
+    return changes;
+}
 function* bisect(a: Index, b: Index, region: Region, stats: Stats): Generator<void, readonly [number, number] | Readonly<{ changes: readonly Region[] }>> {
     const n = region.a1 - region.a0, m = region.b1 - region.b0, maximum = Math.ceil((n + m) / 2), delta = n - m;
     let radius = 0, origin = 1, forward = new Int32Array(3).fill(-1), reverse = new Int32Array(3).fill(-1);
@@ -129,10 +155,12 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats): Generator<vo
     };
     for (let distance = 0; distance <= maximum; distance++) {
         // Preserve cheap small-edit searches and ownership proofs. Only after a bounded
-        // frontier effort, try the exact repeated-token case before expanding further.
+        // frontier effort, try exact alphabet proofs before expanding further.
         if (distance === 64 && Math.min(n, m) >= 64) {
             const changes = yield* singleTokenAlignment(a, b, region, stats);
             if (changes) return { changes };
+            const unique = yield* orderedUniqueAlignment(a, b, region, stats);
+            if (unique) return { changes: unique };
         }
         if (distance > radius) {
             // Only visited diagonals need storage. Retain both parities and their empty

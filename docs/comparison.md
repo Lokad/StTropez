@@ -135,8 +135,11 @@ ranges from a completed comparison. Ranges retain their working capture until re
 across edits, only complete rows outside an ownership-proven changed interval are reused.
 A comparison can reuse exact ranges it establishes earlier in the same job. These facts
 become available to later jobs only when the captured comparison completes successfully.
-The existing traversal chooses every split; cached equality does not choose new partitions.
-Complex comparisons can require full alignment work. Dispose the cache
+Cached equality does not choose new partitions. After bounded frontier work, a comparison
+can resolve a region directly when all shared exact short-row tokens are unique on both
+sides and their pairs stay in order. This pass examines at most 65,536 rows per side;
+duplicated common tokens, crossed pairs and rows without short tokens retain the general
+alignment. Complex comparisons can require full alignment work. Dispose the cache
 when its owner ends. Reference replacement resets retained captures; active jobs keep their own
 captures, and late jobs cannot replace a newer cache result. The controller owns its cache.
 A disposed cache cannot start a new diff job.

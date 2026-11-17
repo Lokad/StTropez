@@ -134,17 +134,29 @@ test("tab replacement expires pending work and teardown leaves only host resourc
 });
 
 test("large comparison stays virtualized, exact and cooperative during real input", async ({ page }) => {
-    await page.evaluate(() => {
-        const text = "unchanged source line\r\n".repeat(30000);
-        window.comparisonFixture.setText(text); window.comparisonFixture.begin("accept"); window.comparisonFixture.finish("accept");
-        window.comparisonFixture.setText(text.replace("unchanged", "modified") + "tail"); window.comparisonFixture.focus();
-    });
-    await page.keyboard.type("x"); await ready(page);
-    const state = await page.evaluate(() => window.comparisonFixture.snapshot());
-    expect(state.hunks.length).toBeGreaterThan(0); expect(state.working.exports).toBe(0); expect(state.baseline!.exports).toBe(0);
-    expect(await page.locator(".st-viewport-row").count()).toBeLessThan(100);
-    expect(state.editor.inputUnits).toBeLessThan(2600);
-    expect(state.working.length).toBe(690004);
+    for (const many of [false, true]) {
+        const length = await page.evaluate(many => {
+            const text = many ? Array.from({ length: 10000 }, (_, i) => `row ${i}\n`).join("") : "unchanged source line\r\n".repeat(30000);
+            const working = many ? text.replace(/^row (\d+)$/gm, (line, n: string) => Number(n) % 10 === 0 ? "changed " + n : line) : text.replace("unchanged", "modified") + "tail";
+            const f = window.comparisonFixture; f.setText(text); f.begin("accept"); f.finish("accept"); f.setText(working);
+            f.select({ anchor: working.length, head: working.length }); f.focus(); return working.length;
+        }, many);
+        await page.keyboard.type("x"); await ready(page);
+        const state = await page.evaluate(() => window.comparisonFixture.snapshot());
+        expect(state.hunks.length).toBeGreaterThan(0); expect(state.working.exports).toBe(0); expect(state.baseline!.exports).toBe(0);
+        expect(await page.locator(".st-viewport-row").count()).toBeLessThan(100);
+        expect(state.editor.inputUnits).toBeLessThan(2600); expect(state.working.length).toBe(length + 1);
+        expect(await page.evaluate(at => window.comparisonFixture.range(at, at + 1), length)).toBe("x");
+        if (many) {
+            expect(state.hunks.length).toBe(1001);
+            await page.keyboard.press("Control+z"); await ready(page);
+            const undone = await page.evaluate(() => window.comparisonFixture.snapshot());
+            expect(undone.working.length).toBe(length); expect(undone.hunks.length).toBe(1000);
+            await page.keyboard.press("Control+Shift+z"); await ready(page);
+            expect((await page.evaluate(() => window.comparisonFixture.snapshot())).hunks.length).toBe(1001);
+            expect(await page.evaluate(at => window.comparisonFixture.range(at, at + 1), length)).toBe("x");
+        }
+    }
 });
 
 test("a full 100000-line hunk stays atomic under bounded history and permits later typing", async ({ page }) => {

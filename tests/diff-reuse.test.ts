@@ -234,17 +234,23 @@ test("independent remote references reuse working metadata across shifted suffix
     cache.dispose();
 });
 
-test("many separated changes bound retained-proof lookup work across unsuccessful frontier probes", () => {
-    const source = Array.from({ length: 100000 }, (_, i) => `row ${i}\n`).join(""), baseline = TextBuffer.from(source);
-    const text = source.replace(/^row (\d+)$/gm, (line, n: string) => Number(n) % 100 === 0 ? "changed " + n : line);
-    const working = TextBuffer.from(text), cache = new DiffReferenceCache();
-    const cold = finish(baseline, working, cache), changed = working.replace(working.length, working.length, "z");
-    const warm = finish(baseline, changed, cache), fresh = finish(baseline, changed);
-    assert.deepEqual(warm.hunks, fresh.hunks); reconstruct(warm, source, text + "z");
-    assert.equal(cold.hunks.length, 1000); assert.equal(warm.hunks.length, 1001);
-    assert.ok(cold.work < 13000000, `${cold.work} cold units`);
-    assert.ok(warm.work < 15000000, `${warm.work} warm units`);
-    cache.dispose();
+test("many separated changes retain exact alignment and bounded work for unique and repeated rows", () => {
+    for (const [count, period, stride, coldLimit, warmLimit] of [
+        [100000, 100000, 100, 13000000, 15000000],
+        [10000, 10000, 10, 800000, 600000],
+        [10000, 20, 10, 7400000, 9300000]
+    ] as const) {
+        const source = Array.from({ length: count }, (_, i) => `row ${i % period}\n`).join(""), baseline = TextBuffer.from(source);
+        const text = source.replace(/^row (\d+)$/gm, (line, n: string) => Number(n) % stride === 0 ? "changed " + n : line);
+        const working = TextBuffer.from(text), cache = new DiffReferenceCache();
+        const cold = finish(baseline, working, cache), changed = working.replace(working.length, working.length, "z");
+        const warm = finish(baseline, changed, cache), fresh = finish(baseline, changed);
+        assert.deepEqual(warm.hunks, fresh.hunks); reconstruct(warm, source, text + "z");
+        assert.equal(cold.hunks.length, 1000); assert.equal(warm.hunks.length, 1001);
+        assert.ok(cold.work < coldLimit, `${count}/${period}: ${cold.work} cold units`);
+        assert.ok(warm.work < warmLimit, `${count}/${period}: ${warm.work} warm units`);
+        cache.dispose();
+    }
 });
 
 test("tail-only warmup retains sparse coverage through distant edits, undo and redo without indexing the intervening 100k rows", () => {
