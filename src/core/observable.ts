@@ -27,6 +27,10 @@ export class NotificationScope {
             }
         }
     }
+    /** Single-store status publication may nest during delivery; commands own write guards. */
+    publish<T>(store: Store<T>, value: T): void {
+        const changed = new Set<Store<unknown>>(); store.set(value, changed); this.deliver([...changed]);
+    }
     deliver(stores: readonly Store<unknown>[]): void {
         // Capture all callbacks before delivery: subscription changes affect later publications.
         const listeners: Deliveries = this.delivery.batches ? this.delivery.pending : new Map();

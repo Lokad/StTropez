@@ -91,12 +91,12 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Edit
     const publish = (message: string) => {
         const visible = job?.visible;
         if (visible !== labelItems) { labelItems = visible; labels = visible ? Object.freeze(visible.map(item => item.label)) : emptyMessages; }
-        const selected = job?.visible[job.choice], activeStop = snippet?.stops[snippet.active], changed = new Set<Store<unknown>>(); cell.set(Object.freeze({ message, connected: scope.state.getSnapshot().phase === "ready", pending: !!job && (job.pendingList || !!job.resolution || !!selected?.resolve),
+        const selected = job?.visible[job.choice], activeStop = snippet?.stops[snippet.active]; notifications.publish(cell, Object.freeze({ message, connected: scope.state.getSnapshot().phase === "ready", pending: !!job && (job.pendingList || !!job.resolution || !!selected?.resolve),
         offerText: selected?.label ?? null, choices: labels, choiceIndex: job?.choice ?? 0, completionId: job?.id ?? 0,
         completionIncomplete: job?.choices?.incomplete ?? false, completionDetail: selected ? [selected.detail, selected.documentation].filter(Boolean).join("\n") : "", resolving: !!job?.resolution,
         snippet: snippet ? Object.freeze({ id: snippet.id, stop: snippet.stops[snippet.active]!.index, position: snippet.active + 1,
             count: snippet.stops.length - 1, choices: activeStop!.choices, choiceIndex: snippetChoiceIndex(snippet, activeStop!) }) : null,
-        omittedCompletions: job?.choices?.omitted ?? Object.freeze([]), diagnostics, diagnosticRevision, diagnosticsPending, unversionedDiagnostics: unversioned }), changed); notifications.deliver([...changed]); };
+        omittedCompletions: job?.choices?.omitted ?? Object.freeze([]), diagnostics, diagnosticRevision, diagnosticsPending, unversionedDiagnostics: unversioned })); };
     const release = (retain = false) => {
         const old = job; job = undefined; if (!old) return; old.cancelled = true; old.call?.cancel(); old.resolution?.call?.cancel(); old.resolution = undefined;
         if (!retain) completion.cancel();

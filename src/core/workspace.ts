@@ -275,7 +275,7 @@ export class Workspace {
             this.scope.assertWritable();
             const next = foldingSnapshot(record.buffer!, previous.revision, previous.generation + 1, regions, previous);
             if (!previous.index.sameProjection(next.index)) this.history.seal(id);
-            const changed = new Set<Store<unknown>>(); folds.set(next, changed); this.scope.deliver([...changed]); return true;
+            this.scope.publish(folds, next); return true;
         };
         const folding: DocumentFolding = Object.freeze({ ...folds.observable,
             setRanges: (expected, ranges) => foldTarget(expected) && setFoldRegions(createFoldRegions(record.buffer!, ranges, folds.get().regions)),

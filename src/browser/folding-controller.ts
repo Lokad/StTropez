@@ -37,8 +37,8 @@ export function createFoldingController(workspace: Workspace, tabId: TabId, edit
         if (folds.regions !== groupRegions) {
             groupRegions = folds.regions; groups = Object.freeze([...new Set(groupRegions.flatMap(range => range.group ? [range.group] : []))].sort());
         }
-        const changed = new Set<Store<unknown>>(); cell.set(Object.freeze({ status, revision: folds.revision, regions: folds.regions.length,
-            collapsed: folds.index.collapsedCount, groups, message }), changed); notifications.deliver([...changed]);
+        notifications.publish(cell, Object.freeze({ status, revision: folds.revision, regions: folds.regions.length,
+            collapsed: folds.index.collapsedCount, groups, message }));
     };
     const release = (capture: NonNullable<typeof job>) => { const cursor = capture.cursor; delete capture.cursor; cursor?.dispose(); };
     const cancel = () => {

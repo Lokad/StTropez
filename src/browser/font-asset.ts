@@ -18,7 +18,7 @@ export function createFontAssetController(owner: Document, fontId: string,
     const win = owner.defaultView; if (!win || !owner.fonts || !win.FontFace) throw new Error("Font loading is unavailable.");
     const scope = new NotificationScope(options.onListenerError ?? (() => {})), store = new Store<FontAssetSnapshot>(Object.freeze({ fontId, generation: 0, status: "idle", current: null, failure: null }), scope);
     let disposed = false, currentFace: FontFace | undefined;
-    const publish = (next: FontAssetSnapshot) => { const changed = new Set<Store<unknown>>(); store.set(Object.freeze(next), changed); scope.deliver([...changed]); };
+    const publish = (next: FontAssetSnapshot) => { scope.publish(store, Object.freeze(next)); };
     const live = (generation: number) => !disposed && store.get().generation === generation;
     return Object.freeze({ ...store.observable,
         request: (expectedGeneration: number, input: Uint8Array) => {

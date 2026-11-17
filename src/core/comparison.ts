@@ -59,7 +59,7 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
     let refreshGeneration = 0, acceptanceGeneration = 0, reversionGeneration = 0;
     let reversionPolicy = resource.metadata.getSnapshot(), reversionPolicyGeneration = 0;
     const pending = new Set<() => void>();
-    const publish = (next: ComparisonSnapshot) => { const changed = new Set<Store<unknown>>(); state.set(Object.freeze(next), changed); scope.deliver([...changed]); };
+    const publish = (next: ComparisonSnapshot) => { scope.publish(state, Object.freeze(next)); };
     const live = () => !disposed && state.get().baseline !== null && workspace.ownsDocumentView(view) && workspace.resolveTab(target) !== undefined && resource.getSnapshot().state === "ready";
     const canAccept = () => live() && resource.metadata.getSnapshot().capabilities.edit.includes("human") && resource.metadata.getSnapshot().editLock === null;
     function expire(): void {

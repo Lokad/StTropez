@@ -148,6 +148,9 @@ its captured coordinates and entries; matching does not depend on a preceding ro
 
 Observers read published state. Commands run outside notification delivery, including nested
 controller notifications. Listener failures are reported without preventing other delivery.
+Single-store status publication uses the internal `NotificationScope.publish` path; features
+construct their snapshots and own command write guards. Workspace transactions and queued LSP
+workspace updates accumulate their changed stores before delivery so observers see complete state.
 The detailed batching, callback and write-guard rules belong to
 [workspace observables](workspace.md#observables). A host reactive library can consume the read
 contract without sharing the workspace's synchronous write/completion semantics.

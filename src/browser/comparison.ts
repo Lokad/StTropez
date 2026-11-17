@@ -64,7 +64,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     let measuredGeneration = -1, steps = 0, advances = 0, maxStepMs = 0, totalStepMs = 0;
     let decoratedGeneration = -1, decoratedStatus: string | undefined;
     const referenceScope = workspace.createNotificationScope(), referenceStore = new Store<ComparisonReferenceView | undefined>(undefined, referenceScope);
-    const publishReference = (value: ComparisonReferenceView | undefined) => { const changed = new Set<Store<unknown>>(); referenceStore.set(value, changed); referenceScope.deliver([...changed]); };
+    const publishReference = (value: ComparisonReferenceView | undefined) => { referenceScope.publish(referenceStore, value); };
     function rangeAt(side: "baseline" | "working", line: number): DiffRange | undefined {
         if (state.status !== "ready" && state.status !== "running") return;
         const low = partitionPoint(state.hunks.length, index => { const range = state.hunks[index]![side]; return Math.max(range.lineFrom + 1, range.lineTo) <= line; });
@@ -105,7 +105,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
         const sameAlignment = a.enabled === b.enabled && a.status === b.status && a.pending === b.pending && a.work === b.work && a.runs === b.runs && a.failure === b.failure;
         if (old.comparison === next.comparison && old.selectedHunk === next.selectedHunk && old.canNavigate === next.canNavigate
             && old.canRevert === next.canRevert && old.scrollLinked === next.scrollLinked && old.disposed === next.disposed && sameAlignment) return;
-        const changedStores = new Set<Store<unknown>>(); stateStore.set(next, changedStores); stateScope.deliver([...changedStores]);
+        stateScope.publish(stateStore, next);
     }
     function changed(): void { publishState(); schedule(); }
     const setScrollLinked = (value: boolean) => { referenceScope.assertWritable(); scroll.setLinked(value); publishState(); };

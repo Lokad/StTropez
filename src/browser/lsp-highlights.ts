@@ -26,7 +26,7 @@ export function createLspHighlightController(workspace: Workspace, tabId: TabId,
     const focused = () => isFocused(editor.input);
     const busy = () => { const state = editor.activity(); return state.composing || state.pendingInput || state.pendingCommand || state.pendingWord || state.pendingGrapheme; };
     const publish = (status: LspHighlightSnapshot["status"], revision = cell.get().revision, caret: number | null = null) => {
-        const changed = new Set<Store<unknown>>(); cell.set(Object.freeze({ status, documentId, revision, caret, items: result?.items ?? empty }), changed); notifications.deliver([...changed]);
+        notifications.publish(cell, Object.freeze({ status, documentId, revision, caret, items: result?.items ?? empty }));
     };
     const cancel = () => {
         generation++; runner.cancel();

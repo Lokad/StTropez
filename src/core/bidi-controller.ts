@@ -29,7 +29,7 @@ export function createBidiIndexController(workspace: Workspace, tabId: TabId,
     const store = new Store<BidiIndexSnapshot>(Object.freeze({ status: "idle", documentId, revision: null, generation: 0, range: null, progress: null, index: null, failure: null }), scope);
     let cursor: BidiCursor | undefined, disposed = false;
     const live = () => !disposed && retention.active() && workspace.resolveTab(target) !== undefined && resource.getSnapshot().state === "ready" && document.getSnapshot() !== undefined;
-    const publish = (patch: Partial<BidiIndexSnapshot>) => { const changed = new Set<Store<unknown>>(); store.set(Object.freeze({ ...store.get(), ...patch }), changed); scope.deliver([...changed]); };
+    const publish = (patch: Partial<BidiIndexSnapshot>) => { scope.publish(store, Object.freeze({ ...store.get(), ...patch })); };
     const stop = () => { cursor?.dispose(); cursor = undefined; };
     const reconcile = () => {
         if (disposed || store.get().status === "expired") return;

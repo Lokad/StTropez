@@ -56,7 +56,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         && workspace.observeDocument(documentId).getSnapshot() !== undefined && !editor.activity().disposed;
     const publish = (patch: FindPatch) => {
         scanMaximum = patch.maxScanStepMs ?? scanMaximum;
-        const changed = new Set<Store<unknown>>(); store.set(Object.freeze({ ...store.get(), ...patch, maxScanStepMs: scanMaximum }), changed); scope.deliver([...changed]);
+        scope.publish(store, Object.freeze({ ...store.get(), ...patch, maxScanStepMs: scanMaximum }));
     };
     const stop = () => { generation++; runner.cancel();
         const active = cursor, plan = planCursor, authority = stopPlanAuthority; cursor = undefined; planCursor = undefined; stopPlanAuthority = undefined;

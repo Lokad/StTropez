@@ -86,7 +86,7 @@ class Review implements AgentReview {
         };
     }
     private publish(state: AgentSnapshot): void {
-        const changed = new Set<Store<unknown>>(); this.store.set(Object.freeze(state), changed); this.scope.deliver([...changed]);
+        this.scope.publish(this.store, Object.freeze(state));
     }
     private requireSource(): void {
         if (this.workspace.resolveResource(this.target) !== this.source) throw new Error("Review source was released.");

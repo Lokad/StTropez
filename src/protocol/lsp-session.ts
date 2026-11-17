@@ -154,7 +154,7 @@ export class LspSession {
             registrations: Object.freeze([...this.registrations.values()].map(item => item.value)), registrationGeneration: this.generation, documents: this.documents.size, error });
     }
     private publish(phase = this.store.get().phase, error: string | null = null): void {
-        const changed = new Set<Store<unknown>>(); this.store.set(this.snapshot(phase, error), changed); this.scope.deliver([...changed]);
+        this.scope.publish(this.store, this.snapshot(phase, error));
     }
     private current(epoch: number): boolean { return this.epoch === epoch && this.store.get().phase !== "disconnected" && this.store.get().phase !== "disposed"; }
     private ready(epoch = this.epoch): JsonRpcConnection { if (!this.current(epoch) || this.store.get().phase !== "ready" || !this.rpc) throw closed(); return this.rpc; }

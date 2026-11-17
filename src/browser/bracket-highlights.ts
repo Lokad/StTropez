@@ -39,9 +39,8 @@ export function mountBracketHighlights(workspace: Workspace, tabId: TabId, view:
         }
         const before = cell.get(), failure = progress?.failure ?? null;
         if (before.status === status && before.revision === revision && before.caret === caret && before.result === result && before.failure === failure) return;
-        const changed = new Set<Store<unknown>>(); cell.set(Object.freeze({ status, documentId, revision, caret, result, failure,
-            workUnits: progress?.workUnits ?? 0, readUnits: progress?.readUnits ?? 0, callbackCalls: progress?.callbackCalls ?? 0 }), changed);
-        notifications.deliver([...changed]);
+        notifications.publish(cell, Object.freeze({ status, documentId, revision, caret, result, failure,
+            workUnits: progress?.workUnits ?? 0, readUnits: progress?.readUnits ?? 0, callbackCalls: progress?.callbackCalls ?? 0 }));
     };
     const cancel = () => {
         runner.cancel();

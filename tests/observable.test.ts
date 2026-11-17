@@ -3,6 +3,19 @@ import assert from "node:assert/strict";
 import { NotificationScope, Store } from "../src/core/observable.ts";
 import { Workspace } from "../src/index.ts";
 
+test("single-store publication preserves snapshot identity and SameValue suppression", () => {
+    const scope = new NotificationScope(), initial = Object.freeze({ value: 1 }), store = new Store<unknown>(initial, scope);
+    const seen: unknown[] = [], stop = store.observable.subscribe(() => seen.push(store.get()));
+    try {
+        scope.publish(store, initial); assert.deepEqual(seen, []);
+        const next = Object.freeze({ value: 1 }); scope.publish(store, next); scope.publish(store, next);
+        assert.equal(seen.length, 1); assert.equal(seen[0], next); assert.equal(store.observable.getSnapshot(), next);
+        scope.publish(store, NaN); scope.publish(store, NaN); scope.publish(store, 0); scope.publish(store, -0);
+        assert.deepEqual(seen, [next, NaN, 0, -0]);
+    } finally { stop(); stop(); }
+    scope.publish(store, initial); assert.equal(seen.length, 4); assert.equal(scope.subscriptionCount(), 0);
+});
+
 test("one shared observer sees the complete atomic edit and each history publication once", () => {
     const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => errors.push(error) });
     const sources = ["a", "b"].map(name => workspace.createTextResource({ scope: "test", resource: name, variant: "text" }, name, { value: name }));
@@ -57,10 +70,10 @@ test("nested controller publications deliver their new state while sharing the p
     const source = new Store(0, parent), derived = new Store(0, child), seen: number[][] = [];
     const shared = () => { seen.push([source.get(), derived.get()]); assert.throws(() => parent.assertWritable(), /Reentrant/); assert.throws(() => child.assertWritable(), /Reentrant/); };
     const stops = [source.observable.subscribe(shared), derived.observable.subscribe(shared), source.observable.subscribe(() => {
-        const changed = new Set<Store<unknown>>(); derived.set(source.get() * 2, changed); child.deliver([...changed]);
+        child.publish(derived, source.get() * 2);
     })];
     try {
-        const changed = new Set<Store<unknown>>(); source.set(1, changed); parent.deliver([...changed]);
+        parent.publish(source, 1);
         assert.deepEqual(seen, [[1, 0], [1, 2]]); assert.deepEqual(errors, []);
         assert.doesNotThrow(() => parent.assertWritable()); assert.doesNotThrow(() => child.assertWritable());
     } finally { stops.forEach(stop => stop()); }
@@ -73,9 +86,6 @@ test("nested scope batches deliver final state once with captured registrations 
     const child = new NotificationScope(error => { childErrors.push(error); throw new Error("reporter"); }, parent);
     const independent = new NotificationScope(() => {}), outside = new Store(0, independent);
     const a = new Store(0, parent), b = new Store(0, child), failure = new Error("listener");
-    const publish = (scope: NotificationScope, store: Store<number>, value: number) => {
-        const changed = new Set<Store<unknown>>(); store.set(value, changed); scope.deliver([...changed]);
-    };
     const shared = () => {
         order.push("shared"); assert.deepEqual([a.get(), b.get()], [2, 3]);
         assert.throws(() => child.batch(() => {}), /Reentrant/);
@@ -86,11 +96,11 @@ test("nested scope batches deliver final state once with captured registrations 
     let stopLate = () => {};
     try {
         const result = child.batch(() => {
-            publish(child, b, 1); stops[1]!();
+            child.publish(b, 1); stops[1]!();
             stopLate = b.observable.subscribe(() => order.push("late"));
-            parent.batch(() => { publish(parent, a, 2); publish(child, b, 3); });
+            parent.batch(() => { parent.publish(a, 2); child.publish(b, 3); });
             assert.deepEqual(order, []);
-            publish(independent, outside, 1); assert.deepEqual(order, ["outside"]);
+            independent.publish(outside, 1); assert.deepEqual(order, ["outside"]);
             return 7;
         });
         assert.equal(result, 7); assert.deepEqual(order, ["outside", "shared", "broken", "late"]);
