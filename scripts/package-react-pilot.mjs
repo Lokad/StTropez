@@ -261,6 +261,11 @@ async function workflow(page, original, activeCase, screenshot) {
 export async function proveCompiledTextDrag(browser, baseUrl) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }), errors = [];
     page.on("pageerror", error => errors.push(error.message));
+    const methods = new Set();
+    page.on("websocket", socket => socket.on("framesent", frame => {
+        const value = JSON.parse(frame.payload.toString());
+        if (value.jsonrpc === "2.0" && value.method) methods.add(value.method);
+    }));
     const original = "alpha\r\nbeta tail", expected = "\r\n tail", targetText = "target", inserted = "taalpha\nbetarget";
     const read = () => page.evaluate(() => { const f = window.hostFixture, state = f.snapshot(); return { state, target: f.transferSnapshot(), text: f.range(0, state.source.length) }; });
     const ready = () => page.waitForFunction(() => { const f = window.hostFixture, state = f.snapshot(), target = f.transferSnapshot(), comparison = state.bindings.comparison;
@@ -279,7 +284,7 @@ export async function proveCompiledTextDrag(browser, baseUrl) {
         throw new Error("Compiled drag has no text point.");
     }, offset);
     try {
-        await page.goto(new URL("/hosts/react/?editor=candidate", baseUrl).href);
+        await page.goto(new URL("/hosts/react/?editor=candidate&language=lsp", baseUrl).href);
         await page.waitForFunction(() => window.hostFixture?.ready);
         await page.evaluate(({ original, targetText }) => { const f = window.hostFixture;
             f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: original }]); f.openTransferTarget(targetText);
@@ -343,9 +348,11 @@ export async function proveCompiledTextDrag(browser, baseUrl) {
         await working.pressSequentially("X"); await ready(); await popup.waitFor({ state: "hidden" }); const typedHover = await read();
         assert.equal(typedHover.text, "coXnst captured = 1;"); assert.equal(typedHover.state.history.undoDepth, beforeHover.state.history.undoDepth + 1);
         await primary.press("Control+z"); await ready(); assert.equal((await read()).text, hoverText); assert.equal((await read()).state.source.exports, 0);
-        const hover = { actualWorker: page.workers().some(worker => worker.url().endsWith("/provider-worker.js")), compiledDescription: true,
+        const hover = { transport: "lsp3.17", methods: [...methods].sort(), compiledDescription: true,
             comparisonCapture: true, plainText: true, focusAndHistory: true, typingDismisses: true, zeroCompleteExports: true };
-        assert.equal(hover.actualWorker, true);
+        for (const method of ["initialize", "initialized", "textDocument/didOpen", "textDocument/didChange", "textDocument/hover"]) assert.ok(methods.has(method), `Missing LSP traffic: ${method}`);
+        assert.equal(page.workers().some(worker => worker.url().endsWith("/provider-worker.js")), false);
+        assert.equal((await page.request.get(new URL("/provider-worker.js", baseUrl).href)).status(), 404);
         await page.evaluate(() => window.hostFixture.dispose()); const disposed = await page.evaluate(() => window.hostFixture.snapshot());
         for (const key of ["views", "leases", "subscriptions"]) assert.equal(disposed.diagnostics[key], 0);
         return { source: "restored-compiled-assets", browser: browser.browserType().name(), audit, moveAndLinkedHistoryQualified: !refused, tokenlessRefusalQualified: refused, variantDiscard, caseFind, hover,
@@ -366,7 +373,7 @@ export async function runPackagedReactPilot(browser, baseUrl, { directory, packa
                 activeCase = { corpus, iteration, stage: "mount" }; const setup = performance.now();
                 page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); page.setDefaultTimeout(30000);
                 page.on("pageerror", error => errors.push(error.message)); page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
-                await page.goto(new URL("/hosts/react/?editor=candidate", baseUrl).href);
+                await page.goto(new URL("/hosts/react/?editor=candidate&language=lsp", baseUrl).href);
                 await page.waitForFunction(() => window.hostFixture?.ready && window.hostFixture.snapshot().bindings.activeViews === 2);
                 assert.equal(await page.evaluate(() => window.hostFixture.mode), "react");
                 await page.evaluate(installHostReferenceProbe);

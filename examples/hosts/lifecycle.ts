@@ -21,7 +21,7 @@ export class HostLifecycle {
     private disposal: Promise<void> | undefined;
     constructor(page: EventTarget, recoveryButton: EventTarget, owners: HostOwners) {
         this.page = page; this.recoveryButton = recoveryButton; this.owners = owners;
-        // Reverse release: listeners, mounted views, bindings, fixture resources, durable drafts, commands.
+        // Start cleanup in reverse order: listeners, views, bindings, resources, drafts, commands.
         this.cleanup.defer(() => { this.pending.push(owners.controller.dispose()); });
         this.cleanup.defer(() => { if (owners.draft) this.pending.push(owners.draft.dispose()); });
         this.cleanup.defer(this.fixtures.dispose);
@@ -33,10 +33,10 @@ export class HostLifecycle {
     private reportError(error: unknown): void {
         if (this.owners.reportError) this.owners.reportError(error); else console.error(error);
     }
-    /** Additional host-owned resources release after view bindings, before drafts and commands. */
-    onDispose(cleanup: () => void): void {
+    /** Start after view bindings; final disposal also waits for deferred resource release. */
+    onDispose(cleanup: () => void | Promise<void>): void {
         if (this.stopped) throw new Error("Host is disposed.");
-        this.fixtures.defer(cleanup);
+        this.fixtures.defer(() => { const pending = cleanup(); if (pending) this.pending.push(pending); });
     }
     start(): void {
         if (this.stopped) throw new Error("Host is disposed.");

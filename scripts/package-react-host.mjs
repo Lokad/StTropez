@@ -54,10 +54,9 @@ export async function stageHostFixture(project, consumer, path, destination = jo
 export async function stagePackagedReactHost(project, consumer) {
     const entryPoints = {
         "host-react": "host-fixtures/react-entry.ts",
-        "provider-worker": "host-fixtures/examples/probes/provider-worker.ts",
     };
     // Seed contracts whose type-only imports disappear from the bundle graph.
-    const graph = await build({ absWorkingDir: project, entryPoints: ["examples/hosts/react-main.tsx", "examples/probes/provider-worker.ts",
+    const graph = await build({ absWorkingDir: project, entryPoints: ["examples/hosts/react-main.tsx",
         "examples/shared/language/hover-backend.ts", "examples/shared/language/provider-contract.ts"],
         outdir: join(consumer, "graph"), bundle: true, platform: "browser", format: "esm", target: "es2022", packages: "external", write: false, metafile: true,
         plugins: [{ name: "host-public-imports", setup(builder) {

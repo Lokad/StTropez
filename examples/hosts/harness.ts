@@ -17,9 +17,11 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
             const resource = controller.workspace.createTextResource({ scope: "host-workload", resource: `inactive-${index}`, variant: "working" },
                 `Inactive ${index}`, { value: `// inactive ${index}\r\n` + "row Δ😀\r\n".repeat(1000) });
             let target: TabTarget | undefined;
-            lifecycle.onDispose(() => {
+            lifecycle.onDispose(async () => {
                 const index = inactive.findIndex(owner => owner.resource === resource); if (index >= 0) inactive.splice(index, 1);
                 if (target && controller.workspace.resolveTab(target)) controller.workspace.close(target.id);
+                // Provider bindings defer lease release out of workspace notification delivery.
+                await Promise.resolve();
                 controller.workspace.releaseResource(resource.id);
             });
             const id = controller.workspace.open({ kind: "text", documentId: resource.documentId }, "inactive");
@@ -58,8 +60,9 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
             lifecycle.unmount();
             const resource = controller.workspace.createTextResource({ scope: "host-fixture", resource: "transfer-text", variant: "working" }, "Transfer target", { value: text });
             transferTarget = resource; let target: TabTarget | undefined;
-            lifecycle.onDispose(() => {
+            lifecycle.onDispose(async () => {
                 if (target && controller.workspace.resolveTab(target)) controller.workspace.close(target.id);
+                await Promise.resolve();
                 controller.workspace.releaseResource(resource.id, true); transferTarget = undefined;
             });
             controller.workspace.replace(controller.viewTab("secondary"), { kind: "text", documentId: resource.documentId });
