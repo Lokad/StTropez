@@ -149,9 +149,14 @@ export function* findWords(buffer: TextBuffer, query: string): Generator<readonl
 frontier, units read and matches. Budgets default to 32,768 units and 8,192 matches and must be
 positive safe integers. Dispose or close the generator when abandoning a scan. Preparation
 is synchronous and proportional to query length; work budgets are not elapsed-time deadlines.
-The browser controller supplies scheduling, with steps of up to 131,072 units/8,192 matches.
-After an edit it repairs a conservative changed region, starting with a smaller step. Repeated
-patterns can require a full suffix scan; unknown revision lineage requires a full search.
+The browser controller advances literal scans by at most 4,096 read units/1,024 matches.
+A task batches at most 32 advances, checking its cooperative 4 ms target after each advance
+and index update, then publishes progress once. Its first repair advance permits 64 matches
+to find a nearby reusable suffix. Repeated patterns can require a full suffix scan; unknown
+revision lineage requires a full search. These limits bound scan work, not query preparation,
+publication, rendering or a hard callback deadline. `maxScanStepMs` measures an individual
+matching/index span, not the complete batched task. Regex backends retain one request in
+flight and schedule the next step only after its result is processed.
 
 Case-insensitive literal matching uses Unicode simple folding over code points. It does not
 expand `ß` to `ss`, normalize combining sequences or apply locale-specific casing. Whole-word

@@ -37,13 +37,13 @@ export function createFindReplacementPlan(positions: FindIndex, total: number, r
 
 /** Controller-private backend: replacement captures the existing index, without rescanning
  * the document or retaining a second index. The controller owns all cursors and commits. */
-export function createLiteralFindBackend(index: () => FindIndex): FindBackend {
+export function createLiteralFindBackend(index: () => FindIndex, maxUnits: number, maxMatches: number) {
     return Object.freeze({
-        search: ({ buffer, query, wholeWord, matchCase }) => {
+        search: ({ buffer, query, wholeWord, matchCase }: FindQueryCapture) => {
             const search = new LiteralSearch(buffer, query, { wholeWord, matchCase });
-            return { next: () => search.next(131_072, 8192), dispose: () => search.dispose() };
+            return { next: () => search.next(maxUnits, maxMatches), dispose: () => search.dispose() };
         },
-        replace: (_capture, replacement, range) => {
+        replace: (_capture: FindQueryCapture, replacement: string, range?: SearchMatch) => {
             let positions = range ? undefined : index(), at = 0;
             const count = range ? 1 : positions!.count;
             return {

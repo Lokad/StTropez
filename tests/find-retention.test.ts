@@ -101,20 +101,47 @@ test("caseless repair cannot expose a clipped surrogate as a new literal match",
     finish(repair, 1, 1); assert.deepEqual(all(repair.index), all(scan(buffer, "\udc00", settings).index));
 });
 
-function fixture(text: string) {
+function fixture(text: string, clock: Pick<Performance, "now"> = performance) {
     const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => errors.push(error) });
     const documentId = workspace.createDocument({ scope: "find", resource: "retention", variant: "working" }, "Source", text);
     const tab = workspace.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>(); let serial = 0;
-    const owner = Object.assign(new EventTarget(), { defaultView: { performance,
+    const owner = Object.assign(new EventTarget(), { defaultView: { performance: clock,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), activity: () => ({ composing: false, disposed: false }), viewport: { revealOffset: () => {} }, focus: () => {} } as unknown as EditingCandidate;
     const find = createFindController(workspace, tab, editor), document = () => workspace.document(documentId);
-    const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 1000); const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); } assert.deepEqual(errors, []); };
+    const step = () => { const entry = tasks.entries().next().value; assert.ok(entry); tasks.delete(entry[0]); entry[1](); };
+    const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 1000); step(); } assert.deepEqual(errors, []); };
     const edit = (from: number, to: number, insert: string) => { assert.equal(workspace.edit({ documentId, expectedRevision: document().revision, origin: "human", edits: [{ from, to, insert }], history: { kind: "replace" } }).applied, true); };
     const select = (anchor: number, head = anchor) => view.setSelection(document().revision, { anchor, head });
     const dispose = () => { find.destroy(); view.dispose(); workspace.close(tab); assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().subscriptions, 0); };
-    return { workspace, documentId, view, find, document, drain, edit, select, dispose };
+    return { workspace, documentId, view, find, document, tasks, step, drain, edit, select, dispose };
 }
+
+test("literal tasks bound advances and elapsed work, publish once and preserve repair and cancellation", () => {
+    const original = LiteralSearch.prototype.next;
+    for (const cost of [0, 1]) {
+        let time = 0; const calls: { units: number; matches: number; read: number }[] = [];
+        LiteralSearch.prototype.next = function(units = 32768, matches = 8192) {
+            const result = original.call(this, units, matches); time += cost; calls.push({ units, matches, read: result.readUnits }); return result;
+        };
+        const f = fixture("cat ".repeat(100000), { now: () => time }); let publications = 0;
+        const stop = f.find.state.subscribe(() => publications++);
+        try {
+            f.find.setOptions({ wholeWord: true }); f.find.setQuery("cat"); const before = publications; f.step();
+            assert.equal(calls.length, cost ? 4 : 32); assert.ok(calls.every(call => call.units === 4096 && call.matches === 1024 && call.read <= 4096));
+            assert.equal(publications, before + 1); assert.equal(f.find.state.getSnapshot().status, "searching"); assert.equal(f.tasks.size, 1);
+            assert.equal(f.find.state.getSnapshot().maxScanStepMs, cost);
+            const obsolete = [...f.tasks.values()][0]!, advanced = calls.length;
+            f.find.setQuery("dog"); const replacement = [...f.tasks]; obsolete();
+            assert.deepEqual([...f.tasks], replacement); assert.equal(calls.length, advanced); assert.equal(f.find.state.getSnapshot().count, 0);
+            f.find.setQuery("cat"); f.drain(); assert.equal(f.find.state.getSnapshot().count, 100000);
+            calls.length = 0; f.edit(40000, 40003, "dog"); assert.equal(f.find.state.getSnapshot().retained, true);
+            f.step(); assert.equal(calls[0]!.units, 4096); assert.equal(calls[0]!.matches, 64);
+            f.drain(); assert.equal(f.find.state.getSnapshot().count, 99999); assert.equal(f.find.state.getSnapshot().status, "ready");
+            assert.equal(f.document().buffer.readMetrics().textExports, 0);
+        } finally { stop(); f.dispose(); LiteralSearch.prototype.next = original; }
+    }
+});
 
 test("confirmed matches remain navigable and replaceable during repair without wrapping over unknown matches", () => {
     const f = fixture("cat ".repeat(20000));

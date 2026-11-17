@@ -10,6 +10,8 @@ import type { SearchMatch, SearchStep } from "../core/search.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { Store } from "../core/observable.ts";
 import type { EditingCandidate } from "./editing-candidate.ts";
+import { createCooperativeRunner } from "./cooperative-runner.ts";
+const literalBudget = Object.freeze({ units: 4096, matches: 1024, calls: 32 });
 export type FindOptions = Readonly<{ wholeWord?: boolean; matchCase?: boolean; regularExpression?: boolean }>;
 export type FindConfiguration = Readonly<{ regularExpression?: FindBackend; regularExpressionDelayMs?: number }>;
 /** Stable cause of the last published notice, independent of its display message. */
@@ -37,14 +39,15 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     const scope = workspace.createNotificationScope(), initial = workspace.document(documentId);
     const store = new Store<FindSnapshot>(Object.freeze({ query: "", wholeWord: false, matchCase: true, regularExpression: false, revision: initial.revision, status: "idle", count: 0, scanned: 0, length: initial.buffer.length,
         retained: false, current: null, matchesVersion: 0, reason: null, message: "", maxScanStepMs: 0, replaceTransactionMs: 0 }), scope);
-    let disposed = false, timer: number | undefined, cursor: FindSearchCursor | undefined, planCursor: FindPlanCursor | undefined, generation = 0, focusGeneration = 0;
+    const runner = createCooperativeRunner(win);
+    let disposed = false, cursor: FindSearchCursor | undefined, planCursor: FindPlanCursor | undefined, generation = 0, focusGeneration = 0;
     let navigatedZero: Readonly<{ index: number; selectionSet: SelectionSet }> | undefined;
     let replacedZero: Readonly<{ revision: number; head: number; selectionSet: SelectionSet }> | undefined;
     let stopPlanAuthority: (() => void) | undefined;
     let matches = new FindIndex(), count = 0, navigationTo = 0, observed = initial;
     let literal: { document: DocumentSnapshot; index: FindIndex; query: string; wholeWord: boolean; matchCase: boolean } | undefined;
     let edges: { prefix: number; suffix: number } | undefined;
-    const literalBackend = createLiteralFindBackend(() => matches);
+    const literalBackend = createLiteralFindBackend(() => matches, literalBudget.units, literalBudget.matches);
     const backendFor = (regularExpression: boolean) => regularExpression ? backend : literalBackend;
     const disposeBackends = () => { literalBackend.dispose(); backend?.dispose(); };
     let scanMaximum = 0;
@@ -55,7 +58,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         scanMaximum = patch.maxScanStepMs ?? scanMaximum;
         const changed = new Set<Store<unknown>>(); store.set(Object.freeze({ ...store.get(), ...patch, maxScanStepMs: scanMaximum }), changed); scope.deliver([...changed]);
     };
-    const stop = () => { generation++; if (timer !== undefined) win.clearTimeout(timer); timer = undefined;
+    const stop = () => { generation++; runner.cancel();
         const active = cursor, plan = planCursor, authority = stopPlanAuthority; cursor = undefined; planCursor = undefined; stopPlanAuthority = undefined;
         navigatedZero = undefined; replacedZero = undefined;
         active?.dispose(); plan?.dispose(); authority?.(); };
@@ -63,7 +66,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         matches = new FindIndex(); count = 0; literal = undefined; edges = undefined; navigationTo = 0;
         publish({ ...patch, retained: false, count: 0, scanned: 0, current: null, matchesVersion: store.get().matchesVersion + 1 });
     };
-    const later = (work: () => void, delay = 0) => { timer = win.setTimeout(() => { timer = undefined; work(); }, delay); };
+    const later = (work: () => void, delay = 0) => { runner.schedule(work, delay); };
     const offsetAt = (index: number) => matches.at(index).from;
     const endAt = (index: number) => matches.at(index).to;
     const indexAt = (offset: number) => matches.lowerBound(offset);
@@ -118,42 +121,46 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
             publish({ ...patch, status: "searching", retained: true, count, scanned: repair.start, current: null, matchesVersion: store.get().matchesVersion + 1 });
         } else reset({ ...patch, status: query ? "searching" : "idle" });
         if (!query) return;
+        let nextLiteral: (() => SearchStep) | undefined;
         try {
             if (regularExpression && !backend) throw new Error("Regular-expression search is unavailable in this host.");
             let created: FindSearchCursor;
-            if (repair) {
+            if (regularExpression) created = backend!.search(capture(query, wholeWord, matchCase));
+            else if (repair) {
                 const repairing = repair; let first = true;
-                // A nearby anchor usually settles in one small slice. If it does not,
-                // use the ordinary scan budget so ambiguous suffixes do not yield per 64 matches.
-                created = { next: () => { const small = first; first = false; return repairing.next(small ? 4096 : 131_072, small ? 64 : 8192); }, dispose: () => repairing.dispose() };
-            }
-            else created = backendFor(regularExpression)!.search(capture(query, wholeWord, matchCase));
+                // A nearby anchor usually settles in one small slice; ambiguous suffixes
+                // continue with the same bounded advances as a fresh literal scan.
+                nextLiteral = () => { const small = first; first = false; return repairing.next(literalBudget.units, small ? 64 : literalBudget.matches); };
+                created = { next: nextLiteral, dispose: () => repairing.dispose() };
+            } else { const literal = literalBackend.search(capture(query, wholeWord, matchCase)); created = literal; nextLiteral = literal.next; }
             if (token !== generation) { created.dispose(); return; } cursor = created;
         } catch (error) { failed(error, token, false, regularExpression && !backend ? "backend-unavailable" : "search-failed"); return; }
         const step = () => {
             if (token !== generation || !valid()) { if (token === generation) restart(query); return; }
-            const started = win.performance.now();
+            const started = win.performance.now(); let scanned = store.get().scanned;
             // Start the next literal timer's wait during this bounded slice, rather than after it.
             if (!regularExpression) later(step);
-            const receive = (result: SearchStep, asynchronous: boolean, dispatchMs: number) => {
-                if (token !== generation) return;
-                if (!valid() || workspace.document(documentId).revision !== document.revision) { restart(query); return; }
-                const began = asynchronous ? win.performance.now() : started;
+            const accept = (result: SearchStep, began: number, dispatchMs: number): boolean => {
+                if (token !== generation) return false;
+                if (!valid() || workspace.document(documentId).revision !== document.revision) { restart(query); return false; }
                 if (!result || typeof result.done !== "boolean" || !Array.isArray(result.matches) || result.matches.length > 8192
-                    || !Number.isSafeInteger(result.scanned) || result.scanned < store.get().scanned || result.scanned > document.buffer.length) throw new Error("Invalid search result.");
+                    || !Number.isSafeInteger(result.scanned) || result.scanned < scanned || result.scanned > document.buffer.length) throw new Error("Invalid search result.");
                 for (const match of repair ? [] : result.matches) {
                     if (!Number.isSafeInteger(match.from) || !Number.isSafeInteger(match.to) || match.from < 0 || match.to < match.from || match.to > document.buffer.length
                         || count > 0 && (match.from < endAt(count - 1) || match.from === offsetAt(count - 1) && match.to === endAt(count - 1))) throw new Error("Invalid search range.");
                     matches.append(match); count++;
                 }
                 if (repair) { count = matches.count; navigationTo = Math.max(navigationTo, count ? endAt(count - 1) : 0); }
+                scanned = result.scanned;
                 scanMaximum = Math.max(scanMaximum, dispatchMs, win.performance.now() - began);
                 if (result.done) {
-                    if (!regularExpression && timer !== undefined) { win.clearTimeout(timer); timer = undefined; }
+                    if (!regularExpression) runner.cancel();
                     const finished = cursor; cursor = undefined; finished?.dispose();
                     if (!regularExpression) { literal = { document, index: matches, query, wholeWord, matchCase }; edges = undefined; }
                 }
-                if (token !== generation || !valid()) return;
+                return token === generation && valid();
+            };
+            const present = (result: SearchStep) => {
                 // Transfer acknowledgements can change work/timing without changing visible
                 // progress. Keep their maximum privately until the next real publication.
                 const state = store.get();
@@ -161,9 +168,20 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
                     publish({ count, matchesVersion: state.matchesVersion + (count !== state.count ? 1 : 0), scanned: result.scanned, status: result.done ? "ready" : "searching", retained: !!repair && !result.done });
                 if (!result.done && token === generation && regularExpression) later(step);
             };
-            try { const result = cursor!.next(), dispatchMs = win.performance.now() - started;
-                if (isAsync(result)) void Promise.resolve(result).then(value => { try { receive(value, true, dispatchMs); } catch (error) { failed(error, token); } }, error => failed(error, token));
-                else receive(result, false, 0);
+            const receive = (result: SearchStep, asynchronous: boolean, dispatchMs: number) => {
+                if (accept(result, asynchronous ? win.performance.now() : started, dispatchMs)) present(result);
+            };
+            try {
+                if (nextLiteral) {
+                    const advance = nextLiteral;
+                    const result = runner.slice(() => { const began = win.performance.now(), value = advance(); return accept(value, began, 0) ? value : undefined; },
+                        value => !!value && !value.done && token === generation && valid(), literalBudget.calls);
+                    if (result && token === generation && valid()) present(result);
+                } else {
+                    const result = cursor!.next(), dispatchMs = win.performance.now() - started;
+                    if (isAsync(result)) void Promise.resolve(result).then(value => { try { receive(value, true, dispatchMs); } catch (error) { failed(error, token); } }, error => failed(error, token));
+                    else receive(result, false, 0);
+                }
             } catch (error) { failed(error, token); }
         };
         // Coalesce pattern typing before a host worker starts; later steps still yield normally.
