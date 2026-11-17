@@ -3,22 +3,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { openHarness } from "./browser-harness.mjs";
 import { corpus } from "../fixtures/workloads.ts";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
+import { installHostReferenceProbe } from "./host-reference-probe.mjs";
 
 const source = await sourceIdentity(), smoke = process.env.STTROPEZ_HOST_SMOKE === "1", warmup = smoke ? 0 : 3, measured = smoke ? 1 : 10;
 const harness = await openHarness(), page = harness.page, cases = []; let activeCase;
 const snapshot = () => page.evaluate(() => window.hostFixture.snapshot()), clock = () => page.evaluate(() => performance.now());
 const click = name => page.getByRole("button", { name, exact: true }).click();
-async function ready() {
-    await page.waitForFunction(() => {
-        const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
-        const same = (a, b) => a?.anchor === b?.anchor && a?.head === b?.head && a?.anchorAffinity === b?.anchorAffinity && a?.headAffinity === b?.headAffinity;
-        return s.bindings.views.every(v => v.metrics && !v.metrics.pendingCaret && !v.metrics.pendingDragScroll && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.viewport.pending
-            && v.metrics.viewport.revision === s.source.revision && same(v.metrics.viewport.selection, v.selection))
-            && c?.status === "ready" && c.workingRevision === s.source.revision && !c.workingViewport.pending && !c.referenceViewport.pending
-            && !c.input.pendingCaret && !c.input.pendingDragScroll && !c.input.pendingWord && !c.input.pendingGrapheme && same(c.workingViewport.selection, c.selection);
-    });
-    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-}
+const ready = () => page.evaluate(() => globalThis.hostReferenceProbe.waitReady());
 try {
     for (const host of ["plain", "react"]) for (const corpusId of ["normal", "unique-lines-100000", "single-line"]) {
         const header = "const saMORE = 123; // TODO\n", body = corpusId === "unique-lines-100000"
@@ -28,6 +19,7 @@ try {
             activeCase = { host, corpus: corpusId, iteration, stage: "mount" };
             await page.goto(new URL(`/hosts/${host}/?editor=candidate`, page.url()).href);
             const input = page.getByRole("textbox", { name: "Primary source", exact: true }); await input.waitFor();
+            await page.evaluate(installHostReferenceProbe);
             await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
             await click("Open source review"); await ready();
             const before = await snapshot(), start = await clock(), stages = {};
@@ -80,7 +72,7 @@ try {
     }
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
     const report = { schemaVersion: 1, created: new Date().toISOString(), source, smoke, environment: { ...environment(), browser: harness.browser.version() }, cases, errors: harness.errors,
-        boundaries: "Fresh page per workflow; setup/mount and full text/reference oracles outside the total clock. Both candidate hosts, 20Hz traffic, three working views plus immutable comparison. A captured safe-text hover uses an independent real-worker lane and is ready before actual typing. Typing dismisses the popup and releases its layout observer in beforeinput, then starts a bounded completion worker request in the same beforeinput task, so its reply must follow the edit and be rejected. A fresh keyboard completion, search/cancel, save with later typing, acknowledgement failure/retry and next request follow. No service delay imposed. Input-event handler elapsed time is a separate adapter snapshot, excluding beforeinput/provider posting. It includes synchronous work inside that span and does not measure process CPU time. Stage and whole workflow automation proxies include controls, transport, asynchronous worker/comparison/caret/viewport settlement and two frames. They are not browser-input-to-ready point timings or physical display latency. Existing host-input benchmark retains its separate point/burst clocks and targets. Native IME/clipboard remain unqualified." };
+        boundaries: "Fresh page per workflow; setup/mount and full text/reference oracles outside the total clock. Both candidate hosts, 20Hz traffic, three working views plus immutable comparison. A captured safe-text hover uses an independent real-worker lane and is ready before actual typing. Typing dismisses the popup and releases its layout observer in beforeinput, then starts a bounded completion worker request in the same beforeinput task, so its reply must follow the edit and be rejected. A fresh keyboard completion, search/cancel, save with later typing, acknowledgement failure/retry and next request follow. No service delay imposed. Input-event handler elapsed time is a separate adapter snapshot, excluding beforeinput/provider posting. It includes synchronous work inside that span and does not measure process CPU time. Stage and whole workflow automation proxies include controls, transport, each stage's explicit provider gates and shared live-owner working/reference settlement (complete selections/folds, pending input/commands, caret/scans/drag, comparison alignment/scroll), source revision/reference label and two consecutive frames. They are not browser-input-to-ready point timings or physical display latency. Existing host-input benchmark retains its separate point/burst clocks and targets. Native IME/clipboard remain unqualified. Historical reports retain their original readiness definition." };
     await mkdir("artifacts/bench/host-language", { recursive: true }); await writeFile(`artifacts/bench/host-language/${smoke ? "smoke" : "latest"}.json`, JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ cases: cases.length, summary: cases.map(c => ({ host: c.host, corpus: c.corpus, handlerP95: c.inputHandlerMs.p95, workflowP95: c.workflowAutomationProxyMs.p95 })) }, null, 2));
 } catch (error) {

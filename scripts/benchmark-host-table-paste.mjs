@@ -4,20 +4,19 @@ import { performance } from "node:perf_hooks";
 import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
 import { corpus } from "../fixtures/workloads.ts";
+import { installHostReferenceProbe } from "./host-reference-probe.mjs";
 
 const source = await sourceIdentity(), writer = await createReportWriter("artifacts/bench/host-table-paste", "full");
 const harness = await openHarness(), page = harness.page;
 const report = { schemaVersion: 1, created: new Date().toISOString(), source, environment: { ...environment(), browser: harness.browser.version(), viewport: { width: 1440, height: 900 } },
     status: "running", active: null, cases: [],
     scope: "One fixed table-paste experiment: both hosts, normal/100k sources, HTML/TSV, two raw warmups and ten measured workflows per group. Normal tables have two rows; large tables have1500. One captured caret, independent source/review views, immutable reference, actual worker reply before the point and20Hz background host traffic. No prior experiment rerun.",
-    clocks: "captureHandlerMs covers only the host capture listener; it excludes candidate cleanup and conversion. dispatchMs wraps complete synchronous synthetic paste dispatch, including all listeners. maxTurnMs covers entire scheduled conversion callbacks, including final assembly, commit/publication and scheduling. commitMs measures the atomic model call including synchronous subscribers; conversionToCommitMs starts after clipboard capture and stops at commit. eventToReviewReadyMs requires exact revision, complete selections, all working views, caret/scans, immutable reference/comparison and two RAFs; later language replies are excluded. completeActionProxyMs includes automation payload transfer and the same readiness. workflowMs includes setup, fold-free controls, oracles, shared undo and disposal. No OS clipboard, native IME, CPU or physical-display qualification.",
+    clocks: "captureHandlerMs covers only the host capture listener; it excludes candidate cleanup and conversion. dispatchMs wraps complete synchronous synthetic paste dispatch, including all listeners. maxTurnMs covers entire scheduled conversion callbacks, including final assembly, commit/publication and scheduling. commitMs measures the atomic model call including synchronous subscribers; conversionToCommitMs starts after clipboard capture and stops at commit. eventToReviewReadyMs requires exact revision, completed conversion, immutable reference identity, shared live-owner working/reference settlement (complete selections/folds, pending input/commands, caret/scans/drag, comparison alignment/scroll), source revision/reference label and two RAFs; later language replies are excluded. completeActionProxyMs includes automation payload transfer and the same readiness. workflowMs includes setup, fold-free controls, oracles, shared undo and disposal. No OS clipboard, native IME, CPU or physical-display qualification. Historical reports retain their original readiness definition.",
     retention: "All raw warmups and observations are retained. Failed partial workflows and the last active identity are saved without automatic retries." };
 const save = () => writer.write(report);
 const click = name => page.getByRole("button", { name, exact: true }).click();
-const ready = () => page.waitForFunction(() => { const s = window.hostFixture?.snapshot(), c = s?.bindings.comparison;
-    return s && !s.bindings.tablePaste.pending && s.bindings.views.every(v => !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.pendingDragScroll && !v.metrics.viewport.pending
-        && v.metrics.viewport.revision === s.source.revision && v.metrics.viewport.selectionSet === v.selectionSet && v.metrics.viewport.foldGeneration === v.foldGeneration)
-        && c?.status === "ready" && !c.input.pendingCaret && !c.input.pendingWord && !c.input.pendingGrapheme && !c.workingViewport.pending && !c.referenceViewport.pending;
+const ready = () => page.waitForFunction(() => { const s = window.hostFixture.snapshot();
+    return !s.bindings.tablePaste.pending && globalThis.hostReferenceProbe.isReady(s);
 });
 const exact = text => page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false;
     for (let from = 0; from < text.length; from += 32768) if (f.range(from, Math.min(text.length, from + 32768)) !== text.slice(from, from + 32768)) return false; return true;
@@ -33,10 +32,10 @@ async function point(payload, expected) {
         const check = () => {
             if (finished) return; const s = f.snapshot(), c = s.bindings.comparison, t = s.bindings.tablePaste;
             if (t.status === "failed" || t.status === "cancelled") { fail(t.message); return; }
-            const full = !t.pending && t.status === "applied" && s.bindings.views.every(v => !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.pendingDragScroll && !v.metrics.viewport.pending
-                && v.metrics.viewport.revision === s.source.revision && v.metrics.viewport.selectionSet === v.selectionSet && v.metrics.viewport.foldGeneration === v.foldGeneration)
-                && c.status === "ready" && !c.input.pendingCaret && !c.input.pendingWord && !c.input.pendingGrapheme && !c.input.pendingDragScroll && !c.workingViewport.pending
-                && c.workingRevision === s.source.revision && c.workingViewport.selectionSet === c.selectionSet && !c.referenceViewport.pending
+            let full;
+            try { full = globalThis.hostReferenceProbe.isReady(s); }
+            catch (error) { fail(String(error?.message ?? error)); return; }
+            full &&= !t.pending && t.status === "applied"
                 && c.baseline.version === before.bindings.comparison.baseline.version && c.referenceViewport.revision === before.bindings.comparison.referenceViewport.revision;
             if (!full) { frames = 0; requestAnimationFrame(check); return; }
             const p = s.bindings.views.find(v => v.id === "primary");
@@ -63,6 +62,7 @@ try {
         for (let iteration = 0; iteration < 12; iteration++) {
             const began = performance.now(), raw = { iteration, warmup: iteration < 2, status: "running", paste: null }; group.raw.push(raw); report.active = { host, corpus: id, format, iteration };
             await page.goto(new URL(`/hosts/${host}/?editor=candidate`, page.url()).href);
+            await page.evaluate(installHostReferenceProbe);
             await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, original);
             await click("Open source review"); await ready(); await click("Capture review acceptance"); await click("Finish review acceptance"); await ready();
             await page.getByRole("checkbox", { name: "Paste tables as CSV", exact: true }).check(); const input = page.getByRole("textbox", { name: "Primary source", exact: true }); await input.focus();

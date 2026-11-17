@@ -3,22 +3,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
+import { installHostReferenceProbe } from "./host-reference-probe.mjs";
 
 const source = await sourceIdentity(), smoke = process.env.STTROPEZ_NAVIGATION_SMOKE === "1";
 const warmup = smoke ? 0 : 3, measured = smoke ? 1 : 10, cases = [], displays = [];
 const harness = await openHarness(), page = harness.page;
 const click = name => page.getByRole("button", { name, exact: true }).click();
-async function ready() {
-    await page.waitForFunction(() => {
-        const s = window.hostFixture?.snapshot(), c = s?.bindings.comparison;
-        const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-        return s?.bindings.activeViews === 2 && s.bindings.views.every(v => v.metrics && !v.metrics.pendingWord && !v.metrics.pendingGrapheme
-            && !v.metrics.pendingCaret && !v.metrics.pendingDragScroll && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision && same(v.selection, v.metrics.viewport.selection))
-            && c?.status === "ready" && !c.input.pendingWord && !c.input.pendingGrapheme && !c.input.pendingCaret && !c.input.pendingDragScroll
-            && c.workingRevision === s.source.revision && !c.workingViewport.pending && c.workingViewport.revision === s.source.revision
-            && same(c.selection, c.workingViewport.selection) && c.referenceViewport && !c.referenceViewport.pending;
-    });
-}
+const ready = () => page.evaluate(() => globalThis.hostReferenceProbe.waitReady());
 async function select(offset) {
     assert.equal(await page.evaluate(offset => {
         const f = window.hostFixture; return f.selectSource("primary", f.snapshot().source.revision, { anchor: offset, head: offset });
@@ -30,25 +21,23 @@ async function command(key, expected) {
     await page.evaluate(({ key, expected }) => {
         const f = window.hostFixture, prior = f.snapshot(), input = document.querySelector('textarea[aria-label="Primary source"]');
         globalThis.hostNavigationMeasurement = new Promise((resolve, reject) => {
-            let frames = 0, start;
-            const fail = message => { clearTimeout(timeout); reject(new Error(message)); };
+            let frames = 0, start, frame, finished = false;
+            const cleanup = () => { finished = true; clearTimeout(timeout); cancelAnimationFrame(frame); input.removeEventListener("keydown", onKey, true); };
+            const fail = message => { if (finished) return; cleanup(); reject(new Error(message)); };
             const timeout = setTimeout(() => fail(`Navigation readiness timed out: ${key}`), 20000);
-            const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
             const check = () => {
+                if (finished) return;
                 const s = f.snapshot(), c = s.bindings.comparison, p = s.bindings.views.find(v => v.id === "primary");
-                const workingReady = s.bindings.views.every(v => v.metrics && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.pendingCaret && !v.metrics.pendingDragScroll
-                    && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision && same(v.selection, v.metrics.viewport.selection));
-                if (!workingReady || !c || c.status !== "ready" || c.input.pendingWord || c.input.pendingGrapheme || c.input.pendingCaret || c.input.pendingDragScroll
-                    || c.workingRevision !== s.source.revision || c.workingViewport.pending || c.workingViewport.revision !== s.source.revision
-                    || !same(c.selection, c.workingViewport.selection) || !c.referenceViewport || c.referenceViewport.pending) {
-                    frames = 0; requestAnimationFrame(check); return;
-                }
+                let full;
+                try { full = globalThis.hostReferenceProbe.isReady(s); }
+                catch (error) { fail(String(error?.message ?? error)); return; }
+                if (!full) { frames = 0; frame = requestAnimationFrame(check); return; }
                 if (s.source.revision !== prior.source.revision + expected.revisionDelta || s.source.length !== expected.length
                     || p.selection.anchor !== expected.anchor || p.selection.head !== expected.head) {
                     fail(`Incorrect navigation result: ${JSON.stringify({ key, expected, revision: s.source.revision, prior: prior.source.revision, length: s.source.length, selection: p.selection })}`); return;
                 }
-                if (++frames < 2) { requestAnimationFrame(check); return; }
-                clearTimeout(timeout);
+                if (++frames < 2) { frame = requestAnimationFrame(check); return; }
+                cleanup();
                 resolve({ keydownHandlerMs: p.metrics.lastKeydownMs, keyToReviewReadyProxyMs: performance.now() - start,
                     selection: p.selection, revision: s.source.revision, length: s.source.length, exports: s.source.exports,
                     history: s.history, inputUnits: p.metrics.inputUnits, rows: s.bindings.views.map(v => v.metrics.viewport.rows),
@@ -61,7 +50,7 @@ async function command(key, expected) {
             };
             const onKey = event => {
                 if (event.key !== key) return;
-                input.removeEventListener("keydown", onKey, true); start = performance.now(); requestAnimationFrame(check);
+                input.removeEventListener("keydown", onKey, true); start = performance.now(); frame = requestAnimationFrame(check);
             };
             input.addEventListener("keydown", onKey, { capture: true });
         });
@@ -92,6 +81,7 @@ try {
         for (let iteration = 0; iteration < warmup + measured; iteration++) {
             await page.goto(new URL(`/hosts/${host}/?editor=candidate`, page.url()).href);
             await page.waitForFunction(() => window.hostFixture?.snapshot().bindings.activeViews === 2);
+            await page.evaluate(installHostReferenceProbe);
             await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, original);
             await click("Open source review"); await ready();
             await click("Capture review acceptance"); await click("Finish review acceptance"); await ready();
@@ -157,7 +147,7 @@ try {
         readinessMet: c.bulk ? null : c.keyToReviewReadyProxyMs.p95 <= c.targets.readinessMs, completeActionMet: c.bulk ? null : c.completeActionProxyMs.p95 <= c.targets.completeActionMs };
     const report = { schemaVersion: 1, created: new Date().toISOString(), source, smoke,
         environment: { ...environment(), browser: harness.browser.version(), viewport: page.viewportSize(), displays }, cases, errors: harness.errors,
-        boundaries: "Candidate source commands in both hosts with two source panes, editable comparison, immutable reference and 20Hz host traffic. Three positions per corpus. Each measured command starts at input-capture keydown and waits for exact text length/revision/model selection, all three completed render selections/revisions, cooperative scans, caret scheduling, completed comparison and two consecutive frames. Synchronous keydown handler elapsed time, readiness and whole keyboard-action automation are separate. Full-text/reference oracles and explicit selection setup are outside timers. Warm comparison indexes; cold first edits, sustained input, physical presentation and native devices are unqualified. No imposed service delay. Long single-line word/grapheme jobs and their provisional target misses remain in the results." };
+        boundaries: "Candidate source commands in both hosts with two source panes, editable comparison, immutable reference and 20Hz host traffic. Three positions per corpus. Each measured command starts at input-capture keydown and waits for exact text length/revision/model selection, shared live-owner working/reference settlement (complete selections/folds, pending input/commands, scans/caret/drag, comparison alignment/scroll), source revision/reference label and two consecutive frames. Synchronous keydown handler elapsed time, readiness and whole keyboard-action automation are separate. Full-text/reference oracles and explicit selection setup are outside timers. Warm comparison indexes; cold first edits, sustained input, physical presentation and native devices are unqualified. No imposed service delay. Long single-line word/grapheme jobs and their provisional target misses remain in the results. Historical reports retain their original readiness definition." };
     await mkdir("artifacts/bench/host-navigation", { recursive: true });
     await writeFile(`artifacts/bench/host-navigation/${smoke ? "smoke" : "latest"}.json`, JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ conditions: cases.length, targetMisses: cases.filter(c => Object.values(c.targetAssessment).some(v => v === false))

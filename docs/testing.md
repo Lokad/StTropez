@@ -212,13 +212,14 @@ commands, working/reference views, caret/scans and comparison settlement over tw
 Exact text, transaction counts and undo/redo are checked independently of inserted UTF-16 units.
 The probe retains partial observations on failure. Its `isReady` predicate composes the same
 live-owner `settled` checks used by browser specs, plus the expected working views, source
-revision and displayed reference version. The folding benchmark uses this predicate too.
+revision and displayed reference version. Folding, navigation, table-paste and language
+measurements also use this predicate; provider and host-service gates remain operation-specific.
 Complete selection sets, fold generations, reference input, alignment and scroll must settle;
 phase render observations remain narrower. Terminal alignment failure rejects the wait.
 The standalone installed consumer stages the same fixture helper with public package imports;
 its strict consumer compile and isolation checks exclude library source.
 
-These benchmarks use `scripts/benchmark-report.mjs`: each variant retains a unique run under
+Input/reference, folding and table-paste reports use `scripts/benchmark-report.mjs`: each variant retains a unique run under
 `artifacts/bench/<benchmark>/<variant>/runs/`; only a successful run updates that variant's
 `latest.json`. Smoke, full and retention-check results stay separate, as do raw warmups and
 measured observations. Failed runs retain completed samples and the active partial observation.
