@@ -14,12 +14,20 @@ const stale = () => staleRequest("Captured LSP documents changed.");
 /** One feature scope, one latest intent. Decoding and mutation policy remain with the caller. */
 export function createLspClient(provider: LspWorkspace) {
     const scope = provider.createScope(), listeners = new Set<() => void>();
-    let disposed = false, generation = 0, latest: Request | undefined;
+    let disposed = false, generation = 0, latest: Request | undefined, notificationQueued = false;
     let documents: ReadonlyMap<string, LspDocument> = new Map();
     const notify = () => {
+        notificationQueued = false;
         for (const listener of [...listeners]) {
             try { listener(); } catch { /* An observer cannot change the completed operation. */ }
         }
+    };
+    // Publish only after the call and its rejection handlers exist. A listener may cancel
+    // or replace the intent; an already-delivered state change absorbs the queued update.
+    const queueNotify = () => {
+        if (disposed || notificationQueued) return;
+        notificationQueued = true;
+        void Promise.resolve().then(() => { if (!disposed && notificationQueued) notify(); });
     };
     const stop = scope.state.subscribe(notify);
     const release = () => {
@@ -48,6 +56,7 @@ export function createLspClient(provider: LspWorkspace) {
     const wait = async <T>(request: Request, work: () => Promise<T>) => {
         guard(request);
         request.pending++;
+        queueNotify();
         try { return await Promise.race([work(), request.cancellation]); }
         catch (error) {
             if (current(request)) invalidate(true);
@@ -128,6 +137,7 @@ export function createLspClient(provider: LspWorkspace) {
             op.pending--;
             if (latest === op || !latest) notify();
         });
+        queueNotify();
         // Completed calls may be released by a view without invalidating their published result.
         return Object.freeze({ result, cancel: () => {
             if (op.pending < 1 || op.cancelled) return;

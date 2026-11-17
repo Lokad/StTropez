@@ -49,6 +49,38 @@ test("multi-method handles query their declared methods and reject another clien
     assert.equal(f.provider.snapshot().documents, 0);
 });
 
+test("subscribers observe busy request and follow-up work on unchanged documents", async t => {
+    const f = clientFixture(t), client = protocol.createLspLinkClient(f.provider); t.after(client.dispose);
+    const wire = { range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, data: { token: 1 } };
+    f.peer.onRequest("textDocument/documentLink", () => [wire]);
+    const run = () => client.run(f.document());
+    await run(); await settled();
+    const observed: boolean[] = [], stop = client.subscribe(() => { observed.push(client.isBusy()); }); t.after(stop);
+    const entered = latch<void>(), answer = latch<unknown>(); t.after(() => answer.resolve([]));
+    f.peer.onRequest("textDocument/documentLink", () => { entered.resolve(); return answer.promise; });
+    const pending = run(); await entered.promise; await settled(); assert.deepEqual(observed, [true]);
+    answer.resolve([wire]); const batch = await pending;
+    assert.deepEqual(observed, [true, false]); observed.length = 0;
+    const resolving = latch<void>(), resolved = latch<unknown>(); t.after(() => resolved.resolve(null));
+    f.peer.onRequest("documentLink/resolve", () => { resolving.resolve(); return resolved.promise; });
+    const follow = batch.resolve(batch.items[0]!); await resolving.promise; await settled();
+    assert.deepEqual(observed, [true]); resolved.resolve({ ...wire, target: "host:target" }); await follow;
+    assert.deepEqual(observed, [true, false]);
+});
+
+test("queued busy delivery permits cancellation and suppresses disposed work without replacing its capture", async t => {
+    const f = clientFixture(t), client = createLspHoverClient(f.provider); t.after(client.dispose);
+    await client.run(f.document(), 0).result; await settled();
+    const observed: boolean[] = []; let cancel = true;
+    const stop = client.subscribe(() => { observed.push(client.isBusy()); if (cancel && client.isBusy()) client.cancel(); }); t.after(stop);
+    const call = client.run(f.document(), 0); await assert.rejects(call.result, cancelled); await settled();
+    assert.equal(observed[0], true); assert.equal(observed.at(-1), false); assert.equal(client.isBusy(), false);
+    assert.equal(f.sent("textDocument/hover").length, 1, "The cancelled capture never dispatches another request.");
+    cancel = false; observed.length = 0;
+    const disposed = client.run(f.document(), 6); client.dispose(); await assert.rejects(disposed.result, cancelled); await settled();
+    assert.deepEqual(observed, []); assert.equal(f.provider.snapshot().documents, 0);
+});
+
 test("request validation binds a project once and never replaces a captured URI during a held reply", async t => {
     let mappings = 0, version = 0;
     const f = clientFixture(t, undefined, undefined, doc => { mappings++; return { uri: `generic:${version}/${doc.resourceId}`, languageId: "generic" }; }),

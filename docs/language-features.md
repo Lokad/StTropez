@@ -38,6 +38,10 @@ primary method. Navigation accepts an optional second argument of `textDocument/
 (the default) or `textDocument/references`; colors accept `textDocument/documentColor`
 (the default) or `textDocument/colorPresentation`. Other methods are rejected. Options queries
 and new subscriptions on a disposed client throw; `dispose()` is idempotent.
+Subscribers are notified when pending request or follow-up work starts and finishes, including
+requests for unchanged text. Start delivery is queued after the call exists and may coalesce
+with connection updates or cancellation in the same turn. Read `isBusy()` in the callback;
+it describes current work, not a history of every intermediate transition.
 
 For a mounted completion controller, retain the published list ID in each host action. This
 prevents a delayed click from selecting an item in a replacement list:
