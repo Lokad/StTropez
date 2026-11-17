@@ -4,27 +4,19 @@ import { openHarness } from "./browser-harness.mjs";
 import { distribution as measuredDistribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
 import { measureHostEdit, summarizeHostEdits } from "./host-edit-measurement.mjs";
 import { createReportWriter } from "./benchmark-report.mjs";
-import { installHostReferenceProbe } from "./host-reference-probe.mjs";
+import { createHostScene } from "./host-scene.mjs";
 
 const source = await sourceIdentity(), smoke = process.env.STTROPEZ_REFERENCE_SMOKE === "1", retentionCheck = process.argv.includes("--retention-check");
 assert.ok(!smoke || !retentionCheck, "Select either the smoke run or the focused retention check.");
 const warmup = retentionCheck ? 2 : smoke ? 0 : 3, measured = smoke || retentionCheck ? 1 : 10;
 const distribution = values => ({ ...measuredDistribution(values), max: Math.max(...values) });
-const harness = await openHarness(), page = harness.page, cases = new Map(), warmupCases = new Map(), displays = []; let activeCase, activeSample, mounted = false;
-const directory = "artifacts/bench/host-reference", snapshot = () => page.evaluate(() => window.hostFixture.snapshot());
+const harness = await openHarness(), page = harness.page, scene = createHostScene(page), cases = new Map(), warmupCases = new Map(), displays = []; let activeCase, activeSample;
+const directory = "artifacts/bench/host-reference", snapshot = scene.snapshot;
 const writer = await createReportWriter(directory, retentionCheck ? "retention-check" : smoke ? "smoke" : "full");
 const click = name => page.getByRole("button", { name, exact: true }).click();
-const ready = () => page.evaluate(() => globalThis.hostReferenceProbe.waitReady());
-const fullText = text => page.evaluate(text => { const f = window.hostFixture; return f.snapshot().source.length === text.length && f.range(0, text.length) === text; }, text);
-async function dispose() {
-    if (!mounted) return; await page.evaluate(() => window.hostFixture.dispose()); mounted = false;
-    const state = await snapshot(); assert.equal(state.diagnostics.views, 0); assert.equal(state.diagnostics.leases, 0);
-    assert.equal(state.diagnostics.subscriptions, 0); assert.equal(state.hostSubscriptions, 0);
-}
+const ready = scene.ready, fullText = scene.exactText, dispose = scene.dispose;
 async function mount(host) {
-    await dispose(); await page.goto(new URL(`/hosts/${host}/?editor=candidate`, page.url()).href);
-    await page.waitForFunction(() => window.hostFixture?.snapshot().bindings.activeViews === 2); mounted = true;
-    await page.evaluate(installHostReferenceProbe); await click("Open source review"); await ready();
+    await dispose(); await scene.mount(host); await click("Open source review"); await ready();
 }
 async function prepare(original, reference) {
     await page.evaluate(original => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: original }]); }, original);
@@ -50,7 +42,7 @@ async function prepare(original, reference) {
     assert.equal(refresh.exports, saved.source.exports); assert.equal(refresh.generations.length, 1);
     if (reference === "identity") { assert.equal(refresh.finalDiffProgress.work, 0); assert.equal(refresh.finalDiffProgress.readUnits, 0); }
     else { assert.ok(refresh.finalDiffProgress.work > 0); assert.ok(refresh.finalDiffProgress.readUnits > 0); }
-    assert.equal(await page.evaluate(text => window.hostFixture.referenceRange(0, text.length) === text, original), true);
+    assert.equal(await scene.exactText(original, "reference"), true);
     return { refresh, setup: { saveAutomationProxyMs, submittedRevision: submitted.revision, serverVersion: saved.source.serverVersion, exportsBeforeInput: refresh.exports } };
 }
 function summarize(item) {
@@ -105,7 +97,7 @@ try {
                     activeCase.stage = "input"; const observed = await measureHostEdit(page, input, text, mode, observed => { activeSample.input = observed; }), expected = original.slice(0, offset) + text + original.slice(offset);
                     assert.equal(observed.revision, before.source.revision + observed.transactions); assert.equal(await fullText(expected), true);
                     assert.equal(observed.referenceVersion, refresh.referenceVersion); assert.equal(observed.referenceEpoch, refresh.referenceEpoch);
-                    assert.equal(await page.evaluate(text => window.hostFixture.referenceRange(0, text.length) === text, original), true);
+                    assert.equal(await scene.exactText(original, "reference"), true);
                     assert.equal(observed.secondarySelection.anchor, 2 + (offset < 2 ? text.length : 0)); assert.equal(observed.secondarySelection.head, 4 + (offset < 4 ? text.length : 0));
                     activeCase.stage = "history"; const groups = observed.history?.groups ?? observed.historyAfter.undoDepth - observed.historyBefore.undoDepth;
                     assert.ok(groups >= 1 && groups <= observed.transactions);
@@ -144,8 +136,8 @@ try {
             pattern: c.pattern, position: c.position, mode: c.mode, handlerKind: c.handlerKind, handlerMs: timingSummary(c.keydownHandlerMs ?? c.inputHandlerMs), readyMs: timingSummary(c.commandToFullReviewReadyProxyMs ?? c.lastInputToFullReviewReadyProxyMs), actionMs: timingSummary(c.completeActionProxyMs) })) }, null, 2));
 } catch (error) {
     await writer.write({ status: "failed", source, smoke, retentionCheck, activeCase, activeSample, error: String(error), stack: error.stack,
-        cases: [...cases.values()], warmupCases: [...warmupCases.values()], state: mounted ? await snapshot().catch(() => null) : null,
-        observation: mounted ? await page.evaluate(() => globalThis.hostReferenceProbe?.snapshot()).catch(() => null) : null, errors: harness.errors });
-    if (mounted) await page.screenshot({ path: writer.file.replace(/\.json$/, ".png"), fullPage: true }).catch(() => {});
+        cases: [...cases.values()], warmupCases: [...warmupCases.values()], state: scene.mounted ? await snapshot().catch(() => null) : null,
+        observation: scene.mounted ? await page.evaluate(() => globalThis.hostReferenceProbe?.snapshot()).catch(() => null) : null, errors: harness.errors });
+    if (scene.mounted) await page.screenshot({ path: writer.file.replace(/\.json$/, ".png"), fullPage: true }).catch(() => {});
     console.error(JSON.stringify({ failedReport: writer.file })); throw error;
 } finally { await dispose().catch(() => {}); await harness.close(); }

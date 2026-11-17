@@ -1,6 +1,9 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const { installHostReferenceProbe } = await import(new URL("../../scripts/host-reference-probe.mjs", import.meta.url).href) as { installHostReferenceProbe: () => void };
+type HostScene = Readonly<{ mounted: boolean; mount(host: string): Promise<void>; dispose(): Promise<void>; ready(): Promise<unknown>;
+    snapshot(): Promise<ReturnType<Window["hostFixture"]["snapshot"]>>; exactText(text: string, target?: "source" | "reference"): Promise<boolean> }>;
+const { createHostScene } = await import(new URL("../../scripts/host-scene.mjs", import.meta.url).href) as { createHostScene: (page: Page) => HostScene };
 type Result = { kind: string; transactions: number; insertedUnits: number; revision: number; commandToFullReviewReadyProxyMs: number | null;
     lastInputToFullReviewReadyProxyMs: number | null; records: { trusted?: boolean; keydownHandlerMs?: number; inputHandlerMs?: number; workingRenderProxyMs: number | null }[] };
 type Probe = { arm: (options: { kind: string; text?: string; caretOffset?: number; operation?: string; replaceSelection?: boolean }) => void;
@@ -19,6 +22,42 @@ async function mount(page: Page, host: string) {
     await page.getByRole("button", { name: "Finish review acceptance", exact: true }).click();
     expect((await page.evaluate(() => window.hostReferenceProbe.read())).kind).toBe("reference");
 }
+
+test("host text oracle checks complete raw source and independent reference without exports", async ({ page }) => {
+    await page.goto("/workspace/"); // Establish the harness origin before mounting a host scene.
+    const scene = createHostScene(page);
+    // The surrogate pair and CRLF each straddle a chunk boundary; retain the lone surrogate too.
+    const text = "a".repeat(32767) + "😀" + "b".repeat(32766) + "\r\nend\ud800";
+    try {
+        await scene.mount("plain");
+        expect(await scene.exactText("", "reference")).toBe(false);
+        await page.evaluate(text => {
+            const f = window.hostFixture, s = f.snapshot();
+            f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]);
+        }, text);
+        await page.getByRole("button", { name: "Open source review", exact: true }).click();
+        await page.getByRole("button", { name: "Capture review acceptance", exact: true }).click();
+        await page.getByRole("button", { name: "Finish review acceptance", exact: true }).click(); await scene.ready();
+        for (const target of ["source", "reference"] as const) {
+            expect(await scene.exactText(text, target)).toBe(true);
+            expect(await scene.exactText(text.slice(0, -1), target)).toBe(false);
+            expect(await scene.exactText(text.slice(0, 32768) + "x" + text.slice(32769), target)).toBe(false);
+        }
+        await page.evaluate(() => {
+            const f = window.hostFixture, s = f.snapshot();
+            f.editSource(s.source.revision, [{ from: s.source.length, to: s.source.length, insert: "q" }]);
+        }); await scene.ready();
+        expect(await scene.exactText(text + "q")).toBe(true);
+        expect(await scene.exactText(text)).toBe(false);
+        expect(await scene.exactText(text, "reference")).toBe(true);
+        expect(await scene.exactText(text + "q", "reference")).toBe(false);
+        const state = await scene.snapshot();
+        expect(state.source.exports).toBe(0);
+        expect(state.bindings.comparison!.baseline!.exports).toBe(0);
+    } finally { await scene.dispose(); }
+    expect(scene.mounted).toBe(false);
+    await scene.dispose();
+});
 
 test("source readiness supports native views and optional review without weakening full review", async ({ page }) => {
     for (const editor of ["native", "candidate"]) {

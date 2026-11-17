@@ -3,18 +3,18 @@ import {mkdir,writeFile} from "node:fs/promises";
 import {performance} from "node:perf_hooks";
 import {openHarness} from "./browser-harness.mjs";
 import {sourceIdentity,environment,distribution as measuredDistribution} from "./measurement.mjs";
-import {installHostReferenceProbe} from "./host-reference-probe.mjs";
+import {createHostScene} from "./host-scene.mjs";
 
 const source=await sourceIdentity(),smoke=process.env.STTROPEZ_DRAG_SMOKE==="1",warmup=smoke?0:3,measured=smoke?1:10,holdFrames=8;
-const directory="artifacts/bench/host-drag-scroll",cases=[],displays=[],h=await openHarness(),page=h.page;let mounted=false,activeCase;
+const directory="artifacts/bench/host-drag-scroll",cases=[],displays=[],h=await openHarness(),page=h.page,scene=createHostScene(page);let activeCase;
 const distribution=values=>({...measuredDistribution(values),max:Math.max(...values)});
-const snapshot=()=>page.evaluate(()=>window.hostFixture.snapshot()),primary=s=>s.bindings.views.find(v=>v.id==="primary");
+const snapshot=scene.snapshot,primary=s=>s.bindings.views.find(v=>v.id==="primary");
 const input=()=>page.getByRole("textbox",{name:"Primary source",exact:true}),root=()=>page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"])');
-const click=name=>page.getByRole("button",{name,exact:true}).click(),ready=()=>page.evaluate(()=>globalThis.hostReferenceProbe.waitReady());
-const exact=text=>page.evaluate(value=>{const f=window.hostFixture;return f.snapshot().source.length===value.length&&f.range(0,value.length)===value;},text);
-async function dispose(){if(!mounted)return;await page.mouse.up();await page.evaluate(()=>window.hostFixture.dispose());mounted=false;const s=await snapshot();for(const key of ["views","leases","subscriptions"])assert.equal(s.diagnostics[key],0);assert.equal(s.hostSubscriptions,0);}
+const click=name=>page.getByRole("button",{name,exact:true}).click(),ready=scene.ready;
+const exact=scene.exactText;
+async function dispose(){if(!scene.mounted)return;await page.mouse.up();await scene.dispose();}
 async function prepare(host,corpus,sign){
-    await dispose();await page.goto(new URL(`/hosts/${host}/?editor=candidate`,page.url()).href);await page.waitForFunction(()=>window.hostFixture?.snapshot().bindings.activeViews===2);mounted=true;await page.evaluate(installHostReferenceProbe);
+    await dispose();await scene.mount(host);
     const line="const sample = '😀 é';",count=corpus==="unicode-crlf"?60:100000,original=corpus==="single-line"?"x".repeat(2400000):Array(count).fill(line).join("\r\n");
     await page.evaluate(text=>{const f=window.hostFixture,s=f.snapshot();f.editSource(s.source.revision,[{from:0,to:s.source.length,insert:text}]);f.selectSource("secondary",f.snapshot().source.revision,{anchor:4,head:1});},original);
     await click("Open source review");await ready();await click("Save source");await page.waitForFunction(()=>window.hostFixture.snapshot().pendingSaves.length===1);await page.evaluate(()=>window.hostFixture.finishSave());
@@ -69,7 +69,7 @@ try{
             const observed=await page.evaluate(()=>globalThis.hostReferenceProbe.read());observed.completeActionProxyMs=performance.now()-pointStart;const workflowActionProxyMs=performance.now()-workflowStart;
             const expected=original.slice(0,from)+"q"+original.slice(to),final=await snapshot();assert.equal(await exact(expected),true);assert.deepEqual(observed.replacement,{from,to});assert.equal(observed.primarySelection.anchor,from+1);assert.equal(observed.primarySelection.head,from+1);
             assert.equal(observed.records.length,1);assert.equal(observed.generations.length,1);assert.equal(observed.exports,0);assert.equal(observed.referenceVersion,"reference:saved-v1");assert.ok(observed.rows.every(n=>n<100));assert.ok(observed.readUnits.every(n=>n<20000));assert.ok(observed.inputUnits.every(n=>n<=2600));assert.ok(observed.comparisonInputUnits<=2600);
-            assert.equal(final.history.undoDepth,initial.history.undoDepth+1);assert.ok(final.activity.background>initial.activity.background);assert.equal(await page.evaluate(text=>window.hostFixture.referenceRange(0,text.length)===text,original),true);
+            assert.equal(final.history.undoDepth,initial.history.undoDepth+1);assert.ok(final.activity.background>initial.activity.background);assert.equal(await scene.exactText(original,"reference"),true);
             activeCase.stage="history";await input().press("Control+z");await ready();assert.equal(await exact(original),true);assert.equal((await snapshot()).source.dirty,false);await input().press("Control+Shift+z");await ready();assert.equal(await exact(expected),true);assert.equal((await snapshot()).source.dirty,true);
             if(iteration>=warmup)samples.push({iteration,gestureActionProxyMs,workflowActionProxyMs,gestureToReviewReadyProxyMs:readyAt-gesture.outsideAt,releaseToReviewReadyProxyMs:readyAt-gesture.upAt,stationaryHoldMs:gesture.upAt-gesture.outsideAt,
                 dragFrameMaximumMs:primary(released).metrics.maxDragScrollStepMs,dragScrollFrames:primary(released).metrics.dragScrollFrames,gesture,point:observed,expectedSelection:{anchor:point.offset,head:expectedHead},backgroundUpdates:final.activity.background-initial.activity.background,setupSaveExports:initial.source.exports,gestureExportDelta:released.source.exports-initial.source.exports});
@@ -83,5 +83,5 @@ try{
     assert.equal(cases.length,12);assert.deepEqual(h.errors,[]);assert.equal((await sourceIdentity()).sha256,source.sha256);await mkdir(directory,{recursive:true});
     await writeFile(`${directory}/${smoke?"smoke":"latest"}.json`,JSON.stringify({schemaVersion:1,source,created:new Date().toISOString(),smoke,environment:{...environment(),browser:h.browser.version(),displays},cases,errors:h.errors,
         boundaries:"Both candidate hosts;normalUnicodeCRLF/100k vertical and2.4M ASCII horizontal compressed logical extents,bothdirections. Initialsave/reference/setup excluded. Actual captured mouse,8requestedstationaryanimationframes,outside release,allpanes/reference/scans/caret/no pendingDragScroll+2frames. Native Range caret oracle from bounded rendered text independentlychecks released head. q replaces exact captured selection; source/history/savedref/exports/bounds/background/disposal asserted. Raw gesture browser clocks begin at firstoutside move capture; release clock at pointerup capture. Holdduration is explicit. Full gesture automation begins before initial mouse move/down; workflow includes gesture/oracle/control transport and q. Pointinput beforeinput/readiness/handler andcompletepointaction separate. maxDragScrollStepMs is longest complete synchronous RAFcallback elapsed span per mount,including guards/layout/projection/selection/subscribers/cleanup/scheduling,not a per-frame p95 or processCPU. Report distribution of those per-workflow maxima and raw frame observations. Handler includes synchronoussubscribers;excludesbeforeinput/native-before-handler/laterprobelisteners. Wholegestures/workflows have no point-action budget. No imposed servicedelay,physical display/nativeIME/OSclipboard qualification."},null,2));
-}catch(error){await mkdir(directory,{recursive:true});await writeFile(`${directory}/failure-${Date.now()}.json`,JSON.stringify({source,smoke,activeCase,error:String(error),stack:error.stack,completed:cases,state:mounted?await snapshot().catch(()=>null):null,errors:h.errors},null,2));throw error;}
+}catch(error){await mkdir(directory,{recursive:true});await writeFile(`${directory}/failure-${Date.now()}.json`,JSON.stringify({source,smoke,activeCase,error:String(error),stack:error.stack,completed:cases,state:scene.mounted?await snapshot().catch(()=>null):null,errors:h.errors},null,2));throw error;}
 finally{await page.evaluate(()=>globalThis.dragGestureProbe?.stop()).catch(()=>{});await dispose().catch(()=>{});await h.close();}

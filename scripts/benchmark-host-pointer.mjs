@@ -3,21 +3,19 @@ import {mkdir,writeFile} from "node:fs/promises";
 import {performance} from "node:perf_hooks";
 import {openHarness} from "./browser-harness.mjs";
 import {sourceIdentity,environment,distribution as measuredDistribution} from "./measurement.mjs";
-import {installHostReferenceProbe} from "./host-reference-probe.mjs";
+import {createHostScene} from "./host-scene.mjs";
 import {typeHostSuffix} from "./host-typing.mjs";
 
 const source=await sourceIdentity(),smoke=process.env.STTROPEZ_POINTER_SMOKE==="1",warmup=smoke?0:3,measured=smoke?1:10;
 const distribution=values=>({...measuredDistribution(values),max:Math.max(...values)}),directory="artifacts/bench/host-pointer";
-const h=await openHarness(),page=h.page,cases=[],displays=[];let mounted=false,activeCase;
-const snapshot=()=>page.evaluate(()=>window.hostFixture.snapshot()),click=name=>page.getByRole("button",{name,exact:true}).click();
-const ready=()=>page.evaluate(()=>globalThis.hostReferenceProbe.waitReady()),root=()=>page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"])');
-const exact=text=>page.evaluate(t=>{const f=window.hostFixture;return f.snapshot().source.length===t.length&&f.range(0,t.length)===t;},text);
-async function dispose(){if(!mounted)return;await page.evaluate(()=>window.hostFixture.dispose());mounted=false;const s=await snapshot();assert.equal(s.diagnostics.views,0);assert.equal(s.diagnostics.leases,0);assert.equal(s.diagnostics.subscriptions,0);assert.equal(s.hostSubscriptions,0);}
+const h=await openHarness(),page=h.page,scene=createHostScene(page),cases=[],displays=[];let activeCase;
+const snapshot=scene.snapshot,click=name=>page.getByRole("button",{name,exact:true}).click();
+const ready=scene.ready,root=()=>page.locator('.st-editing-candidate:has(> textarea[aria-label="Primary source"])');
+const exact=scene.exactText,dispose=scene.dispose;
 try{for(const host of ["plain","react"])for(const corpus of ["unicode-crlf","lines-100000"])for(const cancellation of ["capture-loss","synthetic-cancel"]){
     const original=Array(corpus==="unicode-crlf"?60:100000).fill("const sample = '😀 é';").join("\r\n"),samples=[];
     for(let iteration=0;iteration<warmup+measured;iteration++){
-        activeCase={host,corpus,cancellation,iteration,stage:"setup"};await dispose();await page.goto(new URL(`/hosts/${host}/?editor=candidate`,page.url()).href);
-        await page.waitForFunction(()=>window.hostFixture?.snapshot().bindings.activeViews===2);mounted=true;await page.evaluate(installHostReferenceProbe);
+        activeCase={host,corpus,cancellation,iteration,stage:"setup"};await dispose();await scene.mount(host);
         await page.evaluate(text=>{const f=window.hostFixture,s=f.snapshot();f.editSource(s.source.revision,[{from:0,to:s.source.length,insert:text}]);},original);
         await click("Open source review");await ready();await click("Save source");await page.waitForFunction(()=>window.hostFixture.snapshot().pendingSaves.length===1);
         await page.evaluate(()=>window.hostFixture.finishSave());await page.waitForFunction(()=>window.hostFixture.snapshot().pendingCommands===0&&window.hostFixture.snapshot().source.serverVersion==="v1");
@@ -68,5 +66,5 @@ try{for(const host of ["plain","react"])for(const corpus of ["unicode-crlf","lin
 }assert.equal(cases.length,8);assert.deepEqual(h.errors,[]);assert.equal((await sourceIdentity()).sha256,source.sha256);await mkdir(directory,{recursive:true});
 await writeFile(`${directory}/${smoke?"smoke":"latest"}.json`,JSON.stringify({schemaVersion:1,source,created:new Date().toISOString(),smoke,environment:{...environment(),browser:h.browser.version(),displays},cases,errors:h.errors,
     boundaries:"Both candidatehosts,UnicodeCRLF/100k,realmouse capture loss and explicitlysyntheticownedcancel. Actualgotcapture precedescancellation; releaseoutsideandhover mustleavecaret/history/independentselections unchanged. Actualq insertsatcapturedcaret,sharedhistoryundostosaved/redo/baselineversions/bounds/export/disposal asserted. Initialsave/reference/setup excluded. Adapterduration includes synchronoussubscribers,excludesbeforeinput/native-before-handler/laterprobelisteners. Pointreadiness startsbeforeinput,waitscurrentpanes/scans/caret/comparison/referenceversion+2frames. Completepointaction includesautomation. Wholegesture/workflow includescapture/cancellation/outside release/hoversettlement andq; no pointbudget forwholegesture. No imposed servicedelay. Rawp50/p95/max preserved,requestedfontfields distinctfrominstalled-fontidentity; framesare notphysicaldisplay andsyntheticcancel isnotnative deviceproof. No nativeIME/OSclipboard qualification."},null,2));
-}catch(error){await mkdir(directory,{recursive:true});await writeFile(`${directory}/failure-${Date.now()}.json`,JSON.stringify({source,smoke,activeCase,error:String(error),stack:error.stack,completed:cases,state:mounted?await snapshot().catch(()=>null):null,errors:h.errors},null,2));throw error;
+}catch(error){await mkdir(directory,{recursive:true});await writeFile(`${directory}/failure-${Date.now()}.json`,JSON.stringify({source,smoke,activeCase,error:String(error),stack:error.stack,completed:cases,state:scene.mounted?await snapshot().catch(()=>null):null,errors:h.errors},null,2));throw error;
 }finally{await dispose().catch(()=>{});await h.close();}
