@@ -13,6 +13,7 @@ import type { Affinity } from "../core/positions.ts";
 import { unchangedPositionEdges } from "../core/positions.ts";
 import { createFoldRegions, FoldIndex } from "../core/folding.ts";
 import { sameSelectionSet } from "../core/selections.ts";
+import { partitionPoint } from "../core/bound-search.ts";
 import { decorationParts, validDecorationClass } from "./decoration-parts.ts";
 import type { RowPart } from "./decoration-parts.ts";
 import type { ComparisonRowIndex } from "../core/comparison-rows.ts";
@@ -318,9 +319,10 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
     };
     const paintRow = (element: HTMLDivElement, item: Row, document: DocumentSnapshot, selectionSet: SelectionSet, highlightedLine?: number): boolean => {
         element.dataset.line = String(item.line); element.dataset.from = String(item.from); element.dataset.to = String(item.to); element.dataset.complete = String(item.complete);
-        let low = 0, high = selectionSet.ranges.length;
-        while (low < high) { const middle = (low + high) >>> 1, range = selectionSet.ranges[middle]!;
-            if (Math.max(range.anchor, range.head) <= item.from) low = middle + 1; else high = middle; }
+        const low = partitionPoint(selectionSet.ranges.length, index => {
+            const range = selectionSet.ranges[index]!;
+            return Math.max(range.anchor, range.head) <= item.from;
+        });
         const selections: { from: number; to: number }[] = [];
         for (let index = low; index < selectionSet.ranges.length; index++) {
             const range = selectionSet.ranges[index]!, from = Math.max(item.from, Math.min(range.anchor, range.head)), to = Math.min(item.to, Math.max(range.anchor, range.head));

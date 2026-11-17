@@ -1,5 +1,6 @@
 import { resolveBidi } from "../core/bidi.ts";
 import { graphemeBoundaries } from "../core/graphemes.ts";
+import { partitionPoint } from "../core/bound-search.ts";
 import type { Affinity } from "../core/positions.ts";
 
 export type CaretRectangle = Readonly<{ offset: number; affinity: Affinity; left: number; top: number; height: number; revision: number; padding?: true }>;
@@ -113,8 +114,7 @@ export function rowGeometry(element: HTMLElement, from: number, revision: number
     };
     const point = (offset: number, affinity: Affinity = "after"): CaretRectangle | undefined => {
         const local = offset - from; if (local < 0 || local > text.length) return;
-        let low = 0, high = boundaries.length;
-        while (low < high) { const middle = (low + high) >>> 1; if (boundaries[middle]! < local) low = middle + 1; else high = middle; }
+        const low = partitionPoint(boundaries.length, index => boundaries[index]! < local);
         const index = boundaries[low] === local || affinity === "after" ? low : Math.max(0, low - 1);
         if (boundaries.length === 1) return make(0, affinity, bounds!.left, bounds!.top, lineHeight);
         const end = index === boundaries.length - 1 || affinity === "before" && index > 0, at = end ? index - 1 : index;

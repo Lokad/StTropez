@@ -1,5 +1,6 @@
 import { clientBox } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
+import { partitionPoint } from "../core/bound-search.ts";
 import type { DocumentSnapshot, DocumentView } from "../core/workspace.ts";
 import type { TextViewport } from "./viewport.ts";
 
@@ -49,12 +50,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
             const from = buffer.offsetAt(state.firstLine), to = state.lastLine < buffer.lineCount ? buffer.offsetAt(state.lastLine) : buffer.length;
             // Heads of normalized disjoint ranges are ordered. Measure only visible candidates,
             // using the same bounded native row geometry as the primary caret.
-            let low = 0, high = selectionSet.ranges.length;
-            while (low < high) {
-                const middle = (low + high) >>> 1;
-                if (selectionSet.ranges[middle]!.head < from) low = middle + 1;
-                else high = middle;
-            }
+            const low = partitionPoint(selectionSet.ranges.length, index => selectionSet.ranges[index]!.head < from);
             for (let index = low; index < selectionSet.ranges.length; index++) {
                 const range = selectionSet.ranges[index]!;
                 if (range.head > to) break;
