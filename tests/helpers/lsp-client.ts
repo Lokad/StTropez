@@ -9,11 +9,6 @@ import { Workspace } from "../../src/index.ts";
 import * as protocol from "../../src/protocol/index.ts";
 export { protocol };
 export const settled = async () => { await setImmediate(); await setImmediate(); };
-export const latch = <T>() => {
-    let resolve!: (value: T) => void;
-    const promise = new Promise<T>(yes => { resolve = yes; });
-    return { promise, resolve };
-};
 export function clientFixture(t: TestContext, connect?: () => Promise<void>, resolveTarget?: LspTargetResolver, documentInfo?: LspWorkspaceOptions["documentInfo"]) {
     const workspace = new Workspace();
     const source = workspace.createTextResource({ scope: "public-client", resource: "source", variant: "working" }, "Source", { value: "alpha beta" });

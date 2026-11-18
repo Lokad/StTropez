@@ -7,8 +7,8 @@ import { Workspace } from "../src/index.ts";
 import { openWebSocketTransport } from "../src/browser/index.ts";
 import { RpcError } from "../src/protocol/index.ts";
 import type { JsonValue } from "../src/protocol/index.ts";
+import { latch } from "./helpers/latch.ts";
 
-const gate = () => { let release!: () => void; const promise = new Promise<void>(resolve => { release = resolve; }); return { promise, release }; };
 const cancelled = (error: unknown) => error instanceof RpcError && error.code === -32800;
 type Packet = { id?: number; method?: string; params?: { id?: number; command?: string; arguments?: JsonValue[]; _fixture?: unknown } };
 async function fixture() {
@@ -36,8 +36,8 @@ async function fixture() {
     });
     const first = owner.createScope(), second = owner.createScope();
     return { owner, first, second, sent, transitions, holdNext() {
-        assert.equal(intercept, undefined); const entered = gate(); let deliver: (() => void) | undefined;
-        intercept = forward => { deliver = forward; entered.release(); };
+        assert.equal(intercept, undefined); const entered = latch<void>(); let deliver: (() => void) | undefined;
+        intercept = forward => { deliver = forward; entered.resolve(); };
         return { entered: entered.promise, release: () => { const forward = deliver; deliver = undefined; forward?.(); } };
     }, async dispose() {
         owner.dispose(); detach(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));

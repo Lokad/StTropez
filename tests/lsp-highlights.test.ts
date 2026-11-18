@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clientFixture, latch, protocol, settled } from "./helpers/lsp-client.ts";
+import { clientFixture, protocol, settled } from "./helpers/lsp-client.ts";
+import { latch } from "./helpers/latch.ts";
 const { createLspHighlightClient, RpcError } = protocol;
 const range = (line: number, from: number, to: number) => ({ start: { line, character: from }, end: { line, character: to } });
 

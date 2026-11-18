@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clientFixture, latch, protocol, settled } from "./helpers/lsp-client.ts";
+import { clientFixture, protocol, settled } from "./helpers/lsp-client.ts";
+import { latch } from "./helpers/latch.ts";
 import type { LspResolvedTarget, LspTargetContext } from "../src/protocol/index.ts";
 const { createLspNavigationClient, createLspRenameClient, createLspActionClient, LspLineIndex, RpcError, ProtocolDecodeError } = protocol;
 const uri = "host+opaque:unopened%2Fmodule";

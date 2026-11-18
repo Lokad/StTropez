@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clientFixture, latch, protocol, settled } from "./helpers/lsp-client.ts";
+import { clientFixture, protocol, settled } from "./helpers/lsp-client.ts";
+import { latch } from "./helpers/latch.ts";
 const { createLspFoldingClient, RpcError } = protocol;
 test("LSP folding negotiates whole lines and validates the entire response against its captured buffer", async t => {
     const f = clientFixture(t), client = createLspFoldingClient(f.provider); t.after(client.dispose);

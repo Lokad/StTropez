@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clientFixture, latch, protocol, settled } from "./helpers/lsp-client.ts";
+import { clientFixture, protocol, settled } from "./helpers/lsp-client.ts";
+import { latch } from "./helpers/latch.ts";
 import type { DocumentSnapshot } from "../src/core/workspace.ts";
 import type { LspPrepare } from "../src/protocol/index.ts";
 const { createLspHoverClient, createLspNavigationClient, createLspRenameClient, createLspActionClient, RpcError } = protocol;

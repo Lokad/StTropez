@@ -2,12 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createAgentReview, Workspace, WorkspaceCommands } from "../src/index.ts";
 import type { AcknowledgementSubmission, SaveResponse, SaveSubmission } from "../src/index.ts";
-
-function deferred<T>() {
-    let resolve!: (value: T) => void;
-    const promise = new Promise<T>(yes => { resolve = yes; });
-    return { promise, resolve };
-}
+import { latch } from "./helpers/latch.ts";
 function fixture() {
     const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => errors.push(error) });
     const source = workspace.createTextResource({ scope: "fixture", resource: "source", variant: "working" }, "Source", { value: "start", serverVersion: "v0" });
@@ -101,7 +96,7 @@ test("proposal/correction/save/failed acknowledgement/retry/next request uses th
 test("two deferred saves and acknowledgements cannot retire a newer proposal or overwrite later corrections", async () => {
     const { workspace, source, association, review, commands, offer, edit } = fixture();
     offer("proposal one", 1); edit("correction one");
-    const responses = [deferred<SaveResponse<string>>(), deferred<SaveResponse<string>>()], calls: SaveSubmission<string>[] = [];
+    const responses = [latch<SaveResponse<string>>(), latch<SaveResponse<string>>()], calls: SaveSubmission<string>[] = [];
     const port = { save: (submission: SaveSubmission<string>) => { calls.push(submission); return responses[calls.length - 1]!.promise; } };
     const first = commands.save(createAgentReview(workspace, source).captureSave(), port);
     offer("proposal two", 2); edit("correction two"); const second = commands.save(createAgentReview(workspace, source).captureSave(), port);

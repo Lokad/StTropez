@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { LspCommandScope, LspHostCommandContext } from "../src/protocol/index.ts";
-import { clientFixture, latch, protocol, settled } from "./helpers/lsp-client.ts";
+import { clientFixture, protocol, settled } from "./helpers/lsp-client.ts";
+import { latch } from "./helpers/latch.ts";
 const { createLspActionClient, RpcError } = protocol;
 const stale = (error: unknown) => error instanceof RpcError && error.code === -32801;
 const scopeFor = (f: ReturnType<typeof clientFixture>): LspCommandScope => ({ snapshots: () => [f.document()], isCurrent: () => true,

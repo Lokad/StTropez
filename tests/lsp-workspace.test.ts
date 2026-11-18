@@ -7,8 +7,8 @@ import { referencePeer } from "../fixtures/protocol/reference-peer.ts";
 import type { LspFeature, LspRequestContext, LspWorkspaceOptions, RpcScheduler, RpcTransport } from "../src/protocol/index.ts";
 import { Workspace } from "../src/index.ts";
 import { LspWorkspace, createLspHoverClient, createLspCommandRunner, createLspSignatureClient, createLspLinkClient, createLspColorClient, createLspFoldingClient, createLspHighlightClient, RpcError } from "../src/protocol/index.ts";
+import { latch } from "./helpers/latch.ts";
 const settled = async () => { await setImmediate(); await setImmediate(); };
-const latch = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; };
 
 test("binding captures read local revisions across request cancellation and expire with provider authority", async t => {
     const f = fixture(t), scope = f.provider.createScope(), handle = scope.attachDocument(f.source.documentId);
