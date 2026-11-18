@@ -180,6 +180,12 @@ bounds the changed window to 256 rows on each side and captures to 65,536 rows p
 alphabet shortcuts are rechecked after an edit. Unproved or overlapping frontiers restart normally.
 Copying retained vectors is charged cooperative work; cache reuse preserves canonical hunk choices.
 
+A complete checkpoint can also project its live wave after one extra working row when every
+changed old/new row has no reference match. The reference and trimmed bounds must agree, and
+stored dependency extents must exclude boundary overflow. The projected values belong to the
+current working capture. They can resume ordinary search, but cannot be projected again until
+ordinary search supplies the missing preceding wave. Unknown tokens or unproved bounds decline.
+
 Up to 32 completed bisection splits can also be retained, selected by their original work.
 A split is reusable only when both reference bounds match and ownership proves its entire
 working region unchanged, with suffix coordinates shifted by the exact row delta. These
@@ -198,15 +204,25 @@ occurs in the working region forms a subsequence of that region. Earliest prefix
 suffix matches select the same canonical midpoint as the general search. It reuses the
 complete token facts from the preceding alphabet check and only attempts certification when
 a conservative scan-cost bound fits the remaining search work proved by retained distances.
-All child attempts share a budget equal to the work already spent through the normal first
-bisection, with at most one cooperative advance of overshoot. A failed or exhausted attempt
-falls back to the general search. The first bisection and its current capture remain intact;
-a successful certificate preserves their retention eligibility through later edits.
-Each attempt examines at most 65,536 rows per side. Its temporary numeric storage is at most
+Speculative child attempts share a budget equal to the work already spent through the normal
+first bisection, with at most one cooperative advance of overshoot. A failed or exhausted
+attempt falls back to the general search. A successful child certificate preserves the current
+root capture's retention eligibility through later edits.
+Certificates examine at most 65,536 rows per side. A temporary profile set contains at most
 65,536 byte flags and two 65,537-entry unsigned 32-bit vectors, plus bounded token references
 and alphabet metadata. This temporary state is not published in the cache and is separate
 from its retained frontier/split cap. Shortcuts that return a complete alignment retain their
 precedence; this certificate does not make unproved partial hunks authoritative.
+
+The root can use this certificate when a projected current checkpoint plan is also available
+and conservative scan/copy costs fit the proved remaining search work. Its matchable reference
+row count must agree with the independently known optimum. A successful root keeps one profile
+pair for the active job and disables speculative child attempts. Each sufficiently expensive
+child inherits one profile and recomputes the other inside its bounds; shared boundary slots
+are restored for the queued sibling. Saved exact splits retain their points while preparing
+the inherited profile, and cheap subtrees use ordinary search. The same numeric profile bound
+applies throughout the job. Profiles never enter the retained cache; completed splits and
+projected checkpoints retain their actual current capture and the shared 64 KiB cap.
 
 Failed or cancelled jobs cannot publish a retained plan. Complex comparisons can require full
 alignment work. Dispose the cache

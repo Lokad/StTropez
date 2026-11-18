@@ -364,9 +364,11 @@ test("edits to unmatched rows reuse raw alignment and re-trim exact hunks throug
     cache.dispose();
 });
 
-for (const [count, fraction, maximumColdRatio] of [[10000, 0.25, 0.6], [10000, 0.5, 0.48], [10000, 0.75, 0.8], [20000, 0.5, 0.45]] as const)
+for (const [count, fraction, maximumColdRatio, maximumHistoryRatio = maximumColdRatio] of [[10000, 0.25, 0.6], [10000, 0.5, 0.48], [10000, 0.75, 0.8], [20000, 0.5, 0.25, 0.45]] as const)
     test(`edited-region distance bounds reduce ${count}/${fraction} Enter work without changing canonical hunks`, () => {
-        const original = Array.from({ length: count }, (_, i) => `row ${i % 20}\n`).join("");
+        // An equal header exercises absolute profile coordinates after root trimming.
+        const header = count === 20000 ? "review 😀\r\nsecond header\r\n" : "";
+        const original = header + Array.from({ length: count }, (_, i) => `row ${i % 20}\n`).join("");
         const text = original.replaceAll("row 0\n", "changed 0\n").replaceAll("row 10\n", "changed 10\n").replaceAll("row 11\n", "row 11\nrow 11\n");
         const baseline = TextBuffer.from(original), working = TextBuffer.from(text), cache = new DiffReferenceCache();
         try {
@@ -410,15 +412,15 @@ for (const [count, fraction, maximumColdRatio] of [[10000, 0.25, 0.6], [10000, 0
                     const warm = finish(baseline, capture, cache), fresh = finish(baseline, capture);
                     assert.deepEqual(warm.hunks, fresh.hunks); assert.equal(warm.lineEdits, fresh.lineEdits);
                     reconstruct(warm, original, capture.slice(0, capture.length));
-                    assert.ok(warm.work < fresh.work * maximumColdRatio, "successive Enter and undo/redo retain the cheaper exact split");
+                    assert.ok(warm.work < fresh.work * maximumHistoryRatio, "successive Enter and undo/redo retain the cheaper exact split");
                 }
             }
             assert.equal(JSON.stringify(initial.hunks), retained);
         } finally { cache.dispose(); }
     });
 
-for (const fraction of [0.25, 0.5, 0.75]) test(`comparison decision reuse survives cancellation and failure without publishing superseded captures: ${fraction}`, () => {
-    const original = Array.from({ length: 2000 }, (_, i) => `row ${i % 20}\n`).join("");
+for (const [count, fraction] of [[2000, 0.25], [2000, 0.5], [2000, 0.75], [20000, 0.5]] as const) test(`comparison decision reuse survives cancellation and failure without publishing superseded captures: ${count}/${fraction}`, () => {
+    const original = Array.from({ length: count }, (_, i) => `row ${i % 20}\n`).join("");
     const text = original.replaceAll("row 0\n", "changed 0\n").replaceAll("row 10\n", "changed 10\n").replaceAll("row 11\n", "row 11\nrow 11\n");
     const baseline = TextBuffer.from(original), working = TextBuffer.from(text), cache = new DiffReferenceCache();
     const at = text.indexOf("changed ", text.length * fraction) + 3, split = working.replace(at, at, "\n");
@@ -426,8 +428,10 @@ for (const fraction of [0.25, 0.5, 0.75]) test(`comparison decision reuse surviv
     assert.ok(finish(baseline, working, cache).lineComparisons >= 100000, "retain an eligible expensive frontier");
     const cancelled = new TextDiff(baseline, split, cache); let partial = cancelled.next(512);
     // Cancel after actual search progress, independently of the completed cold job's cost.
-    while (partial.status === "running" && partial.lineComparisons < 256) partial = cancelled.next(512);
-    assert.ok(partial.lineComparisons >= 256);
+    // The large case advances into active shared-profile subdivision before cancellation.
+    const reached = (value: DiffProgress) => count === 20000 ? value.work >= 3_000_000 : value.lineComparisons >= 256;
+    while (partial.status === "running" && !reached(partial)) partial = cancelled.next(512);
+    assert.ok(reached(partial));
     assert.equal(partial.status, "running"); cancelled.dispose();
     const slice = TextBuffer.prototype.slice, failure = new Error("captured frontier read failed");
     const failed = new TextDiff(baseline, split, cache);
@@ -440,7 +444,9 @@ for (const fraction of [0.25, 0.5, 0.75]) test(`comparison decision reuse surviv
     assert.deepEqual(resumed.hunks, expected.hunks);
     assert.ok(resumed.lineComparisons < expected.lineComparisons * 0.85, "failed/cancelled captures preserve completed split and frontier decisions");
     finish(baseline, working, cache);
-    const old = new TextDiff(baseline, split, cache); assert.equal(old.next(4096).status, "running");
+    const old = new TextDiff(baseline, split, cache); let superseded = old.next(512);
+    while (superseded.status === "running" && !reached(superseded)) superseded = old.next(512);
+    assert.equal(superseded.status, "running");
     finish(baseline, baseline, cache); // A newer successful comparison clears the retained plans.
     let late = old.next(512); while (late.status === "running") late = old.next(512);
     assert.deepEqual(late.hunks, expected.hunks); old.dispose();
