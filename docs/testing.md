@@ -423,8 +423,9 @@ The lower-level `--reuse-consumer=<metadata>` option checks the package hash and
 Lower-level `--*-only` workload flags are mutually exclusive; use the coordinator's
 `--scenarios` option to qualify multiple workloads against one restored artifact.
 
-Activation and workspace routes also type-check their shared page-transition harness against
-the copied consumer's actual fixture snapshot and restored public declarations. This separate
+Activation and workspace routes also type-check their shared page-transition harness, and the
+workspace route checks its caller, against the copied consumer's actual fixture snapshot and
+restored public declarations. This separate
 tooling program permits the Node/Playwright declarations it needs and records its compiler
 inputs. The independent consumer compile keeps its own options and inputs; tooling dependencies
 are not consumer requirements. Unexpected checkout inputs fail the harness check.

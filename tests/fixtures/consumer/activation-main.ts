@@ -83,7 +83,8 @@ edit.addEventListener("click", () => { void activate(); }, { signal: listeners.s
 const search = () => { if (mounted()) session?.search(query.value, regex.checked); };
 query.addEventListener("input", search, { signal: listeners.signal }); regex.addEventListener("change", search, { signal: listeners.signal }); next.addEventListener("click", () => session?.next(), { signal: listeners.signal });
 window.addEventListener("pagehide", event => { if (!event.persisted) dispose(); }, { signal: listeners.signal });
-const fixture = Object.freeze({ snapshot: () => ({ phase, generation, session: session?.snapshot() ?? null }), text: () => phase === "disposed" ? retainedText : session?.text() ?? original,
+// Preserve both session shapes instead of inferring only their structural common type.
+const fixture = Object.freeze({ snapshot: () => ({ phase, generation, session: (session?.snapshot() ?? null) as ReturnType<ActivationSession["snapshot"]> | ReturnType<WorkspaceSession["snapshot"]> | null }), text: () => phase === "disposed" ? retainedText : session?.text() ?? original,
     select: (ranges: readonly Selection[], primary?: number) => session?.select(ranges, primary), workspace: () => session && "workspaceApi" in session ? session.workspaceApi : undefined, dispose });
 declare global { interface Window { activationFixture: typeof fixture } }
 window.activationFixture = fixture;
