@@ -241,22 +241,66 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP code actions`,
         for (const fault of ["malformed", "failure"] as const) { await select(page); await preview(page); await choices(page).nth(7).click(); const consumed = await faultCommand(page, fault); await button(page, "Execute captured action").click(); await waitForActions(page); await consumed(); await exact(page, marker + raw); await expect(page.getByLabel("Code action status", { exact: true })).toContainText("undo"); await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw); if ((await snapshot(page)).bindings.actions.state.disconnected || (await snapshot(page)).bindings.actions.state.reconnectRequired) await button(page, "Reconnect action provider").click(); }
         await dispose(page);
     });
-    test("action-command cancellation, ownership changes and lost acknowledgements never replay a committed phase", async ({ page }) => {
-        await seed(page); await button(page, "Add navigation companion").click(); const before = await snapshot(page), companion = before.bindings.navigation.companion!; let executed = 0;
+    for (const mode of ["selection", "authority", "typing", "remount", "withdraw", "disconnect", "cancel"] as const) test(`action-command review expires after ${mode} without undoing its committed phase`, async ({ page }) => {
+        await seed(page);
+        await button(page, "Add navigation companion").click();
+        const before = await snapshot(page), companion = before.bindings.navigation.companion!;
+        await select(page);
+        await preview(page);
+        await choices(page).nth(7).click();
+        await button(page, "Execute captured action").click();
+        await review(page);
+        await exact(page, marker + raw);
+        const token = (await snapshot(page)).bindings.project.state.review!.token;
+        if (mode === "selection") await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 3, head: 3 }]); });
+        else if (mode === "authority") await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion);
+        else if (mode === "typing") { await input(page).press("Control+End"); await input(page).pressSequentially("x"); }
+        else if (mode === "remount") await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
+        else if (mode === "withdraw") await control(page, "fixture/reviewRegistration", { registered: false }, false);
+        else if (mode === "disconnect") await control(page, "fixture/disconnect");
+        else await button(page, "Dismiss action preview").click();
+        await waitForActions(page);
+        await page.evaluate(token => window.hostFixture.confirmProjectReview(token), token);
+        if (mode === "authority") await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
+        if (mode === "typing") { await input(page).press("Control+z"); await waitForActions(page); }
+        await exact(page, marker + raw);
+        await expect(page.getByLabel("Code action status", { exact: true })).toContainText("undo");
+        await input(page).press("Control+z");
+        await waitForActions(page);
+        await exact(page, raw);
+        await dispose(page);
+    });
+    test("action-command acknowledgement loss preserves history without replay after reconnect", async ({ page }) => {
+        await seed(page);
+        await button(page, "Add navigation companion").click();
+        const before = await snapshot(page);
+        let executed = 0;
         page.on("websocket", socket => socket.on("framesent", frame => { if (JSON.parse(frame.payload.toString()).method === "workspace/executeCommand") executed++; }));
-        for (const mode of ["selection", "authority", "typing", "remount", "withdraw", "disconnect", "cancel"] as const) {
-            if ((await snapshot(page)).bindings.actions.state.disconnected || (await snapshot(page)).bindings.actions.state.reconnectRequired) await button(page, "Reconnect action provider").click(); await select(page); await preview(page); await choices(page).nth(7).click(); await button(page, "Execute captured action").click(); await review(page); await exact(page, marker + raw); const token = (await snapshot(page)).bindings.project.state.review!.token;
-            if (mode === "selection") await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 3, head: 3 }]); });
-            else if (mode === "authority") await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion);
-            else if (mode === "typing") { await input(page).press("Control+End"); await input(page).pressSequentially("x"); }
-            else if (mode === "remount") await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
-            else if (mode === "withdraw") await control(page, "fixture/reviewRegistration", { registered: false }, false);
-            else if (mode === "disconnect") await control(page, "fixture/disconnect"); else await button(page, "Dismiss action preview").click();
-            await waitForActions(page); await page.evaluate(token => window.hostFixture.confirmProjectReview(token), token); if (mode === "authority") await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
-            if (mode === "typing") { await input(page).press("Control+z"); await waitForActions(page); } await exact(page, marker + raw); await expect(page.getByLabel("Code action status", { exact: true })).toContainText("undo"); await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw);
-        }
-        if ((await snapshot(page)).bindings.actions.state.disconnected || (await snapshot(page)).bindings.actions.state.reconnectRequired) await button(page, "Reconnect action provider").click(); await select(page); await preview(page); await choices(page).nth(7).click(); const consumed = await faultCommand(page, "ack"); await button(page, "Execute captured action").click(); await review(page); await button(page, "Apply captured provider edits").click(); await waitForActions(page); await exact(page, header + marker + raw + footer); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 2); await expect(button(page, "Reconnect action provider")).toBeEnabled(); await consumed(); const count = executed;
-        await button(page, "Reconnect action provider").click(); await select(page); await preview(page); expect(executed).toBe(count); await button(page, "Dismiss action preview").click(); await input(page).press("Control+z"); await waitForActions(page); await exact(page, marker + raw); await input(page).press("Control+z"); await waitForActions(page); await exact(page, raw); await dispose(page);
+        await select(page);
+        await preview(page);
+        await choices(page).nth(7).click();
+        const consumed = await faultCommand(page, "ack");
+        await button(page, "Execute captured action").click();
+        await review(page);
+        await button(page, "Apply captured provider edits").click();
+        await waitForActions(page);
+        await exact(page, header + marker + raw + footer);
+        expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 2);
+        await expect(button(page, "Reconnect action provider")).toBeEnabled();
+        await consumed();
+        const count = executed;
+        await button(page, "Reconnect action provider").click();
+        await select(page);
+        await preview(page);
+        expect(executed).toBe(count);
+        await button(page, "Dismiss action preview").click();
+        await input(page).press("Control+z");
+        await waitForActions(page);
+        await exact(page, marker + raw);
+        await input(page).press("Control+z");
+        await waitForActions(page);
+        await exact(page, raw);
+        await dispose(page);
     });
     test("100k comparison action commands retain phase history, bounded review and primary Save/Run ownership", async ({ page }) => {
         test.setTimeout(90000); const text = "// 😀 TODO\r\n" + "const unchanged = 123;\r\n".repeat(99_999) + "// TODO\r\n".repeat(70); await seed(page, text); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForActions(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline;
