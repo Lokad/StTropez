@@ -20,9 +20,17 @@ if (!process.argv.includes("--existing")) {
 }
 const archive = "artifacts/nuget/feed/StTropez.Assets.0.0.0-local.nupkg";
 const hash = async () => createHash("sha256").update(await readFile(archive)).digest("hex");
-const packageSha256 = await hash(), results = [];
+const packageSha256 = await hash();
+/** @typedef {{scenario: string, consumer: string, assetRoot: string, reusedStage: boolean}} ScenarioResult */
+/** @type {ScenarioResult[]} */
+const results = [];
 const evidence = "artifacts/package/qualification";
-let directory, staged;
+// withPackageConsumer records running ownership before invoking its workload.
+/** @type {string | undefined} */
+let directory;
+/** @type {string | undefined} */
+let staged;
+/** @type {Set<string>} */
 const metadata = new Set();
 await withPackageConsumer({ keep: process.argv.includes("--keep-consumer"), record: async retention => {
     directory = `${evidence}/${basename(retention.consumer)}`;
@@ -39,7 +47,8 @@ await withPackageConsumer({ keep: process.argv.includes("--keep-consumer"), reco
 } }, async ownedConsumer => {
     for (const [index, scenario] of selected.entries()) {
         assert.equal(await hash(), packageSha256, "Package changed during qualification.");
-        const args = [scenario === "demo" ? "scripts/package-demo.mjs" : "scripts/test-package.mjs", ...choices[scenario]];
+        // Every selected name passed the own-key check before package setup.
+        const args = [scenario === "demo" ? "scripts/package-demo.mjs" : "scripts/test-package.mjs", .../** @type {readonly string[]} */ (choices[scenario])];
         if (index) args.push(`--reuse-consumer=${staged}`);
         else args.push(`--consumer-directory=${ownedConsumer}`);
         if (process.argv.includes("--skip-transitions")) args.push("--skip-transitions");
@@ -49,15 +58,16 @@ await withPackageConsumer({ keep: process.argv.includes("--keep-consumer"), reco
         assert.equal(consumer.packageSha256, packageSha256);
         assert.equal(consumer.consumer, ownedConsumer, "Qualification must use its own fresh consumer.");
         if (index) {
-            assert.equal(consumer.consumer, results[0].consumer);
-            assert.equal(consumer.assetRoot, results[0].assetRoot);
+            // A later iteration follows a completed first consumer and its result.
+            assert.equal(consumer.consumer, /** @type {ScenarioResult} */ (results[0]).consumer);
+            assert.equal(consumer.assetRoot, /** @type {ScenarioResult} */ (results[0]).assetRoot);
             assert.equal(consumer.reusedStage, true);
         }
         await copyFile("artifacts/package/restored-consumer.json", `${directory}/${scenario}.json`);
         metadata.add("artifacts/package/restored-consumer.json");
         metadata.add(`${directory}/${scenario}.json`);
-        if (!index) await copyFile("artifacts/package/restored-consumer.json", staged);
-        if (!index) metadata.add(staged);
+        if (!index) await copyFile("artifacts/package/restored-consumer.json", /** @type {string} */ (staged));
+        if (!index) metadata.add(/** @type {string} */ (staged));
         results.push({ scenario, consumer: consumer.consumer, assetRoot: consumer.assetRoot, reusedStage: consumer.reusedStage });
     }
     assert.equal(await hash(), packageSha256);

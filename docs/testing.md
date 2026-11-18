@@ -52,9 +52,8 @@ their imports: measurement, package scenarios, the browser harness, its server a
 library catalogue, plus asset entry metadata, building, declaration finalization and shared
 Unicode generation I/O, package consumer/HTTP lifecycle ownership and benchmark selection,
 orchestration and report retention, plus shared host scenes, browser reference observations,
-static-demo building/serving and package host-fixture staging, public export resolution,
-public import remapping and compiler-root
-isolation.
+static-demo building/serving and package host-fixture staging, qualification coordination,
+public export resolution, public import remapping and compiler-root isolation.
 Other scripts are outside its JavaScript checking scope.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected
