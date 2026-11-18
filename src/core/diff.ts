@@ -25,7 +25,7 @@ export class DiffReferenceCache {
 type Region = Readonly<{ a0: number; a1: number; b0: number; b1: number }>;
 type FrontierPoint = Readonly<{ distance: number; radius: number; origin: number; sparse?: boolean; forward: Int32Array; reverse: Int32Array; seenF: number; seenR: number }>;
 type FrontierPlan = Readonly<{ working: Index; region: Region; points: readonly FrontierPoint[]; minimum?: number }>;
-type FrontierCapture = { previous: FrontierPlan | undefined; plan?: FrontierPlan; ordered?: boolean; certified?: boolean; profile?: RootProfiles; first: boolean };
+type FrontierCapture = { previous: FrontierPlan | undefined; plan?: FrontierPlan; ordered?: boolean; certified?: boolean; profile?: RootProfiles; repair?: ProfileTask; first: boolean };
 type SplitCapture = { rows?: Float64Array; count: number; reused: boolean };
 type SplitPlan = Readonly<{ working: Index; rows: Float64Array; count: number }>;
 // Split points contain the reference row, working row and exact region edit distance.
@@ -450,7 +450,7 @@ function* requiredReferenceSplit(left: Index, right: Index, region: Region, fact
         if (prefix === undefined) { earliest[required.length] = at; if (tick(stats, 3)) yield; }
     }
     let length = required.length, suffix = 0;
-    if (!length || allowOmission && prefix === undefined) return;
+    if (!length) return;
     at = m; latest[length] = m; if (tick(stats)) yield;
     suffixScan: for (let row = length - 1; row >= 0; row--) {
         for (;;) {
@@ -600,7 +600,27 @@ function* twoOmissionSplit(left: Index, right: Index, region: Region, working: A
 
 /** One mutable profile pair belongs to an active subtree, indexed by its required-token ordinal. */
 type RootProfiles = Readonly<{region: Region; required: readonly string[]; flags: Uint8Array; earliest: Uint32Array; latest: Uint32Array}>;
+/** Rebuild current placements only when the root needs the fixed-membership proof.
+ * Outside the bounded edit window, reference membership comes from the completed capture. */
+function* repairedProfiles(left: Index, right: Index, changes: readonly Region[], window: {from: number; to: number; rows: readonly number[]}, stats: Stats): Generator<void, RootProfiles> {
+    const region = {a0: 0, a1: left.lines.size, b0: 0, b1: right.lines.size}, flags = new Uint8Array(left.lines.size);
+    const earliest = new Uint32Array(left.lines.size + 1), latest = new Uint32Array(left.lines.size + 1), required: string[] = [];
+    for (let row = 0; row <= left.lines.size; row++) if (tick(stats, 3)) yield;
+    let change = 0, selected = 0;
+    for (let row = 0; row < left.lines.size; row++) {
+        while (change < changes.length && changes[change]!.a1 <= row) { change++; if (tick(stats)) yield; }
+        let included = !(changes[change] && changes[change]!.a0 <= row);
+        if (row >= window.from && row < window.to) { included = window.rows[selected] === row; if (included) selected++; }
+        if (included) { flags[row] = 1; required.push((yield* getLine(left, row, stats)).token!); }
+        if (tick(stats, 5)) yield;
+    }
+    latest[required.length] = right.lines.size;
+    const profiles = {region, flags, required, earliest, latest};
+    yield* completeRequiredProfiles(right, profiles, 0, 0, stats);
+    return profiles;
+}
 type ProfileTask = Readonly<{profiles: RootProfiles; from: number; to: number; direction: "earliest" | "latest"; boundary?: number | undefined}>;
+type ProfileRepair = Readonly<{from: number; to: number; create: () => Generator<void, RootProfiles>}>;
 type Task = Region & {profile?: ProfileTask; distance?: number};
 /** Forced reference rows enumerate every optimal midpoint; overlap order chooses the canonical one. */
 function* profileMidpoint(region: Region, profiles: RootProfiles, from: number, to: number, stats: Stats): Generator<void, readonly [number, number, number] | undefined> {
@@ -709,7 +729,7 @@ function* optionalRunSplit(left: Index, right: Index, region: Region, minimum: n
             if (tick(stats, 8)) yield;
             if (n + m - 2 * (replacement.required - replacement.missing) < replacement.lower) return;
             if (replacement.missing === 2) return yield* twoOmissionSplit(left, right, region, records, stats, captured);
-            if (replacement.missing !== 1) return;
+            if (replacement.missing !== 0 && replacement.missing !== 1) return;
         }
         if (allowOmission) return yield* requiredReferenceSplit(left, right, region, {working: records, maximum: 0}, stats, captured, true);
         return;
@@ -818,7 +838,7 @@ function* changedReferenceMatch(right: Index, seed: RecursiveSeed, alphabet: Alp
     return false;
 }
 type SplitBudget = { remaining: number; certified: boolean; matching?: boolean };
-function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: FrontierCapture, seed?: RecursiveSeed, certificateBudget?: SplitBudget, rootAlphabet?: Alphabet, childProfile?: {value?: RootProfiles}, exactDistance?: number): Generator<void, readonly [number, number, number] | Readonly<{ changes: readonly Region[] }>> {
+function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: FrontierCapture, seed?: RecursiveSeed, certificateBudget?: SplitBudget, rootAlphabet?: Alphabet, childProfile?: {value?: RootProfiles}, exactDistance?: number, repair?: ProfileRepair): Generator<void, readonly [number, number, number] | Readonly<{ changes: readonly Region[] }>> {
     const n = region.a1 - region.a0, m = region.b1 - region.b0, maximum = Math.ceil((n + m) / 2), delta = n - m;
     let radius = 0, origin = 1, forward = new Int32Array(3).fill(-1), reverse = new Int32Array(3).fill(-1);
     if (tick(stats, 6)) yield;
@@ -847,6 +867,11 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
         }
         if (capture) capture.plan = { working: b, region, points };
     }
+    const repairDistance = repair ? n + m - 2 * (repair.to - repair.from) : undefined;
+    const phase = repairDistance === undefined ? 0 : Math.ceil(repairDistance / 2);
+    // Same final complete checkpoint as the ordinary search, under the unchanged cap.
+    const repairCheckpoint = phase >= 64 ? Math.min(frontierLimits.lastDistance, phase - phase % frontierLimits.checkpointStride) : undefined;
+    if (repair && tick(stats, 8)) yield;
     let preparedRoot: {facts: CommonFacts; lower: number} | undefined;
     const start = (vector: Int32Array, diagonal: number): number => {
         const index = origin + diagonal, insert = vector[index + 1]!, remove = vector[index - 1]! < 0 ? -1 : vector[index - 1]! + 1;
@@ -868,6 +893,17 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
             let bytes = points.reduce((total, point) => total + point.forward.byteLength + point.reverse.byteLength, 0);
             while (bytes + splitBytes > decisionLimits.bytes) { const removed = points.shift()!; bytes -= removed.forward.byteLength + removed.reverse.byteLength; }
             if (tick(stats, points.length)) yield;
+        }
+        if (repair && tick(stats, 2)) yield;
+        if (repair && capture && repairCheckpoint !== undefined && distance === repairCheckpoint) {
+            const current: ProfileTask = {profiles: yield* repair.create(), from: repair.from, to: repair.to, direction: "latest"};
+            const point = yield* profileSplit(a, b, region, current, stats);
+            if (!("changes" in point)) {
+                capture.repair = current; capture.certified = true;
+                if (capture.plan) capture.plan = {...capture.plan, minimum: point[2]};
+                if (tick(stats, 4)) yield;
+            }
+            return point;
         }
         // Preserve cheap small-edit searches and ownership proofs. Only after a bounded
         // frontier effort, try exact alphabet proofs before expanding further.
@@ -1117,6 +1153,18 @@ function* referenceAlphabet(left: Index, stats: Stats): Generator<void, Readonly
 function range(buffer: TextBuffer, from: number, to: number): DiffRange {
     const lineFrom = buffer.lineAt(from); return Object.freeze({ from, to, lineFrom, lineTo: from === to ? lineFrom : buffer.lineAt(to - 1) + 1 });
 }
+/** Certificate acquisition must cost less than the ordinary waves beyond the last
+ * retained checkpoint. Bound token materialization, reference indexing, changed-row
+ * counting and the count maps; no document-size or timing threshold is introduced. */
+function* worthwhileCertificate(left: Index, right: Index, changes: readonly Region[], previous: DiffRepairReference | undefined, plan: FrontierPlan | undefined, stats: Stats): Generator<void, boolean> {
+    if (stats.lineComparisons < frontierLimits.comparisons || plan?.minimum === undefined) return false;
+    const stop = Math.ceil(plan.minimum / 2), start = plan.points.at(-1)?.distance ?? 0;
+    const remaining = stop * (stop + 1) - start * (start + 1);
+    const reference = previous ? 2 * left.to + 13 * left.lines.size : 3 * left.to + 17 * left.lines.size;
+    const cost = reference + 2 * right.to + 13 * right.lines.size + 512 + 4 * changes.length;
+    if (tick(stats, 22)) yield;
+    return cost <= remaining;
+}
 function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, serial = 0): Generator<void, readonly DiffHunk[]> {
     try {
         const prior = cache?.alignment, previousSplits = cache?.splits; let alphabet = cache?.alphabet;
@@ -1126,11 +1174,15 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
         const right = yield* indexLines(b, stats, cache?.working ?? left);
         if (cache) stats.equalities = yield* prepareEqualities(right, cache.equalities, stats);
         if (cache?.serial === serial) cache.working = right;
+        let repaired: {create: () => Generator<void, RootProfiles>; proof: DiffRepairCertificate} | undefined;
         let reused = prior ? yield* reuseAlignment(prior, right, stats) : undefined;
         if (!reused && prior?.proof) {
             const local = yield* repairAlignment(left, right, prior.working, prior.changes, prior.proof, stats);
-            if (local) reused = { plan: { ...prior, changes: local.changes, proof: local.proof }, from: local.from, to: local.to,
-                delta: local.delta, rowDelta: local.rowDelta, origins: local.origins };
+            if (local) {
+                if ("required" in local) { repaired = {create: () => repairedProfiles(left, right, prior.changes, local.required, stats), proof: local.proof}; }
+                else reused = { plan: { ...prior, changes: local.changes, proof: local.proof }, from: local.from, to: local.to,
+                    delta: local.delta, rowDelta: local.rowDelta, origins: local.origins };
+            }
         }
         const frontier: FrontierCapture | undefined = cache && left.lines.size <= frontierLimits.rows && right.lines.size <= frontierLimits.rows
             ? { previous: cache.frontier, first: true } : undefined;
@@ -1139,6 +1191,7 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
         const seed = frontier && !reused ? yield* recursiveSeed(frontier.previous, previousSplits, right, stats) : undefined;
         let certificateBudget: SplitBudget | undefined;
         const tasks: Task[] = [{ a0: 0, a1: left.lines.size, b0: 0, b1: right.lines.size }], changes: Region[] = [];
+
         const append = (change: Region) => {
             const previous = changes.at(-1);
             if (previous?.a1 === change.a0 && previous.b1 === change.b0) changes[changes.length - 1] = { a0: previous.a0, a1: change.a1, b0: previous.b0, b1: change.b1 };
@@ -1165,10 +1218,10 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
                 if (frontier) frontier.first = false;
                 const region = { a0, a1, b0, b1 }, saved = savedSplits?.get(regionKey(region));
                 if (savedSplits && tick(stats, 4)) yield;
-                const profile = inherited && a1 - a0 + b1 - b0 - 2 * (inherited.to - inherited.from) >= 128 ? inherited : undefined;
+                const profile = inherited && !capture && a1 - a0 + b1 - b0 - 2 * (inherited.to - inherited.from) >= 128 ? inherited : undefined;
                 const certified: {value?: RootProfiles} = {};
                 const before = stats.work, split = profile ? yield* profileSplit(left, right, region, profile, stats, saved?.point)
-                    : saved?.point ?? (yield* bisect(left, right, region, stats, capture, seed, capture ? undefined : certificateBudget, alphabet ?? undefined, certified, task.distance));
+                    : saved?.point ?? (yield* bisect(left, right, region, stats, capture, seed, capture ? undefined : certificateBudget, alphabet ?? undefined, certified, task.distance, capture && repaired ? {create: repaired.create, from: prefix, to: repaired.proof.matches - suffix} : undefined));
                 // A root profile disables speculation. A child profile stays on its subtree;
                 // cheap descendants cannot reach the distance-64 certificate phase.
                 if (capture?.plan && seed && !capture.profile) certificateBudget = { remaining: stats.work, certified: false };
@@ -1179,7 +1232,7 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
                 if (tick(stats, 3)) yield;
                 if ((ai === a0 && bi === b0) || (ai === a1 && bi === b1)) throw new Error("Comparison split did not make progress.");
                 const prepared = capture?.profile ?? certified.value;
-                const currentProfile = profile ?? (prepared ? {profiles: prepared, from: 0, to: prepared.required.length} : undefined);
+                const currentProfile = profile ?? capture?.repair ?? (prepared ? {profiles: prepared, from: 0, to: prepared.required.length} : undefined);
                 if (currentProfile) {
                     // A canonical split spends ceil(D/2) edits in its prefix.
                     const middle = currentProfile.from + ((ai - a0) + (bi - b0) - prefixDistance) / 2;
@@ -1191,8 +1244,8 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
                 } else { tasks.push({ a0: ai, a1, b0: bi, b1, distance: split[2] - prefixDistance }); tasks.push({ a0, a1: ai, b0, b1: bi, distance: prefixDistance }); }
             }
         }
-        let proof = reused?.plan.proof;
-        if (!proof && frontier?.ordered) {
+        let proof = repaired?.proof ?? reused?.plan.proof;
+        if (cache && !proof && (frontier?.ordered || (yield* worthwhileCertificate(left, right, changes, cache.repairReference, frontier?.plan, stats)))) {
             // Trimmed outer spans can dwarf the ordered region. Optional certification may
             // spend at most the work already performed, plus one cooperative advance.
             const capture = certifyAlignment(left, right, changes, cache?.repairReference, stats), limit = stats.work * 2;
@@ -1245,7 +1298,7 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
             // Local repair changes the equality matrix. Older frontier/split proofs must
             // keep their actual working capture; only matrix-preserving reuse can relabel it.
             cache.splits = reused?.origins ? previousSplits : reused ? previousSplits && previousSplits.working === reused.plan.working ? Object.freeze({ ...previousSplits, working: right }) : previousSplits
-                : splits?.rows && (splits.reused || frontier?.certified || certificateBudget?.certified || stats.lineComparisons >= frontierLimits.comparisons) ? Object.freeze({ working: right, rows: splits.rows, count: splits.count }) : undefined;
+                : splits?.rows && (repaired || splits.reused || frontier?.certified || certificateBudget?.certified || stats.lineComparisons >= frontierLimits.comparisons) ? Object.freeze({ working: right, rows: splits.rows, count: splits.count }) : undefined;
             const previous = frontier?.previous, captured = frontier?.plan;
             cache.frontier = reused?.origins ? previous : reused ? previous && previous.working === reused.plan.working ? Object.freeze({ ...previous, working: right }) : previous
                 : captured?.points.length && (frontier?.certified || certificateBudget?.certified || stats.lineComparisons >= frontierLimits.comparisons) ? Object.freeze({ ...captured, points: Object.freeze([...captured.points]) }) : undefined;

@@ -151,21 +151,31 @@ regions receive fresh character trimming and whitespace classification; untouche
 shift by the exact UTF-16 offset delta. Retention is bounded to 65,536 rows per side and 4,096
 regions; verification checks at most 256 changed rows.
 
-A completed ordered-common alignment can also certify a unique matching attaining the global
-shared-occurrence bound. Certification adds an optional bounded linear pass to the initial
-comparison. It stops when its work exceeds the alignment work already performed by one
-cooperative advance, so a small changed region cannot force a full scan of large trimmed spans.
-It retains one immutable reference count/first-occurrence index with at most 65,536 entries and
-at most 256 nonzero working counts differing from their reference counts. Later edits update
-only affected counts. Unchanged tokens with balanced old/new counts anchor a local repair;
-each anchor search inspects at most 256 rows, and the changed and local windows contain at most
-256 rows per side. A local longest-common-subsequence calculation accepts only a unique matching
-attaining the updated global bound, preserving the complete canonical alignment. Its transient
-numeric storage is at most 257 × 257 + 2 × 257 unsigned 16-bit cells. Untouched raw regions and
-hunks retain their origins, shifting working text and line ranges by the exact deltas.
-These indexes and metadata are separate from the frontier/split numeric-storage cap.
-Unknown tokens, ambiguous matches, unmet bounds and oversized captures retain the exact general
-alignment. Local repair does not relabel older frontier/split proofs with a newer working buffer.
+A completed alignment can also certify fixed reference membership in every optimum attaining
+the shared-occurrence bound. Initial certification requires every matchable reference occurrence
+to participate; extra working occurrences may leave their placements ambiguous. The reference
+count index and unmatched raw regions establish the counts without rescanning matched working
+rows. Ordered-common alignments can attempt certification directly. Other completed searches
+attempt it only when its bounded cost fits the ordinary frontier work beyond the last retained
+checkpoint. Certification stops when its work exceeds the alignment work already performed by
+one cooperative advance, so a small changed region cannot force a full scan of large trimmed spans.
+
+The certificate retains one immutable reference count/first-occurrence index with at most
+65,536 entries and at most 256 nonzero working counts differing from their reference counts.
+Later edits update only affected counts. Unchanged tokens with balanced old/new counts anchor
+a local repair; each anchor search inspects at most 256 rows, and the changed and local windows
+contain at most 256 rows per side. A local longest-common-subsequence calculation accepts fixed
+reference membership attaining the updated global bound. Its transient numeric storage is at
+most 257 × 257 + 2 × 257 unsigned 16-bit cells. Unique working placements permit local splicing:
+untouched raw regions and hunks retain their origins, shifting text and line ranges by exact deltas.
+
+Ambiguous working placements require canonical recomputation through one temporary profile
+pair. The profile is built only if the root search needs it, after preserving the ordinary
+current checkpoint sequence through its existing distance cap. Later edits can therefore use
+current frontier and split proofs. The profile is never cached. These indexes and metadata are
+separate from the frontier/split numeric-storage cap. Unknown tokens, ambiguous reference
+membership, unmet bounds and oversized captures retain the exact general alignment. Local
+splicing does not relabel older frontier/split proofs with a newer working buffer.
 
 The cache can also retain up to eight frontier checkpoints from the first bisection of an
 expensive completed comparison. Geometric distances and the latest intermediate multiple of
@@ -238,8 +248,9 @@ ambiguous proofs decline. Prepared comparison-length sums bound the extra scans 
 rereading token metadata. Admission waits for every ordinary root checkpoint and fits
 the guaranteed remaining work; retained storage and current-capture publication are unchanged.
 
-When no optional run is eligible, complete occurrence counts select a one- or two-omission
-proof among all matchable reference rows. For one omission, failure to embed the full sequence and a unique feasible
+When no optional run is eligible, complete occurrence counts select a complete-membership,
+one-omission or two-omission proof among all matchable reference rows. Embedding the full
+sequence fixes every matchable reference row. For one omission, failure to embed the full sequence and a unique feasible
 omission establish the exact optimum. This path shares the same profile repair, bounded gap,
 root checkpoints and admission budget; ambiguous optional candidates retain ordinary search.
 

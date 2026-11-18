@@ -4,13 +4,14 @@ import type { DiffIndex as Index, DiffStats as Stats } from "./diff-index.ts";
 type Region = Readonly<{ a0: number; a1: number; b0: number; b1: number }>;
 type Token = Readonly<{ count: number; first: number }>;
 export type DiffRepairReference = ReadonlyMap<string, Token>;
-/** The retained matching is unique and attains sum(min(reference count, working count)).
+/** The retained reference membership is fixed in every optimum attaining the occurrence bound.
+ * The uniqueness flag also proves the working placements; only that case permits local splicing.
  * Deviations store only nonzero working counts different from the reference count.
  * Otherwise the first reference occurrence is matched iff the working count is complete.
  * Published maps are never mutated; each repair copies only the bounded deviations. */
-export type DiffRepairCertificate = Readonly<{ reference: DiffRepairReference; deviations: ReadonlyMap<string, number>; matches: number }>;
-type Repair = Readonly<{ changes: readonly Region[]; origins: readonly (number | undefined)[];
-    proof: DiffRepairCertificate; from: number; to: number; delta: number; rowDelta: number }>;
+export type DiffRepairCertificate = Readonly<{ reference: DiffRepairReference; deviations: ReadonlyMap<string, number>; matches: number; unique: boolean }>;
+type Repair = Readonly<{ proof: DiffRepairCertificate; from: number; to: number; delta: number; rowDelta: number } &
+    ({ changes: readonly Region[]; origins: readonly (number | undefined)[] } | { required: { from: number; to: number; rows: readonly number[] } })>;
 const limits = Object.freeze({ rows: 65536, regions: 4096, window: 256, deviations: 256 });
 
 /** Map an unchanged row through the sorted raw regions, including zero-width changes. */
@@ -27,9 +28,9 @@ function* match(changes: readonly Region[], row: number, side: "a" | "b", stats:
     return row + (prior ? side === "a" ? prior.b1 - prior.a1 : prior.a1 - prior.b1 : 0);
 }
 
-/** Called after ordered-common alignment succeeds. Verify the complete capture, including
- * trimmed outer rows: every shared occurrence must match and shared counts must balance.
- * This gives a unique global optimum and a reusable immutable reference count index. */
+/** Verify the complete capture, including trimmed outer rows: every matchable reference
+ * occurrence must participate. Equal shared counts also fix its working placement; excess
+ * working occurrences permit ambiguity while preserving the forced reference membership. */
 export function* certifyAlignment(left: Index, right: Index, changes: readonly Region[], previous: DiffRepairReference | undefined, stats: Stats): Generator<void, DiffRepairCertificate | undefined> {
     if (Math.max(left.lines.size, right.lines.size) > limits.rows || changes.length > limits.regions) return;
     let reference = previous;
@@ -42,39 +43,60 @@ export function* certifyAlignment(left: Index, right: Index, changes: readonly R
         }
         reference = tokens;
     }
-    const counts = new Map<string, number>(); let matches = 0, change = 0;
-    for (let row = 0; row < right.lines.size; row++) {
-        const token = (yield* getLine(right, row, stats)).token; if (token === undefined) return;
-        while (change < changes.length && changes[change]!.b1 <= row) { change++; if (tick(stats)) yield; }
-        const unmatched = changes[change] && changes[change]!.b0 <= row;
-        if (reference.has(token)) {
-            if (unmatched) return;
-            counts.set(token, (counts.get(token) ?? 0) + 1); matches++;
-        } else if (!unmatched) return;
-        if (tick(stats, token.length + 4)) yield;
+    // All matched rows already occur in the completed alignment. Count only exceptions.
+    // A reference token must be wholly matched or wholly absent, never partially matched.
+    const missing = new Map<string, number>(); let matches = left.lines.size;
+    for (const region of changes) {
+        matches -= region.a1 - region.a0;
+        for (let row = region.a0; row < region.a1; row++) {
+            const token = (yield* getLine(left, row, stats)).token; if (token === undefined) return;
+            missing.set(token, (missing.get(token) ?? 0) + 1);
+            if (tick(stats, token.length + 4)) yield;
+        }
+        if (tick(stats, 2)) yield;
     }
-    for (const [token, count] of counts) { if (count !== reference.get(token)!.count) return; if (tick(stats, 4)) yield; }
-    return { reference, deviations: new Map(), matches };
+    for (const [token, count] of missing) {
+        if (count !== reference.get(token)!.count) return;
+        if (tick(stats, 4)) yield;
+    }
+    const deviations = new Map<string, number>();
+    for (const region of changes) {
+        for (let row = region.b0; row < region.b1; row++) {
+            const token = (yield* getLine(right, row, stats)).token; if (token === undefined) return;
+            const ref = reference.get(token);
+            if (ref) {
+                if (missing.has(token)) return;
+                deviations.set(token, (deviations.get(token) ?? ref.count) + 1);
+                if (deviations.size > limits.deviations) return;
+            }
+            if (tick(stats, token.length + 8)) yield;
+        }
+        if (tick(stats, 2)) yield;
+    }
+    return { reference, deviations, matches, unique: deviations.size === 0 };
 }
 
 /** An equal-row edge belongs to an optimal matching iff prefix + 1 + suffix equals LCS.
- * Exactly LCS such edges means the matching is unique. Insertion/deletion order is irrelevant.
+ * Exactly LCS distinct reference endpoints fixes membership in every optimum. Multiple
+ * working endpoints keep that membership but require global canonical placement.
  * One forward table and two reverse rows use at most 257*257 + 2*257 Uint16 cells. */
-function* unique(left: readonly string[], right: readonly string[], stats: Stats): Generator<void, readonly (readonly [number, number])[] | undefined> {
+function* fixedMembership(left: readonly string[], right: readonly string[], stats: Stats): Generator<void, { pairs: readonly (readonly [number, number])[]; unique: boolean } | undefined> {
     const n = left.length, m = right.length, width = m + 1, table = new Uint16Array((n + 1) * width);
     for (let i = 0; i < n; i++) for (let j = 0; j < m; j++) {
         table[(i + 1) * width + j + 1] = left[i] === right[j] ? table[i * width + j]! + 1 : Math.max(table[i * width + j + 1]!, table[(i + 1) * width + j]!);
         stats.lineComparisons++; if (tick(stats, Math.max(left[i]!.length, right[j]!.length) + 4)) yield;
     }
     const length = table[n * width + m]!, pairs: (readonly [number, number])[] = [];
-    let below = new Uint16Array(width), current = new Uint16Array(width);
+    let below = new Uint16Array(width), current = new Uint16Array(width), unique = true;
     for (let i = n - 1; i >= 0; i--) {
-        current[m] = 0;
+        current[m] = 0; let chosen = false;
         for (let j = m - 1; j >= 0; j--) {
             const equal = left[i] === right[j];
             current[j] = equal ? below[j + 1]! + 1 : Math.max(below[j]!, current[j + 1]!);
             if (equal && table[i * width + j]! + 1 + below[j + 1]! === length) {
-                pairs.push([i, j]); if (pairs.length > length) return;
+                if (chosen) unique = false;
+                else { pairs.push([i, j]); chosen = true; if (pairs.length > length) return; }
+                if (tick(stats, 2)) yield;
             }
             stats.lineComparisons++; if (tick(stats, Math.max(left[i]!.length, right[j]!.length) + 4)) yield;
         }
@@ -83,13 +105,14 @@ function* unique(left: readonly string[], right: readonly string[], stats: Stats
     if (pairs.length !== length) return;
     const ordered: (readonly [number, number])[] = [];
     for (let index = pairs.length - 1; index >= 0; index--) { ordered.push(pairs[index]!); if (tick(stats)) yield; }
-    return ordered;
+    return { pairs: ordered, unique };
 }
 
 /** Tokens balanced in both captures force their occurrence ranks to match in every optimum
  * attaining the count bound. Unchanged matches on either side of the edit therefore anchor
- * an independent local window. Accept only a unique local matching attaining the updated
- * global bound; unchanged outer components retain their old unique optimum. */
+ * an independent local window. Fixed local reference membership must attain the updated
+ * global bound. Unique placements splice locally; ambiguous placements return only the
+ * forced reference rows, leaving canonical placement to the current comparison. */
 export function* repairAlignment(left: Index, right: Index, old: Index, changes: readonly Region[], proof: DiffRepairCertificate, stats: Stats): Generator<void, Repair | undefined> {
     if (Math.max(left.lines.size, right.lines.size, old.lines.size) > limits.rows) return;
     const edges = yield* lineEdges(old.buffer, right.buffer, stats);
@@ -144,7 +167,8 @@ export function* repairAlignment(left: Index, right: Index, old: Index, changes:
         const token = (yield* getLine(index, row, stats)).token; if (token === undefined) return;
         rows.push(token); if (tick(stats)) yield;
     }
-    const pairs = yield* unique(a, b, stats); if (!pairs) return;
+    const local = yield* fixedMembership(a, b, stats); if (!local) return;
+    const pairs = local.pairs;
     const prefix: { region: Region; origin: number }[] = [], suffix: { region: Region; origin: number }[] = []; let localEdits = 0;
     for (let index = 0; index < changes.length; index++) {
         const region = changes[index]!;
@@ -158,6 +182,11 @@ export function* repairAlignment(left: Index, right: Index, old: Index, changes:
     }
     const oldLocal = (a1 - a0 + oldEnd - b0 - localEdits) / 2;
     if (proof.matches - oldLocal + pairs.length !== upper) return;
+    if (!proof.unique || !local.unique) {
+        const rows: number[] = [];
+        for (const pair of pairs) { rows.push(a0 + pair[0]); if (tick(stats, 2)) yield; }
+        return { required: { from: a0, to: a1, rows }, proof: { reference: proof.reference, deviations, matches: upper, unique: false }, from: b0, to: b1, delta, rowDelta };
+    }
     // Origins distinguish reusable empty hunks from newly computed local regions.
     const result: Region[] = [], origins: (number | undefined)[] = [];
     for (const entry of prefix) { result.push(entry.region); origins.push(entry.origin); if (tick(stats, 2)) yield; }
@@ -169,5 +198,5 @@ export function* repairAlignment(left: Index, right: Index, old: Index, changes:
     if (ai < a1 || bi < b1) { result.push({ a0: ai, a1, b0: bi, b1 }); origins.push(undefined); }
     for (const entry of suffix) { result.push(entry.region); origins.push(entry.origin); if (tick(stats, 2)) yield; }
     if (result.length > limits.regions) return;
-    return { changes: result, origins, proof: { reference: proof.reference, deviations, matches: upper }, from: b0, to: b1, delta, rowDelta };
+    return { changes: result, origins, proof: { reference: proof.reference, deviations, matches: upper, unique: true }, from: b0, to: b1, delta, rowDelta };
 }

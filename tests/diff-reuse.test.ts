@@ -224,7 +224,7 @@ for (const [count, period] of [[2000, 2000], [20000, 20]] as const) test(`matche
         edit(second, second + 1, [lines[second]!.slice(0, 3) + "\n", lines[second]!.slice(3)], true);
         edit(middle, middle + 2, [rows[middle]!], true);
         edit(middle - 1, middle, [rows[middle - 1]!], true);
-        // A duplicate creates ambiguous optimal matches; long tokens also require fallback.
+        // A duplicate needs canonical placement beyond the local window; long tokens require fallback.
         edit(middle + 4, middle + 4, [lines[middle + 4]!], false);
         edit(middle + 8, middle + 9, ["x".repeat(257) + "😀\r\n"], false);
     } finally { cache.dispose(); }
@@ -369,7 +369,7 @@ for (const matching of [1, 2]) test(`joining ${matching === 1 ? "an unmatched an
     const text = original.replaceAll("row 0\n", "changed 0\n").replaceAll("row 10\n", "changed 10\n").replaceAll("row 11\n", "row 11\nrow 11\n");
     const baseline = TextBuffer.from(original), working = TextBuffer.from(text), cache = new DiffReferenceCache();
     const first = text.indexOf("\n", text.indexOf("changed ", Math.floor(text.length * 0.5)));
-    const at = matching === 1 ? first : text.indexOf("\n", first + 1), joinWork = matching === 1 ? 7_500_000 : 8_000_000;
+    const at = matching === 1 ? first : text.indexOf("\n", first + 1), joinWork = matching === 1 ? 7_500_000 : 7_000_000;
     const joined = working.replace(at, at + 1, ""), typed = joined.replace(at, at, "!");
     try {
         finish(baseline, working, cache);
