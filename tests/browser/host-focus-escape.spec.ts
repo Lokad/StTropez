@@ -20,11 +20,14 @@ async function exact(page: Page, text: string): Promise<void> { expect(await hos
 async function keyboardFocus(page: Page, target: Locator): Promise<void> {
     await expect(target).toBeVisible();
     for (let step = 0; step < 128; step++) {
-        if (await target.evaluate(node => node === document.activeElement)) return;
-        const backward = await target.evaluate(node => !!document.activeElement
-            && !!(node.compareDocumentPosition(document.activeElement) & Node.DOCUMENT_POSITION_FOLLOWING));
-        if (await page.evaluate(() => document.activeElement instanceof HTMLTextAreaElement)) await page.keyboard.press("Escape");
-        await page.keyboard.press(backward ? "Shift+Tab" : "Tab");
+        const focus = await target.evaluate(node => {
+            const active = document.activeElement;
+            return { reached: node === active, backward: !!active && !!(node.compareDocumentPosition(active) & Node.DOCUMENT_POSITION_FOLLOWING),
+                editor: active instanceof HTMLTextAreaElement };
+        });
+        if (focus.reached) return;
+        if (focus.editor) await page.keyboard.press("Escape");
+        await page.keyboard.press(focus.backward ? "Shift+Tab" : "Tab");
     }
     throw new Error("Keyboard traversal did not reach the requested host control.");
 }
