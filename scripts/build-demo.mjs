@@ -9,6 +9,7 @@ import { libraryModules, libraryCss } from "./library-entries.mjs";
 
 const project = resolve("."), dist = resolve("dist"), site = resolve("artifacts/pages");
 const manifest = JSON.parse(await readFile(join(dist, "manifest.json"), "utf8"));
+/** @param {Uint8Array} bytes */
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 for (const asset of manifest.assets) assert.equal(hash(await readFile(join(dist, asset.path))), asset.sha256, `Build the library first: ${asset.path}`);
 const entries = new Map([...libraryModules, libraryCss].map(entry => [entry.source, entry.output]));
@@ -29,8 +30,8 @@ const result = await build({ absWorkingDir: project,
 const hostPackages = ["typescript-demo", "vscode-languageserver-protocol", "vscode-jsonrpc", "vscode-languageserver-types"];
 const compilerMetadata = JSON.parse(await readFile("node_modules/typescript-demo/package.json", "utf8"));
 const disabled = new Set(Object.entries(compilerMetadata.browser).filter(([, value]) => value === false).map(([name]) => `(disabled):${name}`));
-for (const input of Object.keys(result.metafile.inputs)) {
-    if (disabled.has(input)) { assert.equal(result.metafile.inputs[input].bytes, 0); continue; }
+for (const [input, metadata] of Object.entries(result.metafile.inputs)) {
+    if (disabled.has(input)) { assert.equal(metadata.bytes, 0); continue; }
     const path = resolve(input);
     assert.ok(within(resolve("examples"), path) || within(resolve("fixtures/language"), path) || within(dist, path) && /\.(js|css)$/.test(path)
         || hostPackages.some(name => within(resolve("node_modules", name), path)), `Unexpected static demo input: ${input}`);
@@ -41,8 +42,8 @@ await copyFile(join(dist, manifest.entries.regexWorker), join(site, "regex-worke
 await copyFile(join(dist, "UNICODE-LICENSE.txt"), join(site, "UNICODE-LICENSE.txt"));
 await copyFile(join(dist, "LICENSE.txt"), join(site, "LICENSE.txt"));
 await writeFile(join(site, "typescript-libs.json"), await demoLibraries());
-for (const [name, file] of [["typescript-demo", "LICENSE.txt"], ["typescript-demo", "ThirdPartyNoticeText.txt"],
-    ["vscode-languageserver-protocol", "License.txt"], ["vscode-jsonrpc", "License.txt"], ["vscode-languageserver-types", "License.txt"]]) {
+for (const [name, file] of /** @type {const} */ ([["typescript-demo", "LICENSE.txt"], ["typescript-demo", "ThirdPartyNoticeText.txt"],
+    ["vscode-languageserver-protocol", "License.txt"], ["vscode-jsonrpc", "License.txt"], ["vscode-languageserver-types", "License.txt"]])) {
     await copyFile(join("node_modules", name, file), join(site, `${name}-${file}`));
 }
 await writeFile(join(site, ".nojekyll"), "");
