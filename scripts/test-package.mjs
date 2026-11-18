@@ -11,7 +11,7 @@ import { chromium, firefox, webkit } from "@playwright/test";
 import { runPackagedPilot } from "./package-pilot.mjs";
 import { runPackagedHunkPilot } from "./package-hunk-pilot.mjs";
 import { runPackageTransitions } from "./package-transitions.mjs";
-import { stageHostFixture, within } from "./package-react-host.mjs";
+import { consumerCompilerRoots, stageHostFixture, within } from "./package-react-host.mjs";
 import { qualifyPackageExports } from "./package-exports.mjs";
 import { consumerScenario } from "./package-scenarios.mjs";
 import { emptyConsumerDirectory } from "./package-consumer.mjs";
@@ -123,6 +123,30 @@ if (reactHost) {
     }
     assert.ok(typeInputs.length >= compilerFiles.length, "Compiler input evidence is missing.");
 }
+// Development harness types use the actual copied fixture, after the independent consumer
+// compile above. Node/Playwright declarations belong only to this separate tooling program.
+let pageLifecycleHarness;
+if (deferredOnly) {
+    const script = await realpath(join(project, "scripts/package-page-lifecycle.mjs"));
+    const configuration = join(consumer, "tsconfig.page-lifecycle.json");
+    await writeFile(configuration, JSON.stringify({ compilerOptions: { ...compilerOptions, allowJs: true, checkJs: true,
+        types: ["node"], typeRoots: [join(project, "node_modules/@types")] }, files: [join(consumer, "activation-main.ts"), script] }));
+    const output = execFileSync(process.execPath, [join(project, "node_modules/typescript/bin/tsc"), "-p", configuration, "--listFiles", "--pretty", "false"],
+        { cwd: consumer, encoding: "utf8", stdio: "pipe", windowsHide: true });
+    await writeFile(join(consumer, "page-lifecycle-compiler-inputs.txt"), output);
+    const toolRoots = [...await consumerCompilerRoots(project), ...await Promise.all([
+        "@types/node", "@playwright/test", "playwright", "playwright-core", "undici-types",
+    ].map(name => realpath(join(project, "node_modules", name))))];
+    const inputs = [];
+    for (const path of output.split(/\r?\n/).filter(Boolean)) {
+        const input = await realpath(resolve(consumer, path));
+        assert.ok(within(consumer, input) || input === script || toolRoots.some(root => within(root, input)),
+            `Unexpected input in the restored page-lifecycle harness: ${input}`);
+        inputs.push(input);
+    }
+    assert.ok(inputs.includes(script) && inputs.includes(await realpath(join(assetRoot, "browser/index.d.ts"))), "Harness inputs must include its helper and restored declarations.");
+    pageLifecycleHarness = { checkedJavaScript: true, strict: true, skipLibCheck: false, inputs };
+}
 const bundle = await build({ absWorkingDir: consumer, entryPoints: lspOnly ? { lsp: "lsp.ts" } : deferredOnly ? { activation: "activation-main.ts", ...(workspaceOnly ? { workspace: "workspace.ts" } : { activate: "activate.ts" }) } : { app: "main.ts", pilot: "pilot.ts", ...reactHost?.entryPoints }, bundle: true, format: "esm", platform: "browser",
     ...(deferredOnly ? { splitting: true, minify: true } : {}),
     outdir: join(consumer, "site"), alias: { sttropez: assetRoot }, metafile: true,
@@ -148,7 +172,7 @@ const activationOutputs = deferredOnly ? Object.fromEntries(Object.entries(bundl
 })) : {};
 await mkdir("artifacts/package", { recursive: true });
 await writeFile("artifacts/package/restored-consumer.json", JSON.stringify({ schemaVersion: 1,
-    packageSha256, consumer, assetRoot, reusedStage: !!reused, exportsResolution,
+    packageSha256, consumer, assetRoot, reusedStage: !!reused, exportsResolution, ...(pageLifecycleHarness ? { pageLifecycleHarness } : {}),
     browser: browserName, mode: prepareOnly ? "prepare-only" : benchmark ? "benchmark" : pilotOnly ? "pilot" : "full", scenario: lspOnly ? "lsp" : workspaceOnly ? "workspace" : activationOnly ? "activation" : reactOnly ? "react" : hunkOnly ? "hunk" : pilotOnly ? "recovery" : "all", corpus,
     declarations: { files: compilerFiles, strict: true, skipLibCheck: false, passed: true, ...(reactHost ? { inputs: typeInputs } : {}) },
     inputs: Object.keys(bundle.metafile.inputs).sort(), assets, readinessFixture,

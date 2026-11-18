@@ -423,6 +423,12 @@ The lower-level `--reuse-consumer=<metadata>` option checks the package hash and
 Lower-level `--*-only` workload flags are mutually exclusive; use the coordinator's
 `--scenarios` option to qualify multiple workloads against one restored artifact.
 
+Activation and workspace routes also type-check their shared page-transition harness against
+the copied consumer's actual fixture snapshot and restored public declarations. This separate
+tooling program permits the Node/Playwright declarations it needs and records its compiler
+inputs. The independent consumer compile keeps its own options and inputs; tooling dependencies
+are not consumer requirements. Unexpected checkout inputs fail the harness check.
+
 The coordinator creates and owns one temporary consumer per run. After every selected route
 and final identity check passes, it removes that directory. Pass `--keep-consumer` to retain
 a successful run for inspection. Failures preserve the consumer; standalone preparation,

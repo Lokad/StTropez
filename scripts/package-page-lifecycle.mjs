@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 
-/** Synthetic transitions check the consumer's policy, not real BFCache eligibility. */
+/**
+ * Synthetic transitions check the consumer's policy, not real BFCache eligibility.
+ * @param {import("@playwright/test").Page} page
+ * @param {ReturnType<Window["activationFixture"]["snapshot"]>["phase"]} phase
+ */
 export async function retainPackagedPage(page, phase) {
     const result = await page.evaluate(() => {
         const before = window.activationFixture.snapshot(), inputs = [...document.querySelectorAll("#editor textarea")];
@@ -16,6 +20,7 @@ export async function retainPackagedPage(page, phase) {
     assert.equal(result.sameInputs, true, "Persisted page transitions replaced the mounted inputs");
 }
 
+/** @param {import("@playwright/test").Page} page */
 export async function closePackagedPage(page) {
     const result = await page.evaluate(() => {
         window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false }));
@@ -24,9 +29,11 @@ export async function closePackagedPage(page) {
         return { first, repeated: window.activationFixture.snapshot(), inputs: document.querySelectorAll("#editor textarea").length,
             stylesheets: document.querySelectorAll('link[rel="stylesheet"]').length };
     });
-    assert.equal(result.first.phase, "disposed"); assert.equal(result.first.session.disposed, true);
+    assert.equal(result.first.phase, "disposed");
+    assert.ok(result.first.session, "Disposal must retain the activated session snapshot");
+    assert.equal(result.first.session.disposed, true);
     assert.deepEqual(result.repeated, result.first); assert.equal(result.inputs, 0); assert.equal(result.stylesheets, 0);
     const diagnostics = result.first.session.diagnostics;
-    for (const key of ["resources", "documents", "tabs", "views", "leases", "subscriptions"]) assert.equal(diagnostics[key], 0, key);
+    for (const key of /** @type {const} */ (["resources", "documents", "tabs", "views", "leases", "subscriptions"])) assert.equal(diagnostics[key], 0, key);
     return diagnostics;
 }
