@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { nextSeed } from "../fixtures/workloads.ts";
 import test from "node:test";
 import { DiffReferenceCache, TextBuffer, TextDiff } from "../src/index.ts";
 import type { DiffProgress } from "../src/index.ts";
@@ -86,7 +87,7 @@ test("shared proofs preserve backing-independent alignment ties, Enter splits an
 });
 
 test("shared and cached fragmented revisions agree with independent snapshots and a seeded LCS oracle", () => {
-    let seed = 82213; const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
+    let seed = 82213; const random = (n: number) => { seed = nextSeed(seed); return seed % n; };
     const alphabet = ["A\n", "A\r\n", "B\n", "😀é\n", "\ud800", "\r", "", "x".repeat(257) + "\n"];
     for (let trial = 0; trial < 180; trial++) {
         const independent = trial % 3 === 0;

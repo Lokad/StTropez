@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { nextSeed } from "../fixtures/workloads.ts";
 import test from "node:test";
 import { TextBuffer } from "../src/core/text-buffer.ts";
 import { adjustInsertionText, insertionContext, reindentInsertionText } from "../src/core/insertion-text.ts";
@@ -64,7 +65,7 @@ test("format markers distinguish empty lines, trailing stops and normalized whit
 
 test("formatted marker bounds remain ordered and preserve raw body ranges across varied indentation", () => {
     let seed = 0x1de17;
-    const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return (seed >>> 8) % n; };
+    const random = (n: number) => { seed = nextSeed(seed); return (seed >>> 8) % n; };
     for (let trial = 0; trial < 250; trial++) {
         let input = ""; const bodies: { from: number; to: number; text: string }[] = [];
         for (let line = 0; line < 5; line++) {

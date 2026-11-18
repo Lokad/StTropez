@@ -1,4 +1,5 @@
 import test from "node:test";
+import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { TextBuffer, TextDiff } from "../src/index.ts";
 import { comparisonLine } from "../src/core/comparison-scroll.ts";
@@ -24,7 +25,7 @@ test("inserted/deleted rows project to captured anchors and unchanged rows retai
     const trailing = mapping("one\r\ntwo\r\nthree", "one\r\ntwo"); assert.equal(trailing.line("working", 1), 1); assert.equal(trailing.line("baseline", 1), 1);
 });
 test("actual diff projections preserve every unique unchanged row through multiple line edits", () => {
-    let seed = 43829; const random = (n: number) => { seed = Math.imul(seed, 1664525) + 1013904223 | 0; return (seed >>> 0) % n; };
+    let seed = 43829; const random = (n: number) => { seed = nextSeed(seed) | 0; return (seed >>> 0) % n; };
     for (let trial = 0; trial < 40; trial++) {
         const a = Array.from({ length: 70 }, (_, i) => `original-${i};`), b = a.slice();
         for (let edit = 0; edit < 8; edit++) b.splice(random(b.length), random(4), ...Array.from({ length: random(5) }, (_, i) => `new-${edit}-${i};`));

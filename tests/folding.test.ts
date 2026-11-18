@@ -1,4 +1,5 @@
 import test from "node:test";
+import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { createAgentReview, FoldIndex, TextBuffer, Workspace, createFoldRegions } from "../src/index.ts";
 import { mapFoldRegions, revealSelectionFolds } from "../src/core/folding.ts";
@@ -122,7 +123,7 @@ test("boundary newline removal cannot publish crossing folds or interrupt an ato
 test("mapped sparse folds agree with a naive row oracle across bounded structural edits and undo", () => {
     const model = new Workspace(), source = model.createTextResource({ scope: "fold", resource: "structural", variant: "working" }, "Source", { value: "header\r\nbody\n".repeat(60) + "end" });
     const view = model.createDocumentView(source.documentId); let seed = 5321;
-    const next = (limit: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % limit; };
+    const next = (limit: number) => { seed = nextSeed(seed); return seed % limit; };
     const verify = () => {
         const document = model.document(source.documentId), snapshot = view.folding.getSnapshot(), index = snapshot.index;
         assert.equal(snapshot.revision, document.revision);

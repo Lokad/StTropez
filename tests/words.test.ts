@@ -1,4 +1,5 @@
 import test from "node:test";
+import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { TextBuffer, WordCursor } from "../src/index.ts";
 import type { WordOptions } from "../src/index.ts";
@@ -62,7 +63,7 @@ test("arbitrarily long code words and whitespace yield across immutable piece se
 test("seeded code-word navigation agrees with an independent whole-string grapheme/run oracle", () => {
     const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
     const tokens = ["alpha", "βγ", "東京", "नम", "123", "_", "é", "👩‍💻", "!?", "😀", "  ", "\t", "\r\n"];
-    let seed = 0x42ab7; const random = (limit: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % limit; };
+    let seed = 0x42ab7; const random = (limit: number) => { seed = nextSeed(seed); return seed % limit; };
     for (let trial = 0; trial < 250; trial++) {
         const text = Array.from({ length: 3 + random(20) }, () => tokens[random(tokens.length)]!).join("");
         let buffer = TextBuffer.from("");
@@ -160,7 +161,7 @@ test("Unicode runs preserve raw clipped surrogate seams and the final whitespace
 test("Unicode and fragmented run scans match an independent complete grapheme/run table", () => {
     const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
     const tokens = ["alpha", "βγ", "東京", "नम", "123", "_", "é", "👩‍💻", "!?", "😀", "  ", "\t", "\r\n", "\u0301"];
-    let seed = 0x291b; const random = (limit: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % limit; };
+    let seed = 0x291b; const random = (limit: number) => { seed = nextSeed(seed); return seed % limit; };
     for (let trial = 0; trial < 180; trial++) {
         const text = Array.from({ length: 3 + random(18) }, () => tokens[random(tokens.length)]!).join("");
         let buffer = TextBuffer.from("");

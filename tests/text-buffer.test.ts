@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PositionMap, TextBuffer, applyTextEdits, validateTextEdits } from "../src/index.ts";
-import { corpus, corpusIds, editLog } from "../fixtures/workloads.ts";
+import { nextSeed, corpus, corpusIds, editLog } from "../fixtures/workloads.ts";
 
 test("the selected buffer applies atomic original-coordinate batches and preserves immutable snapshots", () => {
     const original = TextBuffer.from("a😀b\r\nc"), edits = [{ from: 1, to: 3, insert: "X" }, { from: 3, to: 3, insert: "Y" }, { from: 6, to: 7, insert: "Z" }];
@@ -199,7 +199,7 @@ test("large line indexes remain exact across split backings and retained version
 
 test("multi-range batches preserve the string oracle and map untouched original boundaries", () => {
     let text = "a😀\r\ne\u0301👩‍💻\ud800".repeat(50), buffer = TextBuffer.from(text), seed = 0x5eeda11;
-    const random = (maximum: number): number => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % maximum; };
+    const random = (maximum: number): number => { seed = nextSeed(seed); return seed % maximum; };
     for (let step = 0; step < 300; step++) {
         const edits = [], inserts = ["", "\r\n", "😀", "e\u0301", "👩‍💻", "\ud800"];
         let cursor = 0;

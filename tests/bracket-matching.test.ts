@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { nextSeed } from "../fixtures/workloads.ts";
 import test from "node:test";
 import { BracketMatcher, TextBuffer } from "../src/index.ts";
 import type { BracketMatchCursor, BracketMatchOptions, LanguageConfiguration, PairingContext } from "../src/index.ts";
@@ -44,7 +45,7 @@ const match = (text: string, caret: number, configuration?: LanguageConfiguratio
 test("matching follows known nested pairs in both directions and uses absolute UTF-16 offsets", () => {
     const matcher = new BracketMatcher(), pairs = [["(", ")"], ["[", "]"], ["{", "}"]] as const;
     let seed = 417;
-    const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed; };
+    const random = () => { seed = nextSeed(seed); return seed; };
     for (let sample = 0; sample < 64; sample++) {
         let text = "😀\r\n", expected = new Map<number, number>();
         const add = (depth: number) => {

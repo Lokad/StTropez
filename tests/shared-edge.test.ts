@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { nextSeed } from "../fixtures/workloads.ts";
 import test from "node:test";
 import { TextBuffer } from "../src/index.ts";
 
@@ -30,7 +31,7 @@ test("shared edges prove owned spans without text reads, including split backing
 
 test("fragmented shared-edge proofs remain exact through edits, balancing, partial spans and cancellation", () => {
     let text = "0123\r\n😀é\n".repeat(200), buffer = TextBuffer.from(text), seed = 9321;
-    const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
+    const random = (n: number) => { seed = nextSeed(seed); return seed % n; };
     for (let iteration = 0; iteration < 600; iteration++) {
         const from = random(text.length + 1), to = Math.min(text.length, from + random(5)), insert = ["x", "\r\n", "", "😀", "é"][random(5)]!;
         const next = buffer.replace(from, to, insert), nextText = text.slice(0, from) + insert + text.slice(to);

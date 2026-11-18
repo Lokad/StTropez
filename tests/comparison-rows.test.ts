@@ -1,4 +1,5 @@
 import test from "node:test";
+import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { TextBuffer, TextDiff, FoldIndex, createFoldRegions } from "../src/index.ts";
 import { ComparisonRowsCursor } from "../src/core/comparison-rows.ts";
@@ -17,7 +18,7 @@ test("aligned slots preserve exact source rows across scalar trims, inline/newli
     assert.equal(rows.baseline.rowAt(1), rows.working.rowAt(3)); assert.equal(rows.baseline.gapAt(1)!.offset, 4); assert.equal(rows.baseline.nextLine(1, -1), 0); assert.equal(rows.baseline.nextLine(1, 1), 1);
 });
 test("generated edits retain every real row and align unique unchanged lines", () => {
-    let seed = 95471; const random = (n: number) => { seed = Math.imul(seed, 1664525) + 1013904223 | 0; return (seed >>> 0) % n; };
+    let seed = 95471; const random = (n: number) => { seed = nextSeed(seed) | 0; return (seed >>> 0) % n; };
     for (let trial = 0; trial < 300; trial++) {
         const a = Array.from({ length: 40 }, (_, i) => `original ${i} café😀;`), b = a.slice();
         for (let edit = 0; edit < 6; edit++) b.splice(random(b.length), random(4), ...Array.from({ length: random(5) }, (_, i) => `new ${edit}.${i};`));

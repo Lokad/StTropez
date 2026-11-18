@@ -1,4 +1,5 @@
 import test from "node:test";
+import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { TextBuffer, createGraphemeCursor } from "../src/index.ts";
 import { localAsciiGraphemePoint } from "../src/core/grapheme-point.ts";
@@ -38,7 +39,7 @@ test("accepted ASCII neighborhoods remain exact beside arbitrary Unicode and con
     for (const left of contexts) for (const right of contexts) assert.ok(verify(left + "abc\nxyz" + right) > 0);
     let seed = 0xa51c; const tokens = [...contexts, "abc_def", "  ", "\n", "0123456789"];
     for (let trial = 0; trial < 80; trial++) {
-        const text = Array.from({ length: 12 }, () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return tokens[seed % tokens.length]!; }).join("");
+        const text = Array.from({ length: 12 }, () => { seed = nextSeed(seed); return tokens[seed % tokens.length]!; }).join("");
         verify(text);
     }
 });

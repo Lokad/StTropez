@@ -1,4 +1,5 @@
 import test from "node:test";
+import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { LiteralSearch, TextBuffer } from "../src/index.ts";
 import type { LiteralSearchOptions } from "../src/index.ts";
@@ -58,7 +59,7 @@ test("fragmented whole-word scans agree with an independent flat code-point orac
         return result;
     }
     let seed = 0x73a1, text = "cat cat_ e\u0301 café Ελληνικά 漢字 😀 \u{10400}cat a!a ".repeat(4), buffer = TextBuffer.from(text);
-    const next = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0);
+    const next = () => (seed = nextSeed(seed));
     for (let index = 0; index < 80; index++) {
         const from = next() % (text.length + 1), to = Math.min(text.length, from + next() % 3), insert = ["cat", "_", "😀", "\u0301", " ", "a!a"][next() % 6]!;
         text = text.slice(0, from) + insert + text.slice(to); buffer = buffer.replace(from, to, insert);
@@ -86,7 +87,7 @@ test("adversarial prefixes, match/read budgets, ranged scans and disposal stay e
 });
 test("seeded fragmented snapshots agree with the platform literal-search oracle", () => {
     let seed = 0x51a7, text = "a😀\r\néabc".repeat(20), buffer = TextBuffer.from(text);
-    const next = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0);
+    const next = () => (seed = nextSeed(seed));
     for (let index = 0; index < 120; index++) {
         const from = next() % (text.length + 1), to = Math.min(text.length, from + next() % 4), insert = ["a", "😀", "\r\n", "é", ""][next() % 5]!;
         text = text.slice(0, from) + insert + text.slice(to); buffer = buffer.replace(from, to, insert);
@@ -125,7 +126,7 @@ test("fragmented caseless whole-word scans agree with an independent Unicode reg
         return matches;
     }
     let seed = 0x71ba, text = "k K_ K𐐀 𐐨 SS ß a!A!a é É 😀 ".repeat(4), buffer = TextBuffer.from(text);
-    const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0);
+    const random = () => (seed = nextSeed(seed));
     for (let index = 0; index < 100; index++) {
         const from = random() % (text.length + 1), to = Math.min(text.length, from + random() % 3), insert = ["K", "K", "𐐀", "σ", "\ud800", " ", "a!a"][random() % 7]!;
         text = text.slice(0, from) + insert + text.slice(to); buffer = buffer.replace(from, to, insert);

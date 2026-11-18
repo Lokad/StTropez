@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { nextSeed } from "../fixtures/workloads.ts";
 import test from "node:test";
 import { appendNestedFold } from "../src/core/fold-nesting.ts";
 
@@ -19,7 +20,7 @@ test("fold nesting agrees with all accepted intervals and keeps the conflicting 
         .map(([lineFrom, lineTo]) => Object.freeze({ lineFrom: lineFrom!, lineTo: lineTo! })));
     let seed = 2741;
     for (let trial = 0; trial < 300; trial++) verify(Array.from({ length: 100 }, (_, lineFrom) => {
-        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        seed = nextSeed(seed);
         return Object.freeze({ lineFrom, lineTo: lineFrom + 2 + seed % 150 });
     }));
 });

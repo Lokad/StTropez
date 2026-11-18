@@ -216,6 +216,8 @@ input subscribers. See [text-model diagnostics](text-model.md#conservative-chang
 ### Workloads
 
 `fixtures/workloads.ts` owns locally generated deterministic corpora and seeded edit logs.
+Its `nextSeed` function owns the 32-bit state update. Each model retains its initial seed,
+draw order and modulo, high-bit or scaled range mapping alongside its independent oracle.
 Model replay deliberately uses raw UTF-16 offsets, including surrogate interiors; browser
 navigation applies the editor's grapheme/geometry rules instead.
 

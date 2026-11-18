@@ -1,4 +1,5 @@
 import test from "node:test";
+import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { TableTextFormatter, tableLimits, tsvTokens } from "../examples/shared/table-text.ts";
 function convert(text: string, budget = 3) {
@@ -26,7 +27,7 @@ test("malformed/ragged tables and explicit dimensions fail without a publishable
 });
 
 test("generated rectangular tables retain every cell through tiny and larger streaming boundaries", () => {
-    let seed = 1967; const next = (limit: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % limit; };
+    let seed = 1967; const next = (limit: number) => { seed = nextSeed(seed); return seed % limit; };
     const alphabet = ["", "x", "\t", '"', "\r\n", "\n", "é", "東京", "😀", "\ud800", ",", " "];
     const quote = (cell: string) => '"' + cell.replaceAll('"', '""') + '"';
     for (let sample = 0; sample < 80; sample++) {

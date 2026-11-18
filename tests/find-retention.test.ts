@@ -1,4 +1,5 @@
 import test from "node:test";
+import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { TextBuffer, Workspace } from "../src/index.ts";
 import { LiteralSearch } from "../src/core/search.ts";
@@ -71,7 +72,7 @@ test("local literal repair reuses a large suffix but repeated-pattern phase chan
 
 test("literal repair agrees with fresh search across batches, raw surrogate seams, case and word boundaries", () => {
     let seed = 0x51a710;
-    const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return (seed >>> 8) % n; };
+    const random = (n: number) => { seed = nextSeed(seed); return (seed >>> 8) % n; };
     const alphabet = ["a", "b", " ", "K", "k", "𐐀", "𐐨", "\ud801", "\udc00", "\n", "\u0301", "\u200c", "_", "\r"];
     const text = (n: number) => Array.from({ length: n }, () => alphabet[random(alphabet.length)]!).join("");
     const workspace = new Workspace(), documentId = workspace.createDocument({ scope: "find", resource: "differential", variant: "working" }, "Source", "");

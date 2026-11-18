@@ -3,7 +3,7 @@ import { unchangedPositionEdges } from "../src/core/positions.ts";
 import assert from "node:assert/strict";
 import { PositionMap, anchoredRange, applyTextEdits, composePositionMaps, importText, exportText } from "../src/index.ts";
 import type { Affinity, AnchoredRange, PositionMapping, TextEdit } from "../src/index.ts";
-import { corpus } from "../fixtures/workloads.ts";
+import { nextSeed, corpus } from "../fixtures/workloads.ts";
 
 test("position mapping defines insertion, replacement, deletion and adjacent-batch affinity", () => {
     const map = new PositionMap(6, [{ from: 1, to: 1, insert: "😀" }, { from: 1, to: 3, insert: "X" }, { from: 3, to: 3, insert: "Y" }]);
@@ -99,7 +99,7 @@ test("seeded batches, inverse edits and compositions map every UTF-16 boundary a
         assert.deepEqual(map.map(value.prefix, "before"), { offset: value.prefix, deleted: false });
         assert.deepEqual(map.map(before.length - value.suffix, "after"), { offset: after.length - value.suffix, deleted: false });
     };
-    const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
+    const random = (n: number) => { seed = nextSeed(seed); return seed % n; };
     const inserts = ["", "a", "xyz", "\r\n", "😀", "é", "\ud800", "\udc00"];
     const batch = (length: number) => {
         const edits: TextEdit[] = []; let end = 0;

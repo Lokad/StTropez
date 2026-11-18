@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { nextSeed } from "../fixtures/workloads.ts";
 import test from "node:test";
 import { DiffReferenceCache, TextDiff, TextBuffer } from "../src/index.ts";
 import { collidingDiffLines } from "./helpers/diff-collision.ts";
@@ -24,7 +25,7 @@ test("comparison preserves exact whitespace, endings, empty text and UTF-16", ()
 });
 
 test("line alignment agrees with a dynamic-programming edit-distance oracle", () => {
-    let seed = 45923; const random = (n: number) => { seed = Math.imul(seed, 1664525) + 1013904223 | 0; return (seed >>> 0) % n; };
+    let seed = 45923; const random = (n: number) => { seed = nextSeed(seed) | 0; return (seed >>> 0) % n; };
     for (let trial = 0; trial < 4000; trial++) {
         const a = Array.from({ length: random(18) }, () => String.fromCharCode(65 + random(5)) + "\n");
         const b = Array.from({ length: random(18) }, () => String.fromCharCode(65 + random(5)) + "\n");
@@ -36,7 +37,7 @@ test("line alignment agrees with a dynamic-programming edit-distance oracle", ()
 });
 
 test("imbalanced repeated-row alignment remains minimal with one shared token and exact fallbacks", () => {
-    let seed = 9917; const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
+    let seed = 9917; const random = (n: number) => { seed = nextSeed(seed); return seed % n; };
     const collision = collidingDiffLines();
     for (let trial = 0; trial < 24; trial++) {
         const left = ["common é😀\r\n", "left\n", collision[0]!], right = ["common é😀\r\n", "right\n", collision[1]!];
@@ -119,7 +120,7 @@ test("equal-length hash collisions still require exact line comparison", () => {
 
 test("mixed short and long line identities retain exact UTF16 alignment at bounded-read thresholds", () => {
     const alphabet = ["\n", "a\r\n", "é😀\n", "x".repeat(254) + "\n", "x".repeat(255) + "\n", "x".repeat(256) + "\n", "\ud800".repeat(900) + "\n"];
-    let seed = 7291; const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
+    let seed = 7291; const random = (n: number) => { seed = nextSeed(seed); return seed % n; };
     for (let trial = 0; trial < 250; trial++) {
         const a = Array.from({ length: random(11) }, () => alphabet[random(alphabet.length)]!), b = Array.from({ length: random(11) }, () => alphabet[random(alphabet.length)]!);
         const rows = Array.from({ length: a.length + 1 }, () => Array<number>(b.length + 1).fill(0));
@@ -130,7 +131,7 @@ test("mixed short and long line identities retain exact UTF16 alignment at bound
 
 test("fragmented snapshots preserve raw seams, unpaired surrogates and every edit range", () => {
     let a = "a😀\r\nb\né\t".repeat(10), b = a, left = TextBuffer.from(a), right = TextBuffer.from(b), seed = 871;
-    const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
+    const random = (n: number) => { seed = nextSeed(seed); return seed % n; };
     for (let iteration = 0; iteration < 200; iteration++) {
         const onLeft = random(2) === 0, text = onLeft ? a : b, from = random(text.length + 1), to = Math.min(text.length, from + random(4)), insert = ["\r", "\n", "😀", "é", "", "\ud800"][random(6)]!;
         if (onLeft) { a = a.slice(0, from) + insert + a.slice(to); left = left.replace(from, to, insert); }

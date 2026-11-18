@@ -1,4 +1,5 @@
 import test from "node:test";
+import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
 import type { TextBuffer as Buffer } from "../src/core/text-buffer.ts";
@@ -41,7 +42,7 @@ test("UTF-16 positions preserve bare CR, CRLF, LF, surrogate units and end-of-li
 test("incremental newline joins/splits and history jumps apply exactly through the independent reference", async () => {
     let text = "a😀\r\nb\rc\n\ud800", buffer = TextBuffer.from(text), index = await LspLineIndex.create(buffer, cooperate), seed = 7193;
     const history = [{ buffer, text }], inserts = ["", "\r", "\n", "\r\n", "😀é", "\ud800", "x\ry\nz"];
-    const random = (max: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % max; };
+    const random = (max: number) => { seed = nextSeed(seed); return seed % max; };
     for (let step = 0; step < 300; step++) {
         let next: Buffer, expected: string, mapping: PositionMapping | undefined;
         if (step % 17 === 16) { const old = history[random(history.length)]!; next = old.buffer; expected = old.text; }

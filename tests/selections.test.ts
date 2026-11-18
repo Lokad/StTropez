@@ -1,4 +1,5 @@
 import test from "node:test";
+import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { Workspace, TextBuffer, PositionMap, createSelectionSet, mapSelectionSet, planSelectionEdits } from "../src/index.ts";
 import type { Selection, SelectionSet } from "../src/index.ts";
@@ -155,7 +156,7 @@ test("seeded selection replacements and shared history match an independent stri
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "multi", resource: "oracle", variant: "working" }, "Source", { value: "a😀\r\nβcdef".repeat(4) });
     const view = workspace.createDocumentView(source.documentId), states: { before: string; after: string; beforeSet: SelectionSet; afterSet: SelectionSet }[] = [];
     let text = "a😀\r\nβcdef".repeat(4), seed = 0x517ab;
-    const next = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0);
+    const next = () => (seed = nextSeed(seed));
     for (let step = 0; step < 40; step++) {
         const ranges: Selection[] = Array.from({ length: 1 + next() % 5 }, () => { const anchor = next() % (text.length + 1), head = Math.min(text.length, anchor + next() % 4);
             return next() % 2 ? { anchor, head } : { anchor: head, head: anchor }; });

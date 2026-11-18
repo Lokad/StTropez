@@ -17,10 +17,15 @@ export function corpus(id: CorpusId): string {
     }
 }
 
+/** Advance the deterministic 32-bit state; callers own seeds and range mappings. */
+export function nextSeed(seed: number): number {
+    return (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0;
+}
+
 /** Seeded replay; offsets intentionally use UTF-16, including positions within a surrogate pair. */
 export function editLog(length: number, count: number, seed = workloadSeed) {
     let state = seed >>> 0;
-    const next = () => { state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0; return state; };
+    const next = () => { state = nextSeed(state); return state; };
     const edits: { from: number; to: number; insert: string }[] = [];
     for (let index = 0; index < count; index++) {
         const from = next() % (length + 1);

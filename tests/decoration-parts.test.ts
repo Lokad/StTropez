@@ -1,4 +1,5 @@
 import test from "node:test";
+import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { decorationParts, validDecorationClass } from "../src/browser/decoration-parts.ts";
 import type { RowPart } from "../src/browser/decoration-parts.ts";
@@ -20,7 +21,7 @@ function oracle(text: string, from: number, to: number, length: number, decorati
 }
 
 test("decoration sweep agrees with a per-unit oracle for clipped overlaps, host order, duplicate classes and selection layering", () => {
-    let seed = 71529; const random = (n: number) => { seed = Math.imul(seed, 1664525) + 1013904223 | 0; return (seed >>> 0) % n; };
+    let seed = 71529; const random = (n: number) => { seed = nextSeed(seed) | 0; return (seed >>> 0) % n; };
     const source = "ab😀é␍cd\ud800xy".repeat(3), names = ["first", "second", "first", "-bad", "with space", "st-viewport-selected", "x".repeat(65)];
     for (let trial = 0; trial < 500; trial++) {
         const from = random(source.length), to = from + 1 + random(source.length - from), text = source.slice(from, to);

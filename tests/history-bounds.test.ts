@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { TextHistory } from "../src/core/history.ts";
 import type { EditKind, HistoryChange, HistoryEntry, HistoryOptions } from "../src/core/history.ts";
@@ -89,7 +90,7 @@ test("bounded history matches a recomputing ledger through grouping, linked move
         const actual = new TextHistory(limits), expected = new Ledger(limits), ids = ["a", "b", "c", "d"];
         const buffers = new Map(ids.map(id => [id, TextBuffer.from("012345678901234567890123")]));
         let seed = 0x65ab19;
-        const random = (bound: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return Math.floor(seed / 0x100000000 * bound); };
+        const random = (bound: number) => { seed = nextSeed(seed); return Math.floor(seed / 0x100000000 * bound); };
         for (let step = 0; step < 1200; step++) {
             const id = ids[random(ids.length)]!, action = random(20);
             if (action < 12) {

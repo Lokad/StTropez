@@ -1,4 +1,5 @@
 import test from "node:test";
+import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { BufferChangeCursor, TextBuffer } from "../src/index.ts";
 function delta(before: TextBuffer, after: TextBuffer, budget = 256) {
@@ -34,7 +35,7 @@ test("change planning charges fragmented structural work and suspends without te
 });
 test("generated raw incremental edits, batched changes and older immutable versions remain exactly equivalent", () => {
     let buffer = TextBuffer.from("\ufeffhead\r\n😀 café\ntail"); const history = [buffer]; let seed = 17;
-    const next = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; }, alphabet = ["\r\n", "😀", "\ud800", "東京", "é", "", "x"];
+    const next = (n: number) => { seed = nextSeed(seed); return seed % n; }, alphabet = ["\r\n", "😀", "\ud800", "東京", "é", "", "x"];
     for (let revision = 1; revision <= 80; revision++) {
         const from = next(buffer.length + 1), to = from + next(buffer.length - from + 1);
         const after = revision % 7 === 0 ? history[next(history.length)]! : buffer.apply([{ from, to, insert: alphabet[next(alphabet.length)]! }, ...(to < buffer.length ? [{ from: buffer.length, to: buffer.length, insert: "\r\n" }] : [])]).buffer;
