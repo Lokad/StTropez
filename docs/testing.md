@@ -49,7 +49,8 @@ The development project also checks the JavaScript entries listed in `tsconfig.j
 their imports: measurement, package scenarios, the browser harness, its server and the demo
 library catalogue, plus asset entry metadata, building, declaration finalization and shared
 Unicode generation I/O, package consumer/HTTP lifecycle ownership and benchmark selection,
-orchestration and report retention, plus shared host scenes and browser reference observations.
+orchestration and report retention, plus shared host scenes, browser reference observations
+and static-demo serving.
 Other scripts are outside its JavaScript checking scope.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected
@@ -421,6 +422,12 @@ an empty 500 response; a partially sent response is aborted. Completed responses
 After the HTTP listener closes, teardown awaits handlers that outlive their responses and
 includes their failures in the result. Each server retains its own route, method, provider and
 header policies.
+
+Development and static-demo servers share the listener and ordered-cleanup helpers. A failed
+startup releases acquired resources, and repeated close calls share the same completion.
+The static server serves only manifest-listed assets under its configured prefix, with GET
+and HEAD support. Asset-read failures return 500 and remain visible when the server closes;
+its request handlers settle before teardown completes. It has no provider or fallback route.
 
 Each consuming route has its own integration purpose: public exports/declarations and CSS,
 wire protocol, framework lifetime, review, deferred activation or the actual demo host. Its

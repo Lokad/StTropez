@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { attachProtocolFixture } from "../fixtures/protocol/fixture-server.ts";
 import { attachDemoProvider } from "../examples/demo/provider-server.ts";
 import { demoLibraries } from "./demo-libraries.mjs";
+import { closePackageResources, closePackageServer, listenPackageServer } from "./package-host.mjs";
 
 /**
  * @param {number} port
@@ -80,19 +81,21 @@ export async function startServer(port, { watch = true } = {}) {
         const path = new URL(/** @type {string} */ (request.url), "http://localhost").pathname;
         if (path !== "/lsp-fixture" && !/^\/demo-provider\/[a-f0-9-]+$/.test(path)) socket.destroy();
     });
+    /** @param {readonly unknown[]} [failures] */
+    const release = (failures = []) => closePackageResources([
+        releaseProtocolFixture, () => demoProvider.close(), () => builder.dispose(), () => closePackageServer(server),
+    ], failures);
     try {
         if (watch) { await builder.watch(); await initial; }
         else { await builder.rebuild(); await builder.dispose(); }
         if (failed) throw new Error("Initial development build failed.");
-        await new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, "127.0.0.1", () => resolve(undefined)); });
-    } catch (error) { releaseProtocolFixture(); await demoProvider.close(); await builder.dispose(); throw error; }
+        await listenPackageServer(server, port);
+    } catch (error) { await release([error]); }
     /** @type {Promise<void> | undefined} */
     let closing;
     // The numeric-port TCP listener is bound before its address is captured.
     const address = /** @type {import("node:net").AddressInfo} */ (server.address());
-    return { url: `http://127.0.0.1:${address.port}`, buildMode: watch ? "development-bundle-watch" : "development-bundle-no-watch", close: () => closing ??= (async () => {
-        releaseProtocolFixture(); await demoProvider.close(); await builder.dispose(); await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve(undefined)));
-    })() };
+    return { url: `http://127.0.0.1:${address.port}`, buildMode: watch ? "development-bundle-watch" : "development-bundle-no-watch", close: () => closing ??= release() };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
     const server = await startServer(Number(process.env.STTROPEZ_PORT ?? 4173));
