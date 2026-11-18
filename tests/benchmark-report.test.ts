@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { distribution, timingSummary } from "../scripts/measurement.mjs";
 import { createReportWriter } from "../scripts/benchmark-report.mjs";
+import { hostEditEventSamples, summarizeHostEdits } from "../scripts/host-edit-measurement.mjs";
 type Report = { status: string; variant?: string; observations: number[] };
 
 test("smoke, in-progress and failed reports preserve completed evidence and terminal records", async () => {
@@ -40,4 +41,21 @@ test("small measurement batches report n and maximum while larger batches expose
     }
     const partial = Array<number>(3); partial[0] = 1; partial[2] = 2;
     for (const samples of [[], [-1], [NaN], [Infinity], Array<number>(2), partial]) assert.throws(() => distribution(samples), /invalid/);
+});
+
+test("host summaries include input handlers without another commit and retain separate readiness clocks", () => {
+    const native = { kind: "input" as const, transactions: 1, commandToFullReviewReadyProxyMs: null,
+        records: [{ beforeinputAt: 10, inputHandlerMs: 2, workingRenderProxyMs: 8, supersededBeforeObservedWorkingReady: false }],
+        inputEvents: [{ inputHandlerMs: 2, committed: true }, { inputHandlerMs: 37, committed: false }],
+        browserToFullReviewReadyProxyMs: 70, lastInputToFullReviewReadyProxyMs: 70, completeActionProxyMs: 80 };
+    const result = summarizeHostEdits([native]);
+    assert.equal(hostEditEventSamples(native).length, 2);
+    assert.equal(result.inputHandlerMs!.n, 2); assert.equal(result.inputHandlerMaxMs, 37);
+    assert.equal(result.inputToFullReviewReadyProxyMs!.max, 70); assert.equal(result.completeActionProxyMs.max, 80);
+    assert.equal(result.actualInputGapMs, null); assert.equal(result.keydownHandlerMs, null);
+    const command = { ...native, kind: "command" as const, inputEvents: [], commandToFullReviewReadyProxyMs: 90,
+        records: [{ keydownHandlerMs: 5, workingRenderProxyMs: 12, supersededBeforeObservedWorkingReady: false }] };
+    const entered = summarizeHostEdits([command]);
+    assert.equal(hostEditEventSamples(command).length, 1); assert.equal(entered.keydownHandlerMaxMs, 5);
+    assert.equal(entered.inputHandlerMs, null); assert.equal(entered.commandToFullReviewReadyProxyMs!.max, 90);
 });

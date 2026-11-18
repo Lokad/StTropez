@@ -8,18 +8,21 @@
  * keydownAt?: never, keydownFinishedAt?: never, keydownHandlerMs?: never, key?: never}
  * | {keydownAt: number, keydownFinishedAt: number, keydownHandlerMs: number, key: string,
  * beforeinputAt?: never, inputFinishedAt?: never, inputHandlerMs?: never, data?: never})} InputRecord
+ * @typedef {{revision: number, beforeinputAt: number, inputFinishedAt: number, inputHandlerMs: number,
+ * data: string | null, inputType: string, trusted: boolean, committed: boolean}} NativeInputRecord
  * @typedef {{generation: number, revision: number | undefined, steps: number, advances: number, totalStepMs: number,
  * maxStepMs: number, work: number, readUnits: number, observations: number, status?: Review['status']}} Generation
  * @typedef {'rendered' | 'scans' | 'caret' | 'drag' | 'input' | 'comparison' | 'reference'} Phase
  * @typedef {Partial<Record<`${Phase}At` | 'modelObservedAt', number>>} Phases
  * @typedef {{kind: ObservationKind, expectedText: string, caretOffset: number, start: number | undefined,
  * pendingStart: number | undefined, finished: boolean, failure: string | undefined, nativeInputUnits: number,
- * transactions: number, records: InputRecord[], phases: Phases, generations: Generation[], state: HostState}} Observation
+ * transactions: number, records: InputRecord[], inputEvents: NativeInputRecord[], phases: Phases, generations: Generation[], state: HostState}} Observation
  * @typedef {{kind: ObservationKind, transactions: number, insertedUnits: number, browserToFullReviewReadyProxyMs: number,
  * commandToFullReviewReadyProxyMs: number | null, lastInputToFullReviewReadyProxyMs: number | null,
  * lastInputFinishedToFullReviewReadyProxyMs: number | null, clickDispatchObservationMs: number | null,
  * phasesFromStartMs: Record<string, number>, phasesFromLastInputMs: Record<string, number> | null, inputDispatchSpanMs: number | null,
  * records: (InputRecord & {workingRenderProxyMs: number | null, supersededBeforeObservedWorkingReady: boolean})[],
+ * inputEvents: NativeInputRecord[],
  * generations: (Generation & {supersededWhileObservedRunning: boolean})[], observedDiffBatchMs: number, observedDiffWork: number,
  * finalDiffBatch: Review['work'], finalDiffProgress: Review['progress'], referenceIsWorkingBuffer: boolean,
  * referenceVersion: NonNullable<Review['baseline']>['version'], referenceEpoch: number, referenceLabel: string | null,
@@ -89,10 +92,12 @@ export function installHostReferenceProbe() {
         const node = /** @type {HTMLTextAreaElement | null} */ (document.querySelector('textarea[aria-label="Primary source"]')), listeners = new AbortController();
         /** @type {(() => void)[]} */ const stops = [];
         /** @type {InputRecord[]} */ const records = [];
+        /** @type {NativeInputRecord[]} */ const inputEvents = [];
         /** @type {Map<number, Generation>} */ const generations = new Map();
         /** @type {Phases} */ const phases = {};
         /** @type {number | undefined} */ let start;
         /** @type {number | undefined} */ let pendingStart;
+        let inputText = "";
         /** @type {number | undefined} */ let dispatchEnd;
         /** @type {string | undefined} */ let failure;
         /** @type {(value: ObservationResult) => void} */ let resolve;
@@ -111,7 +116,8 @@ export function installHostReferenceProbe() {
         const timer = setTimeout(() => fail(`Host reference ${kind} readiness timed out.`), 20000);
         active = { promise, abort: () => fail("Host reference observation superseded before completion."), snapshot: () => ({
             kind, expectedText: text, caretOffset, start, pendingStart, finished, failure, nativeInputUnits: insertedUnits, transactions: transactions(),
-            records: records.map(record => ({ ...record })), phases: { ...phases }, generations: [...generations.values()].map(entry => ({ ...entry })),
+            records: records.map(record => ({ ...record })), inputEvents: inputEvents.map(record => ({ ...record })),
+            phases: { ...phases }, generations: [...generations.values()].map(entry => ({ ...entry })),
             state: fixture.snapshot() }) };
         if (!["reference", "input", "command"].includes(kind) || kind !== "reference" && (!text.length || !Number.isSafeInteger(caretOffset) || caretOffset < 0 || caretOffset > text.length)) {
             fail("Invalid captured input observation."); return;
@@ -124,7 +130,7 @@ export function installHostReferenceProbe() {
         const model = state => state.source.revision === before.source.revision + transactions() && (kind === "reference"
             ? state.bindings.comparison?.baseline?.epoch === initialEpoch + 1
             : kind === "command" ? records.length === 1 && state.bindings.views.find(v => v.id === "primary")?.metrics?.commits === priorMetrics.commits + 1
-            : insertedUnits === text.length);
+            : insertedUnits === text.length && pendingStart === undefined);
         /** @param {HostState} state */
         function observeGeneration(state) {
             const c = state.bindings.comparison;
@@ -185,21 +191,35 @@ export function installHostReferenceProbe() {
             } else {
                 node.addEventListener("beforeinput", event => {
                     pendingStart = performance.now(); start ??= pendingStart; observeGeneration(fixture.snapshot());
+                    inputText = event.data ?? "";
                     if (event.inputType !== "insertText") fail(`Expected native insertText; received ${event.inputType}.`);
                 }, { capture: true, signal: listeners.signal });
                 node.addEventListener("input", () => observeGeneration(fixture.snapshot()), { capture: true, signal: listeners.signal });
                 node.addEventListener("input", event => {
                     const input = /** @type {InputEvent} */ (event);
-                    const state = fixture.snapshot(), view = state.bindings.views.find(v => v.id === "primary"), count = records.length + 1;
-                    const units = insertedUnits + (input.data?.length ?? 0);
-                    if (!view?.metrics || pendingStart === undefined || !input.data?.length || units > text.length || input.inputType !== "insertText"
+                    const state = fixture.snapshot(), view = state.bindings.views.find(v => v.id === "primary");
+                    const committed = state.source.revision === before.source.revision + records.length + 1;
+                    const count = records.length + (committed ? 1 : 0), origin = pendingStart ?? records.at(-1)?.beforeinputAt;
+                    // A browser can fragment one payload into several input events. Count
+                    // model commits independently and validate their complete captured text.
+                    const units = state.source.length - before.source.length + replacedUnits;
+                    // WebKit labels newline fragments insertParagraph even though the
+                    // captured intention was one multiline insertText (also for a leading LF).
+                    const fragment = input.inputType === "insertText" || input.inputType === "insertParagraph" && inputText.includes("\n");
+                    if (!view?.metrics || origin === undefined || units > text.length || !fragment
+                        || (committed ? pendingStart === undefined || units <= insertedUnits : pendingStart !== undefined || !records.length || units !== insertedUnits)
                         || state.source.id !== before.source.id || view.viewId !== prior.viewId || state.source.revision !== before.source.revision + count
-                        || state.source.length !== before.source.length - replacedUnits + units || view.selection.anchor !== offset + units || view.selection.head !== offset + units
-                        || fixture.range(offset, offset + units) !== text.slice(0, units) || view.metrics.inputEvents !== priorMetrics.inputEvents + count
+                        || view.selection.anchor !== offset + units || view.selection.head !== offset + units
+                        || fixture.range(offset, offset + units) !== text.slice(0, units) || view.metrics.inputEvents !== priorMetrics.inputEvents + inputEvents.length + 1
                         || view.metrics.commits !== priorMetrics.commits + count || view.metrics.inputUnits > 2600) { fail("Incorrect reference experiment input result."); return; }
-                    records.push({ revision: state.source.revision, beforeinputAt: pendingStart, inputFinishedAt: performance.now(), inputHandlerMs: view.metrics.lastInputMs,
-                        data: input.data, trusted: event.isTrusted });
-                    insertedUnits = units; pendingStart = undefined; observe();
+                    const sample = { revision: state.source.revision, beforeinputAt: origin, inputFinishedAt: performance.now(),
+                        inputHandlerMs: view.metrics.lastInputMs, data: input.data, inputType: input.inputType, trusted: event.isTrusted };
+                    inputEvents.push({ ...sample, committed });
+                    if (committed) {
+                        records.push({ ...sample, data: text.slice(insertedUnits, units) });
+                        insertedUnits = units; pendingStart = undefined;
+                    }
+                    observe();
                 }, { signal: listeners.signal });
             }
         }
@@ -209,7 +229,7 @@ export function installHostReferenceProbe() {
             if (finished) return;
             if (frames < 2) { frame = requestAnimationFrame(check); return; }
             const primary = state.bindings.views.find(v => v.id === "primary"), secondary = state.bindings.views.find(v => v.id === "secondary");
-            const metrics = state.bindings.views.map(v => v.metrics), lastRecord = records.at(-1), lastInputFinishedAt = lastRecord?.inputFinishedAt;
+            const metrics = state.bindings.views.map(v => v.metrics), lastRecord = records.at(-1), lastInputFinishedAt = inputEvents.at(-1)?.inputFinishedAt;
             if (start === undefined || !c?.baseline || !c.referenceViewport || !primary?.metrics || !secondary?.metrics || !metrics.every(metric => metric !== null)
                 || kind === "input" && lastInputFinishedAt === undefined) { fail("Reference observation lost its captured review metrics."); return; }
             const startedAt = start;
@@ -224,6 +244,11 @@ export function installHostReferenceProbe() {
                     || fixture.range(offset, offset + text.length) !== text || view.selection.anchor !== offset + caretOffset || view.selection.head !== offset + caretOffset
                     || viewMetrics.inputEvents !== priorMetrics.inputEvents || viewMetrics.beforeInputEvents !== priorMetrics.beforeInputEvents
                     || viewMetrics.inputUnits > 2600) { fail("Incorrect handled Enter text, selection or event counters."); return; }
+            } else if (kind === "input" && (primary.viewId !== prior.viewId
+                || state.source.length !== before.source.length - replacedUnits + text.length || fixture.range(offset, offset + text.length) !== text
+                || primary.selection.anchor !== offset + text.length || primary.selection.head !== offset + text.length
+                || primary.metrics.inputEvents !== priorMetrics.inputEvents + inputEvents.length || primary.metrics.commits !== priorMetrics.commits + records.length)) {
+                fail("Native input changed after its captured commit."); return;
             }
             const now = performance.now(), lastStart = lastRecord?.beforeinputAt ?? startedAt;
             const observed = [...generations.values()].map(entry => ({ ...entry,
@@ -241,6 +266,7 @@ export function installHostReferenceProbe() {
                 inputDispatchSpanMs: kind === "input" ? lastStart - startedAt : null,
                 records: records.map(record => ({ ...record, workingRenderProxyMs: record.workingRenderedAt === undefined ? null : record.workingRenderedAt - (record.beforeinputAt ?? record.keydownAt),
                     supersededBeforeObservedWorkingReady: record.workingRenderedAt === undefined })),
+                inputEvents: inputEvents.map(record => ({ ...record })),
                 generations: observed, observedDiffBatchMs: observed.reduce((n, entry) => n + entry.totalStepMs, 0),
                 observedDiffWork: observed.reduce((n, entry) => n + entry.work, 0), finalDiffBatch: c.work, finalDiffProgress: c.progress,
                 referenceIsWorkingBuffer: c.referenceIsWorkingBuffer, referenceVersion: c.baseline.version, referenceEpoch: c.baseline.epoch,

@@ -1,15 +1,23 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
-import { installHostReferenceProbe, type HostReferenceProbe } from "../../scripts/host-reference-probe.mjs";
+import { installHostReferenceProbe, type HostReferenceProbe, type ObservationOptions } from "../../scripts/host-reference-probe.mjs";
 import { createHostScene } from "../../scripts/host-scene.mjs";
 declare global { interface Window { hostReferenceProbe: HostReferenceProbe } }
+
+async function armReady(page: Page, options: ObservationOptions) {
+    // Capture and arm in the same browser turn that completes the readiness check.
+    return page.evaluate(async options => {
+        await window.hostReferenceProbe.waitReady(); const before = window.hostFixture.snapshot();
+        window.hostReferenceProbe.arm(options); return before;
+    }, options);
+}
 
 async function mount(page: Page, host: string) {
     await page.goto(`/hosts/${host}/?editor=candidate`); await ready(page);
     await page.evaluate(installHostReferenceProbe);
     await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);
     await page.getByRole("button", { name: "Capture review acceptance", exact: true }).click();
-    await page.evaluate(() => window.hostReferenceProbe.arm({ kind: "reference", operation: "identity" }));
+    await armReady(page, { kind: "reference", operation: "identity" });
     await page.getByRole("button", { name: "Finish review acceptance", exact: true }).click();
     expect((await page.evaluate(() => window.hostReferenceProbe.read())).kind).toBe("reference");
 }
@@ -189,11 +197,10 @@ for (const host of ["plain", "react"]) test(`${host} Enter measurements separate
             const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: item.source }]);
             f.configureSource("primary", { tabSize: 2, enter: item.split ? () => ({ indent: 1, split: true }) : "keep" });
             f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: item.offset, head: item.offset }]);
-        }, item); await ready(page); await input.focus(); await page.evaluate(() => window.hostReferenceProbe.waitReady());
-        const before = await page.evaluate(() => window.hostFixture.snapshot().source.revision);
-        await page.evaluate(item => window.hostReferenceProbe.arm({ kind: "command", text: item.insert, caretOffset: item.caret }), item);
+        }, item); await ready(page); await input.focus();
+        const before = await armReady(page, { kind: "command", text: item.insert, caretOffset: item.caret });
         await input.press("Enter"); const result = await page.evaluate(() => window.hostReferenceProbe.read());
-        expect(result).toMatchObject({ kind: "command", transactions: 1, insertedUnits: item.insert.length, revision: before + 1, lastInputToFullReviewReadyProxyMs: null });
+        expect(result).toMatchObject({ kind: "command", transactions: 1, insertedUnits: item.insert.length, revision: before.source.revision + 1, lastInputToFullReviewReadyProxyMs: null });
         expect(result.commandToFullReviewReadyProxyMs).toBeGreaterThan(0); expect(result.records).toHaveLength(1);
         expect(result.records[0]!.trusted).toBe(true); expect(result.records[0]!.keydownHandlerMs).toBeGreaterThanOrEqual(0);
         expect(result.records[0]!.inputHandlerMs).toBeUndefined(); expect(result.records[0]!.workingRenderProxyMs).not.toBeNull();
@@ -207,26 +214,84 @@ for (const host of ["plain", "react"]) test(`${host} Enter measurements separate
     await page.evaluate(() => window.hostFixture.dispose());
 });
 
-test("input measurement identifies its native route and retains a rejected command observation", async ({ page, browserName }) => {
-    await mount(page, "plain"); const input = page.getByRole("textbox", { name: "Primary source", exact: true }); await input.focus();
-    await page.evaluate(() => window.hostReferenceProbe.waitReady());
-    await page.evaluate(() => window.hostReferenceProbe.arm({ kind: "input", text: "😀é" }));
-    await page.keyboard.insertText("😀é");
-    if (browserName === "firefox") {
-        // Playwright's Firefox insertText uses composition; do not label it ordinary native typing.
-        await expect(page.evaluate(() => window.hostReferenceProbe.read())).rejects.toThrow("Expected native insertText; received insertCompositionText.");
-        expect(await page.evaluate(() => window.hostReferenceProbe.snapshot())).toMatchObject({ finished: true, records: [] });
-        await page.evaluate(() => window.hostReferenceProbe.waitReady());
-    } else {
+test("input measurement separates native events from commits and retains rejected routes", async ({ page, browserName }) => {
+    await mount(page, "plain"); const input = page.getByRole("textbox", { name: "Primary source", exact: true });
+    const source = "prefix remove suffix";
+    for (const item of [{ text: "😀é", to: 7 }, { text: "row 0\n".repeat(7), to: 13 }, { text: "\n😀\n", to: 7 }]) {
+        await page.evaluate(({ source, to }) => {
+            const f = window.hostFixture, s = f.snapshot();
+            f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: source }]);
+            f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: to, head: 7 }]);
+        }, { source, to: item.to });
+        await input.focus();
+        const before = await armReady(page, { kind: "input", text: item.text, replaceSelection: item.to !== 7 });
+        await page.keyboard.insertText(item.text);
+        if (browserName === "firefox") {
+            // Playwright's Firefox insertText uses composition; do not label it ordinary native typing.
+            await expect(page.evaluate(() => window.hostReferenceProbe.read())).rejects.toThrow("Expected native insertText; received insertCompositionText.");
+            expect(await page.evaluate(() => window.hostReferenceProbe.snapshot())).toMatchObject({ finished: true, records: [], inputEvents: [] });
+            await page.evaluate(() => window.hostReferenceProbe.waitReady());
+            continue;
+        }
         const native = await page.evaluate(() => window.hostReferenceProbe.read());
-        expect(native).toMatchObject({ kind: "input", transactions: 1, insertedUnits: 4, commandToFullReviewReadyProxyMs: null });
-        expect(native.records).toHaveLength(1); expect(native.records[0]!.inputHandlerMs).toBeGreaterThanOrEqual(0); expect(native.records[0]!.keydownHandlerMs).toBeUndefined();
+        const after = await page.evaluate(() => window.hostFixture.snapshot());
+        const prior = before.bindings.views.find(v => v.id === "primary")!, current = after.bindings.views.find(v => v.id === "primary")!;
+        expect(native).toMatchObject({ kind: "input", transactions: 1, insertedUnits: item.text.length, revision: before.source.revision + 1,
+            commandToFullReviewReadyProxyMs: null, primarySelection: { anchor: 7 + item.text.length, head: 7 + item.text.length } });
+        expect(native.records).toHaveLength(1);
+        expect(native.records[0]).toMatchObject({ data: item.text, trusted: true, revision: native.revision });
+        expect(native.records[0]!.keydownHandlerMs).toBeUndefined();
+        expect(native.inputEvents).toHaveLength(current.metrics!.inputEvents - prior.metrics!.inputEvents);
+        expect(current.metrics!.commits - prior.metrics!.commits).toBe(1);
+        expect(native.inputEvents.filter(event => event.committed)).toHaveLength(1);
+        for (const event of native.inputEvents) {
+            expect(event).toMatchObject({ trusted: true, revision: native.revision, beforeinputAt: native.records[0]!.beforeinputAt });
+            expect(event.inputHandlerMs).toBeGreaterThanOrEqual(0);
+            expect(event.inputType).toBe(browserName === "webkit" && event.data === null ? "insertParagraph" : "insertText");
+        }
+        const last = native.inputEvents.at(-1)!;
+        expect(native.lastInputToFullReviewReadyProxyMs! - native.lastInputFinishedToFullReviewReadyProxyMs!)
+            .toBeCloseTo(last.inputFinishedAt - last.beforeinputAt, 5);
+        const expected = source.slice(0, 7) + item.text + source.slice(item.to);
+        expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(expected);
+        if (item.to !== 7) {
+            // Exercise the fragmented Chromium driver sequence that originally rejected a correct edit.
+            if (browserName === "chromium") {
+                expect(native.inputEvents.length).toBeGreaterThan(1);
+                expect(native.inputEvents.some(event => event.data === null && !event.committed)).toBe(true);
+            }
+            await input.press("Control+z"); await ready(page);
+            expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(source);
+            await input.press("Control+Shift+z"); await ready(page);
+            expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(expected);
+        }
     }
-    await page.evaluate(() => window.hostReferenceProbe.arm({ kind: "command", text: "wrong expected newline" }));
+    await armReady(page, { kind: "command", text: "wrong expected newline" });
     await input.press("Enter");
     await expect(page.evaluate(() => window.hostReferenceProbe.read())).rejects.toThrow(/Incorrect handled Enter/);
     expect(await page.evaluate(() => window.hostReferenceProbe.snapshot())).toMatchObject({ finished: true, failure: "Incorrect handled Enter text, selection or event counters.", records: [{}] });
-    await page.evaluate(() => window.hostReferenceProbe.arm({ kind: "input", text: "q" })); await page.keyboard.type("q");
+    await armReady(page, { kind: "input", text: "q" }); await page.keyboard.type("q");
     expect((await page.evaluate(() => window.hostReferenceProbe.read())).transactions).toBe(1);
+    await page.evaluate(() => window.hostFixture.dispose());
+});
+
+test("native measurements reject missing event origins and selection changes after a commit", async ({ page }) => {
+    await mount(page, "plain"); const input = page.getByRole("textbox", { name: "Primary source", exact: true });
+    await input.focus(); await armReady(page, { kind: "input", text: "q" });
+    await input.evaluate(node => node.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "q", bubbles: true })));
+    await expect(page.evaluate(() => window.hostReferenceProbe.read())).rejects.toThrow("Incorrect reference experiment input result.");
+    expect(await page.evaluate(() => window.hostReferenceProbe.snapshot())).toMatchObject({ finished: true, records: [], inputEvents: [] });
+    await armReady(page, { kind: "input", text: "\n" });
+    await input.evaluate(node => node.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertParagraph", bubbles: true, cancelable: true })));
+    await expect(page.evaluate(() => window.hostReferenceProbe.read())).rejects.toThrow("Expected native insertText; received insertParagraph.");
+    await armReady(page, { kind: "input", text: "q" });
+    // Registered after the probe: keep the real committing event, then invalidate its captured caret.
+    await input.evaluate(node => node.addEventListener("input", () => {
+        const f = window.hostFixture;
+        f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 0 }]);
+    }, { once: true }));
+    await page.keyboard.type("q");
+    await expect(page.evaluate(() => window.hostReferenceProbe.read())).rejects.toThrow("Native input changed after its captured commit.");
+    expect(await page.evaluate(() => window.hostReferenceProbe.snapshot())).toMatchObject({ finished: true, records: [{}], inputEvents: [{ committed: true }] });
     await page.evaluate(() => window.hostFixture.dispose());
 });

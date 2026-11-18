@@ -339,6 +339,16 @@ text input with the distinct [clock definitions](README.md#glossary).
 Inapplicable command/input clocks are null. Full review readiness includes pending input and
 commands, working/reference views, caret/scans and comparison settlement over two frames.
 Exact text, transaction counts and undo/redo are checked independently of inserted UTF-16 units.
+Native `inputEvents` retain every observed input-handler sample, type and raw data, including
+dispatches that make no additional commit. Transaction `records` retain the committed text,
+revision and committing handler sample; fragmented or null event data does not count inserted
+units. Host summaries and event counts use the raw event samples, while render/generation
+observations stay attached to committed revisions. Settlement after the last input event uses
+that event's observation end, including any dispatches after the committing event. Final text,
+selection, ownership and event/commit counters are rechecked before accepting full readiness.
+The native route requires an `insertText` beforeinput intention. A captured multiline intention
+also allows WebKit's `insertParagraph` input fragments; a separate paragraph intention and
+the Firefox driver's `insertCompositionText` route remain rejected by this typing probe.
 The probe retains partial observations on failure. Its `isReady` predicate composes the same
 live-owner `settled` checks used by browser specs, plus the expected working views, source
 revision and displayed reference version. Folding, navigation, table-paste and language
