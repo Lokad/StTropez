@@ -198,7 +198,7 @@ function* retainedRecursive(seed: RecursiveSeed, region: Region, stats: Stats, b
     let possible = false;
     for (const point of frontier.points) { possible ||= safeF(point) || safeR(point); if (tick(stats, 8)) yield; }
     if (!possible) return;
-    const lower = yield* recursiveDistance(seed, region, stats);
+    const lower = bounds?.minimum ?? (yield* recursiveDistance(seed, region, stats));
     if (bounds) bounds.minimum = lower;
     const limit = Math.ceil(lower / 2); let forward = -1, reverse = -1;
     for (let index = 0; index < frontier.points.length; index++) {
@@ -402,7 +402,7 @@ type ChildDistance = { minimum?: number };
  * Earliest prefix endpoints and latest suffix starts enumerate all optimum midpoint
  * vertices. Odd/even overlap scan order selects the diagonal, then its furthest x,
  * preserving the ordinary first canonical split without publishing a partial frontier. */
-function* requiredReferenceSplit(left: Index, right: Index, region: Region, facts: CommonFacts, stats: Stats, captured?: {value?: RootProfiles}): Generator<void, readonly [number, number, number] | undefined> {
+function* requiredReferenceSplit(left: Index, right: Index, region: Region, facts: CommonFacts, stats: Stats, captured: {value?: RootProfiles}): Generator<void, readonly [number, number, number] | undefined> {
     const n = region.a1 - region.a0, m = region.b1 - region.b0;
     const flags = new Uint8Array(n), earliest = new Uint32Array(n + 1), latest = new Uint32Array(n + 1), required: string[] = [];
     for (let row = 0; row <= n; row++) if (tick(stats, 3)) yield;
@@ -432,34 +432,35 @@ function* requiredReferenceSplit(left: Index, right: Index, region: Region, fact
         }
         latest[row] = at; if (tick(stats)) yield;
     }
-    const minimum = n + m - length * 2, wave = Math.ceil(minimum / 2);
-    let matched = 0, bestX = -1, bestY = -1, diagonal: number | undefined;
-    for (let x = 0; x <= n; x++) {
-        if (x) matched += flags[x - 1]!;
-        const y = wave - x + matched * 2, k = x - y;
+    if (region.b0) for (let row = 0; row <= length; row++) {
+        earliest[row] = earliest[row]! + region.b0; latest[row] = latest[row]! + region.b0;
+        if (tick(stats, 2)) yield;
+    }
+    const profiles = {region, required, flags, earliest, latest};
+    const point = yield* profileMidpoint(region, profiles, 0, length, stats);
+    if (point) { captured.value = profiles; if (tick(stats, 8)) yield; }
+    return point;
+}
+
+/** One mutable profile pair belongs to an active subtree, indexed by its required-token ordinal. */
+type RootProfiles = Readonly<{region: Region; required: readonly string[]; flags: Uint8Array; earliest: Uint32Array; latest: Uint32Array}>;
+type ProfileTask = Readonly<{profiles: RootProfiles; from: number; to: number; direction: "earliest" | "latest"; boundary?: number | undefined}>;
+type Task = Region & {profile?: ProfileTask; distance?: number};
+/** Forced reference rows enumerate every optimal midpoint; overlap order chooses the canonical one. */
+function* profileMidpoint(region: Region, profiles: RootProfiles, from: number, to: number, stats: Stats): Generator<void, readonly [number, number, number] | undefined> {
+    const {earliest, latest, flags} = profiles, minimum = region.a1 - region.a0 + region.b1 - region.b0 - 2 * (to - from);
+    const wave = Math.ceil(minimum / 2); let matched = from, bestX = -1, bestY = -1, diagonal: number | undefined;
+    for (let x = region.a0; x <= region.a1; x++) {
+        if (x > region.a0) matched += flags[x - profiles.region.a0 - 1]!;
+        const y = region.b0 + wave - (x - region.a0) + 2 * (matched - from), k = (x - region.a0) - (y - region.b0);
         if (y >= earliest[matched]! && y <= latest[matched]!
             && (diagonal === undefined || (minimum % 2 ? k < diagonal : k > diagonal) || k === diagonal && x > bestX)) {
             diagonal = k; bestX = x; bestY = y;
         }
         if (tick(stats, 12)) yield;
     }
-    if (bestX >= 0) {
-        if (captured) {
-            if (region.b0) for (let row = 0; row <= length; row++) {
-                earliest[row] = earliest[row]! + region.b0; latest[row] = latest[row]! + region.b0;
-                if (tick(stats, 2)) yield;
-            }
-            captured.value = {region, required, flags, earliest, latest}; if (tick(stats, 8)) yield;
-        }
-        return [region.a0 + bestX, region.b0 + bestY, minimum];
-    }
-    return;
+    return bestX < 0 ? undefined : [bestX, bestY, minimum];
 }
-
-/** One mutable profile pair belongs to the job, indexed by the root required-token ordinal. */
-type RootProfiles = Readonly<{region: Region; required: readonly string[]; flags: Uint8Array; earliest: Uint32Array; latest: Uint32Array}>;
-type ProfileTask = Readonly<{profiles: RootProfiles; from: number; to: number; direction: "earliest" | "latest"; boundary?: number | undefined}>;
-type Task = Region & {profile?: ProfileTask};
 /** A forced-match child inherits one exact profile. Its sibling owns the shared ordinal. */
 function* profileSplit(left: Index, right: Index, region: Region, task: ProfileTask, stats: Stats, saved?: readonly [number, number, number]): Generator<void, readonly [number, number, number] | Readonly<{changes: readonly Region[]}>> {
     const n = region.a1 - region.a0, m = region.b1 - region.b0, minimum = n + m - 2 * (task.to - task.from);
@@ -470,7 +471,7 @@ function* profileSplit(left: Index, right: Index, region: Region, task: ProfileT
         const ordered = yield* orderedCommonAlignment(left, right, region, stats);
         if (ordered) return {changes: ordered};
     }
-    const {profiles, from, to} = task, {earliest, latest, required, flags} = profiles;
+    const {profiles, from, to} = task, {earliest, latest, required} = profiles;
     if (task.direction === "earliest") {
         if (task.boundary !== undefined) latest[from] = task.boundary;
         let at = region.b0; earliest[from] = at;
@@ -502,28 +503,144 @@ function* profileSplit(left: Index, right: Index, region: Region, task: ProfileT
         if (saved[2] !== minimum) throw new Error("Saved split disagrees with required child distance.");
         return saved;
     }
-    const wave = Math.ceil(minimum / 2); let matched = from, bestX = -1, bestY = -1, diagonal: number | undefined;
-    for (let x = region.a0; x <= region.a1; x++) {
-        if (x > region.a0) matched += flags[x - profiles.region.a0 - 1]!;
-        const y = region.b0 + wave - (x - region.a0) + 2 * (matched - from), k = (x - region.a0) - (y - region.b0);
-        if (y >= earliest[matched]! && y <= latest[matched]!
-            && (diagonal === undefined || (minimum % 2 ? k < diagonal : k > diagonal) || k === diagonal && x > bestX)) {
-            diagonal = k; bestX = x; bestY = y;
-        }
-        if (tick(stats, 12)) yield;
-    }
-    if (bestX < 0) throw new Error("Required child profile has no canonical midpoint.");
-    return [bestX, bestY, minimum];
+    const point = yield* profileMidpoint(region, profiles, from, to, stats);
+    if (!point) throw new Error("Required child profile has no canonical midpoint.");
+    return point;
 }
 
-type SplitBudget = { remaining: number; certified: boolean };
-function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: FrontierCapture, seed?: RecursiveSeed, certificateBudget?: SplitBudget, rootAlphabet?: Alphabet): Generator<void, readonly [number, number, number] | Readonly<{ changes: readonly Region[] }>> {
+/** A short contiguous working run can force one otherwise ambiguous reference occurrence.
+ * Two required rows between optional occurrences make matching two of them strictly worse.
+ * Accept only one occurrence that embeds with every other matchable reference row. */
+function* optionalRunSplit(left: Index, right: Index, region: Region, minimum: number, stats: Stats, captured: {value?: RootProfiles}): Generator<void, readonly [number, number, number] | undefined> {
+    const n = region.a1 - region.a0, m = region.b1 - region.b0;
+    const records = new Map<string, {from: number; to: number; blocks: number; count: number}>();
+    let previous: string | undefined;
+    for (let row = 0; row < m; row++) {
+        const token = (yield* getLine(right, region.b0 + row, stats)).token!;
+        let record = records.get(token);
+        if (!record) { record = {from: row, to: row, blocks: 0, count: 0}; records.set(token, record); }
+        if (previous !== token) record.blocks++;
+        record.to = row + 1; previous = token;
+        if (tick(stats, token.length + 8)) yield;
+    }
+    let common = 0;
+    for (let row = 0; row < n; row++) {
+        const token = (yield* getLine(left, region.a0 + row, stats)).token!, record = records.get(token);
+        if (record) { record.count++; common++; }
+        if (tick(stats, token.length + 6)) yield;
+    }
+    // All optimal matches except one must be the other matchable reference rows.
+    const target = common - (n + m - minimum) / 2 + 1;
+    if (target <= 1) return;
+    let optional: string | undefined, from = 0, to = 0;
+    for (const [token, record] of records) {
+        if (record.blocks === 1 && record.count === target && record.to - record.from <= frontierLimits.changedRows) {
+            if (optional !== undefined) return;
+            optional = token; from = record.from; to = record.to;
+        }
+        if (tick(stats, 8)) yield;
+    }
+    if (optional === undefined) return;
+    const flags = new Uint8Array(n), earliest = new Uint32Array(n + 1), latest = new Uint32Array(n + 1), required: string[] = [];
+    for (let row = 0; row <= n; row++) if (tick(stats, 3)) yield;
+    let gap = 2;
+    for (let row = 0; row < n; row++) {
+        const token = (yield* getLine(left, region.a0 + row, stats)).token!;
+        if (token === optional) { if (gap < 2) return; flags[row] = 2; gap = 0; }
+        else if (records.has(token)) { flags[row] = 1; required.push(token); gap++; }
+        if (tick(stats, token.length + 6)) yield;
+    }
+    if (n + m - 2 * (required.length + 1) !== minimum) return;
+    let at = 0;
+    for (let row = 0; row < required.length; row++) {
+        const wanted = required[row]!;
+        for (;;) {
+            if (at === m) return;
+            const token = (yield* getLine(right, region.b0 + at, stats)).token!, equal = token === wanted;
+            stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
+            at++; if (equal) break;
+        }
+        earliest[row + 1] = at; if (tick(stats)) yield;
+    }
+    at = m; latest[required.length] = m;
+    for (let row = required.length - 1; row >= 0; row--) {
+        const wanted = required[row]!;
+        for (;;) {
+            if (!at) return;
+            const token = (yield* getLine(right, region.b0 + at - 1, stats)).token!, equal = token === wanted;
+            stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
+            at--; if (equal) break;
+        }
+        latest[row] = at; if (tick(stats)) yield;
+    }
+    let chosen = -1, ordinal = 0, selectedOrdinal = 0;
+    for (let row = 0; row < n; row++) {
+        if (flags[row] === 1) ordinal++;
+        else if (flags[row] === 2) {
+            flags[row] = 0;
+            if (earliest[ordinal]! <= from && latest[ordinal]! >= to) {
+                if (chosen >= 0) return;
+                chosen = row; selectedOrdinal = ordinal;
+            }
+        }
+        if (tick(stats, 3)) yield;
+    }
+    if (chosen < 0) return;
+    flags[chosen] = 1;
+    // Insert the forced occurrence into the same profile pair. Only its opposite
+    // prefix/suffix need recomputation; no second pair is allocated.
+    const oldLength = required.length;
+    required.push(optional);
+    for (let row = oldLength; row > selectedOrdinal; row--) { required[row] = required[row - 1]!; if (tick(stats)) yield; }
+    required[selectedOrdinal] = optional;
+    for (let row = oldLength; row >= selectedOrdinal; row--) { latest[row + 1] = latest[row]!; if (tick(stats)) yield; }
+    earliest[selectedOrdinal + 1] = at = from + 1;
+    for (let row = selectedOrdinal + 1; row < required.length; row++) {
+        const wanted = required[row]!;
+        for (;;) {
+            if (at === m) return;
+            const token = (yield* getLine(right, region.b0 + at, stats)).token!, equal = token === wanted;
+            stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
+            at++; if (equal) break;
+        }
+        earliest[row + 1] = at; if (tick(stats)) yield;
+    }
+    latest[selectedOrdinal] = at = to - 1;
+    for (let row = selectedOrdinal - 1; row >= 0; row--) {
+        const wanted = required[row]!;
+        for (;;) {
+            if (!at) return;
+            const token = (yield* getLine(right, region.b0 + at - 1, stats)).token!, equal = token === wanted;
+            stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
+            at--; if (equal) break;
+        }
+        latest[row] = at; if (tick(stats)) yield;
+    }
+    if (region.b0) for (let row = 0; row <= required.length; row++) { earliest[row] = earliest[row]! + region.b0; latest[row] = latest[row]! + region.b0; if (tick(stats, 2)) yield; }
+    const profiles = {region, required, flags, earliest, latest};
+    const point = yield* profileMidpoint(region, profiles, 0, required.length, stats);
+    if (point) { captured.value = profiles; if (tick(stats, 8)) yield; }
+    return point;
+}
+
+/** Limit optional speculation to a captured edit window containing a reference match. */
+function* changedReferenceMatch(right: Index, seed: RecursiveSeed, alphabet: Alphabet | undefined, stats: Stats): Generator<void, boolean> {
+    if (!alphabet) return false;
+    for (let row = seed.from; row < seed.end; row++) {
+        const token = (yield* getLine(right, row, stats)).token;
+        if (tick(stats, (token?.length ?? 0) + 4)) yield;
+        if (token !== undefined && alphabet.has(token)) return true;
+    }
+    return false;
+}
+type SplitBudget = { remaining: number; certified: boolean; matching?: boolean };
+function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: FrontierCapture, seed?: RecursiveSeed, certificateBudget?: SplitBudget, rootAlphabet?: Alphabet, childProfile?: {value?: RootProfiles}, exactDistance?: number): Generator<void, readonly [number, number, number] | Readonly<{ changes: readonly Region[] }>> {
     const n = region.a1 - region.a0, m = region.b1 - region.b0, maximum = Math.ceil((n + m) / 2), delta = n - m;
     let radius = 0, origin = 1, forward = new Int32Array(3).fill(-1), reverse = new Int32Array(3).fill(-1);
     if (tick(stats, 6)) yield;
     forward[origin + 1] = 0; reverse[origin + 1] = 0;
     let resumeDistance = 0, resumeForward = 0, resumeReverse = 0, together = 0, seenF = 0, seenR = 0, sparseThroughF = -1, sparseThroughR = -1;
-    const points: FrontierPoint[] = [], bounds: ChildDistance = {};
+    const points: FrontierPoint[] = [], bounds: ChildDistance = exactDistance === undefined ? {} : {minimum: exactDistance};
     const root = capture?.previous && rootAlphabet && capture.previous.minimum !== undefined
         && b.lines.size === capture.previous.working.lines.size + 1 && !capture.previous.points.some(point => point.sparse)
         ? capture.previous : undefined;
@@ -626,18 +743,45 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
                 const remaining = cells(Math.max(distance, resumeForward)) + cells(Math.max(distance, resumeReverse));
                 // Bound token filtering, both greedy scans, numeric initialization and vertices.
                 const cost = offsetAt(a, region.a1) - offsetAt(a, region.a0) + 2 * (offsetAt(b, region.b1) - offsetAt(b, region.b0))
-                    + 2 * m * facts.maximum + 8 * m + 23 * n + 16;
+                    + 2 * m * facts.maximum + 8 * m + 23 * n + 16 + (region.b0 ? 2 * (n + 1) : 0) + 8;
                 if (tick(stats, 24)) yield;
                 if (cost <= remaining) {
-                    const before = stats.work, limit = before + Math.min(cost, certificateBudget.remaining), probe = requiredReferenceSplit(a, b, region, facts, stats);
+                    const captured: {value?: RootProfiles} = {};
+                    const before = stats.work, limit = before + Math.min(cost, certificateBudget.remaining), probe = requiredReferenceSplit(a, b, region, facts, stats, captured);
                     try {
                         for (;;) {
                             const step = probe.next();
                             if (stats.work > limit) { break; }
-                            if (step.done) { if (step.value) { certificateBudget.certified = true; return step.value; } break; }
+                            if (step.done) { if (step.value) { certificateBudget.certified = true; if (childProfile) childProfile.value = captured.value!; return step.value; } break; }
                             yield;
                         }
                     } finally { certificateBudget.remaining = Math.max(0, certificateBudget.remaining - (stats.work - before)); probe.return(undefined); }
+                }
+                if (exactDistance !== undefined && childProfile && certificateBudget.remaining > 0) {
+                    const optionalCost = 2 * (offsetAt(a, region.a1) - offsetAt(a, region.a0)) + 3 * (offsetAt(b, region.b1) - offsetAt(b, region.b0))
+                        + (3 * m + 512) * facts.maximum + 34 * n + 28 * m + 1032;
+                    if (tick(stats, 24)) yield;
+                    // If 2*d + abs(delta) < D, reaching a boundary would finish in fewer
+                    // than D edits. Every cell is therefore live/interior and pays both ticks.
+                    const interior = (exactDistance - Math.abs(delta)) / 2;
+                    const extra = (start: number) => start >= interior ? 0 : (interior * (interior + 1) - start * (start + 1)) / 2;
+                    const mandatory = remaining + extra(Math.max(distance, resumeForward)) + extra(Math.max(distance, resumeReverse));
+                    if (tick(stats, 20)) yield;
+                    if (optionalCost <= mandatory && (certificateBudget.matching ??= yield* changedReferenceMatch(b, seed, rootAlphabet, stats))) {
+                        const captured: {value?: RootProfiles} = {}, before = stats.work, limit = before + Math.min(optionalCost, certificateBudget.remaining);
+                        const probe = optionalRunSplit(a, b, region, exactDistance, stats, captured);
+                        try {
+                            for (;;) {
+                                const step = probe.next();
+                                if (stats.work > limit) { break; }
+                                if (step.done) {
+                                    if (step.value) { certificateBudget.certified = true; childProfile.value = captured.value!; return step.value; }
+                                    break;
+                                }
+                                yield;
+                            }
+                        } finally { certificateBudget.remaining = Math.max(0, certificateBudget.remaining - (stats.work - before)); probe.return(undefined); }
+                    }
                 }
             }
         }
@@ -783,25 +927,29 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
                 const region = { a0, a1, b0, b1 }, saved = savedSplits?.get(regionKey(region));
                 if (savedSplits && tick(stats, 4)) yield;
                 const profile = inherited && a1 - a0 + b1 - b0 - 2 * (inherited.to - inherited.from) >= 128 ? inherited : undefined;
+                const certified: {value?: RootProfiles} = {};
                 const before = stats.work, split = profile ? yield* profileSplit(left, right, region, profile, stats, saved?.point)
-                    : saved?.point ?? (yield* bisect(left, right, region, stats, capture, capture ? undefined : seed, capture ? undefined : certificateBudget, capture ? alphabet ?? undefined : undefined));
-                // A shared profile job never allocates a second speculative profile set.
+                    : saved?.point ?? (yield* bisect(left, right, region, stats, capture, capture ? undefined : seed, capture ? undefined : certificateBudget, alphabet ?? undefined, certified, task.distance));
+                // A root profile disables speculation. A child profile stays on its subtree;
+                // cheap descendants cannot reach the distance-64 certificate phase.
                 if (capture?.plan && seed && !capture.profile) certificateBudget = { remaining: stats.work, certified: false };
                 if (saved && splits) splits.reused = true;
                 if (splits && !("changes" in split)) yield* retainSplit(splits, region, split, saved?.work ?? stats.work - before, stats);
                 if ("changes" in split) { split.changes.forEach(append); continue; }
-                const [ai, bi] = split;
+                const [ai, bi] = split, prefixDistance = Math.ceil(split[2] / 2);
+                if (tick(stats, 3)) yield;
                 if ((ai === a0 && bi === b0) || (ai === a1 && bi === b1)) throw new Error("Comparison split did not make progress.");
-                const currentProfile = profile ?? (capture?.profile ? {profiles: capture.profile, from: 0, to: capture.profile.required.length} : undefined);
+                const prepared = capture?.profile ?? certified.value;
+                const currentProfile = profile ?? (prepared ? {profiles: prepared, from: 0, to: prepared.required.length} : undefined);
                 if (currentProfile) {
                     // A canonical split spends ceil(D/2) edits in its prefix.
-                    const middle = currentProfile.from + ((ai - a0) + (bi - b0) - Math.ceil(split[2] / 2)) / 2;
+                    const middle = currentProfile.from + ((ai - a0) + (bi - b0) - prefixDistance) / 2;
                     if (!Number.isInteger(middle) || middle < currentProfile.from || middle > currentProfile.to) throw new Error("Invalid required midpoint ordinal.");
-                    tasks.push({a0: ai, a1, b0: bi, b1, profile: {profiles: currentProfile.profiles, from: middle, to: currentProfile.to,
+                    tasks.push({a0: ai, a1, b0: bi, b1, distance: split[2] - prefixDistance, profile: {profiles: currentProfile.profiles, from: middle, to: currentProfile.to,
                         direction: "earliest", boundary: currentProfile.profiles.latest[middle]!}});
-                    tasks.push({a0, a1: ai, b0, b1: bi, profile: {profiles: currentProfile.profiles, from: currentProfile.from, to: middle, direction: "latest"}});
+                    tasks.push({a0, a1: ai, b0, b1: bi, distance: prefixDistance, profile: {profiles: currentProfile.profiles, from: currentProfile.from, to: middle, direction: "latest"}});
                     if (tick(stats, 16)) yield;
-                } else { tasks.push({ a0: ai, a1, b0: bi, b1 }); tasks.push({ a0, a1: ai, b0, b1: bi }); }
+                } else { tasks.push({ a0: ai, a1, b0: bi, b1, distance: split[2] - prefixDistance }); tasks.push({ a0, a1: ai, b0, b1: bi, distance: prefixDistance }); }
             }
         }
         let proof = reused?.plan.proof;

@@ -193,7 +193,8 @@ splits also record their exact region edit distance. A recursive comparison can 
 parent frontier direction when its reference and working anchor match and every earlier
 move validation and equality probe fits inside the child's unchanged region on both axes.
 Owned intersections with retained split regions bound the new edit distance and exclude
-earlier overlaps. The direction resumes from a fresh vector copy; child waves are not retained.
+earlier overlaps. A newly selected canonical split also supplies the exact distances of its
+two children. The direction resumes from a fresh vector copy; child waves are not retained.
 Split records share a 64 KiB numeric-storage cap with frontier vectors; older frontier checkpoints
 are dropped to respect that cap. Indexes, text captures and other cache metadata are separate.
 Whole-region shortcut results are recomputed. Lookup, storage and copying count as cooperative
@@ -203,11 +204,21 @@ A warm child search can also certify its exact split when every reference row wh
 occurs in the working region forms a subsequence of that region. Earliest prefix and latest
 suffix matches select the same canonical midpoint as the general search. It reuses the
 complete token facts from the preceding alphabet check and only attempts certification when
-a conservative scan-cost bound fits the remaining search work proved by retained distances.
+a conservative scan-cost bound fits the remaining search work proved by known distances.
 Speculative child attempts share a budget equal to the work already spent through the normal
 first bisection, with at most one cooperative advance of overshoot. A failed or exhausted
 attempt falls back to the general search. A successful child certificate preserves the current
 root capture's retention eligibility through later edits.
+
+After a changed working window contains a short token present in the reference, an optional
+certificate can also resolve one contiguous working-token run of at most 256 rows. It requires
+every other matchable reference row, at least two such rows between consecutive optional
+reference occurrences, and exactly one optional occurrence that embeds with all required rows.
+Ambiguous tokens, separated working runs or unmet embedding/distance bounds decline. Admission
+counts only guaranteed remaining work, including interior-cell checks on waves that cannot
+reach a document boundary under the known minimum distance. Eligibility is checked once per
+job against the captured changed window and complete reference alphabet.
+
 Certificates examine at most 65,536 rows per side. A temporary profile set contains at most
 65,536 byte flags and two 65,537-entry unsigned 32-bit vectors, plus bounded token references
 and alphabet metadata. This temporary state is not published in the cache and is separate
@@ -216,9 +227,9 @@ precedence; this certificate does not make unproved partial hunks authoritative.
 
 The root can use this certificate when a projected current checkpoint plan is also available
 and conservative scan/copy costs fit the proved remaining search work. Its matchable reference
-row count must agree with the independently known optimum. A successful root keeps one profile
-pair for the active job and disables speculative child attempts. Each sufficiently expensive
-child inherits one profile and recomputes the other inside its bounds; shared boundary slots
+row count must agree with the independently known optimum. A successful root disables speculative
+child attempts. Either a certified root or child keeps its one profile pair through its subtree.
+Each sufficiently expensive descendant inherits one profile and recomputes the other inside its bounds; shared boundary slots
 are restored for the queued sibling. Saved exact splits retain their points while preparing
 the inherited profile, and cheap subtrees use ordinary search. The same numeric profile bound
 applies throughout the job. Profiles never enter the retained cache; completed splits and

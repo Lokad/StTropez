@@ -396,15 +396,15 @@ for (const [count, fraction, maximumColdRatio, maximumHistoryRatio = maximumCold
                 }
             }
             if (count === 20000) {
-                // New reference matches can invalidate a narrower reuse proof. The fallback
-                // still needs the latest completed search state after the first Enter.
+                // A newly matching run can force one reference occurrence while retaining
+                // the current root search decisions and sharing its child's profiles.
                 const editedText = edited.slice(0, edited.length), distantAt = editedText.indexOf("changed ", editedText.length * 0.75);
                 assert.ok(distantAt > at);
                 const matching = edited.replace(distantAt, distantAt, "row 0\n".repeat(7));
                 const fallback = finish(baseline, matching, cache), freshMatching = finish(baseline, matching);
                 assert.deepEqual(fallback.hunks, freshMatching.hunks); assert.equal(fallback.lineEdits, freshMatching.lineEdits);
                 reconstruct(fallback, original, matching.slice(0, matching.length));
-                assert.ok(fallback.work < 21_000_000, `later matching rows retain current search decisions: ${fallback.work}`);
+                assert.ok(fallback.work < 17_000_000, `later matching rows retain current search decisions: ${fallback.work}`);
                 const undone = finish(baseline, edited, cache);
                 assert.deepEqual(undone.hunks, expected.hunks); assert.equal(undone.lineEdits, expected.lineEdits);
                 const second = edited.replace(at + 5, at + 5, "\n");
@@ -419,17 +419,24 @@ for (const [count, fraction, maximumColdRatio, maximumHistoryRatio = maximumCold
         } finally { cache.dispose(); }
     });
 
-for (const [count, fraction] of [[2000, 0.25], [2000, 0.5], [2000, 0.75], [20000, 0.5]] as const) test(`comparison decision reuse survives cancellation and failure without publishing superseded captures: ${count}/${fraction}`, () => {
+for (const [count, fraction, matchingRun = false] of [[2000, 0.25], [2000, 0.5], [2000, 0.75], [20000, 0.5], [20000, 0.75, true]] as const) test(`comparison decision reuse survives cancellation and failure without publishing superseded captures: ${count}/${fraction}`, () => {
     const original = Array.from({ length: count }, (_, i) => `row ${i % 20}\n`).join("");
     const text = original.replaceAll("row 0\n", "changed 0\n").replaceAll("row 10\n", "changed 10\n").replaceAll("row 11\n", "row 11\nrow 11\n");
-    const baseline = TextBuffer.from(original), working = TextBuffer.from(text), cache = new DiffReferenceCache();
-    const at = text.indexOf("changed ", text.length * fraction) + 3, split = working.replace(at, at, "\n");
+    const baseline = TextBuffer.from(original), cache = new DiffReferenceCache();
+    let working = TextBuffer.from(text);
+    if (matchingRun) {
+        finish(baseline, working, cache);
+        const first = text.indexOf("changed ", text.length * 0.5) + 3;
+        working = working.replace(first, first, "\n");
+    }
+    const current = working.slice(0, working.length), at = current.indexOf("changed ", current.length * fraction) + (matchingRun ? 0 : 3);
+    const split = working.replace(at, at, matchingRun ? "row 0\n".repeat(7) : "\n");
     const expected = finish(baseline, split);
     assert.ok(finish(baseline, working, cache).lineComparisons >= 100000, "retain an eligible expensive frontier");
     const cancelled = new TextDiff(baseline, split, cache); let partial = cancelled.next(512);
     // Cancel after actual search progress, independently of the completed cold job's cost.
-    // The large case advances into active shared-profile subdivision before cancellation.
-    const reached = (value: DiffProgress) => count === 20000 ? value.work >= 3_000_000 : value.lineComparisons >= 256;
+    // The large cases interrupt active root or optional-run child profile subdivision.
+    const reached = (value: DiffProgress) => count === 20000 ? value.work >= (matchingRun ? 14_000_000 : 3_000_000) : value.lineComparisons >= 256;
     while (partial.status === "running" && !reached(partial)) partial = cancelled.next(512);
     assert.ok(reached(partial));
     assert.equal(partial.status, "running"); cancelled.dispose();
