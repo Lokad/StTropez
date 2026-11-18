@@ -5,6 +5,7 @@ import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
 import { corpus } from "../fixtures/workloads.ts";
 import { installHostReferenceProbe } from "./host-reference-probe.mjs";
+import { hostTextEquals } from "./host-scene.mjs";
 
 const source = await sourceIdentity(), writer = await createReportWriter("artifacts/bench/host-table-paste", "full");
 const harness = await openHarness(), page = harness.page;
@@ -18,9 +19,7 @@ const click = name => page.getByRole("button", { name, exact: true }).click();
 const ready = () => page.waitForFunction(() => { const s = window.hostFixture.snapshot();
     return !s.bindings.tablePaste.pending && globalThis.hostReferenceProbe.isReady(s);
 });
-const exact = text => page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false;
-    for (let from = 0; from < text.length; from += 32768) if (f.range(from, Math.min(text.length, from + 32768)) !== text.slice(from, from + 32768)) return false; return true;
-}, text);
+const exact = text => hostTextEquals(page, text);
 async function point(payload, expected) {
     const started = performance.now();
     const sample = await page.evaluate(({ payload, expected }) => new Promise((resolve, reject) => {

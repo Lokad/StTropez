@@ -315,7 +315,8 @@ require a review, capture `beforeinput` on the intended input, and check exact r
 selection over two frames. Missing origins and terminal failures reject with listener/frame cleanup.
 Reference, pointer, drag-scroll, word-selection, generic host and save/conflict measurements
 share `scripts/host-scene.mjs` for mounting, readiness, disposal counters and complete
-source/reference text checks. Its `sourceReady` permits native source views and optional
+source/reference text checks. Its `hostTextEquals` function supplies the same checks to callers
+that own their page lifecycle. Its `sourceReady` permits native source views and optional
 review; `ready` requires editor metrics and a complete review. A disposal observer can close the
 caller-owned automation clock after fixture disposal and before teardown diagnostics. Text
 checks compare lengths and raw UTF-16 chunks outside point and gesture clocks. Combined

@@ -5,6 +5,7 @@ import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
 import { corpus } from "../fixtures/workloads.ts";
 import { installHostReferenceProbe } from "./host-reference-probe.mjs";
+import { hostTextEquals } from "./host-scene.mjs";
 
 const source = await sourceIdentity(), writer = await createReportWriter("artifacts/bench/host-folding", "full");
 const harness = await openHarness(), page = harness.page, warmup = 2, measured = 10;
@@ -16,9 +17,7 @@ const report = { schemaVersion: 1, created: new Date().toISOString(), source,
 const save = () => writer.write(report);
 const click = name => page.getByRole("button", { name, exact: true }).click();
 const ready = () => page.evaluate(() => globalThis.hostReferenceProbe.waitReady());
-const equals = text => page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false;
-    for (let from = 0; from < text.length; from += 32768) if (f.range(from, Math.min(text.length, from + 32768)) !== text.slice(from, from + 32768)) return false; return true;
-}, text);
+const equals = text => hostTextEquals(page, text);
 async function point(kind, expected) {
     await page.evaluate(({ kind, expected }) => {
         const input = document.querySelector('textarea[aria-label="Primary source"]'), prior = window.hostFixture.snapshot(), listeners = new AbortController();

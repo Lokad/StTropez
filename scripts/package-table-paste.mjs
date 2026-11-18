@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { sourceIdentity } from "./measurement.mjs";
+import { hostTextEquals } from "./host-scene.mjs";
 
 /** Actual staged host code consumes only restored public assets; no checkout runtime fallback. */
 export async function runPackagedTablePaste(browser, origin, options) {
@@ -10,9 +11,7 @@ export async function runPackagedTablePaste(browser, origin, options) {
     const ready = () => page.waitForFunction(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
         return !s.bindings.tablePaste.pending && s.bindings.views.every(v => !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision)
             && (!c || c.status === "ready" && !c.workingViewport.pending && !c.referenceViewport.pending); });
-    const exact = text => page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false;
-        for (let from = 0; from < text.length; from += 32768) if (f.range(from, Math.min(text.length, from + 32768)) !== text.slice(from, from + 32768)) return false; return true;
-    }, text);
+    const exact = text => hostTextEquals(page, text);
     try {
         await page.goto(origin + "/hosts/react/?editor=candidate");
         const original = "AA\r\n" + "const unchanged = 123;\r\n".repeat(100000) + "ZZ", csv = '"city","value"\r\n"東京","A,""B"""', expected = csv + original.slice(2, -2) + csv;
