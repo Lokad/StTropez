@@ -142,6 +142,9 @@ viewport; rendering stops when that callback invalidates the mount.
 | Geometry | Native text ranges measure mounted fragments; geometry outside those fragments is unavailable |
 | Updates | Relevant changes coalesce into animation frames; unchanged row text/classes retain their nodes |
 
+Measured horizontal extent uses the rendered row contents rather than the full-row decoration
+box. Full-width line backgrounds do not add horizontal scroll range when the text fits.
+
 A long fragment's local measurement is not a measured global glyph origin. Tabs, combining
 sequences and bidirectional/contextual shaping can differ from the horizontal estimate.
 Explicit reveal can retain a local caret placement without reading the entire line; manual

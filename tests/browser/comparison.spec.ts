@@ -7,6 +7,14 @@ test("paired navigation exposes exact whitespace and reverts one hunk through sh
     await expect(page.getByRole("button", { name: "Use baseline", exact: true })).toBeDisabled();
     await page.getByRole("button", { name: "Next change", exact: true }).click();
     await expect(page.locator(".st-comparison-controls output")).toContainText("Change 1 of");
+    await ready(page);
+    const fitting = await page.locator(".st-comparison-panes .st-viewport").evaluateAll(panes => panes.map(pane => {
+        const row = pane.querySelector<HTMLElement>(".st-viewport-row")!, bounds = pane.getBoundingClientRect(), range = pane.ownerDocument.createRange();
+        range.selectNodeContents(row);
+        return { overflow: pane.scrollWidth - pane.clientWidth, textLeft: range.getBoundingClientRect().left - bounds.left,
+            colored: getComputedStyle(row).backgroundColor !== "rgba(0, 0, 0, 0)", fills: row.getBoundingClientRect().right >= bounds.right - 1 };
+    }));
+    for (const pane of fitting) { expect(pane.overflow).toBeLessThanOrEqual(1); expect(pane.textLeft).toBeGreaterThanOrEqual(0); expect(pane.colored && pane.fills).toBe(true); }
     await page.getByRole("button", { name: "Use baseline", exact: true }).click(); await ready(page);
     expect(await page.evaluate(() => window.comparisonFixture.range(0, 25))).toContain("Baseline");
     expect((await page.evaluate(() => window.comparisonFixture.snapshot())).history.undoDepth).toBe(1);

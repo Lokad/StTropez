@@ -560,7 +560,11 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         orderedButtons.forEach((button, index) => { if (foldLayer.children.item(index) !== button) foldLayer.insertBefore(button, foldLayer.children.item(index)); });
         // A bounded batch of native shaping measurements follows the row writes. Extent corrections
         // are scheduled for the next frame, without alternating reads and writes for each row.
-        const measured = Math.max(0, ...[...rows.values()].filter(element => element.dataset.complete === "true").map(element => element.getBoundingClientRect().width / zoom));
+        // Full-row backgrounds can have a minimum width unrelated to their source text.
+        const extentRange = owner.createRange();
+        const measured = Math.max(0, ...[...rows.values()].filter(element => element.dataset.complete === "true").map(element => {
+            extentRange.selectNodeContents(element); return extentRange.getBoundingClientRect().width / zoom;
+        }));
         if (measured > measuredWidth + .01) { measuredWidth = measured; if (measuredWidth + padding * 2 > x.extent + .01) schedule(); }
         const requestedRow = requested?.revision === document.revision ? rows.get(document.buffer.lineAt(requested.offset)) : undefined;
         if (requestedRow?.dataset.complete === "false") {
