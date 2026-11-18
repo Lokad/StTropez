@@ -241,6 +241,10 @@ row among all matchable reference rows. Failure to embed the full sequence and a
 omission establish the exact optimum. This path shares the same profile repair, bounded gap,
 root checkpoints and admission budget; ambiguous optional candidates retain ordinary search.
 
+The same removal proof can admit a captured join of two short rows when exactly one old row
+is matchable and the merged row is unmatched. This shape enables the existing proof; exact
+embedding and uniqueness checks determine whether it can replace ordinary search.
+
 A captured one-row replacement that changes reference matchability can use complete occurrence
 counts to select a one- or two-omission proof. With no optional run, two omissions require that
 at most one omission cannot embed and exactly two reference ordinals are feasible omissions.

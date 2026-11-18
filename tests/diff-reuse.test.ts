@@ -364,6 +364,24 @@ test("edits to unmatched rows reuse raw alignment and re-trim exact hunks throug
     cache.dispose();
 });
 
+test("joining an unmatched and matching row preserves exact review through typing and history", () => {
+    const original = Array.from({ length: 20000 }, (_, i) => `row ${i % 20}\n`).join("");
+    const text = original.replaceAll("row 0\n", "changed 0\n").replaceAll("row 10\n", "changed 10\n").replaceAll("row 11\n", "row 11\nrow 11\n");
+    const baseline = TextBuffer.from(original), working = TextBuffer.from(text), cache = new DiffReferenceCache();
+    const at = text.indexOf("\n", text.indexOf("changed ", Math.floor(text.length * 0.5)));
+    const joined = working.replace(at, at + 1, ""), typed = joined.replace(at, at, "!");
+    try {
+        finish(baseline, working, cache);
+        for (const [label, capture, maximumWork] of [["join", joined, 7_500_000], ["type", typed, 23_000],
+            ["undo typing", joined, 23_000], ["undo join", working, 11_200_000], ["redo join", joined, 7_500_000]] as const) {
+            const warm = finish(baseline, capture, cache), fresh = finish(baseline, capture);
+            assert.deepEqual(warm.hunks, fresh.hunks); assert.equal(warm.lineEdits, fresh.lineEdits);
+            reconstruct(warm, original, capture.slice(0, capture.length));
+            assert.ok(warm.work < maximumWork, `${label}: ${warm.work} units preserve current checkpoints and exact profiles`);
+        }
+    } finally { cache.dispose(); }
+});
+
 for (const [count, fraction, maximumColdRatio, maximumHistoryRatio = maximumColdRatio] of [[10000, 0.25, 0.6], [10000, 0.5, 0.48], [10000, 0.75, 0.8], [20000, 0.5, 0.25, 0.45]] as const)
     test(`edited-region distance bounds reduce ${count}/${fraction} Enter work without changing canonical hunks`, () => {
         // An equal header exercises absolute profile coordinates after root trimming.
@@ -437,7 +455,7 @@ for (const [count, fraction, maximumColdRatio, maximumHistoryRatio = maximumCold
         } finally { cache.dispose(); }
     });
 
-for (const [count, fraction, matchingRun = false, omission = false, typing = false] of [[2000, 0.25], [2000, 0.5], [2000, 0.75], [20000, 0.5], [20000, 0.75, true], [20000, 0.75, true, true], [20000, 0.75, false, true], [20000, 0.75, false, true, true]] as const) test(`comparison decision reuse survives cancellation and failure without publishing superseded captures: ${count}/${fraction}${typing ? "/typing after omission" : omission ? matchingRun ? "/omission" : "/omission without run" : ""}`, () => {
+for (const [count, fraction, matchingRun = false, omission = false, typing = false, join = false] of [[2000, 0.25], [2000, 0.5], [2000, 0.75], [20000, 0.5], [20000, 0.75, true], [20000, 0.75, true, true], [20000, 0.75, false, true], [20000, 0.75, false, true, true], [20000, 0.5, false, false, false, true]] as const) test(`comparison decision reuse survives cancellation and failure without publishing superseded captures: ${count}/${fraction}${join ? "/join" : typing ? "/typing after omission" : omission ? matchingRun ? "/omission" : "/omission without run" : ""}`, () => {
     const original = Array.from({ length: count }, (_, i) => `row ${i % 20}\n`).join("");
     const text = original.replaceAll("row 0\n", "changed 0\n").replaceAll("row 10\n", "changed 10\n").replaceAll("row 11\n", "row 11\nrow 11\n");
     const baseline = TextBuffer.from(original), cache = new DiffReferenceCache();
@@ -449,6 +467,7 @@ for (const [count, fraction, matchingRun = false, omission = false, typing = fal
     }
     const current = working.slice(0, working.length), at = current.indexOf("changed ", current.length * fraction) + (matchingRun ? 0 : 3);
     let split = working.replace(at, at, matchingRun ? "row 0\n".repeat(7) : "\n");
+    if (join) { const end = current.indexOf("\n", at); split = working.replace(end, end + 1, ""); }
     if (omission) {
         if (matchingRun) { finish(baseline, working, cache); working = split; }
         const remove = working.slice(0, working.length).indexOf("row 1\n", at + (matchingRun ? 42 : 0));
@@ -460,7 +479,7 @@ for (const [count, fraction, matchingRun = false, omission = false, typing = fal
     // Cancel after actual search progress, independently of the completed cold job's cost.
     // The omission case interrupts both in-place profile repair and later subtree sharing.
     const reached = (value: DiffProgress, threshold = matchingRun ? 9_000_000 : 3_000_000) => count === 20000 ? value.work >= threshold : value.lineComparisons >= 256;
-    for (const threshold of omission ? [typing ? 5_700_000 : 5_200_000, 9_000_000] : [matchingRun ? 9_000_000 : 3_000_000]) {
+    for (const threshold of join ? [1_650_000, 4_000_000] : omission ? [typing ? 5_700_000 : 5_200_000, 9_000_000] : [matchingRun ? 9_000_000 : 3_000_000]) {
         const cancelled = new TextDiff(baseline, split, cache); let partial = cancelled.next(512);
         while (partial.status === "running" && !reached(partial, threshold)) partial = cancelled.next(512);
         assert.ok(reached(partial, threshold));

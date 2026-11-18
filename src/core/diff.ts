@@ -883,6 +883,21 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
                 omission = token !== undefined && rootAlphabet.has(token);
                 if (tick(stats, (token?.length ?? 0) + 4)) yield;
             }
+            // Joining one matchable and one unmatched row can remove one required occurrence.
+            if (capture && seed && rootAlphabet && seed.to === seed.from + 2 && seed.end === seed.from + 1) {
+                const token = (yield* getLine(b, seed.from, stats)).token;
+                if (tick(stats, (token?.length ?? 0) + 4)) yield;
+                if (token !== undefined && !rootAlphabet.has(token)) {
+                    let matches = 0, complete = true;
+                    for (let row = seed.from; row < seed.to; row++) {
+                        const old = (yield* getLine(seed.frontier.working, row, stats)).token;
+                        complete &&= old !== undefined;
+                        if (old !== undefined && rootAlphabet.has(old)) matches++;
+                        if (tick(stats, (old?.length ?? 0) + 4)) yield;
+                    }
+                    omission = complete && matches === 1;
+                }
+            }
             if (capture && seed && rootAlphabet && seed.to === seed.from + 1 && seed.end === seed.to) {
                 const old = (yield* getLine(seed.frontier.working, seed.from, stats)).token;
                 const current = (yield* getLine(b, seed.from, stats)).token;
