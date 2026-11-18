@@ -1,5 +1,6 @@
-import { ready, test, expect } from "./fixtures.ts";
+import { ready, test, expect, expectUnmountedSourceHost } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const button = (p: Page, name: string) => p.getByRole("button", { name, exact: true });
@@ -9,10 +10,7 @@ async function waitForReview(page: Page): Promise<void> {
     await ready(page);
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.activeViews === 2 && s.bindings.comparison !== null); });
 }
-async function exact(p: Page, text: string) { expect(await p.evaluate(text => { const f = window.hostFixture;
-    if (f.snapshot().source.length !== text.length) return false;
-    for (let i = 0; i < text.length; i += 32768) if (f.range(i, Math.min(text.length, i + 32768)) !== text.slice(i, i + 32768)) return false; return true;
-}, text)).toBe(true); }
+async function exact(p: Page, text: string) { expect(await hostTextEquals(p, text)).toBe(true); }
 
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} configuration Save stays independent through typing, review, Run and remount`, async ({ page: p }, info) => {
 
@@ -46,7 +44,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await button(p, "Fail configuration save").click(); await expect(p.getByLabel("Configuration save status", { exact: true })).toContainText("failed");
     await button(p, "Dismiss message").click(); await button(p, "Save configuration").click(); await expect(button(p, "Finish configuration save")).toBeEnabled();
     // Service work outlives views; remount keeps the captured resource and later form value.
-    await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expect(dormant.diagnostics.subscriptions).toBe(4); expect(dormant.hostSubscriptions).toBe(2);
+    await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expectUnmountedSourceHost(dormant);
     await p.evaluate(() => window.hostFixture.mount()); await waitForReview(p); await expect(field).toHaveValue("later.csv");
     await button(p, "Finish configuration save").click(); await expect.poll(async () => (await snapshot(p)).configuration.dirty).toBe(false);
     await field.fill("local.csv"); await button(p, "Simulate external configuration change").click(); await button(p, "Save configuration").click();

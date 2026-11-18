@@ -1,21 +1,12 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const click = (page: Page, name: string) => page.getByRole("button", { name, exact: true }).click();
 const version = (page: Page, id: string) => page.getByRole("combobox", { name: "Review version", exact: true }).selectOption(id);
 
-async function exact(page: Page, value: string, reference = false): Promise<void> {
-    expect(await page.evaluate(({ value, reference }) => { const f = window.hostFixture;
-        const length = reference ? f.snapshot().bindings.comparison?.baseline?.length : f.snapshot().source.length;
-        if (length !== value.length) return false;
-        for (let from = 0; from < value.length; from += 32768) {
-            const to = Math.min(value.length, from + 32768), actual = reference ? f.referenceRange(from, to) : f.range(from, to);
-            if (actual !== value.slice(from, to)) return false;
-        }
-        return true;
-    }, { value, reference })).toBe(true);
-}
+async function exact(page: Page, value: string, reference = false): Promise<void> { expect(await hostTextEquals(page, value, reference ? "reference" : "source")).toBe(true); }
 async function mount(page: Page, host: string, text: string): Promise<void> {
      await page.goto(`/hosts/${host}/?editor=candidate`);
     await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, text);

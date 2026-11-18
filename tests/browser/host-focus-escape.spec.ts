@@ -1,5 +1,6 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page, Locator } from "@playwright/test";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 
 type FocusKey = Readonly<{ key: string; shift: boolean; trusted: boolean; prevented: boolean; tag: string | null; label: string | null }>;
 declare global { interface Window { hostFocusEscapeKeys: readonly FocusKey[] } }
@@ -14,15 +15,7 @@ async function waitForViews(page: Page): Promise<void> {
     await ready(page);
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.activeViews === 2); });
 }
-async function exact(page: Page, text: string): Promise<void> {
-    expect(await page.evaluate(text => {
-        const fixture = window.hostFixture;
-        if (fixture.snapshot().source.length !== text.length) return false;
-        for (let from = 0; from < text.length; from += 32768)
-            if (fixture.range(from, Math.min(text.length, from + 32768)) !== text.slice(from, from + 32768)) return false;
-        return true;
-    }, text)).toBe(true);
-}
+async function exact(page: Page, text: string): Promise<void> { expect(await hostTextEquals(page, text)).toBe(true); }
 /** Traverse the real page tab order; no pointer activation or programmatic focus. */
 async function keyboardFocus(page: Page, target: Locator): Promise<void> {
     await expect(target).toBeVisible();

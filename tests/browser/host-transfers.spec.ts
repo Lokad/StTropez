@@ -1,5 +1,6 @@
-import { ready, test, expect } from "./fixtures.ts";
+import { ready, test, expect, expectUnmountedSourceHost } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const button = (p: Page, name: string) => p.getByRole("button", { name, exact: true });
 const sets = (s: Awaited<ReturnType<typeof snapshot>>) => ({ views: s.bindings.views.map(v => ({ id: v.id, set: v.selectionSet })), working: s.bindings.comparison?.selectionSet, reference: s.bindings.comparison?.referenceViewport?.selectionSet });
@@ -7,8 +8,7 @@ async function waitForDraft(page: Page): Promise<void> {
     await ready(page);
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (!s.draft?.busy && s.bindings.comparison !== null); });
 }
-async function exact(p: Page, text: string) { expect(await p.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false;
-    for (let i = 0; i < text.length; i += 32768) if (f.range(i, Math.min(text.length, i + 32768)) !== text.slice(i, i + 32768)) return false; return true; }, text)).toBe(true); }
+async function exact(p: Page, text: string) { expect(await hostTextEquals(p, text)).toBe(true); }
 async function draftAction(p: Page, name: string) { await button(p, name).click(); await expect(button(p, "Confirm draft action")).toBeEnabled(); await button(p, "Confirm draft action").click(); await waitForDraft(p); }
 
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} transfer settings and immutable Run/log inspection retain independent inputs`, async ({ page: p }, info) => {
@@ -52,7 +52,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await batch.fill("invalid"); await button(p, "Keep recovery draft").click(); await waitForDraft(p); expect((await snapshot(p)).draft?.hasTransfer).toBe(true); await p.reload(); await expect(input).toBeVisible(); await button(p, "Open source review").click(); await waitForDraft(p);
     await draftAction(p, "Restore transfer draft"); await expect(destination).toHaveValue("newer.csv"); await expect(batch).toHaveValue("invalid"); await expect(path).toHaveValue("source.csv"); await exact(p, "start");
     await draftAction(p, "Restore source draft"); await exact(p, original + "!"); await batch.fill("100"); await destination.fill(" final.csv "); await destination.press("Control+s"); await expect(button(p, "Finish transfer settings save")).toBeEnabled();
-    await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expect(dormant.diagnostics.subscriptions).toBe(4); expect(dormant.hostSubscriptions).toBe(2);
+    await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expectUnmountedSourceHost(dormant);
     await p.evaluate(() => window.hostFixture.mount()); await waitForDraft(p); await button(p, "Finish transfer settings save").click(); await expect(destination).toHaveValue("final.csv");
     await button(p, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(p)).runResources.runs.length).toBe(1); await button(p, "Inspect Run 1").click();
     if (!large) await info.attach("transfer-run-inspection", { body: await p.screenshot(), contentType: "image/png" });

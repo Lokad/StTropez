@@ -1,6 +1,7 @@
 import { isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { coversHost } from "./host-cases.ts";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -16,7 +17,7 @@ async function register(page: Page) { if ((await snapshot(page)).bindings.projec
     await button(page, "Register provider review command").click(); await done(page); const s = await snapshot(page); expect(s.bindings.project.registered, JSON.stringify({ project: s.bindings.project, lsp: s.bindings.lsp })).toBe(true); }
 async function request(page: Page) { await button(page, "Request provider review edits").click(); await expect.poll(async () => !!(await snapshot(page)).bindings.project.state.review).toBe(true); await editors(page); }
 async function control(page: Page, method: string, params?: unknown) { await page.evaluate(({ method, params }) => (Reflect.get(window, "projectTestSocket") as WebSocket).send(JSON.stringify({ jsonrpc: "2.0", ...(params === undefined ? {} : { id: "control-" + method, params }), method })), { method, params }); }
-async function exact(page: Page, text: string) { expect(await page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false; for (let at = 0; at < text.length; at += 32768) if (f.range(at, Math.min(text.length, at + 32768)) !== text.slice(at, at + 32768)) return false; return true; }, text)).toBe(true); }
+async function exact(page: Page, text: string) { expect(await hostTextEquals(page, text)).toBe(true); }
 async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.project).toMatchObject({ pending: false, transport: null, sessions: 0, subscriptions: 0, disposed: true }); }
 for (const host of ["plain", "react"] as const) test.describe(`${host} LSP server edits`, () => {
     test.beforeEach(async ({ page }) => {

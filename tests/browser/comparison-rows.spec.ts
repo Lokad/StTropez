@@ -1,5 +1,6 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const button = (p: Page, name: string) => p.getByRole("button", { name, exact: true });
 const input = (p: Page) => p.getByRole("textbox", { name: "Comparison working source", exact: true });
@@ -9,7 +10,7 @@ async function waitForReview(page: Page): Promise<void> {
     await ready(page);
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.comparison !== null); });
 }
-async function exact(p: Page, text: string): Promise<void> { expect(await p.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false; for (let i = 0; i < text.length; i += 32768) if (f.range(i, Math.min(i + 32768, text.length)) !== text.slice(i, i + 32768)) return false; return true; }, text)).toBe(true); }
+async function exact(p: Page, text: string): Promise<void> { expect(await hostTextEquals(p, text)).toBe(true); }
 async function setup(p: Page, host: string, raw: string): Promise<void> {  await p.goto(`/hosts/${host}/?editor=candidate`); await p.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, raw); for (const name of ["Open source review", "Capture review acceptance", "Finish review acceptance"]) { await button(p, name).click(); await waitForReview(p); } }
 async function sourceSet(p: Page, ranges: readonly { anchor: number; head: number }[], primary = 0): Promise<void> { await input(p).focus(); await p.evaluate(({ ranges, primary }) => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, ranges, primary); }, { ranges, primary }); await waitForReview(p); }
 async function scroll(p: Page, row: number): Promise<void> { await panes(p).last().evaluate((node, row) => { const c = window.hostFixture.snapshot().bindings.comparison!; node.scrollTop = 12 + row * c.workingViewport.lineHeight; node.dispatchEvent(new Event("scroll")); }, row); await waitForReview(p); }

@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.ts";
+import { test, expect, expectUnmountedSourceHost } from "./fixtures.ts";
 import { coversHost } from "./host-cases.ts";
 
 for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const) {
@@ -488,7 +488,7 @@ test(`React ${editor} root error callbacks retain resources and recover through 
     await page.getByRole("button", { name: "Inject form error", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().activity.errors)).toBeGreaterThan(0);
     await expect(primary).toHaveCount(0);
-    expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics.subscriptions).toBe(5); // Source document/metadata, connection, transfer recovery and retained LSP provider observers.
+    expectUnmountedSourceHost(await page.evaluate(() => window.hostFixture.snapshot()));
     await page.getByRole("button", { name: "Recover views", exact: true }).click();
     await expect(primary).toHaveValue("unsaved before failure");
     const after = await page.evaluate(() => window.hostFixture.snapshot());

@@ -1,17 +1,13 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 async function waitForReview(page: Page): Promise<void> {
     await ready(page);
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.comparison !== null); });
 }
-async function exact(page: Page, text: string): Promise<void> {
-    expect(await page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false;
-        for (let at = 0; at < text.length; at += 32768) if (f.range(at, Math.min(text.length, at + 32768)) !== text.slice(at, at + 32768)) return false;
-        return true;
-    }, text)).toBe(true);
-}
+async function exact(page: Page, text: string): Promise<void> { expect(await hostTextEquals(page, text)).toBe(true); }
 
 for (const host of ["plain", "react"]) for (const large of [false, true]) for (const journey of ["primary", "comparison", "resize and queued input"] as const)
 test(`${host} ${large ? "100k" : "normal"} ${journey} boundaries finish before immediate typing`, async ({ page }) => {

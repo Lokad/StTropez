@@ -1,17 +1,11 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const source = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const click = (page: Page, name: string) => page.getByRole("button", { name, exact: true }).click();
 
-async function exact(page: Page, value: string, reference = false): Promise<void> {
-    expect(await page.evaluate(({ value, reference }) => { const f = window.hostFixture, s = f.snapshot();
-        if ((reference ? s.bindings.comparison?.baseline?.length : s.source.length) !== value.length) return false;
-        for (let from = 0; from < value.length; from += 32768) { const to = Math.min(value.length, from + 32768);
-            if ((reference ? f.referenceRange(from, to) : f.range(from, to)) !== value.slice(from, to)) return false; }
-        return true;
-    }, { value, reference })).toBe(true);
-}
+async function exact(page: Page, value: string, reference = false): Promise<void> { expect(await hostTextEquals(page, value, reference ? "reference" : "source")).toBe(true); }
 for (const host of ["plain", "react"]) for (const large of [false, true])
 test(`${host} ${large ? "100k" : "normal"} match-case find keeps Unicode ranges, shared undo, comparison and working Save/Run`, async ({ page }) => {
     test.setTimeout(120000);

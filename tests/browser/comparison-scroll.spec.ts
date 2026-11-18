@@ -1,5 +1,6 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const check = (p: Page) => p.getByRole("checkbox", { name: "Link review scrolling", exact: true });
 const button = (p: Page, name: string) => p.getByRole("button", { name, exact: true });
@@ -7,7 +8,7 @@ async function waitForReview(page: Page): Promise<void> {
     await ready(page);
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.comparison !== null); });
 }
-async function exact(p: Page, text: string): Promise<void> { expect(await p.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false; for (let i = 0; i < text.length; i += 32768) if (f.range(i, Math.min(i + 32768, text.length)) !== text.slice(i, i + 32768)) return false; return true; }, text)).toBe(true); }
+async function exact(p: Page, text: string): Promise<void> { expect(await hostTextEquals(p, text)).toBe(true); }
 async function scroll(p: Page, side: "baseline" | "working", row: number, left?: number): Promise<void> {
     await p.locator(".st-comparison-panes .st-viewport").nth(side === "baseline" ? 0 : 1).evaluate((node, { row, left }) => {
         const c = window.hostFixture.snapshot().bindings.comparison!, h = node === node.parentElement!.parentElement!.parentElement!.querySelector(".st-viewport") ? c.referenceViewport!.lineHeight : c.workingViewport.lineHeight;

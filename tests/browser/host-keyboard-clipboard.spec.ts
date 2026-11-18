@@ -3,6 +3,7 @@ import { chromium } from "@playwright/test";
 import { captureBrowserErrors } from "../helpers/browser-errors.ts";
 import type { Page, TestInfo } from "@playwright/test";
 import { createHash } from "node:crypto";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 
 type ClipboardRecord = Readonly<{ type: string; trusted: boolean; prevented: boolean; label: string | null; text: string }>;
 declare global {
@@ -18,15 +19,7 @@ async function waitForReview(page: Page): Promise<void> {
     await ready(page);
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (s.bindings.activeViews === 2 && s.bindings.comparison !== null); });
 }
-async function exact(page: Page, text: string): Promise<void> {
-    expect(await page.evaluate(text => {
-        const fixture = window.hostFixture;
-        if (fixture.snapshot().source.length !== text.length) return false;
-        for (let from = 0; from < text.length; from += 32768)
-            if (fixture.range(from, Math.min(text.length, from + 32768)) !== text.slice(from, from + 32768)) return false;
-        return true;
-    }, text)).toBe(true);
-}
+async function exact(page: Page, text: string): Promise<void> { expect(await hostTextEquals(page, text)).toBe(true); }
 async function select(page: Page, from: number, to = from, id: "primary" | "secondary" = "primary"): Promise<void> {
     expect(await page.evaluate(({ from, to, id }) => { const fixture = window.hostFixture;
         return fixture.selectSource(id, fixture.snapshot().source.revision, { anchor: to, head: from });

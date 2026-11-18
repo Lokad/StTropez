@@ -1,14 +1,11 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 
-async function exact(page: Page, text: string): Promise<void> {
-    expect(await page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false;
-        for (let from = 0; from < text.length; from += 32768) if (f.range(from, Math.min(text.length, from + 32768)) !== text.slice(from, from + 32768)) return false; return true;
-    }, text)).toBe(true);
-}
+async function exact(page: Page, text: string): Promise<void> { expect(await hostTextEquals(page, text)).toBe(true); }
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} replace all stays cancelled after restored authority and permits an explicit retry`, async ({ page }) => {
     test.setTimeout(120000);  await page.goto(`/hosts/${host}/?editor=candidate`);
     const original = "cat cat\r\n" + "const unchanged = 123;\r\n".repeat(large ? 100000 : 1), changed = "dog dog" + original.slice(7);

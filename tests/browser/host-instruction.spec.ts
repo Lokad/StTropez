@@ -1,5 +1,6 @@
-import { ready, test, expect } from "./fixtures.ts";
+import { ready, test, expect, expectUnmountedSourceHost } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 const snap = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const button = (p: Page, name: string) => p.getByRole("button", { name, exact: true });
 const source = (p: Page) => p.getByRole("textbox", { name: "Primary source", exact: true });
@@ -8,8 +9,7 @@ async function waitForInstruction(page: Page, review = true): Promise<void> {
     await ready(page);
     await page.waitForFunction(review => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (!s.bindings.instruction?.pending && (!review || s.bindings.comparison !== null)); }, review);
 }
-async function exact(p: Page, text: string) { expect(await p.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false;
-    for (let i = 0; i < text.length; i += 32768) if (f.range(i, Math.min(text.length, i + 32768)) !== text.slice(i, i + 32768)) return false; return true; }, text)).toBe(true); }
+async function exact(p: Page, text: string) { expect(await hostTextEquals(p, text)).toBe(true); }
 test.afterEach(async ({ page }, info) => { if (info.status !== info.expectedStatus && !page.isClosed()) await info.attach("instruction-failure-state", { contentType: "application/json", body: JSON.stringify(await snap(page), null, 2) }); });
 for (const host of ["plain", "react"]) for (const large of [false, true]) test(`${host} ${large ? "100k" : "normal"} anchored instruction preserves source, history, copy and virtualized ownership`, async ({ page: p }, info) => {
       await p.goto(`/hosts/${host}/?editor=candidate`); await expect(source(p)).toBeVisible();
@@ -45,7 +45,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     expect((await snap(p)).source.revision).toBe(geometry.source.revision); expect((await snap(p)).history).toEqual(geometry.history);
     await expect.poll(() => p.evaluate(() => { const panel = document.querySelector('[aria-label="Anchored transfer instruction"]')!.getBoundingClientRect(), lane = document.querySelector('.host-instruction-lane')!.getBoundingClientRect(), source = document.querySelector('.host-instruction-source')!.getBoundingClientRect();
         return panel.top >= lane.top - 1 && panel.bottom <= lane.bottom + 1 && source.right <= lane.left + 1; })).toBe(true);
-    await p.evaluate(() => window.hostFixture.unmount()); expect((await snap(p)).diagnostics.subscriptions).toBe(6); await p.evaluate(() => window.hostFixture.mount()); await waitForInstruction(p); await expect(field).toHaveValue("aA.csvXY");
+    await p.evaluate(() => window.hostFixture.unmount()); expectUnmountedSourceHost(await snap(p), 2); await p.evaluate(() => window.hostFixture.mount()); await waitForInstruction(p); await expect(field).toHaveValue("aA.csvXY");
     const committed = await p.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); });
     const oldToken = '"a\\u0041.csvXY"', crlfToken = '"line\\r\\nname.csv"', at = committed.indexOf(oldToken); expect(at).toBeGreaterThanOrEqual(0);
     await p.evaluate(({ at, length, value }) => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: at, to: at + length, insert: value }]); }, { at, length: oldToken.length, value: crlfToken });

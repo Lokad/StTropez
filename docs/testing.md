@@ -124,6 +124,12 @@ Strict Mode readiness, render isolation and root-error recovery. The shared
 each case registers at its declaration site so reports retain its file and line. Test titles
 do not select hosts.
 
+`expectUnmountedSourceHost` checks detached DOM views and the retained source-provider scope,
+including the recovery/provider workspace subscriptions and retained project-review observer.
+Consumers declare any additional
+service subscriptions and keep their service/focus assertions. Full disposal separately
+requires zero views, leases and subscriptions.
+
 Server-edit journeys retain every scenario on plain. React also covers changed-resource node
 identity, unmounted-companion focus, decision invalidation through remount, provider recovery,
 held-request focus and primary Save/Run during comparison review. Plain owns the large-input
@@ -327,7 +333,9 @@ selection over two frames. Missing origins and terminal failures reject with lis
 Reference, pointer, drag-scroll, word-selection, generic host and save/conflict measurements
 share `scripts/host-scene.mjs` for mounting, readiness, disposal counters and complete
 source/reference text checks. Its `hostTextEquals` function supplies the same checks to callers
-that own their page lifecycle. Its `sourceReady` permits native source views and optional
+that own their page lifecycle, including browser specs with bounded raw-source assertions.
+Specs with distinct failure diagnostics or read contracts keep those explicit. Its `sourceReady`
+permits native source views and optional
 review; `ready` requires editor metrics and a complete review. A disposal observer can close the
 caller-owned automation clock after fixture disposal and before teardown diagnostics. Text
 checks compare lengths and raw UTF-16 chunks outside point and gesture clocks. Combined

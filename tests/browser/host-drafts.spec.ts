@@ -1,5 +1,6 @@
-import { ready, test, expect } from "./fixtures.ts";
+import { ready, test, expect, expectUnmountedSourceHost } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const button = (p: Page, name: string) => p.getByRole("button", { name, exact: true });
 const source = (p: Page, name = "Primary source") => p.getByRole("textbox", { name, exact: true });
@@ -72,7 +73,7 @@ async function waitForDraft(page: Page): Promise<void> {
     await ready(page);
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (!s.draft?.busy); });
 }
-async function exact(p: Page, value: string): Promise<void> { expect(await p.evaluate(value => { const f = window.hostFixture; if (f.snapshot().source.length !== value.length) return false; for (let from = 0; from < value.length; from += 32768) if (f.range(from, Math.min(value.length, from + 32768)) !== value.slice(from, from + 32768)) return false; return true; }, value)).toBe(true); }
+async function exact(p: Page, value: string): Promise<void> { expect(await hostTextEquals(p, value)).toBe(true); }
 async function warning(p: Page): Promise<boolean> { return p.evaluate(() => { const e = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; }); }
 async function restore(p: Page, name: string): Promise<void> { await button(p, name).click(); await expect(button(p, "Confirm draft action")).toBeEnabled(); await button(p, "Confirm draft action").click(); await waitForDraft(p); }
 async function dispose(p: Page): Promise<void> { await p.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(p); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.draft?.disposed).toBe(true); }
@@ -195,7 +196,7 @@ for (const host of ["plain", "react"]) test(`${host === "plain" ? "" : "react "}
     await button(p, "Retry draft storage").click(); await waitForDraft(p); let seen = await notices(peer); await keep(p); await peerNotice(peer, seen); await preserved(peer, peerBefore, peerText); expect(await source(peer).evaluate(n => document.activeElement === n)).toBe(true);
     await source(p).focus(); await waitForDraft(p); let before = await snapshot(p); seen = await notices(p); await keep(peer); await peerNotice(p, seen); await preserved(p, before, owned); expect((await snapshot(p)).draft!.unprotected).toBe(true); expect(await warning(p)).toBe(true); expect(await warning(peer)).toBe(false); expect(await source(p).evaluate(n => document.activeElement === n)).toBe(true);
     // The persistent host service also observes the peer while its views are dormant.
-    await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expect(dormant.diagnostics.subscriptions).toBe(4); expect(dormant.hostSubscriptions).toBe(2);
+    await p.evaluate(() => window.hostFixture.unmount()); const dormant = await snapshot(p); expectUnmountedSourceHost(dormant);
     await source(peer).press("Control+End"); await source(peer).pressSequentially("B"); peerText += "B"; seen = await notices(p); await keep(peer); await peerNotice(p, seen); await preserved(p, dormant, owned);
     await p.evaluate(() => window.hostFixture.mount()); await waitForDraft(p); await exact(p, owned); expect(selections(await snapshot(p))).toEqual(selections(before));
     await button(p, "Open source review").click(); await waitForDraft(p); const baseline = (await snapshot(p)).bindings.comparison!.baseline!.version;

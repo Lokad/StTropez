@@ -1,5 +1,6 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 const snap = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
 const command = (p: Page, name: string) => p.getByRole("button", { name, exact: true }).click();
 const primary = (p: Page) => p.getByRole("textbox", { name: "Primary source", exact: true });
@@ -8,7 +9,7 @@ async function waitForLoad(page: Page): Promise<void> {
     await ready(page);
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (!s.bindings.instruction?.pending && s.bindings.views.length === 2); });
 }
-async function exact(p: Page, text: string) { expect(await p.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false; for (let i = 0; i < text.length; i += 32768) if (f.range(i, Math.min(text.length, i + 32768)) !== text.slice(i, i + 32768)) return false; return true; }, text)).toBe(true); }
+async function exact(p: Page, text: string) { expect(await hostTextEquals(p, text)).toBe(true); }
 test.afterEach(async ({ page }, info) => { if (info.status !== info.expectedStatus && !page.isClosed()) await info.attach("load-failure-state", { contentType: "application/json", body: JSON.stringify(await snap(page), null, 2) }); });
 for (const host of ["plain", "react"]) for (const editor of ["native", "candidate"]) test(`${host} ${editor} repeated loads release clean documents and preserve reachable drafts`, async ({ page: p }) => {
       await p.goto(`/hosts/${host}/?editor=${editor}`); await expect(primary(p)).toBeVisible();

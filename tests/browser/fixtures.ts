@@ -1,8 +1,19 @@
-import { test as base } from "@playwright/test";
+import { test as base, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { captureBrowserErrors } from "../helpers/browser-errors.ts";
 
-export { expect } from "@playwright/test";
+export { expect };
+
+/** A single-source fixture keeps recovery and its provider owner while DOM views detach. */
+export function expectUnmountedSourceHost(state: ReturnType<Window["hostFixture"]["snapshot"]>, additionalSubscriptions = 0): void {
+    expect(state.bindings.activeViews).toBe(0);
+    expect(state.bindings.lsp).toMatchObject({ disposed: false, scopes: 1, documents: 1, documentParticipants: 1 });
+    // Recovery observes source content/metadata, configuration and transfer; LSP observes source.
+    expect(state.diagnostics.subscriptions).toBe(5 + additionalSubscriptions);
+    // Recovery watches loaded-source/recovery cells; actions retain their project-review observer.
+    expect(state.bindings.project.subscriptions).toBe(1);
+    expect(state.hostSubscriptions).toBe(3);
+}
 
 /** Scheduled editor work only. Specs separately await services, mount counts and native controls. */
 export async function ready(page: Page, timeout = 30_000): Promise<void> {

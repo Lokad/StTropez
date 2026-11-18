@@ -2,6 +2,7 @@ import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { coversHost } from "./host-cases.ts";
 import { holdLspReplies } from "../helpers/lsp-replies.ts";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -52,7 +53,7 @@ async function preview(page: Page) {
     }).toMatchObject({ requested: requested + 1 });
     await waitForActions(page);
 }
-async function exact(page: Page, text: string) { expect(await page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false; for (let at = 0; at < text.length; at += 32768) if (f.range(at, Math.min(at + 32768, text.length)) !== text.slice(at, at + 32768)) return false; return true; }, text)).toBe(true); }
+async function exact(page: Page, text: string) { expect(await hostTextEquals(page, text)).toBe(true); }
 async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.actions).toMatchObject({ sessions: 0, subscriptions: 0, transport: null, disposed: true }); }
 for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code actions`, () => {
     test.beforeEach(async ({ page }) => {

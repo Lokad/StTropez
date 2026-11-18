@@ -1,5 +1,6 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 
 type HostState = ReturnType<Window["hostFixture"]["snapshot"]>;
 type CompositionFindTrace = { commandTrusted?: boolean; afterStart?: HostState; events: { type: string; trusted: boolean; revision: number }[] };
@@ -8,15 +9,7 @@ const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot
 const primary = (page: Page) => page.getByRole("textbox", { name: "Primary source", exact: true });
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 const selections = (s: HostState) => s.bindings.views.map(v => ({ id: v.id, selection: v.selection }));
-async function exact(page: Page, text: string): Promise<void> {
-    expect(await page.evaluate(text => {
-        const f = window.hostFixture;
-        if (f.snapshot().source.length !== text.length) return false;
-        for (let from = 0; from < text.length; from += 32768)
-            if (f.range(from, Math.min(text.length, from + 32768)) !== text.slice(from, from + 32768)) return false;
-        return true;
-    }, text)).toBe(true);
-}
+async function exact(page: Page, text: string): Promise<void> { expect(await hostTextEquals(page, text)).toBe(true); }
 
 async function drainPlan(page: Page): Promise<void> {
     // Give the original 1024-match batches enough independent turns, even after immediate composition cancellation.

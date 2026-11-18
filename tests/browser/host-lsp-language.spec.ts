@@ -2,6 +2,7 @@ import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { holdLspReplies } from "../helpers/lsp-replies.ts";
 import { coversHost } from "./host-cases.ts";
+import { hostTextEquals } from "../../scripts/host-scene.mjs";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const field = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -15,12 +16,7 @@ async function settledColorsAndLinks(page: Page) {
     await ready(page);
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && !s.bindings.colors.state.pending && !s.bindings.links.state.pending; });
 }
-async function exact(page: Page, text: string) {
-    expect(await page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false;
-        for (let at = 0; at < text.length; at += 32768) if (f.range(at, Math.min(text.length, at + 32768)) !== text.slice(at, at + 32768)) return false;
-        return true;
-    }, text)).toBe(true);
-}
+async function exact(page: Page, text: string) { expect(await hostTextEquals(page, text)).toBe(true); }
 async function disposeColorsAndLinks(page: Page) {
     await page.evaluate(() => window.hostFixture.dispose()); const state = await snapshot(page);
     expect(state.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(state.hostSubscriptions).toBe(0);
