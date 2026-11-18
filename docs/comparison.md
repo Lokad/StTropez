@@ -145,12 +145,27 @@ or crossed order retain the general alignment. These passes examine at most 65,5
 side and decline rows without short tokens.
 
 An expensive completed comparison can retain its raw line regions and complete reference
-alphabet. A later capture reuses that alignment only when row count is unchanged and every
+alphabet. A later capture reuses that alignment directly when row count is unchanged and every
 old/new row in an ownership-proven changed window is absent from the reference. Affected
 regions receive fresh character trimming and whitespace classification; untouched later hunks
 shift by the exact UTF-16 offset delta. Retention is bounded to 65,536 rows per side and 4,096
-regions; verification checks at most 256 changed rows. Unknown tokens, new matches and changed
-row counts require alignment rather than directly reusing the raw regions.
+regions; verification checks at most 256 changed rows.
+
+A completed ordered-common alignment can also certify a unique matching attaining the global
+shared-occurrence bound. Certification adds an optional bounded linear pass to the initial
+comparison. It stops when its work exceeds the alignment work already performed by one
+cooperative advance, so a small changed region cannot force a full scan of large trimmed spans.
+It retains one immutable reference count/first-occurrence index with at most 65,536 entries and
+at most 256 nonzero working counts differing from their reference counts. Later edits update
+only affected counts. Unchanged tokens with balanced old/new counts anchor a local repair;
+each anchor search inspects at most 256 rows, and the changed and local windows contain at most
+256 rows per side. A local longest-common-subsequence calculation accepts only a unique matching
+attaining the updated global bound, preserving the complete canonical alignment. Its transient
+numeric storage is at most 257 × 257 + 2 × 257 unsigned 16-bit cells. Untouched raw regions and
+hunks retain their origins, shifting working text and line ranges by the exact deltas.
+These indexes and metadata are separate from the frontier/split numeric-storage cap.
+Unknown tokens, ambiguous matches, unmet bounds and oversized captures retain the exact general
+alignment. Local repair does not relabel older frontier/split proofs with a newer working buffer.
 
 The cache can also retain up to eight frontier checkpoints from the first bisection of an
 expensive completed comparison. Geometric distances and the latest intermediate multiple of

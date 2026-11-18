@@ -202,6 +202,51 @@ test("long-line review identities bound warm reads across revisions and independ
     }
 });
 
+for (const [count, period] of [[2000, 2000], [20000, 20]] as const) test(`matched-row edits repair exact alignment across split/join histories: ${count}/${period}`, () => {
+    const rows = Array.from({ length: count }, (_, i) => `row ${i % period}\n`), original = rows.join("");
+    let lines = rows.map((row, i) => i % 10 === 0 ? row.replace("row ", "changed ") : row);
+    const baseline = TextBuffer.from(original), cache = new DiffReferenceCache(); let working = TextBuffer.from(lines.join(""));
+    const initial = finish(baseline, working, cache), retained = JSON.stringify(initial.hunks);
+    const edit = (from: number, to: number, insert: readonly string[], local: boolean) => {
+        working = working.replace(working.offsetAt(from), working.offsetAt(to), insert.join(""));
+        lines = [...lines.slice(0, from), ...insert, ...lines.slice(to)];
+        const result = finish(baseline, working, cache), expected = finish(baseline, TextBuffer.from(lines.join("")));
+        assert.deepEqual(result.hunks, expected.hunks); assert.equal(result.lineEdits, expected.lineEdits);
+        reconstruct(result, original, lines.join("")); assert.equal(JSON.stringify(initial.hunks), retained);
+        if (local) {
+            assert.ok(result.work < count * 3, `${result.work} units for local repair`);
+            assert.ok(result.readUnits < 1024, `${result.readUnits} units reread outside the edit`);
+        }
+    };
+    try {
+        const middle = count / 2 + 1, second = middle + 21;
+        edit(middle, middle + 1, [lines[middle]!.slice(0, 3) + "\n", lines[middle]!.slice(3)], true);
+        edit(second, second + 1, [lines[second]!.slice(0, 3) + "\n", lines[second]!.slice(3)], true);
+        edit(middle, middle + 2, [rows[middle]!], true);
+        edit(middle - 1, middle, [rows[middle - 1]!], true);
+        // A duplicate creates ambiguous optimal matches; long tokens also require fallback.
+        edit(middle + 4, middle + 4, [lines[middle + 4]!], false);
+        edit(middle + 8, middle + 9, ["x".repeat(257) + "😀\r\n"], false);
+    } finally { cache.dispose(); }
+});
+
+test("optional alignment certification bounds cold work when shared outer spans dwarf the changed region", () => {
+    for (const count of [10000, 60000]) {
+        const original = Array.from({ length: count }, (_, i) => `row ${i % 20}\n`).join(""), baseline = TextBuffer.from(original);
+        const edits = Array.from({ length: 80 }, (_, i) => {
+            const from = baseline.offsetAt(count / 2 + i * 10); return { from, to: from + 3, insert: "changed" };
+        });
+        const working = baseline.apply(edits).buffer, cache = new DiffReferenceCache();
+        try {
+            const result = finish(baseline, working, cache), expected = finish(baseline, working);
+            assert.deepEqual(result.hunks, expected.hunks); assert.equal(result.lineEdits, expected.lineEdits);
+            reconstruct(result, original, working.slice(0, working.length));
+            assert.ok(result.work < expected.work * 2 + 4096, `${count}: ${result.work}/${expected.work} cold work`);
+            assert.ok(result.readUnits < 64000, `${count}: ${result.readUnits} UTF-16 units read`);
+        } finally { cache.dispose(); }
+    }
+});
+
 test("distant small edits keep alignment storage independent of unchanged row count", context => {
     const allocations: number[] = [], Native = Int32Array;
     context.mock.method(globalThis, "Int32Array", new Proxy(Native, { construct(target, args) {
@@ -248,7 +293,8 @@ test("independent remote references reuse working metadata across shifted suffix
 test("many separated changes retain exact alignment and bounded work for unique and repeated rows", () => {
     for (const [count, period, stride, variation, hunks, coldLimit, warmLimit] of [
         [100000, 100000, 100, "ordered", 1000, 13000000, 15000000],
-        [10000, 10000, 10, "ordered", 1000, 800000, 600000],
+        // The ordered capture includes a bounded initial count-index/certificate pass.
+        [10000, 10000, 10, "ordered", 1000, 1000000, 600000],
         [10000, 20, 10, "ordered", 1000, 1100000, 850000],
         [10000, 20, 10, "extra", 1068, 10000000, 10000000],
         [10000, 20, 10, "crossed", 1500, 14000000, 14000000]

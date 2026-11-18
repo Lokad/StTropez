@@ -1,3 +1,5 @@
+import { certifyAlignment, repairAlignment } from "./diff-repair.ts";
+import type { DiffRepairCertificate, DiffRepairReference } from "./diff-repair.ts";
 import { prepareEqualities, minimumEqualRows } from "./diff-equalities.ts";
 import type { DiffEqualities, DiffEqualitySnapshot } from "./diff-equalities.ts";
 import type { TextBuffer } from "./text-buffer.ts";
@@ -10,8 +12,9 @@ type Stats = DiffStats & { identities: DiffIdentities; equalities: DiffEqualitie
 export type DiffRange = Readonly<{ from: number; to: number; lineFrom: number; lineTo: number }>;
 export type DiffHunk = Readonly<{ baseline: DiffRange; working: DiffRange; whitespaceOnly: boolean }>;
 export type DiffProgress = Readonly<{ status: KernelStatus; work: number; readUnits: number; lineComparisons: number; lineEdits: number; hunks: readonly DiffHunk[]; failure: string | null }>;
+type Alphabet = Readonly<{ has(token: string): boolean }>;
 type Cache = { baseline: TextBuffer; serial: number; reference: Index | undefined; working: Index | undefined;
-    equalities?: DiffEqualitySnapshot; alphabet?: ReadonlySet<string> | null; alignment?: AlignmentPlan | undefined; frontier?: FrontierPlan | undefined; splits?: SplitPlan | undefined };
+    equalities?: DiffEqualitySnapshot; alphabet?: Alphabet | null; repairReference?: DiffRepairReference; alignment?: AlignmentPlan | undefined; frontier?: FrontierPlan | undefined; splits?: SplitPlan | undefined };
 const referenceCaches = new WeakMap<DiffReferenceCache, { current: Cache | undefined }>();
 
 /** Retains reference/working metadata and bounded exact proofs from completed captures. */
@@ -22,7 +25,7 @@ export class DiffReferenceCache {
 type Region = Readonly<{ a0: number; a1: number; b0: number; b1: number }>;
 type FrontierPoint = Readonly<{ distance: number; radius: number; origin: number; forward: Int32Array; reverse: Int32Array; seenF: number; seenR: number }>;
 type FrontierPlan = Readonly<{ working: Index; region: Region; points: readonly FrontierPoint[]; minimum?: number }>;
-type FrontierCapture = { previous: FrontierPlan | undefined; plan?: FrontierPlan; first: boolean };
+type FrontierCapture = { previous: FrontierPlan | undefined; plan?: FrontierPlan; ordered?: boolean; first: boolean };
 type SplitCapture = { rows?: Float64Array; count: number; reused: boolean };
 type SplitPlan = Readonly<{ working: Index; rows: Float64Array; count: number }>;
 // Split points contain the reference row, working row and exact region edit distance.
@@ -393,7 +396,7 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
             const changes = yield* singleTokenAlignment(a, b, region, stats);
             if (changes) return { changes };
             const ordered = yield* orderedCommonAlignment(a, b, region, stats);
-            if (ordered) return { changes: ordered };
+            if (ordered) { if (capture) capture.ordered = true; return { changes: ordered }; }
         }
         if (distance > radius) {
             // Only visited diagonals need storage. Retain both parities and their empty
@@ -451,8 +454,8 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
     throw new Error("Comparison search did not find a split.");
 }
 
-type AlignmentPlan = Readonly<{ working: Index; alphabet: ReadonlySet<string>; changes: readonly Region[]; hunks: readonly (DiffHunk | undefined)[] }>;
-type AlignmentReuse = Readonly<{ plan: AlignmentPlan; from: number; to: number; delta: number }>;
+type AlignmentPlan = Readonly<{ working: Index; alphabet: Alphabet; proof?: DiffRepairCertificate | undefined; changes: readonly Region[]; hunks: readonly (DiffHunk | undefined)[] }>;
+type AlignmentReuse = Readonly<{ plan: AlignmentPlan; from: number; to: number; delta: number; rowDelta?: number; origins?: readonly (number | undefined)[] }>;
 /** Equal row positions and zero reference matches for every changed old/new row preserve
  * the complete equality matrix, hence the canonical raw alignment. Character trims still
  * depend on the new text. Ownership must cover everything outside the checked window. */
@@ -497,7 +500,12 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
         const right = yield* indexLines(b, stats, cache?.working ?? left);
         if (cache) stats.equalities = yield* prepareEqualities(right, cache.equalities, stats);
         if (cache?.serial === serial) cache.working = right;
-        const reused = prior ? yield* reuseAlignment(prior, right, stats) : undefined;
+        let reused = prior ? yield* reuseAlignment(prior, right, stats) : undefined;
+        if (!reused && prior?.proof) {
+            const local = yield* repairAlignment(left, right, prior.working, prior.changes, prior.proof, stats);
+            if (local) reused = { plan: { ...prior, changes: local.changes, proof: local.proof }, from: local.from, to: local.to,
+                delta: local.delta, rowDelta: local.rowDelta, origins: local.origins };
+        }
         const frontier: FrontierCapture | undefined = cache && left.lines.size <= frontierLimits.rows && right.lines.size <= frontierLimits.rows
             ? { previous: cache.frontier, first: true } : undefined;
         const splits: SplitCapture | undefined = frontier ? { count: 0, reused: false } : undefined;
@@ -536,19 +544,35 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
                 tasks.push({ a0: ai, a1, b0: bi, b1 }); tasks.push({ a0, a1: ai, b0, b1: bi });
             }
         }
-        // Only expensive completed alignments justify a bounded full reference alphabet.
-        // Cheap sparse jobs keep their lazy indexes and clear an obsolete plan on success.
+        let proof = reused?.plan.proof;
+        if (!proof && frontier?.ordered) {
+            // Trimmed outer spans can dwarf the ordered region. Optional certification may
+            // spend at most the work already performed, plus one cooperative advance.
+            const capture = certifyAlignment(left, right, changes, cache?.repairReference, stats), limit = stats.work * 2;
+            try {
+                for (;;) {
+                    const step = capture.next();
+                    if (stats.work > limit) break;
+                    if (step.done) { proof = step.value; break; }
+                    yield;
+                }
+            } finally { capture.return(undefined); }
+        }
+        if (proof) alphabet = proof.reference;
+        // Capture a certified ordered alignment or an expensive completed search. Other
+        // cheap sparse jobs keep lazy indexes and clear an obsolete plan on success.
         const capturePlan = cache && alphabet !== null && left.lines.size <= 65536 && right.lines.size <= 65536 && changes.length <= 4096
-            && (reused !== undefined || stats.lineComparisons >= 100000);
+            && (reused !== undefined || proof !== undefined || stats.lineComparisons >= 100000);
         const regionHunks: (DiffHunk | undefined)[] | undefined = capturePlan ? [] : undefined;
         const hunks: DiffHunk[] = [];
         for (let index = 0; index < changes.length; index++) {
             const change = changes[index]!;
             stats.lineEdits += change.a1 - change.a0 + change.b1 - change.b0;
-            if (reused && (change.b1 <= reused.from || change.b0 >= reused.to)) {
-                let hunk = reused.plan.hunks[index];
-                if (hunk && change.b0 >= reused.to && reused.delta !== 0) hunk = Object.freeze({ baseline: hunk.baseline,
-                    working: Object.freeze({ ...hunk.working, from: hunk.working.from + reused.delta, to: hunk.working.to + reused.delta }), whitespaceOnly: hunk.whitespaceOnly });
+            if (reused && (reused.origins === undefined || reused.origins[index] !== undefined) && (change.b1 <= reused.from || change.b0 >= reused.to)) {
+                let hunk = reused.plan.hunks[reused.origins?.[index] ?? index];
+                if (hunk && change.b0 >= reused.to && (reused.delta !== 0 || reused.rowDelta !== undefined && reused.rowDelta !== 0)) hunk = Object.freeze({ baseline: hunk.baseline,
+                    working: Object.freeze({ ...hunk.working, from: hunk.working.from + reused.delta, to: hunk.working.to + reused.delta,
+                        lineFrom: hunk.working.lineFrom + (reused.rowDelta ?? 0), lineTo: hunk.working.lineTo + (reused.rowDelta ?? 0) }), whitespaceOnly: hunk.whitespaceOnly });
                 if (hunk) hunks.push(hunk); regionHunks?.push(hunk); if (tick(stats, 8)) yield; continue;
             }
             let a0 = offsetAt(left, change.a0), a1 = offsetAt(left, change.a1);
@@ -569,11 +593,14 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
         if (stats.equalities) { const equalities = yield* stats.equalities.finish(stats); if (cache?.serial === serial) cache.equalities = equalities; }
         if (cache?.serial === serial) {
             if (alphabet !== undefined) cache.alphabet = alphabet;
-            cache.alignment = capturePlan && alphabet ? Object.freeze({ working: right, alphabet, changes: Object.freeze(changes), hunks: Object.freeze(regionHunks!) }) : undefined;
-            cache.splits = reused ? previousSplits && previousSplits.working === reused.plan.working ? Object.freeze({ ...previousSplits, working: right }) : previousSplits
+            if (proof) cache.repairReference = proof.reference;
+            cache.alignment = capturePlan && alphabet ? Object.freeze({ working: right, alphabet, proof, changes: Object.freeze(changes), hunks: Object.freeze(regionHunks!) }) : undefined;
+            // Local repair changes the equality matrix. Older frontier/split proofs must
+            // keep their actual working capture; only matrix-preserving reuse can relabel it.
+            cache.splits = reused?.origins ? previousSplits : reused ? previousSplits && previousSplits.working === reused.plan.working ? Object.freeze({ ...previousSplits, working: right }) : previousSplits
                 : splits?.rows && (splits.reused || stats.lineComparisons >= frontierLimits.comparisons) ? Object.freeze({ working: right, rows: splits.rows, count: splits.count }) : undefined;
             const previous = frontier?.previous, captured = frontier?.plan;
-            cache.frontier = reused ? previous && previous.working === reused.plan.working ? Object.freeze({ ...previous, working: right }) : previous
+            cache.frontier = reused?.origins ? previous : reused ? previous && previous.working === reused.plan.working ? Object.freeze({ ...previous, working: right }) : previous
                 : captured?.points.length && stats.lineComparisons >= frontierLimits.comparisons ? Object.freeze({ ...captured, points: Object.freeze([...captured.points]) }) : undefined;
         }
         return Object.freeze(hunks);
