@@ -27,7 +27,7 @@ export async function runBenchmarkCommand(args, log, cwd) {
     } finally { await output.close(); }
 }
 
-/** @typedef {Pick<ReturnType<import("./benchmark-suites.mjs").selectBenchmarks>, "key" | "suites" | "omitted">} BenchmarkPlan */
+/** @typedef {Pick<ReturnType<typeof import("./benchmark-suites.mjs").selectBenchmarks>, "key" | "suites" | "omitted">} BenchmarkPlan */
 /** @typedef {{id: string, status: "pending" | "running" | "passed" | "failed" | "not-run", reason?: string, reports: readonly string[], steps: {kind: string, args: readonly string[], log: string, result?: CommandResult}[]}} SuiteResult */
 
 /**
