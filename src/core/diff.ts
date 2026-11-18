@@ -66,7 +66,7 @@ function* retainSplit(capture: SplitCapture, region: Region, point: readonly [nu
     capture.count = Math.min(capture.count + 1, decisionLimits.splits);
     if (tick(stats, fields)) yield;
 }
-const frontierLimits = Object.freeze({ rows: 65536, changedRows: 256, firstDistance: 16, lastDistance: 2048, comparisons: 100000 });
+const frontierLimits = Object.freeze({ rows: 65536, changedRows: 256, firstDistance: 16, lastDistance: 2048, checkpointStride: 64, comparisons: 100000 });
 
 /** A wave is reusable only while both directions remain strictly outside the changed rows.
  * Candidate bounds are dependencies too: changing the row count can make a rejected move valid. */
@@ -293,9 +293,11 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
         return Math.max(valid(insert) ? insert : -1, valid(remove) ? remove : -1);
     };
     for (let distance = resumeDistance; distance <= maximum; distance++) {
-        // Geometric frontier checkpoints share one numeric-storage cap with split decisions.
+        // Keep geometric waves and only the latest intermediate wave under the shared cap.
         if (capture && distance >= frontierLimits.firstDistance && distance <= frontierLimits.lastDistance
-            && (distance & (distance - 1)) === 0 && (points.at(-1)?.distance ?? -1) < distance) {
+            && ((distance & (distance - 1)) === 0 || distance % frontierLimits.checkpointStride === 0) && (points.at(-1)?.distance ?? -1) < distance) {
+            const previous = points.at(-1)?.distance ?? 0;
+            if ((previous & (previous - 1)) !== 0) { points.pop(); if (tick(stats)) yield; }
             const [f, r] = yield* copyFrontier(forward, reverse, stats);
             points.push(Object.freeze({ distance, radius, origin, forward: f, reverse: r, seenF, seenR }));
             let bytes = points.reduce((total, point) => total + point.forward.byteLength + point.reverse.byteLength, 0);

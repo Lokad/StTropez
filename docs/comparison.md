@@ -153,7 +153,8 @@ regions; verification checks at most 256 changed rows. Unknown tokens, new match
 row counts require alignment rather than directly reusing the raw regions.
 
 The cache can also retain up to eight frontier checkpoints from the first bisection of an
-expensive completed comparison. A later job can resume
+expensive completed comparison. Geometric distances and the latest intermediate multiple of
+64, through distance 2048, share the existing storage cap. A later job can resume
 a checkpoint when the reference/trimmed region agree and ownership proves that every earlier
 move validation and equality probe stays strictly outside the changed rows in both directions.
 This includes row-count changes and new matches; affected decisions are recomputed. Verification

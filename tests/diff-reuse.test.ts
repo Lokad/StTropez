@@ -304,6 +304,7 @@ test("edits to unmatched rows reuse raw alignment and re-trim exact hunks throug
     assert.deepEqual(splitResult.hunks, splitExpected.hunks); assert.equal(splitResult.lineEdits, splitExpected.lineEdits);
     reconstruct(splitResult, original, split.slice(0, split.length));
     assert.ok(splitResult.lineComparisons < splitExpected.lineComparisons * 0.85, "reuse completed subregion decisions as well as frontier waves");
+    assert.ok(splitResult.work < splitExpected.work * 0.75, "nearby Enter retains enough completed search to reduce total charged work");
     // Changed equality/row counts re-run alignment, but can resume unaffected frontier waves.
     for (const insert of ["row 0\n", "new\nrow\n", "x".repeat(300) + "\n"]) {
         finish(baseline, working, cache);
@@ -324,7 +325,9 @@ test("comparison decision reuse survives cancellation and failure without publis
     const expected = finish(baseline, split);
     assert.ok(finish(baseline, working, cache).lineComparisons >= 100000, "retain an eligible expensive frontier");
     const cancelled = new TextDiff(baseline, split, cache); let partial = cancelled.next(512);
-    while (partial.status === "running" && partial.work < expected.work * 0.75) partial = cancelled.next(512);
+    // Cancel after actual search progress, independently of the completed cold job's cost.
+    while (partial.status === "running" && partial.lineComparisons < 256) partial = cancelled.next(512);
+    assert.ok(partial.lineComparisons >= 256);
     assert.equal(partial.status, "running"); cancelled.dispose();
     const slice = TextBuffer.prototype.slice, failure = new Error("captured frontier read failed");
     const failed = new TextDiff(baseline, split, cache);
