@@ -1,5 +1,6 @@
 import { isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { coversHost } from "./host-cases.ts";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -17,12 +18,12 @@ async function request(page: Page) { await button(page, "Request provider review
 async function control(page: Page, method: string, params?: unknown) { await page.evaluate(({ method, params }) => (Reflect.get(window, "projectTestSocket") as WebSocket).send(JSON.stringify({ jsonrpc: "2.0", ...(params === undefined ? {} : { id: "control-" + method, params }), method })), { method, params }); }
 async function exact(page: Page, text: string) { expect(await page.evaluate(text => { const f = window.hostFixture; if (f.snapshot().source.length !== text.length) return false; for (let at = 0; at < text.length; at += 32768) if (f.range(at, Math.min(text.length, at + 32768)) !== text.slice(at, at + 32768)) return false; return true; }, text)).toBe(true); }
 async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.project).toMatchObject({ pending: false, transport: null, sessions: 0, subscriptions: 0, disposed: true }); }
-for (const host of ["plain", "react"]) test.describe(`${host} LSP server edits`, () => {
+for (const host of ["plain", "react"] as const) test.describe(`${host} LSP server edits`, () => {
     test.beforeEach(async ({ page }) => {
          await page.addInitScript(() => { const send = WebSocket.prototype.send; WebSocket.prototype.send = function(this: WebSocket, data) { if (typeof data === "string") { const value = JSON.parse(data); if (value.method === "initialize" && value.params.capabilities.workspace?.applyEdit) Reflect.set(window, "projectTestSocket", this); } send.call(this, data); }; });
         await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(input(page)).toBeVisible(); await editors(page);
     });
-    test("advertised commands and explicit server-edit decisions retain wire versions, complete history and one acknowledgement", async ({ page }) => {
+    if (coversHost("candidate-hosts", host, "candidate")) test("advertised commands and explicit server-edit decisions retain wire versions, complete history and one acknowledgement", async ({ page }) => {
         const sent: any[] = [], incoming: any[] = []; let opened = 0, closed = 0; page.on("websocket", socket => { opened++; socket.on("close", () => closed++); socket.on("framesent", frame => sent.push(JSON.parse(frame.payload.toString()))); socket.on("framereceived", frame => incoming.push(JSON.parse(frame.payload.toString()))); });
         await seed(page); await button(page, "Add navigation companion").click(); await button(page, "Request provider workspace status").click(); await done(page); expect((await snapshot(page)).bindings.project.transport!.version).toBe("LSP3.17"); await register(page);
         const ranges = [{ anchor: 10, head: 7 }, { anchor: raw.length, head: raw.length }]; await page.evaluate(ranges => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, ranges); }, ranges); const before = await snapshot(page); await request(page); await expect(notes(page)).toHaveCount(4); await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
@@ -35,7 +36,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP server edits`,
         await expect(button(page, "Open provider changes in Navigation companion")).toHaveAttribute("data-retained", "changed-resource");
         const depth = (await snapshot(page)).history.undoDepth; await button(page, "Request provider review edits").click(); await done(page); expect((await snapshot(page)).history.undoDepth).toBe(depth); await button(page, "Unregister provider review command").click(); await done(page); await expect(button(page, "Request provider review edits")).toBeDisabled(); expect((await snapshot(page)).source.exports).toBe(0); await dispose(page); await expect.poll(() => closed).toBe(opened);
     });
-    test("edits to only an unmounted companion preserve primary revision, review, Save and Run", async ({ page }) => {
+    if (coversHost("candidate-hosts", host, "candidate")) test("edits to only an unmounted companion preserve primary revision, review, Save and Run", async ({ page }) => {
         await seed(page); await button(page, "Open source review").click(); await register(page); await request(page);
         await button(page, "Apply captured provider edits").click(); await done(page); const expected = header + raw + footer; await exact(page, expected);
         const baseline = (await snapshot(page)).bindings.comparison!.baseline; await button(page, "Add navigation companion").click(); await editors(page);
@@ -63,7 +64,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP server edits`,
         await button(page, "Save source").click(); await page.evaluate(() => window.hostFixture.finishSave()); await done(page);
         expect((await snapshot(page)).source.dirty).toBe(false); await exact(page, expected);  await dispose(page);
     });
-    test("decline, stale decision tokens and project authority or view changes cannot apply a partial batch", async ({ page }) => {
+    if (coversHost("candidate-hosts", host, "candidate")) test("decline, stale decision tokens and project authority or view changes cannot apply a partial batch", async ({ page }) => {
         await seed(page); await button(page, "Add navigation companion").click(); await register(page); const before = await snapshot(page), companion = before.bindings.navigation.companion!;
         // The held-request journey owns focus when review arrives after a form change.
         await request(page); const old = (await snapshot(page)).bindings.project.state.review!.token; await button(page, "Decline captured provider edits").click(); await done(page); await exact(page, raw);
@@ -76,7 +77,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP server edits`,
         }
         expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth); await dispose(page);
     });
-    test("request cancellation, capability withdrawal, disconnect and lost acknowledgement never replay edits", async ({ page }) => {
+    if (coversHost("candidate-hosts", host, "candidate")) test("request cancellation, capability withdrawal, disconnect and lost acknowledgement never replay edits", async ({ page }) => {
         let executions = 0; const incoming: any[] = []; page.on("websocket", socket => {
             socket.on("framesent", frame => { if (JSON.parse(frame.payload.toString()).method === "workspace/executeCommand") executions++; });
             socket.on("framereceived", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "workspace/applyEdit") incoming.push(value); });
@@ -100,7 +101,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP server edits`,
         await page.evaluate(() => window.hostFixture.faultProjectNext("ack")); await request(page); await button(page, "Apply captured provider edits").click(); await done(page); await exact(page, header + raw + footer); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); await expect(page.getByLabel("Workspace provider status", { exact: true })).toContainText("undo");
         const sent = executions; await button(page, "Reconnect workspace provider").click(); await select(page); await register(page); expect(executions).toBe(sent); await button(page, "Request provider review edits").click(); await done(page); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1); await input(page).press("Control+z"); await editors(page); await exact(page, raw); await dispose(page);
     });
-    test("held server requests cannot revive interrupted command captures and fresh reviews retain form focus", async ({ page }) => {
+    if (coversHost("candidate-hosts", host, "candidate")) test("held server requests cannot revive interrupted command captures and fresh reviews retain form focus", async ({ page }) => {
         test.setTimeout(60000);
         let armed = false, commandId: number | undefined, requestId: number | undefined, cancelled = false, response: any, release: (() => void) | undefined;
         await page.routeWebSocket("**/lsp-fixture", client => {
@@ -145,12 +146,12 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP server edits`,
         await exact(page, header + current + footer); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
          expect((await snapshot(page)).source.exports).toBe(0); await dispose(page);
     });
-    test("comparison review decisions keep immutable baselines and primary Save/Run despite companion focus", async ({ page }) => {
+    if (coversHost("candidate-hosts", host, "candidate")) test("comparison review decisions keep immutable baselines and primary Save/Run despite companion focus", async ({ page }) => {
         await seed(page); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await editors(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline; await working.focus(); await register(page); await request(page); await button(page, "Apply captured provider edits").click(); await done(page); const expected = header + raw + footer; await exact(page, expected); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline);
         await button(page, "Open provider changes in Navigation companion").click(); await editors(page); await button(page, "Run captured inputs").click(); expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(expected); await page.evaluate(() => window.hostFixture.finishRun());
         await button(page, "Save source").click(); await working.press("Control+End"); await working.pressSequentially(" later"); await editors(page); await page.evaluate(() => window.hostFixture.finishSave()); await editors(page); await exact(page, expected + " later"); expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline); await dispose(page);
     });
-    test("100k-line server reviews page every edit and bound wide deletion previews without applying declines", async ({ page }) => {
+    if (coversHost("plain-candidate", host, "candidate")) test("100k-line server reviews page every edit and bound wide deletion previews without applying declines", async ({ page }) => {
         test.setTimeout(90000); const text = "// 😀 TODO\r\n" + "const unchanged = 123;\r\n".repeat(99_999) + "// TODO\r\n".repeat(70); await seed(page, text); await register(page); const before = await snapshot(page); await control(page, "fixture/projectStyle", { style: "many" }); await request(page); expect((await snapshot(page)).bindings.project.state.review!.count).toBe(73); await expect(notes(page)).toHaveCount(64); await button(page, "Next provider edits").click(); await expect(notes(page)).toHaveCount(9); await button(page, "Apply captured provider edits").click(); await done(page); await exact(page, header + text.replaceAll("TODO", "DONE") + footer); await input(page).press("Control+z"); await editors(page); await exact(page, text);
         await control(page, "fixture/projectStyle", { style: "wide" }); await request(page); await expect(notes(page)).toHaveCount(1); expect((await snapshot(page)).bindings.project.state.review!.notes[0]!.context.length).toBeLessThan(200); expect((await page.getByRole("list", { name: "Captured provider edits" }).textContent())!.length).toBeLessThan(2000); await button(page, "Decline captured provider edits").click(); await done(page); await exact(page, text); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth); expect((await snapshot(page)).source.exports).toBe(0); expect((await snapshot(page)).bindings.views.every(v => v.metrics!.inputUnits <= 4096 && v.metrics!.viewport.rows < 100)).toBe(true); await dispose(page);
     });

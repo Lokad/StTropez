@@ -124,6 +124,11 @@ Strict Mode readiness, render isolation and root-error recovery. The shared
 each case registers at its declaration site so reports retain its file and line. Test titles
 do not select hosts.
 
+Server-edit journeys retain every scenario on plain. React also covers changed-resource node
+identity, unmounted-companion focus, decision invalidation through remount, provider recovery,
+held-request focus and primary Save/Run during comparison review. Plain owns the large-input
+paging and wide-deletion preview case in each engine.
+
 Color-preview interruption cases retain every mode on the plain host. React also owns proposed
 value changes and remounts; completed-preview/read-only recovery runs on both hosts. The separate
 F6 color journey retains control identity, keyboard traversal, focus and comparison history on
