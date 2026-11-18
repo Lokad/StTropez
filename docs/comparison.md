@@ -168,7 +168,12 @@ Copying retained vectors is charged cooperative work; cache reuse preserves cano
 Up to 32 completed bisection splits can also be retained, selected by their original work.
 A split is reusable only when both reference bounds match and ownership proves its entire
 working region unchanged, with suffix coordinates shifted by the exact row delta. These
-decisions share a 64 KiB numeric-storage cap with frontier vectors; older frontier checkpoints
+splits also record their exact region edit distance. A recursive comparison can reuse a
+parent frontier direction when its reference and working anchor match and every earlier
+move validation and equality probe fits inside the child's unchanged region on both axes.
+Owned intersections with retained split regions bound the new edit distance and exclude
+earlier overlaps. The direction resumes from a fresh vector copy; child waves are not retained.
+Split records share a 64 KiB numeric-storage cap with frontier vectors; older frontier checkpoints
 are dropped to respect that cap. Indexes, text captures and other cache metadata are separate.
 Whole-region shortcut results are recomputed. Lookup, storage and copying count as cooperative
 work; replay preserves the existing canonical split choices.

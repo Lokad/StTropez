@@ -25,8 +25,9 @@ type FrontierPlan = Readonly<{ working: Index; region: Region; points: readonly 
 type FrontierCapture = { previous: FrontierPlan | undefined; plan?: FrontierPlan; first: boolean };
 type SplitCapture = { rows?: Float64Array; count: number; reused: boolean };
 type SplitPlan = Readonly<{ working: Index; rows: Float64Array; count: number }>;
-type SavedSplit = Readonly<{ point: readonly [number, number]; work: number }>;
-const decisionLimits = Object.freeze({ bytes: 65536, splits: 32, fields: 7, minimumWork: 1024 });
+// Split points contain the reference row, working row and exact region edit distance.
+type SavedSplit = Readonly<{ point: readonly [number, number, number]; work: number }>;
+const decisionLimits = Object.freeze({ bytes: 65536, splits: 32, fields: 8, minimumWork: 1024 });
 const splitBytes = decisionLimits.splits * decisionLimits.fields * Float64Array.BYTES_PER_ELEMENT;
 const regionKey = (region: Region): string => [region.a0, region.a1, region.b0, region.b1].join(":");
 /** Only whole unchanged regions preserve the deterministic bisection decision. */
@@ -44,13 +45,13 @@ function* retainedSplits(plan: SplitPlan, right: Index, stats: Stats): Generator
         const i = row * decisionLimits.fields, a0 = plan.rows[i + 1]!, a1 = plan.rows[i + 2]!, b0 = plan.rows[i + 3]!, b1 = plan.rows[i + 4]!;
         const shift = b1 <= from ? 0 : b0 >= to ? end - to : undefined;
         if (shift !== undefined) saved.set(regionKey({ a0, a1, b0: b0 + shift, b1: b1 + shift }),
-            { point: [plan.rows[i + 5]!, plan.rows[i + 6]! + shift], work: plan.rows[i]! });
+            { point: [plan.rows[i + 5]!, plan.rows[i + 6]! + shift, plan.rows[i + 7]!], work: plan.rows[i]! });
         if (tick(stats, decisionLimits.fields)) yield;
     }
     return saved;
 }
 /** Descending original work keeps expensive decisions without depending on the next edit. */
-function* retainSplit(capture: SplitCapture, region: Region, point: readonly [number, number], work: number, stats: Stats): Generator<void, void> {
+function* retainSplit(capture: SplitCapture, region: Region, point: readonly [number, number, number], work: number, stats: Stats): Generator<void, void> {
     if (tick(stats)) yield;
     if (work < decisionLimits.minimumWork) return;
     const fields = decisionLimits.fields; let rows = capture.rows;
@@ -62,7 +63,7 @@ function* retainSplit(capture: SplitCapture, region: Region, point: readonly [nu
         row--; if (tick(stats, fields)) yield;
     }
     const i = row * fields;
-    rows[i] = work; rows[i + 1] = region.a0; rows[i + 2] = region.a1; rows[i + 3] = region.b0; rows[i + 4] = region.b1; rows[i + 5] = point[0]; rows[i + 6] = point[1];
+    rows[i] = work; rows[i + 1] = region.a0; rows[i + 2] = region.a1; rows[i + 3] = region.b0; rows[i + 4] = region.b1; rows[i + 5] = point[0]; rows[i + 6] = point[1]; rows[i + 7] = point[2];
     capture.count = Math.min(capture.count + 1, decisionLimits.splits);
     if (tick(stats, fields)) yield;
 }
@@ -101,6 +102,58 @@ function* retainedFrontier(plan: FrontierPlan, right: Index, region: Region, sta
     }
     forward = Math.max(joint, forward); reverse = Math.max(joint, reverse);
     return forward >= 0 || reverse >= 0 ? {joint, forward, reverse} : undefined;
+}
+type RecursiveSeed = Readonly<{ frontier: FrontierPlan; splits: SplitPlan; from: number; to: number; end: number }>;
+/** Cross-region bounds require frontier and split facts from the same working capture. */
+function* recursiveSeed(frontier: FrontierPlan | undefined, splits: SplitPlan | undefined, right: Index, stats: Stats): Generator<void, RecursiveSeed | undefined> {
+    if (!frontier || !splits || frontier.working !== splits.working) return;
+    const old = frontier.working;
+    let from = old.lines.size, to = from, end = from;
+    if (old.buffer !== right.buffer) {
+        const edges = yield* lineEdges(old.buffer, right.buffer, stats);
+        from = edges.aFrom === old.to ? old.lines.size : old.buffer.lineAt(edges.aFrom);
+        to = edges.aTo === old.to ? old.lines.size : old.buffer.lineAt(edges.aTo);
+        end = edges.bTo === right.to ? right.lines.size : right.buffer.lineAt(edges.bTo);
+    }
+    if (Math.max(to - from, end - from) > frontierLimits.changedRows) return;
+    return {frontier, splits, from, to, end};
+}
+/** An anchored parent direction is also exact inside a shorter unchanged child region.
+ * The stored y extent plus the wave distance bounds x, including move validations.
+ * A completed split supplies an exact distance; deleting/inserting outside the owned
+ * intersections bounds how far the new region distance can fall. This excludes early
+ * overlap before either reused direction catches up. No child wave is retained here. */
+function* retainedRecursive(seed: RecursiveSeed, region: Region, stats: Stats): Generator<void, {joint: number; forward: number; reverse: number} | undefined> {
+    const {frontier, splits, from, to, end} = seed, prior = frontier.region, n = region.a1 - region.a0, m = region.b1 - region.b0, shift = end - to;
+    const anchorF = region.a0 === prior.a0 && region.b0 === prior.b0;
+    const anchorR = region.a1 === prior.a1 && region.b1 === prior.b1 + shift;
+    if (tick(stats, 8)) yield;
+    if ((!anchorF && !anchorR) || n > prior.a1 - prior.a0 || m > prior.b1 - prior.b0) return;
+    const safeF = (p: FrontierPoint) => anchorF && p.seenF < from - region.b0 && p.seenF < m && p.seenF + p.distance < n;
+    const safeR = (p: FrontierPoint) => anchorR && p.seenR < prior.b1 - to && p.seenR < m && p.seenR + p.distance < n;
+    let possible = false;
+    for (const point of frontier.points) { possible ||= safeF(point) || safeR(point); if (tick(stats, 8)) yield; }
+    if (!possible) return;
+    const overlap = (a0: number, a1: number, b0: number, b1: number) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+    let lower = Math.abs(n - m);
+    for (let row = 0; row < splits.count; row++) {
+        const i = row * decisionLimits.fields, a0 = splits.rows[i + 1]!, a1 = splits.rows[i + 2]!, b0 = splits.rows[i + 3]!, b1 = splits.rows[i + 4]!;
+        const commonA = overlap(a0, a1, region.a0, region.a1);
+        const prefix = overlap(b0, Math.min(from, b1), region.b0, region.b1);
+        const suffix = overlap(Math.max(to, b0) + shift, b1 + shift, region.b0, region.b1);
+        // The prefix and shifted suffix are ordered disjoint common subsequences.
+        const costA = a1 - a0 + n - 2 * commonA, costB = b1 - b0 + m - 2 * (prefix + suffix);
+        lower = Math.max(lower, splits.rows[i + 7]! - costA - costB);
+        if (tick(stats, 24)) yield;
+    }
+    const limit = Math.ceil(lower / 2); let forward = -1, reverse = -1;
+    for (let index = 0; index < frontier.points.length; index++) {
+        const point = frontier.points[index]!;
+        if (point.distance <= limit) { if (safeF(point)) forward = index; if (safeR(point)) reverse = index; }
+        if (tick(stats, 10)) yield;
+    }
+    if (forward >= 0 || reverse >= 0) { return {joint: -1, forward, reverse}; }
+    return;
 }
 function* copyFrontier(forward: Int32Array, reverse: Int32Array, stats: Stats): Generator<void, readonly [Int32Array<ArrayBuffer>, Int32Array<ArrayBuffer>]> {
     const f = new Int32Array(forward.length), r = new Int32Array(reverse.length);
@@ -286,15 +339,16 @@ function* orderedCommonAlignment(left: Index, right: Index, region: Region, stat
     if (a0 < region.a1 || b0 < region.b1) changes.push({ a0, a1: region.a1, b0, b1: region.b1 });
     return changes;
 }
-function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: FrontierCapture): Generator<void, readonly [number, number] | Readonly<{ changes: readonly Region[] }>> {
+function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: FrontierCapture, seed?: RecursiveSeed): Generator<void, readonly [number, number, number] | Readonly<{ changes: readonly Region[] }>> {
     const n = region.a1 - region.a0, m = region.b1 - region.b0, maximum = Math.ceil((n + m) / 2), delta = n - m;
     let radius = 0, origin = 1, forward = new Int32Array(3).fill(-1), reverse = new Int32Array(3).fill(-1);
     if (tick(stats, 6)) yield;
     forward[origin + 1] = 0; reverse[origin + 1] = 0;
     let resumeDistance = 0, resumeForward = 0, resumeReverse = 0, together = 0, seenF = 0, seenR = 0;
     const points: FrontierPoint[] = [];
-    if (capture) {
-        const prior = capture.previous, retained = prior ? yield* retainedFrontier(prior, b, region, stats) : undefined;
+    if (capture || seed) {
+        const prior = capture?.previous ?? seed?.frontier;
+        const retained = capture ? prior ? yield* retainedFrontier(prior, b, region, stats) : undefined : seed ? yield* retainedRecursive(seed, region, stats) : undefined;
         if (prior && retained) {
             for (let index = 0; index <= retained.joint; index++) { points.push(prior.points[index]!); if (tick(stats)) yield; }
             const f = prior.points[retained.forward], r = prior.points[retained.reverse];
@@ -309,7 +363,7 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
                 if (tick(stats, 2)) yield;
             }
         }
-        capture.plan = { working: b, region, points };
+        if (capture) capture.plan = { working: b, region, points };
     }
     const start = (vector: Int32Array, diagonal: number): number => {
         const index = origin + diagonal, insert = vector[index + 1]!, remove = vector[index - 1]! < 0 ? -1 : vector[index - 1]! + 1;
@@ -370,7 +424,7 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
             const opposite = origin + delta - diagonal;
             if (distance >= together && x >= 0 && delta % 2 !== 0 && opposite >= 0 && opposite < reverse.length && reverse[opposite]! >= 0 && x >= n - reverse[opposite]!) {
                 if (capture?.plan) { capture.plan = {...capture.plan, minimum: 2 * distance - 1}; if (tick(stats)) yield; }
-                return [region.a0 + x, region.b0 + y];
+                return [region.a0 + x, region.b0 + y, 2 * distance - 1];
             }
             if (tick(stats)) yield;
         }
@@ -389,7 +443,7 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
             const opposite = origin + delta - diagonal;
             if (distance >= together && x >= 0 && delta % 2 === 0 && opposite >= 0 && opposite < forward.length && forward[opposite]! >= 0 && forward[opposite]! >= n - x) {
                 if (capture?.plan) { capture.plan = {...capture.plan, minimum: 2 * distance}; if (tick(stats)) yield; }
-                const split = forward[opposite]!; return [region.a0 + split, region.b0 + split - (delta - diagonal)];
+                const split = forward[opposite]!; return [region.a0 + split, region.b0 + split - (delta - diagonal), 2 * distance];
             }
             if (tick(stats)) yield;
         }
@@ -448,6 +502,7 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
             ? { previous: cache.frontier, first: true } : undefined;
         const splits: SplitCapture | undefined = frontier ? { count: 0, reused: false } : undefined;
         const savedSplits = splits && previousSplits && !reused ? yield* retainedSplits(previousSplits, right, stats) : undefined;
+        const seed = frontier && !reused ? yield* recursiveSeed(frontier.previous, previousSplits, right, stats) : undefined;
         const tasks: Region[] = [{ a0: 0, a1: left.lines.size, b0: 0, b1: right.lines.size }], changes: Region[] = [];
         const append = (change: Region) => {
             const previous = changes.at(-1);
@@ -472,7 +527,7 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
                 if (frontier) frontier.first = false;
                 const region = { a0, a1, b0, b1 }, saved = savedSplits?.get(regionKey(region));
                 if (savedSplits && tick(stats, 4)) yield;
-                const before = stats.work, split = saved?.point ?? (yield* bisect(left, right, region, stats, capture));
+                const before = stats.work, split = saved?.point ?? (yield* bisect(left, right, region, stats, capture, capture ? undefined : seed));
                 if (saved && splits) splits.reused = true;
                 if (splits && !("changes" in split)) yield* retainSplit(splits, region, split, saved?.work ?? stats.work - before, stats);
                 if ("changes" in split) { split.changes.forEach(append); continue; }

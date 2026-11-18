@@ -318,7 +318,7 @@ test("edits to unmatched rows reuse raw alignment and re-trim exact hunks throug
     cache.dispose();
 });
 
-for (const [fraction, maximumColdRatio] of [[0.25, 0.6], [0.75, 0.8]] as const)
+for (const [fraction, maximumColdRatio] of [[0.25, 0.6], [0.5, 0.48], [0.75, 0.8]] as const)
     test(`edited-region distance bounds reduce ${fraction} Enter work without changing canonical hunks`, () => {
         const original = Array.from({ length: 10000 }, (_, i) => `row ${i % 20}\n`).join("");
         const text = original.replaceAll("row 0\n", "changed 0\n").replaceAll("row 10\n", "changed 10\n").replaceAll("row 11\n", "row 11\nrow 11\n");
