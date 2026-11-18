@@ -125,15 +125,31 @@ if (reactHost) {
 }
 // Development harness types use the actual copied fixture, after the independent consumer
 // compile above. Node/Playwright declarations belong only to this separate tooling program.
-let pageLifecycleHarness, lspHarness;
-if (deferredOnly || lspOnly) {
-    const harnessName = lspOnly ? "lsp-harness" : "page-lifecycle";
+let pageLifecycleHarness, lspHarness, editingHarness;
+const plainEditing = !deferredOnly && !lspOnly && !reactOnly;
+if (deferredOnly || lspOnly || plainEditing) {
+    const harnessName = lspOnly ? "lsp-harness" : plainEditing ? "editing-harness" : "page-lifecycle";
     const scripts = await Promise.all((lspOnly ? ["scripts/package-lsp.mjs"]
+        : plainEditing ? ["scripts/package-pilot.mjs", "scripts/package-hunk-pilot.mjs", "scripts/host-typing.mjs", "scripts/host-reference-probe.mjs", "scripts/measurement.mjs"]
         : ["scripts/package-page-lifecycle.mjs", workspaceOnly ? "scripts/package-workspace.mjs" : "scripts/package-activation.mjs", "tests/helpers/latch.ts"])
         .map(path => realpath(join(project, path))));
+    const fixture = join(consumer, lspOnly ? "lsp.ts" : plainEditing ? "pilot.ts" : "activation-main.ts"), declarations = [];
+    if (plainEditing) {
+        const path = join(consumer, "editing-harness.d.ts");
+        await writeFile(path, `import type { mountPackagedPilot } from "./pilot.js";
+import type { HostReferenceProbe } from ${JSON.stringify(join(project, "scripts/host-reference-probe.mjs").replaceAll("\\", "/"))};
+type Fixture = ReturnType<typeof mountPackagedPilot>;
+declare global { interface Window {
+    hostFixture: Fixture;
+    mountPackagedPilot(text: Parameters<typeof mountPackagedPilot>[1]): ReturnType<Fixture["snapshot"]>;
+    hostReferenceProbe: HostReferenceProbe;
+} }
+`);
+        declarations.push(path);
+    }
     const configuration = join(consumer, `tsconfig.${harnessName}.json`);
     await writeFile(configuration, JSON.stringify({ compilerOptions: { ...compilerOptions, allowJs: true, checkJs: true,
-        allowImportingTsExtensions: true, types: ["node"], typeRoots: [join(project, "node_modules/@types")] }, files: [join(consumer, lspOnly ? "lsp.ts" : "activation-main.ts"), ...scripts] }));
+        allowImportingTsExtensions: true, types: ["node"], typeRoots: [join(project, "node_modules/@types")] }, files: [fixture, ...declarations, ...scripts] }));
     const output = execFileSync(process.execPath, [join(project, "node_modules/typescript/bin/tsc"), "-p", configuration, "--listFiles", "--pretty", "false"],
         { cwd: consumer, encoding: "utf8", stdio: "pipe", windowsHide: true });
     await writeFile(join(consumer, `${harnessName}-compiler-inputs.txt`), output);
@@ -148,11 +164,13 @@ if (deferredOnly || lspOnly) {
         inputs.push(input);
     }
     assert.ok(scripts.every(script => inputs.includes(script)) && inputs.includes(await realpath(join(assetRoot, "browser/index.d.ts"))), "Harness inputs must include its scripts and restored declarations.");
+    assert.ok(inputs.includes(await realpath(fixture)), "Harness must check the actual copied consumer fixture.");
     const harness = { checkedJavaScript: true, strict: true, skipLibCheck: false, inputs };
     if (lspOnly) {
         assert.ok(inputs.includes(await realpath(join(assetRoot, "protocol/index.d.ts"))), "LSP harness must use restored protocol declarations.");
         lspHarness = harness;
-    } else pageLifecycleHarness = harness;
+    } else if (plainEditing) editingHarness = harness;
+    else pageLifecycleHarness = harness;
 }
 const bundle = await build({ absWorkingDir: consumer, entryPoints: lspOnly ? { lsp: "lsp.ts" } : deferredOnly ? { activation: "activation-main.ts", ...(workspaceOnly ? { workspace: "workspace.ts" } : { activate: "activate.ts" }) } : { app: "main.ts", pilot: "pilot.ts", ...reactHost?.entryPoints }, bundle: true, format: "esm", platform: "browser",
     ...(deferredOnly ? { splitting: true, minify: true } : {}),
@@ -179,7 +197,7 @@ const activationOutputs = deferredOnly ? Object.fromEntries(Object.entries(bundl
 })) : {};
 await mkdir("artifacts/package", { recursive: true });
 await writeFile("artifacts/package/restored-consumer.json", JSON.stringify({ schemaVersion: 1,
-    packageSha256, consumer, assetRoot, reusedStage: !!reused, exportsResolution, ...(pageLifecycleHarness ? { pageLifecycleHarness } : {}), ...(lspHarness ? { lspHarness } : {}),
+    packageSha256, consumer, assetRoot, reusedStage: !!reused, exportsResolution, ...(pageLifecycleHarness ? { pageLifecycleHarness } : {}), ...(lspHarness ? { lspHarness } : {}), ...(editingHarness ? { editingHarness } : {}),
     browser: browserName, mode: prepareOnly ? "prepare-only" : benchmark ? "benchmark" : pilotOnly ? "pilot" : "full", scenario: lspOnly ? "lsp" : workspaceOnly ? "workspace" : activationOnly ? "activation" : reactOnly ? "react" : hunkOnly ? "hunk" : pilotOnly ? "recovery" : "all", corpus,
     declarations: { files: compilerFiles, strict: true, skipLibCheck: false, passed: true, ...(reactHost ? { inputs: typeInputs } : {}) },
     inputs: Object.keys(bundle.metafile.inputs).sort(), assets, readinessFixture,
