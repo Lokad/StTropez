@@ -310,6 +310,12 @@ check brackets execution. Arguments and declared workload environment settings d
 report variants, so a smoke configuration does not replace a full configuration's latest run.
 Failed or interrupted runs do not promote a completed latest report.
 
+Source capture hashes current file bytes for tracked and nonignored untracked paths, excluding
+unstaged deletions reported by Git. Staging an unchanged working tree does not change that
+content identity. Other read failures reject the capture. A retained campaign manifest requires
+every listed file and the aggregate hash to match, including files deleted after capture.
+Capture does not lock the working tree; keep source inputs stable throughout qualification.
+
 These records describe command outcomes. Measurement values, sample counts, clock definitions
 and readiness checks remain in each suite's reports; the listed owner report locations do not
 assert that new measurements exist after a failed command. The runner adds no retries or

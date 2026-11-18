@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { benchmarkSuites, selectBenchmarks } from "../../scripts/benchmark-suites.mjs";
 import { runBenchmarkCommand, runBenchmarkPlan, type BenchmarkPlan } from "../../scripts/benchmark-runner.mjs";
@@ -13,6 +15,46 @@ async function fixture(run: (root: string) => Promise<void>) {
     assert.equal(await realpath(root), root);
     await rm(root, { recursive: true });
 }
+
+test("source capture preserves current bytes through unstaged moves and retains strict manifest validation", async () => fixture(async root => {
+    const git = (...args: string[]) => execFileSync("git", ["-c", "core.autocrlf=false", ...args], { cwd: root, encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    git("init", "--quiet");
+    type Source = { commit: string | null; sha256: string; files: { path: string; sha256: string }[] };
+    const moduleUrl = new URL("../../scripts/measurement.mjs", import.meta.url).href;
+    const capture = (manifest = "") => JSON.parse(execFileSync(process.execPath, ["--input-type=module", "--eval",
+        `import { sourceIdentity } from ${JSON.stringify(moduleUrl)};
+try { console.log(JSON.stringify({ source: await sourceIdentity() })); }
+catch (error) { console.log(JSON.stringify({ error: { code: error.code, message: error.message } })); }`], {
+        cwd: root, encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, STTROPEZ_SOURCE_MANIFEST: manifest },
+    })) as { source?: Source; error?: { code?: string; message: string } };
+    const contents = new Map([
+        [".gitignore", "ignored/\nmanifest.json\n"], ["keep.ts", "const before = 1;\r\n"],
+        ["remove.ts", "removed\n"], ["old name.ts", "renamed\n"], ["staged.ts", "staged\n"],
+    ]);
+    const put = async (path: string, value: string) => { contents.set(path, value); await writeFile(join(root, path), value); };
+    for (const [path, value] of contents) await put(path, value);
+    git("add", "--all");
+    const original = capture(); assert.equal(original.error, undefined); assert.ok(original.source);
+    await put("keep.ts", "const after = 'é';\r\n");
+    await rm(join(root, "remove.ts")); contents.delete("remove.ts");
+    await rename(join(root, "old name.ts"), join(root, "new name.ts"));
+    contents.set("new name.ts", contents.get("old name.ts")!); contents.delete("old name.ts");
+    await put("π file.ts", "untracked\n");
+    await mkdir(join(root, "ignored")); await writeFile(join(root, "ignored/unused.ts"), "ignored\n");
+    const changed = capture(); assert.equal(changed.error, undefined); assert.ok(changed.source);
+    const expected = [...contents].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+        .map(([path, value]) => ({ path, sha256: createHash("sha256").update(value).digest("hex") }));
+    assert.deepEqual(changed.source.files, expected); assert.equal(changed.source.commit, null);
+    assert.notEqual(changed.source.sha256, original.source.sha256);
+    git("add", "--all"); assert.deepEqual(capture().source, changed.source);
+    const manifest = join(root, "manifest.json"); await writeFile(manifest, JSON.stringify(changed.source));
+    assert.deepEqual(capture(manifest).source, changed.source);
+    await writeFile(join(root, "keep.ts"), "different bytes\n");
+    assert.match(capture(manifest).error!.message, /Campaign source mismatch: keep\.ts/);
+    await rm(join(root, "keep.ts")); assert.equal(capture(manifest).error?.code, "ENOENT");
+    await mkdir(join(root, "keep.ts")); assert.ok(capture(manifest).error, "Non-file read failures are not omitted from retained manifests.");
+}));
 
 test("benchmark selection preserves named aliases, explicit prerequisites and workload arguments", async () => {
     assert.deepEqual(selectBenchmarks([]).suites.map(suite => suite.id), ["model", "editing"]);

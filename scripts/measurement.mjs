@@ -40,7 +40,11 @@ export async function sourceIdentity() {
         if (hash.digest("hex") !== manifest.sha256) throw new Error("Campaign source manifest mismatch.");
         return manifest;
     }
-    const paths = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean).sort();
+    // Index entries survive an unstaged deletion. Exclude only Git's known removals;
+    // a later disappearance or any other read failure still rejects the capture.
+    const deleted = new Set(execFileSync("git", ["ls-files", "--deleted", "-z"], { encoding: "utf8", windowsHide: true }).split("\0"));
+    const paths = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "--deduplicate", "-z"], { encoding: "utf8", windowsHide: true })
+        .split("\0").filter(path => path && !deleted.has(path)).sort();
     const hash = createHash("sha256");
     const files = [];
     for (const path of paths) {
@@ -50,7 +54,7 @@ export async function sourceIdentity() {
         files.push({ path, sha256 });
     }
     let commit = null;
-    try { commit = execFileSync("git", ["rev-parse", "--verify", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { /* New repository. */ }
+    try { commit = execFileSync("git", ["rev-parse", "--verify", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true }).trim(); } catch { /* New repository. */ }
     return { commit, sha256: hash.digest("hex"), files };
 }
 
