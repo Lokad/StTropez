@@ -117,8 +117,15 @@ The action host suite runs every feature case on the plain host. Explicit regist
 also selects React integration cases for choice/input identity and focus, multi-resource review
 with captured Save/Run, pending and committed-command remounts, provider recovery, lost command
 acknowledgements and large comparison commands. The general host suite owns stable refs,
-Strict Mode readiness, render isolation and root-error recovery. Both suites use the shared
-[host registration helper](../tests/browser/host-cases.ts); test titles do not select hosts.
+Strict Mode readiness, render isolation and root-error recovery. The shared
+[host coverage helper](../tests/browser/host-cases.ts) selects dimensions from metadata;
+each case registers at its declaration site so reports retain its file and line. Test titles
+do not select hosts.
+
+Color-preview interruption cases retain every mode on the plain host. React also owns proposed
+value changes and remounts; completed-preview/read-only recovery runs on both hosts. The separate
+F6 color journey retains control identity, keyboard traversal, focus and comparison history on
+both hosts.
 
 ### Behavioral coverage
 
