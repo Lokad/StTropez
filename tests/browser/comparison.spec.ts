@@ -133,8 +133,8 @@ test("tab replacement expires pending work and teardown leaves only host resourc
     await expect(page.locator(".st-comparison")).toHaveCount(0);
 });
 
-test("large comparison stays virtualized, exact and cooperative during real input", async ({ page }) => {
-    for (const kind of ["long", "unique", "repeated", "unbalanced"] as const) {
+for (const kind of ["long", "unique", "repeated", "unbalanced"] as const)
+    test(`${kind} comparison stays virtualized, exact and cooperative during real input`, async ({ page }) => {
         const { length, at } = await page.evaluate(kind => {
             const many = kind !== "long";
             const text = many ? Array.from({ length: 10000 }, (_, i) => `row ${kind === "unique" ? i : i % 20}\n`).join("") : "unchanged source line\r\n".repeat(30000);
@@ -171,8 +171,7 @@ test("large comparison stays virtualized, exact and cooperative during real inpu
                 expect(await page.evaluate(at => window.comparisonFixture.range(at, at + 2), at)).toBe(split ? "x\n" : "xn");
             }
         }
-    }
-});
+    });
 
 test("a full 100000-line hunk stays atomic under bounded history and permits later typing", async ({ page }) => {
     const reference = Array.from({ length: 100_000 }, (_, index) => `A${String(index).padStart(6, "0")} = 1234567890123;`).join("\n") + "X";
