@@ -1,6 +1,7 @@
 import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { publishFixtureDiagnostics, sourceDiagnosticUri } from "./fixture-diagnostics.ts";
+import { holdLspReplies } from "../helpers/lsp-replies.ts";
 // Explicit background process ownership also avoids the known Firefox context-deletion issue.
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
@@ -57,6 +58,26 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP edito
         await seed(page, "object", 6); await expect.poll(async () => (await provider(page)).connected).toBe(true); await field(page).pressSequentially(".");
         await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible(); expect(calls.at(-1)).toEqual({ triggerKind: 2, triggerCharacter: "." });
         await field(page).press("Escape"); await expect(page.getByRole("option")).toHaveCount(0); expect(await source(page)).toBe("object.");
+        await field(page).press("Tab"); await expect(field(page)).toBeFocused(); expect(await source(page)).toBe("object.    ");
+        await field(page).press("Control+z"); expect(await source(page)).toBe("object.");
+    });
+    if (mode === "plain") for (const completed of [false, true]) test(`${completed ? "empty" : "pending"} invisible completion preserves Escape focus traversal`, async ({ page }) => {
+        const replies = await holdLspReplies(page, "textDocument/completion"); await page.reload();
+        await seed(page, "const ", 6); await expect.poll(async () => (await provider(page)).connected).toBe(true);
+        replies.hold(); await field(page).pressSequentially("z"); await expect.poll(replies.waiting).toBe(true);
+        expect((await provider(page)).pending).toBe(true); await expect(page.getByRole("option")).toHaveCount(0);
+        if (completed) { await replies.release(); await expect.poll(async () => (await provider(page)).pending).toBe(false); }
+        const before = await snapshot(page), selection = before.bindings.views.find(view => view.id === "primary")!.selection;
+        await field(page).press("Escape"); await page.keyboard.press(completed ? "Shift+Tab" : "Tab");
+        const target = completed ? button(page, "Inject form error") : field(page, "Configuration path");
+        await expect(target).toBeFocused();
+        if (!completed) { await expect.poll(replies.cancelled).toBe(true); await replies.release(); }
+        await expect(target).toBeFocused(); await expect(page.getByRole("option")).toHaveCount(0);
+        const after = await snapshot(page); expect(after.source.revision).toBe(before.source.revision); expect(after.history).toEqual(before.history);
+        expect(after.bindings.views.find(view => view.id === "primary")!.selection).toEqual(selection); expect(await source(page)).toBe("const z");
+        await page.keyboard.press(completed ? "Tab" : "Shift+Tab"); await expect(field(page)).toBeFocused();
+        expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toEqual(selection);
+        await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 });
     });
     test("incomplete prefix lists refresh, filter provider metadata, resolve and commit with one shared undo", async ({ page }) => {
         const contexts: unknown[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "textDocument/completion") contexts.push(value.params.context); }));

@@ -178,7 +178,10 @@ before that stage skips the callback; cancelled preparation cannot publish or re
 
 Automatic completion follows ordinary prefix typing and advertised trigger characters after
 input settles, with one collapsed caret and no active composition. Ctrl/Cmd+Space invokes it
-explicitly. Arrows select, Enter replaces, Tab inserts and Escape dismisses. `chooseCompletion`,
+explicitly. Arrows select, Enter replaces, Tab inserts and Escape dismisses visible choices or
+an active snippet before editor commands. With no choices or snippet, Escape cancels pending
+completion work and reaches the editor, allowing Escape then Tab/Shift+Tab to leave the view.
+`chooseCompletion`,
 `accept` and `apply` accept an optional `completionId` for retained controls. Each list ID also
 changes after prefix filtering. The immutable `choices` array retains identity while its labels
 are unchanged, including diagnostic, selection and detail publications.

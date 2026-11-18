@@ -397,7 +397,11 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Text
     const keydown = (event: KeyboardEvent) => {
         if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;
         if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.code === "Space") { event.preventDefault(); request(); return; }
-        if (event.key === "Escape" && (snippet || job || inputIntent || autoFrame !== undefined)) { event.preventDefault(); cancel(); return; }
+        if (event.key === "Escape" && (snippet || job || inputIntent || autoFrame !== undefined)) {
+            // Invisible work must not consume the editor's focus-traversal arm.
+            if (snippet || job?.visible.length) event.preventDefault();
+            cancel(); return;
+        }
         if (snippet && event.key === "Tab" && !event.ctrlKey && !event.metaKey && !event.altKey) { if (moveSnippet(event.shiftKey ? -1 : 1)) event.preventDefault(); return; }
         if (snippet && (event.key === "ArrowDown" || event.key === "ArrowUp") && event.altKey && !event.ctrlKey && !event.metaKey) {
             const stop = snippet.stops[snippet.active]!, index = snippetChoiceIndex(snippet, stop), next = (Math.max(0, index) + (event.key === "ArrowDown" ? 1 : stop.choices.length - 1)) % stop.choices.length;
