@@ -49,7 +49,8 @@ The development project also checks the JavaScript entries listed in `tsconfig.j
 their imports: measurement, package scenarios, the browser harness, its server and the demo
 library catalogue, plus asset entry metadata, building, declaration finalization and shared
 Unicode generation I/O, package consumer/HTTP lifecycle ownership and benchmark selection,
-orchestration and report retention. Other scripts are outside its JavaScript checking scope.
+orchestration and report retention, plus shared host scenes and browser reference observations.
+Other scripts are outside its JavaScript checking scope.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected
 Chromium gate and the static-demo Chromium journey. A passing CI run has that scope;

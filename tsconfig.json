@@ -11,7 +11,7 @@
     "fixtures/**/*.ts", "examples/**/*.ts", "examples/**/*.tsx", "experiments/**/*.ts", "tests/**/*.ts", "playwright*.ts",
     "scripts/measurement.mjs", "scripts/package-scenarios.mjs", "scripts/browser-harness.mjs",
     "scripts/build.mjs", "scripts/finalize-assets.mjs", "scripts/unicode-generation.mjs", "scripts/package-consumer.mjs", "scripts/package-host.mjs",
-    "scripts/run-benchmarks.mjs"
+    "scripts/run-benchmarks.mjs", "scripts/host-scene.mjs"
   ],
   "references": [
     { "path": "./tsconfig.core.json" },

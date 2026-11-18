@@ -1,19 +1,8 @@
 import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
-const { installHostReferenceProbe } = await import(new URL("../../scripts/host-reference-probe.mjs", import.meta.url).href) as { installHostReferenceProbe: () => void };
-type HostScene = Readonly<{ mounted: boolean; mount(host: string, editor?: "native" | "candidate"): Promise<void>;
-    dispose(observe?: () => Promise<void>): Promise<ReturnType<Window["hostFixture"]["snapshot"]> | undefined>;
-    ready(): Promise<unknown>; sourceReady(): Promise<unknown>;
-    snapshot(): Promise<ReturnType<Window["hostFixture"]["snapshot"]>>; exactText(text: string, target?: "source" | "reference"): Promise<boolean> }>;
-const { createHostScene } = await import(new URL("../../scripts/host-scene.mjs", import.meta.url).href) as { createHostScene: (page: Page) => HostScene };
-type Result = { kind: string; transactions: number; insertedUnits: number; revision: number; commandToFullReviewReadyProxyMs: number | null;
-    lastInputToFullReviewReadyProxyMs: number | null; records: { trusted?: boolean; keydownHandlerMs?: number; inputHandlerMs?: number; workingRenderProxyMs: number | null }[] };
-type Probe = { arm: (options: { kind: string; text?: string; caretOffset?: number; operation?: string; replaceSelection?: boolean }) => void;
-    isSourceReady: (state?: ReturnType<Window["hostFixture"]["snapshot"]>) => boolean;
-    waitSourceReady: () => Promise<unknown>;
-    isReady: (state?: ReturnType<Window["hostFixture"]["snapshot"]>) => boolean;
-    waitReady: () => Promise<unknown>; read: () => Promise<Result>; snapshot: () => { finished: boolean; failure?: string; records: unknown[] } };
-declare global { interface Window { hostReferenceProbe: Probe } }
+import { installHostReferenceProbe, type HostReferenceProbe } from "../../scripts/host-reference-probe.mjs";
+import { createHostScene } from "../../scripts/host-scene.mjs";
+declare global { interface Window { hostReferenceProbe: HostReferenceProbe } }
 
 async function mount(page: Page, host: string) {
     await page.goto(`/hosts/${host}/?editor=candidate`); await ready(page);
@@ -148,6 +137,17 @@ test("review measurements await full selections, folds, queued input and referen
     })).toEqual({ pending: true, ready: false });
     await settle();
     expect(await page.evaluate(() => { window.hostFixture.dispose(); return window.hostReferenceProbe.isReady(); })).toBe(false);
+});
+
+test("an unmounted host produces a terminal observation instead of throwing during setup", async ({ page }) => {
+    const scene = createHostScene(page);
+    try {
+        await scene.mount("plain");
+        await page.evaluate(() => { window.hostFixture.unmount(); window.hostReferenceProbe.arm({ kind: "input", text: "q" }); });
+        await expect(page.evaluate(() => window.hostReferenceProbe.read())).rejects.toThrow("Reference experiment requires three ready bounded working views.");
+        expect(await page.evaluate(() => window.hostReferenceProbe.snapshot())).toMatchObject({
+            finished: true, failure: "Reference experiment requires three ready bounded working views.", records: [], generations: [] });
+    } finally { await scene.dispose(); }
 });
 
 test("review measurement propagates terminal settlement failure and releases the observation", async ({ page }) => {
