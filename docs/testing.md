@@ -133,6 +133,11 @@ also on React. Completed-token rejection and read-only target navigation run on 
 The separate F4 journey retains row identity, comparison/secondary selections and later-form
 focus on both hosts.
 
+Protocol interruption journeys use `tests/helpers/lsp-replies.ts` to hold completed replies
+by connection and request identity. They interrupt the captured operation before releasing
+the reply, then fence delivery with another reply on the same stream. Closed-transport tests
+own a separate boundary; reconnecting does not fence delivery on the old connection.
+
 ### Behavioral coverage
 
 An integration qualification asserts the resulting state, not only that an action completed.
