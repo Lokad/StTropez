@@ -127,7 +127,7 @@ if (reactHost) {
 // compile above. Node/Playwright declarations belong only to this separate tooling program.
 let pageLifecycleHarness;
 if (deferredOnly) {
-    const scripts = await Promise.all(["scripts/package-page-lifecycle.mjs", ...(workspaceOnly ? ["scripts/package-workspace.mjs", "tests/helpers/latch.ts"] : [])]
+    const scripts = await Promise.all(["scripts/package-page-lifecycle.mjs", workspaceOnly ? "scripts/package-workspace.mjs" : "scripts/package-activation.mjs", "tests/helpers/latch.ts"]
         .map(path => realpath(join(project, path))));
     const configuration = join(consumer, "tsconfig.page-lifecycle.json");
     await writeFile(configuration, JSON.stringify({ compilerOptions: { ...compilerOptions, allowJs: true, checkJs: true,
