@@ -394,6 +394,17 @@ for (const [count, fraction, maximumColdRatio] of [[10000, 0.25, 0.6], [10000, 0
                 }
             }
             if (count === 20000) {
+                // New reference matches can invalidate a narrower reuse proof. The fallback
+                // still needs the latest completed search state after the first Enter.
+                const editedText = edited.slice(0, edited.length), distantAt = editedText.indexOf("changed ", editedText.length * 0.75);
+                assert.ok(distantAt > at);
+                const matching = edited.replace(distantAt, distantAt, "row 0\n".repeat(7));
+                const fallback = finish(baseline, matching, cache), freshMatching = finish(baseline, matching);
+                assert.deepEqual(fallback.hunks, freshMatching.hunks); assert.equal(fallback.lineEdits, freshMatching.lineEdits);
+                reconstruct(fallback, original, matching.slice(0, matching.length));
+                assert.ok(fallback.work < 21_000_000, `later matching rows retain current search decisions: ${fallback.work}`);
+                const undone = finish(baseline, edited, cache);
+                assert.deepEqual(undone.hunks, expected.hunks); assert.equal(undone.lineEdits, expected.lineEdits);
                 const second = edited.replace(at + 5, at + 5, "\n");
                 for (const capture of [second, edited, second]) {
                     const warm = finish(baseline, capture, cache), fresh = finish(baseline, capture);
