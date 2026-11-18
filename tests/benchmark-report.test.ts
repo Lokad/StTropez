@@ -3,10 +3,8 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { distribution, timingSummary } from "../scripts/measurement.mjs";
+import { createReportWriter } from "../scripts/benchmark-report.mjs";
 type Report = { status: string; variant?: string; observations: number[] };
-const { createReportWriter } = await import(new URL("../scripts/benchmark-report.mjs", import.meta.url).href) as {
-    createReportWriter(directory: string, variant: string): Promise<{ file: string; latest: string; write(report: Report): Promise<void> }>;
-};
 
 test("smoke, in-progress and failed reports preserve completed evidence and terminal records", async () => {
     await mkdir("artifacts", { recursive: true }); const root = await mkdtemp(resolve("artifacts/report-test-"));

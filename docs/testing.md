@@ -48,8 +48,8 @@ independently against the public source entries using `tsconfig.base.json`.
 The development project also checks the JavaScript entries listed in `tsconfig.json` and
 their imports: measurement, package scenarios, the browser harness, its server and the demo
 library catalogue, plus asset entry metadata, building, declaration finalization and shared
-Unicode generation I/O and package consumer/HTTP lifecycle ownership. Other scripts are outside its
-JavaScript checking scope.
+Unicode generation I/O, package consumer/HTTP lifecycle ownership and benchmark selection,
+orchestration and report retention. Other scripts are outside its JavaScript checking scope.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected
 Chromium gate and the static-demo Chromium journey. A passing CI run has that scope;
@@ -236,6 +236,36 @@ fixtures after input validation. Ordinary library builds and consumer restores d
 these generators.
 
 ### Measurement policy
+
+Benchmark npm commands share a [suite manifest](../scripts/benchmark-suites.mjs) and a
+sequential runner. `bench`, `bench:pilot` and `bench:all` select their declared groups.
+The larger selection is not every available command: listing it also shows the
+commands outside that group. Its native-workspace suite includes the model workload internally.
+Named commands such as `bench:services` and `bench:host-drag-scroll` remain available.
+
+```sh
+npm run bench:all -- --list
+npm run bench:services -- --regex --whole-word
+node scripts/run-benchmarks.mjs --suite=host-drag-scroll --list
+```
+
+`--list` describes selection, prerequisites and owner report locations without starting work.
+Named npm commands forward workload arguments unchanged. Direct runner calls put workload
+arguments after `--`. Group calls reject workload arguments because applying a flag to only
+part of a group would be ambiguous; select a named suite instead. Package suites retain their
+explicit pack prerequisite and run through npm. A campaign runs its commands sequentially.
+
+The runner keeps a record and per-step stdout/stderr logs under `artifacts/bench/campaigns`.
+It stops after the first failed command, preserves its exit code when available, and marks
+later selected suites `not-run`. Unselected suites are listed separately. A source-identity
+check brackets execution. Arguments and declared workload environment settings distinguish
+report variants, so a smoke configuration does not replace a full configuration's latest run.
+Failed or interrupted runs do not promote a completed latest report.
+
+These records describe command outcomes. Measurement values, sample counts, clock definitions
+and readiness checks remain in each suite's reports; the listed owner report locations do not
+assert that new measurements exist after a failed command. The runner adds no retries or
+timeouts and does not infer device or latency qualification from a successful exit alone.
 
 Source browser benchmarks use a fixed development bundle with the compiler watcher disposed
 before browser launch (`buildMode: development-bundle-no-watch`). The shared harness starts
