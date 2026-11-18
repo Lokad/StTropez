@@ -4,11 +4,12 @@ import { attachProtocolFixture } from "../../fixtures/protocol/fixture-server.ts
 import { closePackageResources, closePackageServer, listenPackageServer } from "../../scripts/package-host.mjs";
 
 type Cleanup = () => unknown | Promise<unknown>;
+export type ProtocolFixture = Readonly<{
+    url: string; server: Server; defer: (cleanup: Cleanup) => void;
+}>;
 
 /** Own the real protocol server and unwind acquired test owners before detaching it. */
-export async function withProtocolFixture(run: (fixture: {
-    url: string; server: Server; defer: (cleanup: Cleanup) => void;
-}) => Promise<void>): Promise<void> {
+export async function withProtocolFixture(run: (fixture: ProtocolFixture) => Promise<void>): Promise<void> {
     const server = createServer(), cleanup: Cleanup[] = [], failures: unknown[] = [];
     let detach: Cleanup = () => {};
     try {

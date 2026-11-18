@@ -6,7 +6,7 @@ import { openWebSocketTransport } from "../src/browser/index.ts";
 import { RpcError, createLspActionClient, createLspColorClient, createLspHoverClient, createLspLinkClient, createLspNavigationClient, createLspRenameClient, createLspSignatureClient } from "../src/protocol/index.ts";
 import type { JsonValue, LspDocumentFeature, LspPrepare } from "../src/protocol/index.ts";
 import { latch } from "./helpers/latch.ts";
-import { withProtocolFixture } from "./helpers/protocol-fixture.ts";
+import { withProtocolFixture, type ProtocolFixture } from "./helpers/protocol-fixture.ts";
 
 const cancelled = (error: unknown) => error instanceof RpcError && error.code === -32800;
 
@@ -77,7 +77,7 @@ test("fixture hover policy belongs to the captured request across overlapping sc
     assert.equal(packets.some(packet => packet.method === "fixture/hoverConfig"), false);
 }));
 
-test("fixture language requests retain their own faults, module aliases and resolve policies", { timeout: 15000 }, async () => withProtocolFixture(async ({ url, defer }) => {
+async function languagePolicy({ url, defer }: ProtocolFixture) {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "language", resource: "source", variant: "working" }, "Source",
         { value: 'lookup("a", );\nimport "sample-utils";\nconst color = "#abc";' });
     defer(() => assert.equal(workspace.diagnostics().leases, 0));
@@ -92,7 +92,15 @@ test("fixture language requests retain their own faults, module aliases and reso
     defer(() => owner.dispose());
     const own = <T extends { dispose(): void }>(client: T): T => { defer(() => client.dispose()); return client; };
     const completionScope = () => { const scope = owner.createScope(); defer(() => scope.release()); return scope; };
-    const scope = owner.createScope(), signatures = [own(createLspSignatureClient(owner)), own(createLspSignatureClient(owner))],
+    const scope = owner.createScope();
+    scope.setDocuments([document]); await scope.ensureConnected();
+    const offset = document.text().indexOf("color") + 2;
+    return { owner, scope, document, offset, defaultUri, firstUri, secondUri, own, completionScope };
+}
+
+test("fixture faults stay local to overlapping language requests", { timeout: 15000 }, async () => withProtocolFixture(async fixture => {
+    const { owner, document, offset, own, completionScope } = await languagePolicy(fixture);
+    const signatures = [own(createLspSignatureClient(owner)), own(createLspSignatureClient(owner))],
         links = [own(createLspLinkClient(owner)), own(createLspLinkClient(owner))], colors = [own(createLspColorClient(owner)), own(createLspColorClient(owner))],
         navigation = [own(createLspNavigationClient(owner)), own(createLspNavigationClient(owner))], renames = [own(createLspRenameClient(owner)), own(createLspRenameClient(owner))],
         completion = [completionScope(), completionScope()], actions = [own(createLspActionClient(owner)), own(createLspActionClient(owner))];
@@ -108,8 +116,6 @@ test("fixture language requests retain their own faults, module aliases and reso
         assert.equal(outcomes[1]!.status, "fulfilled", method);
         if (outcomes[1]!.status === "fulfilled") assert.ok(outcomes[1]!.value, method);
     };
-    scope.setDocuments([document]); await scope.ensureConnected();
-    const offset = document.text().indexOf("color") + 2;
     await overlap("textDocument/completion", async (index, prepare) => {
         const session = completion[index]!; session.setDocuments([document]); await session.flush(); await prepare(session);
         return session.requestDocument("textDocument/completion", session.attachDocument(document.id), index => ({ position: index.at(offset) })).result;
@@ -123,7 +129,11 @@ test("fixture language requests retain their own faults, module aliases and reso
     const discovered = await Promise.all(colors.map(client => client.run(document)));
     assert.ok(discovered.every(batch => batch.items.length === 1));
     await overlap("textDocument/colorPresentation", (index, prepare) => discovered[index]!.presentations(discovered[index]!.items[0]!, { red: 0, green: 0, blue: 1, alpha: 1 }, prepare));
+}));
 
+test("fixture link captures retain nested aliases and independent resolve policy", { timeout: 15000 }, async () => withProtocolFixture(async fixture => {
+    const { owner, scope, document, defaultUri, firstUri, secondUri, own } = await languagePolicy(fixture);
+    const links = [own(createLspLinkClient(owner)), own(createLspLinkClient(owner))];
     // Distinct views of the same source capture different alias maps, including nested data.
     const prepared = latch<void>(); let count = 0;
     const batches = await Promise.all(links.map((client, index) => client.run(document, async session => {
@@ -146,6 +156,18 @@ test("fixture language requests retain their own faults, module aliases and reso
     assert.equal((await unconfigured.resolve(unconfigured.items[0]!)).target, defaultUri);
 
     const binding = scope.attachDocument(document.id);
+    for (const aliases of [null, [{ uri: firstUri }], [{ module: "sample-utils", uri: "" }], [{ module: "not a module", uri: firstUri }], Array(101).fill({ module: "sample-utils", uri: firstUri })]) {
+        await assert.rejects(scope.requestDocument("textDocument/documentLink", binding, () => ({ _fixture: { delay: 0, aliases } })).result,
+            error => error instanceof RpcError && error.code === -32602);
+    }
+    await assert.rejects(scope.request("documentLink/resolve", { ...values, _fixture: { delay: 0, fault: "failure" } }).result,
+        error => error instanceof RpcError && error.code === -32602);
+}));
+
+test("fixture action captures retain module and resolve policies", { timeout: 15000 }, async () => withProtocolFixture(async fixture => {
+    const { owner, scope, document, offset, own } = await languagePolicy(fixture);
+    const actions = [own(createLspActionClient(owner)), own(createLspActionClient(owner))];
+    const binding = scope.attachDocument(document.id);
     const actionBatches = await Promise.all(actions.map((client, index) => client.run([document], document.id, offset, offset,
         session => owner.prepareRequest(session, "textDocument/codeAction", { delay: 0, module: index ? "other-utils" : "first-utils" }))));
     for (const [index, batch] of actionBatches.entries()) assert.ok(batch.actions[0]!.edit!.documents[0]!.edits[0]!.insert.includes(index ? "other-utils" : "first-utils"));
@@ -158,10 +180,4 @@ test("fixture language requests retain their own faults, module aliases and reso
     for (const module of [null, 7, "invalid module"]) await assert.rejects(scope.requestDocument("textDocument/codeAction", binding, () => ({
         range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }, context: { diagnostics: [] }, _fixture: { delay: 0, module },
     })).result, error => error instanceof RpcError && error.code === -32602);
-    for (const aliases of [null, [{ uri: firstUri }], [{ module: "sample-utils", uri: "" }], [{ module: "not a module", uri: firstUri }], Array(101).fill({ module: "sample-utils", uri: firstUri })]) {
-        await assert.rejects(scope.requestDocument("textDocument/documentLink", binding, () => ({ _fixture: { delay: 0, aliases } })).result,
-            error => error instanceof RpcError && error.code === -32602);
-    }
-    await assert.rejects(scope.request("documentLink/resolve", { ...values, _fixture: { delay: 0, fault: "failure" } }).result,
-        error => error instanceof RpcError && error.code === -32602);
 }));
