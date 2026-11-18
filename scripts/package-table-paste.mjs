@@ -3,15 +3,27 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { sourceIdentity } from "./measurement.mjs";
 import { hostTextEquals } from "./host-scene.mjs";
 
-/** Actual staged host code consumes only restored public assets; no checkout runtime fallback. */
+/** Actual staged host code consumes only restored public assets; no checkout runtime fallback.
+ * @param {import('@playwright/test').Browser} browser
+ * @param {string} origin
+ * @param {{ directory: string; packageSha256: string }} options
+ */
 export async function runPackagedTablePaste(browser, origin, options) {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } }), errors = [], source = await sourceIdentity();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } }), /** @type {string[]} */ errors = [], source = await sourceIdentity();
     page.on("pageerror", error => errors.push(error.message));
+    /** @param {string} name */
     const click = name => page.getByRole("button", { name, exact: true }).click();
     const ready = () => page.waitForFunction(() => { const s = window.hostFixture.snapshot(), c = s.bindings.comparison;
-        return !s.bindings.tablePaste.pending && s.bindings.views.every(v => !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision)
-            && (!c || c.status === "ready" && !c.workingViewport.pending && !c.referenceViewport.pending); });
+        return !s.bindings.tablePaste.pending && s.bindings.views.every(v => v.metrics !== null && !v.metrics.pendingCaret && !v.metrics.pendingWord && !v.metrics.pendingGrapheme && !v.metrics.viewport.pending && v.metrics.viewport.revision === s.source.revision)
+            && (!c || c.status === "ready" && !c.workingViewport.pending && c.referenceViewport !== undefined && !c.referenceViewport.pending); });
+    /** @param {string} text */
     const exact = text => hostTextEquals(page, text);
+    /** @param {ReturnType<Window['hostFixture']['snapshot']>} state */
+    const primary = state => {
+        const view = state.bindings.views.find(v => v.id === "primary");
+        assert.ok(view, "Primary source view must be mounted.");
+        return view;
+    };
     try {
         await page.goto(origin + "/hosts/react/?editor=candidate");
         const original = "AA\r\n" + "const unchanged = 123;\r\n".repeat(100000) + "ZZ", csv = '"city","value"\r\n"東京","A,""B"""', expected = csv + original.slice(2, -2) + csv;
@@ -26,16 +38,16 @@ export async function runPackagedTablePaste(browser, origin, options) {
             node.dispatchEvent(event); });
         await ready(); assert.equal(await exact(expected), true);
         const pasted = await page.evaluate(() => window.hostFixture.snapshot()); assert.equal(pasted.bindings.tablePaste.status, "applied"); assert.equal(pasted.history.undoDepth, before.history.undoDepth + 1); assert.equal(pasted.source.exports, 0);
-        assert.equal(pasted.bindings.views.find(v => v.id === "primary").selectionSet.ranges.length, 2);
+        assert.equal(primary(pasted).selectionSet.ranges.length, 2);
         await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await ready(); assert.equal(await exact(original), true);
-        assert.deepEqual((await page.evaluate(() => window.hostFixture.snapshot())).bindings.views.find(v => v.id === "primary").selectionSet, before.bindings.views.find(v => v.id === "primary").selectionSet);
+        assert.deepEqual(primary(await page.evaluate(() => window.hostFixture.snapshot())).selectionSet, primary(before).selectionSet);
         await input.press("Control+Shift+z"); await ready(); assert.equal(await exact(expected), true);
         await input.press("Control+s"); await page.waitForFunction(() => window.hostFixture.snapshot().pendingSaves.length === 1);
         await input.press("Escape"); await input.press("Control+End"); await input.pressSequentially(" later"); await page.evaluate(() => window.hostFixture.finishSave()); await ready(); assert.equal(await exact(expected + " later"), true);
         await input.press("Control+z"); await ready(); assert.equal(await exact(expected), true); assert.equal((await page.evaluate(() => window.hostFixture.snapshot())).source.dirty, false);
-        const viewId = (await page.evaluate(() => window.hostFixture.snapshot())).bindings.views.find(v => v.id === "primary").viewId;
+        const viewId = primary(await page.evaluate(() => window.hostFixture.snapshot())).viewId;
         await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); }); await ready();
-        assert.equal((await page.evaluate(() => window.hostFixture.snapshot())).bindings.views.find(v => v.id === "primary").viewId, viewId);
+        assert.equal(primary(await page.evaluate(() => window.hostFixture.snapshot())).viewId, viewId);
         const reference = await page.evaluate(() => window.hostFixture.referenceRange(0, 4)); assert.equal(reference, "AA\r\n");
         await page.evaluate(() => window.hostFixture.dispose());
         const released = await page.evaluate(() => { const s = window.hostFixture.snapshot(); return { views: s.diagnostics.views, leases: s.diagnostics.leases, subscriptions: s.diagnostics.subscriptions, host: s.hostSubscriptions, pasteSessions: s.bindings.tablePaste.sessions }; });

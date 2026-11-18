@@ -53,7 +53,8 @@ library catalogue, plus asset entry metadata, building, declaration finalization
 Unicode generation I/O, package consumer/HTTP lifecycle ownership and benchmark selection,
 orchestration and report retention, plus shared host scenes, browser reference observations,
 static-demo building/serving and package host-fixture staging, qualification coordination,
-public export resolution, public import remapping and compiler-root isolation.
+public export resolution, public import remapping, compiler-root isolation and the restored
+React table-paste caller against the host fixture's declared snapshot.
 Other scripts are outside its JavaScript checking scope.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected
