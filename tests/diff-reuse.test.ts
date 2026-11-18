@@ -364,16 +364,17 @@ test("edits to unmatched rows reuse raw alignment and re-trim exact hunks throug
     cache.dispose();
 });
 
-test("joining an unmatched and matching row preserves exact review through typing and history", () => {
+for (const matching of [1, 2]) test(`joining ${matching === 1 ? "an unmatched and matching row" : "two matching rows"} preserves exact review through typing and history`, () => {
     const original = Array.from({ length: 20000 }, (_, i) => `row ${i % 20}\n`).join("");
     const text = original.replaceAll("row 0\n", "changed 0\n").replaceAll("row 10\n", "changed 10\n").replaceAll("row 11\n", "row 11\nrow 11\n");
     const baseline = TextBuffer.from(original), working = TextBuffer.from(text), cache = new DiffReferenceCache();
-    const at = text.indexOf("\n", text.indexOf("changed ", Math.floor(text.length * 0.5)));
+    const first = text.indexOf("\n", text.indexOf("changed ", Math.floor(text.length * 0.5)));
+    const at = matching === 1 ? first : text.indexOf("\n", first + 1), joinWork = matching === 1 ? 7_500_000 : 8_000_000;
     const joined = working.replace(at, at + 1, ""), typed = joined.replace(at, at, "!");
     try {
         finish(baseline, working, cache);
-        for (const [label, capture, maximumWork] of [["join", joined, 7_500_000], ["type", typed, 23_000],
-            ["undo typing", joined, 23_000], ["undo join", working, 11_200_000], ["redo join", joined, 7_500_000]] as const) {
+        for (const [label, capture, maximumWork] of [["join", joined, joinWork], ["type", typed, 23_000],
+            ["undo typing", joined, 23_000], ["undo join", working, 11_200_000], ["redo join", joined, joinWork]] as const) {
             const warm = finish(baseline, capture, cache), fresh = finish(baseline, capture);
             assert.deepEqual(warm.hunks, fresh.hunks); assert.equal(warm.lineEdits, fresh.lineEdits);
             reconstruct(warm, original, capture.slice(0, capture.length));
@@ -455,7 +456,7 @@ for (const [count, fraction, maximumColdRatio, maximumHistoryRatio = maximumCold
         } finally { cache.dispose(); }
     });
 
-for (const [count, fraction, matchingRun = false, omission = false, typing = false, join = false] of [[2000, 0.25], [2000, 0.5], [2000, 0.75], [20000, 0.5], [20000, 0.75, true], [20000, 0.75, true, true], [20000, 0.75, false, true], [20000, 0.75, false, true, true], [20000, 0.5, false, false, false, true]] as const) test(`comparison decision reuse survives cancellation and failure without publishing superseded captures: ${count}/${fraction}${join ? "/join" : typing ? "/typing after omission" : omission ? matchingRun ? "/omission" : "/omission without run" : ""}`, () => {
+for (const [count, fraction, matchingRun = false, omission = false, typing = false, join = 0] of [[2000, 0.25], [2000, 0.5], [2000, 0.75], [20000, 0.5], [20000, 0.75, true], [20000, 0.75, true, true], [20000, 0.75, false, true], [20000, 0.75, false, true, true], [20000, 0.5, false, false, false, 1], [20000, 0.5, false, false, false, 2]] as const) test(`comparison decision reuse survives cancellation and failure without publishing superseded captures: ${count}/${fraction}${join === 2 ? "/matching join" : join ? "/join" : typing ? "/typing after omission" : omission ? matchingRun ? "/omission" : "/omission without run" : ""}`, () => {
     const original = Array.from({ length: count }, (_, i) => `row ${i % 20}\n`).join("");
     const text = original.replaceAll("row 0\n", "changed 0\n").replaceAll("row 10\n", "changed 10\n").replaceAll("row 11\n", "row 11\nrow 11\n");
     const baseline = TextBuffer.from(original), cache = new DiffReferenceCache();
@@ -467,7 +468,7 @@ for (const [count, fraction, matchingRun = false, omission = false, typing = fal
     }
     const current = working.slice(0, working.length), at = current.indexOf("changed ", current.length * fraction) + (matchingRun ? 0 : 3);
     let split = working.replace(at, at, matchingRun ? "row 0\n".repeat(7) : "\n");
-    if (join) { const end = current.indexOf("\n", at); split = working.replace(end, end + 1, ""); }
+    if (join) { const first = current.indexOf("\n", at), end = join === 2 ? current.indexOf("\n", first + 1) : first; split = working.replace(end, end + 1, ""); }
     if (omission) {
         if (matchingRun) { finish(baseline, working, cache); working = split; }
         const remove = working.slice(0, working.length).indexOf("row 1\n", at + (matchingRun ? 42 : 0));

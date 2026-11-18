@@ -219,16 +219,18 @@ counts only guaranteed remaining work, including interior-cell checks on waves t
 reach a document boundary under the known minimum distance. Eligibility uses the captured
 changed window and complete reference alphabet.
 
-The root can derive its own exact optimum from the same optional-run certificate. When a
-captured matchable edit has a distance lower bound extending beyond the last retained
-checkpoint, the existing alphabet scans also collect reference counts and contiguous working
-runs. Only complete facts from that region are used. The root first preserves every ordinary
+The root can derive its own exact optimum from the same optional-run certificate. A captured
+window contains at most 256 old and new rows. When either side contains a reference-matchable
+token and the distance lower bound extends beyond the last retained checkpoint, the existing
+alphabet scans also collect reference counts, working occurrence counts and contiguous working
+runs. Eligibility depends on the captured window, including removals, replacements and joins.
+Only complete facts from that region are used. The root first preserves every ordinary
 current checkpoint through the final retained distance, then attempts certification if its
 reduced scan-cost bound fits the remaining guaranteed search work. Incomplete facts, ambiguous
 matches and insufficient remaining work keep the ordinary search.
 
-A captured removal of one complete working row can also admit one omitted matchable reference
-row. The certificate requires at least three other matchable rows between optional occurrences,
+A certificate can also admit one omitted matchable reference row. It requires at least three
+other matchable rows between optional occurrences,
 failure to embed all required rows, and exactly one reference-row omission that permits the
 remaining rows to embed. Its prefix/suffix gap is at most 256 working rows, and the optional
 occurrence must be unique. The same profile pair is repaired in place; incomplete or
@@ -236,22 +238,16 @@ ambiguous proofs decline. Prepared comparison-length sums bound the extra scans 
 rereading token metadata. Admission waits for every ordinary root checkpoint and fits
 the guaranteed remaining work; retained storage and current-capture publication are unchanged.
 
-When no optional run is eligible, a captured removal can instead certify one uniquely omitted
-row among all matchable reference rows. Failure to embed the full sequence and a unique feasible
+When no optional run is eligible, complete occurrence counts select a one- or two-omission
+proof among all matchable reference rows. For one omission, failure to embed the full sequence and a unique feasible
 omission establish the exact optimum. This path shares the same profile repair, bounded gap,
 root checkpoints and admission budget; ambiguous optional candidates retain ordinary search.
 
-The same removal proof can admit a captured join of two short rows when exactly one old row
-is matchable and the merged row is unmatched. This shape enables the existing proof; exact
-embedding and uniqueness checks determine whether it can replace ordinary search.
-
-A captured one-row replacement that changes reference matchability can use complete occurrence
-counts to select a one- or two-omission proof. With no optional run, two omissions require that
-at most one omission cannot embed and exactly two reference ordinals are feasible omissions.
+Two omissions require that at most one omission cannot embed and exactly two reference ordinals are feasible omissions.
 Those ordinals fix every optimum reference match. Capped prefix/suffix scans reuse the same
 profile pair, with an outer repair gap of at most 256 rows. Admission bounds all scans against
 guaranteed remaining work after the ordinary root checkpoints. Undo uses the same captured
-replacement rule; ambiguous masks, incompatible count bounds and incomplete facts decline.
+window rule; ambiguous masks, incompatible count bounds and incomplete facts decline.
 
 Certificates examine at most 65,536 rows per side. A temporary profile set contains at most
 65,536 byte flags and two 65,537-entry unsigned 32-bit vectors, plus bounded token references

@@ -875,41 +875,21 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
         if ((distance === 64 || distance === resumeDistance && resumeDistance > 64) && Math.min(n, m) >= 64) {
             const changes = yield* singleTokenAlignment(a, b, region, stats);
             if (changes) return { changes };
-            // Removals and replacements can lose a reference match. Inspect the captured
-            // old row; child speculation keeps its existing insertion guard.
-            let omission = false, replacement = false;
-            if (capture && seed && rootAlphabet && seed.end === seed.from && seed.to === seed.from + 1) {
-                const token = (yield* getLine(seed.frontier.working, seed.from, stats)).token;
-                omission = token !== undefined && rootAlphabet.has(token);
-                if (tick(stats, (token?.length ?? 0) + 4)) yield;
-            }
-            // Joining one matchable and one unmatched row can remove one required occurrence.
-            if (capture && seed && rootAlphabet && seed.to === seed.from + 2 && seed.end === seed.from + 1) {
-                const token = (yield* getLine(b, seed.from, stats)).token;
-                if (tick(stats, (token?.length ?? 0) + 4)) yield;
-                if (token !== undefined && !rootAlphabet.has(token)) {
-                    let matches = 0, complete = true;
-                    for (let row = seed.from; row < seed.to; row++) {
-                        const old = (yield* getLine(seed.frontier.working, row, stats)).token;
-                        complete &&= old !== undefined;
-                        if (old !== undefined && rootAlphabet.has(old)) matches++;
-                        if (tick(stats, (old?.length ?? 0) + 4)) yield;
-                    }
-                    omission = complete && matches === 1;
-                }
-            }
-            if (capture && seed && rootAlphabet && seed.to === seed.from + 1 && seed.end === seed.to) {
-                const old = (yield* getLine(seed.frontier.working, seed.from, stats)).token;
-                const current = (yield* getLine(b, seed.from, stats)).token;
-                replacement = old !== undefined && current !== undefined && rootAlphabet.has(old) !== rootAlphabet.has(current);
-                if (tick(stats, (old?.length ?? 0) + (current?.length ?? 0) + 8)) yield;
-            }
-            const rootLower = capture && seed && rootAlphabet && (omission || replacement || (yield* changedReferenceMatch(b, seed, rootAlphabet, stats)))
-                ? yield* recursiveDistance(seed, region, stats) : undefined;
+            // A bounded captured window can change required matches regardless of its row-count shape.
+            const rootLower = capture && seed && rootAlphabet ? yield* recursiveDistance(seed, region, stats) : undefined;
             // No certificate can fit after the last retained wave if the lower bound ends there.
-            const optionalRoot = rootLower !== undefined && Math.ceil(rootLower / 2) > frontierLimits.lastDistance;
+            let optionalRoot = false;
+            if (rootLower !== undefined && Math.ceil(rootLower / 2) > frontierLimits.lastDistance && seed && rootAlphabet) {
+                for (let row = seed.from; row < seed.to; row++) {
+                    const token = (yield* getLine(seed.frontier.working, row, stats)).token;
+                    if (tick(stats, (token?.length ?? 0) + 4)) yield;
+                    if (token !== undefined && rootAlphabet.has(token)) { optionalRoot = true; break; }
+                }
+                if (!optionalRoot) optionalRoot = yield* changedReferenceMatch(b, seed, rootAlphabet, stats);
+            }
             const facts: CommonFacts | undefined = root || optionalRoot || certificateBudget && certificateBudget.remaining > 0
-                ? {maximum: 0, ...(optionalRoot ? {optional: {records: new Map(), complete: false, ...(omission || replacement ? {omission: {comparison: 0, maximum: 0, ...(replacement ? {replacement: {required: 0, missing: 0, lower: rootLower!}} : {})}} : {})}} : {})} : undefined;
+                ? {maximum: 0, ...(optionalRoot ? {optional: {records: new Map(), complete: false,
+                    omission: {comparison: 0, maximum: 0, replacement: {required: 0, missing: 0, lower: rootLower!}}}} : {})} : undefined;
             const ordered = yield* orderedCommonAlignment(a, b, region, stats, facts);
             if (ordered) { if (capture) capture.ordered = true; return { changes: ordered }; }
             if (facts?.working && root && capture && rootAlphabet) {
