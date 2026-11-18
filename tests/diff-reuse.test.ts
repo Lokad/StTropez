@@ -409,15 +409,15 @@ for (const [count, fraction, maximumColdRatio, maximumHistoryRatio = maximumCold
                 const requiredAt = editedText.indexOf("row 1\n", distantAt);
                 assert.ok(requiredAt > distantAt);
                 const omitted = edited.replace(requiredAt, requiredAt + "row 1\n".length, "");
-                // Editing another matching row needs ordinary search; retain its measured work bound.
+                // Editing another matching row forces two omissions; undo restores the single omission.
                 const typedOmitted = omitted.replace(requiredAt + 2, requiredAt + 2, "!");
                 const history = [["matching run", matching, 12_000_000], ["type after matching", typed, 23_000],
                     ["undo typing", matching, 23_000], ["delete required row", deleted, 12_000_000],
                     ["type after deletion", typedDeleted, 23_000], ["undo deletion typing", deleted, 23_000],
                     ["undo required deletion", matching, 12_000_000], ["undo matching", edited, 15_350_000],
                     ["redo matching", matching, 12_000_000], ["undo matching again", edited, 15_350_000],
-                    ["delete without matching run", omitted, 11_000_000], ["type after required omission", typedOmitted, 19_500_000],
-                    ["undo omission typing", omitted, 18_650_000], ["undo required omission", edited, 14_800_000],
+                    ["delete without matching run", omitted, 11_000_000], ["type after required omission", typedOmitted, 12_100_000],
+                    ["undo omission typing", omitted, 11_600_000], ["undo required omission", edited, 14_800_000],
                     ["redo required omission", omitted, 11_000_000], ["undo required omission again", edited, 14_800_000]] as const;
                 for (const [label, capture, maximumWork] of history) {
                     const warm = finish(baseline, capture, cache), fresh = finish(baseline, capture);
@@ -437,7 +437,7 @@ for (const [count, fraction, maximumColdRatio, maximumHistoryRatio = maximumCold
         } finally { cache.dispose(); }
     });
 
-for (const [count, fraction, matchingRun = false, omission = false] of [[2000, 0.25], [2000, 0.5], [2000, 0.75], [20000, 0.5], [20000, 0.75, true], [20000, 0.75, true, true], [20000, 0.75, false, true]] as const) test(`comparison decision reuse survives cancellation and failure without publishing superseded captures: ${count}/${fraction}${omission ? matchingRun ? "/omission" : "/omission without run" : ""}`, () => {
+for (const [count, fraction, matchingRun = false, omission = false, typing = false] of [[2000, 0.25], [2000, 0.5], [2000, 0.75], [20000, 0.5], [20000, 0.75, true], [20000, 0.75, true, true], [20000, 0.75, false, true], [20000, 0.75, false, true, true]] as const) test(`comparison decision reuse survives cancellation and failure without publishing superseded captures: ${count}/${fraction}${typing ? "/typing after omission" : omission ? matchingRun ? "/omission" : "/omission without run" : ""}`, () => {
     const original = Array.from({ length: count }, (_, i) => `row ${i % 20}\n`).join("");
     const text = original.replaceAll("row 0\n", "changed 0\n").replaceAll("row 10\n", "changed 10\n").replaceAll("row 11\n", "row 11\nrow 11\n");
     const baseline = TextBuffer.from(original), cache = new DiffReferenceCache();
@@ -453,13 +453,14 @@ for (const [count, fraction, matchingRun = false, omission = false] of [[2000, 0
         if (matchingRun) { finish(baseline, working, cache); working = split; }
         const remove = working.slice(0, working.length).indexOf("row 1\n", at + (matchingRun ? 42 : 0));
         assert.ok(remove > at); split = working.replace(remove, remove + "row 1\n".length, "");
+        if (typing) { finish(baseline, working, cache); working = split; split = working.replace(remove + 2, remove + 2, "!"); }
     }
     const expected = finish(baseline, split);
     assert.ok(finish(baseline, working, cache).lineComparisons >= 100000, "retain an eligible expensive frontier");
     // Cancel after actual search progress, independently of the completed cold job's cost.
     // The omission case interrupts both in-place profile repair and later subtree sharing.
     const reached = (value: DiffProgress, threshold = matchingRun ? 9_000_000 : 3_000_000) => count === 20000 ? value.work >= threshold : value.lineComparisons >= 256;
-    for (const threshold of omission ? [5_200_000, 9_000_000] : [matchingRun ? 9_000_000 : 3_000_000]) {
+    for (const threshold of omission ? [typing ? 5_700_000 : 5_200_000, 9_000_000] : [matchingRun ? 9_000_000 : 3_000_000]) {
         const cancelled = new TextDiff(baseline, split, cache); let partial = cancelled.next(512);
         while (partial.status === "running" && !reached(partial, threshold)) partial = cancelled.next(512);
         assert.ok(reached(partial, threshold));

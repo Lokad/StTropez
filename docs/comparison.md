@@ -241,6 +241,14 @@ row among all matchable reference rows. Failure to embed the full sequence and a
 omission establish the exact optimum. This path shares the same profile repair, bounded gap,
 root checkpoints and admission budget; ambiguous optional candidates retain ordinary search.
 
+A captured one-row replacement that changes reference matchability can use complete occurrence
+counts to select a one- or two-omission proof. With no optional run, two omissions require that
+at most one omission cannot embed and exactly two reference ordinals are feasible omissions.
+Those ordinals fix every optimum reference match. Capped prefix/suffix scans reuse the same
+profile pair, with an outer repair gap of at most 256 rows. Admission bounds all scans against
+guaranteed remaining work after the ordinary root checkpoints. Undo uses the same captured
+replacement rule; ambiguous masks, incompatible count bounds and incomplete facts decline.
+
 Certificates examine at most 65,536 rows per side. A temporary profile set contains at most
 65,536 byte flags and two 65,537-entry unsigned 32-bit vectors, plus bounded token references
 and alphabet metadata. This temporary state is not published in the cache and is separate

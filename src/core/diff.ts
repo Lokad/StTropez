@@ -345,14 +345,21 @@ function* completeCommonAlignment(left: Index, right: Index, region: Region, row
             }
             if (previous !== token) record.blocks++;
             record.to = bi - region.b0 + 1; previous = token;
+            if (facts?.optional?.omission?.replacement) { record.occurrences = (record.occurrences ?? 0) + 1; if (tick(stats, 2)) yield; }
         } else tokens!.add(token);
-        // Sum comparison lengths for the captured removal without rereading row tokens.
+        // Sum comparison lengths for the captured edit without rereading row tokens.
         if (facts?.optional?.omission) {
             const bound = facts.optional.omission, cost = Math.max(token.length, facts.maximum);
             bound.comparison += cost; bound.maximum = Math.max(bound.maximum, cost);
             if (tick(stats, 2)) yield;
         }
         if (tick(stats, token.length + (runs ? 8 : 4))) yield;
+    }
+    const replacement = facts?.optional?.omission?.replacement;
+    if (replacement) for (const record of runs!.values()) {
+        replacement.required += record.count;
+        replacement.missing += Math.max(0, record.count - record.occurrences!);
+        if (tick(stats, 6)) yield;
     }
     if (facts) { facts.working = rightTokens; if (facts.optional) facts.optional.complete = true; if (tick(stats, facts.optional ? 2 : 1)) yield; }
     const changes: Region[] = []; let a0 = region.a0, b0 = region.b0, ai = a0, bi = b0;
@@ -415,8 +422,9 @@ function* orderedCommonAlignment(left: Index, right: Index, region: Region, stat
     if (a0 < region.a1 || b0 < region.b1) changes.push({ a0, a1: region.a1, b0, b1: region.b1 });
     return changes;
 }
-type OptionalRecord = {from: number; to: number; blocks: number; count: number};
-type CommonFacts = { working?: Alphabet; maximum: number; optional?: {records: Map<string, OptionalRecord>; complete: boolean; omission?: {comparison: number; maximum: number}} };
+type OptionalRecord = {from: number; to: number; blocks: number; count: number; occurrences?: number};
+type ReplacementFacts = {required: number; missing: number; lower: number};
+type CommonFacts = { working?: Alphabet; maximum: number; optional?: {records: Map<string, OptionalRecord>; complete: boolean; omission?: {comparison: number; maximum: number; replacement?: ReplacementFacts}} };
 type ChildDistance = { minimum?: number };
 /** The complete working alphabet and all short row tokens are already materialized.
  * If every matchable reference row embeds in order, every optimum must match them all.
@@ -471,8 +479,7 @@ function* requiredReferenceSplit(left: Index, right: Index, region: Region, fact
 /** A unique omitted ordinal fixes the optimum mask. Repair the same profile pair in place. */
 function* omitRequiredRow(right: Index, profiles: RootProfiles & {required: string[]}, prefix: number, suffix: number, stats: Stats): Generator<void, boolean> {
     const {region, required, flags, earliest, latest} = profiles;
-    const n = region.a1 - region.a0, m = region.b1 - region.b0;
-    let at: number;
+    const n = region.a1 - region.a0;
     // Prefixes through prefix and suffixes from suffix are complete and exact.
     let omitted = -1;
     for (let row = Math.max(0, suffix - 1); row <= Math.min(prefix, required.length - 1); row++) {
@@ -490,8 +497,14 @@ function* omitRequiredRow(right: Index, profiles: RootProfiles & {required: stri
     for (let row = omitted; row < oldLength - 1; row++) { required[row] = required[row + 1]!; if (tick(stats)) yield; }
     required.pop();
     for (let row = omitted; row < oldLength; row++) { latest[row] = latest[row + 1]!; if (tick(stats)) yield; }
-    at = earliest[omitted]!;
-    for (let row = omitted; row < required.length; row++) {
+    return yield* completeRequiredProfiles(right, profiles, omitted, omitted, stats);
+}
+
+/** Recompute only the changed sides of one shared profile pair. */
+function* completeRequiredProfiles(right: Index, profiles: RootProfiles & {required: string[]}, prefix: number, suffix: number, stats: Stats): Generator<void, boolean> {
+    const {region, required, earliest, latest} = profiles, m = region.b1 - region.b0;
+    let at = earliest[prefix]!;
+    for (let row = prefix; row < required.length; row++) {
         const wanted = required[row]!;
         for (;;) {
             if (at === m) throw new Error("Unique omission prefix does not embed.");
@@ -501,8 +514,8 @@ function* omitRequiredRow(right: Index, profiles: RootProfiles & {required: stri
         }
         earliest[row + 1] = at; if (tick(stats)) yield;
     }
-    at = latest[omitted]!;
-    for (let row = omitted - 1; row >= 0; row--) {
+    at = latest[suffix]!;
+    for (let row = suffix - 1; row >= 0; row--) {
         const wanted = required[row]!;
         for (;;) {
             if (!at) throw new Error("Unique omission suffix does not embed.");
@@ -513,6 +526,76 @@ function* omitRequiredRow(right: Index, profiles: RootProfiles & {required: stri
         latest[row] = at; if (tick(stats)) yield;
     }
     return true;
+}
+
+/** With at most one omission impossible, exactly two omittable ordinals force the optimum mask. */
+function* twoOmissionSplit(left: Index, right: Index, region: Region, working: Alphabet, stats: Stats, captured: {value?: RootProfiles}): Generator<void, readonly [number, number, number] | undefined> {
+    const n = region.a1 - region.a0, m = region.b1 - region.b0;
+    const flags = new Uint8Array(n), earliest = new Uint32Array(n + 1), latest = new Uint32Array(n + 1), required: string[] = [];
+    for (let row = 0; row <= n; row++) if (tick(stats, 3)) yield;
+    for (let row = 0; row < n; row++) {
+        const token = (yield* getLine(left, region.a0 + row, stats)).token!;
+        if (working.has(token)) { flags[row] = 1; required.push(token); }
+        if (tick(stats, token.length + 4)) yield;
+    }
+    let zero = 0, one = 0;
+    for (let row = 0; row < required.length; row++) {
+        const wanted = required[row]!, cap = zero;
+        for (;;) {
+            if (zero >= m) { zero = m + 1; break; }
+            const token = (yield* getLine(right, region.b0 + zero, stats)).token!, equal = token === wanted;
+            stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
+            zero++; if (equal) break;
+        }
+        for (;;) {
+            if (one >= Math.min(m, cap)) { one = cap; break; }
+            const token = (yield* getLine(right, region.b0 + one, stats)).token!, equal = token === wanted;
+            stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
+            one++; if (equal) break;
+        }
+        earliest[row + 1] = zero; latest[row + 1] = one; if (tick(stats, 4)) yield;
+    }
+    if (one <= m) return;
+    // Consume each one-omission prefix before replacing it with the ordinary suffix.
+    zero = one = m; latest[required.length] = m;
+    let ordinal = required.length, first = -1, last = -1;
+    for (let row = n - 1; row >= 0; row--) {
+        if (tick(stats)) yield;
+        if (flags[row] !== 1) continue;
+        const index = --ordinal, wanted = required[index]!, cap = zero;
+        if (earliest[index]! <= one || latest[index]! <= zero) {
+            if (last < 0) last = index;
+            else if (first < 0) first = index;
+            else return;
+            flags[row] = 0; if (tick(stats, 2)) yield;
+        }
+        for (;;) {
+            if (zero <= 0) { zero = -1; break; }
+            const token = (yield* getLine(right, region.b0 + zero - 1, stats)).token!, equal = token === wanted;
+            stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
+            zero--; if (equal) break;
+        }
+        for (;;) {
+            if (one <= Math.max(0, cap)) { one = cap; break; }
+            const token = (yield* getLine(right, region.b0 + one - 1, stats)).token!, equal = token === wanted;
+            stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
+            one--; if (equal) break;
+        }
+        latest[index] = zero < 0 ? m + 1 : zero; if (tick(stats, 5)) yield;
+    }
+    if (first < 0 || earliest[first]! > m || latest[last + 1]! > m
+        || latest[last + 1]! - earliest[first]! > frontierLimits.changedRows) return;
+    const oldLength = required.length;
+    for (let row = first; row < last - 1; row++) { required[row] = required[row + 1]!; if (tick(stats)) yield; }
+    for (let row = last - 1; row < oldLength - 2; row++) { required[row] = required[row + 2]!; if (tick(stats)) yield; }
+    for (let row = last - 1; row < oldLength - 1; row++) { latest[row] = latest[row + 2]!; if (tick(stats)) yield; }
+    required.length = oldLength - 2;
+    const profiles = {region, required, flags, earliest, latest};
+    yield* completeRequiredProfiles(right, profiles, first, last - 1, stats);
+    if (region.b0) for (let row = 0; row <= required.length; row++) { earliest[row] = earliest[row]! + region.b0; latest[row] = latest[row]! + region.b0; if (tick(stats, 2)) yield; }
+    const point = yield* profileMidpoint(region, profiles, 0, required.length, stats);
+    if (point) { captured.value = profiles; if (tick(stats, 8)) yield; }
+    return point;
 }
 
 /** One mutable profile pair belongs to an active subtree, indexed by its required-token ordinal. */
@@ -588,7 +671,7 @@ function* profileSplit(left: Index, right: Index, region: Region, task: ProfileT
  * duplicate token scans; children also verify their independently known distance.
  * After one working-row removal, three separators and a unique omitted required row
  * can still force every optimum reference match. Ambiguous omissions decline. */
-function* optionalRunSplit(left: Index, right: Index, region: Region, minimum: number | undefined, stats: Stats, captured: {value?: RootProfiles}, prepared?: ReadonlyMap<string, OptionalRecord>, allowOmission = false): Generator<void, readonly [number, number, number] | undefined> {
+function* optionalRunSplit(left: Index, right: Index, region: Region, minimum: number | undefined, stats: Stats, captured: {value?: RootProfiles}, prepared?: ReadonlyMap<string, OptionalRecord>, allowOmission = false, replacement?: ReplacementFacts): Generator<void, readonly [number, number, number] | undefined> {
     const n = region.a1 - region.a0, m = region.b1 - region.b0;
     let records = prepared, common = 0;
     if (!records) {
@@ -621,7 +704,13 @@ function* optionalRunSplit(left: Index, right: Index, region: Region, minimum: n
         if (tick(stats, 8)) yield;
     }
     if (optional === undefined) {
-        // Only the captured-removal root admits an omitted required row without a run.
+        // Complete occurrence counts can reject a required-only replacement before allocation.
+        if (replacement) {
+            if (tick(stats, 8)) yield;
+            if (n + m - 2 * (replacement.required - replacement.missing) < replacement.lower) return;
+            if (replacement.missing === 2) return yield* twoOmissionSplit(left, right, region, records, stats, captured);
+            if (replacement.missing !== 1) return;
+        }
         if (allowOmission) return yield* requiredReferenceSplit(left, right, region, {working: records, maximum: 0}, stats, captured, true);
         return;
     }
@@ -786,20 +875,26 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
         if ((distance === 64 || distance === resumeDistance && resumeDistance > 64) && Math.min(n, m) >= 64) {
             const changes = yield* singleTokenAlignment(a, b, region, stats);
             if (changes) return { changes };
-            // A full-row removal has no new token in the changed window. Inspect its
-            // captured old row; child speculation keeps its existing insertion guard.
-            let omission = false;
+            // Removals and replacements can lose a reference match. Inspect the captured
+            // old row; child speculation keeps its existing insertion guard.
+            let omission = false, replacement = false;
             if (capture && seed && rootAlphabet && seed.end === seed.from && seed.to === seed.from + 1) {
                 const token = (yield* getLine(seed.frontier.working, seed.from, stats)).token;
                 omission = token !== undefined && rootAlphabet.has(token);
                 if (tick(stats, (token?.length ?? 0) + 4)) yield;
             }
-            const rootLower = capture && seed && rootAlphabet && (omission || (yield* changedReferenceMatch(b, seed, rootAlphabet, stats)))
+            if (capture && seed && rootAlphabet && seed.to === seed.from + 1 && seed.end === seed.to) {
+                const old = (yield* getLine(seed.frontier.working, seed.from, stats)).token;
+                const current = (yield* getLine(b, seed.from, stats)).token;
+                replacement = old !== undefined && current !== undefined && rootAlphabet.has(old) !== rootAlphabet.has(current);
+                if (tick(stats, (old?.length ?? 0) + (current?.length ?? 0) + 8)) yield;
+            }
+            const rootLower = capture && seed && rootAlphabet && (omission || replacement || (yield* changedReferenceMatch(b, seed, rootAlphabet, stats)))
                 ? yield* recursiveDistance(seed, region, stats) : undefined;
             // No certificate can fit after the last retained wave if the lower bound ends there.
             const optionalRoot = rootLower !== undefined && Math.ceil(rootLower / 2) > frontierLimits.lastDistance;
             const facts: CommonFacts | undefined = root || optionalRoot || certificateBudget && certificateBudget.remaining > 0
-                ? {maximum: 0, ...(optionalRoot ? {optional: {records: new Map(), complete: false, ...(omission ? {omission: {comparison: 0, maximum: 0}} : {})}} : {})} : undefined;
+                ? {maximum: 0, ...(optionalRoot ? {optional: {records: new Map(), complete: false, ...(omission || replacement ? {omission: {comparison: 0, maximum: 0, ...(replacement ? {replacement: {required: 0, missing: 0, lower: rootLower!}} : {})}} : {})}} : {})} : undefined;
             const ordered = yield* orderedCommonAlignment(a, b, region, stats, facts);
             if (ordered) { if (capture) capture.ordered = true; return { changes: ordered }; }
             if (facts?.working && root && capture && rootAlphabet) {
@@ -904,14 +999,20 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
             const remaining = cells(Math.max(distance, resumeForward)) + cells(Math.max(distance, resumeReverse));
             const omission = facts.optional!.omission;
             // A bounded omission gap and optional run add at most 512 repeated row probes.
-            const cost = omission ? offsetAt(a, region.a1) - offsetAt(a, region.a0) + 4 * omission.comparison
+            let cost = omission ? offsetAt(a, region.a1) - offsetAt(a, region.a0) + 4 * omission.comparison
                 + 44 * n + 16 * m + 1024 * omission.maximum + 8 * facts.optional!.records.size + 4096
                 : offsetAt(a, region.a1) - offsetAt(a, region.a0) + 2 * (offsetAt(b, region.b1) - offsetAt(b, region.b0))
                     + (3 * m + 512) * facts.maximum + 28 * n + 20 * m + 1032;
+            if (omission?.replacement?.missing === 2) {
+                // Four capped scans plus in-place repair of a bounded outer gap.
+                cost = Math.max(cost, offsetAt(a, region.a1) - offsetAt(a, region.a0) + 5 * omission.comparison
+                    + 20 * n + 14 * omission.replacement.required + 20 * m + 256 * omission.maximum
+                    + 8 * facts.optional!.records.size + 2048);
+            }
             if (tick(stats, 24)) yield;
             if (cost <= remaining) {
                 const captured: {value?: RootProfiles} = {}, limit = stats.work + cost;
-                const probe = optionalRunSplit(a, b, region, undefined, stats, captured, facts.optional!.records, !!omission);
+                const probe = optionalRunSplit(a, b, region, undefined, stats, captured, facts.optional!.records, !!omission, omission?.replacement);
                 try {
                     for (;;) {
                         const step = probe.next();
