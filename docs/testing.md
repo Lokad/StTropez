@@ -127,6 +127,11 @@ value changes and remounts; completed-preview/read-only recovery runs on both ho
 F6 color journey retains control identity, keyboard traversal, focus and comparison history on
 both hosts.
 
+Link-discovery interruption cases retain every mode on the plain host, with attachment remounts
+also on React. Completed-token rejection and read-only target navigation run on both hosts.
+The separate F4 journey retains row identity, comparison/secondary selections and later-form
+focus on both hosts.
+
 ### Behavioral coverage
 
 An integration qualification asserts the resulting state, not only that an action completed.
