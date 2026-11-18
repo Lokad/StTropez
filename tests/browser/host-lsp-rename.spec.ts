@@ -1,5 +1,6 @@
 import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { coversHost } from "./host-cases.ts";
 import { holdLspReplies } from "../helpers/lsp-replies.ts";
 import { hostTextEquals } from "../../scripts/host-scene.mjs";
 
@@ -18,9 +19,9 @@ async function seed(page: Page, text = raw) { await page.evaluate(text => { cons
 async function preview(page: Page, value = "inventory") { await name(page).fill(value); await button(page, "Prepare rename preview").click(); await waitForRename(page); }
 async function exact(page: Page, text: string) { expect(await hostTextEquals(page, text)).toBe(true); }
 async function dispose(page: Page) { await page.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(page); expect(s.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(s.hostSubscriptions).toBe(0); expect(s.bindings.rename).toMatchObject({ transport: null, sessions: 0, subscriptions: 0, disposed: true }); }
-for (const host of ["plain", "react"]) test.describe(`${host} LSP rename host`, () => {
+for (const host of ["plain", "react"] as const) test.describe(`${host} LSP rename host`, () => {
     test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(input(page)).toBeVisible(); await waitForRename(page); });
-    test("new-name preview applies exact provider edits across captured resources with shared complete-set history", async ({ page }) => {
+    if (coversHost("candidate-hosts", host, "candidate")) test("new-name preview applies exact provider edits across captured resources with shared complete-set history", async ({ page }) => {
         const requests: { method: string; params: any }[] = [], responses: any[] = []; let opened = 0, closed = 0;
         page.on("websocket", socket => { opened++; socket.on("close", () => closed++); socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) requests.push(value); }); socket.on("framereceived", frame => { const value = JSON.parse(frame.payload.toString()); if (value.result?.documentChanges) responses.push(value.result); }); });
         await seed(page, raw + " "); await seed(page, raw + "  "); await seed(page); await button(page, "Add navigation companion").click();
@@ -49,7 +50,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP rename host`, 
         await expect(button(page, "Open renamed changes in Navigation companion")).toHaveAttribute("data-retained", "rename-resource");
         await input(page, "Secondary source").press("Control+z"); await waitForRename(page); await exact(page, raw); await input(page, "Secondary source").press("Control+Shift+z"); await waitForRename(page); await exact(page, expected); expect((await snapshot(page)).source.exports).toBe(0); await dispose(page); await expect.poll(() => closed).toBe(opened);
     });
-    test("malformed targets, authority changes, cancelled captures and reconnect leave editing available", async ({ page }) => {
+    if (coversHost("candidate-hosts", host, "candidate")) test("malformed targets, authority changes, cancelled captures and reconnect leave editing available", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/rename"); await page.reload();
         let requests = 0, lastPosition: unknown; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "textDocument/rename") { requests++; lastPosition = value.params.position; } }));
         await seed(page); await button(page, "Add navigation companion").click(); const before = await snapshot(page), companion = before.bindings.navigation.companion!;
@@ -74,7 +75,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP rename host`, 
         await button(page, "Reconnect rename provider").click(); await select(page, raw.indexOf("catalogue") + 2); await preview(page); await button(page, "Disconnect rename provider").click(); await input(page).press("Control+End"); await input(page).pressSequentially("local"); await waitForRename(page); await exact(page, raw + "local"); await button(page, "Reconnect rename provider").click(); await select(page, raw.indexOf("catalogue") + 2); await preview(page); await expect(button(page, "Apply captured rename")).toBeEnabled();
         const count = requests; await select(page, raw.indexOf(";") + 1); await preview(page); expect(requests).toBe(count + 1); expect(lastPosition).toEqual({ line: 1, character: "const catalogue = 1;".length }); expect((await snapshot(page)).bindings.rename.state.count).toBe(0); await exact(page, raw + "local"); await dispose(page);
     });
-    test("comparison rename preserves its baseline and primary Save/Run through unmounted-target focus", async ({ page }) => {
+    if (coversHost("candidate-hosts", host, "candidate")) test("comparison rename preserves its baseline and primary Save/Run through unmounted-target focus", async ({ page }) => {
         await seed(page); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForRename(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline;
         await working.focus(); await page.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: at, head: at }]); }, raw.indexOf("catalogue") + 2); await working.press("F2"); await name(page).fill("inventory"); await name(page).press("Enter"); await waitForRename(page);
         expect((await snapshot(page)).bindings.rename.capture!.view).toBe("comparison"); await button(page, "Apply captured rename").click(); await waitForRename(page); const expected = marker + raw.replace("const catalogue", "const inventory").replace("\r\ncatalogue;", "\r\ninventory;"); await exact(page, expected); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline);
@@ -82,7 +83,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP rename host`, 
         await button(page, "Open renamed changes in Navigation companion").click(); await waitForRename(page); await button(page, "Run captured inputs").click(); expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(expected); await page.evaluate(() => window.hostFixture.finishRun());
         await button(page, "Save source").click(); await working.press("Control+End"); await working.pressSequentially(" later"); await waitForRename(page); await page.evaluate(() => window.hostFixture.finishSave()); await waitForRename(page); await exact(page, expected + " later"); expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline); await dispose(page);
     });
-    test("100k-line rename pages its preview, preserves form focus and shares atomic undo with bounded input", async ({ page }) => {
+    if (coversHost("plain-candidate", host, "candidate")) test("100k-line rename pages its preview, preserves form focus and shares atomic undo with bounded input", async ({ page }) => {
         test.setTimeout(90000);
         const text = "const catalogue = 1;\r\n" + "const unchanged = 123;\r\n".repeat(99_929) + "catalogue;\r\n".repeat(70);
         await seed(page, text); const before = await snapshot(page); await preview(page);

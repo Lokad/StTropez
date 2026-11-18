@@ -134,6 +134,10 @@ each case registers at its declaration site so reports retain its file and line.
 do not select hosts. The save-failure suite declares its native projection-cache eviction
 prerequisite in case annotations; setup reads that metadata before navigating to the host.
 
+Navigation and rename retain their normal integration journeys on both hosts, including
+focus, remount, provider recovery, unmounted targets and captured Save/Run. Their complete
+large-document paging and preview workloads run on the plain host in every browser engine.
+
 `expectUnmountedSourceHost` checks detached DOM views and the retained source-provider scope,
 including the recovery/provider workspace subscriptions and retained project-review observer.
 Consumers declare any additional

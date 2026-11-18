@@ -1,5 +1,6 @@
 import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { coversHost } from "./host-cases.ts";
 import { holdLspReplies } from "../helpers/lsp-replies.ts";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
@@ -15,9 +16,9 @@ async function seed(page: Page, text: string, offset: number) {
     await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, text); await field(page).focus(); await select(page, offset); await waitForNavigation(page);
 }
 async function hover(page: Page) { await field(page).press("Control+k"); await field(page).press("Control+i"); }
-for (const host of ["plain", "react"]) test.describe(`${host} LSP inspection/navigation`, () => {
+for (const host of ["plain", "react"] as const) test.describe(`${host} LSP inspection/navigation`, () => {
     test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await waitForNavigation(page); });
-    test("standard hover content and absent ranges preserve selections, safe text and focus", async ({ page }) => {
+    if (coversHost("candidate-hosts", host, "candidate")) test("standard hover content and absent ranges preserve selections, safe text and focus", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/hover"); await page.reload();
         const packets: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const data = JSON.parse(frame.payload.toString()); if (data.method) packets.push(data.method); }));
         await seed(page, "const café = 1;\r\n𐐀value = 2;", 2); await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 2, head: 2 }, { anchor: 8, head: 8 }]); }); await waitForNavigation(page);
@@ -32,7 +33,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP inspection/nav
         await expect(page.getByRole("tooltip")).toBeHidden(); await expect(field(page, "Configuration path")).toBeFocused();
         expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).source.exports).toBe(0); expect(packets).toContain("textDocument/hover");
     });
-    test("definition links and references open captured unmounted targets and return complete selections", async ({ page }) => {
+    if (coversHost("candidate-hosts", host, "candidate")) test("definition links and references open captured unmounted targets and return complete selections", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/definition"); await page.reload();
         const methods: { method: string; params?: { position?: unknown; context?: { includeDeclaration?: boolean } } }[] = []; let linkedResponses = 0;
         page.on("websocket", socket => { socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value); });
@@ -57,7 +58,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP inspection/nav
         await field(page).focus(); await select(page, text.indexOf(";") + 1); await button(page, "Find definition").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(0);
         expect(methods.filter(message => message.method === "textDocument/definition").length).toBe(definitions + 1);
     });
-    test("malformed navigation, changed authority and pending remount cannot publish stale targets", async ({ page, browserName, browserErrors }) => {
+    if (coversHost("candidate-hosts", host, "candidate")) test("malformed navigation, changed authority and pending remount cannot publish stale targets", async ({ page, browserName, browserErrors }) => {
         const replies = await holdLspReplies(page, "textDocument/definition"); await page.reload();
         const text = "const target = 1;\r\ntarget"; await seed(page, text, text.length - 2); const before = await snapshot(page);
         await page.evaluate(() => window.hostFixture.faultNavigationNext("malformed")); await field(page).press("F12"); await expect(page.getByLabel("Symbol navigation status", { exact: true })).toContainText("unavailable"); await expect(results(page)).toHaveCount(0); await expect(field(page)).toBeFocused();
@@ -79,7 +80,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP inspection/nav
         expect((await snapshot(page)).source.revision).toBeGreaterThan(before.source.revision); await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
         expect(final.diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect(final.hostSubscriptions).toBe(0);
     });
-    test("review navigation and hover preserve the immutable baseline and working Save/Run identity", async ({ page }) => {
+    if (coversHost("candidate-hosts", host, "candidate")) test("review navigation and hover preserve the immutable baseline and working Save/Run identity", async ({ page }) => {
         const text = "catalogue;\r\nconst working = 1;"; await seed(page, text, 3); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForNavigation(page);
         const working = field(page, "Comparison working source"); await working.focus(); await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: 3, head: 3 }, { anchor: 23, head: 23 }]); });
         const before = await snapshot(page), baseline = await page.evaluate(() => { const f = window.hostFixture; return f.referenceRange(0, f.snapshot().bindings.comparison!.baseline!.length); });
@@ -94,7 +95,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP inspection/nav
         expect((await snapshot(page)).source.dirty).toBe(true); expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(text + " later");
         await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
     });
-    test("large-document hover and reference pages expose every target without changing source or history", async ({ page }) => {
+    if (coversHost("plain-candidate", host, "candidate")) test("large-document hover and reference pages expose every target without changing source or history", async ({ page }) => {
         const text = "const unrelated = 123;\r\n".repeat(98_976) + "const target = 1;\r\n" + "target;\r\n".repeat(1023);
         await seed(page, text, text.lastIndexOf("target") + 2); const before = await snapshot(page);
         await hover(page); await expect(page.getByRole("tooltip")).toContainText("target"); await field(page).press("Escape"); await field(page).press("F12"); await waitForNavigation(page); await expect(results(page)).toHaveCount(1);
