@@ -447,6 +447,8 @@ The LSP route checks its browser caller against the copied LSP fixture and resto
 The plain editing/review routes check their callers and shared interaction helpers against the
 standalone consumer fixture. Their local Window declarations derive from that copied fixture;
 they do not use the development host's snapshot contract or join the React consumer's compile.
+The full route also checks its installation-transition caller against the copied transition
+fixture, with explicit input allowances for the existing build metadata and development packages.
 This separate tooling program permits the Node/Playwright declarations it needs and records its compiler
 inputs. The independent consumer compile keeps its own options and inputs; tooling dependencies
 are not consumer requirements. Unexpected checkout inputs fail the harness check.

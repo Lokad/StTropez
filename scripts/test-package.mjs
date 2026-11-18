@@ -127,13 +127,16 @@ if (reactHost) {
 // compile above. Node/Playwright declarations belong only to this separate tooling program.
 let pageLifecycleHarness, lspHarness, editingHarness;
 const plainEditing = !deferredOnly && !lspOnly && !reactOnly;
+const checkTransitions = scenario === "full";
 if (deferredOnly || lspOnly || plainEditing) {
     const harnessName = lspOnly ? "lsp-harness" : plainEditing ? "editing-harness" : "page-lifecycle";
     const scripts = await Promise.all((lspOnly ? ["scripts/package-lsp.mjs"]
-        : plainEditing ? ["scripts/package-pilot.mjs", "scripts/package-hunk-pilot.mjs", "scripts/host-typing.mjs", "scripts/host-reference-probe.mjs", "scripts/measurement.mjs"]
+        : plainEditing ? ["scripts/package-pilot.mjs", "scripts/package-hunk-pilot.mjs", "scripts/host-typing.mjs", "scripts/host-reference-probe.mjs", "scripts/measurement.mjs",
+            ...(checkTransitions ? ["scripts/package-transitions.mjs", "scripts/package-react-host.mjs", "scripts/package-host.mjs", "scripts/library-entries.mjs"] : [])]
         : ["scripts/package-page-lifecycle.mjs", workspaceOnly ? "scripts/package-workspace.mjs" : "scripts/package-activation.mjs", "tests/helpers/latch.ts"])
         .map(path => realpath(join(project, path))));
     const fixture = join(consumer, lspOnly ? "lsp.ts" : plainEditing ? "pilot.ts" : "activation-main.ts"), declarations = [];
+    const fixtures = [fixture, ...(checkTransitions ? [join(consumer, "transition.ts")] : [])];
     if (plainEditing) {
         const path = join(consumer, "editing-harness.d.ts");
         await writeFile(path, `import type { mountPackagedPilot } from "./pilot.js";
@@ -149,23 +152,25 @@ declare global { interface Window {
     }
     const configuration = join(consumer, `tsconfig.${harnessName}.json`);
     await writeFile(configuration, JSON.stringify({ compilerOptions: { ...compilerOptions, allowJs: true, checkJs: true,
-        allowImportingTsExtensions: true, types: ["node"], typeRoots: [join(project, "node_modules/@types")] }, files: [fixture, ...declarations, ...scripts] }));
+        allowImportingTsExtensions: true, types: ["node"], typeRoots: [join(project, "node_modules/@types")] }, files: [...fixtures, ...declarations, ...scripts] }));
     const output = execFileSync(process.execPath, [join(project, "node_modules/typescript/bin/tsc"), "-p", configuration, "--listFiles", "--pretty", "false"],
         { cwd: consumer, encoding: "utf8", stdio: "pipe", windowsHide: true });
     await writeFile(join(consumer, `${harnessName}-compiler-inputs.txt`), output);
     const toolRoots = [...await consumerCompilerRoots(project), ...await Promise.all([
         "@types/node", "@playwright/test", "playwright", "playwright-core", "undici-types",
+        ...(checkTransitions ? ["esbuild", "fflate"] : []),
     ].map(name => realpath(join(project, "node_modules", name))))];
+    const metadataInputs = checkTransitions ? [await realpath(join(project, "package.json"))] : [];
     const inputs = [];
     for (const path of output.split(/\r?\n/).filter(Boolean)) {
         const input = await realpath(resolve(consumer, path));
-        assert.ok(within(consumer, input) || scripts.includes(input) || toolRoots.some(root => within(root, input)),
+        assert.ok(within(consumer, input) || scripts.includes(input) || metadataInputs.includes(input) || toolRoots.some(root => within(root, input)),
             `Unexpected input in the restored ${harnessName} harness: ${input}`);
         inputs.push(input);
     }
     assert.ok(scripts.every(script => inputs.includes(script)) && inputs.includes(await realpath(join(assetRoot, "browser/index.d.ts"))), "Harness inputs must include its scripts and restored declarations.");
-    assert.ok(inputs.includes(await realpath(fixture)), "Harness must check the actual copied consumer fixture.");
-    const harness = { checkedJavaScript: true, strict: true, skipLibCheck: false, inputs };
+    for (const path of fixtures) assert.ok(inputs.includes(await realpath(path)), "Harness must check the actual copied consumer fixture.");
+    const harness = { checkedJavaScript: true, strict: true, skipLibCheck: false, inputs, ...(checkTransitions ? { transitionCaller: true } : {}) };
     if (lspOnly) {
         assert.ok(inputs.includes(await realpath(join(assetRoot, "protocol/index.d.ts"))), "LSP harness must use restored protocol declarations.");
         lspHarness = harness;

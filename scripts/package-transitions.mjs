@@ -11,7 +11,11 @@ import { sourceIdentity, environment } from "./measurement.mjs";
 import { within, consumerCompilerRoots } from "./package-react-host.mjs";
 import { createPackageRequestHandler, listenPackageServer, closePackageServer, closePackageResources } from "./package-host.mjs";
 
+/** @typedef {{version: string, assets: readonly {path: string, bytes: number, sha256: string}[]}} Manifest */
+
+/** @param {Uint8Array} bytes */
 const sha = bytes => createHash("sha256").update(bytes).digest("hex");
+/** @param {string} root @param {string} [prefix] @returns {Promise<string[]>} */
 async function files(root, prefix = "") {
     const paths = [];
     for (const entry of await readdir(join(root, prefix), { withFileTypes: true })) {
@@ -22,7 +26,10 @@ async function files(root, prefix = "") {
     return paths.sort();
 }
 
-/** Qualification-only versions of this producer's payload, restored by real NuGet/MSBuild. */
+/** Qualification-only versions of this producer's payload, restored by real NuGet/MSBuild.
+ * @param {{project: string, consumer: string, entries: import('fflate').Unzipped,
+ * assets: Manifest, browserName: 'chromium' | 'firefox' | 'webkit', dotnet: (args: string[]) => string}} options
+ */
 export async function runPackageTransitions({ project, consumer, entries, assets, browserName, dotnet }) {
     const source = await sourceIdentity(), probe = "browser/package-transition-worker.js", optional = strToU8('postMessage("transition-a");\n');
     assert.ok(!entries["assets/" + probe]);
@@ -30,7 +37,7 @@ export async function runPackageTransitions({ project, consumer, entries, assets
     const payloads = { a: { ...entries, ["assets/" + probe]: optional, "assets/manifest.json": strToU8(JSON.stringify(manifestA, null, 2) + "\n") }, b: entries };
     const versions = { a: "0.0.0-transition.1", b: "0.0.0-transition.2", base: "0.0.0-local" }, manifests = { a: manifestA, b: assets, base: assets };
     const fixturePackages = [];
-    for (const kind of ["a", "b"]) {
+    for (const kind of /** @type {const} */ (["a", "b"])) {
         const payload = { ...payloads[kind] };
         for (const path of Object.keys(payload).filter(path => path.endsWith(".nuspec") || path.endsWith(".psmdcp"))) {
             const xml = strFromU8(payload[path]); assert.equal((xml.match(/<version>[^<]*<\/version>/g) ?? []).length, 1);
@@ -43,36 +50,50 @@ export async function runPackageTransitions({ project, consumer, entries, assets
     await writeFile(join(consumer, "package.json"), '{"type":"module"}');
     const stageParent = join(consumer, "obj/sttropez"), sentinel = join(stageParent, "host-owned.txt"), sentinelText = "Host owns cleanup outside each content-addressed generation.\n";
     await mkdir(stageParent, { recursive: true }); await writeFile(sentinel, sentinelText);
-    const compilerRoots = await consumerCompilerRoots(project), roots = new Map(), caches = new Map(), routes = new Map(), steps = [], errors = [];
-    const failures = [];
+    const compilerRoots = await consumerCompilerRoots(project);
+    /** @type {Map<string, {manifest: Manifest, bytes: Uint8Array}>} */ const roots = new Map();
+    /** @type {Map<string, {manifest: Manifest, bytes: Uint8Array}>} */ const caches = new Map();
+    /** @type {Map<string, Uint8Array>} */ const routes = new Map();
+    /** @type {{root: string}[]} */ const steps = [];
+    /** @type {string[]} */ const errors = [];
+    /** @type {unknown[]} */ const failures = [];
     const requests = createPackageRequestHandler((request, response) => {
+        assert.ok(request.url, "HTTP request must have a URL.");
         const path = new URL(request.url, "http://localhost").pathname, file = routes.get(path);
         if (!file) { response.writeHead(404).end(); return; }
         response.writeHead(200, { "Content-Type": path.endsWith(".js") ? "text/javascript" : path.endsWith(".css") ? "text/css" : "text/html", "Cache-Control": "no-store" }); response.end(file);
     }, failures);
     const server = createServer(requests.listener);
-    let browser, retainedPage;
+    /** @type {import('@playwright/test').Browser | undefined} */ let browser;
+    /** @type {import('@playwright/test').Page | undefined} */ let retainedPage;
+    /** @param {string} root @param {Manifest} manifest @param {Uint8Array} bytes */
     const verifyPayload = async (root, manifest, bytes) => {
         assert.equal(sha(await readFile(join(root, "manifest.json"))), sha(bytes));
         for (const asset of manifest.assets) { const actual = await readFile(join(root, asset.path)); assert.equal(actual.length, asset.bytes, asset.path); assert.equal(sha(actual), asset.sha256, asset.path); }
     };
+    /** @param {string} root @param {Manifest} manifest @param {Uint8Array} bytes */
     const verifyStage = async (root, manifest, bytes) => {
         assert.equal(basename(root).toLowerCase(), sha(bytes)); assert.ok(within(stageParent, root));
         assert.deepEqual(await files(root), ["manifest.json", ...manifest.assets.map(asset => asset.path)].sort()); await verifyPayload(root, manifest, bytes);
     };
+    /** @param {import('@playwright/test').Page} page */
     const ready = page => page.waitForFunction(() => window.transitionFixture?.ready());
+    /** @param {import('@playwright/test').Page} page */
     const snapshot = page => page.evaluate(() => window.transitionFixture.snapshot());
+    /** @param {import('@playwright/test').Page} page */
     const release = async page => { const diagnostics = await page.evaluate(() => window.transitionFixture.dispose()); assert.deepEqual(diagnostics, { ...diagnostics, views: 0, leases: 0, subscriptions: 0 }); await page.close(); };
     try {
         await listenPackageServer(server);
-        const url = `http://127.0.0.1:${server.address().port}`;
+        const address = server.address(); assert.ok(address && typeof address !== "string");
+        const url = `http://127.0.0.1:${address.port}`;
         browser = await ({ chromium, firefox, webkit })[browserName].launch();
-        for (const [index, kind] of ["a", "b", "a", "base"].entries()) {
+        for (const [index, kind] of /** @type {const} */ (["a", "b", "a", "base"]).entries()) {
             const version = versions[kind], property = `-p:StTropezTestVersion=${version}`, manifest = manifests[kind], payload = kind === "a" ? payloads.a : entries, manifestBytes = payload["assets/manifest.json"];
             dotnet(["restore", "Consumer.csproj", "--packages", join(consumer, "packages"), "--configfile", "NuGet.Config", property]);
             dotnet(["msbuild", "Consumer.csproj", "-target:PrepareFrontend", "-verbosity:minimal", property]);
             const root = await realpath((await readFile(join(consumer, "assets-root.txt"), "utf8")).trim()), packageRoot = await realpath((await readFile(join(consumer, "package-assets-root.txt"), "utf8")).trim());
             assert.ok(within(join(consumer, "packages"), packageRoot));
+            /** @type {{libraries: Record<string, unknown>, targets: Record<string, Record<string, {compile?: unknown, runtime?: unknown}>>}} */
             const restored = JSON.parse(await readFile(join(consumer, "obj/project.assets.json"), "utf8")); assert.deepEqual(Object.keys(restored.libraries), [`StTropez.Assets/${version}`]);
             const library = Object.values(restored.targets)[0][`StTropez.Assets/${version}`]; assert.equal(library.compile, undefined); assert.equal(library.runtime, undefined);
             await verifyStage(root, manifest, manifestBytes); await verifyPayload(packageRoot, manifest, manifestBytes);
@@ -107,11 +128,12 @@ export async function runPackageTransitions({ project, consumer, entries, assets
             if (retainedPage) { const prior = await snapshot(retainedPage); await retainedPage.getByRole("textbox", { name: "Staged source", exact: true }).press("z"); await ready(retainedPage); assert.equal((await snapshot(retainedPage)).text, prior.text + "z"); assert.deepEqual(await snapshot(page), alive); }
             if (index === 0) retainedPage = page; else await release(page);
             for (const [cache, value] of caches) await verifyPayload(cache, value.manifest, value.bytes);
-            steps.push({ kind, version, root, manifestSha256: sha(manifestBytes), optionalWorker: kind === "a", repeatPrepare: index === 0, sourceIsolation: true, strictDeclarations: true, typeInputs, bundleInputs: Object.keys(bundled.metafile.inputs).sort(), actualKeyboardEdit: true, sharedUndoRedo: true, completeSelections: true, priorPageStillEditable: index > 0, style });
+            const step = { kind, version, root, manifestSha256: sha(manifestBytes), optionalWorker: kind === "a", repeatPrepare: index === 0, sourceIsolation: true, strictDeclarations: true, typeInputs, bundleInputs: Object.keys(bundled.metafile.inputs).sort(), actualKeyboardEdit: true, sharedUndoRedo: true, completeSelections: true, priorPageStillEditable: index > 0, style }; steps.push(step);
             console.log(`Package transition ${index + 1}/4: ${version}; staged hashes, isolated declarations, keyboard edit and history passed.`);
         }
-        await release(retainedPage); retainedPage = undefined; assert.deepEqual(errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
-        const report = { schemaVersion: 1, source, environment: environment(), browser: browser.version(), consumer, fixturePackages, steps, originalPayloadVersion: assets.version, originalStage: steps.at(-1).root, retainedGenerations: roots.size, sentinelUnchanged: true, packagePayloadsUnchanged: true, timingsMeasured: false,
+        assert.ok(retainedPage); await release(retainedPage); retainedPage = undefined; assert.deepEqual(errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
+        const last = steps.at(-1); assert.ok(last);
+        const report = { schemaVersion: 1, source, environment: environment(), browser: browser.version(), consumer, fixturePackages, steps, originalPayloadVersion: assets.version, originalStage: last.root, retainedGenerations: roots.size, sentinelUnchanged: true, packagePayloadsUnchanged: true, timingsMeasured: false,
             limits: "Controlled local evaluation versions of this payload; fixture-only optional worker. Qualifies NuGet restore/stage transitions and isolated frontend usability, not arbitrary released-version compatibility, publishing, native input or display latency." };
         await mkdir("artifacts/package", { recursive: true }); await writeFile(`artifacts/package/transitions-${browserName}.json`, JSON.stringify(report, null, 2));
         console.log("Local package transitions A→B→A and identical-payload root reuse passed; old stages and live source remain intact."); return report;
