@@ -318,11 +318,28 @@ test("edits to unmatched rows reuse raw alignment and re-trim exact hunks throug
     cache.dispose();
 });
 
-test("comparison decision reuse survives cancellation and failure without publishing superseded captures", () => {
+for (const [fraction, maximumColdRatio] of [[0.25, 0.6], [0.75, 0.8]] as const)
+    test(`edited-region distance bounds reduce ${fraction} Enter work without changing canonical hunks`, () => {
+        const original = Array.from({ length: 10000 }, (_, i) => `row ${i % 20}\n`).join("");
+        const text = original.replaceAll("row 0\n", "changed 0\n").replaceAll("row 10\n", "changed 10\n").replaceAll("row 11\n", "row 11\nrow 11\n");
+        const baseline = TextBuffer.from(original), working = TextBuffer.from(text), cache = new DiffReferenceCache();
+        try {
+            const initial = finish(baseline, working, cache), retained = JSON.stringify(initial.hunks);
+            const at = text.indexOf("changed ", Math.floor(text.length * fraction)); assert.ok(at >= 0);
+            const edited = working.replace(at + 3, at + 3, "\n");
+            const result = finish(baseline, edited, cache), expected = finish(baseline, edited);
+            assert.deepEqual(result.hunks, expected.hunks); assert.equal(result.lineEdits, expected.lineEdits);
+            reconstruct(result, original, edited.slice(0, edited.length));
+            assert.ok(result.work < expected.work * maximumColdRatio, `${fraction}: ${result.work} warm / ${expected.work} cold work`);
+            assert.equal(JSON.stringify(initial.hunks), retained);
+        } finally { cache.dispose(); }
+    });
+
+for (const fraction of [0.25, 0.5, 0.75]) test(`comparison decision reuse survives cancellation and failure without publishing superseded captures: ${fraction}`, () => {
     const original = Array.from({ length: 2000 }, (_, i) => `row ${i % 20}\n`).join("");
     const text = original.replaceAll("row 0\n", "changed 0\n").replaceAll("row 10\n", "changed 10\n").replaceAll("row 11\n", "row 11\nrow 11\n");
     const baseline = TextBuffer.from(original), working = TextBuffer.from(text), cache = new DiffReferenceCache();
-    const at = text.indexOf("changed ", text.length / 2) + 3, split = working.replace(at, at, "\n");
+    const at = text.indexOf("changed ", text.length * fraction) + 3, split = working.replace(at, at, "\n");
     const expected = finish(baseline, split);
     assert.ok(finish(baseline, working, cache).lineComparisons >= 100000, "retain an eligible expensive frontier");
     const cancelled = new TextDiff(baseline, split, cache); let partial = cancelled.next(512);

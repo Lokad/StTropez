@@ -21,7 +21,7 @@ export class DiffReferenceCache {
 }
 type Region = Readonly<{ a0: number; a1: number; b0: number; b1: number }>;
 type FrontierPoint = Readonly<{ distance: number; radius: number; origin: number; forward: Int32Array; reverse: Int32Array; seenF: number; seenR: number }>;
-type FrontierPlan = Readonly<{ working: Index; region: Region; points: readonly FrontierPoint[] }>;
+type FrontierPlan = Readonly<{ working: Index; region: Region; points: readonly FrontierPoint[]; minimum?: number }>;
 type FrontierCapture = { previous: FrontierPlan | undefined; plan?: FrontierPlan; first: boolean };
 type SplitCapture = { rows?: Float64Array; count: number; reused: boolean };
 type SplitPlan = Readonly<{ working: Index; rows: Float64Array; count: number }>;
@@ -68,25 +68,39 @@ function* retainSplit(capture: SplitCapture, region: Region, point: readonly [nu
 }
 const frontierLimits = Object.freeze({ rows: 65536, changedRows: 256, firstDistance: 16, lastDistance: 2048, checkpointStride: 64, comparisons: 100000 });
 
-/** A wave is reusable only while both directions remain strictly outside the changed rows.
- * Candidate bounds are dependencies too: changing the row count can make a rejected move valid. */
-function* retainedFrontier(plan: FrontierPlan, right: Index, region: Region, stats: Stats): Generator<void, number> {
+/** A direction is reusable only while all move bounds and equality probes exclude the edit.
+ * Replacing r old working rows with s new rows changes edit distance by at most r+s.
+ * The completed region's exact minimum therefore excludes overlap below D-r-s. Saved
+ * points contain complete waves through distance-1: ceil((D-r-s)/2) is a conservative
+ * limit for independently restarting either direction without missing the first split.
+ * The existing joint dependency proof remains available when this bound is weaker. */
+function* retainedFrontier(plan: FrontierPlan, right: Index, region: Region, stats: Stats): Generator<void, {joint: number; forward: number; reverse: number} | undefined> {
     const old = plan.working, prior = plan.region;
     if (tick(stats, 4)) yield;
-    if (region.a0 !== prior.a0 || region.a1 !== prior.a1 || region.b0 !== prior.b0) return -1;
-    if (old.buffer === right.buffer) return region.b1 === prior.b1 ? plan.points.length - 1 : -1;
+    if (region.a0 !== prior.a0 || region.a1 !== prior.a1 || region.b0 !== prior.b0) return;
+    if (old.buffer === right.buffer) {
+        const last = plan.points.length - 1;
+        return region.b1 === prior.b1 ? {joint: last, forward: last, reverse: last} : undefined;
+    }
     const edges = yield* lineEdges(old.buffer, right.buffer, stats);
     const from = edges.aFrom === old.to ? old.lines.size : old.buffer.lineAt(edges.aFrom);
     const to = edges.aTo === old.to ? old.lines.size : old.buffer.lineAt(edges.aTo);
     const end = edges.bTo === right.to ? right.lines.size : right.buffer.lineAt(edges.bTo);
     if (from < prior.b0 || to > prior.b1 || Math.max(to - from, end - from) > frontierLimits.changedRows
-        || region.b1 !== prior.b1 + end - to) return -1;
+        || region.b1 !== prior.b1 + end - to) return;
+    const limit = plan.minimum === undefined ? -1 : Math.ceil(Math.max(0, plan.minimum - (to - from) - (end - from)) / 2);
+    let joint = -1, forward = -1, reverse = -1;
     for (let index = plan.points.length - 1; index >= 0; index--) {
-        const point = plan.points[index]!;
-        if (tick(stats, 3)) yield;
-        if (point.seenF < from - prior.b0 && point.seenR < prior.b1 - to && point.seenF + point.seenR < region.b1 - region.b0) return index;
+        const point = plan.points[index]!, safeF = point.seenF < from - prior.b0, safeR = point.seenR < prior.b1 - to;
+        if (joint < 0 && safeF && safeR && point.seenF + point.seenR < region.b1 - region.b0) joint = index;
+        if (point.distance <= limit) {
+            if (forward < 0 && safeF) forward = index;
+            if (reverse < 0 && safeR) reverse = index;
+        }
+        if (tick(stats, 7)) yield;
     }
-    return -1;
+    forward = Math.max(joint, forward); reverse = Math.max(joint, reverse);
+    return forward >= 0 || reverse >= 0 ? {joint, forward, reverse} : undefined;
 }
 function* copyFrontier(forward: Int32Array, reverse: Int32Array, stats: Stats): Generator<void, readonly [Int32Array<ArrayBuffer>, Int32Array<ArrayBuffer>]> {
     const f = new Int32Array(forward.length), r = new Int32Array(reverse.length);
@@ -277,15 +291,23 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
     let radius = 0, origin = 1, forward = new Int32Array(3).fill(-1), reverse = new Int32Array(3).fill(-1);
     if (tick(stats, 6)) yield;
     forward[origin + 1] = 0; reverse[origin + 1] = 0;
-    let resumeDistance = 0, seenF = 0, seenR = 0;
+    let resumeDistance = 0, resumeForward = 0, resumeReverse = 0, together = 0, seenF = 0, seenR = 0;
     const points: FrontierPoint[] = [];
     if (capture) {
-        const prior = capture.previous, retained = prior ? yield* retainedFrontier(prior, b, region, stats) : -1;
-        if (prior && retained >= 0) {
-            for (let index = 0; index <= retained; index++) { points.push(prior.points[index]!); if (tick(stats)) yield; }
-            const point = points.at(-1)!;
-            radius = point.radius; origin = point.origin; resumeDistance = point.distance; seenF = point.seenF; seenR = point.seenR;
-            [forward, reverse] = yield* copyFrontier(point.forward, point.reverse, stats);
+        const prior = capture.previous, retained = prior ? yield* retainedFrontier(prior, b, region, stats) : undefined;
+        if (prior && retained) {
+            for (let index = 0; index <= retained.joint; index++) { points.push(prior.points[index]!); if (tick(stats)) yield; }
+            const f = prior.points[retained.forward], r = prior.points[retained.reverse];
+            resumeForward = f?.distance ?? 0; resumeReverse = r?.distance ?? 0;
+            resumeDistance = Math.min(resumeForward, resumeReverse); together = Math.max(resumeForward, resumeReverse);
+            seenF = f?.seenF ?? 0; seenR = r?.seenR ?? 0;
+            radius = Math.max(f?.radius ?? 0, r?.radius ?? 0); origin = radius + 1;
+            forward = new Int32Array(radius * 2 + 3); reverse = new Int32Array(forward.length);
+            for (let index = 0; index < forward.length; index++) {
+                forward[index] = f ? f.forward[index - origin + f.origin] ?? -1 : index === origin + 1 ? 0 : -1;
+                reverse[index] = r ? r.reverse[index - origin + r.origin] ?? -1 : index === origin + 1 ? 0 : -1;
+                if (tick(stats, 2)) yield;
+            }
         }
         capture.plan = { working: b, region, points };
     }
@@ -299,8 +321,8 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
         return Math.max(valid(insert) ? insert : -1, valid(remove) ? remove : -1);
     };
     for (let distance = resumeDistance; distance <= maximum; distance++) {
-        // Keep geometric waves and only the latest intermediate wave under the shared cap.
-        if (capture && distance >= frontierLimits.firstDistance && distance <= frontierLimits.lastDistance
+        // Retain only complete, synchronized waves under the shared cap.
+        if (capture && distance >= together && distance >= frontierLimits.firstDistance && distance <= frontierLimits.lastDistance
             && ((distance & (distance - 1)) === 0 || distance % frontierLimits.checkpointStride === 0) && (points.at(-1)?.distance ?? -1) < distance) {
             const previous = points.at(-1)?.distance ?? 0;
             if ((previous & (previous - 1)) !== 0) { points.pop(); if (tick(stats)) yield; }
@@ -331,7 +353,9 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
             }
             radius = nextRadius; origin = nextOrigin; forward = nextForward; reverse = nextReverse;
         }
-        for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
+        // A reused direction may start ahead of the other. Compare overlap only after
+        // both have caught up to the same phase; earlier overlaps are excluded above.
+        if (distance >= resumeForward) for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
             let x = start(forward, diagonal), y = x - diagonal;
             if (x >= 0) {
                 if (x < n && y < m) {
@@ -344,10 +368,13 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
             }
             forward[origin + diagonal] = x;
             const opposite = origin + delta - diagonal;
-            if (x >= 0 && delta % 2 !== 0 && opposite >= 0 && opposite < reverse.length && reverse[opposite]! >= 0 && x >= n - reverse[opposite]!) return [region.a0 + x, region.b0 + y];
+            if (distance >= together && x >= 0 && delta % 2 !== 0 && opposite >= 0 && opposite < reverse.length && reverse[opposite]! >= 0 && x >= n - reverse[opposite]!) {
+                if (capture?.plan) { capture.plan = {...capture.plan, minimum: 2 * distance - 1}; if (tick(stats)) yield; }
+                return [region.a0 + x, region.b0 + y];
+            }
             if (tick(stats)) yield;
         }
-        for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
+        if (distance >= resumeReverse) for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
             let x = start(reverse, diagonal), y = x - diagonal;
             if (x >= 0) {
                 if (x < n && y < m) {
@@ -360,7 +387,8 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
             }
             reverse[origin + diagonal] = x;
             const opposite = origin + delta - diagonal;
-            if (x >= 0 && delta % 2 === 0 && opposite >= 0 && opposite < forward.length && forward[opposite]! >= 0 && forward[opposite]! >= n - x) {
+            if (distance >= together && x >= 0 && delta % 2 === 0 && opposite >= 0 && opposite < forward.length && forward[opposite]! >= 0 && forward[opposite]! >= n - x) {
+                if (capture?.plan) { capture.plan = {...capture.plan, minimum: 2 * distance}; if (tick(stats)) yield; }
                 const split = forward[opposite]!; return [region.a0 + split, region.b0 + split - (delta - diagonal)];
             }
             if (tick(stats)) yield;

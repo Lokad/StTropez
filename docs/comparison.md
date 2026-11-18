@@ -157,6 +157,9 @@ expensive completed comparison. Geometric distances and the latest intermediate 
 64, through distance 2048, share the existing storage cap. A later job can resume
 a checkpoint when the reference/trimmed region agree and ownership proves that every earlier
 move validation and equality probe stays strictly outside the changed rows in both directions.
+Each direction can also resume independently when its own dependency proof holds and the
+completed region's exact edit distance excludes every earlier possible overlap after the edit.
+Overlap checks and new checkpoint capture wait until both directions reach the same wave phase.
 This includes row-count changes and new matches; affected decisions are recomputed. Verification
 bounds the changed window to 256 rows on each side and captures to 65,536 rows per side. Whole-region
 alphabet shortcuts are rechecked after an edit. Unproved or overlapping frontiers restart normally.
