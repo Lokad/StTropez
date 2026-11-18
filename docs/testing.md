@@ -113,6 +113,13 @@ or changing a case. Keep small browser integration checks where model behavior c
 input or UI. Add cross-engine dimensions where engine behavior matters. Do not multiply the
 same invariant across every host, corpus and distribution route without a distinct purpose.
 
+The action host suite runs every feature case on the plain host. Explicit registration metadata
+also selects React integration cases for choice/input identity and focus, multi-resource review
+with captured Save/Run, pending and committed-command remounts, provider recovery, lost command
+acknowledgements and large comparison commands. The general host suite owns stable refs,
+Strict Mode readiness, render isolation and root-error recovery. Both suites use the shared
+[host registration helper](../tests/browser/host-cases.ts); test titles do not select hosts.
+
 ### Behavioral coverage
 
 An integration qualification asserts the resulting state, not only that an action completed.

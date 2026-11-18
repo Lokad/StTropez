@@ -1,13 +1,10 @@
-import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures.ts";
+import { hostCases } from "./host-cases.ts";
 
 for (const editor of ["native", "candidate"] as const) for (const mode of ["plain", "react"] as const) {
     test.describe(`${mode} ${editor} controller host`, () => {
         // Model permutations have deterministic owners. These variants establish DOM/host differences.
-        const hostTest = (coverage: "all-hosts" | "candidate-hosts" | "plain-candidate", name: string,
-            body: (args: { page: Page }) => Promise<void>) => {
-            if (coverage === "all-hosts" || editor === "candidate" && (mode === "plain" || coverage === "candidate-hosts")) test(name, body);
-        };
+        const hostTest = hostCases(test, mode, editor);
         test.beforeEach(async ({ page }) => {
 
 
