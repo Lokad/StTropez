@@ -5,11 +5,16 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { build } from "esbuild";
 import { libraryModules, libraryCss } from "./library-entries.mjs";
 
+/**
+ * @param {string} root
+ * @param {string} path
+ */
 export function within(root, path) {
     const remainder = relative(root, path);
     return remainder !== ".." && !remainder.startsWith(`..${sep}`) && !isAbsolute(remainder);
 }
 
+/** @param {string} project */
 export async function consumerCompilerRoots(project) {
     const compilerRoot = await realpath(join(project, "node_modules/typescript"));
     const compilerPackage = JSON.parse(await readFile(join(compilerRoot, "package.json"), "utf8"));
@@ -25,10 +30,16 @@ export async function consumerCompilerRoots(project) {
 
 const publicImports = new Map([...libraryModules, libraryCss].map(entry => [entry.source, entry.specifier]));
 
-/** Stage only host fixtures, resolving every library import through a public package entry. */
+/** Stage only host fixtures, resolving every library import through a public package entry.
+ * @param {string} project
+ * @param {string} consumer
+ * @param {string} path
+ * @param {string} [destination]
+ */
 export async function stageHostFixture(project, consumer, path, destination = join("host-fixtures", path)) {
     assert.ok((path.startsWith("examples/") || path.startsWith("fixtures/protocol/") || path.startsWith("fixtures/language/")) && !path.includes(".."), `Unexpected host fixture: ${path}`);
-    const original = resolve(project, path), text = await readFile(original, "utf8"), imports = [];
+    const original = resolve(project, path), text = await readFile(original, "utf8"),
+        /** @type {{original: string; restored: string}[]} */ imports = [];
     // Include type-only imports erased from the emitted graph; reject private library imports.
     const staged = text.replace(/(["'])((?:\.\.\/)+src\/[^"']+)\1/g, (_match, quote, specifier) => {
         const target = resolve(dirname(original), specifier);
@@ -42,11 +53,15 @@ export async function stageHostFixture(project, consumer, path, destination = jo
     assert.ok(within(consumer, output));
     await mkdir(dirname(output), { recursive: true });
     await writeFile(output, staged);
+    /** @param {string} value */
     const hash = value => createHash("sha256").update(value).digest("hex");
     return { path, stagedPath: relative(consumer, output).replaceAll("\\", "/"), sourceSha256: hash(text), stagedSha256: hash(staged), publicImports: imports };
 }
 
-/** Reuse the development host; the consumer never receives checkout library sources. */
+/** Reuse the development host; the consumer never receives checkout library sources.
+ * @param {string} project
+ * @param {string} consumer
+ */
 export async function stagePackagedReactHost(project, consumer) {
     const entryPoints = {
         "host-react": "host-fixtures/react-entry.ts",
@@ -72,7 +87,7 @@ export async function stagePackagedReactHost(project, consumer) {
     await writeFile(join(consumer, shim), 'declare module "*.css";\n');
     const reactTypes = await realpath(join(project, "node_modules/@types/react")), reactDomTypes = await realpath(join(project, "node_modules/@types/react-dom"));
     const typePackageRoots = [reactTypes, reactDomTypes, ...await consumerCompilerRoots(project), await realpath(join(project, "node_modules/csstype"))];
-    const hostPackageRoots = [], hostPackages = [];
+    const /** @type {string[]} */ hostPackageRoots = [], hostPackages = [];
     for (const name of ["react", "react-dom", "scheduler"]) {
         const root = await realpath(join(project, "node_modules", name));
         hostPackageRoots.push(root);
@@ -91,8 +106,8 @@ export async function stagePackagedReactHost(project, consumer) {
         html: await readFile(join(project, "examples/hosts/react.html"), "utf8"),
         nodePaths: [await realpath(join(project, "node_modules"))],
         hostPackageRoots,
-        allowInput: input => within(consumer, input) || hostPackageRoots.some(root => within(root, input)),
-        allowTypeInput: input => within(consumer, input) || /\.d\.[cm]?ts$/.test(input) && typePackageRoots.some(root => within(root, input)),
+        allowInput: /** @param {string} input */ input => within(consumer, input) || hostPackageRoots.some(root => within(root, input)),
+        allowTypeInput: /** @param {string} input */ input => within(consumer, input) || /\.d\.[cm]?ts$/.test(input) && typePackageRoots.some(root => within(root, input)),
         hostPackages,
         sources: sources.sort((a, b) => a.path.localeCompare(b.path)),
     };
