@@ -155,10 +155,16 @@ A completed alignment can also certify fixed reference membership in every optim
 the shared-occurrence bound. Initial certification requires every matchable reference occurrence
 to participate; extra working occurrences may leave their placements ambiguous. The reference
 count index and unmatched raw regions establish the counts without rescanning matched working
-rows. Ordered-common alignments can attempt certification directly. Other completed searches
-attempt it only when its bounded cost fits the ordinary frontier work beyond the last retained
-checkpoint. Certification stops when its work exceeds the alignment work already performed by
-one cooperative advance, so a small changed region cannot force a full scan of large trimmed spans.
+rows. Complete root alphabet scans also retain counts and first occurrences in their existing
+reference map and collect working counts; later captures reuse the immutable reference index.
+Certification extends the job-local counts through
+equal trimmed outer rows and checks the completed exact edit distance against the occurrence
+bound. Incomplete working scans use unmatched-region verification with the completed reference
+index. Ordered-common alignments and expensive searches with these counts can attempt certification
+directly. Other completed searches attempt it only when its bounded cost fits the ordinary
+frontier work beyond the last retained checkpoint. Count collection and certification share the
+original alignment-work allowance, with at most one cooperative advance of overshoot, so a small
+changed region cannot force a full scan of large trimmed spans.
 
 The certificate retains one immutable reference count/first-occurrence index with at most
 65,536 entries and at most 256 nonzero working counts differing from their reference counts.
@@ -172,7 +178,13 @@ untouched raw regions and hunks retain their origins, shifting text and line ran
 Ambiguous working placements require canonical recomputation through one temporary profile
 pair. The profile is built only if the root search needs it, after preserving the ordinary
 current checkpoint sequence through its existing distance cap. Later edits can therefore use
-current frontier and split proofs. The profile is never cached. These indexes and metadata are
+current frontier and split proofs. Profile setup is declined when its linear work bound exceeds
+the full wave-cell count for the exact current distance. Shortcut checks already declined by
+the same current-region search are not repeated during setup; previous-capture failures and
+child regions supply no such proof. Under a root profile, unchanged subtrees with saved decisions
+keep their own reuse path without refreshing parent profiles. The root disables child profile
+speculation; subtree-only profiles continue sharing their pair through saved descendants.
+The profile is never cached. These indexes and metadata are
 separate from the frontier/split numeric-storage cap. Unknown tokens, ambiguous reference
 membership, unmet bounds and oversized captures retain the exact general alignment. Local
 splicing does not relabel older frontier/split proofs with a newer working buffer.

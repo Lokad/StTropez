@@ -4,6 +4,8 @@ import type { DiffIndex as Index, DiffStats as Stats } from "./diff-index.ts";
 type Region = Readonly<{ a0: number; a1: number; b0: number; b1: number }>;
 type Token = Readonly<{ count: number; first: number }>;
 export type DiffRepairReference = ReadonlyMap<string, Token>;
+/** Job-local complete root scans. Neither map is published before outer-row completion. */
+export type DiffRepairCounts = { region: Region; previous?: DiffRepairReference | undefined; reference?: Map<string, Token>; working?: Map<string, number> };
 /** The retained reference membership is fixed in every optimum attaining the occurrence bound.
  * The uniqueness flag also proves the working placements; only that case permits local splicing.
  * Deviations store only nonzero working counts different from the reference count.
@@ -13,6 +15,40 @@ export type DiffRepairCertificate = Readonly<{ reference: DiffRepairReference; d
 type Repair = Readonly<{ proof: DiffRepairCertificate; from: number; to: number; delta: number; rowDelta: number } &
     ({ changes: readonly Region[]; origins: readonly (number | undefined)[] } | { required: { from: number; to: number; rows: readonly number[] } })>;
 const limits = Object.freeze({ rows: 65536, regions: 4096, window: 256, deviations: 256 });
+
+/** Reuse complete root alphabets, extending their counts through the equal trimmed rows.
+ * The completed exact edit distance proves attainment of the shared-occurrence bound.
+ * An absent working scan still permits the ordinary unmatched-region certification. */
+export function* certifyCountedAlignment(left: Index, right: Index, changes: readonly Region[], counts: DiffRepairCounts, stats: Stats): Generator<void, { reference: DiffRepairReference; proof?: DiffRepairCertificate } | undefined> {
+    if (Math.max(left.lines.size, right.lines.size) > limits.rows || changes.length > limits.regions) return;
+    const { working, region } = counts, reference = counts.previous ?? counts.reference;
+    if (!reference || region.a0 !== region.b0 || left.lines.size - region.a1 !== right.lines.size - region.b1) return;
+    for (const [from, to] of [[0, region.a0], [region.a1, left.lines.size]] as const) for (let row = from; row < to; row++) {
+        const token = (yield* getLine(left, row, stats)).token; if (token === undefined) return;
+        if (!counts.previous) {
+            const old = reference.get(token);
+            counts.reference!.set(token, { first: Math.min(old?.first ?? row, row), count: (old?.count ?? 0) + 1 });
+        }
+        if (working) working.set(token, (working.get(token) ?? 0) + 1);
+        if (tick(stats, token.length + (working ? 8 : 6))) yield;
+    }
+    if (!working) {
+        const proof = yield* certifyAlignment(left, right, changes, reference, stats);
+        return proof ? { reference, proof } : { reference };
+    }
+    const deviations = new Map<string, number>(); let matches = 0, edits = 0;
+    for (const [token, ref] of reference) {
+        const count = working.get(token) ?? 0;
+        if (count > 0 && count < ref.count) return { reference };
+        if (count > 0) matches += ref.count;
+        if (count > ref.count) deviations.set(token, count);
+        if (deviations.size > limits.deviations) return { reference };
+        if (tick(stats, token.length + 8)) yield;
+    }
+    for (const change of changes) { edits += change.a1 - change.a0 + change.b1 - change.b0; if (tick(stats, 4)) yield; }
+    return edits === left.lines.size + right.lines.size - 2 * matches
+        ? { reference, proof: { reference, deviations, matches, unique: deviations.size === 0 } } : { reference };
+}
 
 /** Map an unchanged row through the sorted raw regions, including zero-width changes. */
 function* match(changes: readonly Region[], row: number, side: "a" | "b", stats: Stats): Generator<void, number | undefined> {

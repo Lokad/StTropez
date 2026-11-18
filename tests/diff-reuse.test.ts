@@ -399,6 +399,7 @@ for (const [count, fraction, maximumColdRatio, maximumHistoryRatio = maximumCold
             reconstruct(result, original, edited.slice(0, edited.length));
             assert.ok(result.work < expected.work * maximumColdRatio, `${fraction}: ${result.work} warm / ${expected.work} cold work`);
             if (count === 10000 && fraction === 0.5) {
+                assert.ok(result.work < 3_000_000, `${result.work} units for the repaired middle Enter`);
                 // A cheap first split must leave useful decisions for later edits and history.
                 const typed = edited.replace(at + 5, at + 5, "!");
                 const typedText = typed.slice(0, typed.length), distantAt = typedText.indexOf("changed ", typedText.length * 0.75) + 3;
@@ -495,6 +496,10 @@ for (const [count, fraction, matchingRun = false, omission = false, typing = fal
     } finally { TextBuffer.prototype.slice = slice; failed.dispose(); }
     const resumed = finish(baseline, split, cache);
     assert.deepEqual(resumed.hunks, expected.hunks);
+    if (count === 2000) {
+        const maximumWork = fraction === 0.25 ? 313_000 : fraction === 0.5 ? 350_000 : 408_000;
+        assert.ok(resumed.work < maximumWork, `${resumed.work} units preserve the cheaper small-edit search`);
+    }
     assert.ok(resumed.lineComparisons < expected.lineComparisons * 0.85, "failed/cancelled captures preserve completed split and frontier decisions");
     finish(baseline, working, cache);
     const old = new TextDiff(baseline, split, cache); let superseded = old.next(512);

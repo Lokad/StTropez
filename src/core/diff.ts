@@ -1,5 +1,5 @@
-import { certifyAlignment, repairAlignment } from "./diff-repair.ts";
-import type { DiffRepairCertificate, DiffRepairReference } from "./diff-repair.ts";
+import { certifyAlignment, certifyCountedAlignment, repairAlignment } from "./diff-repair.ts";
+import type { DiffRepairCertificate, DiffRepairCounts, DiffRepairReference } from "./diff-repair.ts";
 import { prepareEqualities, minimumEqualRows } from "./diff-equalities.ts";
 import type { DiffEqualities, DiffEqualitySnapshot } from "./diff-equalities.ts";
 import type { TextBuffer } from "./text-buffer.ts";
@@ -25,7 +25,8 @@ export class DiffReferenceCache {
 type Region = Readonly<{ a0: number; a1: number; b0: number; b1: number }>;
 type FrontierPoint = Readonly<{ distance: number; radius: number; origin: number; sparse?: boolean; forward: Int32Array; reverse: Int32Array; seenF: number; seenR: number }>;
 type FrontierPlan = Readonly<{ working: Index; region: Region; points: readonly FrontierPoint[]; minimum?: number }>;
-type FrontierCapture = { previous: FrontierPlan | undefined; plan?: FrontierPlan; ordered?: boolean; certified?: boolean; profile?: RootProfiles; repair?: ProfileTask; first: boolean };
+type CountToken = Readonly<{first: number; count: number}>;
+type FrontierCapture = { counts?: DiffRepairCounts; reference: DiffRepairReference | undefined; previous: FrontierPlan | undefined; plan?: FrontierPlan; ordered?: boolean; certified?: boolean; profile?: RootProfiles; repair?: ProfileTask; first: boolean };
 type SplitCapture = { rows?: Float64Array; count: number; reused: boolean };
 type SplitPlan = Readonly<{ working: Index; rows: Float64Array; count: number }>;
 // Split points contain the reference row, working row and exact region edit distance.
@@ -329,8 +330,9 @@ function* singleTokenAlignment(left: Index, right: Index, region: Region, stats:
 }
 /** Matching every common occurrence fixes its pairing, even when tokens repeat.
  * The caller supplies the complete left alphabet and bounds both region sizes. */
-function* completeCommonAlignment(left: Index, right: Index, region: Region, rows: ReadonlyMap<string, number>, stats: Stats, facts?: CommonFacts): Generator<void, readonly Region[] | undefined> {
+function* completeCommonAlignment(left: Index, right: Index, region: Region, rows: ReadonlyMap<string, number | CountToken>, stats: Stats, facts?: CommonFacts, counts?: DiffRepairCounts): Generator<void, readonly Region[] | undefined> {
     const runs = facts?.optional?.records, tokens = runs ? undefined : new Set<string>();
+    const working = counts ? new Map<string, number>() : undefined;
     const rightTokens = runs ?? tokens!;
     let previous: string | undefined;
     for (let bi = region.b0; bi < region.b1; bi++) {
@@ -340,13 +342,14 @@ function* completeCommonAlignment(left: Index, right: Index, region: Region, row
             let record = runs.get(token);
             if (!record) {
                 const reference = rows.get(token);
-                record = {from: bi - region.b0, to: bi - region.b0, blocks: 0, count: reference === undefined ? 0 : reference < 0 ? -reference : 1};
+                record = {from: bi - region.b0, to: bi - region.b0, blocks: 0, count: reference === undefined ? 0 : typeof reference === "number" ? reference < 0 ? -reference : 1 : reference.count};
                 runs.set(token, record); if (tick(stats, token.length + 4)) yield;
             }
             if (previous !== token) record.blocks++;
             record.to = bi - region.b0 + 1; previous = token;
             if (facts?.optional?.omission?.replacement) { record.occurrences = (record.occurrences ?? 0) + 1; if (tick(stats, 2)) yield; }
         } else tokens!.add(token);
+        if (working) { working.set(token, (working.get(token) ?? 0) + 1); if (tick(stats, 2)) yield; }
         // Sum comparison lengths for the captured edit without rereading row tokens.
         if (facts?.optional?.omission) {
             const bound = facts.optional.omission, cost = Math.max(token.length, facts.maximum);
@@ -355,6 +358,7 @@ function* completeCommonAlignment(left: Index, right: Index, region: Region, row
         }
         if (tick(stats, token.length + (runs ? 8 : 4))) yield;
     }
+    if (counts && working) counts.working = working;
     const replacement = facts?.optional?.omission?.replacement;
     if (replacement) for (const record of runs!.values()) {
         replacement.required += record.count;
@@ -394,26 +398,37 @@ function* completeCommonAlignment(left: Index, right: Index, region: Region, row
 }
 /** Unique common tokens establish a complete ordered match directly. Duplicates require
  * matching both complete common sequences; unknown or crossed matches retain the frontier. */
-function* orderedCommonAlignment(left: Index, right: Index, region: Region, stats: Stats, facts?: CommonFacts): Generator<void, readonly Region[] | undefined> {
+function* orderedCommonAlignment(left: Index, right: Index, region: Region, stats: Stats, facts?: CommonFacts, counts?: DiffRepairCounts): Generator<void, readonly Region[] | undefined> {
     if (Math.max(region.a1 - region.a0, region.b1 - region.b0) > 65536) return;
-    const rows = new Map<string, number>();
+    const reference = counts && !counts.previous ? new Map<string, CountToken>() : undefined;
+    const rows: Map<string, number | CountToken> = reference ?? new Map<string, number>();
     for (let ai = region.a0; ai < region.a1; ai++) {
         const token = (yield* getLine(left, ai, stats)).token;
         if (token === undefined) return;
-        // Negative values mark repeated tokens; eligible roots also retain their counts.
+        // Roots keep counts and first occurrences in the same alphabet map. Child probes
+        // retain their compact numeric representation; negative values mark repetitions.
         const previous = rows.get(token);
-        rows.set(token, previous === undefined ? ai : facts?.optional ? previous < 0 ? previous - 1 : -2 : -1);
+        if (reference) {
+            const old = previous as CountToken | undefined;
+            rows.set(token, {first: old?.first ?? ai, count: (old?.count ?? 0) + 1});
+            if (tick(stats, 2)) yield;
+        } else {
+            const old = previous as number | undefined;
+            rows.set(token, old === undefined ? ai : facts?.optional ? old < 0 ? old - 1 : -2 : -1);
+        }
         if (facts) { facts.maximum = Math.max(facts.maximum, token.length); if (tick(stats, facts.optional ? 2 : 1)) yield; }
         if (tick(stats, token.length + 4)) yield;
     }
+    if (counts && reference) counts.reference = reference;
     const changes: Region[] = []; let a0 = region.a0, b0 = region.b0;
     for (let bi = region.b0; bi < region.b1; bi++) {
         const token = (yield* getLine(right, bi, stats)).token;
         if (token === undefined) return;
-        const ai = rows.get(token); stats.lineComparisons++;
+        const record = rows.get(token); stats.lineComparisons++;
         if (tick(stats, token.length + 4)) yield;
-        if (ai === undefined) continue;
-        if (ai < 0) return yield* completeCommonAlignment(left, right, region, rows, stats, facts);
+        if (record === undefined) continue;
+        const ai = typeof record === "number" ? record : record.count > 1 ? -1 : record.first;
+        if (ai < 0) return yield* completeCommonAlignment(left, right, region, rows, stats, facts, counts);
         if (ai < a0) return; // Repeated working tokens or crossed unique pairs.
         if (a0 < ai || b0 < bi) changes.push({ a0, a1: ai, b0, b1: bi });
         a0 = ai + 1; b0 = bi + 1;
@@ -620,7 +635,7 @@ function* repairedProfiles(left: Index, right: Index, changes: readonly Region[]
     return profiles;
 }
 type ProfileTask = Readonly<{profiles: RootProfiles; from: number; to: number; direction: "earliest" | "latest"; boundary?: number | undefined}>;
-type ProfileRepair = Readonly<{from: number; to: number; create: () => Generator<void, RootProfiles>}>;
+type ProfileRepair = Readonly<{cost: number; from: number; to: number; create: () => Generator<void, RootProfiles>}>;
 type Task = Region & {profile?: ProfileTask; distance?: number};
 /** Forced reference rows enumerate every optimal midpoint; overlap order chooses the canonical one. */
 function* profileMidpoint(region: Region, profiles: RootProfiles, from: number, to: number, stats: Stats): Generator<void, readonly [number, number, number] | undefined> {
@@ -638,10 +653,11 @@ function* profileMidpoint(region: Region, profiles: RootProfiles, from: number, 
     return bestX < 0 ? undefined : [bestX, bestY, minimum];
 }
 /** A forced-match child inherits one exact profile. Its sibling owns the shared ordinal. */
-function* profileSplit(left: Index, right: Index, region: Region, task: ProfileTask, stats: Stats, saved?: readonly [number, number, number]): Generator<void, readonly [number, number, number] | Readonly<{changes: readonly Region[]}>> {
+function* profileSplit(left: Index, right: Index, region: Region, task: ProfileTask, stats: Stats, saved?: readonly [number, number, number], checked = false): Generator<void, readonly [number, number, number] | Readonly<{changes: readonly Region[]}>> {
     const n = region.a1 - region.a0, m = region.b1 - region.b0, minimum = n + m - 2 * (task.to - task.from);
     // The exact distance excludes overlap before the existing distance-64 shortcut phase.
-    if (!saved && Math.min(n, m) >= 64) {
+    // Only this same current-region bisection can already have declined both shortcuts.
+    if (!saved && !checked && Math.min(n, m) >= 64) {
         const single = yield* singleTokenAlignment(left, right, region, stats);
         if (single) return {changes: single};
         const ordered = yield* orderedCommonAlignment(left, right, region, stats);
@@ -872,7 +888,7 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
     // Same final complete checkpoint as the ordinary search, under the unchanged cap.
     const repairCheckpoint = phase >= 64 ? Math.min(frontierLimits.lastDistance, phase - phase % frontierLimits.checkpointStride) : undefined;
     if (repair && tick(stats, 8)) yield;
-    let preparedRoot: {facts: CommonFacts; lower: number} | undefined;
+    let preparedRoot: {facts: CommonFacts; lower: number} | undefined, checked = false;
     const start = (vector: Int32Array, diagonal: number): number => {
         const index = origin + diagonal, insert = vector[index + 1]!, remove = vector[index - 1]! < 0 ? -1 : vector[index - 1]! + 1;
         if (capture) {
@@ -895,9 +911,11 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
             if (tick(stats, points.length)) yield;
         }
         if (repair && tick(stats, 2)) yield;
-        if (repair && capture && repairCheckpoint !== undefined && distance === repairCheckpoint) {
+        // Do not construct a linear profile when its setup bound exceeds even the full
+        // two-direction wave-cell count. Retained waves can make the ordinary path cheaper.
+        if (repair && capture && repairCheckpoint !== undefined && distance === repairCheckpoint && repair.cost <= phase * (phase + 1)) {
             const current: ProfileTask = {profiles: yield* repair.create(), from: repair.from, to: repair.to, direction: "latest"};
-            const point = yield* profileSplit(a, b, region, current, stats);
+            const point = yield* profileSplit(a, b, region, current, stats, undefined, checked);
             if (!("changes" in point)) {
                 capture.repair = current; capture.certified = true;
                 if (capture.plan) capture.plan = {...capture.plan, minimum: point[2]};
@@ -926,8 +944,11 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
             const facts: CommonFacts | undefined = root || optionalRoot || certificateBudget && certificateBudget.remaining > 0
                 ? {maximum: 0, ...(optionalRoot ? {optional: {records: new Map(), complete: false,
                     omission: {comparison: 0, maximum: 0, replacement: {required: 0, missing: 0, lower: rootLower!}}}} : {})} : undefined;
-            const ordered = yield* orderedCommonAlignment(a, b, region, stats, facts);
+            const counts: DiffRepairCounts | undefined = capture && !repair ? {region, previous: capture.reference} : undefined;
+            const ordered = yield* orderedCommonAlignment(a, b, region, stats, facts, counts);
+            if (capture && counts && (counts.reference || counts.previous)) capture.counts = counts;
             if (ordered) { if (capture) capture.ordered = true; return { changes: ordered }; }
+            checked = true;
             if (facts?.working && root && capture && rootAlphabet) {
                 const prepared = yield* projectionSource(root, b, region, rootAlphabet, stats);
                 if (prepared) {
@@ -1174,18 +1195,26 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
         const right = yield* indexLines(b, stats, cache?.working ?? left);
         if (cache) stats.equalities = yield* prepareEqualities(right, cache.equalities, stats);
         if (cache?.serial === serial) cache.working = right;
-        let repaired: {create: () => Generator<void, RootProfiles>; proof: DiffRepairCertificate} | undefined;
+        let repaired: {cost: number; create: () => Generator<void, RootProfiles>; proof: DiffRepairCertificate} | undefined;
         let reused = prior ? yield* reuseAlignment(prior, right, stats) : undefined;
         if (!reused && prior?.proof) {
             const local = yield* repairAlignment(left, right, prior.working, prior.changes, prior.proof, stats);
             if (local) {
-                if ("required" in local) { repaired = {create: () => repairedProfiles(left, right, prior.changes, local.required, stats), proof: local.proof}; }
+                if ("required" in local) {
+                    let maximum = 0;
+                    for (const token of local.proof.reference.keys()) { maximum = Math.max(maximum, token.length); if (tick(stats, 2)) yield; }
+                    // Flags/membership, two token scans, row initialization and midpoint,
+                    // including lazy working metadata. Child work remains independently bounded.
+                    const cost = 24 * (left.lines.size + 1) + prior.changes.length + 3 * right.to + 2 * right.lines.size * maximum + 12 * right.lines.size + 512;
+                    if (tick(stats, 12)) yield;
+                    repaired = {cost, create: () => repairedProfiles(left, right, prior.changes, local.required, stats), proof: local.proof};
+                }
                 else reused = { plan: { ...prior, changes: local.changes, proof: local.proof }, from: local.from, to: local.to,
                     delta: local.delta, rowDelta: local.rowDelta, origins: local.origins };
             }
         }
         const frontier: FrontierCapture | undefined = cache && left.lines.size <= frontierLimits.rows && right.lines.size <= frontierLimits.rows
-            ? { previous: cache.frontier, first: true } : undefined;
+            ? { previous: cache.frontier, reference: cache.repairReference, first: true } : undefined;
         const splits: SplitCapture | undefined = frontier ? { count: 0, reused: false } : undefined;
         const savedSplits = splits && previousSplits && !reused ? yield* retainedSplits(previousSplits, right, stats) : undefined;
         const seed = frontier && !reused ? yield* recursiveSeed(frontier.previous, previousSplits, right, stats) : undefined;
@@ -1218,13 +1247,17 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
                 if (frontier) frontier.first = false;
                 const region = { a0, a1, b0, b1 }, saved = savedSplits?.get(regionKey(region));
                 if (savedSplits && tick(stats, 4)) yield;
-                const profile = inherited && !capture && a1 - a0 + b1 - b0 - 2 * (inherited.to - inherited.from) >= 128 ? inherited : undefined;
+                // An unchanged saved subtree under a root profile keeps its own decisions.
+                // The root disables speculation; its sibling retains the captured boundary.
+                // Subtree-only profiles keep sharing their pair through saved descendants.
+                const profile = inherited && !capture && !(saved && (frontier?.profile || frontier?.repair))
+                    && a1 - a0 + b1 - b0 - 2 * (inherited.to - inherited.from) >= 128 ? inherited : undefined;
                 const certified: {value?: RootProfiles} = {};
                 const before = stats.work, split = profile ? yield* profileSplit(left, right, region, profile, stats, saved?.point)
-                    : saved?.point ?? (yield* bisect(left, right, region, stats, capture, seed, capture ? undefined : certificateBudget, alphabet ?? undefined, certified, task.distance, capture && repaired ? {create: repaired.create, from: prefix, to: repaired.proof.matches - suffix} : undefined));
+                    : saved?.point ?? (yield* bisect(left, right, region, stats, capture, seed, capture ? undefined : certificateBudget, alphabet ?? undefined, certified, task.distance, capture && repaired ? {cost: repaired.cost, create: repaired.create, from: prefix, to: repaired.proof.matches - suffix} : undefined));
                 // A root profile disables speculation. A child profile stays on its subtree;
                 // cheap descendants cannot reach the distance-64 certificate phase.
-                if (capture?.plan && seed && !capture.profile) certificateBudget = { remaining: stats.work, certified: false };
+                if (capture?.plan && seed && !capture.profile && !capture.repair) certificateBudget = { remaining: stats.work, certified: false };
                 if (saved && splits) splits.reused = true;
                 if (splits && !("changes" in split)) yield* retainSplit(splits, region, split, saved?.work ?? stats.work - before, stats);
                 if ("changes" in split) { split.changes.forEach(append); continue; }
@@ -1245,15 +1278,26 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
             }
         }
         let proof = repaired?.proof ?? reused?.plan.proof;
-        if (cache && !proof && (frontier?.ordered || (yield* worthwhileCertificate(left, right, changes, cache.repairReference, frontier?.plan, stats)))) {
+        const counted = frontier?.counts;
+        const useCounts = counted && (counted.reference || counted.previous) && (frontier?.ordered || counted.working && stats.lineComparisons >= frontierLimits.comparisons);
+        if (cache && !proof && (useCounts || frontier?.ordered || (yield* worthwhileCertificate(left, right, changes, cache.repairReference, frontier?.plan, stats)))) {
             // Trimmed outer spans can dwarf the ordered region. Optional certification may
-            // spend at most the work already performed, plus one cooperative advance.
-            const capture = certifyAlignment(left, right, changes, cache?.repairReference, stats), limit = stats.work * 2;
+            // spend at most the original alignment work, plus one cooperative advance.
+            // Charge root count collection to that same budget, not a larger new allowance.
+            const capture = useCounts ? certifyCountedAlignment(left, right, changes, counted!, stats)
+                : certifyAlignment(left, right, changes, cache.repairReference, stats);
+            const collected = useCounts ? 2 * ((counted.reference ? counted.region.a1 - counted.region.a0 : 0) + (counted.working ? counted.region.b1 - counted.region.b0 : 0)) : 0;
+            const limit = (stats.work - collected) * 2;
             try {
                 for (;;) {
                     const step = capture.next();
                     if (stats.work > limit) break;
-                    if (step.done) { proof = step.value; break; }
+                    if (step.done) {
+                        const value = step.value;
+                        proof = value && "matches" in value ? value : value?.proof;
+                        if (value && (proof || stats.lineComparisons >= frontierLimits.comparisons)) alphabet = value.reference;
+                        break;
+                    }
                     yield;
                 }
             } finally { capture.return(undefined); }
