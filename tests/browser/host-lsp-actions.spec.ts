@@ -1,6 +1,7 @@
 import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { coversHost } from "./host-cases.ts";
+import { holdLspReplies } from "../helpers/lsp-replies.ts";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -58,8 +59,10 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await page.addInitScript(() => { const send = WebSocket.prototype.send; WebSocket.prototype.send = function(this: WebSocket, data) { if (typeof data === "string") { const value = JSON.parse(data); if (value.method === "initialize" && value.params.capabilities.textDocument?.codeAction) Reflect.set(window, "actionTestSocket", this); } send.call(this, data); }; });
         await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(input(page)).toBeVisible(); await waitForActions(page); });
     if (coversHost("candidate-hosts", host, "candidate")) test("action choices and lazy previews preserve captured diagnostic ranges, safe commands and complete-set history", async ({ page }) => {
+        const replies = await holdLspReplies(page, "codeAction/resolve");
         const requests: { method: string; params: any }[] = []; let opened = 0, closed = 0;
         page.on("websocket", socket => { opened++; socket.on("close", () => closed++); socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) requests.push(value); }); });
+        await page.reload();
         await seed(page); const ranges = [{ anchor: raw.indexOf("TODO") + 4, head: raw.indexOf("TODO") + 1 }, { anchor: raw.length, head: raw.length }]; await page.evaluate(ranges => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, ranges); }, ranges); const before = await snapshot(page);
         await input(page).press("Control+."); await expect(input(page, "Action module")).toBeFocused(); await waitForActions(page); await expect(choices(page)).toHaveCount(9); await expect(edits(page)).toHaveCount(1); await expect(button(page, "Apply captured action")).toBeEnabled();
         await choices(page).nth(5).evaluate(node => { node.dataset.retained = "action-choice"; });
@@ -68,7 +71,8 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await choices(page).nth(4).click(); await expect(button(page, "Execute captured action")).toBeEnabled(); await choices(page).nth(5).click(); await expect(button(page, "Execute captured action")).toBeEnabled(); expect(requests.some(r => r.method === "workspace/executeCommand")).toBe(false); await exact(page, raw);
         await expect(choices(page).nth(5)).toHaveAttribute("data-retained", "action-choice"); await expect(choices(page).nth(5)).toHaveAttribute("aria-pressed", "true");
         await expect(input(page, "Action module")).toHaveAttribute("data-retained", "action-module");
-        await page.evaluate(() => window.hostFixture.setActionDelay(200)); await choices(page).nth(2).click(); await input(page, "Configuration path").focus(); await waitForActions(page); await expect(input(page, "Configuration path")).toBeFocused(); await expect(edits(page)).toHaveCount(1); await expect(edits(page).first()).toContainText('Insert "DONE"');
+        replies.hold(); await choices(page).nth(2).click(); await expect.poll(replies.waiting).toBe(true);
+        await input(page, "Configuration path").focus(); await replies.release(); await waitForActions(page); await expect(input(page, "Configuration path")).toBeFocused(); await expect(edits(page)).toHaveCount(1); await expect(edits(page).first()).toContainText('Insert "DONE"');
         const request = requests.find(r => r.method === "textDocument/codeAction")!; expect(request.params.range).toEqual({ start: { line: 0, character: 7 }, end: { line: 0, character: 10 } }); expect(request.params.context.triggerKind).toBe(1); expect(request.params.context.diagnostics).toHaveLength(1); expect(request.params.context.diagnostics[0].range).toEqual({ start: { line: 0, character: 6 }, end: { line: 0, character: 10 } });
         expect(requests.filter(r => r.method === "codeAction/resolve")).toHaveLength(1); const initialize = requests.find(r => r.method === "initialize" && r.params.capabilities.textDocument.codeAction)!; expect(initialize.params.capabilities.textDocument.codeAction.resolveSupport.properties).toEqual(["edit"]);
         expect((await snapshot(page)).history).toEqual(before.history); await button(page, "Apply captured action").click(); await waitForActions(page); await exact(page, raw.replace("TODO", "DONE")); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
@@ -170,12 +174,14 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
         await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
     });
     for (const mode of ["selection", "typing", "remount"] as const) if (coversHost(mode === "remount" ? "candidate-hosts" : "plain-candidate", host, "candidate")) test(`pending action resolution expires after ${mode}`, async ({ page }) => {
+        const replies = await holdLspReplies(page, "codeAction/resolve"); await page.reload();
         await seed(page);
         await button(page, "Add navigation companion").click();
         await select(page);
         await preview(page);
-        await page.evaluate(() => window.hostFixture.setActionDelay(1000));
+        replies.hold();
         await choices(page).nth(2).click();
+        await expect.poll(replies.waiting).toBe(true);
         expect((await snapshot(page)).bindings.actions.state.resolving).toBe(true);
         if (mode === "selection") await select(page, raw.indexOf("TODO") + 2);
         else if (mode === "typing") {
@@ -184,13 +190,14 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
             await waitForActions(page);
             await input(page).press("Control+z");
         } else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
+        await expect.poll(replies.cancelled).toBe(true); await replies.release();
         await waitForActions(page);
         await expect(button(page, "Apply captured action")).toBeDisabled();
         await exact(page, raw);
-        await page.evaluate(() => window.hostFixture.setActionDelay(0));
     });
     if (coversHost("candidate-hosts", host, "candidate")) test("action disconnect and idle faults require explicit provider recovery", async ({ page }) => {
-        await page.evaluate(() => {
+        const replies = await holdLspReplies(page, "codeAction/resolve");
+        await page.addInitScript(() => {
             const send = WebSocket.prototype.send; Reflect.set(window, "actionResolutionSends", 0);
             WebSocket.prototype.send = function(this: WebSocket, data) {
                 if (typeof data === "string") { const value = JSON.parse(data);
@@ -199,20 +206,22 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} LSP code 
                 } send.call(this, data);
             };
         });
+        await page.reload();
         await seed(page);
         await button(page, "Add navigation companion").click();
         await select(page);
         await preview(page);
         const resolutions = await page.evaluate(() => Reflect.get(window, "actionResolutionSends") as number);
-        await page.evaluate(() => window.hostFixture.setActionDelay(1000));
+        replies.hold();
         await choices(page).nth(2).click();
         await expect.poll(() => page.evaluate(() => Reflect.get(window, "actionResolutionSends") as number)).toBeGreaterThan(resolutions);
+        await expect.poll(replies.waiting).toBe(true);
+        // The response remains withheld while its original transport closes.
         await page.evaluate(() => (Reflect.get(window, "actionTestSocket") as WebSocket).send(JSON.stringify({ jsonrpc: "2.0", method: "fixture/disconnect" })));
         await waitForActions(page);
         await expect(button(page, "Reconnect action provider")).toBeEnabled();
         await exact(page, raw);
         await button(page, "Reconnect action provider").click();
-        await page.evaluate(() => window.hostFixture.setActionDelay(0));
         await select(page);
         await preview(page);
         await page.evaluate(() => window.hostFixture.faultIdleAction());

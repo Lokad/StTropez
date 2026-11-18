@@ -409,6 +409,7 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await disposeColorsAndLinks(page);
     });
     test("advertised signature triggers and retriggers show active parameters without taking completion shortcuts", async ({ page }) => {
+        const replies = await holdLspReplies(page, "textDocument/signatureHelp"); await page.reload();
         const contexts: { triggerKind: number; triggerCharacter?: string; isRetrigger: boolean; activeSignatureHelp?: unknown }[] = [];
         page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "textDocument/signatureHelp") contexts.push(value.params.context); }));
         const popup = page.getByRole("tooltip", { name: "Signature help", exact: true }), parameter = popup.getByLabel("Active signature parameter", { exact: true });
@@ -424,8 +425,9 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
         await field(page).press("Control+Space"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
         await field(page).press("Escape"); await expect(page.getByRole("option")).toHaveCount(0); await expect(popup).toBeVisible();
         await field(page).press("Escape"); await expect(popup).not.toBeVisible();
-        await page.evaluate(() => window.hostFixture.setSignatureDelay(1000)); await field(page).press("Control+Shift+Space"); await expect.poll(async () => (await snapshot(page)).bindings.signature.pending).toBe(true);
+        replies.hold(); await field(page).press("Control+Shift+Space"); await expect.poll(replies.waiting).toBe(true); await expect.poll(async () => (await snapshot(page)).bindings.signature.pending).toBe(true);
         await field(page, "Configuration path").fill("while-signature.csv"); await expect.poll(async () => (await snapshot(page)).bindings.signature.pending).toBe(false);
+        await expect.poll(replies.cancelled).toBe(true); await replies.release();
         await expect(field(page, "Configuration path")).toBeFocused(); expect((await snapshot(page)).source.exports).toBe(0);
     });
     test("read-only manual signature help keeps complete selections and yields only to explicit hover", async ({ page }) => {
@@ -475,7 +477,8 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
     });
 });
 test("missing and withdrawn language capabilities fail explicitly without a worker fallback or a late color edit", async ({ page }) => {
-     await page.goto("/hosts/plain/?editor=candidate&language=lsp&lspSubset=dynamic");
+    const replies = await holdLspReplies(page, "textDocument/colorPresentation");
+    await page.goto("/hosts/plain/?editor=candidate&language=lsp&lspSubset=dynamic");
     const text = 'lookup("a", )\r\nconst color = "#abc";'; await seed(page, text, text.indexOf(")"));
     await field(page).press("Control+Shift+Space"); await expect.poll(async () => (await snapshot(page)).bindings.signature.presentation.status).toBe("failed");
     await button(page, "Discover module links").click(); await expect.poll(async () => (await snapshot(page)).bindings.links.state.status).toBe("failed");
@@ -484,9 +487,9 @@ test("missing and withdrawn language capabilities fail explicitly without a work
     await page.evaluate(methods => window.hostFixture.providerCustom("fixture/register", { registrations: methods.map((method, i) => ({ id: `selected-${i}`, method, registerOptions: { documentSelector: null, ...(i === 0 ? { triggerCharacters: ["("], retriggerCharacters: [","] } : {}), ...(i === 1 ? { resolveProvider: true } : {}) } })) }), methods);
     await field(page).press("Control+Shift+Space"); await expect(page.getByRole("tooltip", { name: "Signature help", exact: true })).toBeVisible(); await field(page).press("Escape");
     await button(page, "Discover document colors").click(); await expect.poll(async () => (await snapshot(page)).bindings.colors.state.count).toBe(1);
-    await page.getByRole("textbox", { name: "Proposed color", exact: true }).fill("#112233"); await page.evaluate(() => window.hostFixture.setColorsDelay(650)); await button(page, "Preview color presentations").click();
+    await page.getByRole("textbox", { name: "Proposed color", exact: true }).fill("#112233"); replies.hold(); await button(page, "Preview color presentations").click(); await expect.poll(replies.waiting).toBe(true);
     await expect.poll(async () => (await snapshot(page)).bindings.colors.state.pending).toBe(true);
     await page.evaluate(() => window.hostFixture.providerCustom("fixture/unregister", { unregisterations: [{ id: "selected-2", method: "textDocument/documentColor" }] }));
-    await expect.poll(async () => (await snapshot(page)).bindings.colors.state.pending).toBe(false); await expect(button(page, "Apply captured color")).toBeDisabled();
+    await replies.release(); await expect.poll(async () => (await snapshot(page)).bindings.colors.state.pending).toBe(false); await expect(button(page, "Apply captured color")).toBeDisabled();
     expect(await page.evaluate(() => { const f = window.hostFixture; return f.range(0, f.snapshot().source.length); })).toBe(text);
 });
