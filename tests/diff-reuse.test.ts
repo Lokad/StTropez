@@ -377,6 +377,22 @@ for (const [fraction, maximumColdRatio] of [[0.25, 0.6], [0.5, 0.48], [0.75, 0.8
             assert.deepEqual(result.hunks, expected.hunks); assert.equal(result.lineEdits, expected.lineEdits);
             reconstruct(result, original, edited.slice(0, edited.length));
             assert.ok(result.work < expected.work * maximumColdRatio, `${fraction}: ${result.work} warm / ${expected.work} cold work`);
+            if (fraction === 0.5) {
+                // A cheap first split must leave useful decisions for later edits and history.
+                const typed = edited.replace(at + 5, at + 5, "!");
+                const typedText = typed.slice(0, typed.length), distantAt = typedText.indexOf("changed ", typedText.length * 0.75) + 3;
+                assert.ok(distantAt > at);
+                const distant = typed.replace(distantAt, distantAt, "\n");
+                const history = [["type", typed, 20_000], ["distant Enter", distant, 5_700_000],
+                    ["undo distant", typed, 5_700_000], ["undo type", edited, 20_000], ["undo Enter", working, 4_400_000],
+                    ["redo Enter", edited, 4_400_000], ["redo type", typed, 20_000], ["redo distant", distant, 5_700_000]] as const;
+                for (const [label, capture, maximumWork] of history) {
+                    const warm = finish(baseline, capture, cache), fresh = finish(baseline, capture);
+                    assert.deepEqual(warm.hunks, fresh.hunks); assert.equal(warm.lineEdits, fresh.lineEdits);
+                    reconstruct(warm, original, capture.slice(0, capture.length));
+                    assert.ok(warm.work < maximumWork, label + ": " + warm.work + " work must preserve reuse across successive captures");
+                }
+            }
             assert.equal(JSON.stringify(initial.hunks), retained);
         } finally { cache.dispose(); }
     });
