@@ -227,6 +227,15 @@ current checkpoint through the final retained distance, then attempts certificat
 reduced scan-cost bound fits the remaining guaranteed search work. Incomplete facts, ambiguous
 matches and insufficient remaining work keep the ordinary search.
 
+A captured removal of one complete working row can also admit one omitted matchable reference
+row. The certificate requires at least three other matchable rows between optional occurrences,
+failure to embed all required rows, and exactly one reference-row omission that permits the
+remaining rows to embed. Its prefix/suffix gap is at most 256 working rows, and the optional
+occurrence must be unique. The same profile pair is repaired in place; incomplete or
+ambiguous proofs decline. Prepared comparison-length sums bound the extra scans without
+rereading token metadata. Admission waits for every ordinary root checkpoint and fits
+the guaranteed remaining work; retained storage and current-capture publication are unchanged.
+
 Certificates examine at most 65,536 rows per side. A temporary profile set contains at most
 65,536 byte flags and two 65,537-entry unsigned 32-bit vectors, plus bounded token references
 and alphabet metadata. This temporary state is not published in the cache and is separate

@@ -405,8 +405,10 @@ for (const [count, fraction, maximumColdRatio, maximumHistoryRatio = maximumCold
                 const remove = matching.slice(0, matching.length).indexOf("row 1\n", distantAt + 42);
                 assert.ok(remove > distantAt);
                 const deleted = matching.replace(remove, remove + "row 1\n".length, "");
+                const typedDeleted = deleted.replace(distantAt + 45, distantAt + 45, "!");
                 const history = [["matching run", matching, 12_000_000], ["type after matching", typed, 23_000],
-                    ["undo typing", matching, 23_000], ["delete required row", deleted, 18_900_000],
+                    ["undo typing", matching, 23_000], ["delete required row", deleted, 12_000_000],
+                    ["type after deletion", typedDeleted, 23_000], ["undo deletion typing", deleted, 23_000],
                     ["undo required deletion", matching, 12_000_000], ["undo matching", edited, 15_350_000],
                     ["redo matching", matching, 12_000_000], ["undo matching again", edited, 15_350_000]] as const;
                 for (const [label, capture, maximumWork] of history) {
@@ -427,7 +429,7 @@ for (const [count, fraction, maximumColdRatio, maximumHistoryRatio = maximumCold
         } finally { cache.dispose(); }
     });
 
-for (const [count, fraction, matchingRun = false] of [[2000, 0.25], [2000, 0.5], [2000, 0.75], [20000, 0.5], [20000, 0.75, true]] as const) test(`comparison decision reuse survives cancellation and failure without publishing superseded captures: ${count}/${fraction}`, () => {
+for (const [count, fraction, matchingRun = false, omission = false] of [[2000, 0.25], [2000, 0.5], [2000, 0.75], [20000, 0.5], [20000, 0.75, true], [20000, 0.75, true, true]] as const) test(`comparison decision reuse survives cancellation and failure without publishing superseded captures: ${count}/${fraction}${omission ? "/omission" : ""}`, () => {
     const original = Array.from({ length: count }, (_, i) => `row ${i % 20}\n`).join("");
     const text = original.replaceAll("row 0\n", "changed 0\n").replaceAll("row 10\n", "changed 10\n").replaceAll("row 11\n", "row 11\nrow 11\n");
     const baseline = TextBuffer.from(original), cache = new DiffReferenceCache();
@@ -438,16 +440,23 @@ for (const [count, fraction, matchingRun = false] of [[2000, 0.25], [2000, 0.5],
         working = working.replace(first, first, "\n");
     }
     const current = working.slice(0, working.length), at = current.indexOf("changed ", current.length * fraction) + (matchingRun ? 0 : 3);
-    const split = working.replace(at, at, matchingRun ? "row 0\n".repeat(7) : "\n");
+    let split = working.replace(at, at, matchingRun ? "row 0\n".repeat(7) : "\n");
+    if (omission) {
+        finish(baseline, working, cache); working = split;
+        const remove = working.slice(0, working.length).indexOf("row 1\n", at + 42);
+        assert.ok(remove > at); split = working.replace(remove, remove + "row 1\n".length, "");
+    }
     const expected = finish(baseline, split);
     assert.ok(finish(baseline, working, cache).lineComparisons >= 100000, "retain an eligible expensive frontier");
-    const cancelled = new TextDiff(baseline, split, cache); let partial = cancelled.next(512);
     // Cancel after actual search progress, independently of the completed cold job's cost.
-    // The large cases interrupt active root or optional-run profile subdivision.
-    const reached = (value: DiffProgress) => count === 20000 ? value.work >= (matchingRun ? 9_000_000 : 3_000_000) : value.lineComparisons >= 256;
-    while (partial.status === "running" && !reached(partial)) partial = cancelled.next(512);
-    assert.ok(reached(partial));
-    assert.equal(partial.status, "running"); cancelled.dispose();
+    // The omission case interrupts both in-place profile repair and later subtree sharing.
+    const reached = (value: DiffProgress, threshold = matchingRun ? 9_000_000 : 3_000_000) => count === 20000 ? value.work >= threshold : value.lineComparisons >= 256;
+    for (const threshold of omission ? [5_200_000, 9_000_000] : [matchingRun ? 9_000_000 : 3_000_000]) {
+        const cancelled = new TextDiff(baseline, split, cache); let partial = cancelled.next(512);
+        while (partial.status === "running" && !reached(partial, threshold)) partial = cancelled.next(512);
+        assert.ok(reached(partial, threshold));
+        assert.equal(partial.status, "running"); cancelled.dispose();
+    }
     const slice = TextBuffer.prototype.slice, failure = new Error("captured frontier read failed");
     const failed = new TextDiff(baseline, split, cache);
     try {

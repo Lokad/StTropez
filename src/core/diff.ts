@@ -346,6 +346,12 @@ function* completeCommonAlignment(left: Index, right: Index, region: Region, row
             if (previous !== token) record.blocks++;
             record.to = bi - region.b0 + 1; previous = token;
         } else tokens!.add(token);
+        // Sum comparison lengths for the captured removal without rereading row tokens.
+        if (facts?.optional?.omission) {
+            const bound = facts.optional.omission, cost = Math.max(token.length, facts.maximum);
+            bound.comparison += cost; bound.maximum = Math.max(bound.maximum, cost);
+            if (tick(stats, 2)) yield;
+        }
         if (tick(stats, token.length + (runs ? 8 : 4))) yield;
     }
     if (facts) { facts.working = rightTokens; if (facts.optional) facts.optional.complete = true; if (tick(stats, facts.optional ? 2 : 1)) yield; }
@@ -410,7 +416,7 @@ function* orderedCommonAlignment(left: Index, right: Index, region: Region, stat
     return changes;
 }
 type OptionalRecord = {from: number; to: number; blocks: number; count: number};
-type CommonFacts = { working?: Alphabet; maximum: number; optional?: {records: Map<string, OptionalRecord>; complete: boolean} };
+type CommonFacts = { working?: Alphabet; maximum: number; optional?: {records: Map<string, OptionalRecord>; complete: boolean; omission?: {comparison: number; maximum: number}} };
 type ChildDistance = { minimum?: number };
 /** The complete working alphabet and all short row tokens are already materialized.
  * If every matchable reference row embeds in order, every optimum must match them all.
@@ -527,8 +533,10 @@ function* profileSplit(left: Index, right: Index, region: Region, task: ProfileT
  * Two required rows between optional occurrences make matching two of them strictly worse.
  * Accept only one occurrence that embeds with every other matchable reference row.
  * This proves the optimum even without a known distance. Prepared root facts avoid
- * duplicate token scans; children also verify their independently known distance. */
-function* optionalRunSplit(left: Index, right: Index, region: Region, minimum: number | undefined, stats: Stats, captured: {value?: RootProfiles}, prepared?: ReadonlyMap<string, OptionalRecord>): Generator<void, readonly [number, number, number] | undefined> {
+ * duplicate token scans; children also verify their independently known distance.
+ * After one working-row removal, three separators and a unique omitted required row
+ * can still force every optimum reference match. Ambiguous omissions decline. */
+function* optionalRunSplit(left: Index, right: Index, region: Region, minimum: number | undefined, stats: Stats, captured: {value?: RootProfiles}, prepared?: ReadonlyMap<string, OptionalRecord>, allowOmission = false): Generator<void, readonly [number, number, number] | undefined> {
     const n = region.a1 - region.a0, m = region.b1 - region.b0;
     let records = prepared, common = 0;
     if (!records) {
@@ -563,35 +571,84 @@ function* optionalRunSplit(left: Index, right: Index, region: Region, minimum: n
     if (optional === undefined) return;
     const flags = new Uint8Array(n), earliest = new Uint32Array(n + 1), latest = new Uint32Array(n + 1), required: string[] = [];
     for (let row = 0; row <= n; row++) if (tick(stats, 3)) yield;
-    let gap = 2;
+    let gap = 2, minimumGap = n, seenOptional = false;
     for (let row = 0; row < n; row++) {
         const token = (yield* getLine(left, region.a0 + row, stats)).token!;
-        if (token === optional) { if (gap < 2) return; flags[row] = 2; gap = 0; }
+        if (token === optional) {
+            if (gap < 2) return;
+            if (allowOmission) { if (seenOptional) minimumGap = Math.min(minimumGap, gap); seenOptional = true; if (tick(stats, 2)) yield; }
+            flags[row] = 2; gap = 0;
+        }
         else if (records.has(token)) { flags[row] = 1; required.push(token); gap++; }
         if (tick(stats, token.length + 6)) yield;
     }
     if (minimum !== undefined && n + m - 2 * (required.length + 1) !== minimum) return;
-    let at = 0;
-    for (let row = 0; row < required.length; row++) {
+    let at = 0, prefix = 0, suffix = required.length;
+    prefixScan: for (let row = 0; row < required.length; row++) {
         const wanted = required[row]!;
         for (;;) {
-            if (at === m) return;
+            if (at === m) { if (!allowOmission) return; break prefixScan; }
             const token = (yield* getLine(right, region.b0 + at, stats)).token!, equal = token === wanted;
             stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
             at++; if (equal) break;
         }
-        earliest[row + 1] = at; if (tick(stats)) yield;
+        earliest[row + 1] = at; prefix = row + 1; if (tick(stats)) yield;
     }
     at = m; latest[required.length] = m;
-    for (let row = required.length - 1; row >= 0; row--) {
+    suffixScan: for (let row = required.length - 1; row >= 0; row--) {
         const wanted = required[row]!;
         for (;;) {
-            if (!at) return;
+            if (!at) { if (!allowOmission) return; break suffixScan; }
             const token = (yield* getLine(right, region.b0 + at - 1, stats)).token!, equal = token === wanted;
             stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
             at--; if (equal) break;
         }
-        latest[row] = at; if (tick(stats)) yield;
+        latest[row] = at; suffix = row; if (tick(stats)) yield;
+    }
+    if (prefix < required.length) {
+        // q optional matches lose at least 3(q-1) required rows. Once all required
+        // rows cannot embed, a witness with one omission and one optional match is
+        // strictly better than q=0 or q>=2. Its omitted reference row must be unique.
+        if (minimumGap < 3) return;
+        // Prefixes through prefix and suffixes from suffix are complete and exact.
+        let omitted = -1;
+        for (let row = Math.max(0, suffix - 1); row <= Math.min(prefix, required.length - 1); row++) {
+            if (earliest[row]! <= latest[row + 1]!) { if (omitted >= 0) return; omitted = row; }
+            if (tick(stats, 4)) yield;
+        }
+        if (omitted < 0 || latest[omitted + 1]! - earliest[omitted]! > frontierLimits.changedRows) return;
+        let ordinal = 0;
+        for (let row = 0; row < n; row++) {
+            if (flags[row] === 1 && ordinal++ === omitted) { flags[row] = 0; break; }
+            if (tick(stats, 2)) yield;
+        }
+        // Keep one profile pair: shift the known suffix and repair only the changed sides.
+        const oldLength = required.length;
+        for (let row = omitted; row < oldLength - 1; row++) { required[row] = required[row + 1]!; if (tick(stats)) yield; }
+        required.pop();
+        for (let row = omitted; row < oldLength; row++) { latest[row] = latest[row + 1]!; if (tick(stats)) yield; }
+        at = earliest[omitted]!;
+        for (let row = omitted; row < required.length; row++) {
+            const wanted = required[row]!;
+            for (;;) {
+                if (at === m) throw new Error("Unique omission prefix does not embed.");
+                const token = (yield* getLine(right, region.b0 + at, stats)).token!, equal = token === wanted;
+                stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
+                at++; if (equal) break;
+            }
+            earliest[row + 1] = at; if (tick(stats)) yield;
+        }
+        at = latest[omitted]!;
+        for (let row = omitted - 1; row >= 0; row--) {
+            const wanted = required[row]!;
+            for (;;) {
+                if (!at) throw new Error("Unique omission suffix does not embed.");
+                const token = (yield* getLine(right, region.b0 + at - 1, stats)).token!, equal = token === wanted;
+                stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
+                at--; if (equal) break;
+            }
+            latest[row] = at; if (tick(stats)) yield;
+        }
     }
     let chosen = -1, ordinal = 0, selectedOrdinal = 0;
     for (let row = 0; row < n; row++) {
@@ -711,12 +768,20 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
         if ((distance === 64 || distance === resumeDistance && resumeDistance > 64) && Math.min(n, m) >= 64) {
             const changes = yield* singleTokenAlignment(a, b, region, stats);
             if (changes) return { changes };
-            const rootLower = capture && seed && rootAlphabet && (yield* changedReferenceMatch(b, seed, rootAlphabet, stats))
+            // A full-row removal has no new token in the changed window. Inspect its
+            // captured old row; child speculation keeps its existing insertion guard.
+            let omission = false;
+            if (capture && seed && rootAlphabet && seed.end === seed.from && seed.to === seed.from + 1) {
+                const token = (yield* getLine(seed.frontier.working, seed.from, stats)).token;
+                omission = token !== undefined && rootAlphabet.has(token);
+                if (tick(stats, (token?.length ?? 0) + 4)) yield;
+            }
+            const rootLower = capture && seed && rootAlphabet && (omission || (yield* changedReferenceMatch(b, seed, rootAlphabet, stats)))
                 ? yield* recursiveDistance(seed, region, stats) : undefined;
             // No certificate can fit after the last retained wave if the lower bound ends there.
             const optionalRoot = rootLower !== undefined && Math.ceil(rootLower / 2) > frontierLimits.lastDistance;
             const facts: CommonFacts | undefined = root || optionalRoot || certificateBudget && certificateBudget.remaining > 0
-                ? {maximum: 0, ...(optionalRoot ? {optional: {records: new Map(), complete: false}} : {})} : undefined;
+                ? {maximum: 0, ...(optionalRoot ? {optional: {records: new Map(), complete: false, ...(omission ? {omission: {comparison: 0, maximum: 0}} : {})}} : {})} : undefined;
             const ordered = yield* orderedCommonAlignment(a, b, region, stats, facts);
             if (ordered) { if (capture) capture.ordered = true; return { changes: ordered }; }
             if (facts?.working && root && capture && rootAlphabet) {
@@ -819,12 +884,16 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
             const stop = Math.ceil(lower / 2);
             const cells = (start: number) => start >= stop ? 0 : (stop * (stop + 1) - start * (start + 1)) / 2;
             const remaining = cells(Math.max(distance, resumeForward)) + cells(Math.max(distance, resumeReverse));
-            const cost = offsetAt(a, region.a1) - offsetAt(a, region.a0) + 2 * (offsetAt(b, region.b1) - offsetAt(b, region.b0))
-                + (3 * m + 512) * facts.maximum + 28 * n + 20 * m + 1032;
+            const omission = facts.optional!.omission;
+            // A bounded omission gap and optional run add at most 512 repeated row probes.
+            const cost = omission ? offsetAt(a, region.a1) - offsetAt(a, region.a0) + 4 * omission.comparison
+                + 44 * n + 16 * m + 1024 * omission.maximum + 8 * facts.optional!.records.size + 4096
+                : offsetAt(a, region.a1) - offsetAt(a, region.a0) + 2 * (offsetAt(b, region.b1) - offsetAt(b, region.b0))
+                    + (3 * m + 512) * facts.maximum + 28 * n + 20 * m + 1032;
             if (tick(stats, 24)) yield;
             if (cost <= remaining) {
                 const captured: {value?: RootProfiles} = {}, limit = stats.work + cost;
-                const probe = optionalRunSplit(a, b, region, undefined, stats, captured, facts.optional!.records);
+                const probe = optionalRunSplit(a, b, region, undefined, stats, captured, facts.optional!.records, !!omission);
                 try {
                     for (;;) {
                         const step = probe.next();
