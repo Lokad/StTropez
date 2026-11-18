@@ -26,26 +26,37 @@ async function disposeColorsAndLinks(page: Page) {
     for (const feature of [state.bindings.colors, state.bindings.links]) expect(feature).toMatchObject({ transport: null, sessions: 0, subscriptions: 0, disposed: true });
     expect(state.bindings.colors.decoratedViews).toBe(0);
 }
+async function languageFailureScene(page: Page) {
+    const raw = 'lookup("key", )\r\nimport "sample-utils";\r\nconst color = "#abc";';
+    await seed(page, raw, raw.indexOf(")"));
+    await button(page, "Add module companion").click();
+    const before = await snapshot(page);
+    const links = page.getByLabel("Module link results", { exact: true });
+    const colors = page.getByLabel("Document color results", { exact: true });
+    const popup = page.getByRole("tooltip", { name: "Signature help", exact: true });
+    const proposed = field(page, "Proposed color"), apply = button(page, "Apply captured color");
+    const discoverColors = async () => {
+        await field(page).focus();
+        await button(page, "Discover document colors").click();
+        await settledColorsAndLinks(page);
+    };
+    const preview = async () => {
+        await proposed.fill("#112233");
+        await button(page, "Preview color presentations").click();
+        await settledColorsAndLinks(page);
+    };
+    const signature = async () => {
+        await field(page).focus();
+        await field(page).press("Control+Shift+Space");
+        await expect.poll(async () => (await snapshot(page)).bindings.signature.pending).toBe(false);
+    };
+    return { raw, before, links, colors, popup, apply, discoverColors, preview, signature };
+}
 for (const host of ["plain", "react"] as const) test.describe(`${host} selected LSP features`, () => {
     test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); });
-    test("language failures clear partial presentation and shared disconnect preserves editing until explicit reconnect", async ({ page }) => {
-        test.setTimeout(60000); const methods: string[] = []; let disconnect: (() => void) | undefined;
-        await page.routeWebSocket("**/lsp-fixture", client => {
-            const server = client.connectToServer();
-            client.onMessage(message => { const value = JSON.parse(message.toString());
-                if (value.method) methods.push(value.method);
-                if (value.method === "initialize") disconnect = () => server.send(JSON.stringify({ jsonrpc: "2.0", method: "fixture/disconnect" }));
-                server.send(message);
-            });
-            server.onMessage(message => client.send(message));
-        });
-        await page.reload(); const raw = 'lookup("key", )\r\nimport "sample-utils";\r\nconst color = "#abc";'; await seed(page, raw, raw.indexOf(")"));
-        await button(page, "Add module companion").click(); const before = await snapshot(page);
-        const links = page.getByLabel("Module link results", { exact: true }), colors = page.getByLabel("Document color results", { exact: true });
-        const popup = page.getByRole("tooltip", { name: "Signature help", exact: true }), proposed = field(page, "Proposed color"), apply = button(page, "Apply captured color");
-        const discoverColors = async () => { await field(page).focus(); await button(page, "Discover document colors").click(); await settledColorsAndLinks(page); };
-        const preview = async () => { await proposed.fill("#112233"); await button(page, "Preview color presentations").click(); await settledColorsAndLinks(page); };
-        const signature = async () => { await field(page).focus(); await field(page).press("Control+Shift+Space"); await expect.poll(async () => (await snapshot(page)).bindings.signature.pending).toBe(false); };
+    test("failed language replies clear partial presentation without changing source or history", async ({ page }) => {
+        test.setTimeout(60000);
+        const { raw, before, links, colors, popup, apply, discoverColors, preview, signature } = await languageFailureScene(page);
         for (const fault of ["malformed", "incomplete", "failure"] as const) {
             await page.evaluate(fault => window.hostFixture.faultLinksNext(fault), fault); await button(page, "Discover module links").click(); await settledColorsAndLinks(page);
             expect((await snapshot(page)).bindings.links.state.status).toBe("failed"); await expect(links.locator("li")).toHaveCount(0);
@@ -60,11 +71,32 @@ for (const host of ["plain", "react"] as const) test.describe(`${host} selected 
             }
             await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
         }
+    });
+    test("provider link tooltips and color labels render literal markup", async ({ page }) => {
+        const { links, apply, discoverColors, preview } = await languageFailureScene(page);
         await page.evaluate(() => window.hostFixture.faultLinksNext("markup")); await button(page, "Discover module links").click(); await settledColorsAndLinks(page);
         await expect(links).toContainText("<b>Literal link tooltip</b>"); await expect(links.locator("b,img,script,a")).toHaveCount(0);
         await discoverColors(); await page.evaluate(() => window.hostFixture.faultColorsNext("markup")); await preview();
         await expect(page.getByRole("combobox", { name: "Color presentation", exact: true })).toContainText("<b>Literal color label</b>");
         await expect(page.getByRole("region", { name: "Document colors", exact: true }).locator("b,img,script")).toHaveCount(0); await expect(apply).toBeEnabled();
+    });
+    test("shared language disconnect clears presentation and preserves editing until explicit reconnect", async ({ page }) => {
+        test.setTimeout(60000);
+        const methods: string[] = []; let disconnect: (() => void) | undefined;
+        await page.routeWebSocket("**/lsp-fixture", client => {
+            const server = client.connectToServer();
+            client.onMessage(message => { const value = JSON.parse(message.toString());
+                if (value.method) methods.push(value.method);
+                if (value.method === "initialize") disconnect = () => server.send(JSON.stringify({ jsonrpc: "2.0", method: "fixture/disconnect" }));
+                server.send(message);
+            });
+            server.onMessage(message => client.send(message));
+        });
+        await page.reload();
+        const { raw, links, popup, apply, discoverColors, preview, signature } = await languageFailureScene(page);
+        await button(page, "Discover module links").click(); await settledColorsAndLinks(page);
+        await expect(links.getByRole("button")).toHaveCount(1);
+        await discoverColors(); await preview(); await expect(apply).toBeEnabled();
         await signature(); await expect(popup.getByLabel("Active signature parameter", { exact: true })).toHaveText("fallback?: string");
         const connected = await snapshot(page); expect(disconnect).toBeDefined(); disconnect!();
         await expect.poll(async () => (await snapshot(page)).bindings.signature.presentation.connected).toBe(false);
