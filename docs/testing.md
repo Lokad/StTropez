@@ -402,6 +402,11 @@ record file-byte counts before removal. Metadata marked removed or being removed
 reused. Evidence is written outside the consumer before cleanup; historical directories are
 not swept. Counts describe file sizes, not allocated disk space.
 
+Protocol policy tests use `tests/helpers/protocol-fixture.ts` to own a real ephemeral server.
+Register each acquired owner's cleanup immediately with `defer`; cleanup runs in reverse
+registration order before the fixture detaches and its listener closes. Setup and cleanup
+failures retain their causes through the shared server lifecycle helpers.
+
 Package routes acquire their HTTP listener inside the cleanup scope. Teardown attempts each
 page/browser/provider/server close in its declared order even if a prior close rejects. A sole
 failure is preserved; multiple workload/cleanup failures are reported together with the original
