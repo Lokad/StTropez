@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { withProtocolFixture, type ProtocolFixture } from "./helpers/protocol-fixture.ts";
-import { Workspace } from "../src/index.ts";
-import { openWebSocketTransport } from "../src/browser/index.ts";
-import { JsonRpcConnection, LspWorkspace, RpcError, createLspActionClient } from "../src/protocol/index.ts";
-import type { JsonValue, LspWorkspaceEdit } from "../src/protocol/index.ts";
-import { isRecord } from "../src/protocol/wire.ts";
+import { withProtocolFixture, type ProtocolFixture } from "../helpers/protocol-fixture.ts";
+import { Workspace } from "../../src/index.ts";
+import { openWebSocketTransport } from "../../src/browser/index.ts";
+import { JsonRpcConnection, LspWorkspace, RpcError, createLspActionClient } from "../../src/protocol/index.ts";
+import type { JsonValue, LspWorkspaceEdit } from "../../src/protocol/index.ts";
+import { isRecord } from "../../src/protocol/wire.ts";
 
 function fixture({ url, defer }: ProtocolFixture) {
     const workspace = new Workspace(), resources = ["first", "second"].map(name => workspace.createTextResource(

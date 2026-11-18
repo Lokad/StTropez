@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { benchmarkSuites, selectBenchmarks } from "../scripts/benchmark-suites.mjs";
-import { runBenchmarkCommand, runBenchmarkPlan, type BenchmarkPlan } from "../scripts/benchmark-runner.mjs";
+import { benchmarkSuites, selectBenchmarks } from "../../scripts/benchmark-suites.mjs";
+import { runBenchmarkCommand, runBenchmarkPlan, type BenchmarkPlan } from "../../scripts/benchmark-runner.mjs";
 
 async function fixture(run: (root: string) => Promise<void>) {
     await mkdir("artifacts", { recursive: true });

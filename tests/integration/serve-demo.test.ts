@@ -3,8 +3,8 @@ import test from "node:test";
 import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createServer } from "node:http";
-import { serveDemo } from "../scripts/serve-demo.mjs";
-import { closePackageResources, closePackageServer, listenPackageServer } from "../scripts/package-host.mjs";
+import { serveDemo } from "../../scripts/serve-demo.mjs";
+import { closePackageResources, closePackageServer, listenPackageServer } from "../../scripts/package-host.mjs";
 
 test("static assets keep manifest boundaries and report failed reads after releasing their listener", async t => {
     const previous = process.cwd(); await mkdir(join(previous, "artifacts"), { recursive: true });

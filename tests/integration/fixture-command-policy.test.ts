@@ -1,12 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { withProtocolFixture, type ProtocolFixture } from "./helpers/protocol-fixture.ts";
-import { FixtureLspWorkspace } from "../fixtures/protocol/fixture-workspace.ts";
-import { Workspace } from "../src/index.ts";
-import { openWebSocketTransport } from "../src/browser/index.ts";
-import { RpcError } from "../src/protocol/index.ts";
-import type { JsonValue } from "../src/protocol/index.ts";
-import { latch } from "./helpers/latch.ts";
+import { withProtocolFixture, type ProtocolFixture } from "../helpers/protocol-fixture.ts";
+import { FixtureLspWorkspace } from "../../fixtures/protocol/fixture-workspace.ts";
+import { Workspace } from "../../src/index.ts";
+import { openWebSocketTransport } from "../../src/browser/index.ts";
+import { RpcError } from "../../src/protocol/index.ts";
+import type { JsonValue } from "../../src/protocol/index.ts";
+import { latch } from "../helpers/latch.ts";
 
 const cancelled = (error: unknown) => error instanceof RpcError && error.code === -32800;
 type Packet = { id?: number; method?: string; params?: { id?: number; command?: string; arguments?: JsonValue[]; _fixture?: unknown } };

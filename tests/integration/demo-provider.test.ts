@@ -6,13 +6,13 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import { attachDemoProvider } from "../examples/demo/provider-server.ts";
-import type { DemoProviderBootstrap } from "../examples/demo/provider-contract.ts";
-import { demoSample } from "../examples/demo/samples.ts";
-import { Workspace } from "../src/index.ts";
-import { LspWorkspace, createLspActionClient, decodeLspCompletions, decodeLspResolvedCompletion, lspCompletionPlan } from "../src/protocol/index.ts";
-import type { LspDocumentCapture, LspScopeAccess } from "../src/protocol/index.ts";
-import { openWebSocketTransport } from "../src/browser/index.ts";
+import { attachDemoProvider } from "../../examples/demo/provider-server.ts";
+import type { DemoProviderBootstrap } from "../../examples/demo/provider-contract.ts";
+import { demoSample } from "../../examples/demo/samples.ts";
+import { Workspace } from "../../src/index.ts";
+import { LspWorkspace, createLspActionClient, decodeLspCompletions, decodeLspResolvedCompletion, lspCompletionPlan } from "../../src/protocol/index.ts";
+import type { LspDocumentCapture, LspScopeAccess } from "../../src/protocol/index.ts";
+import { openWebSocketTransport } from "../../src/browser/index.ts";
 
 test("demo capacity reclaims idle workspaces while retaining connected clients and bounding concurrent allocation", { timeout: 15000 }, async () => {
     const server = createServer((request, response) => { void provider.handle(request, response).then(handled => { if (!handled) response.writeHead(404).end(); }); });
@@ -189,7 +189,7 @@ test("real lazy imports, snippets and reviewed command edits use public clients 
         assert.ok(action?.command, JSON.stringify(batch.actions.map(item => ({ title: item.title, kind: item.kind, command: item.command?.command }))));
         assert.equal(action.edit, null); assert.equal(batch.supports(action.command), true, JSON.stringify({ command: action.command, expected: config.documents["main.ts"]!.path }));
         let approve = false, reviews = 0;
-        const commandScope = { snapshots, isCurrent: () => true, review: async (request: import("../src/protocol/index.ts").LspApplyEdit, context: import("../src/protocol/index.ts").LspRequestContext) => {
+        const commandScope = { snapshots, isCurrent: () => true, review: async (request: import("../../src/protocol/index.ts").LspApplyEdit, context: import("../../src/protocol/index.ts").LspRequestContext) => {
             reviews++; assert.equal(context.isCurrent(), true); assert.equal(request.edit.isCurrent(), true); assert.equal(request.edit.documents.length, 1);
             assert.equal(request.edit.documents[0]!.target.document.documentId, before.id);
             if (!approve) return { applied: false, failureReason: "Review declined" };

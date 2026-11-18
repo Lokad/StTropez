@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
-import { Workspace } from "../src/index.ts";
-import { openWebSocketTransport } from "../src/browser/index.ts";
-import { FixtureLspWorkspace } from "../fixtures/protocol/fixture-workspace.ts";
-import { closePackageServer, listenPackageServer } from "../scripts/package-host.mjs";
-import { withProtocolFixture } from "./helpers/protocol-fixture.ts";
+import { Workspace } from "../../src/index.ts";
+import { openWebSocketTransport } from "../../src/browser/index.ts";
+import { FixtureLspWorkspace } from "../../fixtures/protocol/fixture-workspace.ts";
+import { closePackageServer, listenPackageServer } from "../../scripts/package-host.mjs";
+import { withProtocolFixture } from "../helpers/protocol-fixture.ts";
 
 test("partial protocol setup releases the listener and leases while preserving setup and cleanup failures", { timeout: 15000 }, async t => {
     const primary = new Error("Later client setup failed"), cleanup = new Error("Scope cleanup reported failure"), order: string[] = [];

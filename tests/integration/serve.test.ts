@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createServer } from "node:http";
-import { startServer } from "../scripts/serve.mjs";
+import { startServer } from "../../scripts/serve.mjs";
 
 // Compiler/watch turns run on the test filesystem, outside all editor interaction clocks.
 test("development assets follow completed watched or fixed builds, reject private paths and release their port", { timeout: 90000 }, async t => {

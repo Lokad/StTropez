@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { withProtocolFixture } from "./helpers/protocol-fixture.ts";
-import { reviewHeader, reviewFooter } from "../fixtures/language/project-commands.ts";
-import { Workspace } from "../src/index.ts";
-import { openWebSocketTransport } from "../src/browser/index.ts";
-import { LspWorkspace, RpcError, createLspActionClient, createLspHighlightClient, decodeLspCompletions, decodeLspResolvedCompletion, lspCompletionPlan } from "../src/protocol/index.ts";
-import type { LspDocumentCapture, LspCommandScope, LspWorkspaceEdit } from "../src/protocol/index.ts";
+import { withProtocolFixture } from "../helpers/protocol-fixture.ts";
+import { reviewHeader, reviewFooter } from "../../fixtures/language/project-commands.ts";
+import { Workspace } from "../../src/index.ts";
+import { openWebSocketTransport } from "../../src/browser/index.ts";
+import { LspWorkspace, RpcError, createLspActionClient, createLspHighlightClient, decodeLspCompletions, decodeLspResolvedCompletion, lspCompletionPlan } from "../../src/protocol/index.ts";
+import type { LspDocumentCapture, LspCommandScope, LspWorkspaceEdit } from "../../src/protocol/index.ts";
 
 test("fixture diagnostics address the requested URI and reject missing, unknown or closed targets", { timeout: 15000 }, async () => withProtocolFixture(async ({ url, defer }) => {
     const workspace = new Workspace(), first = workspace.createTextResource({ scope: "diagnostics", resource: "first", variant: "working" }, "First", { value: "TODO first" });

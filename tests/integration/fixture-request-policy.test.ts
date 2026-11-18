@@ -1,12 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { FixtureLspWorkspace } from "../fixtures/protocol/fixture-workspace.ts";
-import { Workspace } from "../src/index.ts";
-import { openWebSocketTransport } from "../src/browser/index.ts";
-import { RpcError, createLspActionClient, createLspColorClient, createLspHoverClient, createLspLinkClient, createLspNavigationClient, createLspRenameClient, createLspSignatureClient } from "../src/protocol/index.ts";
-import type { JsonValue, LspDocumentFeature, LspPrepare } from "../src/protocol/index.ts";
-import { latch } from "./helpers/latch.ts";
-import { withProtocolFixture, type ProtocolFixture } from "./helpers/protocol-fixture.ts";
+import { FixtureLspWorkspace } from "../../fixtures/protocol/fixture-workspace.ts";
+import { Workspace } from "../../src/index.ts";
+import { openWebSocketTransport } from "../../src/browser/index.ts";
+import { RpcError, createLspActionClient, createLspColorClient, createLspHoverClient, createLspLinkClient, createLspNavigationClient, createLspRenameClient, createLspSignatureClient } from "../../src/protocol/index.ts";
+import type { JsonValue, LspDocumentFeature, LspPrepare } from "../../src/protocol/index.ts";
+import { latch } from "../helpers/latch.ts";
+import { withProtocolFixture, type ProtocolFixture } from "../helpers/protocol-fixture.ts";
 
 const cancelled = (error: unknown) => error instanceof RpcError && error.code === -32800;
 

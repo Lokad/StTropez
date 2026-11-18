@@ -23,7 +23,9 @@ Select the commands relevant to the changed owner:
 | --- | --- |
 | `npm run typecheck` | Referenced strict core, protocol, browser and development type projects |
 | `npm run check:docs` | Subject-page structure, repository links/anchors, public value ownership, prose and independently compiled TypeScript examples |
-| `npm test` | Headless model and host-policy tests |
+| `npm test` | All model, host-policy, tooling and server/process integration tests |
+| `npm run test:models` | Headless model, host-policy and tooling checks without live servers or provider/compiler processes |
+| `npm run test:integration` | Real HTTP/WebSocket, provider, compiler and child-process lifecycle checks |
 | `npm run test:browser` | Source browser suite in Chromium |
 | `npm run test:browsers` | Source browser suite in Chromium, Firefox and WebKit; explicit paths/projects narrow it |
 | `npm run test:ci` | Selected Chromium owner journeys defined in `playwright.ci.config.ts` |
@@ -109,11 +111,18 @@ and integration, rather than repeating every source-model permutation.
 | Font registration lifetime | Native browser decoder | Font registration/measurement/release owner and a restored-consumer check |
 | Compiled assets and installation | Manifest/hash/dependency/export checks | Full restored consumer, version transitions and selected LSP/React/demo routes |
 
-The named source owners live under `tests/` and `tests/browser/`; package journeys live in
+The named source owners live under `tests/`, `tests/integration/` and `tests/browser/`; package journeys live in
 `scripts/package-*.mjs` and their consuming fixtures. Select the owning test file when adding
 or changing a case. Keep small browser integration checks where model behavior crosses into
 input or UI. Add cross-engine dimensions where engine behavior matters. Do not multiply the
 same invariant across every host, corpus and distribution route without a distinct purpose.
+
+Live server and process owners run from `tests/integration/`. They use ephemeral loopback
+ports and own their acquired listeners, processes and temporary files through teardown.
+In-memory protocol peers stay with the model tests. `npm test` includes both groups in one
+Node test-runner invocation, so the default local and CI checks retain complete coverage.
+Use an explicit file, such as `node --test tests/integration/demo-provider.test.ts`, for a
+focused provider regression.
 
 The action host suite runs every feature case on the plain host. Explicit registration metadata
 also selects React integration cases for choice/input identity and focus, multi-resource review

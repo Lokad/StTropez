@@ -4,8 +4,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { attachProtocolFixture } from "../fixtures/protocol/fixture-server.ts";
-import { createPackageRequestHandler, listenPackageServer, closePackageServer, closePackageResources } from "../scripts/package-host.mjs";
+import { attachProtocolFixture } from "../../fixtures/protocol/fixture-server.ts";
+import { createPackageRequestHandler, listenPackageServer, closePackageServer, closePackageResources } from "../../scripts/package-host.mjs";
 
 test("package request failures return bounded responses, preserve causes and leave the listener usable", async t => {
     const failures: unknown[] = [], synchronous = new Error("route failed"), partial = new Error("partial payload failed"), completed = new Error("completed handler failed");
