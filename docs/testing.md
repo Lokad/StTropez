@@ -441,6 +441,7 @@ Lower-level `--*-only` workload flags are mutually exclusive; use the coordinato
 
 Activation and workspace routes also type-check their callers and shared page-transition
 harness against the copied consumer's actual fixture snapshot and restored public declarations.
+The LSP route checks its browser caller against the copied LSP fixture and restored browser/protocol declarations.
 This separate tooling program permits the Node/Playwright declarations it needs and records its compiler
 inputs. The independent consumer compile keeps its own options and inputs; tooling dependencies
 are not consumer requirements. Unexpected checkout inputs fail the harness check.
