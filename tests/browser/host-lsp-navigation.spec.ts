@@ -1,5 +1,6 @@
 import { ready, isolatedTest as test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
+import { holdLspReplies } from "../helpers/lsp-replies.ts";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const field = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -17,6 +18,7 @@ async function hover(page: Page) { await field(page).press("Control+k"); await f
 for (const host of ["plain", "react"]) test.describe(`${host} LSP inspection/navigation`, () => {
     test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); await waitForNavigation(page); });
     test("standard hover content and absent ranges preserve selections, safe text and focus", async ({ page }) => {
+        const replies = await holdLspReplies(page, "textDocument/hover"); await page.reload();
         const packets: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const data = JSON.parse(frame.payload.toString()); if (data.method) packets.push(data.method); }));
         await seed(page, "const café = 1;\r\n𐐀value = 2;", 2); await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 2, head: 2 }, { anchor: 8, head: 8 }]); }); await waitForNavigation(page);
         const before = await snapshot(page); await hover(page); await expect(page.getByRole("tooltip")).toContainText("Declares a constant binding."); await expect(field(page)).toBeFocused();
@@ -25,16 +27,20 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP inspection/nav
         await page.evaluate(() => window.hostFixture.faultHoverNext("primary", "markup")); await hover(page); await expect(page.getByRole("tooltip")).toContainText("<img"); await expect(page.getByRole("tooltip").locator("img,script")).toHaveCount(0);
         expect(await page.evaluate(() => Reflect.get(window, "hoverExecuted"))).toBeUndefined();
         await page.evaluate(() => window.hostFixture.faultHoverNext("primary", "malformed")); await hover(page); await expect.poll(async () => (await snapshot(page)).bindings.hover.presentation.status).toBe("failed");
-        await page.evaluate(() => window.hostFixture.setHoverDelay("primary", 1000)); await hover(page); await field(page, "Configuration path").focus(); await expect(page.getByRole("tooltip")).toBeHidden(); await expect(field(page, "Configuration path")).toBeFocused();
+        replies.hold(); await hover(page); await expect.poll(replies.waiting).toBe(true);
+        await field(page, "Configuration path").focus(); await expect.poll(replies.cancelled).toBe(true); await replies.release();
+        await expect(page.getByRole("tooltip")).toBeHidden(); await expect(field(page, "Configuration path")).toBeFocused();
         expect((await snapshot(page)).history).toEqual(before.history); expect((await snapshot(page)).source.exports).toBe(0); expect(packets).toContain("textDocument/hover");
     });
     test("definition links and references open captured unmounted targets and return complete selections", async ({ page }) => {
+        const replies = await holdLspReplies(page, "textDocument/definition"); await page.reload();
         const methods: { method: string; params?: { position?: unknown; context?: { includeDeclaration?: boolean } } }[] = []; let linkedResponses = 0;
         page.on("websocket", socket => { socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value); });
             socket.on("framereceived", frame => { const value = JSON.parse(frame.payload.toString()); if (Array.isArray(value.result) && value.result[0]?.targetUri) linkedResponses++; }); });
         const text = "catalogue;\r\nconst local = 1;\r\n"; await seed(page, text, 3); await button(page, "Add navigation companion").click();
         await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 3, head: 3 }, { anchor: 22, head: 22 }]); });
-        const before = await snapshot(page); await page.evaluate(() => window.hostFixture.setNavigationDelay(200)); await button(page, "Find definition").click(); await field(page, "Configuration path").focus(); await waitForNavigation(page);
+        const before = await snapshot(page); replies.hold(); await button(page, "Find definition").click(); await expect.poll(replies.waiting).toBe(true);
+        await field(page, "Configuration path").focus(); await replies.release(); await waitForNavigation(page);
         await expect(field(page, "Configuration path")).toBeFocused(); await expect(results(page)).toHaveText(["Navigation companion:1:7 · declaration"]);
         expect((await snapshot(page)).bindings.navigation.transport?.version).toBe("LSP3.17");
         const companion = (await snapshot(page)).bindings.navigation.companion!; expect((await snapshot(page)).bindings.views.every(view => view.documentId !== companion)).toBe(true);
@@ -42,7 +48,7 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP inspection/nav
         await results(page).first().click(); await waitForNavigation(page); await expect(field(page, "Secondary source")).toBeFocused(); expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")!.documentId).toBe(companion);
         await button(page, "Return to navigation origin").click(); await waitForNavigation(page); await expect(field(page)).toBeFocused(); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet).toEqual(before.bindings.views.find(view => view.id === "primary")!.selectionSet);
         await expect(results(page).first()).toHaveAttribute("data-retained", "navigation-row");
-        await page.evaluate(() => window.hostFixture.setNavigationDelay(0)); await button(page, "Find references").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(3);
+        await button(page, "Find references").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(3);
         await page.getByRole("checkbox", { name: "Include declarations in references", exact: true }).uncheck(); await button(page, "Find references").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(2);
         expect((await snapshot(page)).source.id).toBe(before.source.id); expect((await snapshot(page)).source.revision).toBe(before.source.revision); expect((await snapshot(page)).history).toEqual(before.history);
         expect(methods.some(message => message.method === "textDocument/definition" && JSON.stringify(message.params?.position) === JSON.stringify({ line: 0, character: 3 }))).toBe(true); expect(linkedResponses).toBeGreaterThan(0);
@@ -52,19 +58,22 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP inspection/nav
         expect(methods.filter(message => message.method === "textDocument/definition").length).toBe(definitions + 1);
     });
     test("malformed navigation, changed authority and pending remount cannot publish stale targets", async ({ page, browserName, browserErrors }) => {
+        const replies = await holdLspReplies(page, "textDocument/definition"); await page.reload();
         const text = "const target = 1;\r\ntarget"; await seed(page, text, text.length - 2); const before = await snapshot(page);
         await page.evaluate(() => window.hostFixture.faultNavigationNext("malformed")); await field(page).press("F12"); await expect(page.getByLabel("Symbol navigation status", { exact: true })).toContainText("unavailable"); await expect(results(page)).toHaveCount(0); await expect(field(page)).toBeFocused();
         await button(page, "Find definition").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(1); await page.evaluate(() => window.hostFixture.setSourceReadOnly(true)); await expect(results(page)).toHaveCount(0); await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));
-        await page.evaluate(() => window.hostFixture.setNavigationDelay(1000)); await field(page).press("F12"); await expect.poll(async () => (await snapshot(page)).bindings.navigation.pending).toBe(true); await field(page).press("ArrowLeft"); await waitForNavigation(page); await expect(results(page)).toHaveCount(0);
-        await button(page, "Find definition").click(); await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); }); await waitForNavigation(page); await expect(results(page)).toHaveCount(0);
-        await field(page).focus(); await select(page, text.length - 2); await page.evaluate(() => window.hostFixture.setNavigationDelay(0)); await button(page, "Find definition").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(1);
+        replies.hold(); await field(page).press("F12"); await expect.poll(replies.waiting).toBe(true); await expect.poll(async () => (await snapshot(page)).bindings.navigation.pending).toBe(true);
+        await field(page).press("ArrowLeft"); await expect.poll(replies.cancelled).toBe(true); await replies.release(); await waitForNavigation(page); await expect(results(page)).toHaveCount(0);
+        replies.hold(); await button(page, "Find definition").click(); await expect.poll(replies.waiting).toBe(true);
+        await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); }); await expect.poll(replies.cancelled).toBe(true); await replies.release(); await waitForNavigation(page); await expect(results(page)).toHaveCount(0);
+        await field(page).focus(); await select(page, text.length - 2); await button(page, "Find definition").click(); await waitForNavigation(page); await expect(results(page)).toHaveCount(1);
         await button(page, "Disconnect navigation provider").click(); await field(page).press("Control+End"); await field(page).pressSequentially(" local");
         // This last reconnect is deliberately disposed during its handshake. WebKit can
-        // report that abort; permit one exact diagnostic only for this captured page/socket.
+        // report that abort from Playwright's routed socket; permit one exact diagnostic.
         if (browserName === "webkit") {
             const endpoint = new URL("/lsp-fixture", page.url()); endpoint.protocol = "ws:";
             browserErrors.allowConsoleError(`WebSocket connection to '${endpoint.href}' failed: WebSocket is closed before the connection is established.`,
-                new URL(`/host-${host}.js`, page.url()).href);
+                "web-inspector://bootstrap.js");
         }
         await button(page, "Reconnect navigation provider").click();
         expect((await snapshot(page)).source.revision).toBeGreaterThan(before.source.revision); await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
