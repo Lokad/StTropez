@@ -109,15 +109,21 @@ function* equalLine(a: Index, b: Index, ai: number, bi: number, stats: Stats, pr
         return (yield* identities.identify(a, ai, left, stats)) === (yield* identities.identify(b, bi, right, stats));
     return yield* equalLineText(a, ai, left, b, bi, right, stats);
 }
-function* commonLines(a: Index, b: Index, region: Region, reverse: boolean, stats: Stats): Generator<void, number> {
+/** Known metadata can prove inequality; equal hashes and gaps still require exact checks. */
+function knownUnequal(a: Index, b: Index, ai: number, bi: number): boolean {
+    const left = a.lines.at(ai), right = b.lines.at(bi);
+    if (!left || !right) return false;
+    if (left.length !== right.length) return true;
+    const ah = knownLineHash(left), bh = knownLineHash(right);
+    return ah !== undefined && bh !== undefined && ah !== bh;
+}
+function* commonLines(a: Index, b: Index, region: Region, reverse: boolean, stats: Stats, firstChecked = false): Generator<void, number> {
     let count = 0;
     const maximum = Math.min(region.a1 - region.a0, region.b1 - region.b0);
-    if (maximum) {
+    if (maximum && !firstChecked) {
         // Cached inequality proves zero common rows before any structural span work.
         // Equal hashes and missing metadata retain the exact span/row checks below.
-        const firstA = a.lines.at(reverse ? region.a1 - 1 : region.a0), firstB = b.lines.at(reverse ? region.b1 - 1 : region.b0);
-        const ah = firstA && knownLineHash(firstA), bh = firstB && knownLineHash(firstB);
-        const unequal = firstA && firstB && (firstA.length !== firstB.length || ah !== undefined && bh !== undefined && ah !== bh);
+        const unequal = knownUnequal(a, b, reverse ? region.a1 - 1 : region.a0, reverse ? region.b1 - 1 : region.b0);
         if (tick(stats)) yield;
         if (unequal) { stats.lineComparisons++; return 0; }
     }
@@ -327,7 +333,15 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
         }
         for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
             let x = start(forward, diagonal), y = x - diagonal;
-            if (x >= 0) { const same = yield* commonLines(a, b, { a0: region.a0 + x, a1: region.a1, b0: region.b0 + y, b1: region.b1 }, false, stats); x += same; y += same; if (capture) seenF = Math.max(seenF, y + 1); }
+            if (x >= 0) {
+                if (x < n && y < m) {
+                    const unequal = knownUnequal(a, b, region.a0 + x, region.b0 + y);
+                    if (tick(stats)) yield;
+                    if (unequal) stats.lineComparisons++;
+                    else { const same = yield* commonLines(a, b, { a0: region.a0 + x, a1: region.a1, b0: region.b0 + y, b1: region.b1 }, false, stats, true); x += same; y += same; }
+                }
+                if (capture) seenF = Math.max(seenF, y + 1);
+            }
             forward[origin + diagonal] = x;
             const opposite = origin + delta - diagonal;
             if (x >= 0 && delta % 2 !== 0 && opposite >= 0 && opposite < reverse.length && reverse[opposite]! >= 0 && x >= n - reverse[opposite]!) return [region.a0 + x, region.b0 + y];
@@ -335,7 +349,15 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
         }
         for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
             let x = start(reverse, diagonal), y = x - diagonal;
-            if (x >= 0) { const same = yield* commonLines(a, b, { a0: region.a0, a1: region.a1 - x, b0: region.b0, b1: region.b1 - y }, true, stats); x += same; y += same; if (capture) seenR = Math.max(seenR, y + 1); }
+            if (x >= 0) {
+                if (x < n && y < m) {
+                    const unequal = knownUnequal(a, b, region.a1 - x - 1, region.b1 - y - 1);
+                    if (tick(stats)) yield;
+                    if (unequal) stats.lineComparisons++;
+                    else { const same = yield* commonLines(a, b, { a0: region.a0, a1: region.a1 - x, b0: region.b0, b1: region.b1 - y }, true, stats, true); x += same; y += same; }
+                }
+                if (capture) seenR = Math.max(seenR, y + 1);
+            }
             reverse[origin + diagonal] = x;
             const opposite = origin + delta - diagonal;
             if (x >= 0 && delta % 2 === 0 && opposite >= 0 && opposite < forward.length && forward[opposite]! >= 0 && forward[opposite]! >= n - x) {
