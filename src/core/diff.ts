@@ -330,13 +330,25 @@ function* singleTokenAlignment(left: Index, right: Index, region: Region, stats:
 /** Matching every common occurrence fixes its pairing, even when tokens repeat.
  * The caller supplies the complete left alphabet and bounds both region sizes. */
 function* completeCommonAlignment(left: Index, right: Index, region: Region, rows: ReadonlyMap<string, number>, stats: Stats, facts?: CommonFacts): Generator<void, readonly Region[] | undefined> {
-    const rightTokens = new Set<string>();
+    const runs = facts?.optional?.records, tokens = runs ? undefined : new Set<string>();
+    const rightTokens = runs ?? tokens!;
+    let previous: string | undefined;
     for (let bi = region.b0; bi < region.b1; bi++) {
         const token = (yield* getLine(right, bi, stats)).token;
         if (token === undefined) return;
-        rightTokens.add(token); if (tick(stats, token.length + 4)) yield;
+        if (runs) {
+            let record = runs.get(token);
+            if (!record) {
+                const reference = rows.get(token);
+                record = {from: bi - region.b0, to: bi - region.b0, blocks: 0, count: reference === undefined ? 0 : reference < 0 ? -reference : 1};
+                runs.set(token, record); if (tick(stats, token.length + 4)) yield;
+            }
+            if (previous !== token) record.blocks++;
+            record.to = bi - region.b0 + 1; previous = token;
+        } else tokens!.add(token);
+        if (tick(stats, token.length + (runs ? 8 : 4))) yield;
     }
-    if (facts) { facts.working = rightTokens; if (tick(stats)) yield; }
+    if (facts) { facts.working = rightTokens; if (facts.optional) facts.optional.complete = true; if (tick(stats, facts.optional ? 2 : 1)) yield; }
     const changes: Region[] = []; let a0 = region.a0, b0 = region.b0, ai = a0, bi = b0;
     for (;;) {
         let leftToken: string | undefined, rightToken: string | undefined;
@@ -375,8 +387,10 @@ function* orderedCommonAlignment(left: Index, right: Index, region: Region, stat
     for (let ai = region.a0; ai < region.a1; ai++) {
         const token = (yield* getLine(left, ai, stats)).token;
         if (token === undefined) return;
-        rows.set(token, rows.has(token) ? -1 : ai);
-        if (facts) { facts.maximum = Math.max(facts.maximum, token.length); if (tick(stats)) yield; }
+        // Negative values mark repeated tokens; eligible roots also retain their counts.
+        const previous = rows.get(token);
+        rows.set(token, previous === undefined ? ai : facts?.optional ? previous < 0 ? previous - 1 : -2 : -1);
+        if (facts) { facts.maximum = Math.max(facts.maximum, token.length); if (tick(stats, facts.optional ? 2 : 1)) yield; }
         if (tick(stats, token.length + 4)) yield;
     }
     const changes: Region[] = []; let a0 = region.a0, b0 = region.b0;
@@ -386,7 +400,7 @@ function* orderedCommonAlignment(left: Index, right: Index, region: Region, stat
         const ai = rows.get(token); stats.lineComparisons++;
         if (tick(stats, token.length + 4)) yield;
         if (ai === undefined) continue;
-        if (ai === -1) return yield* completeCommonAlignment(left, right, region, rows, stats, facts);
+        if (ai < 0) return yield* completeCommonAlignment(left, right, region, rows, stats, facts);
         if (ai < a0) return; // Repeated working tokens or crossed unique pairs.
         if (a0 < ai || b0 < bi) changes.push({ a0, a1: ai, b0, b1: bi });
         a0 = ai + 1; b0 = bi + 1;
@@ -395,7 +409,8 @@ function* orderedCommonAlignment(left: Index, right: Index, region: Region, stat
     if (a0 < region.a1 || b0 < region.b1) changes.push({ a0, a1: region.a1, b0, b1: region.b1 });
     return changes;
 }
-type CommonFacts = { working?: ReadonlySet<string>; maximum: number };
+type OptionalRecord = {from: number; to: number; blocks: number; count: number};
+type CommonFacts = { working?: Alphabet; maximum: number; optional?: {records: Map<string, OptionalRecord>; complete: boolean} };
 type ChildDistance = { minimum?: number };
 /** The complete working alphabet and all short row tokens are already materialized.
  * If every matchable reference row embeds in order, every optimum must match them all.
@@ -510,31 +525,36 @@ function* profileSplit(left: Index, right: Index, region: Region, task: ProfileT
 
 /** A short contiguous working run can force one otherwise ambiguous reference occurrence.
  * Two required rows between optional occurrences make matching two of them strictly worse.
- * Accept only one occurrence that embeds with every other matchable reference row. */
-function* optionalRunSplit(left: Index, right: Index, region: Region, minimum: number, stats: Stats, captured: {value?: RootProfiles}): Generator<void, readonly [number, number, number] | undefined> {
+ * Accept only one occurrence that embeds with every other matchable reference row.
+ * This proves the optimum even without a known distance. Prepared root facts avoid
+ * duplicate token scans; children also verify their independently known distance. */
+function* optionalRunSplit(left: Index, right: Index, region: Region, minimum: number | undefined, stats: Stats, captured: {value?: RootProfiles}, prepared?: ReadonlyMap<string, OptionalRecord>): Generator<void, readonly [number, number, number] | undefined> {
     const n = region.a1 - region.a0, m = region.b1 - region.b0;
-    const records = new Map<string, {from: number; to: number; blocks: number; count: number}>();
-    let previous: string | undefined;
-    for (let row = 0; row < m; row++) {
-        const token = (yield* getLine(right, region.b0 + row, stats)).token!;
-        let record = records.get(token);
-        if (!record) { record = {from: row, to: row, blocks: 0, count: 0}; records.set(token, record); }
-        if (previous !== token) record.blocks++;
-        record.to = row + 1; previous = token;
-        if (tick(stats, token.length + 8)) yield;
-    }
-    let common = 0;
-    for (let row = 0; row < n; row++) {
-        const token = (yield* getLine(left, region.a0 + row, stats)).token!, record = records.get(token);
-        if (record) { record.count++; common++; }
-        if (tick(stats, token.length + 6)) yield;
+    let records = prepared, common = 0;
+    if (!records) {
+        const scanned = new Map<string, OptionalRecord>();
+        let previous: string | undefined;
+        for (let row = 0; row < m; row++) {
+            const token = (yield* getLine(right, region.b0 + row, stats)).token!;
+            let record = scanned.get(token);
+            if (!record) { record = {from: row, to: row, blocks: 0, count: 0}; scanned.set(token, record); }
+            if (previous !== token) record.blocks++;
+            record.to = row + 1; previous = token;
+            if (tick(stats, token.length + 8)) yield;
+        }
+        for (let row = 0; row < n; row++) {
+            const token = (yield* getLine(left, region.a0 + row, stats)).token!, record = scanned.get(token);
+            if (record) { record.count++; common++; }
+            if (tick(stats, token.length + 6)) yield;
+        }
+        records = scanned;
     }
     // All optimal matches except one must be the other matchable reference rows.
-    const target = common - (n + m - minimum) / 2 + 1;
-    if (target <= 1) return;
+    const target = minimum === undefined ? undefined : common - (n + m - minimum) / 2 + 1;
+    if (target !== undefined && target <= 1) return;
     let optional: string | undefined, from = 0, to = 0;
     for (const [token, record] of records) {
-        if (record.blocks === 1 && record.count === target && record.to - record.from <= frontierLimits.changedRows) {
+        if (record.blocks === 1 && record.count > 1 && (target === undefined || record.count === target) && record.to - record.from <= frontierLimits.changedRows) {
             if (optional !== undefined) return;
             optional = token; from = record.from; to = record.to;
         }
@@ -550,7 +570,7 @@ function* optionalRunSplit(left: Index, right: Index, region: Region, minimum: n
         else if (records.has(token)) { flags[row] = 1; required.push(token); gap++; }
         if (tick(stats, token.length + 6)) yield;
     }
-    if (n + m - 2 * (required.length + 1) !== minimum) return;
+    if (minimum !== undefined && n + m - 2 * (required.length + 1) !== minimum) return;
     let at = 0;
     for (let row = 0; row < required.length; row++) {
         const wanted = required[row]!;
@@ -663,6 +683,7 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
         }
         if (capture) capture.plan = { working: b, region, points };
     }
+    let preparedRoot: {facts: CommonFacts; lower: number} | undefined;
     const start = (vector: Int32Array, diagonal: number): number => {
         const index = origin + diagonal, insert = vector[index + 1]!, remove = vector[index - 1]! < 0 ? -1 : vector[index - 1]! + 1;
         if (capture) {
@@ -690,7 +711,12 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
         if ((distance === 64 || distance === resumeDistance && resumeDistance > 64) && Math.min(n, m) >= 64) {
             const changes = yield* singleTokenAlignment(a, b, region, stats);
             if (changes) return { changes };
-            const facts: CommonFacts | undefined = root || certificateBudget && certificateBudget.remaining > 0 ? { maximum: 0 } : undefined;
+            const rootLower = capture && seed && rootAlphabet && (yield* changedReferenceMatch(b, seed, rootAlphabet, stats))
+                ? yield* recursiveDistance(seed, region, stats) : undefined;
+            // No certificate can fit after the last retained wave if the lower bound ends there.
+            const optionalRoot = rootLower !== undefined && Math.ceil(rootLower / 2) > frontierLimits.lastDistance;
+            const facts: CommonFacts | undefined = root || optionalRoot || certificateBudget && certificateBudget.remaining > 0
+                ? {maximum: 0, ...(optionalRoot ? {optional: {records: new Map(), complete: false}} : {})} : undefined;
             const ordered = yield* orderedCommonAlignment(a, b, region, stats, facts);
             if (ordered) { if (capture) capture.ordered = true; return { changes: ordered }; }
             if (facts?.working && root && capture && rootAlphabet) {
@@ -714,7 +740,7 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
                                 if (facts.working!.has(token)) required++;
                                 if (tick(stats, token.length + 4)) yield;
                             }
-                            if (n + m - 2 * required !== root.minimum! + 1) { return; }
+                            if (n + m - 2 * required !== root.minimum! + 1) return;
                             const captured: {value?: RootProfiles} = {};
                             const split = yield* requiredReferenceSplit(a, b, region, facts, stats, captured);
                             if (!split) return;
@@ -736,6 +762,7 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
                     }
                 }
             }
+            if (optionalRoot && facts?.optional?.complete) preparedRoot = {facts, lower: rootLower!};
             if (facts?.working && certificateBudget && certificateBudget.remaining > 0 && seed) {
                 const lower = bounds.minimum ?? (yield* recursiveDistance(seed, region, stats)), stop = Math.ceil(lower / 2);
                 // Every wave before stop must complete, visiting d+1 cells per active direction.
@@ -783,6 +810,35 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
                         } finally { certificateBudget.remaining = Math.max(0, certificateBudget.remaining - (stats.work - before)); probe.return(undefined); }
                     }
                 }
+            }
+        }
+        // Keep the ordinary current checkpoint sequence intact for later edits and undo.
+        // Only complete same-region token facts can avoid the helper's first two scans.
+        if (distance === frontierLimits.lastDistance && preparedRoot && capture?.plan?.points.at(-1)?.distance === distance) {
+            const {facts, lower} = preparedRoot; preparedRoot = undefined;
+            const stop = Math.ceil(lower / 2);
+            const cells = (start: number) => start >= stop ? 0 : (stop * (stop + 1) - start * (start + 1)) / 2;
+            const remaining = cells(Math.max(distance, resumeForward)) + cells(Math.max(distance, resumeReverse));
+            const cost = offsetAt(a, region.a1) - offsetAt(a, region.a0) + 2 * (offsetAt(b, region.b1) - offsetAt(b, region.b0))
+                + (3 * m + 512) * facts.maximum + 28 * n + 20 * m + 1032;
+            if (tick(stats, 24)) yield;
+            if (cost <= remaining) {
+                const captured: {value?: RootProfiles} = {}, limit = stats.work + cost;
+                const probe = optionalRunSplit(a, b, region, undefined, stats, captured, facts.optional!.records);
+                try {
+                    for (;;) {
+                        const step = probe.next();
+                        if (stats.work > limit) break;
+                        if (step.done) {
+                            if (step.value) {
+                                capture.plan = {...capture.plan, minimum: step.value[2]}; capture.certified = true; capture.profile = captured.value!;
+                                if (tick(stats, 8)) yield; return step.value;
+                            }
+                            break;
+                        }
+                        yield;
+                    }
+                } finally { probe.return(undefined); }
             }
         }
         if (distance > radius) {
@@ -929,7 +985,7 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
                 const profile = inherited && a1 - a0 + b1 - b0 - 2 * (inherited.to - inherited.from) >= 128 ? inherited : undefined;
                 const certified: {value?: RootProfiles} = {};
                 const before = stats.work, split = profile ? yield* profileSplit(left, right, region, profile, stats, saved?.point)
-                    : saved?.point ?? (yield* bisect(left, right, region, stats, capture, capture ? undefined : seed, capture ? undefined : certificateBudget, alphabet ?? undefined, certified, task.distance));
+                    : saved?.point ?? (yield* bisect(left, right, region, stats, capture, seed, capture ? undefined : certificateBudget, alphabet ?? undefined, certified, task.distance));
                 // A root profile disables speculation. A child profile stays on its subtree;
                 // cheap descendants cannot reach the distance-64 certificate phase.
                 if (capture?.plan && seed && !capture.profile) certificateBudget = { remaining: stats.work, certified: false };

@@ -397,16 +397,24 @@ for (const [count, fraction, maximumColdRatio, maximumHistoryRatio = maximumCold
             }
             if (count === 20000) {
                 // A newly matching run can force one reference occurrence while retaining
-                // the current root search decisions and sharing its child's profiles.
+                // every ordinary root checkpoint and sharing one temporary profile pair.
                 const editedText = edited.slice(0, edited.length), distantAt = editedText.indexOf("changed ", editedText.length * 0.75);
                 assert.ok(distantAt > at);
                 const matching = edited.replace(distantAt, distantAt, "row 0\n".repeat(7));
-                const fallback = finish(baseline, matching, cache), freshMatching = finish(baseline, matching);
-                assert.deepEqual(fallback.hunks, freshMatching.hunks); assert.equal(fallback.lineEdits, freshMatching.lineEdits);
-                reconstruct(fallback, original, matching.slice(0, matching.length));
-                assert.ok(fallback.work < 17_000_000, `later matching rows retain current search decisions: ${fallback.work}`);
-                const undone = finish(baseline, edited, cache);
-                assert.deepEqual(undone.hunks, expected.hunks); assert.equal(undone.lineEdits, expected.lineEdits);
+                const typed = matching.replace(distantAt + 45, distantAt + 45, "!");
+                const remove = matching.slice(0, matching.length).indexOf("row 1\n", distantAt + 42);
+                assert.ok(remove > distantAt);
+                const deleted = matching.replace(remove, remove + "row 1\n".length, "");
+                const history = [["matching run", matching, 12_000_000], ["type after matching", typed, 23_000],
+                    ["undo typing", matching, 23_000], ["delete required row", deleted, 18_900_000],
+                    ["undo required deletion", matching, 12_000_000], ["undo matching", edited, 15_350_000],
+                    ["redo matching", matching, 12_000_000], ["undo matching again", edited, 15_350_000]] as const;
+                for (const [label, capture, maximumWork] of history) {
+                    const warm = finish(baseline, capture, cache), fresh = finish(baseline, capture);
+                    assert.deepEqual(warm.hunks, fresh.hunks); assert.equal(warm.lineEdits, fresh.lineEdits);
+                    reconstruct(warm, original, capture.slice(0, capture.length));
+                    assert.ok(warm.work < maximumWork, label + ": " + warm.work + " work must preserve current checkpoints and exact profiles");
+                }
                 const second = edited.replace(at + 5, at + 5, "\n");
                 for (const capture of [second, edited, second]) {
                     const warm = finish(baseline, capture, cache), fresh = finish(baseline, capture);
@@ -435,8 +443,8 @@ for (const [count, fraction, matchingRun = false] of [[2000, 0.25], [2000, 0.5],
     assert.ok(finish(baseline, working, cache).lineComparisons >= 100000, "retain an eligible expensive frontier");
     const cancelled = new TextDiff(baseline, split, cache); let partial = cancelled.next(512);
     // Cancel after actual search progress, independently of the completed cold job's cost.
-    // The large cases interrupt active root or optional-run child profile subdivision.
-    const reached = (value: DiffProgress) => count === 20000 ? value.work >= (matchingRun ? 14_000_000 : 3_000_000) : value.lineComparisons >= 256;
+    // The large cases interrupt active root or optional-run profile subdivision.
+    const reached = (value: DiffProgress) => count === 20000 ? value.work >= (matchingRun ? 9_000_000 : 3_000_000) : value.lineComparisons >= 256;
     while (partial.status === "running" && !reached(partial)) partial = cancelled.next(512);
     assert.ok(reached(partial));
     assert.equal(partial.status, "running"); cancelled.dispose();

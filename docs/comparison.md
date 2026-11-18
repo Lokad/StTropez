@@ -216,8 +216,16 @@ every other matchable reference row, at least two such rows between consecutive 
 reference occurrences, and exactly one optional occurrence that embeds with all required rows.
 Ambiguous tokens, separated working runs or unmet embedding/distance bounds decline. Admission
 counts only guaranteed remaining work, including interior-cell checks on waves that cannot
-reach a document boundary under the known minimum distance. Eligibility is checked once per
-job against the captured changed window and complete reference alphabet.
+reach a document boundary under the known minimum distance. Eligibility uses the captured
+changed window and complete reference alphabet.
+
+The root can derive its own exact optimum from the same optional-run certificate. When a
+captured matchable edit has a distance lower bound extending beyond the last retained
+checkpoint, the existing alphabet scans also collect reference counts and contiguous working
+runs. Only complete facts from that region are used. The root first preserves every ordinary
+current checkpoint through the final retained distance, then attempts certification if its
+reduced scan-cost bound fits the remaining guaranteed search work. Incomplete facts, ambiguous
+matches and insufficient remaining work keep the ordinary search.
 
 Certificates examine at most 65,536 rows per side. A temporary profile set contains at most
 65,536 byte flags and two 65,537-entry unsigned 32-bit vectors, plus bounded token references
@@ -225,7 +233,7 @@ and alphabet metadata. This temporary state is not published in the cache and is
 from its retained frontier/split cap. Shortcuts that return a complete alignment retain their
 precedence; this certificate does not make unproved partial hunks authoritative.
 
-The root can use this certificate when a projected current checkpoint plan is also available
+The root can also certify all required reference matches when a projected current checkpoint plan is available
 and conservative scan/copy costs fit the proved remaining search work. Its matchable reference
 row count must agree with the independently known optimum. A successful root disables speculative
 child attempts. Either a certified root or child keeps its one profile pair through its subtree.
@@ -233,7 +241,7 @@ Each sufficiently expensive descendant inherits one profile and recomputes the o
 are restored for the queued sibling. Saved exact splits retain their points while preparing
 the inherited profile, and cheap subtrees use ordinary search. The same numeric profile bound
 applies throughout the job. Profiles never enter the retained cache; completed splits and
-projected checkpoints retain their actual current capture and the shared 64 KiB cap.
+ordinary or projected checkpoints retain their actual current capture and the shared 64 KiB cap.
 
 Failed or cancelled jobs cannot publish a retained plan. Complex comparisons can require full
 alignment work. Dispose the cache
