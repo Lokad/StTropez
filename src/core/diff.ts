@@ -423,44 +423,96 @@ type ChildDistance = { minimum?: number };
  * Earliest prefix endpoints and latest suffix starts enumerate all optimum midpoint
  * vertices. Odd/even overlap scan order selects the diagonal, then its furthest x,
  * preserving the ordinary first canonical split without publishing a partial frontier. */
-function* requiredReferenceSplit(left: Index, right: Index, region: Region, facts: CommonFacts, stats: Stats, captured: {value?: RootProfiles}): Generator<void, readonly [number, number, number] | undefined> {
+function* requiredReferenceSplit(left: Index, right: Index, region: Region, facts: CommonFacts, stats: Stats, captured: {value?: RootProfiles}, allowOmission = false): Generator<void, readonly [number, number, number] | undefined> {
     const n = region.a1 - region.a0, m = region.b1 - region.b0;
     const flags = new Uint8Array(n), earliest = new Uint32Array(n + 1), latest = new Uint32Array(n + 1), required: string[] = [];
     for (let row = 0; row <= n; row++) if (tick(stats, 3)) yield;
-    let at = 0;
+    let at = 0, prefix: number | undefined;
     for (let row = 0; row < n; row++) {
         const token = (yield* getLine(left, region.a0 + row, stats)).token!;
         if (tick(stats, token.length + 4)) yield;
         if (!facts.working!.has(token)) continue;
         flags[row] = 1; required.push(token);
         for (;;) {
-            if (at === m) return;
+            if (at === m) { if (!allowOmission) return; prefix ??= required.length - 1; break; }
             const other = (yield* getLine(right, region.b0 + at, stats)).token!, equal = other === token;
             stats.lineComparisons++; if (tick(stats, Math.max(token.length, other.length) + 4)) yield;
             at++; if (equal) break;
         }
-        earliest[required.length] = at; if (tick(stats, 3)) yield;
+        if (prefix === undefined) { earliest[required.length] = at; if (tick(stats, 3)) yield; }
     }
-    const length = required.length;
-    if (!length) return;
+    let length = required.length, suffix = 0;
+    if (!length || allowOmission && prefix === undefined) return;
     at = m; latest[length] = m; if (tick(stats)) yield;
-    for (let row = length - 1; row >= 0; row--) {
+    suffixScan: for (let row = length - 1; row >= 0; row--) {
         for (;;) {
-            if (!at) return;
+            if (!at) { if (!allowOmission) return; suffix = row + 1; break suffixScan; }
             const token = (yield* getLine(right, region.b0 + at - 1, stats)).token!, wanted = required[row]!, equal = token === wanted;
             stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
             at--; if (equal) break;
         }
         latest[row] = at; if (tick(stats)) yield;
     }
+    const profiles = {region, required, flags, earliest, latest};
+    if (prefix !== undefined) {
+        // All required rows cannot embed, so one unique omission attains the optimum.
+        if (!(yield* omitRequiredRow(right, profiles, prefix, suffix, stats))) return;
+        length = required.length;
+    }
     if (region.b0) for (let row = 0; row <= length; row++) {
         earliest[row] = earliest[row]! + region.b0; latest[row] = latest[row]! + region.b0;
         if (tick(stats, 2)) yield;
     }
-    const profiles = {region, required, flags, earliest, latest};
     const point = yield* profileMidpoint(region, profiles, 0, length, stats);
     if (point) { captured.value = profiles; if (tick(stats, 8)) yield; }
     return point;
+}
+
+/** A unique omitted ordinal fixes the optimum mask. Repair the same profile pair in place. */
+function* omitRequiredRow(right: Index, profiles: RootProfiles & {required: string[]}, prefix: number, suffix: number, stats: Stats): Generator<void, boolean> {
+    const {region, required, flags, earliest, latest} = profiles;
+    const n = region.a1 - region.a0, m = region.b1 - region.b0;
+    let at: number;
+    // Prefixes through prefix and suffixes from suffix are complete and exact.
+    let omitted = -1;
+    for (let row = Math.max(0, suffix - 1); row <= Math.min(prefix, required.length - 1); row++) {
+        if (earliest[row]! <= latest[row + 1]!) { if (omitted >= 0) return false; omitted = row; }
+        if (tick(stats, 4)) yield;
+    }
+    if (omitted < 0 || latest[omitted + 1]! - earliest[omitted]! > frontierLimits.changedRows) return false;
+    let ordinal = 0;
+    for (let row = 0; row < n; row++) {
+        if (flags[row] === 1 && ordinal++ === omitted) { flags[row] = 0; break; }
+        if (tick(stats, 2)) yield;
+    }
+    // Keep one profile pair: shift the known suffix and repair only the changed sides.
+    const oldLength = required.length;
+    for (let row = omitted; row < oldLength - 1; row++) { required[row] = required[row + 1]!; if (tick(stats)) yield; }
+    required.pop();
+    for (let row = omitted; row < oldLength; row++) { latest[row] = latest[row + 1]!; if (tick(stats)) yield; }
+    at = earliest[omitted]!;
+    for (let row = omitted; row < required.length; row++) {
+        const wanted = required[row]!;
+        for (;;) {
+            if (at === m) throw new Error("Unique omission prefix does not embed.");
+            const token = (yield* getLine(right, region.b0 + at, stats)).token!, equal = token === wanted;
+            stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
+            at++; if (equal) break;
+        }
+        earliest[row + 1] = at; if (tick(stats)) yield;
+    }
+    at = latest[omitted]!;
+    for (let row = omitted - 1; row >= 0; row--) {
+        const wanted = required[row]!;
+        for (;;) {
+            if (!at) throw new Error("Unique omission suffix does not embed.");
+            const token = (yield* getLine(right, region.b0 + at - 1, stats)).token!, equal = token === wanted;
+            stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
+            at--; if (equal) break;
+        }
+        latest[row] = at; if (tick(stats)) yield;
+    }
+    return true;
 }
 
 /** One mutable profile pair belongs to an active subtree, indexed by its required-token ordinal. */
@@ -568,7 +620,11 @@ function* optionalRunSplit(left: Index, right: Index, region: Region, minimum: n
         }
         if (tick(stats, 8)) yield;
     }
-    if (optional === undefined) return;
+    if (optional === undefined) {
+        // Only the captured-removal root admits an omitted required row without a run.
+        if (allowOmission) return yield* requiredReferenceSplit(left, right, region, {working: records, maximum: 0}, stats, captured, true);
+        return;
+    }
     const flags = new Uint8Array(n), earliest = new Uint32Array(n + 1), latest = new Uint32Array(n + 1), required: string[] = [];
     for (let row = 0; row <= n; row++) if (tick(stats, 3)) yield;
     let gap = 2, minimumGap = n, seenOptional = false;
@@ -610,45 +666,7 @@ function* optionalRunSplit(left: Index, right: Index, region: Region, minimum: n
         // rows cannot embed, a witness with one omission and one optional match is
         // strictly better than q=0 or q>=2. Its omitted reference row must be unique.
         if (minimumGap < 3) return;
-        // Prefixes through prefix and suffixes from suffix are complete and exact.
-        let omitted = -1;
-        for (let row = Math.max(0, suffix - 1); row <= Math.min(prefix, required.length - 1); row++) {
-            if (earliest[row]! <= latest[row + 1]!) { if (omitted >= 0) return; omitted = row; }
-            if (tick(stats, 4)) yield;
-        }
-        if (omitted < 0 || latest[omitted + 1]! - earliest[omitted]! > frontierLimits.changedRows) return;
-        let ordinal = 0;
-        for (let row = 0; row < n; row++) {
-            if (flags[row] === 1 && ordinal++ === omitted) { flags[row] = 0; break; }
-            if (tick(stats, 2)) yield;
-        }
-        // Keep one profile pair: shift the known suffix and repair only the changed sides.
-        const oldLength = required.length;
-        for (let row = omitted; row < oldLength - 1; row++) { required[row] = required[row + 1]!; if (tick(stats)) yield; }
-        required.pop();
-        for (let row = omitted; row < oldLength; row++) { latest[row] = latest[row + 1]!; if (tick(stats)) yield; }
-        at = earliest[omitted]!;
-        for (let row = omitted; row < required.length; row++) {
-            const wanted = required[row]!;
-            for (;;) {
-                if (at === m) throw new Error("Unique omission prefix does not embed.");
-                const token = (yield* getLine(right, region.b0 + at, stats)).token!, equal = token === wanted;
-                stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
-                at++; if (equal) break;
-            }
-            earliest[row + 1] = at; if (tick(stats)) yield;
-        }
-        at = latest[omitted]!;
-        for (let row = omitted - 1; row >= 0; row--) {
-            const wanted = required[row]!;
-            for (;;) {
-                if (!at) throw new Error("Unique omission suffix does not embed.");
-                const token = (yield* getLine(right, region.b0 + at - 1, stats)).token!, equal = token === wanted;
-                stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
-                at--; if (equal) break;
-            }
-            latest[row] = at; if (tick(stats)) yield;
-        }
+        if (!(yield* omitRequiredRow(right, {region, required, flags, earliest, latest}, prefix, suffix, stats))) return;
     }
     let chosen = -1, ordinal = 0, selectedOrdinal = 0;
     for (let row = 0; row < n; row++) {

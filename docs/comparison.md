@@ -236,6 +236,11 @@ ambiguous proofs decline. Prepared comparison-length sums bound the extra scans 
 rereading token metadata. Admission waits for every ordinary root checkpoint and fits
 the guaranteed remaining work; retained storage and current-capture publication are unchanged.
 
+When no optional run is eligible, a captured removal can instead certify one uniquely omitted
+row among all matchable reference rows. Failure to embed the full sequence and a unique feasible
+omission establish the exact optimum. This path shares the same profile repair, bounded gap,
+root checkpoints and admission budget; ambiguous optional candidates retain ordinary search.
+
 Certificates examine at most 65,536 rows per side. A temporary profile set contains at most
 65,536 byte flags and two 65,537-entry unsigned 32-bit vectors, plus bounded token references
 and alphabet metadata. This temporary state is not published in the cache and is separate
