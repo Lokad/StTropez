@@ -35,9 +35,22 @@ async function binaryRejection() {
         await rpc.request("fixture/state").result; rpc.notify("fixture/binary"); reason = await failed; return { reason, snapshot: rpc.snapshot(), timers: timers.size };
     } finally { rpc.dispose(); }
 }
-async function abortOpening() {
-    const abort = new AbortController(); const opening = openWebSocketTransport(url.href, { signal: abort.signal }); abort.abort();
-    try { await opening; return false; } catch (error) { return error instanceof DOMException && error.name === "AbortError"; }
+function openingSession(endpoint: string) {
+    let transportCancelled: Promise<boolean> | undefined;
+    const session = new LspSession({ schedule, connect: context => {
+        const abort = new AbortController(), stop = context.onCancel(() => abort.abort());
+        const opening = openWebSocketTransport(endpoint, { signal: abort.signal });
+        transportCancelled = opening.then(() => false, error => error instanceof DOMException && error.name === "AbortError");
+        return opening.finally(stop);
+    } });
+    session.bindDocument({ uri: "fixture:opening", languageId: "fixture", resourceId: "opening", documentId: "working", revision: 0, buffer: TextBuffer.from("local text") });
+    session.state.subscribe(() => {});
+    const cancelled = session.connect().then(() => false, error => error instanceof RpcError && error.code === -32097);
+    const snapshot = () => ({ phase: session.state.getSnapshot().phase, ownership: session.snapshotOwnership(), timers: timers.size });
+    return { snapshot, async dispose() {
+        session.dispose();
+        return { cancelled: await cancelled, transportCancelled: await transportCancelled, ...snapshot() };
+    } };
 }
 async function preProtocolJourney() {
     const endpoint = new URL(url); endpoint.searchParams.set("preface", "1"); let attempts = 0;
@@ -94,6 +107,6 @@ async function sessionJourney(large: boolean) {
             diagnostic: { openMs, enqueueMs, syncMs, scope: "single document-session action; enqueue is not an input handler or display latency" } };
     } finally { session.dispose(); }
 }
-const fixture = Object.freeze({ ready: true, exercise, binaryRejection, abortOpening, preProtocolJourney, sessionJourney, mountDocumentation });
+const fixture = Object.freeze({ ready: true, exercise, binaryRejection, openingSession, preProtocolJourney, sessionJourney, mountDocumentation });
 window.protocolFixture = fixture; document.getElementById("state")!.textContent = "Ready";
 declare global { interface Window { protocolFixture: typeof fixture } }

@@ -142,7 +142,10 @@ and reserved protocol methods cannot be replaced through the custom-message API.
 
 `openWebSocketTransport` creates a browser `RpcTransport` only when invoked. Each ordered text
 message contains one JSON value, without stream `Content-Length` headers. Binary messages are
-refused. Opening supports cancellation and a deadline; disposal releases the socket and listeners.
+refused. Opening supports cancellation and a deadline. Disposal releases transport listeners,
+rejects pending opening and requests native socket closure. The browser controls completion of
+network shutdown; it can wait for an outstanding opening handshake. A disposed session cannot
+initialize or regain ownership when that handshake completes later.
 Transport policy failures close the native socket with code `4003` for binary input or `4009`
 for a message/buffer limit. Imports perform no network work.
 
