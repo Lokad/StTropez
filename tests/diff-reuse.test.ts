@@ -364,9 +364,9 @@ test("edits to unmatched rows reuse raw alignment and re-trim exact hunks throug
     cache.dispose();
 });
 
-for (const [fraction, maximumColdRatio] of [[0.25, 0.6], [0.5, 0.48], [0.75, 0.8]] as const)
-    test(`edited-region distance bounds reduce ${fraction} Enter work without changing canonical hunks`, () => {
-        const original = Array.from({ length: 10000 }, (_, i) => `row ${i % 20}\n`).join("");
+for (const [count, fraction, maximumColdRatio] of [[10000, 0.25, 0.6], [10000, 0.5, 0.48], [10000, 0.75, 0.8], [20000, 0.5, 0.45]] as const)
+    test(`edited-region distance bounds reduce ${count}/${fraction} Enter work without changing canonical hunks`, () => {
+        const original = Array.from({ length: count }, (_, i) => `row ${i % 20}\n`).join("");
         const text = original.replaceAll("row 0\n", "changed 0\n").replaceAll("row 10\n", "changed 10\n").replaceAll("row 11\n", "row 11\nrow 11\n");
         const baseline = TextBuffer.from(original), working = TextBuffer.from(text), cache = new DiffReferenceCache();
         try {
@@ -377,7 +377,7 @@ for (const [fraction, maximumColdRatio] of [[0.25, 0.6], [0.5, 0.48], [0.75, 0.8
             assert.deepEqual(result.hunks, expected.hunks); assert.equal(result.lineEdits, expected.lineEdits);
             reconstruct(result, original, edited.slice(0, edited.length));
             assert.ok(result.work < expected.work * maximumColdRatio, `${fraction}: ${result.work} warm / ${expected.work} cold work`);
-            if (fraction === 0.5) {
+            if (count === 10000 && fraction === 0.5) {
                 // A cheap first split must leave useful decisions for later edits and history.
                 const typed = edited.replace(at + 5, at + 5, "!");
                 const typedText = typed.slice(0, typed.length), distantAt = typedText.indexOf("changed ", typedText.length * 0.75) + 3;
@@ -391,6 +391,15 @@ for (const [fraction, maximumColdRatio] of [[0.25, 0.6], [0.5, 0.48], [0.75, 0.8
                     assert.deepEqual(warm.hunks, fresh.hunks); assert.equal(warm.lineEdits, fresh.lineEdits);
                     reconstruct(warm, original, capture.slice(0, capture.length));
                     assert.ok(warm.work < maximumWork, label + ": " + warm.work + " work must preserve reuse across successive captures");
+                }
+            }
+            if (count === 20000) {
+                const second = edited.replace(at + 5, at + 5, "\n");
+                for (const capture of [second, edited, second]) {
+                    const warm = finish(baseline, capture, cache), fresh = finish(baseline, capture);
+                    assert.deepEqual(warm.hunks, fresh.hunks); assert.equal(warm.lineEdits, fresh.lineEdits);
+                    reconstruct(warm, original, capture.slice(0, capture.length));
+                    assert.ok(warm.work < fresh.work * maximumColdRatio, "successive Enter and undo/redo retain the cheaper exact split");
                 }
             }
             assert.equal(JSON.stringify(initial.hunks), retained);

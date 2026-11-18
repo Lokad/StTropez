@@ -121,22 +121,9 @@ function* recursiveSeed(frontier: FrontierPlan | undefined, splits: SplitPlan | 
     if (Math.max(to - from, end - from) > frontierLimits.changedRows) return;
     return {frontier, splits, from, to, end};
 }
-/** An anchored parent direction is also exact inside a shorter unchanged child region.
- * The stored y extent plus the wave distance bounds x, including move validations.
- * A completed split supplies an exact distance; deleting/inserting outside the owned
- * intersections bounds how far the new region distance can fall. This excludes early
- * overlap before either reused direction catches up. No child wave is retained here. */
-function* retainedRecursive(seed: RecursiveSeed, region: Region, stats: Stats): Generator<void, {joint: number; forward: number; reverse: number} | undefined> {
-    const {frontier, splits, from, to, end} = seed, prior = frontier.region, n = region.a1 - region.a0, m = region.b1 - region.b0, shift = end - to;
-    const anchorF = region.a0 === prior.a0 && region.b0 === prior.b0;
-    const anchorR = region.a1 === prior.a1 && region.b1 === prior.b1 + shift;
-    if (tick(stats, 8)) yield;
-    if ((!anchorF && !anchorR) || n > prior.a1 - prior.a0 || m > prior.b1 - prior.b0) return;
-    const safeF = (p: FrontierPoint) => anchorF && p.seenF < from - region.b0 && p.seenF < m && p.seenF + p.distance < n;
-    const safeR = (p: FrontierPoint) => anchorR && p.seenR < prior.b1 - to && p.seenR < m && p.seenR + p.distance < n;
-    let possible = false;
-    for (const point of frontier.points) { possible ||= safeF(point) || safeR(point); if (tick(stats, 8)) yield; }
-    if (!possible) return;
+/** Deleting/inserting outside owned intersections bounds how far an exact old distance can fall. */
+function* recursiveDistance(seed: RecursiveSeed, region: Region, stats: Stats): Generator<void, number> {
+    const {splits, from, to, end} = seed, n = region.a1 - region.a0, m = region.b1 - region.b0, shift = end - to;
     const overlap = (a0: number, a1: number, b0: number, b1: number) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
     let lower = Math.abs(n - m);
     for (let row = 0; row < splits.count; row++) {
@@ -149,6 +136,24 @@ function* retainedRecursive(seed: RecursiveSeed, region: Region, stats: Stats): 
         lower = Math.max(lower, splits.rows[i + 7]! - costA - costB);
         if (tick(stats, 24)) yield;
     }
+    return lower;
+}
+/** An anchored parent direction is exact inside a shorter unchanged child region.
+ * Its stored y extent plus wave distance bounds x, including move validations. The
+ * distance bound excludes overlap before either reused direction catches up. */
+function* retainedRecursive(seed: RecursiveSeed, region: Region, stats: Stats, bounds?: ChildDistance): Generator<void, {joint: number; forward: number; reverse: number} | undefined> {
+    const {frontier, from, to, end} = seed, prior = frontier.region, n = region.a1 - region.a0, m = region.b1 - region.b0, shift = end - to;
+    const anchorF = region.a0 === prior.a0 && region.b0 === prior.b0;
+    const anchorR = region.a1 === prior.a1 && region.b1 === prior.b1 + shift;
+    if (tick(stats, 8)) yield;
+    if ((!anchorF && !anchorR) || n > prior.a1 - prior.a0 || m > prior.b1 - prior.b0) return;
+    const safeF = (p: FrontierPoint) => anchorF && p.seenF < from - region.b0 && p.seenF < m && p.seenF + p.distance < n;
+    const safeR = (p: FrontierPoint) => anchorR && p.seenR < prior.b1 - to && p.seenR < m && p.seenR + p.distance < n;
+    let possible = false;
+    for (const point of frontier.points) { possible ||= safeF(point) || safeR(point); if (tick(stats, 8)) yield; }
+    if (!possible) return;
+    const lower = yield* recursiveDistance(seed, region, stats);
+    if (bounds) bounds.minimum = lower;
     const limit = Math.ceil(lower / 2); let forward = -1, reverse = -1;
     for (let index = 0; index < frontier.points.length; index++) {
         const point = frontier.points[index]!;
@@ -278,13 +283,14 @@ function* singleTokenAlignment(left: Index, right: Index, region: Region, stats:
 }
 /** Matching every common occurrence fixes its pairing, even when tokens repeat.
  * The caller supplies the complete left alphabet and bounds both region sizes. */
-function* completeCommonAlignment(left: Index, right: Index, region: Region, rows: ReadonlyMap<string, number>, stats: Stats): Generator<void, readonly Region[] | undefined> {
+function* completeCommonAlignment(left: Index, right: Index, region: Region, rows: ReadonlyMap<string, number>, stats: Stats, facts?: CommonFacts): Generator<void, readonly Region[] | undefined> {
     const rightTokens = new Set<string>();
     for (let bi = region.b0; bi < region.b1; bi++) {
         const token = (yield* getLine(right, bi, stats)).token;
         if (token === undefined) return;
         rightTokens.add(token); if (tick(stats, token.length + 4)) yield;
     }
+    if (facts) { facts.working = rightTokens; if (tick(stats)) yield; }
     const changes: Region[] = []; let a0 = region.a0, b0 = region.b0, ai = a0, bi = b0;
     for (;;) {
         let leftToken: string | undefined, rightToken: string | undefined;
@@ -317,13 +323,14 @@ function* completeCommonAlignment(left: Index, right: Index, region: Region, row
 }
 /** Unique common tokens establish a complete ordered match directly. Duplicates require
  * matching both complete common sequences; unknown or crossed matches retain the frontier. */
-function* orderedCommonAlignment(left: Index, right: Index, region: Region, stats: Stats): Generator<void, readonly Region[] | undefined> {
+function* orderedCommonAlignment(left: Index, right: Index, region: Region, stats: Stats, facts?: CommonFacts): Generator<void, readonly Region[] | undefined> {
     if (Math.max(region.a1 - region.a0, region.b1 - region.b0) > 65536) return;
     const rows = new Map<string, number>();
     for (let ai = region.a0; ai < region.a1; ai++) {
         const token = (yield* getLine(left, ai, stats)).token;
         if (token === undefined) return;
         rows.set(token, rows.has(token) ? -1 : ai);
+        if (facts) { facts.maximum = Math.max(facts.maximum, token.length); if (tick(stats)) yield; }
         if (tick(stats, token.length + 4)) yield;
     }
     const changes: Region[] = []; let a0 = region.a0, b0 = region.b0;
@@ -333,7 +340,7 @@ function* orderedCommonAlignment(left: Index, right: Index, region: Region, stat
         const ai = rows.get(token); stats.lineComparisons++;
         if (tick(stats, token.length + 4)) yield;
         if (ai === undefined) continue;
-        if (ai === -1) return yield* completeCommonAlignment(left, right, region, rows, stats);
+        if (ai === -1) return yield* completeCommonAlignment(left, right, region, rows, stats, facts);
         if (ai < a0) return; // Repeated working tokens or crossed unique pairs.
         if (a0 < ai || b0 < bi) changes.push({ a0, a1: ai, b0, b1: bi });
         a0 = ai + 1; b0 = bi + 1;
@@ -342,16 +349,69 @@ function* orderedCommonAlignment(left: Index, right: Index, region: Region, stat
     if (a0 < region.a1 || b0 < region.b1) changes.push({ a0, a1: region.a1, b0, b1: region.b1 });
     return changes;
 }
-function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: FrontierCapture, seed?: RecursiveSeed): Generator<void, readonly [number, number, number] | Readonly<{ changes: readonly Region[] }>> {
+type CommonFacts = { working?: ReadonlySet<string>; maximum: number };
+type ChildDistance = { minimum?: number };
+/** The complete working alphabet and all short row tokens are already materialized.
+ * If every matchable reference row embeds in order, every optimum must match them all.
+ * Earliest prefix endpoints and latest suffix starts enumerate all optimum midpoint
+ * vertices. Odd/even overlap scan order selects the diagonal, then its furthest x,
+ * preserving the ordinary first canonical split without publishing a partial frontier. */
+function* requiredReferenceSplit(left: Index, right: Index, region: Region, facts: CommonFacts, stats: Stats): Generator<void, readonly [number, number, number] | undefined> {
+    const n = region.a1 - region.a0, m = region.b1 - region.b0;
+    const flags = new Uint8Array(n), earliest = new Uint32Array(n + 1), latest = new Uint32Array(n + 1), required: string[] = [];
+    for (let row = 0; row <= n; row++) if (tick(stats, 3)) yield;
+    let at = 0;
+    for (let row = 0; row < n; row++) {
+        const token = (yield* getLine(left, region.a0 + row, stats)).token!;
+        if (tick(stats, token.length + 4)) yield;
+        if (!facts.working!.has(token)) continue;
+        flags[row] = 1; required.push(token);
+        for (;;) {
+            if (at === m) return;
+            const other = (yield* getLine(right, region.b0 + at, stats)).token!, equal = other === token;
+            stats.lineComparisons++; if (tick(stats, Math.max(token.length, other.length) + 4)) yield;
+            at++; if (equal) break;
+        }
+        earliest[required.length] = at; if (tick(stats, 3)) yield;
+    }
+    const length = required.length;
+    if (!length) return;
+    at = m; latest[length] = m; if (tick(stats)) yield;
+    for (let row = length - 1; row >= 0; row--) {
+        for (;;) {
+            if (!at) return;
+            const token = (yield* getLine(right, region.b0 + at - 1, stats)).token!, wanted = required[row]!, equal = token === wanted;
+            stats.lineComparisons++; if (tick(stats, Math.max(token.length, wanted.length) + 4)) yield;
+            at--; if (equal) break;
+        }
+        latest[row] = at; if (tick(stats)) yield;
+    }
+    const minimum = n + m - length * 2, wave = Math.ceil(minimum / 2);
+    let matched = 0, bestX = -1, bestY = -1, diagonal: number | undefined;
+    for (let x = 0; x <= n; x++) {
+        if (x) matched += flags[x - 1]!;
+        const y = wave - x + matched * 2, k = x - y;
+        if (y >= earliest[matched]! && y <= latest[matched]!
+            && (diagonal === undefined || (minimum % 2 ? k < diagonal : k > diagonal) || k === diagonal && x > bestX)) {
+            diagonal = k; bestX = x; bestY = y;
+        }
+        if (tick(stats, 12)) yield;
+    }
+    if (bestX >= 0) return [region.a0 + bestX, region.b0 + bestY, minimum];
+    return;
+}
+
+type SplitBudget = { remaining: number; certified: boolean };
+function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: FrontierCapture, seed?: RecursiveSeed, certificateBudget?: SplitBudget): Generator<void, readonly [number, number, number] | Readonly<{ changes: readonly Region[] }>> {
     const n = region.a1 - region.a0, m = region.b1 - region.b0, maximum = Math.ceil((n + m) / 2), delta = n - m;
     let radius = 0, origin = 1, forward = new Int32Array(3).fill(-1), reverse = new Int32Array(3).fill(-1);
     if (tick(stats, 6)) yield;
     forward[origin + 1] = 0; reverse[origin + 1] = 0;
     let resumeDistance = 0, resumeForward = 0, resumeReverse = 0, together = 0, seenF = 0, seenR = 0;
-    const points: FrontierPoint[] = [];
+    const points: FrontierPoint[] = [], bounds: ChildDistance = {};
     if (capture || seed) {
         const prior = capture?.previous ?? seed?.frontier;
-        const retained = capture ? prior ? yield* retainedFrontier(prior, b, region, stats) : undefined : seed ? yield* retainedRecursive(seed, region, stats) : undefined;
+        const retained = capture ? prior ? yield* retainedFrontier(prior, b, region, stats) : undefined : seed ? yield* retainedRecursive(seed, region, stats, bounds) : undefined;
         if (prior && retained) {
             for (let index = 0; index <= retained.joint; index++) { points.push(prior.points[index]!); if (tick(stats)) yield; }
             const f = prior.points[retained.forward], r = prior.points[retained.reverse];
@@ -395,8 +455,30 @@ function* bisect(a: Index, b: Index, region: Region, stats: Stats, capture?: Fro
         if ((distance === 64 || distance === resumeDistance && resumeDistance > 64) && Math.min(n, m) >= 64) {
             const changes = yield* singleTokenAlignment(a, b, region, stats);
             if (changes) return { changes };
-            const ordered = yield* orderedCommonAlignment(a, b, region, stats);
+            const facts: CommonFacts | undefined = certificateBudget && certificateBudget.remaining > 0 ? { maximum: 0 } : undefined;
+            const ordered = yield* orderedCommonAlignment(a, b, region, stats, facts);
             if (ordered) { if (capture) capture.ordered = true; return { changes: ordered }; }
+            if (facts?.working && certificateBudget && certificateBudget.remaining > 0 && seed) {
+                const lower = bounds.minimum ?? (yield* recursiveDistance(seed, region, stats)), stop = Math.ceil(lower / 2);
+                // Every wave before stop must complete, visiting d+1 cells per active direction.
+                const cells = (start: number) => start >= stop ? 0 : (stop * (stop + 1) - start * (start + 1)) / 2;
+                const remaining = cells(Math.max(distance, resumeForward)) + cells(Math.max(distance, resumeReverse));
+                // Bound token filtering, both greedy scans, numeric initialization and vertices.
+                const cost = offsetAt(a, region.a1) - offsetAt(a, region.a0) + 2 * (offsetAt(b, region.b1) - offsetAt(b, region.b0))
+                    + 2 * m * facts.maximum + 8 * m + 23 * n + 16;
+                if (tick(stats, 24)) yield;
+                if (cost <= remaining) {
+                    const before = stats.work, limit = before + Math.min(cost, certificateBudget.remaining), probe = requiredReferenceSplit(a, b, region, facts, stats);
+                    try {
+                        for (;;) {
+                            const step = probe.next();
+                            if (stats.work > limit) { break; }
+                            if (step.done) { if (step.value) { certificateBudget.certified = true; return step.value; } break; }
+                            yield;
+                        }
+                    } finally { certificateBudget.remaining = Math.max(0, certificateBudget.remaining - (stats.work - before)); probe.return(undefined); }
+                }
+            }
         }
         if (distance > radius) {
             // Only visited diagonals need storage. Retain both parities and their empty
@@ -511,6 +593,7 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
         const splits: SplitCapture | undefined = frontier ? { count: 0, reused: false } : undefined;
         const savedSplits = splits && previousSplits && !reused ? yield* retainedSplits(previousSplits, right, stats) : undefined;
         const seed = frontier && !reused ? yield* recursiveSeed(frontier.previous, previousSplits, right, stats) : undefined;
+        let certificateBudget: SplitBudget | undefined;
         const tasks: Region[] = [{ a0: 0, a1: left.lines.size, b0: 0, b1: right.lines.size }], changes: Region[] = [];
         const append = (change: Region) => {
             const previous = changes.at(-1);
@@ -535,7 +618,8 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
                 if (frontier) frontier.first = false;
                 const region = { a0, a1, b0, b1 }, saved = savedSplits?.get(regionKey(region));
                 if (savedSplits && tick(stats, 4)) yield;
-                const before = stats.work, split = saved?.point ?? (yield* bisect(left, right, region, stats, capture, capture ? undefined : seed));
+                const before = stats.work, split = saved?.point ?? (yield* bisect(left, right, region, stats, capture, capture ? undefined : seed, capture ? undefined : certificateBudget));
+                if (capture?.plan && seed) certificateBudget = { remaining: stats.work, certified: false };
                 if (saved && splits) splits.reused = true;
                 if (splits && !("changes" in split)) yield* retainSplit(splits, region, split, saved?.work ?? stats.work - before, stats);
                 if ("changes" in split) { split.changes.forEach(append); continue; }
@@ -562,7 +646,7 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
         // Capture a certified ordered alignment or an expensive completed search. Other
         // cheap sparse jobs keep lazy indexes and clear an obsolete plan on success.
         const capturePlan = cache && alphabet !== null && left.lines.size <= 65536 && right.lines.size <= 65536 && changes.length <= 4096
-            && (reused !== undefined || proof !== undefined || stats.lineComparisons >= 100000);
+            && (reused !== undefined || proof !== undefined || certificateBudget?.certified || stats.lineComparisons >= 100000);
         const regionHunks: (DiffHunk | undefined)[] | undefined = capturePlan ? [] : undefined;
         const hunks: DiffHunk[] = [];
         for (let index = 0; index < changes.length; index++) {
@@ -598,10 +682,10 @@ function* compare(a: TextBuffer, b: TextBuffer, stats: Stats, cache?: Cache, ser
             // Local repair changes the equality matrix. Older frontier/split proofs must
             // keep their actual working capture; only matrix-preserving reuse can relabel it.
             cache.splits = reused?.origins ? previousSplits : reused ? previousSplits && previousSplits.working === reused.plan.working ? Object.freeze({ ...previousSplits, working: right }) : previousSplits
-                : splits?.rows && (splits.reused || stats.lineComparisons >= frontierLimits.comparisons) ? Object.freeze({ working: right, rows: splits.rows, count: splits.count }) : undefined;
+                : splits?.rows && (splits.reused || certificateBudget?.certified || stats.lineComparisons >= frontierLimits.comparisons) ? Object.freeze({ working: right, rows: splits.rows, count: splits.count }) : undefined;
             const previous = frontier?.previous, captured = frontier?.plan;
             cache.frontier = reused?.origins ? previous : reused ? previous && previous.working === reused.plan.working ? Object.freeze({ ...previous, working: right }) : previous
-                : captured?.points.length && stats.lineComparisons >= frontierLimits.comparisons ? Object.freeze({ ...captured, points: Object.freeze([...captured.points]) }) : undefined;
+                : captured?.points.length && (certificateBudget?.certified || stats.lineComparisons >= frontierLimits.comparisons) ? Object.freeze({ ...captured, points: Object.freeze([...captured.points]) }) : undefined;
         }
         return Object.freeze(hunks);
     } finally { stats.identities.clear(); stats.equalities = undefined; stats.textProof = undefined; }

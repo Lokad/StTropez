@@ -193,6 +193,21 @@ are dropped to respect that cap. Indexes, text captures and other cache metadata
 Whole-region shortcut results are recomputed. Lookup, storage and copying count as cooperative
 work; replay preserves the existing canonical split choices.
 
+A warm child search can also certify its exact split when every reference row whose token
+occurs in the working region forms a subsequence of that region. Earliest prefix and latest
+suffix matches select the same canonical midpoint as the general search. It reuses the
+complete token facts from the preceding alphabet check and only attempts certification when
+a conservative scan-cost bound fits the remaining search work proved by retained distances.
+All child attempts share a budget equal to the work already spent through the normal first
+bisection, with at most one cooperative advance of overshoot. A failed or exhausted attempt
+falls back to the general search. The first bisection and its current capture remain intact;
+a successful certificate preserves their retention eligibility through later edits.
+Each attempt examines at most 65,536 rows per side. Its temporary numeric storage is at most
+65,536 byte flags and two 65,537-entry unsigned 32-bit vectors, plus bounded token references
+and alphabet metadata. This temporary state is not published in the cache and is separate
+from its retained frontier/split cap. Shortcuts that return a complete alignment retain their
+precedence; this certificate does not make unproved partial hunks authoritative.
+
 Failed or cancelled jobs cannot publish a retained plan. Complex comparisons can require full
 alignment work. Dispose the cache
 when its owner ends. Reference replacement resets retained captures; active jobs keep their own
