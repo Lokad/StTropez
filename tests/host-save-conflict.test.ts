@@ -86,8 +86,8 @@ test("superseded remote reads cannot publish over a newer review, and disposal s
     assert.equal(host.finishConflictReview(), false); await settled(); assert.deepEqual(host.debug(), stopped);
 });
 
-test("a newer version choice or reference publication expires an older remote conflict review", async () => {
-    for (const action of ["loading", "completed", "cancelled", "failed", "reference"] as const) {
+for (const action of ["loading", "completed", "cancelled", "failed", "reference"] as const)
+    test(`a newer version choice or reference publication expires an older remote conflict review: ${action}`, async () => {
         const host = new HostController();
         try {
             await conflict(host); host.variants.keepDraft(); host.reviewSaveConflict();
@@ -108,8 +108,7 @@ test("a newer version choice or reference publication expires an older remote co
             if (action === "loading") assert.equal(host.variants.finishNext(), true);
             assert.equal(host.debug().diagnostics.leases, 0);
         } finally { await host.dispose(); }
-    }
-});
+    });
 
 test("a newer remote review expires an older version load before either response publishes", async () => {
     const host = new HostController();
@@ -128,8 +127,8 @@ test("a newer remote review expires an older version load before either response
     } finally { await host.dispose(); }
 });
 
-test("dismissed review loads cannot publish or reopen the comparison, including after reopening", async () => {
-    for (const kind of ["remote", "variant"] as const) for (const reopen of [false, true]) {
+for (const kind of ["remote", "variant"] as const) for (const reopen of [false, true])
+    test(`dismissed review loads cannot publish or reopen the comparison, including after reopening: ${kind}/${reopen ? "reopened" : "closed"}`, async () => {
         const host = new HostController();
         try {
             await conflict(host); host.variants.keepDraft(); host.openReview();
@@ -144,5 +143,4 @@ test("dismissed review loads cannot publish or reopen the comparison, including 
             host.reviewSaveConflict(); assert.equal(host.finishConflictReview(), true); assert.equal(host.canSaveReviewedSource(), true);
             host.closeReview(); assert.equal(host.canSaveReviewedSource(), true);
         } finally { await host.dispose(); }
-    }
-});
+    });
