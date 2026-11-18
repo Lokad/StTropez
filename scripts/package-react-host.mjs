@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { build } from "esbuild";
+import { libraryModules, libraryCss } from "./library-entries.mjs";
 
 export function within(root, path) {
     const remainder = relative(root, path);
@@ -22,12 +23,7 @@ export async function consumerCompilerRoots(project) {
     return roots;
 }
 
-const publicImports = new Map([
-        ["src/index.ts", "sttropez"],
-        ["src/browser/index.ts", "sttropez/browser"],
-        ["src/protocol/index.ts", "sttropez/protocol"],
-        ["src/browser/editor.css", "sttropez/editor.css"],
-]);
+const publicImports = new Map([...libraryModules, libraryCss].map(entry => [entry.source, entry.specifier]));
 
 /** Stage only host fixtures, resolving every library import through a public package entry. */
 export async function stageHostFixture(project, consumer, path, destination = join("host-fixtures", path)) {
