@@ -80,23 +80,21 @@ async function linkCaptureScene(page: Page, text: string, editedTarget: boolean)
 }
 for (const host of ["plain", "react"] as const) test.describe(`${host} selected LSP features`, () => {
     test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/${host}/?editor=candidate&language=lsp`); await expect(field(page)).toBeVisible(); });
-    test("failed language replies clear partial presentation without changing source or history", async ({ page }) => {
+    for (const fault of ["malformed", "incomplete", "failure"] as const) test(`${fault} language replies clear partial presentation without changing source or history`, async ({ page }) => {
         test.setTimeout(60000);
         const { raw, before, links, colors, popup, apply, discoverColors, preview, signature } = await languageFailureScene(page);
-        for (const fault of ["malformed", "incomplete", "failure"] as const) {
-            await page.evaluate(fault => window.hostFixture.faultLinksNext(fault), fault); await button(page, "Discover module links").click(); await settledColorsAndLinks(page);
-            expect((await snapshot(page)).bindings.links.state.status).toBe("failed"); await expect(links.locator("li")).toHaveCount(0);
-            await page.evaluate(fault => window.hostFixture.faultColorsNext(fault), fault); await discoverColors();
-            expect((await snapshot(page)).bindings.colors.state.status).toBe("failed"); await expect(colors.locator("li")).toHaveCount(0); expect((await snapshot(page)).bindings.colors.decoratedViews).toBe(0);
-            await discoverColors(); await expect(colors.getByRole("button")).toHaveCount(1); await page.evaluate(fault => window.hostFixture.faultColorsNext(fault), fault); await preview();
-            expect((await snapshot(page)).bindings.colors.state).toMatchObject({ status: "failed", choices: [], canApply: false }); await expect(apply).toBeDisabled();
-            await expect(button(page, "Reconnect color provider")).toBeEnabled();
-            if (fault !== "incomplete") {
-                await page.evaluate(fault => window.hostFixture.faultSignatureNext(fault), fault); await signature();
-                expect((await snapshot(page)).bindings.signature.presentation.status).toBe("failed"); await expect(popup).toBeHidden(); await expect(field(page)).toBeFocused();
-            }
-            await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
+        await page.evaluate(fault => window.hostFixture.faultLinksNext(fault), fault); await button(page, "Discover module links").click(); await settledColorsAndLinks(page);
+        expect((await snapshot(page)).bindings.links.state.status).toBe("failed"); await expect(links.locator("li")).toHaveCount(0);
+        await page.evaluate(fault => window.hostFixture.faultColorsNext(fault), fault); await discoverColors();
+        expect((await snapshot(page)).bindings.colors.state.status).toBe("failed"); await expect(colors.locator("li")).toHaveCount(0); expect((await snapshot(page)).bindings.colors.decoratedViews).toBe(0);
+        await discoverColors(); await expect(colors.getByRole("button")).toHaveCount(1); await page.evaluate(fault => window.hostFixture.faultColorsNext(fault), fault); await preview();
+        expect((await snapshot(page)).bindings.colors.state).toMatchObject({ status: "failed", choices: [], canApply: false }); await expect(apply).toBeDisabled();
+        await expect(button(page, "Reconnect color provider")).toBeEnabled();
+        if (fault !== "incomplete") {
+            await page.evaluate(fault => window.hostFixture.faultSignatureNext(fault), fault); await signature();
+            expect((await snapshot(page)).bindings.signature.presentation.status).toBe("failed"); await expect(popup).toBeHidden(); await expect(field(page)).toBeFocused();
         }
+        await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
     });
     test("provider link tooltips and color labels render literal markup", async ({ page }) => {
         const { links, apply, discoverColors, preview } = await languageFailureScene(page);
