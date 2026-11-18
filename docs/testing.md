@@ -383,6 +383,11 @@ Package routes acquire their HTTP listener inside the cleanup scope. Teardown at
 page/browser/provider/server close in its declared order even if a prior close rejects. A sole
 failure is preserved; multiple workload/cleanup failures are reported together with the original
 workload error first. This does not impose a timeout on a close operation that never settles.
+Request exceptions retain their original causes for that teardown. An unsent response becomes
+an empty 500 response; a partially sent response is aborted. Completed responses are left alone.
+After the HTTP listener closes, teardown awaits handlers that outlive their responses and
+includes their failures in the result. Each server retains its own route, method, provider and
+header policies.
 
 Each consuming route has its own integration purpose: public exports/declarations and CSS,
 wire protocol, framework lifetime, review, deferred activation or the actual demo host. Its

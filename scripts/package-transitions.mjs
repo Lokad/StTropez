@@ -9,7 +9,7 @@ import { zipSync, strFromU8, strToU8 } from "fflate";
 import { chromium, firefox, webkit } from "@playwright/test";
 import { sourceIdentity, environment } from "./measurement.mjs";
 import { within, consumerCompilerRoots } from "./package-react-host.mjs";
-import { listenPackageServer, closePackageServer, closePackageResources } from "./package-host.mjs";
+import { createPackageRequestHandler, listenPackageServer, closePackageServer, closePackageResources } from "./package-host.mjs";
 
 const sha = bytes => createHash("sha256").update(bytes).digest("hex");
 async function files(root, prefix = "") {
@@ -44,13 +44,14 @@ export async function runPackageTransitions({ project, consumer, entries, assets
     const stageParent = join(consumer, "obj/sttropez"), sentinel = join(stageParent, "host-owned.txt"), sentinelText = "Host owns cleanup outside each content-addressed generation.\n";
     await mkdir(stageParent, { recursive: true }); await writeFile(sentinel, sentinelText);
     const compilerRoots = await consumerCompilerRoots(project), roots = new Map(), caches = new Map(), routes = new Map(), steps = [], errors = [];
-    const server = createServer((request, response) => {
+    const failures = [];
+    const requests = createPackageRequestHandler((request, response) => {
         const path = new URL(request.url, "http://localhost").pathname, file = routes.get(path);
         if (!file) { response.writeHead(404).end(); return; }
         response.writeHead(200, { "Content-Type": path.endsWith(".js") ? "text/javascript" : path.endsWith(".css") ? "text/css" : "text/html", "Cache-Control": "no-store" }); response.end(file);
-    });
+    }, failures);
+    const server = createServer(requests.listener);
     let browser, retainedPage;
-    const failures = [];
     const verifyPayload = async (root, manifest, bytes) => {
         assert.equal(sha(await readFile(join(root, "manifest.json"))), sha(bytes));
         for (const asset of manifest.assets) { const actual = await readFile(join(root, asset.path)); assert.equal(actual.length, asset.bytes, asset.path); assert.equal(sha(actual), asset.sha256, asset.path); }
@@ -116,6 +117,6 @@ export async function runPackageTransitions({ project, consumer, entries, assets
         console.log("Local package transitions A→B→A and identical-payload root reuse passed; old stages and live source remain intact."); return report;
     } catch (error) { failures.push(error); }
     finally {
-        await closePackageResources([() => retainedPage?.close(), () => browser?.close(), () => closePackageServer(server)], failures);
+        await closePackageResources([() => retainedPage?.close(), () => browser?.close(), () => closePackageServer(server), () => requests.settled()], failures);
     }
 }

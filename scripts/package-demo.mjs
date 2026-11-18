@@ -10,7 +10,7 @@ import { chromium, firefox, webkit } from "@playwright/test";
 import { strFromU8, unzipSync } from "fflate";
 import ts from "typescript-demo";
 import { moduleSpecifiers } from "./module-specifiers.mjs";
-import { listenPackageServer, closePackageServer, closePackageResources } from "./package-host.mjs";
+import { createPackageRequestHandler, listenPackageServer, closePackageServer, closePackageResources } from "./package-host.mjs";
 import { libraryModules, libraryCss } from "./library-entries.mjs";
 import { attachDemoProvider } from "../examples/demo/provider-server.ts";
 import { runDemoWalkthrough, runDemoConflict, runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoHighlights, runDemoDocumentation, runDemoActions } from "../tests/browser/demo-walkthrough.ts";
@@ -140,15 +140,16 @@ await mkdir("artifacts/package", { recursive: true });
 if (!prepareOnly) {
     const routes = new Map(["index.html", "app.js", "app.css", "demo-syntax-worker.js", "regex-worker.js", "LICENSE.txt", "UNICODE-LICENSE.txt"].map(name => ["/" + name, name]));
     routes.set("/", "index.html");
-    const server = createServer((request, response) => { void (async () => {
+    const failures = [];
+    const requests = createPackageRequestHandler(async (request, response) => {
         if (await provider.handle(request, response)) return;
         const file = routes.get(new URL(request.url, "http://localhost").pathname);
         if (!file || request.method !== "GET") { response.writeHead(404).end(); return; }
         response.setHeader("Content-Type", file.endsWith(".js") ? "text/javascript" : file.endsWith(".css") ? "text/css" : file.endsWith(".txt") ? "text/plain" : "text/html");
         response.end(await readFile(join(site, file)));
-    })().catch(error => { console.error(error); if (!response.headersSent) response.writeHead(500); response.end(); }); });
+    }, failures);
+    const server = createServer(requests.listener);
     const provider = attachDemoProvider(server); let browser, browserServer;
-    const failures = [];
     try {
         await listenPackageServer(server);
         if (measureOnly) {
@@ -167,7 +168,7 @@ if (!prepareOnly) {
     } catch (error) { failures.push(error); }
     finally {
         await closePackageResources([() => browser?.close(), () => browserServer?.close(), () => provider.close(),
-            () => closePackageServer(server), () => {
+            () => closePackageServer(server), () => requests.settled(), () => {
                 evidence.providerAfterClose = provider.snapshot();
                 assert.deepEqual(evidence.providerAfterClose, { projects: 0, connections: 0, processes: 0, removals: 0 });
             }], failures);

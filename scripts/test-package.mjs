@@ -15,7 +15,7 @@ import { stageHostFixture, within } from "./package-react-host.mjs";
 import { qualifyPackageExports } from "./package-exports.mjs";
 import { consumerScenario } from "./package-scenarios.mjs";
 import { emptyConsumerDirectory } from "./package-consumer.mjs";
-import { listenPackageServer, closePackageServer, closePackageResources } from "./package-host.mjs";
+import { createPackageRequestHandler, listenPackageServer, closePackageServer, closePackageResources } from "./package-host.mjs";
 
 const scenario = consumerScenario(process.argv);
 const hunkOnly = scenario === "hunk";
@@ -163,7 +163,8 @@ await writeFile("artifacts/package/restored-consumer.json", JSON.stringify({ sch
 if (prepareOnly) {
     console.log(`Restored ${workspaceOnly ? "workspace" : activationOnly ? "activation" : "React"} consumer declarations and isolated bundle prepared without a browser: ${consumer}`);
 } else {
-const server = createServer(async (request, response) => {
+const failures = [];
+const requests = createPackageRequestHandler(async (request, response) => {
     const path = new URL(request.url, "http://localhost").pathname;
     const file = { "/": lspOnly ? "lsp.html" : deferredOnly ? "activation.html" : "index.html", "/lsp.js": "lsp.js", "/app.js": "app.js", "/pilot": "pilot.html", "/pilot.js": "pilot.js", "/editor.css": "editor.css", "/regex-worker.js": "regex-worker.js", "/LICENSE.txt": "LICENSE.txt", "/UNICODE-LICENSE.txt": "UNICODE-LICENSE.txt",
         ...(deferredOnly ? Object.fromEntries(Object.keys(activationOutputs).map(name => ["/" + name, name])) : {}),
@@ -171,10 +172,10 @@ const server = createServer(async (request, response) => {
     if (!file) { response.writeHead(404).end(); return; }
     response.setHeader("Content-Type", file.endsWith("js") ? "text/javascript" : file.endsWith("css") ? "text/css" : file.endsWith("txt") ? "text/plain" : "text/html");
     response.end(await readFile(join(consumer, "site", file)));
-});
+}, failures);
+const server = createServer(requests.listener);
 const stopFixture = lspOnly || reactHost ? (await import("../fixtures/protocol/fixture-server.ts")).attachProtocolFixture(server) : () => {};
 let browser;
-const failures = [];
 try {
     await listenPackageServer(server);
     browser = await ({ chromium, firefox, webkit })[browserName].launch();
@@ -392,7 +393,7 @@ try {
     console.log(`Restored integrated pilot passed in ${browserName}. Consumer: ${consumer}`);
 } catch (error) { failures.push(error); }
 finally {
-    await closePackageResources([() => browser?.close(), stopFixture, () => closePackageServer(server)], failures);
+    await closePackageResources([() => browser?.close(), stopFixture, () => closePackageServer(server), () => requests.settled()], failures);
 }
 }
 }

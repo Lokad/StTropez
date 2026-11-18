@@ -1,4 +1,36 @@
 /**
+ * Contain HTTP request failures and retain their original causes for qualification teardown.
+ * The caller owns routing, methods, provider dispatch and successful response headers.
+ * @param {(request: import("node:http").IncomingMessage, response: import("node:http").ServerResponse) => void | Promise<void>} handle
+ * @param {unknown[]} failures
+ */
+export function createPackageRequestHandler(handle, failures) {
+    /** @type {Set<Promise<void>>} */
+    const pending = new Set();
+    /** @type {import("node:http").RequestListener} */
+    const listener = (request, response) => {
+        /** @param {unknown} error */
+        const failed = error => {
+            failures.push(error);
+            if (response.destroyed || response.writableEnded) return;
+            if (response.headersSent) { response.destroy(); return; }
+            // A failed read must not retain a successful payload's length or encoding.
+            for (const name of response.getHeaderNames()) response.removeHeader(name);
+            response.writeHead(500, { "Content-Length": "0" }); response.end();
+        };
+        const work = (async () => {
+            try { await handle(request, response); }
+            catch (error) { failed(error); }
+        })();
+        pending.add(work); void work.then(() => pending.delete(work));
+    };
+    return Object.freeze({ listener,
+        // Stop accepting HTTP requests before awaiting handlers that outlive their responses.
+        async settled() { while (pending.size) await Promise.all(pending); },
+    });
+}
+
+/**
  * Acquire the ephemeral HTTP listener inside the caller's cleanup scope.
  * @param {import("node:http").Server} server
  * @param {number} [port]
@@ -34,11 +66,13 @@ export function closePackageServer(server) {
  * @param {readonly unknown[]} [failures]
  */
 export async function closePackageResources(actions, failures = []) {
-    const errors = [...failures];
+    const closeErrors = [];
     for (const close of actions) {
         try { await close(); }
-        catch (error) { errors.push(error); }
+        catch (error) { closeErrors.push(error); }
     }
+    // Request failures can be recorded while asynchronous owners are closing.
+    const errors = [...failures, ...closeErrors];
     if (errors.length === 1) throw errors[0];
     if (errors.length) throw new AggregateError(errors, "Package workload and cleanup failures.");
 }
