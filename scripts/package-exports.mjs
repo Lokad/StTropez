@@ -6,11 +6,17 @@ import { build } from "esbuild";
 import { consumerCompilerRoots, within } from "./package-react-host.mjs";
 import { moduleSpecifiers } from "./module-specifiers.mjs";
 
-/** A host-owned local package mount: no install, aliases, paths or library compilation. */
+/**
+ * A host-owned local package mount: no install, aliases, paths or library compilation.
+ * @param {string} project
+ * @param {string} consumer
+ * @param {string} assetRoot
+ */
 export async function qualifyPackageExports(project, consumer, assetRoot) {
     await mkdir(join(consumer, "exports-probe/node_modules"), { recursive: true });
     const root = await realpath(join(consumer, "exports-probe")), installed = join(root, "node_modules/sttropez");
     await cp(assetRoot, installed, { recursive: true, force: false, errorOnExist: true });
+    /** @type {{ assets: { path: string }[]; entries: Record<"core" | "browser" | "protocol" | "css" | "regexWorker", string> }} */
     const manifest = JSON.parse(await readFile(join(installed, "manifest.json"), "utf8"));
     for (const asset of manifest.assets.filter(asset => asset.path.endsWith(".d.ts"))) {
         const source = await readFile(join(installed, asset.path), "utf8");
@@ -46,7 +52,7 @@ console.log(JSON.stringify(Object.fromEntries(names.map(name => [name, fileURLTo
         "sttropez/editor.css": manifest.entries.css, "sttropez/regex-worker.js": manifest.entries.regexWorker };
     assert.deepEqual(Object.keys(entries), Object.keys(expected));
     for (const [name, path] of Object.entries(entries)) {
-        assert.equal(await realpath(path), await realpath(join(installed, expected[name])), `Wrong exported asset: ${name}`);
+        assert.equal(await realpath(path), await realpath(join(installed, expected[/** @type {keyof typeof expected} */ (name)])), `Wrong exported asset: ${name}`);
         assert.ok(within(installed, await realpath(path))); assert.ok((await readFile(path)).length);
     }
     const metadata = JSON.parse(await readFile(join(installed, "package.json"), "utf8"));
