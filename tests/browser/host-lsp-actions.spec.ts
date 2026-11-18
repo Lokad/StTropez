@@ -128,7 +128,67 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP code actions`,
         await input(page, "Secondary source").focus(); await button(page, "Run captured inputs").click(); expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(before.source.id); expect(await page.evaluate(() => window.hostFixture.runCapture(0)!.source)).toBe(marker + raw); await page.evaluate(() => window.hostFixture.finishRun());
         await button(page, "Save source").click(); await working.press("Control+End"); await working.pressSequentially(" later"); await waitForActions(page); await page.evaluate(() => window.hostFixture.finishSave()); await waitForActions(page); await exact(page, marker + raw + " later"); expect((await snapshot(page)).source.dirty).toBe(true); expect((await snapshot(page)).bindings.comparison!.baseline).toEqual(baseline); await dispose(page);
     });
-    test("malformed lists/resolves and stale project authority, selections and remount cannot apply partial actions", async ({ page }) => {
+    test("invalid action replies clear choices and provider titles remain literal", async ({ page }) => {
+        await seed(page);
+        await button(page, "Add navigation companion").click();
+        for (const fault of ["malformed", "incomplete"] as const) {
+            await page.evaluate(fault => window.hostFixture.faultActionNext(fault), fault);
+            await preview(page);
+            expect((await snapshot(page)).bindings.actions.state).toMatchObject({ status: "failed", choices: [], canApply: false });
+            await exact(page, raw);
+        }
+        await page.evaluate(() => window.hostFixture.faultActionNext("markup"));
+        await preview(page);
+        await expect(choices(page).first()).toContainText("<img");
+        await expect(page.getByRole("list", { name: "Provider code actions" }).locator("img,script")).toHaveCount(0);
+        expect(await page.evaluate(() => Reflect.get(window, "actionExecuted"))).toBeUndefined();
+        for (const fault of ["malformed", "markup"] as const) {
+            await preview(page);
+            await page.evaluate(fault => window.hostFixture.faultActionNext(fault), fault);
+            await choices(page).nth(2).click();
+            await waitForActions(page);
+            expect((await snapshot(page)).bindings.actions.state).toMatchObject({ status: "failed", choices: [], canApply: false });
+            await exact(page, raw);
+        }
+    });
+    test("project authority changes disable captured actions without editing source or history", async ({ page }) => {
+        await seed(page);
+        await button(page, "Add navigation companion").click();
+        const before = await snapshot(page), companion = before.bindings.navigation.companion!;
+        await preview(page);
+        await choices(page).nth(1).click();
+        await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion);
+        await waitForActions(page);
+        await expect(button(page, "Apply captured action")).toBeDisabled();
+        await preview(page);
+        await choices(page).nth(1).click();
+        await page.evaluate(() => { const f = window.hostFixture; f.applyAction(f.snapshot().bindings.actions.state.token); });
+        await waitForActions(page);
+        await exact(page, raw);
+        expect((await snapshot(page)).history).toEqual(before.history);
+        await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
+    });
+    for (const mode of ["selection", "typing", "remount"] as const) test(`pending action resolution expires after ${mode}`, async ({ page }) => {
+        await seed(page);
+        await button(page, "Add navigation companion").click();
+        await select(page);
+        await preview(page);
+        await page.evaluate(() => window.hostFixture.setActionDelay(1000));
+        await choices(page).nth(2).click();
+        expect((await snapshot(page)).bindings.actions.state.resolving).toBe(true);
+        if (mode === "selection") await select(page, raw.indexOf("TODO") + 2);
+        else if (mode === "typing") {
+            await input(page).press("Control+End");
+            await input(page).pressSequentially("x");
+            await waitForActions(page);
+            await input(page).press("Control+z");
+        } else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
+        await waitForActions(page);
+        await expect(button(page, "Apply captured action")).toBeDisabled();
+        await exact(page, raw);
+        await page.evaluate(() => window.hostFixture.setActionDelay(0));
+    });
+    test("action disconnect and idle faults require explicit provider recovery", async ({ page }) => {
         await page.evaluate(() => {
             const send = WebSocket.prototype.send; Reflect.set(window, "actionResolutionSends", 0);
             WebSocket.prototype.send = function(this: WebSocket, data) {
@@ -138,20 +198,30 @@ for (const host of ["plain", "react"]) test.describe(`${host} LSP code actions`,
                 } send.call(this, data);
             };
         });
-        await seed(page); await button(page, "Add navigation companion").click(); const before = await snapshot(page), companion = before.bindings.navigation.companion!;
-        for (const fault of ["malformed", "incomplete"] as const) { await page.evaluate(fault => window.hostFixture.faultActionNext(fault), fault); await preview(page); expect((await snapshot(page)).bindings.actions.state).toMatchObject({ status: "failed", choices: [], canApply: false }); await exact(page, raw); }
-        await page.evaluate(() => window.hostFixture.faultActionNext("markup")); await preview(page); await expect(choices(page).first()).toContainText("<img"); await expect(page.getByRole("list", { name: "Provider code actions" }).locator("img,script")).toHaveCount(0); expect(await page.evaluate(() => Reflect.get(window, "actionExecuted"))).toBeUndefined();
-        for (const fault of ["malformed", "markup"] as const) { await preview(page); await page.evaluate(fault => window.hostFixture.faultActionNext(fault), fault); await choices(page).nth(2).click(); await waitForActions(page); expect((await snapshot(page)).bindings.actions.state).toMatchObject({ status: "failed", choices: [], canApply: false }); await exact(page, raw); }
-        await preview(page); await choices(page).nth(1).click(); await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion); await waitForActions(page); await expect(button(page, "Apply captured action")).toBeDisabled(); await preview(page); await choices(page).nth(1).click(); await page.evaluate(() => { const f = window.hostFixture; f.applyAction(f.snapshot().bindings.actions.state.token); }); await waitForActions(page); await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history); await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
-        for (const mode of ["selection", "typing", "remount"] as const) {
-            await select(page); await preview(page); await page.evaluate(() => window.hostFixture.setActionDelay(1000)); await choices(page).nth(2).click(); expect((await snapshot(page)).bindings.actions.state.resolving).toBe(true);
-            if (mode === "selection") await select(page, raw.indexOf("TODO") + 2); else if (mode === "typing") { await input(page).press("Control+End"); await input(page).pressSequentially("x"); await waitForActions(page); await input(page).press("Control+z"); } else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
-            await waitForActions(page); await expect(button(page, "Apply captured action")).toBeDisabled(); await exact(page, raw); await page.evaluate(() => window.hostFixture.setActionDelay(0));
-        }
-        await select(page); await preview(page); const resolutions = await page.evaluate(() => Reflect.get(window, "actionResolutionSends") as number); await page.evaluate(() => window.hostFixture.setActionDelay(1000)); await choices(page).nth(2).click();
+        await seed(page);
+        await button(page, "Add navigation companion").click();
+        await select(page);
+        await preview(page);
+        const resolutions = await page.evaluate(() => Reflect.get(window, "actionResolutionSends") as number);
+        await page.evaluate(() => window.hostFixture.setActionDelay(1000));
+        await choices(page).nth(2).click();
         await expect.poll(() => page.evaluate(() => Reflect.get(window, "actionResolutionSends") as number)).toBeGreaterThan(resolutions);
-        await page.evaluate(() => (Reflect.get(window, "actionTestSocket") as WebSocket).send(JSON.stringify({ jsonrpc: "2.0", method: "fixture/disconnect" }))); await waitForActions(page); await expect(button(page, "Reconnect action provider")).toBeEnabled(); await exact(page, raw);
-        await button(page, "Reconnect action provider").click(); await page.evaluate(() => window.hostFixture.setActionDelay(0)); await select(page); await preview(page); await page.evaluate(() => window.hostFixture.faultIdleAction()); await waitForActions(page); await expect(button(page, "Apply captured action")).toBeDisabled(); await button(page, "Reconnect action provider").click(); await select(page); await preview(page); await expect(button(page, "Apply captured action")).toBeEnabled(); await dispose(page);
+        await page.evaluate(() => (Reflect.get(window, "actionTestSocket") as WebSocket).send(JSON.stringify({ jsonrpc: "2.0", method: "fixture/disconnect" })));
+        await waitForActions(page);
+        await expect(button(page, "Reconnect action provider")).toBeEnabled();
+        await exact(page, raw);
+        await button(page, "Reconnect action provider").click();
+        await page.evaluate(() => window.hostFixture.setActionDelay(0));
+        await select(page);
+        await preview(page);
+        await page.evaluate(() => window.hostFixture.faultIdleAction());
+        await waitForActions(page);
+        await expect(button(page, "Apply captured action")).toBeDisabled();
+        await button(page, "Reconnect action provider").click();
+        await select(page);
+        await preview(page);
+        await expect(button(page, "Apply captured action")).toBeEnabled();
+        await dispose(page);
     });
     test("confirmed action commands preserve ordered edits, wire arguments and complete history without automatic execution", async ({ page }) => {
         await seed(page); await button(page, "Add navigation companion").click(); const before = await snapshot(page);
