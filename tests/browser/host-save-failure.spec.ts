@@ -27,8 +27,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
     test.describe(`${mode} ${editor} save failure pilot`, () => {
         test.beforeEach(async ({ page }, testInfo) => {
 
-            if (editor === "native" && testInfo.title.startsWith("normal typing,")) {
-                testInfo.annotations.push({ type: "native-projection-cache", description: "Optional whole-value projection cache evicted between tasks; native exports are diagnostic and candidate zero-export gates remain strict." });
+            if (testInfo.annotations.some(annotation => annotation.type === "native-projection-cache")) {
                 await page.addInitScript(() => {
                 // Optional projections can be reclaimed between browser tasks. Make
                 // that cache boundary deterministic while retaining native weak references.
@@ -44,7 +43,9 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await expect(page.getByRole("textbox", { name: "Primary source", exact: true })).toBeVisible();
         });
         for (const corpus of editor === "candidate" ? ["normal", "lines-100000"] : ["normal"]) {
-            test(`${corpus} typing, shared history and review survive a failed save, remounted retry and acknowledgement`, async ({ page }) => {
+            test(`${corpus} typing, shared history and review survive a failed save, remounted retry and acknowledgement`, {
+                annotation: editor === "native" ? [{ type: "native-projection-cache", description: "Optional whole-value projection cache evicted between tasks; native exports are diagnostic and candidate zero-export gates remain strict." }] : [],
+            }, async ({ page }) => {
                 const button = (name: string) => page.getByRole("button", { name, exact: true });
                 const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
                 const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });

@@ -131,7 +131,8 @@ acknowledgements and large comparison commands. The general host suite owns stab
 Strict Mode readiness, render isolation and root-error recovery. The shared
 [host coverage helper](../tests/browser/host-cases.ts) selects dimensions from metadata;
 each case registers at its declaration site so reports retain its file and line. Test titles
-do not select hosts.
+do not select hosts. The save-failure suite declares its native projection-cache eviction
+prerequisite in case annotations; setup reads that metadata before navigating to the host.
 
 `expectUnmountedSourceHost` checks detached DOM views and the retained source-provider scope,
 including the recovery/provider workspace subscriptions and retained project-review observer.
