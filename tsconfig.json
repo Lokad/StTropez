@@ -12,7 +12,7 @@
     "scripts/measurement.mjs", "scripts/package-scenarios.mjs", "scripts/browser-harness.mjs",
     "scripts/build.mjs", "scripts/build-demo.mjs", "scripts/finalize-assets.mjs", "scripts/unicode-generation.mjs", "scripts/package-consumer.mjs", "scripts/package-host.mjs", "scripts/package-react-host.mjs",
     "scripts/run-benchmarks.mjs", "scripts/host-scene.mjs", "scripts/serve-demo.mjs", "scripts/package-exports.mjs", "scripts/qualify-package.mjs",
-    "scripts/package-table-paste.mjs"
+    "scripts/package-table-paste.mjs", "scripts/package-react-pilot.mjs"
   ],
   "references": [
     { "path": "./tsconfig.core.json" },

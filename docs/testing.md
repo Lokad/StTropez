@@ -54,7 +54,8 @@ Unicode generation I/O, package consumer/HTTP lifecycle ownership and benchmark 
 orchestration and report retention, plus shared host scenes, browser reference observations,
 static-demo building/serving and package host-fixture staging, qualification coordination,
 public export resolution, public import remapping, compiler-root isolation and the restored
-React table-paste caller against the host fixture's declared snapshot.
+React host/table-paste callers against the host fixture's declared snapshot. The host caller's
+browser event observations are local types; its point results use the shared readiness probe.
 Other scripts are outside its JavaScript checking scope.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected
