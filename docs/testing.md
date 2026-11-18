@@ -394,6 +394,14 @@ wire protocol, framework lifetime, review, deferred activation or the actual dem
 compiler/bundle graphs reject checkout/private library fallback. The host owns its compiler,
 framework and language provider. See [packaging](packaging.md) for the artifact/build contract.
 
+The restored demo runs the real-provider editing/review/save/recovery walkthrough, the two-page
+conflict journey and the host-integration journey with its server-free language sample. Source
+and static browser suites own detailed feature cases for completion, snippets, project results,
+editing rules, folding, highlights, documentation, unopened navigation and actions. The source
+route exercises the WebSocket provider; the static route exercises the browser worker and
+repository-prefix asset loading. Restored qualification retains isolated declarations, compiled
+asset input checks, browser-error collection and provider cleanup around its integration journeys.
+
 ### Native-device checklist
 
 The [support matrix](README.md#support-matrix) records support and unverified boundaries.
