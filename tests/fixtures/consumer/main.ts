@@ -2,7 +2,7 @@ import { Workspace, TextBuffer, TextDiff, WordCursor, BidiCursor, createBidiInde
 import { inputConflictEvent, createFontAssetController, createFindController, createRegexFindBackend, mountTextComparison, mountTextViewport, mountTextEditor } from "sttropez/browser";
 import * as browserApi from "sttropez/browser";
 import { fontFixture } from "./font-fixture.js";
-import { createAgentReview, DiffReferenceCache, WorkspaceCommands } from "sttropez";
+import { createAgentReview, WorkspaceCommands } from "sttropez";
 import { createSelectionSet, planSelectionEdits } from "sttropez";
 import type { ResourceVisibility, SaveReview } from "sttropez";
 import type { FindDiagnostics, FindReason, TextComparisonDiagnostics, InputConflictDetail, PresentedLine, TextComparisonOptions, TextComparisonSnapshot, TextViewportOptions } from "sttropez/browser";
@@ -315,9 +315,9 @@ const fixture = { text: () => workspace.document(documentId).text(),
         comparison.working.restoreView({ ...state, ...comparisonView.getSnapshot().selection }); return retained;
     },
     acceptComparison: () => { const t = comparison.controller.beginAcceptance(); return t.complete({ buffer: t.capture.working.buffer, version: "accepted-2" }); },
-    diff: () => { const cache = new DiffReferenceCache(), d = new TextDiff(TextBuffer.from("a\r\n"), TextBuffer.from("a\n"), cache);
+    diff: () => { const d = new TextDiff(TextBuffer.from("a\r\n"), TextBuffer.from("a\n"));
         try { let s = d.next(512); while (s.status === "running") s = d.next(512); return { status: s.status, whitespaceOnly: s.hunks[0]?.whitespaceOnly }; }
-        finally { d.dispose(); cache.dispose(); } },
+        finally { d.dispose(); } },
     viewport: () => viewport.snapshot(),
     candidate: () => ({ ...candidate.snapshot(), viewport: candidate.viewport.snapshot() }),
     captureCandidate: candidate.captureView,

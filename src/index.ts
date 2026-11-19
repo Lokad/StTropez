@@ -26,7 +26,7 @@ export { BidiCursor } from "./core/bidi-cursor.ts";
 export type { BidiIndex, BidiStep } from "./core/bidi-cursor.ts";
 export { createBidiIndexController } from "./core/bidi-controller.ts";
 export type { BidiIndexController, BidiIndexRequest, BidiIndexSnapshot, BidiProgress } from "./core/bidi-controller.ts";
-export { DiffReferenceCache, TextDiff } from "./core/diff.ts";
+export { TextDiff } from "./core/diff.ts";
 export type { DiffHunk, DiffProgress, DiffRange } from "./core/diff.ts";
 export { createComparisonController } from "./core/comparison.ts";
 export type { ComparisonBaseline, ComparisonCapture, ComparisonController, ComparisonSnapshot, ComparisonTicket, ComparisonReversion } from "./core/comparison.ts";

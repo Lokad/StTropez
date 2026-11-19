@@ -1,6 +1,6 @@
 import { TextBuffer } from "./text-buffer.ts";
 import { createAgentReview } from "./agent.ts";
-import { DiffReferenceCache, TextDiff } from "./diff.ts";
+import { TextDiff } from "./diff.ts";
 import type { DiffHunk, DiffProgress } from "./diff.ts";
 import { Store } from "./observable.ts";
 import { validateWorkBudget } from "./kernel-cursor.ts";
@@ -54,8 +54,7 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
     const scope = workspace.createNotificationScope(options.onListenerError);
     const state = new Store<ComparisonSnapshot>(Object.freeze({ status: "running", generation: 0, baseline: initialBaseline,
         working: document, hunks: empty, progress: null, failure: null }), scope);
-    const referenceCache = new DiffReferenceCache();
-    let job: TextDiff | undefined = new TextDiff(initialBaseline.buffer, document.buffer, referenceCache), disposed = false;
+    let job: TextDiff | undefined = new TextDiff(initialBaseline.buffer, document.buffer), disposed = false;
     let refreshGeneration = 0, acceptanceGeneration = 0, reversionGeneration = 0;
     let reversionPolicy = resource.metadata.getSnapshot(), reversionPolicyGeneration = 0;
     const pending = new Set<() => void>();
@@ -63,14 +62,14 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
     const live = () => !disposed && state.get().baseline !== null && workspace.ownsDocumentView(view) && workspace.resolveTab(target) !== undefined && resource.getSnapshot().state === "ready";
     const canAccept = () => live() && resource.metadata.getSnapshot().capabilities.edit.includes("human") && resource.metadata.getSnapshot().editLock === null;
     function expire(): void {
-        job?.dispose(); job = undefined; referenceCache.dispose();
+        job?.dispose(); job = undefined;
         publish({ status: "expired", generation: state.get().generation + 1, baseline: null, working: null, hunks: empty, progress: null, failure: null });
     }
     function restart(reference: ComparisonBaseline & Readonly<{ epoch: number }>, working: DocumentSnapshot): void {
         const previous = state.get(), change = working.change;
         const hunks = previous.baseline === reference && previous.working && change?.previousRevision === previous.working.revision
             ? mapComparisonHunks(reference.buffer, previous.working.buffer, working.buffer, change.mapping, previous.hunks) : empty;
-        job?.dispose(); job = new TextDiff(reference.buffer, working.buffer, referenceCache);
+        job?.dispose(); job = new TextDiff(reference.buffer, working.buffer);
         publish({ status: "running", generation: previous.generation + 1, baseline: reference, working, hunks, progress: null, failure: null });
     }
     const update = () => {
@@ -167,7 +166,7 @@ export function createComparisonController(workspace: Workspace, tabId: TabId, i
         scope.assertWritable(); if (disposed) return;
         retention.release();
         for (const finish of [...pending]) finish();
-        disposed = true; stopDocument(); stopMetadata(); stopTab(); job?.dispose(); job = undefined; referenceCache.dispose();
+        disposed = true; stopDocument(); stopMetadata(); stopTab(); job?.dispose(); job = undefined;
         if (!options.view) view.dispose();
         publish({ status: "disposed", generation: state.get().generation + 1, baseline: null, working: null, hunks: empty, progress: null, failure: null });
     } });

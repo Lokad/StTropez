@@ -160,12 +160,18 @@ for (const kind of ["long", "unique", "repeated", "unbalanced"] as const)
         expect(state.editor.inputUnits).toBeLessThan(2600); expect(state.working.length).toBe(length + 1);
         expect(await page.evaluate(at => window.comparisonFixture.range(at, at + 1), at)).toBe("x");
         if (kind !== "long") {
-            expect(state.hunks.length).toBe(kind === "unbalanced" ? 1068 : 1001);
+            // Every tenth baseline row is replaced; 500 extra identical rows admit several minimal alignments.
+            const edits = () => page.evaluate(() => window.comparisonFixture.review.controller.getSnapshot().progress!.lineEdits);
+            if (kind === "unbalanced") expect(await edits()).toBe(2500);
+            else expect(state.hunks.length).toBe(1001);
             await page.keyboard.press("Control+z"); await ready(page);
             const undone = await page.evaluate(() => window.comparisonFixture.snapshot());
-            expect(undone.working.length).toBe(length); expect(undone.hunks.length).toBe(kind === "unbalanced" ? 1068 : 1000);
+            expect(undone.working.length).toBe(length);
+            if (kind === "unbalanced") expect(await edits()).toBe(2500);
+            else expect(undone.hunks.length).toBe(1000);
             await page.keyboard.press("Control+Shift+z"); await ready(page);
-            expect((await page.evaluate(() => window.comparisonFixture.snapshot())).hunks.length).toBe(kind === "unbalanced" ? 1068 : 1001);
+            if (kind === "unbalanced") expect(await edits()).toBe(2500);
+            else expect((await page.evaluate(() => window.comparisonFixture.snapshot())).hunks.length).toBe(1001);
             expect(await page.evaluate(at => window.comparisonFixture.range(at, at + 1), at)).toBe("x");
         }
         if (kind === "unbalanced") {
@@ -174,7 +180,7 @@ for (const kind of ["long", "unique", "repeated", "unbalanced"] as const)
                 const edited = await page.evaluate(() => window.comparisonFixture.snapshot());
                 expect(edited.working.length).toBe(length + 1 + Number(split));
                 expect(edited.selection).toMatchObject({ anchor: at + 1 + Number(split), head: at + 1 + Number(split) });
-                expect(edited.hunks).toHaveLength(1068);
+                expect(await page.evaluate(() => window.comparisonFixture.review.controller.getSnapshot().progress!.lineEdits)).toBe(2500 + Number(split));
                 expect(edited.working.exports).toBe(0); expect(edited.baseline!.exports).toBe(0);
                 expect(await page.evaluate(at => window.comparisonFixture.range(at, at + 2), at)).toBe(split ? "x\n" : "xn");
             }

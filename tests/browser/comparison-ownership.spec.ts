@@ -84,7 +84,7 @@ test("browser comparison work yields with large requested budgets and cancels it
         // the browser owner from checking its clock. No machine-speed timing assertion.
         TextDiff.prototype.next = function(budget = 32768) {
             now += budget / 1024 * clockRate; calls++; work += budget;
-            return Object.freeze({ status: "running", work, readUnits: 0, lineComparisons: 0, lineEdits: 0, hunks: Object.freeze([]), failure: null });
+            return Object.freeze({ status: "running", work, readUnits: 0, lineEdits: 0, hunks: Object.freeze([]), failure: null });
         };
         const results: { requested: number | null; clockRate: number; calls: number; elapsed: number; work: number; pending: number; cancelled: boolean }[] = [];
         try {
@@ -141,7 +141,7 @@ test("review highlights survive every typing paint while exact comparison work i
         const exact = mounted.controller.getSnapshot(); mounted.selectHunk(exact.generation, 0);
         mounted.working.view.setSelection(0, { anchor: 1, head: 1 }); mounted.working.focus();
         const next = TextDiff.prototype.next;
-        TextDiff.prototype.next = function() { return Object.freeze({ status: "running", work: 0, readUnits: 0, lineComparisons: 0, lineEdits: 0, hunks: Object.freeze([]), failure: null }); };
+        TextDiff.prototype.next = function() { return Object.freeze({ status: "running", work: 0, readUnits: 0, lineEdits: 0, hunks: Object.freeze([]), failure: null }); };
         const paints: { revision: number; text: string; color: string }[] = [];
         mounted.working.viewport.onRender(() => {
             const revision = workspace.document(source.documentId).revision; if (!revision) return;

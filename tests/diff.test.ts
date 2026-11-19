@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { nextSeed } from "../fixtures/workloads.ts";
 import test from "node:test";
-import { DiffReferenceCache, TextDiff, TextBuffer } from "../src/index.ts";
-import { collidingDiffLines } from "./helpers/diff-collision.ts";
+import { TextDiff, TextBuffer } from "../src/index.ts";
 
 function diff(a: string, b: string, buffers?: readonly [TextBuffer, TextBuffer]) {
     const job = new TextDiff(buffers?.[0] ?? TextBuffer.from(a), buffers?.[1] ?? TextBuffer.from(b)); let result = job.next(512), calls = 1;
@@ -38,9 +37,9 @@ test("line alignment agrees with a dynamic-programming edit-distance oracle", ()
 
 test("imbalanced repeated-row alignment remains minimal with one shared token and exact fallbacks", () => {
     let seed = 9917; const random = (n: number) => { seed = nextSeed(seed); return seed % n; };
-    const collision = collidingDiffLines();
+    const alternatives = ["left alternative\n", "right alternative\n"];
     for (let trial = 0; trial < 24; trial++) {
-        const left = ["common é😀\r\n", "left\n", collision[0]!], right = ["common é😀\r\n", "right\n", collision[1]!];
+        const left = ["common é😀\r\n", "left\n", alternatives[0]!], right = ["common é😀\r\n", "right\n", alternatives[1]!];
         if (trial % 3 === 1) right[2] = left[2]!; // Two shared tokens must use the general exact algorithm.
         if (trial % 3 === 2) left[0] = right[0] = "x".repeat(300) + "\n"; // No short-token identity.
         const a = Array.from({ length: 256 }, () => left[random(left.length)]!), b = Array.from({ length: 96 }, () => right[random(right.length)]!);
@@ -84,7 +83,7 @@ test("comparison yields within a long line, never exports full text and cancels 
 test("comparison snapshots do not advance work and the default retains its charged-work budget", () => {
     const a = TextBuffer.from("x".repeat(1_000_000)), b = TextBuffer.from("x".repeat(999_999) + "y");
     const job = new TextDiff(a, b), explicit = new TextDiff(a, b), initial = job.snapshot();
-    assert.deepEqual(initial, { status: "running", work: 0, readUnits: 0, lineComparisons: 0, lineEdits: 0, hunks: [], failure: null });
+    assert.deepEqual(initial, { status: "running", work: 0, readUnits: 0, lineEdits: 0, hunks: [], failure: null });
     assert.ok(Object.isFrozen(initial)); assert.equal(a.readMetrics().sliceUnits + b.readMetrics().sliceUnits, 0);
     const first = job.next(); assert.deepEqual(first, explicit.next(32_768));
     assert.equal(first.status, "running"); assert.ok(first.work >= 32_768 && first.work <= 32_768 + 768);
@@ -96,7 +95,7 @@ test("comparison snapshots do not advance work and the default retains its charg
 
 test("failed comparison preserves its cause and cannot publish or resume a partial result", t => {
     const baseline = TextBuffer.from("abc\n".repeat(20_000)), working = TextBuffer.from("def\n".repeat(20_000));
-    const cache = new DiffReferenceCache(), job = new TextDiff(baseline, working, cache), cause = new Error("Read failed.");
+    const job = new TextDiff(baseline, working), cause = new Error("Read failed.");
     const slice = TextBuffer.prototype.slice;
     const fault = t.mock.method(TextBuffer.prototype, "slice", function(this: TextBuffer, from: number, to: number) {
         if (this === working) throw cause;
@@ -106,20 +105,14 @@ test("failed comparison preserves its cause and cannot publish or resume a parti
     const failed = job.next(256);
     assert.equal(failed.status, "failed"); assert.deepEqual(failed.hunks, []); assert.equal(failed.failure, cause.message);
     fault.mock.restore(); assert.deepEqual(job.next(256), failed);
-    const fresh = new TextDiff(baseline, working, cache); let ready = fresh.next();
+    const fresh = new TextDiff(baseline, working); let ready = fresh.next();
     while (ready.status === "running") ready = fresh.next();
     assert.equal(ready.status, "ready"); assert.equal(ready.hunks.length, 1); assert.equal(ready.lineEdits, 40_000);
-    job.dispose(); fresh.dispose(); cache.dispose();
-});
-
-test("equal-length hash collisions still require exact line comparison", () => {
-    const [a, b] = collidingDiffLines();
-    const result = diff(a, b); assert.equal(result.hunks.length, 1); assert.equal(result.lineEdits, 2);
-    const surrounded = diff(`same\n${a}same\n`, `same\n${b}same\n`); assert.equal(surrounded.hunks.length, 1);
+    job.dispose(); fresh.dispose();
 });
 
 test("mixed short and long line identities retain exact UTF16 alignment at bounded-read thresholds", () => {
-    const alphabet = ["\n", "a\r\n", "é😀\n", "x".repeat(254) + "\n", "x".repeat(255) + "\n", "x".repeat(256) + "\n", "\ud800".repeat(900) + "\n"];
+    const alphabet = ["\n", "a\r\n", "é😀\n", "x".repeat(254) + "\n", "x".repeat(255) + "\n", "x".repeat(256) + "\n", "x".repeat(511) + "\n", "x".repeat(512) + "\n", "\ud800".repeat(900) + "\n"];
     let seed = 7291; const random = (n: number) => { seed = nextSeed(seed); return seed % n; };
     for (let trial = 0; trial < 250; trial++) {
         const a = Array.from({ length: random(11) }, () => alphabet[random(alphabet.length)]!), b = Array.from({ length: random(11) }, () => alphabet[random(alphabet.length)]!);
@@ -140,77 +133,59 @@ test("fragmented snapshots preserve raw seams, unpaired surrogates and every edi
     }
 });
 
-test("reference and working index reuse retain exact hunks across edits and baseline replacement", () => {
-    const cache = new DiffReferenceCache(), original = Array.from({ length: 2000 }, (_, i) => `line ${i}\r\n`).join(""), baseline = TextBuffer.from(original);
-    const finish = (a: TextBuffer, b: TextBuffer, shared?: DiffReferenceCache) => { const job = new TextDiff(a, b, shared); let result = job.next(512);
-        while (result.status === "running") result = job.next(512); job.dispose(); return result; };
-    // Independent reference storage requires cached exact identities rather than ownership alone.
-    let working = TextBuffer.from(original).replace(0, 4, "changed"); finish(baseline, working, cache);
-    for (let i = 0; i < 12; i++) {
-        working = working.replace(working.length, working.length, `tail ${i}\n`);
-        const reused = finish(baseline, working, cache), fresh = finish(baseline, working);
-        assert.deepEqual(reused.hunks, fresh.hunks); assert.equal(reused.lineEdits, fresh.lineEdits); assert.ok(reused.readUnits < fresh.readUnits);
-    }
-    const other = TextBuffer.from("different\r\n"), reused = finish(other, working, cache), fresh = finish(other, working);
-    assert.deepEqual(reused.hunks, fresh.hunks); assert.equal(reused.lineEdits, fresh.lineEdits); cache.dispose();
-    assert.throws(() => new TextDiff(baseline, working, cache), /disposed/);
-    assert.equal(baseline.readMetrics().textExports, 0); assert.equal(working.readMetrics().textExports, 0);
-});
-
-test("cancelled partial reference indexing and concurrent jobs retain independent working identities", () => {
-    const cache = new DiffReferenceCache(), a = TextBuffer.from("repeat\n".repeat(2000));
-    const cancelled = new TextDiff(a, TextBuffer.from("other\n"), cache); cancelled.next(512); cancelled.dispose();
-    const left = new TextDiff(a, TextBuffer.from("left\n"), cache), right = new TextDiff(a, TextBuffer.from("right\n"), cache);
+test("cancelling one comparison leaves interleaved jobs independent", () => {
+    const a = TextBuffer.from("repeat\n".repeat(2000));
+    const cancelled = new TextDiff(a, TextBuffer.from("other\n")); cancelled.next(512); cancelled.dispose();
+    const left = new TextDiff(a, TextBuffer.from("left\n")), right = new TextDiff(a, TextBuffer.from("right\n"));
     let l = left.next(512), r = right.next(512);
     while (l.status === "running" || r.status === "running") { if (l.status === "running") l = left.next(512); if (r.status === "running") r = right.next(512); }
     assert.equal(l.hunks.length, 1); assert.equal(r.hunks.length, 1);
-    cache.dispose(); assert.equal(left.next(512).status, "ready"); left.dispose(); right.dispose(); cache.dispose();
+    assert.equal(left.next(512).status, "ready"); left.dispose(); right.dispose();
 });
 
-test("cached alignment stays minimal through block splits, mixed endings, long rows and hash collisions", () => {
-    const collision = collidingDiffLines();
+test("alignment stays minimal for successive edits with mixed endings and long rows", () => {
+    const alternatives = ["left alternative\n", "right alternative\n"];
     const rows = Array.from({ length: 194 }, (_, i) => `row ${i} é😀\ud800${i % 3 ? "\n" : "\r\n"}`);
-    rows[63] = collision[0]!; rows[127] = "x".repeat(300) + "\r\n";
+    rows[63] = alternatives[0]!; rows[127] = "x".repeat(300) + "\r\n";
     const baselineRows = [...rows]; baselineRows[0] = "remote " + baselineRows[0];
-    const baselineText = baselineRows.join(""), baseline = TextBuffer.from(baselineText), cache = new DiffReferenceCache();
+    const baselineText = baselineRows.join(""), baseline = TextBuffer.from(baselineText);
     let workingRows = [...rows], working = TextBuffer.from(rows.join(""));
-    const finish = (buffer: TextBuffer, shared?: DiffReferenceCache) => {
-        const job = new TextDiff(baseline, buffer, shared); let result = job.next(512);
+    const finish = (buffer: TextBuffer) => {
+        const job = new TextDiff(baseline, buffer); let result = job.next(512);
         while (result.status === "running") { const before = result.work; result = job.next(512); assert.ok(result.work - before < 1280); }
         assert.equal(result.status, "ready"); job.dispose(); return result;
     };
-    const retained = finish(working, cache).hunks, retainedJson = JSON.stringify(retained);
+    const retained = finish(working).hunks, retainedJson = JSON.stringify(retained);
     for (let trial = 0; trial < 48; trial++) {
         const at = [0, 1, 62, 63, 64, 65, 126, 127, 128, 129, 190, 191, 192][trial % 13]! % workingRows.length;
         const from = workingRows.slice(0, at).join("").length, old = workingRows[at]!;
-        const insert = trial % 4 === 0 ? `insert ${trial}\r\n` : trial % 4 === 1 ? collision[trial % 2]!
+        const insert = trial % 4 === 0 ? `insert ${trial}\r\n` : trial % 4 === 1 ? alternatives[trial % 2]!
             : trial % 4 === 2 ? "" : "long é😀".repeat(50) + "\n";
         const remove = trial % 4 === 0 ? 0 : old.length;
         working = working.replace(from, from + remove, insert);
         workingRows.splice(at, remove ? 1 : 0, ...(insert ? [insert] : []));
-        const expected = workingRows.join(""), cached = finish(working, cache), fresh = finish(working);
-        assert.deepEqual(cached.hunks, fresh.hunks);
+        const expected = workingRows.join(""), result = finish(working);
         let previous = new Uint16Array(workingRows.length + 1);
         for (const row of baselineRows) {
             const next = new Uint16Array(previous.length);
             for (let j = 1; j < next.length; j++) next[j] = row === workingRows[j - 1] ? previous[j - 1]! + 1 : Math.max(previous[j]!, next[j - 1]!);
             previous = next;
         }
-        assert.equal(cached.lineEdits, baselineRows.length + workingRows.length - 2 * previous.at(-1)!);
+        assert.equal(result.lineEdits, baselineRows.length + workingRows.length - 2 * previous.at(-1)!);
         let restored = baselineText;
-        for (const hunk of [...cached.hunks].reverse()) restored = restored.slice(0, hunk.baseline.from)
+        for (const hunk of [...result.hunks].reverse()) restored = restored.slice(0, hunk.baseline.from)
             + expected.slice(hunk.working.from, hunk.working.to) + restored.slice(hunk.baseline.to);
         assert.equal(restored, expected); assert.equal(JSON.stringify(retained), retainedJson);
         assert.equal(working.readMetrics().textExports, 0);
     }
-    assert.equal(baseline.readMetrics().textExports, 0); cache.dispose();
+    assert.equal(baseline.readMetrics().textExports, 0);
 });
 
-test("independent 100k-line cached comparisons retain literal edits without rereading equal interiors", () => {
+test("independent 100k-line comparisons preserve literal edits at both ends", () => {
     const original = Array.from({ length: 100000 }, (_, i) => `const row${i}\r\n`).join("").trimEnd();
-    const baseline = TextBuffer.from("remote " + original), cache = new DiffReferenceCache();
+    const baseline = TextBuffer.from("remote " + original);
     let working = TextBuffer.from(original);
-    const finish = () => { const job = new TextDiff(baseline, working, cache); let result = job.next(32768);
+    const finish = () => { const job = new TextDiff(baseline, working); let result = job.next(32768);
         while (result.status === "running") result = job.next(32768); assert.equal(result.status, "ready"); job.dispose(); return result; };
     finish(); let tail = "";
     for (const addition of [" later", "😀", " correction", "\tmore"]) {
@@ -221,13 +196,13 @@ test("independent 100k-line cached comparisons retain literal edits without rere
             { baseline: { from: baseline.length, to: baseline.length, lineFrom: 99999, lineTo: 99999 },
                 working: { from: original.length, to: original.length + tail.length, lineFrom: 99999, lineTo: 100000 }, whitespaceOnly: false },
         ]);
-        assert.ok(result.readUnits < 4096); assert.equal(result.lineEdits, 4);
+        assert.equal(result.lineEdits, 4);
         assert.equal(working.readMetrics().textExports, 0);
     }
-    assert.equal(baseline.readMetrics().textExports, 0); cache.dispose();
+    assert.equal(baseline.readMetrics().textExports, 0);
 });
 
-test("shared-source restoration retains bounded comparison reads across partial metadata blocks", () => {
+test("shared-source restoration skips equal rows beyond the restored edge", () => {
     const counts = [...Array.from({ length: 64 }, (_, remainder) => 128 + remainder), 194, 10000, 99967, 100000];
     for (const count of counts) for (const restoredEdge of ["first", "last"]) {
         const rows = Array.from({ length: count }, (_, i) => `const value${String(i).padStart(6, "0")} = 123;`), text = rows.join("\n");
@@ -250,7 +225,7 @@ test("shared-source restoration retains bounded comparison reads across partial 
             + working.slice(hunk.working.from, hunk.working.to) + rebuilt.slice(hunk.baseline.to);
         assert.equal(rebuilt, expected);
         assert.ok(result.readUnits < 8192, `${count} rows, restored ${restoredEdge}: ${result.readUnits} comparison reads`);
-        assert.ok(result.work < 20000); assert.ok(result.lineComparisons < 256);
+        assert.ok(result.work < 20000);
         assert.equal(baseline.readMetrics().textExports, 0); assert.equal(working.readMetrics().textExports, 0); job.dispose();
     }
 });

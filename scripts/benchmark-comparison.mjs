@@ -33,7 +33,7 @@ for (const { id, text, edits } of cases) {
         if (id === "many-hunks") assert.equal(result.hunks.length, 100);
         if (id === "repeated-rotation") assert.equal(result.lineEdits, 2);
         assert.equal(a.readMetrics().textExports, 0); assert.equal(b.readMetrics().textExports, 0);
-        if (iteration >= 3) samples.push({ elapsedMs, maxStepMs, steps, hunks: result.hunks.length, work: result.work, readUnits: result.readUnits, lineComparisons: result.lineComparisons });
+        if (iteration >= 3) samples.push({ elapsedMs, maxStepMs, steps, hunks: result.hunks.length, work: result.work, readUnits: result.readUnits });
         job.dispose();
     }
     model.push({ corpus: id, length: text.length, warmup: 3, measured: 10, elapsedMs: distribution(samples.map(s => s.elapsedMs)), maxStepMs: distribution(samples.map(s => s.maxStepMs)), samples });

@@ -3,10 +3,10 @@ import test from "node:test";
 import { createAgentReview, createComparisonController, TextBuffer, Workspace } from "../src/index.ts";
 import { mapComparisonHunks } from "../src/core/comparison-presentation.ts";
 import type { ComparisonController } from "../src/index.ts";
-function fixture() {
-    const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "working", variant: "source" }, "Working", { value: "first\nworking\nlast\n", serverVersion: "saved-1" });
+function fixture(suffix = "") {
+    const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "working", variant: "source" }, "Working", { value: "first\nworking\nlast\n" + suffix, serverVersion: "saved-1" });
     const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "main");
-    const reference = Object.freeze({ buffer: TextBuffer.from("first\nbaseline\nlast\n"), version: "reference-1" });
+    const reference = Object.freeze({ buffer: TextBuffer.from("first\nbaseline\nlast\n" + suffix), version: "reference-1" });
     const comparison = createComparisonController(workspace, tab, reference);
     const edit = (insert: string) => workspace.edit({ documentId: resource.documentId, expectedRevision: workspace.document(resource.documentId).revision,
         origin: "human", edits: [{ from: workspace.document(resource.documentId).buffer.length, to: workspace.document(resource.documentId).buffer.length, insert }] });
@@ -123,7 +123,7 @@ test("comparison hunk reversion is revision-guarded, undoable and shared across 
 });
 
 test("running comparisons map retained review hunks through consecutive edits without enabling stale actions", () => {
-    const f = fixture();
+    const f = fixture("common tail\n".repeat(64));
     try {
         const exact = ready(f.comparison), original = exact.hunks, originalJson = JSON.stringify(original);
         let before = f.workspace.document(f.resource.documentId), prior = original;
