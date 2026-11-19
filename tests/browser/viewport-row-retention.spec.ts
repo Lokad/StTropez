@@ -107,7 +107,7 @@ test("viewport maps retained source rows through newline edits without stale con
             edit([{ from: doc().buffer.length - 1, to: doc().buffer.length, insert: "" }]); settle();
             const joinedEnd = row(3) === sameB && !eof.isConnected;
             return { work, selected, refreshed, fragment, deletion, insertion, joinedEnd, exact: exact(), exports: doc().buffer.readMetrics().textExports };
-        } finally { stopEarly(); viewport.destroy(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+        } finally { stopEarly(); viewport.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
     });
     await testInfo.attach("row-retention", { body: JSON.stringify(result), contentType: "application/json" });
     for (const work of result.work) {

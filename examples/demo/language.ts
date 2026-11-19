@@ -63,7 +63,7 @@ export class DemoLanguage {
         this.active = true;
         if (this.owner) {
             const owner = this.owner, lifecycle = this.lifecycle;
-            if (owner.state.getSnapshot().phase === "ready") return Promise.resolve(owner);
+            if (owner.getSnapshot().phase === "ready") return Promise.resolve(owner);
             this.publish({ status: "starting", message: "Starting TypeScript…", checking: true });
             return owner.connect().then(() => {
                 if (!this.valid(lifecycle)) throw new Error("Language startup was cancelled.");
@@ -119,8 +119,8 @@ export class DemoLanguage {
                 await owner.connect();
                 if (!this.valid(lifecycle)) throw new Error("Language startup was cancelled.");
                 this.owner = owner; this.scope = scope; this.config = config;
-                this.stopProvider = owner.state.subscribe(() => {
-                    if (owner!.state.getSnapshot().phase === "disconnected" && this.active) {
+                this.stopProvider = owner.subscribe(() => {
+                    if (owner!.getSnapshot().phase === "disconnected" && this.active) {
                         this.invalidate(true); this.publish({ status: "failed", checking: false, message: "TypeScript disconnected. Editing is available; retry to reconnect." });
                     }
                 });
@@ -199,7 +199,7 @@ export class DemoLanguage {
         this.invalidate(true); this.owner?.disconnect(); this.publish({ status: "suspended", checking: false, message: "Language service is idle." });
     }
     retry(): Promise<LspWorkspace> {
-        this.stopProvider?.(); this.stopProvider = undefined; this.scope?.release(); this.scope = undefined; this.owner?.dispose(); this.owner = undefined;
+        this.stopProvider?.(); this.stopProvider = undefined; this.scope?.dispose(); this.scope = undefined; this.owner?.dispose(); this.owner = undefined;
         if (this.config) void this.remove(this.config); this.config = undefined; this.suspend(); return this.connect();
     }
     private remove(config: DemoProvider): Promise<void> { return config.close(); }
@@ -207,7 +207,7 @@ export class DemoLanguage {
         if (this.disposal) return this.disposal;
         const opening = this.opening, config = this.config;
         this.suspend(); this.disposed = true; this.stopWorkspace(); this.stopProvider?.(); this.diagnostics.update([]);
-        this.scope?.release(); this.owner?.dispose();
+        this.scope?.dispose(); this.owner?.dispose();
         this.scope = undefined; this.owner = undefined; this.config = undefined;
         // Public request/scope cancellation releases retention through microtasks. Finish startup
         // and host cleanup, then cross the task boundary before the project releases its resources.

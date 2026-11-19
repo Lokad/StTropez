@@ -91,7 +91,7 @@ async function languagePolicy({ url, defer }: ProtocolFixture) {
     });
     defer(() => owner.dispose());
     const own = <T extends { dispose(): void }>(client: T): T => { defer(() => client.dispose()); return client; };
-    const completionScope = () => { const scope = owner.createScope(); defer(() => scope.release()); return scope; };
+    const completionScope = () => { const scope = owner.createScope(); defer(() => scope.dispose()); return scope; };
     const scope = owner.createScope();
     scope.setDocuments([document]); await scope.ensureConnected();
     const offset = document.text().indexOf("color") + 2;

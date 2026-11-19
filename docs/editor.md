@@ -36,13 +36,13 @@ export function attachSource(
         }
         return editor;
     } catch (error) {
-        editor.destroy();
+        editor.dispose();
         throw error;
     }
 }
 ```
 
-Before detaching, retain `editor.captureView()`, then call `editor.destroy()`. Keep the supplied
+Before detaching, retain `editor.captureView()`, then call `editor.dispose()`. Keep the supplied
 view until its model lifetime ends; dispose it explicitly then. Store captures by document and
 view identity. Mounting another resource requires that resource's own view and capture.
 
@@ -338,8 +338,7 @@ export async function matchBracket(
 `limited`. Only `matched` proves a pair; budget exhaustion must not be displayed as a mismatch.
 The host must discard a completed result when its source/selection capture expires.
 
-The browser's `BracketHighlights` handle is `editor.bracketMatching`. Its stable `state`
-observable supplies `BracketHighlightSnapshot` for the primary collapsed caret. `configure(true)`
+The browser's `BracketHighlights` handle is `editor.bracketMatching`. Its `getSnapshot()` and `subscribe()` methods expose `BracketHighlightSnapshot` for the primary collapsed caret. `configure(true)`
 or explicit limits enable matching; `configure(false)` removes its document/view listeners.
 Matching does not block input, and its pending work is separate from editor input activity.
 Edits, selection, configuration, composition, focus and disposal invalidate stale work, including
@@ -395,7 +394,7 @@ Keep decoration and language callbacks bounded. Run mutations outside notificati
 Coordinate transform/controller ownership and check full interaction readiness before dependent
 Save/Run/service captures. Treat rejected input as content-bearing recovery data.
 
-Call `destroy()` to cancel work, release subscriptions/listeners and owned views, and remove DOM.
+Call `dispose()` to cancel work, release subscriptions/listeners and owned views, and remove DOM.
 It is idempotent. Keep recovery listeners installed through destruction, then release host-owned
 views/resources when their own lifetimes end. Use stable refs or explicit host lifecycle methods;
 do not synchronize editor state in React rendering or effects.

@@ -8,7 +8,6 @@ export type VariantReviewSnapshot = Readonly<{ generation: number; choices: read
 type ReferencePublication = Readonly<{ generation: number; baseline: ComparisonBaseline }>;
 type VariantPorts = Readonly<{ presentation: () => TabTarget; reference: Observable<ReferencePublication>; publish: (baseline: ComparisonBaseline) => void;
     present: () => void; beginReferenceRequest: () => () => boolean; saved: () => ComparisonBaseline; server: () => ComparisonBaseline }>;
-let nextScope = 0;
 const captureBaseline = (value: ComparisonBaseline): ComparisonBaseline => Object.freeze({ buffer: value.buffer, version: value.version });
 
 /** Local host variant retrieval. Reference selection never changes the execution/saving resource. */
@@ -17,7 +16,7 @@ export class ReviewVariants {
     private readonly source: TextResourceHandle;
     private readonly ports: VariantPorts;
     private readonly cell: HostCell<VariantReviewSnapshot>;
-    private readonly lane = `review-variant:${++nextScope}`;
+    private readonly lane: string;
     private readonly history = new Map<string, ComparisonBaseline>();
     private readonly loads: { operation: Operation; reference: ReferencePublication; currentRequest: () => boolean; baseline: ComparisonBaseline; choice: ReviewVariant; ownerGeneration: number }[] = [];
     private draft: ComparisonBaseline | undefined;
@@ -28,6 +27,7 @@ export class ReviewVariants {
     readonly state: Observable<VariantReviewSnapshot>;
     constructor(workspace: Workspace, source: TextResourceHandle, ports: VariantPorts) {
         if (workspace.resourceForDocument(source.documentId) !== source) throw new Error("Variant source belongs to another workspace.");
+        this.lane = `review-variant:${workspace.allocateIdentity()}`;
         this.workspace = workspace; this.source = source; this.ports = ports;
         this.history.set(`history-${++this.serial}`, captureBaseline(ports.saved()));
         this.cell = new HostCell<VariantReviewSnapshot>({ generation: 0, choices: this.choices(), selected: null, requested: null, status: "idle", pending: 0, message: "Choose an immutable version to review." });

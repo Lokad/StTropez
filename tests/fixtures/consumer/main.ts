@@ -5,7 +5,7 @@ import { fontFixture } from "./font-fixture.js";
 import { createAgentReview, DiffReferenceCache, WorkspaceCommands } from "sttropez";
 import { createSelectionSet, planSelectionEdits } from "sttropez";
 import type { ResourceVisibility, SaveReview } from "sttropez";
-import type { FindReason, InputConflictDetail, PresentedLine, TextComparisonOptions, TextComparisonSnapshot, TextViewportOptions } from "sttropez/browser";
+import type { FindDiagnostics, FindReason, TextComparisonDiagnostics, InputConflictDetail, PresentedLine, TextComparisonOptions, TextComparisonSnapshot, TextViewportOptions } from "sttropez/browser";
 import { JsonRpcConnection } from "sttropez/protocol";
 import { openWebSocketTransport } from "sttropez/browser";
 const workspace = new Workspace();
@@ -56,7 +56,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             const d = model.document(source.documentId);
             if (d.revision || d.buffer.slice(0, d.buffer.length) !== original || editor.view.getSnapshot().selectionSet !== selections || model.observeHistory(source.documentId).getSnapshot().undoDepth) throw new Error("Compiled canceled/empty clipboard input changed text, complete selections or history.");
             if (d.buffer.readMetrics().textExports) throw new Error("Compiled clipboard boundary exported text.");
-        } finally { editor.destroy(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
+        } finally { editor.dispose(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
         const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled clipboard resources leaked.");
         return { cancelledOwnership: true, emptyPayloadNoDeletion: true, completeSets: true, noHistory: true, zeroExports: true, events: "synthetic", released: { views, leases, subscriptions } };
     },
@@ -86,7 +86,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             const at = Math.floor(footer / 2); model.edit({ documentId: source.documentId, expectedRevision: 0, origin: "host", edits: [{ from: at, to: at, insert: "x\r\n" }] }); await wait();
             if (editor.viewport.snapshot().visibleLines !== 2) throw new Error("Compiled folded edit exposed hidden rows.");
             model.undo({ documentId: source.documentId, expectedRevision: 1 }); await wait(); exact();
-            const saved = editor.captureView(), retired = editor; editor.destroy();
+            const saved = editor.captureView(), retired = editor; editor.dispose();
             editor = mountTextEditor(host, model, tab, { view, ariaLabel: "Restored folding" }); editor.restoreView(saved); editor.focus(); await wait();
             if (editor.viewport.snapshot().visibleLines !== 2 || view.getSnapshot().selectionSet.ranges.length !== 2) throw new Error("Compiled remount lost folds or complete selections.");
             const fresh = model.createDocumentView(source.documentId), freshHost = document.createElement("div"); freshHost.style.height = "180px"; document.body.append(freshHost);
@@ -95,13 +95,13 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 restored.restoreView(saved); restored.viewport.flush(); if (fresh.folding.getSnapshot().index.visibleLineCount !== 2) throw new Error("Compiled fresh view did not restore captured folds.");
                 const current = fresh.folding.getSnapshot(); fresh.folding.setCollapsed(current, "body", false); restored.restoreView(saved);
                 if (fresh.folding.getSnapshot().index.collapsedCount) throw new Error("A stale capture overwrote newer fold state.");
-            } finally { restored.destroy(); fresh.dispose(); freshHost.remove(); }
+            } finally { restored.dispose(); fresh.dispose(); freshHost.remove(); }
             view.setSelection(model.document(source.documentId).revision, { anchor: at, head: at });
             editor.viewport.revealOffset(at, { horizontal: "nearest", vertical: "nearest" }); await wait();
             if (view.folding.getSnapshot().index.collapsedCount || !editor.viewport.coordsAt(at)) throw new Error("Compiled explicit selection did not reveal its row.");
             if (model.document(source.documentId).buffer.readMetrics().textExports) throw new Error("Compiled folding exported the source value.");
             if (retired.viewport.coordsAt(0) !== undefined) throw new Error("Retired compiled geometry remained active.");
-        } finally { editor.destroy(); other.destroy(); host.remove(); otherHost.remove(); view.dispose(); peer.dispose(); model.close(tab); model.releaseResource(source.id, true); }
+        } finally { editor.dispose(); other.dispose(); host.remove(); otherHost.remove(); view.dispose(); peer.dispose(); model.close(tab); model.releaseResource(source.id, true); }
         if (editor.viewport.coordsAt(0) !== undefined) throw new Error("Released compiled geometry queried a missing source.");
         const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled fold resources leaked.");
         return { units: original.length, visibleRows: 2, independentViews: true, capturedVersions: true, completeSets: true, navigation: true,
@@ -115,28 +115,30 @@ const fixture = { text: () => workspace.document(documentId).text(),
         const tab = model.open({ kind: "text", documentId: source.documentId }, "regex"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
         let workers = 0;
         const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored regex" }), find = createFindController(model, tab, editor, {
-            regularExpression: createRegexFindBackend({ clock: window, createWorker: () => { workers++; return new Worker("/regex-worker.js", { type: "module" }); } }) });
+            regularExpressionBackend: createRegexFindBackend({ clock: window, createWorker: () => { workers++; return new Worker("/regex-worker.js", { type: "module" }); } }) });
         const wait = async (status: "ready" | "failed") => {
             const deadline = performance.now() + 30000;
-            while (find.state.getSnapshot().status !== status) {
-                if (performance.now() > deadline || find.state.getSnapshot().status === "failed" && status !== "failed") throw new Error(find.state.getSnapshot().message || "Compiled regex did not complete.");
+            while (find.getSnapshot().status !== status) {
+                if (performance.now() > deadline || find.getSnapshot().status === "failed" && status !== "failed") throw new Error(find.getSnapshot().message || "Compiled regex did not complete.");
                 await new Promise(resolve => setTimeout(resolve, 0));
             }
         };
         const exact = (text: string) => { const b = model.document(source.documentId).buffer; if (b.length !== text.length) throw new Error("Compiled regex length mismatch.");
             for (let from = 0; from < text.length; from += 32768) if (b.slice(from, Math.min(text.length, from + 32768)) !== text.slice(from, from + 32768)) throw new Error("Compiled regex text mismatch."); };
+        let measurements: FindDiagnostics;
         try {
-            find.setQuery("(?<value>foo|foobar|k|𐐨)"); await wait("ready"); if (workers || find.state.getSnapshot().count) throw new Error("Literal mode started a regex worker.");
-            find.setOptions({ regularExpression: true, matchCase: false, wholeWord: true }); await wait("ready");
-            if (find.state.getSnapshot().count !== 6 || workers < 1) throw new Error("Compiled regex worker was not used.");
+            find.setQuery("(?<value>foo|foobar|k|𐐨)"); await wait("ready"); if (workers || find.getSnapshot().count) throw new Error("Literal mode started a regex worker.");
+            find.setFlags({ regularExpression: true, matchCase: false, wholeWord: true }); await wait("ready");
+            if (find.getSnapshot().count !== 6 || workers < 1) throw new Error("Compiled regex worker was not used.");
             editor.view.setSelections(0, [{ anchor: 0, head: 6 }, { anchor: original.length, head: original.length }], 1);
             const selected = editor.view.getSnapshot().selectionSet;
             find.replaceAll("[$<value>]"); await wait("ready"); exact(expected);
+            measurements = find.getDiagnostics();
             if (model.observeHistory(source.documentId).getSnapshot().undoDepth !== 1) throw new Error("Compiled regex replacement was not atomic.");
             model.undo({ documentId: source.documentId, expectedRevision: model.document(source.documentId).revision }); await wait("ready"); exact(original);
             if (JSON.stringify(editor.view.getSnapshot().selectionSet) !== JSON.stringify(selected)) throw new Error("Compiled regex undo lost selections.");
             const d = model.document(source.documentId); model.edit({ documentId: source.documentId, expectedRevision: d.revision, origin: "host", edits: [{ from: 0, to: d.buffer.length, insert: "😀x\r\nlast" }] });
-            find.setOptions({ regularExpression: true, wholeWord: false, matchCase: true }); find.setQuery("(?:)"); await wait("ready");
+            find.setFlags({ regularExpression: true, wholeWord: false, matchCase: true }); find.setQuery("(?:)"); await wait("ready");
             editor.view.setSelection(model.document(source.documentId).revision, { anchor: 0, head: 0 });
             for (const head of [0, 2, 3, 4, 5, 6, 7, 8, 9, 0]) { find.next(); await new Promise(resolve => setTimeout(resolve, 0));
                 if (editor.view.getSnapshot().selection.head !== head) throw new Error("Compiled zero-width navigation lost a raw position."); }
@@ -145,10 +147,10 @@ const fixture = { text: () => workspace.document(documentId).text(),
             find.replaceAll("|"); await wait("ready"); exact("|😀|x|\r|\n|l|a|s|t|");
             find.setQuery("("); await wait("failed"); exact("|😀|x|\r|\n|l|a|s|t|");
             if (model.document(source.documentId).buffer.readMetrics().textExports) throw new Error("Compiled regex exported the model value.");
-        } finally { find.destroy(); editor.destroy(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
+        } finally { find.dispose(); editor.dispose(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
         const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled regex resources leaked.");
         if (editor.viewport.coordsAt(4) !== undefined) throw new Error("Disposed compiled viewport still exposes geometry.");
-        return { actualWorker: workers > 0, workerCount: workers, units: original.length, atomicReplacement: true, completeSelectionUndo: true,
+        return { measurements, terminalMeasurements: find.getDiagnostics(), actualWorker: workers > 0, workerCount: workers, units: original.length, atomicReplacement: true, completeSelectionUndo: true,
             rawZeroWidthNavigation: true, crlfCaretProjection: true, disposedGeometryInert: true, syntaxFailureSafe: true, zeroCompleteExports: true, released: { views, leases, subscriptions } };
     },
     findAuthority: async () => {
@@ -157,7 +159,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "find-authority", variant: "working" }, "Captured find", { value: "cat cat" });
             const tab = model.open({ kind: "text", documentId: source.documentId }, "find"), host = document.createElement("div"); host.style.height = "160px"; document.body.append(host);
             const editor = mountTextEditor(host, model, tab, { ariaLabel: "Restored captured find" }), find = createFindController(model, tab, editor);
-            const ready = async () => { for (let turn = 0; find.state.getSnapshot().status !== "ready"; turn++) {
+            const ready = async () => { for (let turn = 0; find.getSnapshot().status !== "ready"; turn++) {
                 if (turn >= 1000) throw new Error("Compiled find did not settle."); await new Promise<void>(resolve => setTimeout(resolve, 1)); } };
             try {
                 find.setQuery("cat"); await ready(); editor.view.setSelections(0, [{ anchor: 0, head: 3 }, { anchor: 7, head: 7 }]);
@@ -166,19 +168,19 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 if (change === "permission") { const policy = source.metadata.getSnapshot().capabilities; model.setCapabilities(source.id, { ...policy, edit: ["host"] }); model.setCapabilities(source.id, policy); }
                 else { const lease = model.acquireEditLease(source.id, "consumer", "host"); lease.release(); }
                 await ready();
-                const reason: FindReason | null = find.state.getSnapshot().reason;
+                const reason: FindReason | null = find.getSnapshot().reason;
                 if (model.document(source.documentId).buffer !== before.buffer || reason !== "editing-unavailable"
                     || model.observeHistory(source.documentId).getSnapshot().undoDepth !== 0 || model.diagnostics().subscriptions !== subscriptions
                     || JSON.stringify(editor.view.getSnapshot().selectionSet) !== JSON.stringify(selected)) throw new Error("Interrupted compiled replacement resumed.");
-                find.replaceAll("dog"); if (find.state.getSnapshot().reason !== null) throw new Error("Compiled retry retained an old notice.");
+                find.replaceAll("dog"); if (find.getSnapshot().reason !== null) throw new Error("Compiled retry retained an old notice.");
                 await ready(); const changed = model.document(source.documentId);
                 if (changed.buffer.slice(0, 7) !== "dog dog" || model.observeHistory(source.documentId).getSnapshot().undoDepth !== 1
-                    || find.state.getSnapshot().reason !== "replaced") throw new Error("Fresh compiled retry failed.");
+                    || find.getSnapshot().reason !== "replaced") throw new Error("Fresh compiled retry failed.");
                 model.undo({ documentId: source.documentId, expectedRevision: changed.revision }); await ready();
                 if (model.document(source.documentId).buffer.slice(0, 7) !== "cat cat" || JSON.stringify(editor.view.getSnapshot().selectionSet) !== JSON.stringify(selected)) throw new Error("Compiled retry undo lost selections.");
                 find.replaceAll("cat"); await ready();
                 if (model.diagnostics().subscriptions !== subscriptions || model.document(source.documentId).buffer.readMetrics().textExports !== 0) throw new Error("Compiled replacement retained idle observation or exported text.");
-            } finally { find.destroy(); editor.destroy(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
+            } finally { find.dispose(); editor.dispose(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
             const { views, leases, subscriptions } = model.diagnostics();
             if (views || leases || subscriptions) throw new Error("Compiled find resources leaked.");
             cases.push({ change, cancelled: true, explicitRetry: true, sharedUndoSets: true, noOpReleased: true, zeroCompleteExports: true, released: { views, leases, subscriptions } });
@@ -220,9 +222,9 @@ const fixture = { text: () => workspace.document(documentId).text(),
                 if (model.observeHistory(source.documentId).getSnapshot().undoDepth !== 1 || changed.buffer.readMetrics().textExports !== 0 || recovered.length) throw new Error("Compiled input lost history/bounds.");
                 model.undo({ documentId: source.documentId, expectedRevision: changed.revision }); await ready();
                 if (editor.view.getSnapshot().selectionSet.ranges.some((range, i) => kind === "pointer-word" ? range.anchor !== 0 || range.head !== original.length : range.anchor !== destinations[i] || range.head !== destinations[i])) throw new Error("Compiled undo lost moved selections.");
-                const document = model.document(source.documentId); editor.view.setSelections(document.revision, heads.map(head => ({ anchor: head, head })), heads.length - 1); await ready(); command(); type(); editor.destroy();
+                const document = model.document(source.documentId); editor.view.setSelections(document.revision, heads.map(head => ({ anchor: head, head })), heads.length - 1); await ready(); command(); type(); editor.dispose();
                 if (recovered.length !== 1 || recovered[0] !== text || model.document(source.documentId).buffer !== document.buffer) throw new Error("Compiled detach lost pending input.");
-            } finally { editor.destroy(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
+            } finally { editor.dispose(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
             const { views, leases, subscriptions } = model.diagnostics(); if (views || leases || subscriptions) throw new Error("Compiled ordered input leaked.");
             results.push({ kind, exactText: true, sharedHistory: true, detachRecovery: true, exports: 0, released: { views, leases, subscriptions } });
         }
@@ -236,7 +238,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             edits: [{ from: 0, to: before.buffer.length, insert: "a\r\nb\r" }], view: editor.view,
             selectionSet: createSelectionSet(5, [{ anchor: 0, head: 0 }, { anchor: 3, head: 3 }]), history: { kind: "replace" } });
         if (!result.applied) throw new Error("End target setup rejected."); },
-    finishMultipleInput: () => { const { model, source, tab, host, editor } = multipleInput!; editor.destroy(); host.remove(); model.close(tab); model.releaseResource(source.id, true); multipleInput = undefined;
+    finishMultipleInput: () => { const { model, source, tab, host, editor } = multipleInput!; editor.dispose(); host.remove(); model.close(tab); model.releaseResource(source.id, true); multipleInput = undefined;
         return { views: model.diagnostics().views, leases: model.diagnostics().leases }; },
     readonlyIndent: async (outdent: boolean) => {
         const model = new Workspace(), text = "    const sample = 1;\r\n".repeat(1024), source = model.createTextResource({ scope: "consumer", resource: "readonly-indent", variant: "working" }, "Locked command", { value: text });
@@ -252,7 +254,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             const current = model.document(source.documentId);
             return { outdent, lockedAtHandler, revision: current.revision, sameText: current.buffer.slice(0, text.length) === text,
                 undoBefore: before.undoDepth, undoAfter: model.observeHistory(source.documentId).getSnapshot().undoDepth, exports: current.buffer.readMetrics().textExports };
-        } finally { editor.destroy(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
+        } finally { editor.dispose(); host.remove(); model.close(tab); model.releaseResource(source.id, true); }
     },
     saveReview: async () => {
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "retry", variant: "working" }, "Retry", { value: "base", serverVersion: "v0" });
@@ -297,17 +299,18 @@ const fixture = { text: () => workspace.document(documentId).text(),
             asset.dispose(); return { ...captured, released: document.fonts.size === before };
         } finally { asset.dispose(); }
     },
-    comparison: () => { const review: TextComparisonSnapshot = comparison.state.getSnapshot(), s = review.comparison, reference = comparison.reference.getSnapshot();
+    comparison: () => { const review: TextComparisonSnapshot = comparison.getSnapshot(), s = review.comparison, reference = comparison.reference.getSnapshot();
         const visibility: ResourceVisibility | undefined = reference && workspace.resourceForDocument(reference.editor.view.documentId).metadata.getSnapshot().visibility;
         const inventory = workspace.getSnapshot();
-        return { status: s.status, generation: s.generation, count: s.hunks.length, version: s.baseline?.version,
+        const measurements: TextComparisonDiagnostics = comparison.getDiagnostics();
+        return { measurements, status: s.status, generation: s.generation, count: s.hunks.length, version: s.baseline?.version,
         internalBaseline: visibility === "internal" && !!reference && !inventory.documents.some(document => document.id === reference.editor.view.documentId)
             && !inventory.tabs.some(tab => tab.id === reference.target.id),
         selectedHunk: review.selectedHunk, canNavigate: review.canNavigate, canRevert: review.canRevert,
         viewId: comparisonView.id, selection: comparisonView.getSnapshot().selection, reference: comparison.referenceViewport()?.snapshot(), working: comparison.working.viewport.snapshot() }; },
     remountComparison: () => {
         const baseline = comparison.controller.getSnapshot().baseline!, state = comparison.working.captureView();
-        comparison.destroy(); const retained = workspace.ownsDocumentView(comparisonView);
+        comparison.dispose(); const retained = workspace.ownsDocumentView(comparisonView);
         comparison = mountTextComparison(document.getElementById("comparison")!, workspace, comparisonTab, baseline, reviewOptions);
         comparison.working.restoreView({ ...state, ...comparisonView.getSnapshot().selection }); return retained;
     },
@@ -346,7 +349,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
         candidate.viewport.revealOffset(candidate.view.getSnapshot().selection.head, { horizontal: "nearest", vertical: "nearest" });
         return { offset: step.offset, advances, runOffset, runAdvances, exports: buffer.readMetrics().textExports };
     },
-    find: find.setQuery, findOptions: find.setOptions, findState: find.state.getSnapshot, findMatches: find.matchesIn, replaceAll: find.replaceAll,
+    find: find.setQuery, findOptions: find.setFlags, findState: find.getSnapshot, findMatches: find.matchesIn, replaceAll: find.replaceAll,
     history: () => workspace.observeHistory(documentId).getSnapshot(),
     selectionSets: () => {
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "sets", variant: "working" }, "Sets", { value: "abcd" });
@@ -366,7 +369,7 @@ const fixture = { text: () => workspace.document(documentId).text(),
             const { selectionSet: _, ...legacy } = state; editor.restoreView({ ...legacy, anchor: 2, head: 2 });
             return { captured: state.selectionSet, fullSet, legacy: view.getSnapshot().selectionSet };
         });
-        mounts.forEach(editor => editor.destroy()); container.remove(); model.close(tab);
+        mounts.forEach(editor => editor.dispose()); container.remove(); model.close(tab);
         view.dispose(); model.releaseResource(source.id, true);
         return { before, after, restoredSet, changed, restored, alias, browserSelections, views: model.diagnostics().views, leases: model.diagnostics().leases };
     },

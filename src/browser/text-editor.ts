@@ -66,10 +66,9 @@ export type TextEditor = Readonly<{ element: HTMLDivElement; input: HTMLTextArea
     /** Immutable activity capture, reused while its fields are unchanged. Does not collect metrics. */
     activity: () => TextEditorActivity;
     snapshot: () => TextEditorActivity & Readonly<{ inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number; maxQueuedInputTurnMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number; navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number; wordSelectionEvents: number; lastWordSelectionMs: number; maxWordSelectionTurnMs: number; dragScrollFrames: number; maxDragScrollStepMs: number; commits: number; conflicts: number; queuedInputUnits: number; wordScanSteps: number; maxWordScanStepMs: number; graphemeScanSteps: number; maxGraphemeScanStepMs: number; visualMoves: number }>;
-    destroy: () => void }>;
+    dispose: () => void }>;
 export type MountedTextEditor = Readonly<{ editor: TextEditor; setComparisonRows: ReturnType<typeof mountViewport>["setComparisonRows"] }>;
 
-let nextMount = 0;
 const emptyDecorations = Object.freeze([]);
 
 /** Text editor with bounded native input and virtualized rendering. Native IME qualification is separate. */
@@ -101,7 +100,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     const root = viewport.element;
     root.style.tabSize = String(language.tabSize);
     const owner = host.ownerDocument, win = owner.defaultView!, input = owner.createElement("textarea");
-    const scope = ++nextMount, listeners = new AbortController();
+    const scope = workspace.allocateIdentity(), listeners = new AbortController();
     root.classList.add("st-editor");
     input.className = "st-input-context"; input.wrap = "off"; input.spellcheck = false; input.autocomplete = "off";
     // The native projection belongs to the editor, independently of enclosing host forms.
@@ -1001,7 +1000,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
         restoreView: (state: ViewState) => { viewport.restoreView(state); refresh(); },
         snapshot: () => Object.freeze({ ...activity(), inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs, wordSelectionEvents, lastWordSelectionMs, maxWordSelectionTurnMs,
             dragScrollFrames, maxDragScrollStepMs, commits, conflicts, queuedInputUnits: inputQueue.pending?.units ?? 0, wordScanSteps, maxWordScanStepMs, graphemeScanSteps, maxGraphemeScanStepMs, visualMoves }),
-        destroy: () => {
+        dispose: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; editTransform = undefined;
             brackets!.dispose();
             warnings!.dispose();
@@ -1014,14 +1013,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
             if (composing && input.value !== context.text) conflict("composition-detached");
             composing = false;
             stopDrag();
-            textDrag.destroy();
+            textDrag.dispose();
             caretLayer.dispose();
             commandRunner.cancel();
             listeners.abort();
             subscriptions.forEach(unsubscribe => unsubscribe());
             input.value = "";
             inputBinding.dispose();
-            viewport.destroy();
+            viewport.dispose();
             if (!options.view) view.dispose();
         } });
     return Object.freeze({ editor, setComparisonRows });

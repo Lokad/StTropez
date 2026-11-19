@@ -80,7 +80,7 @@ export function mountPackagedPilot(host: HTMLElement, original: string) {
         comparison = mountTextComparison(comparisonHost, workspace, tab, baseline, { view: reviewView, ariaLabel: "Source review" });
         unsubscribeComparison = comparison.controller.subscribe(render); mounts++;
     }
-    function unmountViews(): void { unsubscribeComparison(); comparison?.destroy(); primary?.destroy(); peer?.destroy(); primary = peer = undefined; comparison = undefined; }
+    function unmountViews(): void { unsubscribeComparison(); comparison?.dispose(); primary?.dispose(); peer?.dispose(); primary = peer = undefined; comparison = undefined; }
     mountViews(Object.freeze({ buffer: initial, version: "saved:v0" }));
     const subscriptions = [workspace.observeDocument(source.documentId).subscribe(render), source.metadata.subscribe(render)];
     const timer = win.setInterval(() => { background++; progress.value = background % 100; }, 50); render();
@@ -104,7 +104,7 @@ export function mountPackagedPilot(host: HTMLElement, original: string) {
                         selection: editor.view.getSnapshot().selection, metrics: Object.freeze({ ...editor.snapshot(), viewport: editor.viewport.snapshot() }) })] : [])),
                     comparison: c && comparison ? Object.freeze({ status: c.status, generation: c.generation, baseline: c.baseline ? Object.freeze({ version: c.baseline.version, epoch: c.baseline.epoch, length: c.baseline.buffer.length }) : null,
                         workingRevision: c.working?.revision, referenceIsWorkingBuffer: c.baseline?.buffer === document?.buffer, viewId: reviewView.id, selection: reviewView.getSnapshot().selection,
-                        hunks: c.hunks.length, hunkRanges: c.hunks, progress: c.progress, work: comparison.snapshot(), input: comparison.working.snapshot(), workingViewport: comparison.working.viewport.snapshot(), referenceViewport: comparison.referenceViewport()?.snapshot() }) : null }) });
+                        hunks: c.hunks.length, hunkRanges: c.hunks, progress: c.progress, work: comparison.getDiagnostics(), input: comparison.working.snapshot(), workingViewport: comparison.working.viewport.snapshot(), referenceViewport: comparison.referenceViewport()?.snapshot() }) : null }) });
         },
         range: (from: number, to: number) => workspace.document(source.documentId).buffer.slice(from, to),
         referenceRange: (from: number, to: number) => comparison!.controller.getSnapshot().baseline!.buffer.slice(from, to),

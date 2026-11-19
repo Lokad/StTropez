@@ -73,7 +73,7 @@ test("warning policy composes with colors and selection; captures expire on edit
     await expect(marks(page)).toHaveText(["\u200b"]);
     const end = await page.evaluate(() => {
         const f = window.warningFixture, capture = f.editor.characterWarnings.query(0, 5)!;
-        f.editor.destroy(); const configured = f.editor.characterWarnings.configure(true), query = f.editor.characterWarnings.query(0, 5);
+        f.editor.dispose(); const configured = f.editor.characterWarnings.configure(true), query = f.editor.characterWarnings.query(0, 5);
         f.workspace.close(f.tab); f.workspace.releaseResource(f.resource, true);
         return { current: capture.isCurrent(), configured, query, configuration: f.editor.characterWarnings.configuration(), views: f.workspace.diagnostics().views,
             subscriptions: f.workspace.diagnostics().subscriptions, children: f.host.childNodes.length };

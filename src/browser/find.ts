@@ -11,8 +11,8 @@ import type { SelectionSet } from "../core/selections.ts";
 import { Store } from "../core/observable.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 const literalBudget = Object.freeze({ units: 4096, matches: 1024, calls: 32 });
-export type FindOptions = Readonly<{ wholeWord?: boolean; matchCase?: boolean; regularExpression?: boolean }>;
-export type FindConfiguration = Readonly<{ regularExpression?: FindBackend; regularExpressionDelayMs?: number }>;
+export type FindFlags = Readonly<{ wholeWord?: boolean; matchCase?: boolean; regularExpression?: boolean }>;
+export type FindControllerOptions = Readonly<{ regularExpressionBackend?: FindBackend; regularExpressionDelayMs?: number }>;
 type FindEvents = Pick<EventTarget, "addEventListener" | "removeEventListener">;
 /** View operations consumed by find. A mounted TextEditor satisfies this contract directly. */
 export type FindHost = Readonly<{
@@ -30,9 +30,15 @@ export type FindHost = Readonly<{
 export type FindReason = "editing-unavailable" | "composition-active" | "backend-unavailable" | "search-failed"
     | "replacement-failed" | "view-unavailable" | "cancelled" | "replaced" | Extract<EditResult, { applied: false }>["reason"];
 export type FindSnapshot = Readonly<{ query: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean; revision: number; status: "idle" | "searching" | "ready" | "replacing" | "failed" | "cancelled" | "expired" | "disposed";
-    count: number; scanned: number; length: number; retained: boolean; current: number | null; matchesVersion: number; reason: FindReason | null; message: string; maxScanStepMs: number; replaceTransactionMs: number }>;
-export type FindController = Readonly<{ state: Observable<FindSnapshot>; matchesIn: (from: number, to: number, capture?: FindSnapshot) => readonly SearchMatch[]; setQuery: (query: string) => void; setOptions: (options: FindOptions) => void; next: (direction?: 1 | -1) => boolean;
-    replaceCurrent: (replacement: string) => boolean; replaceAll: (replacement: string) => void; cancel: () => void; destroy: () => void }>;
+    count: number; scanned: number; length: number; retained: boolean; current: number | null; matchesVersion: number; reason: FindReason | null; message: string }>;
+export type FindDiagnostics = Readonly<{ maxScanStepMs: number; replaceTransactionMs: number }>;
+export type FindController = Observable<FindSnapshot> & Readonly<{
+    getDiagnostics: () => FindDiagnostics;
+    matchesIn: (from: number, to: number, capture?: FindSnapshot) => readonly SearchMatch[];
+    setQuery: (query: string) => void;
+    setFlags: (flags: FindFlags) => void;
+    next: (direction?: 1 | -1) => boolean;
+    replaceCurrent: (replacement: string) => boolean; replaceAll: (replacement: string) => void; cancel: () => void; dispose: () => void }>;
 // A notice is replaced atomically; progress-only patches retain both fields.
 type FindPatch = Partial<Omit<FindSnapshot, "reason" | "message">> &
     (Pick<FindSnapshot, "reason" | "message"> | { reason?: never; message?: never });
@@ -41,8 +47,8 @@ function isAsync<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
 }
 
 /** Host-rendered find UI; scanning/planning yield, while replacement uses one captured transaction. */
-export function createFindController(workspace: Workspace, tabId: TabId, editor: FindHost, configuration: FindConfiguration = {}): FindController {
-    const backend = configuration.regularExpression, regexDelay = configuration.regularExpressionDelayMs ?? 80;
+export function createFindController(workspace: Workspace, tabId: TabId, editor: FindHost, options: FindControllerOptions = {}): FindController {
+    const backend = options.regularExpressionBackend, regexDelay = options.regularExpressionDelayMs ?? 80;
     if (!Number.isFinite(regexDelay) || regexDelay < 0 || regexDelay > 1000) throw new RangeError("Invalid regular-expression query delay.");
     if (backend !== undefined && (typeof backend?.search !== "function" || typeof backend.replace !== "function" || typeof backend.dispose !== "function")) throw new TypeError("Expected a find backend.");
     const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
@@ -50,7 +56,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId), lease = workspace.acquire(resource.id), owner = editor.element.ownerDocument, win = owner.defaultView!;
     const scope = workspace.createNotificationScope(), initial = workspace.document(documentId);
     const store = new Store<FindSnapshot>(Object.freeze({ query: "", wholeWord: false, matchCase: true, regularExpression: false, revision: initial.revision, status: "idle", count: 0, scanned: 0, length: initial.buffer.length,
-        retained: false, current: null, matchesVersion: 0, reason: null, message: "", maxScanStepMs: 0, replaceTransactionMs: 0 }), scope);
+        retained: false, current: null, matchesVersion: 0, reason: null, message: "" }), scope);
     const runner = createCooperativeRunner(win);
     let disposed = false, cursor: FindSearchCursor | undefined, planCursor: FindPlanCursor | undefined, generation = 0, focusGeneration = 0;
     let navigatedZero: Readonly<{ index: number; selectionSet: SelectionSet }> | undefined;
@@ -62,13 +68,12 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
     const literalBackend = createLiteralFindBackend(() => matches, literalBudget.units, literalBudget.matches);
     const backendFor = (regularExpression: boolean) => regularExpression ? backend : literalBackend;
     const disposeBackends = () => { literalBackend.dispose(); backend?.dispose(); };
-    let scanMaximum = 0;
+    let scanMaximum = 0, replaceTransactionMs = 0;
     const sameOwner = (a: DocumentSnapshot, b: DocumentSnapshot) => a.id === b.id && a.resourceId === b.resourceId && a.key === b.key;
     const valid = () => !disposed && lease.active() && workspace.resolveTab(target) !== undefined && workspace.ownsDocumentView(editor.view)
         && workspace.observeDocument(documentId).getSnapshot() !== undefined && !editor.activity().disposed;
     const publish = (patch: FindPatch) => {
-        scanMaximum = patch.maxScanStepMs ?? scanMaximum;
-        scope.publish(store, Object.freeze({ ...store.get(), ...patch, maxScanStepMs: scanMaximum }));
+        scope.publish(store, Object.freeze({ ...store.get(), ...patch }));
     };
     const stop = () => { generation++; runner.cancel();
         const active = cursor, plan = planCursor, authority = stopPlanAuthority; cursor = undefined; planCursor = undefined; stopPlanAuthority = undefined;
@@ -109,6 +114,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         stop();
         if (!valid()) { disposeBackends(); reset({ status: "expired", reason: "view-unavailable", message: "View is unavailable." }); return; }
         const document = workspace.document(documentId), token = generation;
+        scanMaximum = 0;
         let repair: LiteralFindRepair | undefined;
         if (retain && literal && !regularExpression && literal.query === query && literal.wholeWord === wholeWord && literal.matchCase === matchCase
             && sameOwner(literal.document, document) && sameOwner(observed, document)) {
@@ -119,7 +125,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
                 if (document.buffer === literal.document.buffer) {
                     matches = literal.index; count = matches.count; literal.document = document; edges = undefined; observed = document; navigationTo = document.buffer.length;
                     publish({ revision: document.revision, length: document.buffer.length, retained: false, status: "ready", count, scanned: document.buffer.length,
-                        matchesVersion: store.get().matchesVersion + 1, current: null, reason: null, message: "", maxScanStepMs: 0 }); return;
+                        matchesVersion: store.get().matchesVersion + 1, current: null, reason: null, message: "" }); return;
                 }
                 const prefix = Math.min(edges?.prefix ?? proof.prefix, proof.prefix, literal.document.buffer.length, document.buffer.length);
                 edges = { prefix, suffix: Math.min(edges?.suffix ?? proof.suffix, proof.suffix, literal.document.buffer.length - prefix, document.buffer.length - prefix) };
@@ -127,7 +133,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
             }
         }
         observed = document;
-        const patch = { query, wholeWord, matchCase, regularExpression, revision: document.revision, length: document.buffer.length, reason: null, message: "", maxScanStepMs: 0 };
+        const patch = { query, wholeWord, matchCase, regularExpression, revision: document.revision, length: document.buffer.length, reason: null, message: "" };
         if (repair) {
             matches = repair.index; count = matches.count; navigationTo = repair.start;
             publish({ ...patch, status: "searching", retained: true, count, scanned: repair.start, current: null, matchesVersion: store.get().matchesVersion + 1 });
@@ -173,8 +179,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
                 return token === generation && valid();
             };
             const present = (result: SearchStep) => {
-                // Transfer acknowledgements can change work/timing without changing visible
-                // progress. Keep their maximum privately until the next real publication.
+                // Transfer acknowledgements can advance diagnostics without changing visible progress.
                 const state = store.get();
                 if (result.done || count !== state.count || result.scanned !== state.scanned)
                     publish({ count, matchesVersion: state.matchesVersion + (count !== state.count ? 1 : 0), scanned: result.scanned, status: result.done ? "ready" : "searching", retained: !!repair && !result.done });
@@ -270,7 +275,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
             committed = applied.applied;
             stopPlanAuthority?.(); stopPlanAuthority = undefined;
             if (!valid()) return;
-            publish({ replaceTransactionMs: win.performance.now() - started });
+            replaceTransactionMs = win.performance.now() - started;
             if (!applied.applied) { publish({ status: "ready", reason: applied.reason, message: applied.reason }); return; }
             if (!immediate && workspace.document(documentId).revision === state.revision) publish({ status: "ready" });
             if (range && range.from === range.to && store.get().query === state.query && store.get().regularExpression && valid()) {
@@ -316,12 +321,12 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         if (store.get().status === "cancelled" && valid()) { observed = workspace.document(documentId); publish({ revision: observed.revision, length: observed.buffer.length }); }
         else { const state = store.get(); restart(state.query, state.wholeWord, state.matchCase, state.regularExpression, true); }
     }), workspace.tabState.subscribe(() => { if (!valid()) { stop(); disposeBackends(); reset({ status: "expired", reason: "view-unavailable", message: "View is unavailable." }); } })];
-    return Object.freeze({ state: store.observable, matchesIn, setQuery: (query: string) => { scope.assertWritable(); if (typeof query !== "string") throw new TypeError("Expected a search string."); if (!disposed) restart(query); },
-        setOptions: (options: FindOptions) => {
-            scope.assertWritable(); if (options === null || typeof options !== "object" || (options.wholeWord !== undefined && typeof options.wholeWord !== "boolean" || options.matchCase !== undefined && typeof options.matchCase !== "boolean" || options.regularExpression !== undefined && typeof options.regularExpression !== "boolean")) throw new TypeError("Expected find options.");
-            const state = store.get(), wholeWord = options.wholeWord ?? state.wholeWord, matchCase = options.matchCase ?? state.matchCase, regularExpression = options.regularExpression ?? state.regularExpression;
+    return Object.freeze({ ...store.observable, getDiagnostics: () => Object.freeze({ maxScanStepMs: scanMaximum, replaceTransactionMs }), matchesIn, setQuery: (query: string) => { scope.assertWritable(); if (typeof query !== "string") throw new TypeError("Expected a search string."); if (!disposed) restart(query); },
+        setFlags: (flags: FindFlags) => {
+            scope.assertWritable(); if (flags === null || typeof flags !== "object" || (flags.wholeWord !== undefined && typeof flags.wholeWord !== "boolean" || flags.matchCase !== undefined && typeof flags.matchCase !== "boolean" || flags.regularExpression !== undefined && typeof flags.regularExpression !== "boolean")) throw new TypeError("Expected find flags.");
+            const state = store.get(), wholeWord = flags.wholeWord ?? state.wholeWord, matchCase = flags.matchCase ?? state.matchCase, regularExpression = flags.regularExpression ?? state.regularExpression;
             if (!disposed && (wholeWord !== store.get().wholeWord || matchCase !== store.get().matchCase || regularExpression !== store.get().regularExpression)) restart(store.get().query, wholeWord, matchCase, regularExpression);
         },
         next, replaceCurrent, replaceAll, cancel: () => { scope.assertWritable(); if (!disposed) { stop(); reset({ status: "cancelled", reason: "cancelled", message: "Search cancelled." }); } },
-        destroy: () => { if (disposed) return; scope.assertWritable(); disposed = true; stop(); disposeBackends(); subscriptions.forEach(unsubscribe => unsubscribe()); lease.release(); reset({ status: "disposed", query: "", length: 0, reason: null, message: "" }); } });
+        dispose: () => { if (disposed) return; scope.assertWritable(); disposed = true; stop(); disposeBackends(); subscriptions.forEach(unsubscribe => unsubscribe()); lease.release(); reset({ status: "disposed", query: "", length: 0, reason: null, message: "" }); } });
 }

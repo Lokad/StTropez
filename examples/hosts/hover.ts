@@ -142,7 +142,7 @@ export class HostHoverTools {
         return () => {
             if (detached) return; detached = true; if (this.current === session) this.dismiss(); session.cancelTimers(); listeners.abort(); stop();
             const counts = controller.snapshot(); for (const name of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[name] += counts[name];
-            controller.destroy(); this.sessions.delete(id);
+            controller.dispose(); this.sessions.delete(id);
         };
     }
     setDelay(id: string, value: number): void { this.sessions.get(id)?.controller.setDelay(value); }

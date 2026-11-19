@@ -64,5 +64,5 @@ export function createHoverController(workspace: Workspace, tabId: TabId, editor
         faultNext: (value: NonNullable<HoverInput["fault"]>) => { fault = value; },
         snapshot: () => Object.freeze({ ...counts, connected: options.backend.snapshot().connected, pending: pending !== undefined, disposed,
             transport: options.backend.snapshot().transport }),
-        destroy: () => { if (disposed) return; disposed = true; stopBackend?.(); disconnect(); options.backend.dispose(); editor.input.removeEventListener("compositionstart", composition); } });
+        dispose: () => { if (disposed) return; disposed = true; stopBackend?.(); disconnect(); options.backend.dispose(); editor.input.removeEventListener("compositionstart", composition); } });
 }

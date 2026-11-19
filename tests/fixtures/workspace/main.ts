@@ -34,7 +34,7 @@ const connection = workspace.createResource<Connection>({ scope: "demo", resourc
 const panelTab = workspace.open({ kind: "panel", resourceId: connection.id, panelType: "connection" }, "right");
 for (const tab of [sourceTab, secondaryTab, panelTab]) cleanup.defer(() => workspace.close(tab));
 const editor = mountTextareaEditor(element("left"), workspace, sourceTab);
-cleanup.defer(() => editor.destroy());
+cleanup.defer(() => editor.dispose());
 const conflicts: { reason: string; attemptedLength: number }[] = [];
 editor.element.addEventListener(inputConflictEvent, event => {
     const detail = (event as CustomEvent<InputConflictDetail>).detail;
@@ -52,7 +52,7 @@ panel.append(heading, label, description);
 const secondaryHost = document.createElement("div"); secondaryHost.style.height = "180px";
 panel.append(secondaryHost);
 const secondary = mountTextareaEditor(secondaryHost, workspace, secondaryTab, { ariaLabel: "Secondary source view" });
-cleanup.defer(() => secondary.destroy());
+cleanup.defer(() => secondary.dispose());
 element("right").append(panel);
 sourcePath.addEventListener("input", () => {
     const snapshot = connection.getSnapshot();

@@ -26,17 +26,17 @@ export type TextComparisonSnapshot = Readonly<{
     canNavigate: boolean; canRevert: boolean;
     scrollLinked: boolean; alignment: ComparisonAlignmentSnapshot; disposed: boolean;
 }>;
-export type TextComparison = Readonly<{
+export type TextComparisonDiagnostics = Readonly<{ generation: number; steps: number; advances: number; maxStepMs: number; totalStepMs: number; scrollLinked: boolean; pendingScroll: boolean; rowsAligned: boolean; alignment: ComparisonAlignmentSnapshot; referenceSubscriptions: number; disposed: boolean }>;
+export type TextComparison = Observable<TextComparisonSnapshot> & Readonly<{
     element: HTMLDivElement; controller: ComparisonController; working: TextEditor;
     referenceViewport: () => TextViewport | undefined;
     referenceEditor: () => TextEditor | undefined;
     reference: Observable<ComparisonReferenceView | undefined>;
-    state: Observable<TextComparisonSnapshot>;
-    snapshot: () => Readonly<{ generation: number; steps: number; advances: number; maxStepMs: number; totalStepMs: number; scrollLinked: boolean; pendingScroll: boolean; rowsAligned: boolean; alignment: ComparisonAlignmentSnapshot; referenceSubscriptions: number; disposed: boolean }>;
+    getDiagnostics: () => TextComparisonDiagnostics;
     setScrollLinked: (linked: boolean) => void;
     setRowsAligned: (aligned: boolean) => void;
     selectHunk: (generation: number, index: number) => boolean;
-    revertHunk: (generation: number, index: number) => boolean; destroy: () => void;
+    revertHunk: (generation: number, index: number) => boolean; dispose: () => void;
 }>;
 /** Two independently virtualized panes. Hosts own reference retrieval, acceptance, saving and execution. */
 export function mountTextComparison(host: HTMLElement, workspace: Workspace, workingTab: TabId, baseline: ComparisonBaseline,
@@ -118,7 +118,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     };
     function clearReference(): void {
         publishReference(undefined);
-        const retiredEditor = referenceEditor(); try { pair.setReference(undefined); } finally { retiredEditor?.destroy(); }
+        const retiredEditor = referenceEditor(); try { pair.setReference(undefined); } finally { retiredEditor?.dispose(); }
         if (displayTarget && workspace.resolveTab(displayTarget)) workspace.close(displayTarget.id);
         displayTab = undefined; displayTarget = undefined;
         if (display) { const retired = display; display = undefined; workspace.releaseResourceWhenUnowned(retired.id); }
@@ -133,7 +133,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
             displayTarget = workspace.captureTab(displayTab);
             const mounted = mountEditor(referencePane.content, workspace, displayTab, { ariaLabel: "Comparison baseline source", decorate: decorate("baseline"), lineClass: lineClass("baseline") });
             const editor = mounted.editor;
-            try { pair.setReference(mounted); } catch (error) { editor.destroy(); throw error; }
+            try { pair.setReference(mounted); } catch (error) { editor.dispose(); throw error; }
             publishReference(Object.freeze({ editor, target: displayTarget, epoch, version: state.baseline.version }));
         } else if (!state.baseline && referenceViewport()) clearReference();
         if (root.dataset.status !== state.status) root.dataset.status = state.status;
@@ -182,20 +182,20 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     // Decoration queries must already see the mapped capture for that same revision.
     const unsubscribe = controller.subscribe(() => { state = controller.getSnapshot(); changed(); }),
         stopMetadata = workspace.resourceForDocument(controller.view.documentId).metadata.subscribe(changed);
-    function destroy(): void {
+    function dispose(): void {
         if (disposed) return; referenceScope.assertWritable(); disposed = true; runner.cancel(); scheduled = false;
         try {
             unsubscribe(); stopMetadata(); scroll.dispose(); alignment.dispose();
-            try { clearReference(); } finally { pair.dispose(); working.destroy(); }
+            try { clearReference(); } finally { pair.dispose(); working.dispose(); }
         } finally {
             try { controller.dispose(); } finally { state = controller.getSnapshot(); selected = -1; publishState(); stopControls?.(); root.remove(); }
         }
     }
     try {
         render(); setRowsAligned(options.rowsAligned ?? false); setScrollLinked(options.scrollLinked ?? options.rowsAligned ?? false);
-        if (options.controls !== false) stopControls = mountComparisonControls({ element: root, state: stateStore.observable, selectHunk, revertHunk, setScrollLinked, setRowsAligned }, referencePane.section, workingPane.section);
+        if (options.controls !== false) stopControls = mountComparisonControls({ element: root, ...stateStore.observable, selectHunk, revertHunk, setScrollLinked, setRowsAligned }, referencePane.section, workingPane.section);
         schedule();
-    } catch (error) { destroy(); throw error; }
-    return Object.freeze({ element: root, controller, working, referenceViewport, referenceEditor, reference: referenceStore.observable, state: stateStore.observable, selectHunk, revertHunk, setScrollLinked, setRowsAligned,
-        snapshot: () => Object.freeze({ generation: measuredGeneration, steps, advances, maxStepMs, totalStepMs, scrollLinked: scroll.snapshot().linked, pendingScroll: scroll.snapshot().pending, rowsAligned: alignment.snapshot().enabled, alignment: alignment.snapshot(), referenceSubscriptions: referenceScope.subscriptionCount(), disposed }), destroy });
+    } catch (error) { dispose(); throw error; }
+    return Object.freeze({ element: root, controller, working, referenceViewport, referenceEditor, reference: referenceStore.observable, ...stateStore.observable, selectHunk, revertHunk, setScrollLinked, setRowsAligned,
+        getDiagnostics: () => Object.freeze({ generation: measuredGeneration, steps, advances, maxStepMs, totalStepMs, scrollLinked: scroll.snapshot().linked, pendingScroll: scroll.snapshot().pending, rowsAligned: alignment.snapshot().enabled, alignment: alignment.snapshot(), referenceSubscriptions: referenceScope.subscriptionCount(), disposed }), dispose });
 }

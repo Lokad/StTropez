@@ -74,13 +74,13 @@ export function protocolResponseContract(rpc: JsonRpcConnection, session: LspSes
 
 /** Scope lifetime cannot be confused with shared connection lifetime. */
 export function protocolScopeContract(scope: LspWorkspaceScope): void {
-    void scope.ensureConnected(); scope.cancel(); scope.release();
+    void scope.ensureConnected(); scope.cancel(); scope.dispose();
     // @ts-expect-error Shared connection lifecycle belongs to the provider owner.
     scope.connect();
     // @ts-expect-error Cancelling scoped work cannot disconnect the provider.
     scope.disconnect();
-    // @ts-expect-error Releasing a scope does not dispose the provider.
-    scope.dispose();
+    // @ts-expect-error The scope has a single teardown method.
+    scope.release();
     // @ts-expect-error Only the provider owner can shut down the shared session.
     scope.shutdown();
 }

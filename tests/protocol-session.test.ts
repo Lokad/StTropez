@@ -114,7 +114,7 @@ test("an encoded document failure is isolated, reported once and retried after a
     t.after(() => session.dispose());
     const tooLarge = session.bindDocument(input("\u0000".repeat(1000), "fixture:large", "large")), small = session.bindDocument(input("small", "fixture:small", "small"));
     await session.connect(); await settled(); const peer = host.peers[0]!;
-    assert.equal(session.state.getSnapshot().phase, "ready"); assert.equal(errors.length, 1); assert.match(errors[0]!.message, /configured limit/);
+    assert.equal(session.getSnapshot().phase, "ready"); assert.equal(errors.length, 1); assert.match(errors[0]!.message, /configured limit/);
     assert.equal(session.synchronized(tooLarge), undefined); assert.equal(peer.documents.has("fixture:large"), false);
     peer.rpc.onRequest("textDocument/hover", () => ({ contents: "healthy" }));
     assert.deepEqual(await session.requestDocument("textDocument/hover", small, () => ({})).result, { contents: "healthy" });
@@ -164,7 +164,7 @@ test("an edit queued at pump completion schedules another synchronization turn",
 test("a binding closed synchronously while its open is sent still receives exactly one close", async t => {
     const host = fixture(t); let document: ReturnType<InstanceType<typeof LspSession>["bindDocument"]>;
     const session = new LspSession({ ...host, connect: async context => { const port = await host.connect(context);
-        return { ...port, send: text => { port.send(text); if (JSON.parse(text).method === "textDocument/didOpen") document.close(); } }; } });
+        return { ...port, send: text => { port.send(text); if (JSON.parse(text).method === "textDocument/didOpen") document.dispose(); } }; } });
     t.after(() => session.dispose()); document = session.bindDocument(input("closed during send")); await session.connect();
     const peer = host.peers[0]!; peer.rpc.onRequest("fixture/barrier", () => null); await session.request("fixture/barrier").result;
     assert.deepEqual(peer.events.slice(-2), ["open", "close"]); assert.equal(peer.documents.size, 0);
@@ -183,9 +183,9 @@ test("reference peer receives ordered initialization and exact coalesced UTF-16 
     await session.flush(); await settled(); assert.equal(peer.documents.get(initial.uri)?.getText(), latest.slice(0, latest.length)); assert.equal(peer.documents.get(initial.uri)?.version, 2);
     document.update(51, 52, latest); await session.flush(); await settled(); assert.equal(peer.documents.get(initial.uri)?.version, 3);
     assert.equal(initial.buffer.readMetrics().textExports + latest.readMetrics().textExports, 0);
-    document.close(); const replacement = session.bindDocument(input("replacement", initial.uri, "resource:two", 0)); document.close(); assert.throws(() => document.update(52, 53, latest), error => error instanceof RpcError && error.code === -32801);
-    await session.flush(); await settled(); assert.equal(peer.documents.get(initial.uri)?.getText(), "replacement"); assert.deepEqual(peer.events.slice(-2), ["close", "open"]); replacement.close(); await session.flush(); await settled();
-    session.dispose(); replacement.close(); assert.deepEqual(session.snapshotOwnership(), { documents: 0, remoteDocuments: 0, registrations: 0, subscriptions: 0, scheduledTasks: 0, pendingDocumentRequests: 0, pendingRequests: 0, incomingRequests: 0 }); assert.equal(host.timers.size, 0);
+    document.dispose(); const replacement = session.bindDocument(input("replacement", initial.uri, "resource:two", 0)); document.dispose(); assert.throws(() => document.update(52, 53, latest), error => error instanceof RpcError && error.code === -32801);
+    await session.flush(); await settled(); assert.equal(peer.documents.get(initial.uri)?.getText(), "replacement"); assert.deepEqual(peer.events.slice(-2), ["close", "open"]); replacement.dispose(); await session.flush(); await settled();
+    session.dispose(); replacement.dispose(); assert.deepEqual(session.snapshotOwnership(), { documents: 0, remoteDocuments: 0, registrations: 0, subscriptions: 0, scheduledTasks: 0, pendingDocumentRequests: 0, pendingRequests: 0, incomingRequests: 0 }); assert.equal(host.timers.size, 0);
 });
 
 test("documentation formats are opt-in and declare the supported parser without HTML tags", async t => {
@@ -205,12 +205,12 @@ test("dynamic registrations validate atomically, select documents and withdraw c
     await session.connect(); const peer = host.peers[0]!, selector = [{ scheme: "host+fixture", language: "typescript", pattern: "**/{src,test}/sample[!0-9]?.{ts,js}" }];
     const registration = (id: string, method: string, extra = {}) => ({ id, method, registerOptions: { documentSelector: selector, ...extra } });
     await assert.rejects(peer.rpc.sendRequest(RegistrationRequest.method, { registrations: [registration("valid", "textDocument/didOpen"), registration("bad", "textDocument/didChange", { syncKind: 1 })] }), error => error instanceof ResponseError && error.code === -32602);
-    assert.equal(session.state.getSnapshot().registrations.length, 0);
+    assert.equal(session.getSnapshot().registrations.length, 0);
     await peer.rpc.sendRequest(RegistrationRequest.type, { registrations: [registration("open", "textDocument/didOpen"), registration("change", "textDocument/didChange", { syncKind: 2 }), registration("hover", "textDocument/hover")] });
     await session.flush(); await settled(); assert.equal(peer.documents.size, 2); assert.deepEqual(documents.map(doc => session.canRequest("textDocument/hover", doc)), [true, true, false, false, false]);
-    const immutable = session.state.getSnapshot(); assert.equal(Object.isFrozen(immutable.registrations[0]?.registerOptions), true);
+    const immutable = session.getSnapshot(); assert.equal(Object.isFrozen(immutable.registrations[0]?.registerOptions), true);
     await assert.rejects(peer.rpc.sendRequest(UnregistrationRequest.type, { unregisterations: [{ id: "hover", method: "textDocument/rename" }] }), error => error instanceof ResponseError && error.code === -32602);
-    assert.equal(session.state.getSnapshot(), immutable);
+    assert.equal(session.getSnapshot(), immutable);
     await peer.rpc.sendRequest(UnregistrationRequest.type, { unregisterations: [{ id: "hover", method: "textDocument/hover" }, { id: "change", method: "textDocument/didChange" }] }); await session.flush(); await settled();
     assert.equal(peer.documents.size, 0); assert.equal(session.canRequest("textDocument/hover", documents[0]!), false); assert.equal(immutable.registrations.length, 3);
     await assert.rejects(peer.rpc.sendRequest(RegistrationRequest.type, { registrations: [registration("notebook", "textDocument/hover", { documentSelector: [{ notebook: "fixture" }] })] }), error => error instanceof ResponseError && error.code === -32602);
@@ -241,7 +241,7 @@ test("ordinary edits visit one binding and reuse selector results until registra
         assert.equal(peer.documents.get(doc.getSnapshot().uri)!.getText(), "edited text");
         t.diagnostic(JSON.stringify({ bindings: documents.length, editPolicyVisits, selectorPaths: paths }));
     } finally { Reflect.set(session, "syncs", syncs); }
-    const old = documents[0]!, uri = old.getSnapshot().uri; old.close();
+    const old = documents[0]!, uri = old.getSnapshot().uri; old.dispose();
     const replacement = session.bindDocument({ ...input("replacement", uri, "new-resource", 0), languageId: "plain" });
     await drain(); assert.equal(peer.documents.has(uri), false); assert.equal(session.canRequest("textDocument/completion", replacement), false);
     assert.throws(() => old.update(41, 42, TextBuffer.from("stale")), RpcError);
@@ -307,7 +307,7 @@ test("workspace commands require advertised bounded options, reject stale regist
     await peer.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "commands", method: "workspace/executeCommand", registerOptions: { commands: ["review"] } }] });
     const call = session.requestCommand("review"); const rejected = assert.rejects(call.result, error => error instanceof RpcError && error.code === -32801); await settled();
     await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "commands", method: "workspace/executeCommand" }] }); assert.equal(call.isCurrent(), false); finish!({ late: true }); await rejected;
-    await assert.rejects(peer.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "valid", method: "workspace/executeCommand", registerOptions: { commands: ["first"] } }, { id: "invalid", method: "workspace/executeCommand", registerOptions: { commands: [42] } }] })); assert.equal(session.state.getSnapshot().registrations.length, 0);
+    await assert.rejects(peer.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "valid", method: "workspace/executeCommand", registerOptions: { commands: ["first"] } }, { id: "invalid", method: "workspace/executeCommand", registerOptions: { commands: [42] } }] })); assert.equal(session.getSnapshot().registrations.length, 0);
     await assert.rejects(peer.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "selector", method: "workspace/executeCommand", registerOptions: { commands: ["bad"], documentSelector: null } }] }));
     session.disconnect(); await session.connect(); assert.deepEqual(session.commandNames(), ["status"]); assert.equal(executed, 2); assert.equal(host.peers[1]!.wire.messages[0]!.some(value => (value as { method?: string }).method === "workspace/executeCommand"), false);
 });
@@ -334,7 +334,7 @@ test("document requests reject stale revisions, capability withdrawal, URI reuse
     await peer.rpc.sendRequest(RegistrationRequest.type, { registrations: [{ id: "hover-extra", method: "textDocument/hover", registerOptions: { documentSelector: null } }] }); releases.shift()!(null); await secondRejected;
     const third = request(), cancelled = assert.rejects(third.result, error => error instanceof RpcError && error.code === -32800); third.cancel(); await cancelled; assert.equal(requests, 2);
     const fourthReceived = receipt(), fourth = request(), fourthRejected = assert.rejects(fourth.result, error => error instanceof RpcError && error.code === -32800); await fourthReceived; fourth.cancel(); await fourthRejected; await settled(); assert.equal(cancellations, 1); releases.shift();
-    const fifthReceived = receipt(), fifth = request(), fifthRejected = assert.rejects(fifth.result, error => error instanceof RpcError && error.code === -32801); await fifthReceived; document.close(); session.bindDocument(input("replacement", old.uri, "different-resource")); releases.shift()!(null); await fifthRejected;
+    const fifthReceived = receipt(), fifth = request(), fifthRejected = assert.rejects(fifth.result, error => error instanceof RpcError && error.code === -32801); await fifthReceived; document.dispose(); session.bindDocument(input("replacement", old.uri, "different-resource")); releases.shift()!(null); await fifthRejected;
 });
 
 test("reconnect reopens current captures, clears registrations and never replays commands", async t => {
@@ -343,7 +343,7 @@ test("reconnect reopens current captures, clears registrations and never replays
     await first.rpc.sendRequest(RegistrationRequest.type, { registrations: [{ id: "temporary", method: "textDocument/hover", registerOptions: { documentSelector: null } }] });
     first.rpc.onRequest("fixture/command", () => new Promise(() => {})); const call = session.request("fixture/command", { captured: initial.resourceId }), rejected = assert.rejects(call.result, error => error instanceof RpcError && error.code === -32097); await settled();
     session.disconnect(); await rejected; const latest = initial.buffer.replace(0, 0, "offline"); document.update(initial.revision, 99, latest); await session.connect(); await settled();
-    const second = host.peers[1]!; assert.equal(second.documents.get(initial.uri)?.getText(), latest.slice(0, latest.length)); assert.equal(second.documents.get(initial.uri)?.version, 1); assert.equal(session.state.getSnapshot().registrations.length, 0);
+    const second = host.peers[1]!; assert.equal(second.documents.get(initial.uri)?.getText(), latest.slice(0, latest.length)); assert.equal(second.documents.get(initial.uri)?.version, 1); assert.equal(session.getSnapshot().registrations.length, 0);
     assert.equal(second.wire.messages[0]!.some(value => (value as { method?: string }).method === "fixture/command"), false);
     assert.deepEqual(await second.rpc.sendRequest("host/custom", {}), { ok: true }); assert.equal(handled, 1); remove();
     session.onRequest("host/custom", () => "replacement"); assert.equal(await second.rpc.sendRequest("host/custom", {}), "replacement");
@@ -357,19 +357,19 @@ test("opening cancellation owns late transports and failed UTF-16/full-sync nego
     const opening = session.connect(), rejected = assert.rejects(opening, error => error instanceof RpcError && error.code === -32097); await settled(); session.disconnect(); await rejected;
     const wire = channel(); resolve(wire.left); await settled(); assert.throws(() => wire.right.send("{}"), /Closed/); assert.equal(cancellations, 1); assert.equal(timers.size, 0); session.dispose();
     for (const capabilities of [{ positionEncoding: "utf-8", textDocumentSync: 2 }, { textDocumentSync: 1 }, { textDocumentSync: { openClose: true, change: 1 } }] as const) {
-        const host = fixture(t, capabilities), refused = new LspSession(host); await assert.rejects(refused.connect(), /UTF-16|incremental|synchronization/); assert.equal(refused.state.getSnapshot().phase, "disconnected"); refused.dispose();
+        const host = fixture(t, capabilities), refused = new LspSession(host); await assert.rejects(refused.connect(), /UTF-16|incremental|synchronization/); assert.equal(refused.getSnapshot().phase, "disconnected"); refused.dispose();
     }
 });
 
 test("shutdown ordering, listener isolation and explicit disposal release all session ownership", async t => {
     const errors: Error[] = [], host = fixture(t), session = new LspSession({ ...host, onError: error => { errors.push(error); } });
-    session.state.subscribe(() => { assert.throws(() => session.bindDocument(input()), /Reentrant/); throw new Error("Listener failure"); }); session.state.subscribe(() => {});
+    session.subscribe(() => { assert.throws(() => session.bindDocument(input()), /Reentrant/); throw new Error("Listener failure"); }); session.subscribe(() => {});
     session.bindDocument(input()); await session.connect(); const peer = host.peers[0]!;
     await session.shutdown(); await settled(); assert.deepEqual(peer.events.slice(0, 3), ["initialize", "initialized", "open"]);
     assert.ok(peer.wire.messages[0]!.some(value => (value as { method?: string }).method === "exit")); assert.ok(peer.events.includes("shutdown"));
     const methods = peer.wire.messages[0]!.map(value => (value as { method?: string }).method); assert.deepEqual(methods.slice(-2), ["shutdown", "exit"]);
     session.dispose(); assert.ok(errors.length >= 3);
-    assert.equal(session.state.getSnapshot().phase, "disposed"); assert.equal(session.snapshotOwnership().subscriptions, 0); assert.equal(host.timers.size, 0);
+    assert.equal(session.getSnapshot().phase, "disposed"); assert.equal(session.snapshotOwnership().subscriptions, 0); assert.equal(host.timers.size, 0);
 });
 
 test("large opening plans cancel at a cooperative boundary and limits refuse changes before retaining them", async t => {
@@ -393,7 +393,7 @@ test("local edits retain useful indexing while URI replacement cancels obsolete 
         const session = new LspSession({ ...host, now: () => time += 4, schedule: (ms, callback) => host.schedule(ms, () => { if (change && ms === 0 && ++turns === 2) { const apply = change; change = undefined; apply(); } callback(); }) }); t.after(() => session.dispose());
         const initial = input("small"), original = session.bindDocument(initial); await session.connect(); await settled();
         const large = TextBuffer.from("line\r\n".repeat(40_000)), edit = large.apply([{ from: 0, to: 4, insert: "current" }]), latest = edit.buffer; let current = original;
-        change = () => { if (replacement) { original.close(); current = session.bindDocument(input("replacement", initial.uri, "other-resource", 0)); }
+        change = () => { if (replacement) { original.dispose(); current = session.bindDocument(input("replacement", initial.uri, "other-resource", 0)); }
             else original.update(41, 42, latest, edit.mapping); };
         original.update(40, 41, large); await session.flush(); await settled(); const peer = host.peers[0]!;
         if (replacement) assert.ok(large.readMetrics().sliceUnits < 16500, "A replaced binding stops after its first bounded chunk.");

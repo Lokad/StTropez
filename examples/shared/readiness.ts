@@ -17,7 +17,7 @@ export function editorSettled(editor: TextEditor): boolean {
 }
 
 export function comparisonSettled(comparison: TextComparison): boolean {
-    const work = comparison.snapshot(), reference = comparison.referenceEditor();
+    const work = comparison.getDiagnostics(), reference = comparison.referenceEditor();
     if (work.alignment.status === "failed") throw new Error(work.alignment.failure);
     if (work.disposed || comparison.controller.getSnapshot().status !== "ready" || work.alignment.pending || work.pendingScroll
         || !reference || !editorSettled(reference) || !editorSettled(comparison.working)) return false;

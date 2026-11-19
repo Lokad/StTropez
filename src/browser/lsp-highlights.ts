@@ -34,7 +34,7 @@ export function createLspHighlightController(workspace: Workspace, tabId: TabId,
     };
     const later = (work: () => void, ms: number) => { runner.schedule(work, ms); };
     const start = (token: number, deadline: number) => {
-        if (token !== generation || !available() || !focused() || options.provider.state.getSnapshot().phase !== "ready") return;
+        if (token !== generation || !available() || !focused() || options.provider.getSnapshot().phase !== "ready") return;
         if (busy()) { if (win.performance.now() < deadline) later(() => start(token, deadline), 16); else publish("idle"); return; }
         const document = workspace.document(documentId), selections = view.getSnapshot().selectionSet, caret = selections.ranges[selections.primary]!.head;
         const current = () => token === generation && available() && focused() && !busy() && workspace.document(documentId).revision === document.revision
@@ -50,19 +50,19 @@ export function createLspHighlightController(workspace: Workspace, tabId: TabId,
     };
     const refresh = () => {
         if (disposed) return; cancel(); publish("idle");
-        if (available() && focused() && options.provider.state.getSnapshot().phase === "ready") {
+        if (available() && focused() && options.provider.getSnapshot().phase === "ready") {
             const token = generation; later(() => start(token, win.performance.now() + 5000), delay);
         }
     };
-    let provider = options.provider.state.getSnapshot();
+    let provider = options.provider.getSnapshot();
     const stops = [workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(refresh), workspace.tabState.subscribe(() => { if (!available()) refresh(); }),
-        options.provider.state.subscribe(() => {
-            const next = options.provider.state.getSnapshot(), changed = next.phase !== provider.phase || next.epoch !== provider.epoch || next.registrationGeneration !== provider.registrationGeneration;
+        options.provider.subscribe(() => {
+            const next = options.provider.getSnapshot(), changed = next.phase !== provider.phase || next.epoch !== provider.epoch || next.registrationGeneration !== provider.registrationGeneration;
             provider = next; if (changed) refresh();
         })];
     for (const event of ["focus", "blur", "compositionstart", "compositionend"] as const) editor.input.addEventListener(event, refresh, { signal: events.signal });
     refresh();
-    return Object.freeze({ state: cell.observable, refresh: () => { notifications.assertWritable(); refresh(); },
+    return Object.freeze({ ...cell.observable, refresh: () => { notifications.assertWritable(); refresh(); },
         intersect: (from: number, to: number): readonly LspDocumentHighlight[] => result?.isCurrent() && available() && focused() ? result.intersect(from, to) : empty,
         dispose: () => { if (disposed) return; notifications.assertWritable(); disposed = true; cancel(); events.abort(); stops.forEach(stop => stop()); client.dispose(); publish("disposed"); } });
 }

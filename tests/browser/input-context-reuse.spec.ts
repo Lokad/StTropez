@@ -83,11 +83,11 @@ test("input refresh reuses bounded projections while repairing native state and 
             editor.view.setSelection(doc().revision, { anchor: crlf, head: crlf }); refresh(); input.dispatchEvent(new Event("select"));
             const rawCrLf = editor.view.getSnapshot().selection.head === crlf && exact();
             await settle(); workspace.close(tab); const disabled = input.disabled;
-            editor.destroy(); const reads = doc().buffer.readMetrics().sliceUnits; refresh();
+            editor.dispose(); const reads = doc().buffer.readMetrics().sliceUnits; refresh();
             return { work, compressedExact, repaired, authority, directionChanged, completeSet, newBuffer, expiredComposition, rawCrLf, disabled,
                 disposed: !input.isConnected && input.value === "" && doc().buffer.readMetrics().sliceUnits === reads,
                 exports: doc().buffer.readMetrics().textExports };
-        } finally { editor.destroy(); if (workspace.resolveTab(target)) workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+        } finally { editor.dispose(); if (workspace.resolveTab(target)) workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
     });
     await testInfo.attach("input-context-reuse", { body: JSON.stringify(result), contentType: "application/json" });
     for (const item of result.work) expect(item.sliceUnits, item.name).toBe(0);

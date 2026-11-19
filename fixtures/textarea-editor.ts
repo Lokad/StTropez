@@ -12,10 +12,9 @@ import type { InputConflictDetail } from "../src/browser/input-conflict.ts";
 import type { ViewState } from "../src/browser/view-state.ts";
 
 export type TextareaEditor = Readonly<{ element: HTMLTextAreaElement; view: DocumentView;
-    captureView: () => ViewState; restoreView: (state: ViewState) => void; destroy: () => void }>;
+    captureView: () => ViewState; restoreView: (state: ViewState) => void; dispose: () => void }>;
 type Projection = Readonly<{ text: string; mapping: PositionMapping; hasCR: boolean }>;
 const projections = new WeakMap<TextBuffer, WeakRef<Projection>>();
-let nextMount = 0;
 function project(text: string): Projection {
     const hasCR = text.includes("\r");
     return hasCR ? { ...exportText(text, "lf"), hasCR } : { text, mapping: new PositionMap(text.length, []), hasCR };
@@ -33,7 +32,7 @@ export function mountTextareaEditor(host: HTMLElement, workspace: Workspace, tab
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId);
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId);
-    const groupScope = ++nextMount;
+    const groupScope = workspace.allocateIdentity();
     const input = host.ownerDocument.createElement("textarea");
     // The native projection belongs to the editor, independently of enclosing host forms.
     input.setAttribute("form", "");
@@ -153,7 +152,7 @@ export function mountTextareaEditor(host: HTMLElement, workspace: Workspace, tab
             if (state.selectionSet) view.setSelections(revision, state.selectionSet.ranges, state.selectionSet.primary);
             else view.setSelection(revision, state);
             refresh(); input.scrollTop = state.scrollTop; input.scrollLeft = state.scrollLeft;
-        }, destroy: () => {
+        }, dispose: () => {
             if (destroyed) return; syncSelection(); destroyed = true; insertion = undefined;
             if (composing && input.value !== rendered.text) conflict("composition-detached");
             composing = false; unsubscribers.forEach(unsubscribe => unsubscribe()); listeners.abort(); input.remove();

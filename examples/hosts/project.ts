@@ -26,7 +26,6 @@ export type ProjectActionIntent = Readonly<{ editor: TextEditor; sources: readon
     execute: (scope: LspCommandScope) => Promise<LspCommandReceipt> }>;
 export type ProjectSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; registered: boolean; pending: boolean;
     status: "idle" | "pending" | "ready" | "rejected" | "failed" | "cancelled"; message: string; view: string | null; changes: readonly Readonly<{ document: DocumentId; title: string }>[]; review: ProjectReview | null }>;
-let sessionSerial = 0;
 /** Local protocol owner. Server edits use the workspace's existing atomic shared-history transaction. */
 export class HostProjectTools {
     private readonly workspace: Workspace;
@@ -68,7 +67,7 @@ export class HostProjectTools {
             canApply: this.current(job) && review.context.isCurrent() && review.request.edit.isCurrent()
                 && review.request.edit.documents.every(change => !change.edits.length || this.editable(change.target.document.documentId as DocumentId)) }) : null;
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active), connected: this.lane.value?.snapshot().connected ?? false,
-            disconnected: this.disconnected, reconnectRequired: this.provider?.state.getSnapshot().commandRequiresReconnect ?? false, registered: this.registered, pending: !!job, view: this.active?.id ?? null, changes: this.changes, review: preview });
+            disconnected: this.disconnected, reconnectRequired: this.provider?.getSnapshot().commandRequiresReconnect ?? false, registered: this.registered, pending: !!job, view: this.active?.id ?? null, changes: this.changes, review: preview });
     }
     private editable(document: DocumentId): boolean { const m = this.workspace.resourceForDocument(document).metadata.getSnapshot(); return m.capabilities.edit.includes("human") && m.capabilities.edit.includes("host") && m.editLock === null; }
     private drop(): void { this.registered = false; this.lane.drop(); }
@@ -149,7 +148,7 @@ export class HostProjectTools {
     private readonly reconnectProvider: (() => void) | undefined;
     readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ status: "idle", message: "Register again with current working snapshots." }); };
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const session = { token: ++sessionSerial, id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(session.token, session);
+        const session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(session.token, session);
         editor.input.addEventListener("focus", () => { this.active = session; this.publish(); }, { signal: events.signal });
         for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.job?.documents.has(editor.view.documentId)) this.cancel(); }, { signal: events.signal });
         let detached = false;
@@ -218,7 +217,7 @@ export class HostProjectTools {
             else { this.metrics.rejected++; this.finishReview(job, review, { applied: false, failureReason: error instanceof Error ? error.message : "Provider edits refused." }); this.publish({ message: "Provider edit batch refused without application." }); }
         }
     }
-    canRunAction(editor: TextEditor): boolean { return (!this.disposed) && !this.job && !this.provider?.state.getSnapshot().commandRequiresReconnect && [...this.sessions.values()].some(session => session.editor === editor && this.available(session)); }
+    canRunAction(editor: TextEditor): boolean { return (!this.disposed) && !this.job && !this.provider?.getSnapshot().commandRequiresReconnect && [...this.sessions.values()].some(session => session.editor === editor && this.available(session)); }
     /** Transfer a confirmed action to the existing review owner, independent of later focus. */
     beginAction(intent: ProjectActionIntent): ProjectActionHandle | undefined {
         const origin = [...this.sessions.values()].find(session => session.editor === intent.editor && this.available(session));

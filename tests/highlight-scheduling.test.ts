@@ -27,15 +27,15 @@ test("occurrences coalesce refreshes and bound busy retries from the actual debo
             // A delayed event loop must not consume the busy deadline before its first turn.
             fire(delay ?? 150, 10000); assert.equal(f.sent("textDocument/documentHighlight").length, 0);
             fire(16, 4984); assert.equal(tasks.size, 1);
-            fire(16); assert.equal(tasks.size, 0); assert.equal(controller.state.getSnapshot().status, "idle");
+            fire(16); assert.equal(tasks.size, 0); assert.equal(controller.getSnapshot().status, "idle");
             assert.equal(f.sent("textDocument/documentHighlight").length, 0);
-            const published = new Promise<void>(resolve => { stopReady = controller.state.subscribe(() => {
-                if (controller.state.getSnapshot().status === "ready") resolve();
+            const published = new Promise<void>(resolve => { stopReady = controller.subscribe(() => {
+                if (controller.getSnapshot().status === "ready") resolve();
             }); });
             busy = false; controller.refresh(); fire(delay ?? 150); await published; stopReady();
             assert.equal(f.sent("textDocument/documentHighlight").length, 1);
-            assert.equal(controller.state.getSnapshot().status, "ready");
-            assert.deepEqual(controller.state.getSnapshot().items, [{ from: 0, to: 5, kind: "text" }]);
+            assert.equal(controller.getSnapshot().status, "ready");
+            assert.deepEqual(controller.getSnapshot().items, [{ from: 0, to: 5, kind: "text" }]);
             controller.refresh(); assert.equal(tasks.size, 1);
         } finally { stopReady(); controller.dispose(); view.dispose(); f.workspace.close(tab); await f.provider.flush(); }
         assert.equal(tasks.size, 0); assert.equal(f.workspace.diagnostics().leases, 0);

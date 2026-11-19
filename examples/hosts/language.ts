@@ -40,8 +40,8 @@ export class HostLanguageTools {
     }
     private publish(): void {
         const previous = this.cell.get(), folds = this.active?.editor.view.folding.getSnapshot() ?? null;
-        this.cell.set({ ...previous, readOnlyReference: this.active?.reference !== undefined, view: this.active?.id ?? null, provider: this.active?.provider?.state.getSnapshot() ?? null,
-            providerError: this.active?.providerError ?? null, find: this.active?.find?.state.getSnapshot() ?? null, folds, foldMessage: folds === previous.folds ? previous.foldMessage : "" });
+        this.cell.set({ ...previous, readOnlyReference: this.active?.reference !== undefined, view: this.active?.id ?? null, provider: this.active?.provider?.getSnapshot() ?? null,
+            providerError: this.active?.providerError ?? null, find: this.active?.find?.getSnapshot() ?? null, folds, foldMessage: folds === previous.folds ? previous.foldMessage : "" });
     }
     private activate(session: Session, initialize = true): void {
         this.detachedOwner = undefined;
@@ -81,12 +81,12 @@ export class HostLanguageTools {
         }
         session.provider = provider; delete session.providerError;
         const update = () => {
-            const state = provider.state.getSnapshot(), previous = presentation.diagnostics;
+            const state = provider.getSnapshot(), previous = presentation.diagnostics;
             presentation.diagnostics = { revision: state.diagnosticRevision, ranges: state.diagnostics };
             if (previous?.revision !== state.diagnosticRevision || previous.ranges !== state.diagnostics) editor.viewport.invalidate();
             if (this.active === session) this.publish();
         };
-        session.stopProvider = provider.state.subscribe(update); update();
+        session.stopProvider = provider.subscribe(update); update();
     }
     attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void {
         if (this.sessions.has(id)) throw new Error("Language view already mounted.");
@@ -99,8 +99,8 @@ export class HostLanguageTools {
                 event.preventDefault(); this.activate(session); if (event.code === "BracketLeft") this.foldSelection(); else this.expandFolds();
             } else if (this.findKey(event, session)) return;
             else if ((event.ctrlKey || event.metaKey) && !event.altKey && event.code === "Space") { event.preventDefault(); this.activate(session); session.provider?.request(); }
-            else if (event.altKey && event.key === "Enter" && session.provider?.state.getSnapshot().offerText != null) { event.preventDefault(); session.provider.apply("replace"); }
-            else if (event.key === "Escape" && (session.provider?.state.getSnapshot().pending || session.provider?.state.getSnapshot().offerText != null)) { event.preventDefault(); session.provider?.cancel(); }
+            else if (event.altKey && event.key === "Enter" && session.provider?.getSnapshot().offerText != null) { event.preventDefault(); session.provider.apply("replace"); }
+            else if (event.key === "Escape" && (session.provider?.getSnapshot().pending || session.provider?.getSnapshot().offerText != null)) { event.preventDefault(); session.provider?.cancel(); }
         }, { signal: listeners.signal });
         this.resume(session); return this.detachSession(session, listeners);
     }
@@ -134,7 +134,7 @@ export class HostLanguageTools {
         if (command.kind === "replace" && session.reference) return;
         this.cancelFindCommand();
         const find = this.ensureFind(); if (!find) return;
-        const captured = find.state.getSnapshot();
+        const captured = find.getSnapshot();
         const execute = () => command.kind === "navigate" ? find.next(command.direction) : find.replaceCurrent(command.text);
         if (captured.status === "ready") { execute(); return; }
         if (captured.status !== "searching") return;
@@ -152,7 +152,7 @@ export class HostLanguageTools {
             if (this.pendingFind?.stop === stop) this.pendingFind = undefined; };
         const current = () => {
             if (disability?.takeRecords().length) return false;
-            const state = find.state.getSnapshot(), tab = this.workspace.resolveTab(session.target);
+            const state = find.getSnapshot(), tab = this.workspace.resolveTab(session.target);
             return this.active === session && this.sessions.get(session.id) === session && session.find === find
                 && (capturedAuthority === undefined || authority() === capturedAuthority)
                 && origin.isConnected && owner.activeElement === origin && !(origin.closest("button,input,select,textarea") ?? origin).matches(":disabled")
@@ -166,7 +166,7 @@ export class HostLanguageTools {
         const changed = () => {
             if (stopped) return;
             if (!current()) { stop(); return; }
-            if (!queued && find.state.getSnapshot().status === "ready") {
+            if (!queued && find.getSnapshot().status === "ready") {
                 queued = true;
                 // Observable delivery rejects reentrant commands. Revalidate after the delivery ends.
                 clock.queueMicrotask(() => { if (stopped) return; const valid = current(); stop(); if (valid) execute(); });
@@ -181,7 +181,7 @@ export class HostLanguageTools {
         origin.addEventListener("compositionstart", stop, { signal: listeners.signal });
         editor.input.addEventListener("compositionstart", stop, { signal: listeners.signal });
         clock.addEventListener("blur", stop, { signal: listeners.signal });
-        stops.push(find.state.subscribe(changed), this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.subscribe(changed), this.workspace.tabState.subscribe(changed));
+        stops.push(find.subscribe(changed), this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.subscribe(changed), this.workspace.tabState.subscribe(changed));
         if (command.kind === "replace") stops.push(metadata.subscribe(changed));
         changed();
     }
@@ -214,9 +214,9 @@ export class HostLanguageTools {
                 this.detachedOwner = Object.freeze({ id: session.id, target: session.target, documentId: session.editor.view.documentId, ...(session.reference ? { reference: session.reference } : {}) });
                 this.stopFolds?.(); this.stopFolds = undefined;
             }
-            session.stopProvider?.(); listeners.abort(); session.stopFind?.(); session.find?.destroy();
+            session.stopProvider?.(); listeners.abort(); session.stopFind?.(); session.find?.dispose();
             const counts = session.provider?.snapshot(); if (counts) for (const key of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[key] += counts[key] ?? 0;
-            session.provider?.destroy(); session.presentation.clear(); this.sessions.delete(session.id);
+            session.provider?.dispose(); session.presentation.clear(); this.sessions.delete(session.id);
             if (this.active === session) this.active = undefined; this.publish();
         };
     }
@@ -224,17 +224,17 @@ export class HostLanguageTools {
         const session = this.active; if (!session) return;
         if (!session.find) {
             const clock = session.editor.element.ownerDocument.defaultView!;
-            session.find = createFindController(this.workspace, session.tab, session.editor, { regularExpression: createRegexFindBackend({ clock,
+            session.find = createFindController(this.workspace, session.tab, session.editor, { regularExpressionBackend: createRegexFindBackend({ clock,
                 createWorker: () => new Worker("/regex-worker.js", { type: "module" }) }) });
             const find = session.find;
-            const update = () => { const state = find.state.getSnapshot(), previous = session.presentation.search;
+            const update = () => { const state = find.getSnapshot(), previous = session.presentation.search;
                 session.presentation.search = { revision: state.revision, version: state.matchesVersion, matchesIn: (from, to) => find.matchesIn(from, to, state) };
                 if (previous?.revision !== state.revision || previous.version !== state.matchesVersion) session.editor.viewport.invalidate();
                 if (this.active === session) this.publish(); };
-            session.stopFind = session.find.state.subscribe(update);
+            session.stopFind = session.find.subscribe(update);
         }
-        const state = session.find.state.getSnapshot(), { query, wholeWord, matchCase, regularExpression } = this.cell.get();
-        if (state.wholeWord !== wholeWord || state.matchCase !== matchCase || state.regularExpression !== regularExpression) session.find.setOptions({ wholeWord, matchCase, regularExpression });
+        const state = session.find.getSnapshot(), { query, wholeWord, matchCase, regularExpression } = this.cell.get();
+        if (state.wholeWord !== wholeWord || state.matchCase !== matchCase || state.regularExpression !== regularExpression) session.find.setFlags({ wholeWord, matchCase, regularExpression });
         if (state.query !== query || state.status === "cancelled") session.find.setQuery(query);
         return session.find;
     }
@@ -302,6 +302,6 @@ export class HostLanguageTools {
     }
     setDelay(value: number): void { this.active?.provider?.setDelay(value); }
     faultNext(value: "malformed" | "failure"): void { this.active?.provider?.faultNext(value); }
-    debug() { return { active: this.active?.id ?? null, navigationPending: this.pendingFind?.kind === "navigate", findCommandPending: this.pendingFind?.kind ?? null, subscriptions: this.cell.count(), referenceFind: [...this.sessions.values()].filter(s => s.reference).map(s => ({ id: s.id, documentId: s.editor.view.documentId, viewId: s.editor.view.id, find: s.find?.state.getSnapshot() ?? null })), sessions: [...this.sessions.values()].flatMap(s => s.provider ? [{ id: s.id, documentId: s.editor.view.documentId,
+    debug() { return { active: this.active?.id ?? null, navigationPending: this.pendingFind?.kind === "navigate", findCommandPending: this.pendingFind?.kind ?? null, subscriptions: this.cell.count(), referenceFind: [...this.sessions.values()].filter(s => s.reference).map(s => ({ id: s.id, documentId: s.editor.view.documentId, viewId: s.editor.view.id, find: s.find?.getSnapshot() ?? null })), sessions: [...this.sessions.values()].flatMap(s => s.provider ? [{ id: s.id, documentId: s.editor.view.documentId,
         viewId: s.editor.view.id, foldRegions: s.editor.view.folding.getSnapshot().regions.length, collapsedFolds: s.editor.view.folding.getSnapshot().index.collapsedCount, provider: s.provider.snapshot(), presentation: s.presentation.snapshot() }] : []), retired: { ...this.retired } }; }
 }

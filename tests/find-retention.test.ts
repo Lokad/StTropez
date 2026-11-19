@@ -114,7 +114,7 @@ function fixture(text: string, clock: Pick<Performance, "now"> = performance) {
     const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 1000); step(); } assert.deepEqual(errors, []); };
     const edit = (from: number, to: number, insert: string) => { assert.equal(workspace.edit({ documentId, expectedRevision: document().revision, origin: "human", edits: [{ from, to, insert }], history: { kind: "replace" } }).applied, true); };
     const select = (anchor: number, head = anchor) => view.setSelection(document().revision, { anchor, head });
-    const dispose = () => { find.destroy(); view.dispose(); workspace.close(tab); assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().subscriptions, 0); };
+    const dispose = () => { find.dispose(); view.dispose(); workspace.close(tab); assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().subscriptions, 0); };
     return { workspace, documentId, view, find, document, tasks, step, drain, edit, select, dispose };
 }
 
@@ -126,19 +126,19 @@ test("literal tasks bound advances and elapsed work, publish once and preserve r
             const result = original.call(this, units, matches); time += cost; calls.push({ units, matches, read: result.readUnits }); return result;
         };
         const f = fixture("cat ".repeat(100000), { now: () => time }); let publications = 0;
-        const stop = f.find.state.subscribe(() => publications++);
+        const stop = f.find.subscribe(() => publications++);
         try {
-            f.find.setOptions({ wholeWord: true }); f.find.setQuery("cat"); const before = publications; f.step();
+            f.find.setFlags({ wholeWord: true }); f.find.setQuery("cat"); const before = publications; f.step();
             assert.equal(calls.length, cost ? 4 : 32); assert.ok(calls.every(call => call.units === 4096 && call.matches === 1024 && call.read <= 4096));
-            assert.equal(publications, before + 1); assert.equal(f.find.state.getSnapshot().status, "searching"); assert.equal(f.tasks.size, 1);
-            assert.equal(f.find.state.getSnapshot().maxScanStepMs, cost);
+            assert.equal(publications, before + 1); assert.equal(f.find.getSnapshot().status, "searching"); assert.equal(f.tasks.size, 1);
+            assert.equal(f.find.getDiagnostics().maxScanStepMs, cost);
             const obsolete = [...f.tasks.values()][0]!, advanced = calls.length;
             f.find.setQuery("dog"); const replacement = [...f.tasks]; obsolete();
-            assert.deepEqual([...f.tasks], replacement); assert.equal(calls.length, advanced); assert.equal(f.find.state.getSnapshot().count, 0);
-            f.find.setQuery("cat"); f.drain(); assert.equal(f.find.state.getSnapshot().count, 100000);
-            calls.length = 0; f.edit(40000, 40003, "dog"); assert.equal(f.find.state.getSnapshot().retained, true);
+            assert.deepEqual([...f.tasks], replacement); assert.equal(calls.length, advanced); assert.equal(f.find.getSnapshot().count, 0);
+            f.find.setQuery("cat"); f.drain(); assert.equal(f.find.getSnapshot().count, 100000);
+            calls.length = 0; f.edit(40000, 40003, "dog"); assert.equal(f.find.getSnapshot().retained, true);
             f.step(); assert.equal(calls[0]!.units, 4096); assert.equal(calls[0]!.matches, 64);
-            f.drain(); assert.equal(f.find.state.getSnapshot().count, 99999); assert.equal(f.find.state.getSnapshot().status, "ready");
+            f.drain(); assert.equal(f.find.getSnapshot().count, 99999); assert.equal(f.find.getSnapshot().status, "ready");
             assert.equal(f.document().buffer.readMetrics().textExports, 0);
         } finally { stop(); f.dispose(); LiteralSearch.prototype.next = original; }
     }
@@ -148,23 +148,23 @@ test("confirmed matches remain navigable and replaceable during repair without w
     const f = fixture("cat ".repeat(20000));
     try {
         f.find.setQuery("cat"); f.drain(); const previous = f.find.matchesIn(0, f.document().buffer.length);
-        f.edit(40000, 40003, "dog"); const state = f.find.state.getSnapshot();
+        f.edit(40000, 40003, "dog"); const state = f.find.getSnapshot();
         assert.equal(state.status, "searching"); assert.equal(state.retained, true); assert.ok(state.count > 9000); assert.deepEqual(f.find.matchesIn(0, 400), previous.filter(m => m.from < 400));
         f.select(0); assert.equal(f.find.next(-1), false); assert.equal(f.find.next(), true); assert.equal(f.view.getSnapshot().selection.anchor, 0); assert.equal(f.view.getSnapshot().selection.head, 3);
         f.select(60000); assert.equal(f.find.next(-1), false); assert.equal(f.find.next(), false);
         const revision = f.document().revision; f.find.replaceAll("wrong"); assert.equal(f.document().revision, revision);
-        f.select(4, 7); assert.equal(f.find.replaceCurrent("kitten"), true); assert.equal(f.find.state.getSnapshot().retained, true);
-        f.drain(); assert.equal(f.find.state.getSnapshot().count, 19998); assert.equal(f.find.state.getSnapshot().status, "ready");
+        f.select(4, 7); assert.equal(f.find.replaceCurrent("kitten"), true); assert.equal(f.find.getSnapshot().retained, true);
+        f.drain(); assert.equal(f.find.getSnapshot().count, 19998); assert.equal(f.find.getSnapshot().status, "ready");
         assert.deepEqual(f.find.matchesIn(0, f.document().buffer.length), all(scan(f.document().buffer, "cat").index));
-        f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.state.getSnapshot().count, 19999);
-        f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.state.getSnapshot().count, 20000);
-        f.workspace.redo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.state.getSnapshot().count, 19999);
+        f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.getSnapshot().count, 19999);
+        f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.getSnapshot().count, 20000);
+        f.workspace.redo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.getSnapshot().count, 19999);
         f.edit(60000, 60003, "dog"); f.select(4, 7);
         const history = f.workspace.observeHistory(f.documentId).getSnapshot();
         assert.equal(f.find.replaceCurrent("cat"), true);
-        assert.equal(f.find.state.getSnapshot().status, "searching"); assert.equal(f.find.state.getSnapshot().retained, true);
-        f.drain(); assert.equal(f.find.state.getSnapshot().status, "ready"); assert.equal(f.find.state.getSnapshot().count, 19998);
-        assert.equal(f.find.state.getSnapshot().reason, "replaced");
+        assert.equal(f.find.getSnapshot().status, "searching"); assert.equal(f.find.getSnapshot().retained, true);
+        f.drain(); assert.equal(f.find.getSnapshot().status, "ready"); assert.equal(f.find.getSnapshot().count, 19998);
+        assert.equal(f.find.getSnapshot().reason, "replaced");
         assert.deepEqual(f.workspace.observeHistory(f.documentId).getSnapshot(), history);
     } finally { f.dispose(); }
 });
@@ -172,16 +172,16 @@ test("confirmed matches remain navigable and replaceable during repair without w
 test("rapid edits accumulate safe bounds and undo to the completed capture reuses it immediately", () => {
     const f = fixture("K k cat\n".repeat(2000));
     try {
-        f.find.setOptions({ matchCase: false, wholeWord: true }); f.find.setQuery("k"); f.drain();
+        f.find.setFlags({ matchCase: false, wholeWord: true }); f.find.setQuery("k"); f.drain();
         const original = f.document().buffer, ranges = f.find.matchesIn(0, f.document().buffer.length);
         f.edit(8000, 8001, "x"); f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision });
-        assert.equal(f.document().buffer, original); assert.equal(f.find.state.getSnapshot().status, "ready"); assert.deepEqual(f.find.matchesIn(0, f.document().buffer.length), ranges);
+        assert.equal(f.document().buffer, original); assert.equal(f.find.getSnapshot().status, "ready"); assert.deepEqual(f.find.matchesIn(0, f.document().buffer.length), ranges);
         f.edit(12000, 12000, "long "); f.edit(2000, 2001, "k_"); f.edit(14000, 14002, "K "); f.drain();
         const expected = scan(f.document().buffer, "k", { wholeWord: true, matchCase: false }).index;
-        assert.equal(f.find.state.getSnapshot().count, expected.count); assert.deepEqual(f.find.matchesIn(0, f.document().buffer.length), all(expected));
-        f.edit(10000, 10000, "k "); f.find.setQuery("cat"); assert.equal(f.find.state.getSnapshot().retained, false); assert.equal(f.find.state.getSnapshot().count, 0); f.drain();
-        assert.equal(f.find.state.getSnapshot().count, scan(f.document().buffer, "cat", { wholeWord: true, matchCase: false }).index.count);
-        f.edit(10000, 10000, "cat "); f.find.cancel(); f.edit(10000, 10000, "cat "); f.drain(); assert.equal(f.find.state.getSnapshot().status, "cancelled"); assert.equal(f.find.state.getSnapshot().count, 0);
+        assert.equal(f.find.getSnapshot().count, expected.count); assert.deepEqual(f.find.matchesIn(0, f.document().buffer.length), all(expected));
+        f.edit(10000, 10000, "k "); f.find.setQuery("cat"); assert.equal(f.find.getSnapshot().retained, false); assert.equal(f.find.getSnapshot().count, 0); f.drain();
+        assert.equal(f.find.getSnapshot().count, scan(f.document().buffer, "cat", { wholeWord: true, matchCase: false }).index.count);
+        f.edit(10000, 10000, "cat "); f.find.cancel(); f.edit(10000, 10000, "cat "); f.drain(); assert.equal(f.find.getSnapshot().status, "cancelled"); assert.equal(f.find.getSnapshot().count, 0);
     } finally { f.dispose(); }
 });
 
@@ -189,13 +189,13 @@ test("range captures reject old queries, revisions and disposed views while retu
     const f = fixture("cat dog ".repeat(400));
     try {
         f.find.setQuery("cat"); f.drain();
-        const initial = f.find.state.getSnapshot(), captured = f.find.matchesIn(3192, 3200, initial);
+        const initial = f.find.getSnapshot(), captured = f.find.matchesIn(3192, 3200, initial);
         assert.deepEqual(captured, [{ from: 3192, to: 3195 }]); assert.ok(Object.isFrozen(captured) && captured.every(Object.isFrozen));
-        f.find.setOptions({ matchCase: true }); f.select(3192); f.find.next();
-        assert.equal(f.find.state.getSnapshot().matchesVersion, initial.matchesVersion);
+        f.find.setFlags({ matchCase: true }); f.select(3192); f.find.next();
+        assert.equal(f.find.getSnapshot().matchesVersion, initial.matchesVersion);
         assert.deepEqual(f.find.matchesIn(3192, 3200, initial), captured);
         f.find.setQuery("dog"); f.drain();
-        const changed = f.find.state.getSnapshot(); assert.equal(changed.count, initial.count);
+        const changed = f.find.getSnapshot(); assert.equal(changed.count, initial.count);
         assert.ok(changed.matchesVersion > initial.matchesVersion); assert.deepEqual(f.find.matchesIn(3192, 3200, initial), []);
         assert.deepEqual(f.find.matchesIn(3192, 3200, changed), [{ from: 3196, to: 3199 }]);
         f.edit(0, 8, ""); assert.deepEqual(f.find.matchesIn(3192, 3200, changed), []); f.drain();
@@ -203,6 +203,6 @@ test("range captures reject old queries, revisions and disposed views while retu
         assert.deepEqual(captured, [{ from: 3192, to: 3195 }]);
         assert.throws(() => f.find.matchesIn(0, 3200), RangeError);
         f.find.cancel(); assert.deepEqual(f.find.matchesIn(0, 10), []);
-        f.find.destroy(); assert.deepEqual(f.find.matchesIn(0, 3200, initial), []);
+        f.find.dispose(); assert.deepEqual(f.find.matchesIn(0, 3200, initial), []);
     } finally { f.dispose(); }
 });

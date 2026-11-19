@@ -11,7 +11,7 @@ const fixture = {
         selections: editor.view.getSnapshot().selectionSet, history: workspace.observeHistory(resource.documentId).getSnapshot() }),
     ready: () => { const input = editor.snapshot(), viewport = editor.viewport.snapshot(); return !input.pendingInput && !input.pendingCommand && !input.pendingCaret
         && !viewport.pending && viewport.revision === workspace.document(resource.documentId).revision && viewport.selectionSet === editor.view.getSnapshot().selectionSet; },
-    dispose: () => { if (!disposed) { disposed = true; editor.destroy(); workspace.close(tab); workspace.releaseResource(resource.id, true); } return workspace.diagnostics(); },
+    dispose: () => { if (!disposed) { disposed = true; editor.dispose(); workspace.close(tab); workspace.releaseResource(resource.id, true); } return workspace.diagnostics(); },
 };
 declare global { interface Window { transitionFixture: typeof fixture } }
 window.transitionFixture = fixture;

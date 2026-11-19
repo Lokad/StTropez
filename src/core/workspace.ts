@@ -137,6 +137,7 @@ function viewSnapshot(documentId: DocumentId, revision: number, selectionSet: Se
 export class Workspace {
     private readonly lifetime = Symbol("workspace");
     private nextId = 0;
+    private nextAttachmentId = 0;
     private nextTransaction = 0;
     private readonly history: TextHistory;
     private readonly scope: NotificationScope;
@@ -181,6 +182,9 @@ export class Workspace {
     createNotificationScope(onListenerError?: (error: unknown) => void): NotificationScope {
         return new NotificationScope(onListenerError, this.scope);
     }
+
+    /** Allocate an opaque numeric identity shared by attachments to this workspace. */
+    allocateIdentity(): number { return ++this.nextAttachmentId; }
 
     /** Allocate a resource key in this workspace, including across independently loaded views. */
     createResourceKey(scope: string, resource: string): ResourceKey {

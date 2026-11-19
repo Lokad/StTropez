@@ -90,7 +90,7 @@ export function attachLanguage(
 }
 ```
 
-Render `language.state` through the host's observable integration and call `language.destroy()`
+Read `language.getSnapshot()` and subscribe through `language.subscribe()` and call `language.dispose()`
 when the view detaches. It releases its requests and subscriptions without destroying the editor
 or provider. Dispose other feature clients at their own boundaries, then `provider.dispose()` at
 the workspace/configuration boundary. Destroy the mounted editor separately. Connect the host's
@@ -214,12 +214,12 @@ is capability metadata: a later request requires an admitted binding and current
 `LspWorkspace.createScope()` creates independent feature participation over the shared session.
 Use `attachDocument(id)` or `setDocuments(snapshots)` to participate. Each participating document
 has one workspace lease/observer, one protocol binding and one wire-version stream across views.
-The last participant closes that binding and releases its lease after notification delivery.
+Disposing an `LspDocument` ends its participation. The last participant closes that binding and releases its lease after notification delivery.
 Keep a host scope when unmounted project documents must participate. `LspScopeAccess` describes
 scoped request access, including host preparation callbacks. `scope.ensureConnected()` starts or
 joins the owner's shared connection; cancelling that wait does not disconnect other participants.
 `scope.cancel()` expires only that scope's intents, retaining bindings and registered handlers.
-`scope.release()` cancels its calls and releases its handlers and participation; repeated release
+`scope.dispose()` cancels its calls and releases its handlers and participation. Repeated disposal
 is harmless. Owner `disconnect()` and `reconnect()` change the shared connection, and owner
 `dispose()` closes every scope. Orderly `shutdown()` belongs to the owner.
 
@@ -237,7 +237,7 @@ export async function reconnectProject(provider: LspWorkspace, document: Documen
         await provider.shutdown();
         await scope.ensureConnected();
     } finally {
-        scope.release();
+        scope.dispose();
     }
 }
 ```

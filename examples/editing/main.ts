@@ -47,7 +47,7 @@ const fixture = { ready: true, setText, edit, select, history,
     registerEditTransform: (transform: TextEditorEditTransform) => editors.primary.registerEditTransform(transform),
     discoverFolds: (discover: FoldDiscovery) => { foldingController?.dispose(); foldingController = createFoldingController(workspace, primaryTab, editors.primary, discover, { delayMs: 0 }); },
     foldCommand: (command: FoldCommand, group?: string) => foldingController?.runCommand(command, group),
-    refreshFolds: () => foldingController?.refresh(), foldStatus: () => foldingController?.state.getSnapshot(),
+    refreshFolds: () => foldingController?.refresh(), foldStatus: () => foldingController?.getSnapshot(),
     configureLanguage: (value: LanguageConfiguration) => editors.primary.configureLanguage(value),
     command: (command: EditingCommand) => editors.primary.runCommand(command),
     selections: (ranges: readonly Selection[], primary = 0) => editors.primary.view.setSelections(workspace.document(source.documentId).revision, ranges, primary),
@@ -70,14 +70,14 @@ const fixture = { ready: true, setText, edit, select, history,
             primary: { ...editors.primary.snapshot(), viewport: editors.primary.viewport.snapshot(), selection: editors.primary.view.getSnapshot().selection },
             secondary: { ...editors.secondary.snapshot(), viewport: editors.secondary.viewport.snapshot(), selection: editors.secondary.view.getSnapshot().selection },
             history: current ? workspace.observeHistory(source.documentId).getSnapshot() : null,
-            find: (() => { const state = findUI.find.state.getSnapshot(); return { wholeWord: state.wholeWord, matchCase: state.matchCase, regularExpression: state.regularExpression, revision: state.revision, status: state.status, count: state.count, scanned: state.scanned, current: state.current, matchesVersion: state.matchesVersion, reason: state.reason, message: state.message, maxScanStepMs: state.maxScanStepMs, replaceTransactionMs: state.replaceTransactionMs }; })(),
+            find: (() => { const state = findUI.find.getSnapshot(); return { wholeWord: state.wholeWord, matchCase: state.matchCase, regularExpression: state.regularExpression, revision: state.revision, status: state.status, count: state.count, scanned: state.scanned, current: state.current, matchesVersion: state.matchesVersion, reason: state.reason, message: state.message, ...findUI.find.getDiagnostics() }; })(),
             presentation: { primary: presentation.primary.snapshot(), secondary: presentation.secondary.snapshot() }, paragraph: paragraph.snapshot(),
             conflicts: conflicts.map(item => ({ reason: item.reason, expectedRevision: item.expectedRevision, attemptedUnits: item.attemptedText.length,
                 ...(item.cause instanceof Error ? { error: item.cause.message } : {}) })), diagnostics: workspace.diagnostics(), disposed };
     },
     dispose: () => {
-        if (disposed) return; disposed = true; foldingController?.dispose(); listeners.abort(); unsubscribe(); findUI.destroy(); paragraph.destroy();
-        Object.values(editors).forEach(editor => editor.destroy()); Object.values(presentation).forEach(value => value.clear());
+        if (disposed) return; disposed = true; foldingController?.dispose(); listeners.abort(); unsubscribe(); findUI.dispose(); paragraph.dispose();
+        Object.values(editors).forEach(editor => editor.dispose()); Object.values(presentation).forEach(value => value.clear());
         for (const tab of workspace.tabState.getSnapshot()) workspace.close(tab.id); workspace.releaseResource(source.id, true);
     } };
 window.editingFixture = fixture;

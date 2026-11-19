@@ -126,7 +126,7 @@ export function ownInputRecovery(
         validateAndRetain(documentId, (event as CustomEvent<unknown>).detail);
     }, { signal: listeners.signal });
     return () => {
-        try { editor.destroy(); }
+        try { editor.dispose(); }
         finally { listeners.abort(); }
     };
 }

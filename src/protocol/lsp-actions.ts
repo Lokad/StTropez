@@ -48,7 +48,7 @@ export function createLspActionClient(provider: LspWorkspace, options: LspAction
                 execute: async (action: LspCodeAction, scope: LspCommandScope) => {
                     const route = action.command && routes.get(action.command);
                     if (!value.isCurrent() || busy() || !actions.includes(action) || !action.command || action.disabled
-                        || !route || !(route.isCurrent?.() ?? true) || !provider.state.getSnapshot().commandAvailable) throw staleRequest("Captured action command is unavailable or changed.");
+                        || !route || !(route.isCurrent?.() ?? true) || !provider.getSnapshot().commandAvailable) throw staleRequest("Captured action command is unavailable or changed.");
                     executing = true;
                     try { return await commands().runAuthorized(action.command, scope, route); }
                     finally { executing = false; client.notify(); }

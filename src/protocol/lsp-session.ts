@@ -23,7 +23,7 @@ export type LspCommandCall<T> = RpcCall<T> & Readonly<{ isCurrent: () => boolean
 export type LspCommandAuthorization = Readonly<{ command: string; arguments: readonly JsonValue[]; isCurrent: () => boolean }>;
 export type LspDocumentSnapshot = Readonly<{ uri: string; languageId: string; resourceId: string; documentId: string; revision: number; buffer: TextBuffer }>;
 export type LspDocument = Readonly<{ getSnapshot: () => LspDocumentSnapshot;
-    update: (expectedRevision: number, revision: number, buffer: TextBuffer, mapping?: PositionMapping) => void; close: () => void }>;
+    update: (expectedRevision: number, revision: number, buffer: TextBuffer, mapping?: PositionMapping) => void; dispose: () => void }>;
 export type LspCall<T> = Readonly<{ result: Promise<T>; cancel: () => void }>;
 export type LspDocumentCapture = Readonly<{ document: LspDocumentSnapshot; index: LspLineIndex; version: number;
     epoch: number; registrationGeneration: number; isCurrent: () => boolean;
@@ -73,7 +73,8 @@ export class LspSession {
     private readonly scope: NotificationScope;
     private readonly store: Store<LspSessionSnapshot>;
     private readonly subscriptions = new Set<() => void>();
-    readonly state: Observable<LspSessionSnapshot>;
+    readonly getSnapshot: Observable<LspSessionSnapshot>["getSnapshot"];
+    readonly subscribe: Observable<LspSessionSnapshot>["subscribe"];
     private readonly documents = new Map<string, Entry>();
     private readonly handles = new WeakMap<LspDocument, Entry>();
     private readonly remote = new Map<string, Remote>();
@@ -140,11 +141,12 @@ export class LspSession {
                     ...(options.applyEdit ? { applyEdit: true } : {}), ...(this.features.has("workspace/executeCommand") ? { executeCommand: { dynamicRegistration: true } } : {}) } } : {}) } });
         this.scope = new NotificationScope(error => this.report(error));
         this.store = new Store(this.snapshot("disconnected", null), this.scope);
-        this.state = Object.freeze({ getSnapshot: this.store.observable.getSnapshot, subscribe: listener => {
+        this.getSnapshot = this.store.observable.getSnapshot;
+        this.subscribe = listener => {
             this.scope.assertWritable(); if (this.store.get().phase === "disposed") throw closed();
             const stop = this.store.observable.subscribe(listener); const release = () => { stop(); this.subscriptions.delete(release); };
             this.subscriptions.add(release); return release;
-        } });
+        };
     }
     private report(error: unknown): void { try { this.options.onError?.(error instanceof Error ? error : new Error(String(error))); } catch { /* Reporting cannot interrupt disposal. */ } }
     private release(stop: (() => void) | undefined): void { try { stop?.(); } catch (error) { this.report(error); } }
@@ -333,7 +335,7 @@ export class LspSession {
                 this.writable(); this.entry(handle); if (entry.snapshot.revision !== expectedRevision || !integer(nextRevision) || nextRevision <= expectedRevision) throw stale(); this.size(nextBuffer.length, entry.snapshot.buffer.length);
                 if (mapping) entry.change = Object.freeze({ before: entry.snapshot.buffer, mapping }); else delete entry.change;
                 this.totalUnits += nextBuffer.length - entry.snapshot.buffer.length; entry.snapshot = Object.freeze({ ...entry.snapshot, revision: nextRevision, buffer: nextBuffer }); delete entry.failure; this.kick(uri);
-            }, close: () => {
+            }, dispose: () => {
                 if (this.store.get().phase === "disposed") return; this.writable(); if (this.documents.get(uri) !== entry) return;
                 this.documents.delete(uri); delete entry.change; delete entry.selectors; this.totalUnits -= entry.snapshot.buffer.length; this.publish(); this.kick(uri);
             } });

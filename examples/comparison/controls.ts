@@ -9,24 +9,24 @@ export function mountReviewControls(host: HTMLElement, comparison: TextCompariso
     const alignment = button("Toggle aligned rows"), linking = button("Toggle linked scrolling"), status = owner.createElement("output");
     controls.append(status); host.append(controls);
     function render(): void {
-        const state = comparison.state.getSnapshot(), selected = state.selectedHunk;
+        const state = comparison.getSnapshot(), selected = state.selectedHunk;
         previous.disabled = next.disabled = !state.canNavigate; revert.disabled = !state.canRevert;
         alignment.disabled = linking.disabled = state.disposed || !state.comparison.baseline || !state.comparison.working;
         alignment.setAttribute("aria-pressed", String(state.alignment.enabled)); linking.setAttribute("aria-pressed", String(state.scrollLinked));
         status.textContent = `${state.comparison.status}: ${selected === null ? "no change selected" : `change ${selected + 1} of ${state.comparison.hunks.length}`} · alignment ${state.alignment.status}`;
     }
     function navigate(direction: -1 | 1): void {
-        const state = comparison.state.getSnapshot(), count = state.comparison.hunks.length, current = state.selectedHunk ?? (direction === 1 ? -1 : 0);
+        const state = comparison.getSnapshot(), count = state.comparison.hunks.length, current = state.selectedHunk ?? (direction === 1 ? -1 : 0);
         if (state.canNavigate) comparison.selectHunk(state.comparison.generation, (current + direction + count) % count);
     }
     previous.addEventListener("click", () => navigate(-1), { signal: listeners.signal });
     next.addEventListener("click", () => navigate(1), { signal: listeners.signal });
     revert.addEventListener("click", () => {
-        const state = comparison.state.getSnapshot();
+        const state = comparison.getSnapshot();
         if (state.canRevert && state.selectedHunk !== null) comparison.revertHunk(state.comparison.generation, state.selectedHunk);
     }, { signal: listeners.signal });
-    alignment.addEventListener("click", () => comparison.setRowsAligned(!comparison.state.getSnapshot().alignment.enabled), { signal: listeners.signal });
-    linking.addEventListener("click", () => comparison.setScrollLinked(!comparison.state.getSnapshot().scrollLinked), { signal: listeners.signal });
-    const stop = comparison.state.subscribe(render); render();
+    alignment.addEventListener("click", () => comparison.setRowsAligned(!comparison.getSnapshot().alignment.enabled), { signal: listeners.signal });
+    linking.addEventListener("click", () => comparison.setScrollLinked(!comparison.getSnapshot().scrollLinked), { signal: listeners.signal });
+    const stop = comparison.subscribe(render); render();
     return () => { stop(); listeners.abort(); controls.remove(); };
 }

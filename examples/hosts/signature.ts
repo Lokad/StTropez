@@ -19,7 +19,6 @@ export type SignatureSnapshot = Readonly<{ available: boolean; connected: boolea
     status: "idle" | "pending" | "ready" | "empty" | "expired" | "failed"; message: string; view: string | null; left: number; top: number;
     before: string; parameter: string; after: string; documentation: string; parameterDocumentation: string; content: DocumentationContent; parameterContent: DocumentationContent; activeSignature: number; signatureCount: number; argument: number | null; work: number; total: number }>;
 const emptyContent: DocumentationContent = Object.freeze([]);
-let sessionSerial = 0;
 /** One captured signature lane per host; automatic requests are debounced outside input handlers. */
 export class HostSignatureTools {
     private readonly workspace: Workspace;
@@ -147,7 +146,7 @@ export class HostSignatureTools {
         } catch (error) { this.counts.failed++; this.armed = false; this.clear("failed", error instanceof Error ? error.message : "Signature help is unavailable."); }
     }
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const s: Session = { token: ++sessionSerial, id, target: this.workspace.captureTab(tab), editor, stop: () => {} }, events = new AbortController(), win = editor.element.ownerDocument.defaultView!;
+        const s: Session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.captureTab(tab), editor, stop: () => {} }, events = new AbortController(), win = editor.element.ownerDocument.defaultView!;
         this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { if (this.active !== s) { this.dismiss(); this.active = s; this.publish(); } }, { signal: events.signal });
         editor.input.addEventListener("blur", () => { if (this.active === s) this.dismiss(); }, { signal: events.signal });

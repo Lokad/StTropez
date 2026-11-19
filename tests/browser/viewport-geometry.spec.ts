@@ -67,12 +67,12 @@ test("viewport retains valid native geometry and expires changed captures withou
             viewport.view.folding.setRanges(viewport.view.folding.getSnapshot(), [{ id: "fold", from: 0, to: 7, collapsed: true }]);
             const staleFold = viewport.coordsAt(4) === undefined; viewport.flush();
             const folded = viewport.coordsAt(4)!, header = viewport.coordsAt(2)!;
-            viewport.destroy(); const disposed = viewport.coordsAt(0) === undefined && !originalRow.isConnected && !host.firstChild;
+            viewport.dispose(); const disposed = viewport.coordsAt(0) === undefined && !originalRow.isConnected && !host.firstChild;
             return { steps, stale, retainedNodes, movedBy: initial.top - moved.top, sameWidth, removed, exports, boundaries,
                 staleFold, folded: folded.offset === 4 && folded.left === header.left && folded.top === header.top, disposed };
         } finally {
             document.createRange = createRange; Range.prototype.getClientRects = getClientRects;
-            viewport.destroy(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); style.remove();
+            viewport.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); style.remove();
         }
     });
     expect(result).toMatchObject({ stale: true, retainedNodes: true, movedBy: 12, sameWidth: true, removed: true, exports: 0, staleFold: true, folded: true, disposed: true });

@@ -83,7 +83,7 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
                 correcting, correctionPaints: corrected.renders - beforeCorrection, extentError: Math.abs(corrected.horizontalExtent - measured - 24),
                 idleAfterCorrection, partialIdle, partialAnchor: capture.horizontalAnchor !== undefined, restoredError: Math.abs(point.left - restored.left),
                 initialExports, exports: documentState().buffer.readMetrics().textExports };
-        } finally { observer.disconnect(); viewport.destroy(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+        } finally { observer.disconnect(); viewport.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
     });
     await testInfo.attach("paint-work", { body: JSON.stringify(result), contentType: "application/json" });
     for (const work of [result.idle, result.afterSelection, result.idleAfterCorrection, result.partialIdle])

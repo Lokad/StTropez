@@ -45,7 +45,7 @@ async function fixture(page: Page, shadow = false) {
 }
 const input = (page: Page) => page.getByRole("textbox", { name: "Bracket source", exact: true });
 const marks = (page: Page) => page.locator(".st-matching-bracket");
-const state = (page: Page) => page.evaluate(() => window.bracketFixture.editor.bracketMatching.state.getSnapshot());
+const state = (page: Page) => page.evaluate(() => window.bracketFixture.editor.bracketMatching.getSnapshot());
 async function settled(page: Page) { await expect.poll(async () => (await state(page)).status).not.toBe("pending");
     await page.waitForFunction(() => !window.bracketFixture.editor.viewport.activity().pending); }
 
@@ -54,8 +54,8 @@ for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} brac
     await page.evaluate(() => window.bracketFixture.editor.bracketMatching.configure(true)); await settled(page);
     await expect(marks(page)).toHaveText(["(", ")"]);
     expect(await marks(page).first().evaluate(node => getComputedStyle(node).color)).toBe("rgb(160, 30, 120)");
-    const stable = await page.evaluate(() => { const f = window.bracketFixture, before = f.editor.bracketMatching.state.getSnapshot();
-        f.editor.input.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift" })); return before === f.editor.bracketMatching.state.getSnapshot(); }); expect(stable).toBe(true);
+    const stable = await page.evaluate(() => { const f = window.bracketFixture, before = f.editor.bracketMatching.getSnapshot();
+        f.editor.input.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift" })); return before === f.editor.bracketMatching.getSnapshot(); }); expect(stable).toBe(true);
     await input(page).press("End"); await settled(page); await expect(marks(page)).toHaveText(["[", "]"]);
     await input(page).press("Backspace"); await settled(page); await expect(marks(page)).toHaveCount(0);
     await input(page).press("Control+z"); await settled(page); await expect(marks(page)).toHaveText(["[", "]"]);
@@ -85,15 +85,15 @@ test("bracket budgets, syntax refresh and reentrant cancellation never publish s
     await page.evaluate(() => { const f = window.bracketFixture; f.allowed = true; f.editor.bracketMatching.refresh(); });
     await settled(page); await expect(marks(page)).toHaveText(["(", ")"]);
     await page.evaluate(() => { const f = window.bracketFixture; let changed = false;
-        f.stop = f.editor.bracketMatching.state.subscribe(() => { const s = f.editor.bracketMatching.state.getSnapshot(); if (s.status === "ready") f.states.push(s.result!.kind); });
+        f.stop = f.editor.bracketMatching.subscribe(() => { const s = f.editor.bracketMatching.getSnapshot(); if (s.status === "ready") f.states.push(s.result!.kind); });
         f.editor.configureLanguage({ allowPair: () => { if (!changed) { changed = true; f.set("[new]", 0); } return true; } }); });
     await settled(page); await expect(marks(page)).toHaveText(["[", "]"]); expect((await state(page)).result?.match).toBe(4);
     const end = await page.evaluate(async () => {
         const f = window.bracketFixture; f.editor.bracketMatching.configure(false);
         const disabled = f.workspace.diagnostics().subscriptions;
         f.editor.bracketMatching.configure(true); f.set("(" + "x\n".repeat(100000) + ")", 0);
-        const pending = f.editor.bracketMatching.state.getSnapshot().status;
-        f.editor.destroy(); f.stop?.(); const state = f.editor.bracketMatching.state.getSnapshot();
+        const pending = f.editor.bracketMatching.getSnapshot().status;
+        f.editor.dispose(); f.stop?.(); const state = f.editor.bracketMatching.getSnapshot();
         f.workspace.close(f.tab); f.workspace.releaseResource(f.resource, true);
         await new Promise(resolve => setTimeout(resolve, 30));
         return { disabled, pending, status: state.status, result: state.result, views: f.workspace.diagnostics().views, subscriptions: f.workspace.diagnostics().subscriptions,

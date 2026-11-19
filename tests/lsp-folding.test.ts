@@ -21,7 +21,7 @@ test("LSP folding negotiates whole lines and validates the entire response again
     value = [{ startLine: 0, endLine: 1 }, { startLine: 1, endLine: 3 }];
     assert.deepEqual((await client.run(f.document()).result).ranges, [{ from: 7, to: mixed.indexOf("end") }]);
     const scope = f.provider.createScope(), document = scope.attachDocument(f.source.documentId); await scope.flush();
-    const capture = scope.synchronized(document)!; scope.release();
+    const capture = scope.synchronized(document)!; scope.dispose();
     assert.throws(() => protocol.decodeLspFoldingRanges([], capture), error => error instanceof RpcError && error.code === -32801);
 });
 test("fold discovery cancellation and edits cannot publish obsolete provider ranges", async t => {

@@ -130,15 +130,15 @@ test("registration and URI replacement expire retained choices, while cancellati
     let version = 0;
     const f = clientFixture(t, undefined, undefined, doc => ({ uri: `generic:${version}/${doc.resourceId}`, languageId: "generic" })),
         client = createLspCompletionClient(f.provider), diagnostics = f.provider.createScope();
-    t.after(() => { client.dispose(); diagnostics.release(); }); const binding = diagnostics.attachDocument(f.source.documentId);
+    t.after(() => { client.dispose(); diagnostics.dispose(); }); const binding = diagnostics.attachDocument(f.source.documentId);
     f.peer.onRequest("textDocument/completion", () => [choice()]); const batch = await client.run(f.document(), 2).result;
     assert.equal(f.workspace.diagnostics().leases, 1);
     await f.peer.sendRequest("client/registerCapability", { registrations: [{ id: "completion", method: "textDocument/completion", registerOptions: { documentSelector: null, resolveProvider: true } }] });
     assert.equal(batch.isBindingCurrent(), false); assert.throws(() => client.resolve(batch, batch.items[0]!), stale);
     const fresh = await client.run(f.document(), 2).result;
-    version++; const replacing = f.provider.createScope(); t.after(replacing.release); replacing.attachDocument(f.source.documentId);
+    version++; const replacing = f.provider.createScope(); t.after(replacing.dispose); replacing.attachDocument(f.source.documentId);
     assert.equal(fresh.isCurrent(), false); assert.throws(() => client.resolve(fresh, fresh.items[0]!), stale);
     const next = await client.run(f.document(), 2).result; client.cancel(); assert.equal(next.isCurrent(), false);
-    client.dispose(); assert.ok(f.provider.snapshot().documents > 0); assert.equal(f.provider.state.getSnapshot().phase, "ready");
+    client.dispose(); assert.ok(f.provider.snapshot().documents > 0); assert.equal(f.provider.getSnapshot().phase, "ready");
     assert.equal(diagnostics.synchronized(binding), undefined, "URI replacement expired the original diagnostics binding.");
 });

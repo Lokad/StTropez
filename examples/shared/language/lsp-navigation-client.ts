@@ -10,7 +10,7 @@ export type LspNavigationOptions = Readonly<{ provider: LspWorkspace;
 /** Development query/counter contracts around the exported protocol client. */
 export function createLspNavigationClient(workspace: Workspace, counts: NavigationMetrics,
     changed: () => void, options: LspNavigationOptions): NavigationService {
-    const client = createClient(options.provider), stop = client.state.subscribe(changed);
+    const client = createClient(options.provider), stop = options.provider.subscribe(changed);
     return Object.freeze({
         run: async (capture: NavigationInput, buffers: ReadonlyMap<string, TextBuffer>, progress: (work: number) => void, origin: NavigationOrigin) => {
             const input = validateNavigationInput(capture); if (!origin || !input.documents.some(document => document.document === origin.document)) throw new Error("LSP navigation requires its captured origin.");

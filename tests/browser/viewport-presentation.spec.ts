@@ -89,7 +89,7 @@ test.describe("scrolling beyond the last line", () => {
             f.editor.view.folding.setRanges(f.editor.view.folding.getSnapshot(), [{ id: "body", from: 0, to: doc.buffer.offsetAt(110000), collapsed: true }]); viewport.flush();
             viewport.scrollTo({ top: 1e12 }); viewport.flush(); const s = viewport.snapshot();
             viewport.configureScrollBeyondLastLine(false); viewport.flush(); const clamped = viewport.snapshot().scrollTop;
-            f.editor.destroy(); return { s, clamped, rejected: !viewport.configureScrollBeyondLastLine(true), reset: !viewport.scrollBeyondLastLine(), nodes: f.host.childNodes.length, views: f.workspace.diagnostics().views };
+            f.editor.dispose(); return { s, clamped, rejected: !viewport.configureScrollBeyondLastLine(true), reset: !viewport.scrollBeyondLastLine(), nodes: f.host.childNodes.length, views: f.workspace.diagnostics().views };
         });
         expect(folded.s.visibleLines).toBe(2); expect(folded.s.scrollTop).toBeCloseTo(folded.s.lineHeight, 5);
         expect(folded).toMatchObject({ clamped: 0, rejected: true, reset: true, nodes: 0, views: 0 });
@@ -107,7 +107,7 @@ test.describe("scrolling beyond the last line", () => {
             window.presentationFixture = { workspace, resource: resource.id, host, tab, comparison, editor: comparison.working };
         });
         await page.waitForFunction(() => { const c = window.presentationFixture.comparison!;
-            return c.controller.getSnapshot().status === "ready" && c.snapshot().rowsAligned && !c.working.viewport.activity().pending && !c.referenceViewport()?.activity().pending; });
+            return c.controller.getSnapshot().status === "ready" && c.getDiagnostics().rowsAligned && !c.working.viewport.activity().pending && !c.referenceViewport()?.activity().pending; });
         const result = await page.evaluate(() => {
             const f = window.presentationFixture, c = f.comparison!, working = c.working.viewport, reference = c.referenceViewport()!;
             working.configureScrollBeyondLastLine(true); working.scrollTo({ top: 1e12 }); working.flush();
@@ -116,7 +116,7 @@ test.describe("scrolling beyond the last line", () => {
             const top = (viewport: typeof working, line: number) => viewport.rowBounds(line)!.top - viewport.element.querySelector(".st-viewport-layer")!.getBoundingClientRect().top;
             const workingTop = top(working, 2), referenceTop = top(reference, 3), rows = reference.snapshot().visualRows;
             working.configureScrollBeyondLastLine(false); working.flush();
-            const clamped = working.snapshot().scrollTop, retained = reference.scrollBeyondLastLine(); c.destroy();
+            const clamped = working.snapshot().scrollTop, retained = reference.scrollBeyondLastLine(); c.dispose();
             return { independent, grid, rows, workingTop, referenceTop, clamped, retained, views: f.workspace.diagnostics().views };
         });
         expect(result).toMatchObject({ independent: true, rows: 4, clamped: 0, retained: true, views: 0 });
@@ -141,7 +141,7 @@ test.describe("scrolling beyond the last line", () => {
                     samples.push({ width: root.clientWidth, height: root.clientHeight, overflow: root.scrollWidth > root.clientWidth || root.scrollHeight > root.clientHeight, extent: s.verticalExtent, lineHeight: s.lineHeight });
                 }
             }
-            const enabled = viewport.scrollBeyondLastLine(); editor.destroy(); return { samples, enabled, nodes: host.childNodes.length, views: workspace.diagnostics().views };
+            const enabled = viewport.scrollBeyondLastLine(); editor.dispose(); return { samples, enabled, nodes: host.childNodes.length, views: workspace.diagnostics().views };
         });
         expect(result).toMatchObject({ enabled: true, nodes: 0, views: 0 });
         expect(result.samples.every(sample => !sample.overflow && sample.extent === sample.lineHeight + 24)).toBe(true);
@@ -213,10 +213,10 @@ test("ligature policy changes native shaping while preserving caret, selection, 
     await info.attach("ligature-selection", { body: await page.screenshot(), contentType: "image/png" });
     const disposed = await page.evaluate(async () => {
         const f = window.presentationFixture, viewport = f.editor.viewport;
-        f.editor.destroy(); const disabled = !viewport.fontLigatures(), rejected = !viewport.configureFontLigatures(true);
+        f.editor.dispose(); const disabled = !viewport.fontLigatures(), rejected = !viewport.configureFontLigatures(true);
         const path = "/presentation-fixture/", { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const second = mountTextEditor(f.host, f.workspace, f.tab, { fontLigatures: true }); second.viewport.flush();
-        const mounted = second.viewport.fontLigatures(), css = getComputedStyle(second.element).fontVariantLigatures; second.destroy();
+        const mounted = second.viewport.fontLigatures(), css = getComputedStyle(second.element).fontVariantLigatures; second.dispose();
         return { disabled, rejected, mounted, css, nodes: f.host.childNodes.length, views: f.workspace.diagnostics().views };
     });
     expect(disposed).toEqual({ disabled: true, rejected: true, mounted: true, css: "normal", nodes: 0, views: 0 });
@@ -309,7 +309,7 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
     expect(changes.scaledError).toBeLessThan(.5); expect(changes.scaledUnits).toBeLessThan(1000); expect(changes.emptyExtent).toEqual(changes.extent);
     const end = await page.evaluate(() => { const f = window.presentationFixture, viewport = f.editor.viewport;
         viewport.configureColumnRulers([20]); f.workspace.close(f.tab); viewport.flush(); const closed = !f.host.querySelector(".st-column-rulers");
-        f.editor.destroy(); f.workspace.releaseResource(f.resource, true);
+        f.editor.dispose(); f.workspace.releaseResource(f.resource, true);
         return { closed, configured: viewport.configureColumnRulers([20]), columns: viewport.columnRulers(), children: f.host.childNodes.length,
             views: f.workspace.diagnostics().views, subscriptions: f.workspace.diagnostics().subscriptions }; });
     expect(end).toEqual({ closed: true, configured: false, columns: [], children: 0, views: 0, subscriptions: 0 });
@@ -368,11 +368,11 @@ test("current-line presentation follows the primary caret through input, folding
         const f = window.presentationFixture, path = "/presentation-fixture/";
         const { TextBuffer } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextComparison } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
-        f.editor.destroy(); f.host.style.height = "500px";
+        f.editor.dispose(); f.host.style.height = "500px";
         f.comparison = mountTextComparison(f.host, f.workspace, f.tab, { buffer: TextBuffer.from("extra\nHEAD\nbody\nmore\nend\n"), version: "one" }, { rowsAligned: true });
     });
     await page.waitForFunction(() => { const c = window.presentationFixture.comparison!;
-        return c.controller.getSnapshot().status === "ready" && c.snapshot().rowsAligned && !c.working.viewport.activity().pending && !c.referenceViewport()?.activity().pending; });
+        return c.controller.getSnapshot().status === "ready" && c.getDiagnostics().rowsAligned && !c.working.viewport.activity().pending && !c.referenceViewport()?.activity().pending; });
     const aligned = await page.evaluate(() => {
         const f = window.presentationFixture, c = f.comparison!, working = c.working, reference = c.referenceEditor()!;
         const current = (editor: TextEditor) => editor.element.querySelector(".st-viewport-layer .st-current-line");
@@ -397,7 +397,7 @@ test("current-line presentation follows the primary caret through input, folding
     expect(aligned.edges).toContain("inset"); expect(aligned.fill).not.toBe("rgba(0, 0, 0, 0)");
     await info.attach("current-line-review", { body: await page.screenshot(), contentType: "image/png" });
     const end = await page.evaluate(() => { const f = window.presentationFixture, c = f.comparison!, reference = c.referenceViewport()!;
-        c.destroy(); f.workspace.close(f.tab); f.workspace.releaseResource(f.resource, true);
+        c.dispose(); f.workspace.close(f.tab); f.workspace.releaseResource(f.resource, true);
         return { configured: reference.configureCurrentLineHighlight(true), enabled: reference.currentLineHighlight(), children: f.host.childNodes.length,
             views: f.workspace.diagnostics().views, subscriptions: f.workspace.diagnostics().subscriptions }; });
     expect(end).toEqual({ configured: false, enabled: false, children: 0, views: 0, subscriptions: 0 });

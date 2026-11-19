@@ -18,7 +18,7 @@ const run = async (client: ReturnType<typeof createLspActionClient>, f: ReturnTy
 
 test("the direct runner snapshots command identity and arguments before host preparation", async t => {
     const f = clientFixture(t), scope = f.provider.createScope(), runner = protocol.createLspCommandRunner(scope);
-    t.after(() => { runner.dispose(); scope.release(); }); await scope.ensureConnected();
+    t.after(() => { runner.dispose(); scope.dispose(); }); await scope.ensureConnected();
     const invocation = { title: "captured", command: "host.allowed", arguments: [{ token: 1 }] };
     await runner.runAuthorized(invocation, { ...scopeFor(f), prepare: () => { invocation.command = "other"; invocation.arguments[0]!.token = 2; } }, { kind: "server" });
     assert.deepEqual(f.sent("workspace/executeCommand")[0]!.params, { command: "host.allowed", arguments: [{ token: 1 }] });
@@ -41,8 +41,8 @@ test("host server authority captures one immutable invocation, refuses other arg
     assert.deepEqual(f.sent("workspace/executeCommand").map(call => call.params), [{ command: "host.allowed", arguments: [{ token: 1 }] }]);
     permitted = false; assert.equal(batch.supports(first.command!), false);
     let prepared = false; await assert.rejects(batch.execute(first, { ...scopeFor(f), prepare: () => { prepared = true; } }), stale);
-    assert.equal(prepared, false); assert.equal(policies, 2); assert.equal(f.provider.state.getSnapshot().commandRequiresReconnect, false);
-    const raw = f.provider.createScope(); t.after(raw.release);
+    assert.equal(prepared, false); assert.equal(policies, 2); assert.equal(f.provider.getSnapshot().commandRequiresReconnect, false);
+    const raw = f.provider.createScope(); t.after(raw.dispose);
     assert.throws(() => raw.requestCommand("host.allowed", [{ token: 2 }], 1000, { command: "host.allowed", arguments: [{ token: 1 }], isCurrent: () => true }), /does not match/);
     assert.equal(f.sent("workspace/executeCommand").length, 1);
 });
@@ -59,7 +59,7 @@ test("explicit server route retains captured applyEdit ownership and does not au
     const receipt = await batch.execute(batch.actions[0]!, scopeFor(f));
     assert.equal(receipt.decision?.applied, true); assert.equal(f.document().buffer.slice(0, 7), "changed");
     assert.equal((await f.peer.sendRequest("workspace/applyEdit", edit) as { applied: boolean }).applied, false);
-    assert.equal(f.provider.state.getSnapshot().commandAvailable, true);
+    assert.equal(f.provider.getSnapshot().commandAvailable, true);
 });
 
 test("host handlers see initial edits, reuse captured edit validation, and release the lane after a known failure", async t => {
@@ -75,7 +75,7 @@ test("host handlers see initial edits, reuse captured edit validation, and relea
     const batch = await run(client, f);
     await assert.rejects(batch.execute(batch.actions[0]!, { ...scopeFor(f), prepare: () => { f.edit(); } }), /later phase failure/);
     assert.equal(f.document().buffer.slice(0, 8), "reviewed"); assert.equal(f.sent("workspace/executeCommand").length, 0);
-    assert.equal(f.provider.state.getSnapshot().commandAvailable, true); assert.equal(f.provider.state.getSnapshot().commandRequiresReconnect, false);
+    assert.equal(f.provider.getSnapshot().commandAvailable, true); assert.equal(f.provider.getSnapshot().commandRequiresReconnect, false);
     const fresh = createLspActionClient(f.provider, { commandPolicy: () => ({ kind: "host", run: () => "recovered" }) }); t.after(fresh.dispose);
     const next = await run(fresh, f); assert.equal((await next.execute(next.actions[0]!, scopeFor(f))).value, "recovered");
 });
@@ -94,8 +94,8 @@ test("cancelling a hanging host handler rejects its late edits and permits a fre
     captured!.onCancel(() => { throw new Error("Late host cancellation failure"); }); await settled();
     assert.deepEqual(f.errors.splice(0), ["Host cancellation failure", "Late host cancellation failure"]);
     assert.equal(captured!.isCurrent(), false); assert.equal((await captured!.applyEdit({ edit: { changes: {} } })).applied, false);
-    late.resolve(null); await settled(); assert.equal(f.provider.state.getSnapshot().commandAvailable, true);
-    assert.equal(f.provider.state.getSnapshot().commandRequiresReconnect, false); assert.equal(f.sent("workspace/executeCommand").length, 0);
+    late.resolve(null); await settled(); assert.equal(f.provider.getSnapshot().commandAvailable, true);
+    assert.equal(f.provider.getSnapshot().commandRequiresReconnect, false); assert.equal(f.sent("workspace/executeCommand").length, 0);
     const next = await run(client, f); assert.equal((await next.execute(next.actions[0]!, scopeFor(f))).value, "fresh");
 });
 

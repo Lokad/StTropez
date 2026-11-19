@@ -29,7 +29,7 @@ function fixture(text: string, backend: HoverBackend) {
     const owner = Object.assign(new EventTarget(), { defaultView: { setTimeout: (work: () => void) => { timers.set(++serial, work); return serial; }, clearTimeout: (id: number) => timers.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, input: new EventTarget(), activity: () => ({ composing: false, disposed: false }), focus: () => { throw new Error("Hover must not focus an editor."); } } as unknown as TextEditor;
     const hover = createHoverController(workspace, tab, editor, { backend });
-    return { workspace, documentId, tab, view, hover, timers, leasesBefore: workspace.diagnostics().leases, finish: () => { hover.destroy(); view.dispose(); workspace.close(tab); assert.equal(timers.size, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().subscriptions, 0); } };
+    return { workspace, documentId, tab, view, hover, timers, leasesBefore: workspace.diagnostics().leases, finish: () => { hover.dispose(); view.dispose(); workspace.close(tab); assert.equal(timers.size, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().subscriptions, 0); } };
 }
 test("an asynchronous hover backend accepts absent ranges and expires its guarded result without a worker", async () => {
     const controlled = asynchronousBackend(), f = fixture("const value", controlled.backend), before = f.workspace.document(f.documentId); let live = true;

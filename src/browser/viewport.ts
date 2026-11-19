@@ -67,7 +67,7 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     invalidate: () => void;
     /** Immutable painted identities and scheduled-work state; reused while unchanged. Does not flush or measure layout. */
     activity: () => ViewportActivity;
-    revealOffset: (offset: number, options?: RevealOptions) => void; snapshot: () => ViewportSnapshot; destroy: () => void }>;
+    revealOffset: (offset: number, options?: RevealOptions) => void; snapshot: () => ViewportSnapshot; dispose: () => void }>;
 type Row = Readonly<{ line: number; start: number; end: number; from: number; to: number; text: string; left: number; complete: boolean; endsLine: boolean }>;
 /** CRLF has two raw positions at one painted line edge. Keep the requested model offset. */
 function rowCaretOffset(buffer: TextBuffer, end: number, offset: number): number | undefined {
@@ -764,7 +764,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         snapshot: () => Object.freeze({ ...activity(), selection: renderedSelection, renders, firstLine, lastLine, rows: rows.size, partialRows, textUnits, readUnits, visibleLines: previous ? view.folding.getSnapshot().index.visibleLineCount : 0, collapsedFolds: previous ? renderedIndex.collapsedCount : 0, visualRows: previous ? renderedIndex.visibleLineCount : 0, paddingRows: paddingRows.size, naturalLineHeight, navigationReadUnits, navigationRows, navigationBatches, navigationPreparedRows: preparedRows?.rows.size ?? 0, maxNavigationBatchRows, lastRenderMs,
             scrollTop: top, scrollLeft: left, width, height, lineHeight, columnWidth, verticalExtent: y.extent, horizontalExtent: x.extent,
             physicalHeight: y.physicalExtent, physicalWidth: x.physicalExtent }),
-        destroy: () => {
+        dispose: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
             inputOwner?.detach(); inputOwner = undefined;
             for (const stop of observationStops) stop();

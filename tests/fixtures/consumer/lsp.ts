@@ -32,8 +32,8 @@ let colorPlan: Readonly<{ document: DocumentSnapshot; edits: readonly TextEdit[]
 const notes: { hover?: string; navigation?: string; renameEdits?: number; actions?: number; resolved?: boolean; signature?: string; linkUri?: string; colorPresentations?: number; colorApplied?: boolean } = {};
 const command = (label: string, invoke: () => void | Promise<unknown>) => { const button = document.createElement("button"); button.textContent = label;
     button.onclick = () => { void Promise.resolve().then(invoke).catch(error => { result.textContent = String(error); }); }; document.getElementById("controls")!.append(button); };
-const stop = controller.state.subscribe(() => {
-    const state = controller.state.getSnapshot(); status.textContent = state.message;
+const stop = controller.subscribe(() => {
+    const state = controller.getSnapshot(); status.textContent = state.message;
     if (![state, state.diagnostics, state.choices, state.unversionedDiagnostics].every(Object.isFrozen)) throw new Error("Mutable public editor snapshot");
     choices.replaceChildren(...state.choices.map((label, index) => { const item = document.createElement("li"), button = document.createElement("button");
         button.textContent = label; button.onclick = () => controller.chooseCompletion(index, state.completionId); item.append(button); return item; }));
@@ -66,9 +66,9 @@ command("Apply color", () => { if (!colorPlan?.isCurrent()) throw new Error("Col
     if (!metadata.capabilities.edit.includes("host") || !metadata.capabilities.edit.includes("human") || metadata.editLock !== null) throw new Error("Color target unavailable");
     const applied = workspace.edit({ documentId: source.documentId, expectedRevision: colorPlan.document.revision, edits: colorPlan.edits, origin: "host", view: editor.view, history: { kind: "refactor" } });
     if (!applied.applied) throw new Error(applied.reason); notes.colorApplied = true; result.textContent = "Color applied"; });
-const dispose = () => { if (disposed) return; disposed = true; stop(); controller.destroy(); hover.dispose(); navigation.dispose(); rename.dispose(); actions.dispose(); signature.dispose(); links.dispose(); colors.dispose(); provider.dispose(); editor.destroy(); };
+const dispose = () => { if (disposed) return; disposed = true; stop(); controller.dispose(); hover.dispose(); navigation.dispose(); rename.dispose(); actions.dispose(); signature.dispose(); links.dispose(); colors.dispose(); provider.dispose(); editor.dispose(); };
 const bridge = { text, select: (at: number) => editor.view.setSelection(workspace.document(source.documentId).revision, { anchor: at, head: at }),
-    state: () => ({ provider: provider.snapshot(), editor: controller.snapshot(), completion: controller.state.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, companionResource: companion.id, metrics: editor.snapshot(), errors }),
+    state: () => ({ provider: provider.snapshot(), editor: controller.snapshot(), completion: controller.getSnapshot(), history: workspace.observeHistory(source.documentId).getSnapshot(), diagnostics: workspace.diagnostics(), notes, companion: companion.documentId, companionResource: companion.id, metrics: editor.snapshot(), errors }),
     custom: controller.customRequest, dispose };
 Object.assign(window, { publicLsp: bridge });
 declare global { interface Window { publicLsp: typeof bridge } }

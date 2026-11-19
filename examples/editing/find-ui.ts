@@ -5,7 +5,7 @@ import type { EditingPresentation } from "../shared/language/presentation.ts";
 
 export function mountFindUI(workspace: Workspace, tab: TabId, editor: TextEditor, presentation: EditingPresentation) {
     const owner = editor.element.ownerDocument;
-    const find = createFindController(workspace, tab, editor, { regularExpression: createRegexFindBackend({ clock: owner.defaultView!,
+    const find = createFindController(workspace, tab, editor, { regularExpressionBackend: createRegexFindBackend({ clock: owner.defaultView!,
         createWorker: () => new Worker("/regex-worker.js", { type: "module" }) }) }), listeners = new AbortController();
     const query = owner.getElementById("find-query") as HTMLInputElement, replacement = owner.getElementById("replacement") as HTMLInputElement;
     const wholeWord = owner.getElementById("find-whole-word") as HTMLInputElement;
@@ -13,7 +13,7 @@ export function mountFindUI(workspace: Workspace, tab: TabId, editor: TextEditor
     const regularExpression = owner.getElementById("find-regex") as HTMLInputElement;
     const controls = ["find-next", "find-previous", "replace-current", "replace-all"].map(id => owner.getElementById(id) as HTMLButtonElement);
     const render = () => {
-        const state = find.state.getSnapshot(), changed = presentation.search?.revision !== state.revision || presentation.search.version !== state.matchesVersion;
+        const state = find.getSnapshot(), changed = presentation.search?.revision !== state.revision || presentation.search.version !== state.matchesVersion;
         presentation.search = { revision: state.revision, version: state.matchesVersion, matchesIn: (from, to) => find.matchesIn(from, to, state) };
         owner.getElementById("find-status")!.textContent = state.message || (state.status === "searching" ? `Searching… ${state.count} matches` : `${state.count} matches · ${state.status}`);
         for (const control of controls) control.disabled = !state.count || !(state.status === "ready" || control.id !== "replace-all" && state.status === "searching" && state.retained);
@@ -21,7 +21,7 @@ export function mountFindUI(workspace: Workspace, tab: TabId, editor: TextEditor
         if (changed) editor.viewport.invalidate();
     };
     query.addEventListener("input", () => find.setQuery(query.value), { signal: listeners.signal });
-    const optionsChanged = () => find.setOptions({ wholeWord: wholeWord.checked, matchCase: matchCase.checked, regularExpression: regularExpression.checked });
+    const optionsChanged = () => find.setFlags({ wholeWord: wholeWord.checked, matchCase: matchCase.checked, regularExpression: regularExpression.checked });
     wholeWord.addEventListener("change", optionsChanged, { signal: listeners.signal });
     matchCase.addEventListener("change", optionsChanged, { signal: listeners.signal });
     regularExpression.addEventListener("change", optionsChanged, { signal: listeners.signal });
@@ -36,10 +36,10 @@ export function mountFindUI(workspace: Workspace, tab: TabId, editor: TextEditor
     on("replace-all", () => find.replaceAll(replacement.value)); on("find-cancel", find.cancel);
     editor.element.addEventListener("keydown", event => {
         if ((event.ctrlKey || event.metaKey) && !event.altKey && ["f", "h"].includes(event.key.toLowerCase())) {
-            event.preventDefault(); if (find.state.getSnapshot().status === "cancelled") find.setQuery(query.value);
+            event.preventDefault(); if (find.getSnapshot().status === "cancelled") find.setQuery(query.value);
             const field = event.key.toLowerCase() === "h" ? replacement : query; field.focus(); field.select();
         } else if (event.key === "F3") { event.preventDefault(); find.next(event.shiftKey ? -1 : 1); }
     }, { signal: listeners.signal });
-    const unsubscribe = find.state.subscribe(render); render();
-    return { find, destroy: () => { listeners.abort(); unsubscribe(); find.destroy(); presentation.search = undefined; } };
+    const unsubscribe = find.subscribe(render); render();
+    return { find, dispose: () => { listeners.abort(); unsubscribe(); find.dispose(); presentation.search = undefined; } };
 }

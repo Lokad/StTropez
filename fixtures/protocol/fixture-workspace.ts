@@ -65,7 +65,7 @@ export class FixtureLspWorkspace extends LspWorkspace {
             requestCommand: (command, args, timeout, authorization) => this.sendCommand(command, take(commandKey(command)),
                 () => scope.requestCommand(command, args, timeout, authorization)),
             cancel: () => { pending = undefined; scope.cancel(); },
-            release: () => { pending = undefined; this.preparations.delete(wrapped); scope.release(); },
+            release: () => { pending = undefined; this.preparations.delete(wrapped); scope.dispose(); },
         });
         this.preparations.set(wrapped, (method, policy, replacePending) => {
             // Only the latest-intent owner may replace an abandoned policy for the same method.

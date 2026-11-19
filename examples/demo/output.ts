@@ -3,7 +3,7 @@ import { mountTextViewport } from "../../src/browser/index.ts";
 import type { TextViewport } from "../../src/browser/index.ts";
 
 /** Generated output uses the same bounded public view as source; it owns no editing history. */
-export function mountDemoOutput(host: HTMLElement, text: string): Readonly<{ update: (text: string) => void; snapshot: TextViewport["snapshot"]; destroy: () => void }> {
+export function mountDemoOutput(host: HTMLElement, text: string): Readonly<{ update: (text: string) => void; snapshot: TextViewport["snapshot"]; dispose: () => void }> {
     const workspace = new Workspace();
     const resource = workspace.createTextResource({ scope: "demo-output", resource: "javascript", variant: "generated" }, "JavaScript output",
         { value: text }, { edit: [], save: false, run: false });
@@ -20,8 +20,8 @@ export function mountDemoOutput(host: HTMLElement, text: string): Readonly<{ upd
         viewport.restoreView({ anchor: 0, head: 0, scrollTop: state.scrollTop, scrollLeft: state.scrollLeft,
             ...(anchor ? { verticalAnchor: { revision: current.revision,
                 offset: current.buffer.offsetAt(Math.min(line, current.buffer.lineCount - 1)), topRemainder: anchor.topRemainder } } : {}) });
-    }, destroy: () => {
+    }, dispose: () => {
         if (disposed) return;
-        disposed = true; viewport.destroy(); workspace.close(tab); workspace.releaseResource(resource.id);
+        disposed = true; viewport.dispose(); workspace.close(tab); workspace.releaseResource(resource.id);
     } });
 }

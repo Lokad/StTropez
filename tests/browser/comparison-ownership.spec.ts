@@ -42,12 +42,12 @@ test("independent comparison modules share workspace identity and release retain
         });
         one.controller.beginRefresh().complete({ buffer: TextBuffer.from("new baseline"), version: "two" });
         while (one.controller.getSnapshot().status === "running") one.controller.advance();
-        const retiredRejected = !one.state.getSnapshot().canNavigate && !one.selectHunk(one.controller.getSnapshot().generation, 0);
+        const retiredRejected = !one.getSnapshot().canNavigate && !one.selectHunk(one.controller.getSnapshot().generation, 0);
         await changed;
         const afterRefresh = { old: old.getSnapshot().state, text: workspace.document(old.documentId).text(), oldEditorDisposed: oldEditor.snapshot().disposed,
-            retiredRejected, currentReady: one.state.getSnapshot().canNavigate };
+            retiredRejected, currentReady: one.getSnapshot().canNavigate };
         const current = workspace.resourceForDocument(one.referenceEditor()!.view.documentId), currentLease = workspace.acquire(current.id);
-        one.destroy(); one.destroy(); two.destroy(); stopInventory();
+        one.dispose(); one.dispose(); two.dispose(); stopInventory();
         const afterDestroy = { children: host.childElementCount, controllers: [one.controller.getSnapshot().status, two.controller.getSnapshot().status],
             leases: workspace.diagnostics().leases, views: workspace.diagnostics().views, subscriptions: workspace.diagnostics().subscriptions,
             retained: [old.getSnapshot().state, current.getSnapshot().state] };
@@ -104,11 +104,14 @@ test("browser comparison work yields with large requested budgets and cancels it
                     now = calls = work = 0;
                     const queued = tasks.entries().next().value; if (!queued) throw new Error("Missing comparison work.");
                     tasks.delete(queued[0]); queued[1]();
-                    const pending = tasks.size, measured = mounted.snapshot(), prior = calls; mounted.destroy();
+                    const pending = tasks.size, measured = mounted.getDiagnostics(), prior = calls; mounted.dispose();
+                    const terminal = mounted.getDiagnostics();
+                    if (terminal.maxStepMs !== measured.maxStepMs || terminal.totalStepMs !== measured.totalStepMs || !mounted.getSnapshot().disposed)
+                        throw new Error("Disposal lost comparison measurements or terminal presentation state.");
                     for (const run of tasks.values()) run();
                     results.push({ requested: requested ?? null, clockRate, calls, elapsed: measured.maxStepMs, work, pending,
                         cancelled: tasks.size === 0 && calls === prior && workspace.diagnostics().leases === 0 && workspace.diagnostics().subscriptions === 0 });
-                } finally { mounted.destroy(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+                } finally { mounted.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
             }
         } finally {
             window.setTimeout = timeout; window.clearTimeout = clear; TextDiff.prototype.next = next;
@@ -149,7 +152,7 @@ test("review highlights survive every typing paint while exact comparison work i
             capture: () => { const s = mounted.controller.getSnapshot(); return { status: s.status, revision: s.working!.revision, hunks: s.hunks.length, paints,
                 staleRevert: mounted.controller.revert(exact.generation, 0), currentRevert: mounted.controller.revert(s.generation, 0) }; },
             release: () => { TextDiff.prototype.next = next; },
-            dispose: () => { TextDiff.prototype.next = next; mounted.destroy(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); },
+            dispose: () => { TextDiff.prototype.next = next; mounted.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); },
         };
     });
     try {

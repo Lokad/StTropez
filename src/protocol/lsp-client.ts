@@ -29,9 +29,9 @@ export function createLspClient(provider: LspWorkspace) {
         notificationQueued = true;
         void Promise.resolve().then(() => { if (!disposed && notificationQueued) notify(); });
     };
-    const stop = scope.state.subscribe(notify);
+    const stop = scope.subscribe(notify);
     const release = () => {
-        for (const document of documents.values()) document.close();
+        for (const document of documents.values()) document.dispose();
         documents = new Map();
     };
     const invalidate = (releaseDocuments: boolean) => {
@@ -77,7 +77,7 @@ export function createLspClient(provider: LspWorkspace) {
             op.identities = new Map([...documents.values()].map(document => [document, document.getSnapshot()]));
             const target = documents.get(origin);
             if (!target) throw new Error("LSP source is outside the captured project.");
-            const connection = scope.state.getSnapshot();
+            const connection = scope.getSnapshot();
             if (connection.phase === "disconnected" && connection.epoch !== 0) throw closedConnection("LSP connection requires an explicit host connect or reconnect.");
             await scope.ensureConnected();
             validate(op);
@@ -99,15 +99,15 @@ export function createLspClient(provider: LspWorkspace) {
             })() : scope.requestDocument(method, target, (_index, _document, value) => captureParams(value));
             const response = await call.result;
             validate(op);
-            const isGenerationCurrent = () => current(op) && scope.state.getSnapshot().phase === "ready"
-                && scope.state.getSnapshot().epoch === capture!.epoch && scope.state.getSnapshot().registrationGeneration === capture!.registrationGeneration;
+            const isGenerationCurrent = () => current(op) && scope.getSnapshot().phase === "ready"
+                && scope.getSnapshot().epoch === capture!.epoch && scope.getSnapshot().registrationGeneration === capture!.registrationGeneration;
             const targets = createLspTargets(captures!, scope.resolveTarget, { source: capture!.document, isCurrent: isGenerationCurrent, reportError: scope.reportError,
                 onCancel: listener => { op.cleanups.add(listener); return () => { op.cleanups.delete(listener); }; } });
             const isCurrent = targets.isCurrent;
             if (!isCurrent()) throw stale();
             return Object.freeze({ response, capture: capture!, captures: captures!, target, isCurrent, isGenerationCurrent, targetForUri: targets.get,
                 resolveTargets: (uris: readonly string[], purpose: LspTargetContext["purpose"]) => wait(op, async () => {
-                    const stop = scope.state.subscribe(() => { if (!isCurrent()) void Promise.resolve().then(() => {
+                    const stop = scope.subscribe(() => { if (!isCurrent()) void Promise.resolve().then(() => {
                         if (current(op) && !isCurrent()) { invalidate(true); notify(); }
                     }); });
                     try { await targets.resolve(uris, purpose); validate(op); if (!isCurrent()) throw stale(); }
@@ -150,7 +150,7 @@ export function createLspClient(provider: LspWorkspace) {
             else { op.cancelled = true; op.reject(cancelled()); }
         } });
     };
-    return Object.freeze({ scope, request, notify, state: provider.state,
+    return Object.freeze({ scope, request, notify, getSnapshot: scope.getSnapshot,
         subscribe: (listener: () => void) => {
             if (disposed) throw new Error("LSP feature client is disposed.");
             listeners.add(listener);
@@ -161,7 +161,7 @@ export function createLspClient(provider: LspWorkspace) {
             return provider.queryFeatureOptions(method, document);
         },
         isBusy: () => (latest?.pending ?? 0) > 0,
-        snapshot: () => Object.freeze({ connected: scope.state.getSnapshot().phase === "ready", disposed, protocol: scope.snapshotOwnership() }),
+        snapshot: () => Object.freeze({ connected: scope.getSnapshot().phase === "ready", disposed, protocol: scope.snapshotOwnership() }),
         inspection: () => Object.freeze({ sequence: generation, documents: Object.freeze([...documents.values()].flatMap(document => {
                 const capture = scope.synchronized(document);
                 return capture ? [Object.freeze({ document: capture.document.documentId, revision: capture.document.revision, length: capture.document.buffer.length })] : [];
@@ -172,7 +172,7 @@ export function createLspClient(provider: LspWorkspace) {
             disposed = true;
             invalidate(true);
             stop();
-            scope.release();
+            scope.dispose();
             listeners.clear();
         } });
 }
@@ -180,7 +180,7 @@ export function createLspClient(provider: LspWorkspace) {
 /** Common public controls over the existing request owner; feature state stays with its client. */
 export function lspFeatureHandle<Method extends LspDocumentFeature>(client: ReturnType<typeof createLspClient>,
     methods: readonly [Method, ...Method[]], controls: Partial<Pick<ReturnType<typeof createLspClient>, "isBusy" | "cancel" | "dispose">> = {}) {
-    return Object.freeze({ state: client.state, subscribe: client.subscribe, snapshot: client.snapshot,
+    return Object.freeze({ getSnapshot: client.getSnapshot, subscribe: client.subscribe, snapshot: client.snapshot,
         isBusy: controls.isBusy ?? client.isBusy, cancel: controls.cancel ?? client.cancel, dispose: controls.dispose ?? client.dispose,
         options: (document: DocumentSnapshot, method: Method = methods[0]) => {
             if (!methods.includes(method)) throw new TypeError("Method is outside this LSP feature client.");

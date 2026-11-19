@@ -24,7 +24,7 @@ import type { InstructionViewState } from "./instruction-widget.ts";
 export type HostEditor = "native" | "candidate";
 export type NativeEditorMount = (host: HTMLElement, workspace: Workspace, tabId: TabId,
     options: Readonly<{ ariaLabel?: string; view?: DocumentView }>) => Readonly<{ element: HTMLTextAreaElement; view: DocumentView;
-        captureView: () => ViewState; restoreView: (state: ViewState) => void; destroy: () => void }>;
+        captureView: () => ViewState; restoreView: (state: ViewState) => void; dispose: () => void }>;
 type BoundEditor = ReturnType<NativeEditorMount> & Readonly<{ metrics: () => null | ReturnType<TextEditor["snapshot"]> & Readonly<{ viewport: ViewportSnapshot }> }>;
 type ViewTool = Readonly<{ attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void }>;
 export function hostEditor(): HostEditor { return new URLSearchParams(location.search).get("editor") === "candidate" ? "candidate" : "native"; }
@@ -73,8 +73,9 @@ export class ViewBindings {
         for (const ticket of this.reviewTickets.splice(0)) ticket.cancel();
         for (const { ticket } of this.discardTickets.splice(0)) ticket.cancel();
         if (this.review) {
-            this.reviewScrollLinked = this.review.snapshot().scrollLinked;
-            this.reviewRowsAligned = this.review.snapshot().rowsAligned;
+            const review = this.review.getSnapshot();
+            this.reviewScrollLinked = review.scrollLinked;
+            this.reviewRowsAligned = review.alignment.enabled;
             const baseline = this.review.controller.getSnapshot().baseline, reference = this.review.referenceEditor();
             if (baseline && reference) this.referenceState = { baseline, state: reference.captureView() };
             if (this.review.controller.getSnapshot().working) this.retainState("comparison", this.review.working.view.documentId, this.review.working.captureView());
@@ -96,7 +97,7 @@ export class ViewBindings {
             const review = mountTextComparison(host, this.controller.workspace, this.controller.viewTab("primary"),
                 baseline, { ariaLabel: "Source review", view, scrollLinked: this.reviewScrollLinked, rowsAligned: this.reviewRowsAligned, workingDecorate: presentation.decorate, baselineDecorate: referencePresentation.decorate });
             this.review = review;
-            scope.defer(() => { if (this.review === review) this.review = undefined; review.destroy(); });
+            scope.defer(() => { if (this.review === review) this.review = undefined; review.dispose(); });
             const saveTarget = this.controller.workspace.captureTab(this.controller.viewTab("primary"));
             this.attachTools(scope, "comparison", this.controller.viewTab("primary"), review.working, presentation);
             scope.defer(() => referencePresentation.clear());
@@ -313,10 +314,10 @@ export class ViewBindings {
                 if (surface !== host) { surface.className = "host-instruction-source"; host.append(surface); scope.defer(() => surface.remove()); }
                 const candidate = this.editor === "candidate" ? mountTextEditor(surface, workspace, tabId, { ariaLabel, view, decorate: presentation.decorate }) : undefined;
                 const mounted: BoundEditor = candidate ? { element: candidate.input, view, captureView: candidate.captureView,
-                    restoreView: candidate.restoreView, destroy: candidate.destroy,
+                    restoreView: candidate.restoreView, dispose: candidate.dispose,
                     metrics: () => ({ ...candidate.snapshot(), viewport: candidate.viewport.snapshot() }) }
                     : { ...this.mountNative!(host, workspace, tabId, { ariaLabel, view }), metrics: () => null };
-                scope.defer(mounted.destroy);
+                scope.defer(mounted.dispose);
                 const lane = surface !== host ? host.ownerDocument.createElement("div") : undefined;
                 if (lane) { lane.className = "host-instruction-lane"; lane.hidden = true; host.append(lane); scope.defer(() => lane.remove()); }
                 const instruction = lane && candidate ? mountInstructionWidget(host, lane, candidate, this.controller, tabId, this.instructionMemory) : undefined;
@@ -327,7 +328,7 @@ export class ViewBindings {
                 if (candidate) this.attachTools(scope, id, tabId, candidate, presentation);
                 mounted.element.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
                 this.bindSaveShortcut(mounted.element, tabId, () => candidate?.activity().composing ?? false, listeners.signal);
-                const editor: BoundEditor = { ...mounted, destroy: scope.dispose };
+                const editor: BoundEditor = { ...mounted, dispose: scope.dispose };
                 const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView(this.restoreState(state, view));
                 this.mounted.set(id, { editor, documentId, candidate }); this.mounts++;
             } catch (error) { scope.rollback(error); }
@@ -339,7 +340,7 @@ export class ViewBindings {
     private detach(id: string): void {
         const mounted = this.mounted.get(id); if (!mounted) return;
         this.retainState(id, mounted.documentId, mounted.editor.captureView());
-        try { mounted.editor.destroy(); }
+        try { mounted.editor.dispose(); }
         finally { this.mounted.delete(id); this.destroys++; this.controller.collectLoadedDocument(); }
     }
     readonly anchorInstruction = (): void => {
@@ -376,7 +377,7 @@ export class ViewBindings {
             viewId: this.review!.working.view.id, foldGeneration: this.review!.working.view.folding.getSnapshot().generation, selection: this.review!.working.view.getSnapshot().selection, selectionSet: this.review!.working.view.getSnapshot().selectionSet,
             baseline: comparison.baseline && { version: comparison.baseline.version, epoch: comparison.baseline.epoch, length: comparison.baseline.buffer.length, exports: comparison.baseline.buffer.readMetrics().textExports },
             hunks: comparison.hunks.length, pending: this.reviewTickets.map(ticket => ({ kind: ticket.kind, revision: ticket.capture.working.revision, current: ticket.isCurrent() })),
-            result: this.reviewResult, work: this.review!.snapshot(), input: this.review!.working.snapshot(), referenceInput: this.review!.referenceEditor()?.snapshot() ?? null,
+            result: this.reviewResult, work: this.review!.getDiagnostics(), input: this.review!.working.snapshot(), referenceInput: this.review!.referenceEditor()?.snapshot() ?? null,
             discards: this.discardTickets.map(({ ticket, variantGeneration }) => ({ revision: ticket.capture.working.revision, current: ticket.isCurrent() && this.controller.variants.state.getSnapshot().generation === variantGeneration })),
             workingViewport: this.review!.working.viewport.snapshot(), referenceViewport: this.review!.referenceViewport()?.snapshot() } : null,
         views: [...this.mounted].map(([id, { editor, documentId }]) => ({ id, documentId, viewId: editor.view.id, foldGeneration: editor.view.folding.getSnapshot().generation,

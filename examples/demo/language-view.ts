@@ -13,7 +13,7 @@ import { CleanupScope } from "../shared/cleanup-scope.ts";
 export function mountDemoLanguage(workspace: Workspace, files: () => readonly DemoFile[], file: DemoFile, editor: TextEditor, language: DemoLanguage,
     open: (target: DemoSymbolTarget) => void, reportError: (error: unknown) => void) {
     const scope = new CleanupScope(); let disposed = false;
-    const destroy = () => { disposed = true; scope.dispose(); };
+    const dispose = () => { disposed = true; scope.dispose(); };
     try {
         const target = workspace.captureTab(file.tab), listeners = new AbortController();
         scope.defer(() => listeners.abort());
@@ -33,7 +33,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
         let highlights: LspHighlightController | undefined;
         const valid = () => !disposed && editor.element.isConnected && !editor.activity().disposed && workspace.resolveTab(target)?.surface.kind === "text";
         const render = () => {
-            const state = controller?.state.getSnapshot();
+            const state = controller?.getSnapshot();
             const snippet = state?.snippet; snippetPanel.hidden = !valid() || !snippet;
             if (snippet && !snippetPanel.hidden && renderedSnippet !== snippet.id) {
                 renderedSnippet = snippet.id;
@@ -41,7 +41,7 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
                 const button = (label: string, action: () => void) => { const node = document.createElement("button"); node.type = "button"; node.textContent = label; node.addEventListener("click", action); return node; };
                 snippetPanel.replaceChildren(label, ...snippet.choices.map((value, index) => {
                     const node = button(value || "Empty value", () => controller?.chooseSnippet(index, snippet.id)); node.setAttribute("aria-pressed", String(index === snippet.choiceIndex)); return node;
-                }), button("Previous field", () => controller?.moveSnippet(-1, snippet.id)), button("Next field", () => controller?.moveSnippet(1, snippet.id)), button("Finish snippet", () => { if (controller?.state.getSnapshot().snippet?.id === snippet.id) controller.cancel(); }));
+                }), button("Previous field", () => controller?.moveSnippet(-1, snippet.id)), button("Next field", () => controller?.moveSnippet(1, snippet.id)), button("Finish snippet", () => { if (controller?.getSnapshot().snippet?.id === snippet.id) controller.cancel(); }));
             }
             popup.hidden = !valid() || !state?.choices.length || state.offerText === null;
             if (!state || popup.hidden) return;
@@ -77,15 +77,15 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
             if (!valid()) return;
             try {
                 controller = createLspEditor(workspace, file.tab, editor, { provider, autoConnect: false, filterManualCompletions: true, canCapture: valid });
-                scope.defer(() => controller!.destroy());
+                scope.defer(() => controller!.dispose());
                 highlights = createLspHighlightController(workspace, file.tab, editor, { provider });
                 scope.defer(() => highlights!.dispose());
-                scope.defer(highlights.state.subscribe(() => editor.viewport.invalidate()));
-                inspection = mountDemoInspection(scope, workspace, file, editor, provider, valid, () => !!controller?.state.getSnapshot().choices.length || !!symbols?.isOpen() || !!actions?.isOpen(),
+                scope.defer(highlights.subscribe(() => editor.viewport.invalidate()));
+                inspection = mountDemoInspection(scope, workspace, file, editor, provider, valid, () => !!controller?.getSnapshot().choices.length || !!symbols?.isOpen() || !!actions?.isOpen(),
                     () => controller?.cancel(), () => { symbols?.dismiss(); actions?.dismiss(); });
                 symbols = mountDemoSymbols(scope, workspace, files, file, editor, provider, valid, () => { controller?.cancel(); inspection?.dismiss(); actions?.dismiss(); }, open);
                 actions = mountDemoActions(scope, workspace, file, editor, provider, language, valid, () => { controller?.cancel(); inspection?.dismiss(); symbols?.dismiss(); });
-                scope.defer(controller.state.subscribe(render)); controller.connect(); render();
+                scope.defer(controller.subscribe(render)); controller.connect(); render();
             } catch (error) {
                 disposed = true;
                 try { scope.rollback(error); } catch (failure) { reportError(failure); }
@@ -95,10 +95,10 @@ export function mountDemoLanguage(workspace: Workspace, files: () => readonly De
             definition: () => symbols?.definition(), references: () => symbols?.references(), rename: () => symbols?.rename(),
             quickfix: () => actions?.request(),
             decorate: (line: PresentedLine): readonly InlineDecoration[] => {
-                const state = highlights?.state.getSnapshot();
+                const state = highlights?.getSnapshot();
                 if (!valid() || state?.documentId !== line.documentId || state.revision !== line.revision) return [];
                 return highlights!.intersect(line.from, line.to).map(item => ({ from: item.from, to: item.to, className: `demo-occurrence-${item.kind}` }));
             },
-            destroy });
+            dispose });
     } catch (error) { disposed = true; return scope.rollback(error); }
 }

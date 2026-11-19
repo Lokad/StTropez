@@ -164,6 +164,6 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
             if (!point || !set.ranges.some(range => range.anchor !== range.head && point.offset >= Math.min(range.anchor, range.head) && point.offset <= Math.max(range.anchor, range.head))) return false;
             armed = { revision: state.revision, selectionSet: set, pointer: event.pointerId, offset: point.offset, affinity: point.affinity }; root.draggable = true; return true;
         },
-        destroy: () => { if (disposed) return; disposed = true; invalidateSource(); finish(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); },
+        dispose: () => { if (disposed) return; disposed = true; invalidateSource(); finish(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); },
     });
 }

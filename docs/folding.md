@@ -26,9 +26,9 @@ export function attachFolding(
 }
 ```
 
-Render controls from the returned `FoldingController.state` observable. Invoke
+Render controls from the returned `FoldingController` using `getSnapshot()` and `subscribe()`. Invoke
 `runCommand("collapse-all", "regions")` to collapse a group, `refresh()` when host discovery
-policy changes, and `dispose()` before destroying the editor.
+policy changes, and `dispose()` before disposing the editor.
 
 A host with its own captured outline can publish directly through `DocumentView.folding`:
 

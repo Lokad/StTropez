@@ -26,7 +26,7 @@ function load(id: CorpusId) {
     Object.values(views).forEach(view => { view.view.setSelection(workspace.document(source.documentId).revision, { anchor: 0, head: 0 }); view.scrollTo({ top: 0, left: 0 }); });
 }
 function toggleNative() {
-    if (native) { native.destroy(); native = undefined; pane("native-host").hidden = true; }
+    if (native) { native.dispose(); native = undefined; pane("native-host").hidden = true; }
     else { pane("native-host").hidden = false; native = mountTextareaEditor(pane("native-host"), workspace, primaryTab, { ariaLabel: "Native text control" }); }
 }
 function background(active: boolean) {
@@ -64,8 +64,8 @@ const fixture = { ready: true, load, edit, background,
             primary: views.primary.snapshot(), secondary: views.secondary.snapshot(), diagnostics: workspace.diagnostics(), ticks, native: native !== undefined, disposed };
     },
     dispose: () => {
-        if (disposed) return; disposed = true; background(false); unsubscribe(); listeners.abort(); native?.destroy(); native = undefined;
-        Object.values(views).forEach(view => view.destroy());
+        if (disposed) return; disposed = true; background(false); unsubscribe(); listeners.abort(); native?.dispose(); native = undefined;
+        Object.values(views).forEach(view => view.dispose());
         for (const tab of workspace.tabState.getSnapshot()) workspace.close(tab.id);
         workspace.releaseResource(source.id, true); workspace.releaseResource(progress.id, true);
     } };

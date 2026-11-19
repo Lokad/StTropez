@@ -22,7 +22,7 @@ export function showChanges(
         ariaLabel: "Review changes",
         rowsAligned: true
     };
-    return mountTextComparison(host, workspace, tab, reference, options); // Call destroy() when the review attachment ends.
+    return mountTextComparison(host, workspace, tab, reference, options); // Call dispose() when the review attachment ends.
 }
 ```
 
@@ -38,12 +38,12 @@ comparison's DOM subtree and use the same observable state and commands as the d
 import type { TextComparison } from "sttropez/browser";
 
 export function bindRestoreButton(button: HTMLButtonElement, review: TextComparison) {
-    const render = () => { button.disabled = !review.state.getSnapshot().canRevert; };
+    const render = () => { button.disabled = !review.getSnapshot().canRevert; };
     const restore = () => {
-        const state = review.state.getSnapshot();
+        const state = review.getSnapshot();
         if (state.selectedHunk !== null) review.revertHunk(state.comparison.generation, state.selectedHunk);
     };
-    const stop = review.state.subscribe(render);
+    const stop = review.subscribe(render);
     button.addEventListener("click", restore); render();
     return () => { stop(); button.removeEventListener("click", restore); };
 }
@@ -76,7 +76,7 @@ for display while that work runs. An unknown revision gap or reference replaceme
 provisional hunks. Only a ready result authorizes hunk navigation and reversion. Completion
 replaces the provisional presentation atomically; progress alone does not repaint decorations.
 
-`TextComparison.state` is a stable observable of immutable `TextComparisonSnapshot` values.
+`TextComparison` is a stable observable of immutable `TextComparisonSnapshot` values.
 Its `comparison` field is the controller's current snapshot; `selectedHunk` is an index into that
 snapshot's hunks or `null`. Selection clears as soon as the comparison generation changes.
 `canNavigate` and `canRevert` describe current command availability, including pane readiness,
@@ -310,8 +310,9 @@ descents and unproved leaves. Text reads and line alignment retain their separat
 Cached first-row lengths or known hashes can reject equality before an edge proof; each probe
 charges one work unit. Matching hashes never establish text equality.
 Work budgets bound cooperative work units, not elapsed time. Allocation, publication, rendering
-and individual batches can exceed a scheduling target. Browser `snapshot()` exposes work and
-presentation state; the [clock glossary](README.md#glossary) defines its advance-loop timings.
+and individual batches can exceed a scheduling target. Browser `getDiagnostics()` returns the measured generation, advance count and task timings,
+including after disposal. Read presentation state with `getSnapshot()` and observe it with `subscribe()`.
+The [clock glossary](README.md#glossary) defines its advance-loop timings.
 A headless controller requires explicit `advance()` calls until ready; the browser mount
 schedules them automatically. Mutating commands run outside workspace notification callbacks.
 
@@ -422,7 +423,7 @@ work. Disabling either feature releases its subscriptions and pending work indep
 The active features share pane render/fold observation; disabling both releases that optional
 observation. Reference replacement detaches the old pane before disposal and binds the new pane
 once. Composition and reference focus handling follow the pane's lifetime.
-Only the visible row window creates DOM. `snapshot()` exposes `scrollLinked`, `pendingScroll`, `rowsAligned`
+Only the visible row window creates DOM. `getDiagnostics()` exposes `scrollLinked`, `pendingScroll`, `rowsAligned`
 and alignment phase/work/failure; controller readiness alone does not establish settled panes.
 
 ## Host responsibilities
@@ -431,7 +432,7 @@ Own reference retrieval, acceptance/discard confirmation, transport failures, Sa
 provider/search attachments and view-state storage. Guard host composition and any newer version
 selection intent across delayed confirmations. Capture the working resource explicitly for host
 commands invoked from the reference or surrounding controls. Dispose subscriptions and tickets
-with their owners. Call `destroy()` for a browser comparison or `dispose()` for a headless
+with their owners. Call `dispose()` for a browser comparison or `dispose()` for a headless
 controller; then release host-owned views/resources at their own lifetime boundary.
 
 ## Not covered

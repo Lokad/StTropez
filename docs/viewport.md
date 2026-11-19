@@ -22,7 +22,7 @@ export function showPreview(host: HTMLElement, workspace: Workspace, tab: TabId)
     };
     const viewport = mountTextViewport(host, workspace, tab, options);
     viewport.revealOffset(0, { horizontal: "nearest", vertical: "nearest" });
-    return viewport; // Call destroy() when the host detaches this projection.
+    return viewport; // Call dispose() when the host detaches this projection.
 }
 ```
 
@@ -155,7 +155,7 @@ geometry. Read-only projection does not supply an editable input surface.
 
 Own the surrounding layout, CSS, fonts, resource lifetime and decoration policy. Keep DOM
 owned by the viewport separate from host controls. Reuse a supplied view when its selections
-and folds should outlive a DOM mount; retain scroll captures separately. Call `destroy()` to
+and folds should outlive a DOM mount; retain scroll captures separately. Call `dispose()` to
 cancel frames, disconnect observers, release subscriptions/listeners and remove viewport DOM,
 then release any host-owned view and resource when their lifetimes end.
 

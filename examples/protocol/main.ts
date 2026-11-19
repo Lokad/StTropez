@@ -44,9 +44,9 @@ function openingSession(endpoint: string) {
         return opening.finally(stop);
     } });
     session.bindDocument({ uri: "fixture:opening", languageId: "fixture", resourceId: "opening", documentId: "working", revision: 0, buffer: TextBuffer.from("local text") });
-    session.state.subscribe(() => {});
+    session.subscribe(() => {});
     const cancelled = session.connect().then(() => false, error => error instanceof RpcError && error.code === -32097);
-    const snapshot = () => ({ phase: session.state.getSnapshot().phase, ownership: session.snapshotOwnership(), timers: timers.size });
+    const snapshot = () => ({ phase: session.getSnapshot().phase, ownership: session.snapshotOwnership(), timers: timers.size });
     return { snapshot, async dispose() {
         session.dispose();
         return { cancelled: await cancelled, transportCancelled: await transportCancelled, ...snapshot() };
@@ -95,11 +95,11 @@ async function sessionJourney(large: boolean) {
         await session.request("fixture/unregister", { unregisterations: [{ id: "hover", method: "textDocument/hover" }] }).result;
         const withdrawn = !session.canRequest("textDocument/hover", document), custom = await session.request("fixture/roundtrip", { uri, extension: "host-owned" }).result;
         const hold = session.request("fixture/hold", {}), rejected = hold.result.then(() => false, () => true);
-        const disconnected = new Promise<void>(resolve => { const stop = session.state.subscribe(() => { if (session.state.getSnapshot().phase === "disconnected") { stop(); resolve(); } }); });
+        const disconnected = new Promise<void>(resolve => { const stop = session.subscribe(() => { if (session.getSnapshot().phase === "disconnected") { stop(); resolve(); } }); });
         session.notify("fixture/disconnect"); await rejected; await disconnected;
         const offline = next.replace(0, 0, "offline\r\n"); document.update(107, 110, offline); await session.connect();
         const reopened = await session.request("fixture/document", { uri, from: 0, to: 20 }).result;
-        const fresh = session.state.getSnapshot().registrations.length === 0 && !session.canRequest("textDocument/hover", document);
+        const fresh = session.getSnapshot().registrations.length === 0 && !session.canRequest("textDocument/hover", document);
         await session.shutdown(); session.dispose();
         return { uri, length: next.length, expectedSample: next.slice(Math.max(0, from - 8), Math.min(next.length, from + 14)), remote, boundedReads, sent, tail,
             expectedTail: large ? next.slice(far + 3, far + 20) : null, available, hover, withdrawn, custom, fresh, reopened,

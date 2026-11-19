@@ -15,5 +15,5 @@ export function createLspNavigationClient(provider: LspWorkspace) {
             const locations = value.decode(() => decodeLspLocations(value.response, kind, value.capture, value.targetForUri));
             return Object.freeze({ locations, isCurrent: value.isCurrent });
         },
-        snapshot: () => Object.freeze({ ...client.snapshot(), ...client.inspection(), busy: client.isBusy(), version: "LSP3.17", epoch: provider.state.getSnapshot().epoch }) });
+        snapshot: () => Object.freeze({ ...client.snapshot(), ...client.inspection(), busy: client.isBusy(), version: "LSP3.17", epoch: provider.getSnapshot().epoch }) });
 }

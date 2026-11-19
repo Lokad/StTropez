@@ -19,7 +19,6 @@ export type RenameNote = Readonly<{ ordinal: number; document: string; resource:
 export type RenameSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied";
     message: string; name: string; symbol: string; token: number | null; canApply: boolean; work: number; total: number; count: number; page: number; locations: readonly RenameNote[];
     changes: readonly Readonly<{ document: DocumentId; title: string }>[] }>;
-let sessionSerial = 0;
 /** Captured provider or lexical previews share host authority guards and atomic workspace history. */
 export class HostRenameTools {
     private readonly workspace: Workspace;
@@ -116,7 +115,7 @@ export class HostRenameTools {
         }, { signal: events.signal });
     };
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const s: Session = { token: ++sessionSerial, id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
+        const s: Session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
         editor.input.addEventListener("keydown", event => {
             if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;

@@ -7,11 +7,11 @@ import type { ComparisonPanes } from "./comparison-panes.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 type Capture = { state: ComparisonSnapshot; reference: MountedTextEditor; a: FoldingSnapshot; b: FoldingSnapshot };
 export type ComparisonAlignmentSnapshot = Readonly<{ enabled: boolean; status: "idle" | "building" | "waiting" | "ready" | "failed"; pending: boolean; work: number; runs: number; failure: string | undefined }>;
-let serial = 0;
 
 /** Cooperative, view-only publication against one immutable comparison/fold capture. */
 export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
     getComparison: () => ComparisonSnapshot, changed: () => void, referenceBusy: () => boolean) {
+    let serial = 0;
     const workingMount = panes.working, working = workingMount.editor, reference = panes.reference, runner = createCooperativeRunner(win);
     let enabled = false, disposed = false, scheduled = false, cursor: ComparisonRowsCursor | undefined, capture: Capture | undefined, result: ComparisonRows | undefined;
     let status: "idle" | "building" | "waiting" | "ready" | "failed" = "idle", failure: string | undefined, work = 0, installedPitch = 0;

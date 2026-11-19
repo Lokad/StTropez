@@ -127,7 +127,7 @@ export function createFoldingController(workspace: Workspace, tabId: TabId, edit
         if (command && runCommand(command)) event.preventDefault();
     }, { capture: true, signal: listeners.signal });
     refresh();
-    return Object.freeze({ state: cell.observable, refresh: () => { notifications.assertWritable(); refresh(); }, runCommand, dispose: () => {
+    return Object.freeze({ ...cell.observable, refresh: () => { notifications.assertWritable(); refresh(); }, runCommand, dispose: () => {
         if (disposed) return; notifications.assertWritable(); disposed = true; cancel(); listeners.abort(); stopDocument(); stopTab(); stopFolds(); publish("disposed");
     } });
 }

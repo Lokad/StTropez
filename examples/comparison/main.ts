@@ -23,7 +23,7 @@ function finish(kind: "refresh" | "accept", newest = false) {
 }
 function history(direction: "undo" | "redo") { const current = workspace.document(resource.documentId); workspace[direction]({ documentId: current.id, expectedRevision: current.revision }); }
 function dispose() {
-    if (disposed) return; comparison.destroy(); stopControls?.(); disposed = true;
+    if (disposed) return; comparison.dispose(); stopControls?.(); disposed = true;
     refreshes.length = acceptances.length = 0;
     for (const button of document.querySelectorAll<HTMLButtonElement>("nav button")) button.disabled = true;
     result = "Disposed"; status();
@@ -42,9 +42,9 @@ function snapshot() {
         working: { id: current.id, resourceId: current.resourceId, revision: current.revision, length: current.buffer.length, exports: current.buffer.readMetrics().textExports, metadata: resource.metadata.getSnapshot() },
         reads: { working: current.buffer.readMetrics(), baseline: state.baseline?.buffer.readMetrics() ?? null },
         hunks: state.hunks, history: workspace.observeHistory(current.id).getSnapshot(), viewId: comparison.working.view.id, editor: { ...comparison.working.snapshot(), viewport: comparison.working.viewport.snapshot() }, reference: comparison.referenceViewport()?.snapshot() ?? null,
-        pending: { refreshes: refreshes.length, acceptances: acceptances.length }, comparison: comparison.snapshot(), diagnostics: workspace.diagnostics(), result, disposed };
+        pending: { refreshes: refreshes.length, acceptances: acceptances.length }, comparison: comparison.getDiagnostics(), diagnostics: workspace.diagnostics(), result, disposed };
 }
-const fixture = Object.freeze({ snapshot, setText, begin, finish, dispose, review: comparison.state, focus: () => comparison.working.focus(),
+const fixture = Object.freeze({ snapshot, setText, begin, finish, dispose, review: comparison, focus: () => comparison.working.focus(),
     get settled() { return !disposed && comparisonSettled(comparison); },
     select: (selection: Selection) => comparison.controller.view.setSelection(workspace.document(resource.documentId).revision, selection),
     selectHunk: (generation: number, index: number) => comparison.selectHunk(generation, index), revert: (generation: number, index: number) => comparison.revertHunk(generation, index),

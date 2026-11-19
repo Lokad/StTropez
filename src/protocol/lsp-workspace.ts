@@ -11,18 +11,17 @@ import { decodeLspDiagnostics } from "./lsp-features.ts";
 import type { LspDiagnostics } from "./lsp-features.ts";
 import type { LspTargetResolver } from "./lsp-targets.ts";
 
-export type LspScopeAccess = Pick<LspSession, "state" | "flush" | "bindDocument" | "synchronized" | "requestDocument" | "canRequest" | "featureOptions" | "commandNames" | "requestCommand" | "request" | "notify" | "onRequest" | "onNotification" | "snapshotOwnership"> & Readonly<{
+export type LspScopeAccess = Pick<LspSession, "getSnapshot" | "subscribe" | "flush" | "bindDocument" | "synchronized" | "requestDocument" | "canRequest" | "featureOptions" | "commandNames" | "requestCommand" | "request" | "notify" | "onRequest" | "onNotification" | "snapshotOwnership"> & Readonly<{
     /** Start or join the owner's shared connection; cancellation expires only this scope's wait. */
     ensureConnected: () => Promise<void>;
     /** Cancel this scope's intents, retaining its bindings, handlers and shared connection. */
     cancel: () => void;
     /** Cancel intents and release this scope's handlers and document participation. */
-    release: () => void;
+    dispose: () => void;
 }>;
 /** Optional host custom-message preparation, inside the feature's captured request lifetime. */
 export type LspPrepare = (scope: LspScopeAccess) => Promise<unknown>;
-export type LspWorkspaceScope = Omit<LspScopeAccess, "state"> & Readonly<{
-    state: Observable<LspWorkspaceSnapshot>;
+export type LspWorkspaceScope = Omit<LspScopeAccess, "getSnapshot" | "subscribe"> & Observable<LspWorkspaceSnapshot> & Readonly<{
     attachDocument: (id: DocumentId) => LspDocument;
     setDocuments: (documents: readonly DocumentSnapshot[]) => ReadonlyMap<string, LspDocument>;
     /** Read-only handle/snapshot validation, including Workspace edits not yet synchronized. */
@@ -85,7 +84,8 @@ export class LspWorkspace {
     private unknownDiagnosticUris = 0;
     private command: CommandIntent | undefined;
     private quarantinedEpoch: number | undefined;
-    readonly state: Observable<LspWorkspaceSnapshot>;
+    readonly getSnapshot: Observable<LspWorkspaceSnapshot>["getSnapshot"];
+    readonly subscribe: Observable<LspWorkspaceSnapshot>["subscribe"];
 
     constructor(workspace: Workspace, options: LspWorkspaceOptions) {
         this.workspace = workspace; this.options = options;
@@ -98,12 +98,13 @@ export class LspWorkspace {
             } };
         } });
         this.store = new Store(this.snapshotState(), this.notifications);
-        this.state = Object.freeze({ getSnapshot: this.store.observable.getSnapshot, subscribe: listener => {
+        this.getSnapshot = this.store.observable.getSnapshot;
+        this.subscribe = listener => {
             this.writable(); const stop = this.store.observable.subscribe(listener);
             const release = () => { stop(); this.observers.delete(release); }; this.observers.add(release); return release;
-        } });
-        this.stopState = this.session.state.subscribe(() => {
-            const next = this.session.state.getSnapshot();
+        };
+        this.stopState = this.session.subscribe(() => {
+            const next = this.session.getSnapshot();
             if (next.phase !== "ready" || next.epoch !== this.store.get().epoch) for (const entry of this.documents.values()) this.expireDiagnostics(entry);
             if (this.command && (this.command.epoch !== next.epoch || this.command.registrationGeneration !== next.registrationGeneration)) this.endCommand(this.command, this.command.sent && this.command.epoch === next.epoch);
             if (this.quarantinedEpoch !== next.epoch) this.quarantinedEpoch = undefined;
@@ -139,14 +140,14 @@ export class LspWorkspace {
         }) : undefined;
     }
     private report(error: unknown): void { try { this.options.onError?.(error instanceof Error ? error : new Error(String(error))); } catch { /* Reporting cannot prevent cleanup. */ } }
-    private commandCurrent(intent: CommandIntent): boolean { const state = this.session.state.getSnapshot(); return this.command === intent && !intent.cancelled && intent.scope.active && intent.scope.generation === intent.generation && state.phase === "ready" && state.epoch === intent.epoch && state.registrationGeneration === intent.registrationGeneration; }
+    private commandCurrent(intent: CommandIntent): boolean { const state = this.session.getSnapshot(); return this.command === intent && !intent.cancelled && intent.scope.active && intent.scope.generation === intent.generation && state.phase === "ready" && state.epoch === intent.epoch && state.registrationGeneration === intent.registrationGeneration; }
     private endCommand(intent: CommandIntent, quarantine: boolean, cancelled = true): void {
         if (quarantine) this.quarantinedEpoch = intent.epoch; if (cancelled) intent.cancelled = true;
         if (this.command === intent) this.command = undefined;
         for (const listener of [...intent.listeners]) listener(); intent.listeners.clear();
         this.store.set(this.snapshotState(), this.changed); this.queueDelivery();
     }
-    private snapshotState(): LspWorkspaceSnapshot { const state = this.session.state.getSnapshot(), commandRequiresReconnect = this.quarantinedEpoch === state.epoch;
+    private snapshotState(): LspWorkspaceSnapshot { const state = this.session.getSnapshot(), commandRequiresReconnect = this.quarantinedEpoch === state.epoch;
         return Object.freeze({ ...state, commandAvailable: state.phase === "ready" && !this.command && !commandRequiresReconnect, commandRequiresReconnect }); }
     private writable(): void { this.notifications.assertWritable(); if (this.disposed) throw closedConnection("Provider owner is disposed."); }
     private deliver(): void { this.notificationQueued = false; const changed = this.changed; this.changed = new Set(); if (changed.size) this.notifications.deliver([...changed]); }
@@ -158,7 +159,7 @@ export class LspWorkspace {
     private mapDiagnostics(entry: DocumentEntry): void {
         const before = entry.diagnostics.get(), result = before.result;
         if (!result) return;
-        const next = this.workspace.observeDocument(entry.id).getSnapshot(), session = this.session.state.getSnapshot();
+        const next = this.workspace.observeDocument(entry.id).getSnapshot(), session = this.session.getSnapshot();
         if (!next || next.resourceId !== entry.binding.getSnapshot().resourceId || session.phase !== "ready") { this.expireDiagnostics(entry); return; }
         if (next.revision === result.snapshotRevision) return;
         if (next.change?.previousRevision !== result.snapshotRevision) { this.expireDiagnostics(entry); return; }
@@ -170,7 +171,7 @@ export class LspWorkspace {
         });
         const isPlacementCurrent = () => {
             if (!entry.active) return false;
-            const now = this.workspace.observeDocument(entry.id).getSnapshot(), provider = this.session.state.getSnapshot();
+            const now = this.workspace.observeDocument(entry.id).getSnapshot(), provider = this.session.getSnapshot();
             return provider.phase === "ready" && provider.epoch === session.epoch
                 && now?.resourceId === next.resourceId && now.revision === next.revision && now.buffer === next.buffer;
         };
@@ -222,7 +223,7 @@ export class LspWorkspace {
     }
     private closeDocument(entry: DocumentEntry): void {
         if (!entry.active) return; entry.active = false; this.expireDiagnostics(entry); this.documents.delete(entry.id); this.uris.delete(entry.binding.getSnapshot().uri);
-        entry.stop(); entry.binding.close(); for (const close of [...entry.users]) close();
+        entry.stop(); entry.binding.dispose(); for (const close of [...entry.users]) close();
         // Workspace observers run inside commit delivery, where lease writes must be deferred.
         void Promise.resolve().then(() => { try { entry.lease.release(); } catch (error) { this.report(error); } });
     }
@@ -258,7 +259,7 @@ export class LspWorkspace {
             const entry = this.document(id); let active = true;
             const close = () => { if (!active) return; active = false; for (const call of documentCalls.get(document) ?? []) call.cancel(); documentCalls.delete(document);
                 handles.delete(document); documents.delete(id); entry.users.delete(close); if (entry.active && !entry.users.size) this.closeDocument(entry); };
-            const document: LspDocument = Object.freeze({ getSnapshot: entry.binding.getSnapshot, close, update: (expected, revision, buffer) => {
+            const document: LspDocument = Object.freeze({ getSnapshot: entry.binding.getSnapshot, dispose: close, update: (expected, revision, buffer) => {
                 writable(); if (!active || !entry.active) throw stale(); const latest = this.workspace.document(id), before = entry.binding.getSnapshot();
                 if (latest.revision !== revision || latest.buffer !== buffer) throw stale();
                 if (before.revision === revision && before.buffer === buffer) return;
@@ -270,13 +271,13 @@ export class LspWorkspace {
         const listen = (stop: () => void) => { const release = () => { stops.delete(release); stop(); }; stops.add(release); return release; };
         const cancel = () => { if (!scope.active) return; scope.generation++; if (this.command?.scope === scope) this.endCommand(this.command, this.command.sent); for (const notify of [...scope.incoming]) notify(); for (const call of [...pending]) call.cancel(); };
         scope.close = () => {
-            if (!scope.active) return; cancel(); scope.active = false; closedState = Object.freeze({ ...this.state.getSnapshot(), phase: "disposed", commandAvailable: false });
-            for (const stop of [...stops]) stop(); for (const document of [...documents.values()]) document.close(); this.scopes.delete(scope); scope.applyEdit = undefined;
+            if (!scope.active) return; cancel(); scope.active = false; closedState = Object.freeze({ ...this.getSnapshot(), phase: "disposed", commandAvailable: false });
+            for (const stop of [...stops]) stop(); for (const document of [...documents.values()]) document.dispose(); this.scopes.delete(scope); scope.applyEdit = undefined;
         };
         this.scopes.add(scope);
-        const state: Observable<LspWorkspaceSnapshot> = Object.freeze({ getSnapshot: () => closedState ?? this.state.getSnapshot(), subscribe: listener => { writable(); return listen(this.state.subscribe(listener)); } });
+        const state: Observable<LspWorkspaceSnapshot> = Object.freeze({ getSnapshot: () => closedState ?? this.getSnapshot(), subscribe: listener => { writable(); return listen(this.subscribe(listener)); } });
         const reserve = (): CommandIntent => {
-            writable(); const state = this.session.state.getSnapshot();
+            writable(); const state = this.session.getSnapshot();
             if (state.phase !== "ready" || this.command || this.quarantinedEpoch === state.epoch) throw staleRequest("Provider command lane requires an available captured intent or fresh connection.");
             const intent: CommandIntent = { scope, epoch: state.epoch, generation: scope.generation, registrationGeneration: state.registrationGeneration, sent: false, cancelled: false, listeners: new Set() };
             this.command = intent; this.store.set(this.snapshotState(), this.changed); this.queueDelivery(); return intent;
@@ -294,7 +295,7 @@ export class LspWorkspace {
             void Promise.resolve().then(() => { if (!isCurrent()) throw cancelled(); return handler(value, captured); }).then(
                 result => finish(() => { if (isCurrent()) resolve(result); else reject(cancelled()); }), error => finish(() => reject(error)));
         });
-        const api: LspWorkspaceScope = Object.freeze({ state, reportError: error => this.report(error),
+        const api: LspWorkspaceScope = Object.freeze({ ...state, reportError: error => this.report(error),
             resolveTarget: async (uri, context) => {
                 writable(); const generation = scope.generation;
                 if (!context.isCurrent()) throw stale();
@@ -328,8 +329,8 @@ export class LspWorkspace {
                 }
                 const added: LspDocument[] = [];
                 try { for (const snapshot of snapshots) { const existed = documents.has(snapshot.id); const document = attach(snapshot.id); if (!existed) added.push(document); } }
-                catch (error) { for (const document of added) document.close(); throw error; }
-                for (const [id, document] of [...documents]) if (!ids.has(id as DocumentId)) document.close(); return new Map(documents);
+                catch (error) { for (const document of added) document.dispose(); throw error; }
+                for (const [id, document] of [...documents]) if (!ids.has(id as DocumentId)) document.dispose(); return new Map(documents);
             },
             captureProject: () => { writable(); return new Map([...documents.values()].map(document => { const value = capture(document); if (!value) throw stale(); return [value.document.uri, value] as const; })); },
             captureBinding: document => {
@@ -347,7 +348,7 @@ export class LspWorkspace {
                 return attach(live.id);
             },
             ensureConnected: async () => { writable(); const generation = scope.generation; await this.connect(); if (!current(generation)) throw cancelled(); },
-            cancel, release: () => { if (!scope.active) return; this.notifications.assertWritable(); scope.close(); },
+            cancel, dispose: () => { if (!scope.active) return; this.notifications.assertWritable(); scope.close(); },
             flush: async selected => { writable(); const generation = scope.generation, captured = selected && [...selected];
                 if (captured) {
                     const bindings = captured.map(document => { const entry = handles.get(document); if (!entry) throw stale(); this.synchronize(entry); return unwrap(document); });
@@ -395,7 +396,7 @@ export class LspWorkspace {
     snapshot() {
         return Object.freeze({ disposed: this.disposed, scopes: this.scopes.size, documents: this.documents.size,
             documentParticipants: [...this.documents.values()].reduce((sum, entry) => sum + entry.users.size, 0), created: this.created, terminated: this.terminated,
-            commandPending: !!this.command, commandQuarantined: this.quarantinedEpoch === this.state.getSnapshot().epoch, unknownDiagnosticUris: this.unknownDiagnosticUris, protocol: this.session.snapshotOwnership() });
+            commandPending: !!this.command, commandQuarantined: this.quarantinedEpoch === this.getSnapshot().epoch, unknownDiagnosticUris: this.unknownDiagnosticUris, protocol: this.session.snapshotOwnership() });
     }
     dispose(): void {
         if (this.disposed) return; this.notifications.assertWritable(); this.disposed = true;

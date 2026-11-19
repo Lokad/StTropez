@@ -60,7 +60,7 @@ function editingConfiguration(rules = presentation.editing) {
     return project?.sample.id === "outline" ? { tabSize: config.tabSize!, insertSpaces: config.insertSpaces!, lineComment: "#", pairs: [], enter: "keep" as const } : config;
 }
 function renderFolding(): void {
-    const state = folding?.state.getSnapshot(), select = element("fold-group") as HTMLSelectElement, chosen = select.value;
+    const state = folding?.getSnapshot(), select = element("fold-group") as HTMLSelectElement, chosen = select.value;
     const groups = state?.groups ?? [], all = document.createElement("option"); all.value = ""; all.textContent = "All groups";
     select.replaceChildren(all, ...groups.map(group => { const option = document.createElement("option"); option.value = group; option.textContent = group; return option; }));
     if (groups.includes(chosen)) select.value = chosen;
@@ -236,13 +236,13 @@ function detachView(): void {
     stopFolding?.(); stopFolding = undefined; folding?.dispose(); folding = undefined; referenceFolding?.dispose(); referenceFolding = undefined;
     stopReference?.(); stopReference = undefined;
     referencePresentation?.dispose(); referencePresentation = undefined;
-    output?.destroy(); output = undefined;
+    output?.dispose(); output = undefined;
     detachLanguage();
     stopView?.(); stopView = undefined; stopFind?.(); stopFind = undefined;
     viewListeners?.abort(); viewListeners = undefined;
     stopRender?.(); stopRender = undefined;
-    find?.destroy(); find = undefined; presentation.search = undefined;
-    if (comparison) comparison.destroy(); else editor?.destroy();
+    find?.dispose(); find = undefined; presentation.search = undefined;
+    if (comparison) comparison.dispose(); else editor?.dispose();
     comparison = undefined; editor = undefined; reviewLabel = undefined;
     element("editor").replaceChildren(); element("panel-content").replaceChildren();
     if (metadataFrame !== undefined) cancelAnimationFrame(metadataFrame); metadataFrame = undefined;
@@ -273,7 +273,7 @@ function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEd
 }
 function detachLanguage(): void {
     const previous = languageView; languageView = undefined; languageViewFailure = undefined;
-    try { previous?.destroy(); } catch (error) { console.error(error); }
+    try { previous?.dispose(); } catch (error) { console.error(error); }
 }
 function mountFile(file: DemoFile, focus = false): void {
     if (!project || disposed || editor?.activity().composing) return;
@@ -331,7 +331,7 @@ function mountFile(file: DemoFile, focus = false): void {
     if (savedViews.has(file.view)) editor.restoreView({ ...savedViews.get(file.view)!, ...file.view.getSnapshot().selection,
         selectionSet: file.view.getSnapshot().selectionSet });
     folding = mountDemoFolding(project, file, editor, () => editingConfiguration().tabSize!);
-    stopFolding = folding.state.subscribe(renderFolding); renderFolding();
+    stopFolding = folding.subscribe(renderFolding); renderFolding();
     viewListeners = new AbortController();
     stopRender = editor.viewport.onRender(renderGutter);
     editor.input.addEventListener("compositionstart", renderMetadata, { signal: viewListeners.signal });
@@ -345,15 +345,15 @@ function mountFile(file: DemoFile, focus = false): void {
         } else if (event.key === "F3") { event.preventDefault(); find?.next(event.shiftKey ? -1 : 1); }
     }, { signal: viewListeners.signal });
     find = createFindController(project.workspace, file.tab, editor);
-    find.setOptions({ matchCase: false });
+    find.setFlags({ matchCase: false });
     const capturedFind = find;
     const renderFind = () => {
-        const snapshot = capturedFind.state.getSnapshot(), previous = presentation.search;
+        const snapshot = capturedFind.getSnapshot(), previous = presentation.search;
         presentation.search = { revision: snapshot.revision, version: snapshot.matchesVersion, matchesIn: (from, to) => capturedFind.matchesIn(from, to, snapshot) };
         element("find-status").textContent = snapshot.message || `${snapshot.status === "searching" ? "Searching… " : ""}${snapshot.count} matches`;
         if (previous?.revision !== snapshot.revision || previous.version !== snapshot.matchesVersion) editor?.viewport.invalidate();
     };
-    stopFind = find.state.subscribe(renderFind); if (!element("find-bar").hidden) find.setQuery(field("find-query").value);
+    stopFind = find.subscribe(renderFind); if (!element("find-bar").hidden) find.setQuery(field("find-query").value);
     stopView = file.view.subscribe(renderMetadata);
     languageView = attachLanguage(project, file, editor);
     if (project.sample.id === "host") {

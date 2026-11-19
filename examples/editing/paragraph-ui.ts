@@ -40,6 +40,6 @@ export function mountParagraphUI(workspace: Workspace, tabId: TabId, editor: Tex
         offsetAt: (index: number) => controller.getSnapshot().index?.offsetAt(index),
         snapshot: () => { const state = controller.getSnapshot(); return { status: state.status, revision: state.revision, generation: state.generation, range: state.range,
             progress: state.progress, paragraphCount: state.index?.paragraphCount ?? 0, visualLength: state.index?.visualLength ?? 0, maxStepMs, advances, turns, pending: timer !== undefined }; },
-        destroy: () => { if (disposed) return; disposed = true; clear(); listeners.abort(); unsubscribe(); controller.dispose(); render(); }
+        dispose: () => { if (disposed) return; disposed = true; clear(); listeners.abort(); unsubscribe(); controller.dispose(); render(); }
     });
 }

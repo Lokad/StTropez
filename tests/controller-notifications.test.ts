@@ -16,7 +16,7 @@ for (const kind of ["folding", "highlights"] as const) test(`${kind} commands re
     const commands = [controller.refresh, controller.dispose];
     if ("runCommand" in controller) commands.push(() => { controller.runCommand("collapse"); });
     let attempted = false, rejected = 0; const unexpected: unknown[] = [];
-    const stop = controller.state.subscribe(() => {
+    const stop = controller.subscribe(() => {
         if (attempted) return; attempted = true;
         for (const command of commands) try { command(); } catch (error) {
             if (error instanceof Error && /Reentrant mutation/.test(error.message)) rejected++; else unexpected.push(error);
@@ -24,9 +24,9 @@ for (const kind of ["folding", "highlights"] as const) test(`${kind} commands re
     });
     try {
         controller.refresh(); assert.equal(rejected, commands.length); assert.deepEqual(unexpected, []);
-        const before = controller.state.getSnapshot(); assert.notEqual(before.status, "disposed");
-        f.edit(); assert.notEqual(controller.state.getSnapshot(), before);
-        assert.notEqual(controller.state.getSnapshot().status, "disposed");
+        const before = controller.getSnapshot(); assert.notEqual(before.status, "disposed");
+        f.edit(); assert.notEqual(controller.getSnapshot(), before);
+        assert.notEqual(controller.getSnapshot().status, "disposed");
     } finally { stop(); controller.dispose(); view.dispose(); f.workspace.close(tab); }
     assert.equal(tasks.size, 0); assert.equal(f.workspace.diagnostics().leases, 0);
 });

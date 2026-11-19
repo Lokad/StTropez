@@ -71,11 +71,11 @@ test("owner activity retains immutable captures without collecting metrics and f
             await settle(); state("composition painted");
             editor.input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })); await settle(); state("composition ended");
             const held = editor.captureInsertion()!;
-            editor.destroy(); state("disposed");
+            editor.dispose(); state("disposed");
             return { comparisonSetterExposed: "setComparisonRows" in viewport, polling, states, selectionStale, foldStale, insertionAborted: held.signal.aborted,
                 oldCapturesUnchanged: !idleInput.disposed && !idleViewport.disposed && idleViewport.revision === 0 && idleViewport.alignmentId === null,
                 disposedStable: editor.activity() === editor.activity() && viewport.activity() === viewport.activity() };
-        } finally { editor.destroy(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+        } finally { editor.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
     });
     await testInfo.attach("owner-activity", { body: JSON.stringify(result), contentType: "application/json" });
     expect(result.polling).toEqual({ metricCaptures: 2000, metricValueReads: 1000, activityCaptures: 2, valueReads: 0, layoutReads: 0,

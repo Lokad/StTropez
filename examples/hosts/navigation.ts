@@ -13,7 +13,6 @@ type Job = { id: number; origin: Session; capture: CapturedViewRequest; input: N
 export type NavigationNote = NavigationLocation & Readonly<{ ordinal: number; title: string; line: number; column: number }>;
 export type NavigationSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; syncedDocuments: number; view: string | null; requestView: string | null; token: number | null; status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disconnected";
     message: string; work: number; total: number; includeDeclaration: boolean; locations: readonly NavigationNote[]; count: number; truncated: boolean; page: number; canReturn: boolean }>;
-let sessionSerial = 0;
 
 /** Host-owned project navigation; results carry identities, never a future focus target. */
 export class HostNavigationTools {
@@ -87,7 +86,7 @@ export class HostNavigationTools {
     readonly disconnect = (): void => { this.cancel(); this.dropClient(); this.disconnected = true; this.publish({ status: "disconnected", message: "Navigation provider disconnected; local editing remains available." }); };
     readonly reconnect = (): void => { this.cancel(); this.dropClient(); this.disconnected = false; this.reconnectProvider?.(); this.publish({ status: "idle", message: "Request fresh navigation with current resources." }); };
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const session: Session = { token: ++sessionSerial, id, target: this.workspace.captureTab(tab), editor }, listeners = new AbortController(); this.sessions.set(session.token, session);
+        const session: Session = { token: this.workspace.allocateIdentity(), id, target: this.workspace.captureTab(tab), editor }, listeners = new AbortController(); this.sessions.set(session.token, session);
         editor.input.addEventListener("focus", () => { this.active = session; this.publish(); }, { signal: listeners.signal });
         editor.input.addEventListener("keydown", event => {
             if (event.defaultPrevented || event.isComposing || editor.activity().composing) return;

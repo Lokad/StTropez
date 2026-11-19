@@ -65,7 +65,7 @@ test("target cancellation and deferred release failures are reported without sto
     await client.run([source], source.id, 6, "definition"); client.cancel();
     context.onCancel(() => { throw new Error("Late target cancellation failure"); }); await settled();
     assert.deepEqual(f.errors.splice(0).sort(), ["Late target cancellation failure", "Target cancellation failure", "Target release failure"]);
-    assert.equal(lease.released, 1); assert.equal(f.workspace.diagnostics().leases, 1); assert.equal(f.provider.state.getSnapshot().phase, "ready");
+    assert.equal(lease.released, 1); assert.equal(f.workspace.diagnostics().leases, 1); assert.equal(f.provider.getSnapshot().phase, "ready");
     client.dispose(); await settled(); assert.equal(f.workspace.diagnostics().leases, 0);
 });
 

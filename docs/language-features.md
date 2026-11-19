@@ -30,7 +30,7 @@ work and published results; `dispose` ends participation. Connection and synchro
 ownership follow the [shared scope contract](language-server.md#workspace-ownership-and-synchronization).
 Headless clients do not capture browser selections, focus or host edit permission.
 
-Each headless feature client exposes `state`, `subscribe`, `snapshot`, `isBusy`, `options`,
+Each headless feature client exposes `getSnapshot`, `subscribe`, `snapshot`, `isBusy`, `options`,
 `cancel` and `dispose`. `isBusy()` covers pending requests and follow-up work; the action client
 also includes confirmed command execution. `options(document)` is a
 [read-only capability query](language-server.md#feature-capability-queries) for the client's
@@ -38,7 +38,7 @@ primary method. Navigation accepts an optional second argument of `textDocument/
 (the default) or `textDocument/references`; colors accept `textDocument/documentColor`
 (the default) or `textDocument/colorPresentation`. Other methods are rejected. Options queries
 and new subscriptions on a disposed client throw; `dispose()` is idempotent.
-Subscribers are notified when pending request or follow-up work starts and finishes, including
+`getSnapshot()` reads the scoped provider connection state. Subscribers are notified when pending request or follow-up work starts and finishes, including
 requests for unchanged text. Start delivery is queued after the call exists and may coalesce
 with connection updates or cancellation in the same turn. Read `isBusy()` in the callback;
 it describes current work, not a history of every intermediate transition.
@@ -50,7 +50,7 @@ prevents a delayed click from selecting an item in a replacement list:
 import type { LspEditorController } from "sttropez/browser";
 
 export function completionActions(language: LspEditorController) {
-    const { choices, completionId } = language.state.getSnapshot();
+    const { choices, completionId } = language.getSnapshot();
     return choices.map((label, index) => ({
         label,
         select: () => language.chooseCompletion(index, completionId),
@@ -60,7 +60,7 @@ export function completionActions(language: LspEditorController) {
 }
 ```
 
-Render labels as text. Subscribe to the stable `state` handle, rebuild controls from its immutable
+Render labels as text. Subscribe to the controller, rebuild controls from its immutable
 snapshot and remove the subscription when the host view ends. The
 [editor attachment recipe](language-server.md#use) covers creation and teardown.
 
@@ -168,7 +168,7 @@ export async function completionLabels(
 
 `createLspEditor(workspace, tab, editor, options)` coordinates completion and diagnostics for
 one mounted view. It uses the headless completion client and owns view guards, input listeners
-and acceptance; the host renders its observable choices and status. `destroy()` releases that controller without disposing
+and acceptance; the host renders its observable choices and status. `dispose()` releases that controller without disposing
 the editor or provider. `request()` invokes completion explicitly; `automatic: false` disables
 automatic invocation. `canCapture` supplies an additional host readiness guard.
 Each mounted controller keeps a diagnostic scope and a completion scope; they share the
@@ -547,7 +547,7 @@ queries skip unrelated intervals and omit zero-width markers without changing th
 
 The browser `createLspHighlightController(workspace, tab, editor, { provider, delayMs? })` requests
 after a quiet caret interval and waits for queued input/composition. It observes document,
-selection, focus, tab and provider identity, clearing obsolete results. Subscribe to `state` to
+selection, focus, tab and provider identity, clearing obsolete results. Subscribe to the highlight controller to
 invalidate the host's viewport decorations and call `intersect` while decorating visible lines.
 Host styles distinguish occurrence kinds. `dispose` releases the client and listeners. The
 controller changes neither text nor selection and leaves initial connection/retry policy to the host.

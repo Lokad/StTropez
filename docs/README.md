@@ -77,9 +77,9 @@ general cache eligibility, interactive device behavior or other browser/platform
 | Event observation span | Time between capture and bubble observers, including intervening listeners; it does not isolate the adapter's own handler. |
 | Edit interaction start | Handled Enter starts at keydown capture; native `insertText` starts at beforeinput capture. Their handler samples and readiness clocks stay separate. A command or native payload can insert several UTF-16 units in one transaction; that transaction can produce several input events. Inserted units, native events and commits are counted separately. |
 | Work units | Algorithmic work counters used for cooperative scheduling; not time deadlines or CPU/memory measurements. |
-| Search scan step | `FindSnapshot.maxScanStepMs`: maximum synchronous matching/index span. Regex mode measures main-thread dispatch/index work; worker matching, later transfer/decoding, publication and waiting are excluded. |
-| Replacement transaction | `FindSnapshot.replaceTransactionMs`: final model transaction and synchronous publication/context refresh. Planning and later rendering are excluded. |
-| Comparison advance loop | Browser comparison `maxStepMs`/`totalStepMs`: synchronous controller advances grouped within scheduled tasks. Rendering after the loop and later view/scroll/alignment settlement are excluded. |
+| Search scan step | `FindDiagnostics.maxScanStepMs`: maximum synchronous matching/index span. Regex mode measures main-thread dispatch/index work; worker matching, later transfer/decoding, publication and waiting are excluded. |
+| Replacement transaction | `FindDiagnostics.replaceTransactionMs`: final model transaction and synchronous publication/context refresh. Planning and later rendering are excluded. |
+| Comparison advance loop | `TextComparison.getDiagnostics()` reports `maxStepMs` and `totalStepMs` for synchronous controller advances grouped within scheduled tasks. Rendering after the loop and later view/scroll/alignment settlement are excluded. |
 | Frame readiness | Time from a declared event/command start until required text, selection, decorations and working/reference view state are observable under the declared frame checks. It does not establish physical display latency. |
 | Aggregate browser work | Layout/style counter deltas across a batch, including intervening activity; not per-interaction percentiles. |
 | Provider duration | Time attributed to language/service work, with transport and scheduling boundaries stated by the measurement. |

@@ -57,7 +57,7 @@ test("language mounting releases partial owners, preserves failures and rejects 
                 try {
                     try { view = mountDemoLanguage(project.workspace, () => project.files, file, editor, point === "late" ? delayed : project.language, () => {}, error => errors.push(error)); }
                     catch (error) { errors.push(error); }
-                    if (point === "late") { view!.destroy(); view!.destroy(); release!(provider); }
+                    if (point === "late") { view!.dispose(); view!.dispose(); release!(provider); }
                     await frames();
                     const reported = errors[0];
                     results.push({ point, before, after: ownership(), panels: document.querySelectorAll(panels).length, errors: errors.length,
@@ -65,13 +65,13 @@ test("language mounting releases partial owners, preserves failures and rejects 
                             && reported.errors[0] === failure && reported.errors[1] === cleanupFailure : reported === failure });
                 } finally {
                     Element.prototype.append = append; Element.prototype.remove = remove;
-                    view?.destroy(); view?.destroy();
+                    view?.dispose(); view?.dispose();
                 }
             }
             const view = mountDemoLanguage(project.workspace, () => project.files, file, editor, project.language, () => {}, error => { throw error; });
             await frames();
-            results.push({ point: "retry", panels: document.querySelectorAll(panels).length }); view.destroy();
-        } finally { editor.destroy(); project.dispose(); await project.language.dispose(); }
+            results.push({ point: "retry", panels: document.querySelectorAll(panels).length }); view.dispose();
+        } finally { editor.dispose(); project.dispose(); await project.language.dispose(); }
         return results;
     });
     await info.attach("language-ownership", { body: JSON.stringify(results, null, 2), contentType: "application/json" });

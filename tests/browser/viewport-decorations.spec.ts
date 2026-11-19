@@ -32,7 +32,7 @@ test("decorated viewport bounds endpoint reads and preserves overlap order, sele
             viewport.invalidate(); viewport.flush();
             const reused = children.every((node, i) => row.childNodes[i] === node && node.firstChild === texts[i]);
             return { endpointReads, exact, colored, parts, color, background, reused, exports: workspace.document(source.documentId).buffer.readMetrics().textExports };
-        } finally { viewport.destroy(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); style.remove(); }
+        } finally { viewport.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); style.remove(); }
     });
     expect(result).toMatchObject({ endpointReads: 512, exact: true, colored: 256, color: "rgb(200, 20, 30)", background: "rgb(10, 30, 60)", reused: true, exports: 0 });
     expect(result.parts).toEqual([

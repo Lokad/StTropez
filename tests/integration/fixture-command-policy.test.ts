@@ -101,7 +101,7 @@ test("fixture command policy preserves authorized arguments, request ids and can
     const delayed = f.first.requestCommand(command, args), rejected = assert.rejects(delayed.result, cancelled);
     delayed.cancel(); await rejected;
     assert.ok(f.sent.some(packet => packet.method === "$/cancelRequest" && packet.params?.id === delayed.id));
-    assert.equal(f.owner.state.getSnapshot().commandRequiresReconnect, true);
+    assert.equal(f.owner.getSnapshot().commandRequiresReconnect, true);
     f.owner.disconnect(); await f.first.ensureConnected();
     assert.deepEqual(await f.first.requestCommand(command).result, { documents: 0 }); assert.equal(commands().at(-1)!.params?._fixture, undefined);
     assert.ok(f.sent.every(packet => packet.params?._fixture === undefined || packet.method === "workspace/executeCommand"));

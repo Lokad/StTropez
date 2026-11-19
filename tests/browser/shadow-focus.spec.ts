@@ -39,7 +39,7 @@ async function mount(page: Page, language: boolean) {
         // The protocol reports that late reply; keep it distinct from unexpected diagnostics.
         const report = (error: unknown) => { if (error instanceof RpcError && error.code === -32800) cancellations.push(error.message); else errors.push(String(error)); };
         const f: Fixture = { workspace, source, tab, editor, errors, cancellations, dispose: async () => {
-            f.highlights?.dispose(); f.completion?.destroy(); f.provider?.dispose(); editor.destroy(); workspace.close(tab);
+            f.highlights?.dispose(); f.completion?.dispose(); f.provider?.dispose(); editor.dispose(); workspace.close(tab);
             await Promise.resolve(); workspace.releaseResource(source.id, true); outer.remove(); outside.remove();
         } }; window.shadowFocus = f;
         if (language) {
@@ -56,7 +56,7 @@ async function mount(page: Page, language: boolean) {
     return page.evaluateHandle(() => window.shadowFocus.editor.input);
 }
 const text = (page: Page) => page.evaluate(() => { const f = window.shadowFocus, buffer = f.workspace.document(f.source.documentId).buffer; return buffer.slice(0, buffer.length); });
-const completion = (page: Page) => page.evaluate(() => window.shadowFocus.completion!.state.getSnapshot());
+const completion = (page: Page) => page.evaluate(() => window.shadowFocus.completion!.getSnapshot());
 
 test("completion distinguishes host preparation failures from malformed provider replies and keeps local typing available", async ({ page }) => {
     await page.routeWebSocket("**/lsp-fixture", client => {
@@ -73,7 +73,7 @@ test("completion distinguishes host preparation failures from malformed provider
         for (const failure of ["type", "range", "none"] as const) {
             await page.evaluate(async failure => {
                 const path = "/shadow-focus/", { createLspEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
-                const f = window.shadowFocus; f.completion!.destroy();
+                const f = window.shadowFocus; f.completion!.dispose();
                 f.completion = createLspEditor(f.workspace, f.tab, f.editor, { provider: f.provider!, autoConnect: false, automatic: false,
                     prepareCompletion: async () => {
                         if (failure === "type") throw new TypeError("Host preparation failed.");
@@ -114,7 +114,7 @@ test("nested shadow focus supports occurrences, automatic completion, deferred a
         await expect.poll(async () => (await completion(page)).connected).toBe(true);
         await page.evaluate(() => window.shadowFocus.completion!.customRequest("fixture/completionStyle", { style: "interactive" }));
         await input.focus(); await page.evaluate(() => window.shadowFocus.editor.view.setSelection(0, { anchor: 1, head: 1 }));
-        await expect.poll(() => page.evaluate(() => window.shadowFocus.highlights!.state.getSnapshot().items.length)).toBe(2);
+        await expect.poll(() => page.evaluate(() => window.shadowFocus.highlights!.getSnapshot().items.length)).toBe(2);
         expect(await page.evaluate(() => document.activeElement === window.shadowFocus.editor.input)).toBe(false);
         await input.press("Control+End"); await input.press("a");
         await expect.poll(async () => (await completion(page)).choices).toEqual(["sample"]); await expect.poll(() => !!release).toBe(true);
@@ -126,7 +126,7 @@ test("nested shadow focus supports occurrences, automatic completion, deferred a
         await input.press("Control+Space"); await expect.poll(() => !!release).toBe(true); await input.press("Tab");
         await page.locator("#shadow-focus-outside").focus(); release!(); release = undefined;
         await expect.poll(async () => (await completion(page)).resolving).toBe(false); expect(await text(page)).toBe("sample sample\nsa");
-        await expect.poll(() => page.evaluate(() => window.shadowFocus.highlights!.state.getSnapshot().items.length)).toBe(0);
+        await expect.poll(() => page.evaluate(() => window.shadowFocus.highlights!.getSnapshot().items.length)).toBe(0);
         expect(await page.evaluate(() => window.shadowFocus.errors)).toEqual([]);
         const reported = await page.evaluate(() => window.shadowFocus.cancellations);
         expect(reported.length).toBeLessThanOrEqual(cancellations);
@@ -162,14 +162,14 @@ test("public input recovery reaches retained listeners inside a closed root befo
             host.addEventListener(inputConflictEvent, () => inside++, { signal: listeners.signal });
             document.addEventListener(inputConflictEvent, () => outside++, { signal: listeners.signal });
             try {
-                for (const [node, destroy] of [[f.editor.input, f.editor.destroy], [native.element, native.destroy]] as const) {
+                for (const [node, dispose] of [[f.editor.input, f.editor.dispose], [native.element, native.dispose]] as const) {
                     node.addEventListener(inputConflictEvent, event => { const detail = (event as CustomEvent<InputConflictDetail>).detail;
                         received.push({ detail, frozen: Object.isFrozen(detail), bubbles: event.bubbles, composed: event.composed }); }, { signal: listeners.signal });
                     node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); node.value = "uncommitted 東京";
-                    destroy();
+                    dispose();
                 }
                 return { name: inputConflictEvent, received, inside, outside, documentId: f.source.documentId, revision: f.workspace.document(f.source.documentId).revision };
-            } finally { native.destroy(); listeners.abort(); }
+            } finally { native.dispose(); listeners.abort(); }
         });
         expect(result.name).toBe("sttropez-conflict"); expect(result.inside).toBe(2); expect(result.outside).toBe(0);
         expect(result.revision).toBe(0); expect(await text(page)).toBe("sample sample\ns");

@@ -12,7 +12,7 @@ export function createLspSignatureClient(provider: LspWorkspace) {
     // Prior wire context is not fresh range/edit authority. Keep only its binding identities,
     // never the old buffer/capture, and compare them after the next request has synchronized.
     let previous: Readonly<{ document: string; resource: string; uri: string; language: string; epoch: number; generation: number; wire: JsonValue }> | undefined;
-    const stop = lane.subscribe(() => { const state = lane.state.getSnapshot();
+    const stop = lane.subscribe(() => { const state = lane.getSnapshot();
         if (state.phase !== "ready" || previous?.epoch !== state.epoch || previous.generation !== state.registrationGeneration) previous = undefined;
     });
     return Object.freeze({ ...lspFeatureHandle(lane, ["textDocument/signatureHelp"], {

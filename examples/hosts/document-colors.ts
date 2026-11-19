@@ -22,7 +22,6 @@ export type DocumentColorsSnapshot = Readonly<{ available: boolean; connected: b
     status: "idle" | "scan" | "colors" | "presentations" | "applied" | "expired" | "failed"; message: string; work: number; total: number; count: number; page: number; colors: readonly ColorNote[];
     selected: number; value: string; css: string | null; presentation: string; choices: readonly Readonly<{ id: string; label: string }>[]; edits: readonly ColorEditNote[]; canPreview: boolean; canApply: boolean;
     changed: Readonly<{ document: DocumentId; title: string }> | null }>;
-let serial = 0;
 /** Captured color literals and explicit host presentation edits; source text remains the authority. */
 export class HostDocumentColors {
     private readonly workspace: Workspace;
@@ -103,7 +102,7 @@ export class HostDocumentColors {
             else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) { event.preventDefault(); this.preview(); } }, { signal: events.signal }); };
     setValue(value: string): void { if (value === this.cell.get().value) return; if (this.job) this.clearPreview(this.job); this.publish({ value: value.slice(0, colorLimits.literal + 1), status: this.job?.colors ? "colors" : "idle", message: this.job ? "Proposed color changed; preview before confirming." : "Proposed color changed; discover colors before previewing." }); }
     attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void {
-        const s = { token: ++serial, id, target: this.workspace.captureTab(tab), editor, presentation }, events = new AbortController(); this.sessions.set(s.token, s); this.sync(s);
+        const s = { token: this.workspace.allocateIdentity(), id, target: this.workspace.captureTab(tab), editor, presentation }, events = new AbortController(); this.sessions.set(s.token, s); this.sync(s);
         editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
         editor.input.addEventListener("keydown", event => { if (event.defaultPrevented || event.isComposing || editor.activity().composing || event.key !== "F6" || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return; event.preventDefault(); event.stopImmediatePropagation(); this.active = s; this.start(true); }, { capture: true, signal: events.signal });
         for (const event of ["beforeinput", "compositionstart", "paste", "cut"] as const) editor.input.addEventListener(event, () => { if (this.job?.document.id === editor.view.documentId) this.cancel(); }, { signal: events.signal });

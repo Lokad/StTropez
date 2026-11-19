@@ -18,7 +18,6 @@ type Job = { origin: Session; input: LinksInput; generation: number; capture: Ca
 export type LinkNote = HostModuleLink & Readonly<{ ordinal: number; line: number; column: number; title: string; targetTitle: string | null }>;
 export type DocumentLinksSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; token: number | null; requestView: string | null;
     status: "idle" | "pending" | "ready" | "resolving" | "failed" | "expired"; message: string; work: number; total: number; count: number; page: number; links: readonly LinkNote[]; canReturn: boolean }>;
-let serial = 0;
 /** Host-owned aliases and explicit reveal. No provider target is executed as a URL. */
 export class HostDocumentLinks {
     private readonly workspace: Workspace;
@@ -88,7 +87,7 @@ export class HostDocumentLinks {
         list.addEventListener("keydown", event => { if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return; const origin = this.job?.origin; event.preventDefault(); event.stopPropagation(); this.cancel(); if (origin && this.available(origin)) origin.editor.focus(); }, { signal: events.signal });
     };
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const s = { token: ++serial, id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
+        const s = { token: this.workspace.allocateIdentity(), id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { if (this.active !== s && this.job?.resolving !== undefined) this.cancel(); this.active = s; this.publish(); }, { signal: events.signal });
         editor.input.addEventListener("keydown", event => {
             if (event.defaultPrevented || event.isComposing || editor.activity().composing || event.key !== "F4" || event.ctrlKey || event.metaKey || event.altKey) return;

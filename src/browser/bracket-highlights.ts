@@ -11,7 +11,7 @@ import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.t
 export type BracketHighlightSnapshot = Readonly<{ status: "disabled" | "idle" | "pending" | "ready" | "failed" | "disposed";
     documentId: DocumentId; revision: number; caret: number | null; result: BracketMatchResult | null; failure: string | null;
     workUnits: number; readUnits: number; callbackCalls: number }>;
-export type BracketHighlights = Readonly<{ state: Observable<BracketHighlightSnapshot>;
+export type BracketHighlights = Observable<BracketHighlightSnapshot> & Readonly<{
     configure: (options: boolean | BracketMatchOptions) => boolean; refresh: () => void }>;
 const empty: readonly InlineDecoration[] = Object.freeze([]);
 
@@ -92,7 +92,7 @@ export function mountBracketHighlights(workspace: Workspace, tabId: TabId, view:
         }
         refresh(true); return true;
     };
-    const handle: BracketHighlights = Object.freeze({ state: cell.observable,
+    const handle: BracketHighlights = Object.freeze({ ...cell.observable,
         configure: value => { notifications.assertWritable(); return configure(value); },
         refresh: () => { notifications.assertWritable(); refresh(true); } });
     configure(initial);

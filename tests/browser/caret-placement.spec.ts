@@ -97,7 +97,7 @@ for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} care
             const offscreen = { hidden: primary.hidden, height: parseFloat(input.style.height), expectedHeight: viewport.snapshot().lineHeight, reveals };
             layer.dispose(); layer.schedule();
             return { work, composition, beforeResize, revealed, blurred, offscreen, disposed: !layer.pending() && !root.contains(primary) };
-        } finally { layer.dispose(); viewport.destroy(); workspace.close(tab); workspace.releaseResource(source.id, true); container.remove(); }
+        } finally { layer.dispose(); viewport.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); container.remove(); }
     }, { shadow, css: await readFile("src/browser/editor.css", "utf8") });
     await testInfo.attach("caret-placement", { body: JSON.stringify(result), contentType: "application/json" });
     for (const work of result.work) {

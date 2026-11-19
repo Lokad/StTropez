@@ -41,6 +41,10 @@ changes; end their ownership explicitly as described below.
 
 ## Contract
 
+Use `workspace.allocateIdentity()` for numeric attachment or request tokens that must stay distinct
+across remounts in one workspace. A token belongs to that workspace. Delayed work also needs
+its captured view, tab generation and document revision checked before applying a result.
+
 ### Identities and snapshots
 
 | Handle or value | What it identifies |

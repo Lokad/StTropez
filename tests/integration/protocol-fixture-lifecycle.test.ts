@@ -23,7 +23,7 @@ test("partial protocol setup releases the listener and leases while preserving s
         acquired = owner;
         defer(() => { order.push("owner"); owner.dispose(); });
         const scope = owner.createScope();
-        defer(() => { order.push("scope"); scope.release(); throw cleanup; });
+        defer(() => { order.push("scope"); scope.dispose(); throw cleanup; });
         scope.setDocuments([workspace.document(source.documentId)]); await scope.ensureConnected();
         assert.ok(workspace.diagnostics().leases > 0);
         throw primary;

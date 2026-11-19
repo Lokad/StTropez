@@ -40,7 +40,7 @@ export function openDocument(host: HTMLElement) {
         dispose() {
             if (disposed) return;
             disposed = true;
-            editor.destroy();
+            editor.dispose();
             workspace.close(tab);
             workspace.releaseResource(resource.id);
         }

@@ -351,6 +351,10 @@ try {
     const caseFind = await page.evaluate(() => window.consumer.findState()); assert.equal(caseFind.count, 1); assert.equal(caseFind.matchCase, false); assert.equal(caseFind.wholeWord, true);
     assert.deepEqual(await page.evaluate(() => window.consumer.findMatches(8, 10, window.consumer.findState())), [{ from: 7, to: 15 }]);
     const regex = await page.evaluate(() => window.consumer.regexPilot());
+    for (const measurements of [regex.measurements, regex.terminalMeasurements]) {
+        assert.ok(Number.isFinite(measurements.maxScanStepMs) && measurements.maxScanStepMs >= 0);
+        assert.ok(Number.isFinite(measurements.replaceTransactionMs) && measurements.replaceTransactionMs >= 0);
+    }
     assert.equal(regex.actualWorker, true); assert.equal(regex.zeroCompleteExports, true); assert.deepEqual(regex.released, { views: 0, leases: 0, subscriptions: 0 });
     const folding = await page.evaluate(() => window.consumer.foldingPilot());
     assert.equal(folding.visibleRows, 2); assert.equal(folding.newerStatePreserved, true); assert.deepEqual(folding.released, { views: 0, leases: 0, subscriptions: 0 });
@@ -404,6 +408,9 @@ try {
     await page.waitForFunction(() => { const s = window.consumer.comparison(); return s.status === "ready" && !s.working.pending && s.reference && !s.reference.pending
         && s.working.aligned && s.reference.aligned && s.working.alignmentId === s.reference.alignmentId; });
     const comparison = await page.evaluate(() => window.consumer.comparison()); assert.equal(comparison.count, 1);
+    const { generation, steps, maxStepMs, totalStepMs } = comparison.measurements;
+    assert.equal(generation, comparison.generation); assert.ok(steps > 0);
+    assert.ok(Number.isFinite(totalStepMs) && totalStepMs >= maxStepMs && maxStepMs >= 0);
     assert.equal(comparison.internalBaseline, true);
     assert.equal(await page.locator("#comparison .consumer-review-token.st-comparison-added").textContent(), "working");
     assert.equal(await page.locator("#comparison .consumer-review-token.st-comparison-removed").textContent(), "baseline");

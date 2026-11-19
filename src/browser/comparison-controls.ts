@@ -2,7 +2,7 @@ import type { TextComparison, TextComparisonSnapshot } from "./comparison.ts";
 
 /** Optional presentation. Pane ownership and command validation stay with the comparison. */
 export function mountComparisonControls(
-    comparison: Pick<TextComparison, "element" | "state" | "selectHunk" | "revertHunk" | "setScrollLinked" | "setRowsAligned">,
+    comparison: Pick<TextComparison, "element" | "getSnapshot" | "subscribe" | "selectHunk" | "revertHunk" | "setScrollLinked" | "setRowsAligned">,
     referencePane: HTMLElement, workingPane: HTMLElement
 ): () => void {
     const owner = comparison.element.ownerDocument, controls = owner.createElement("div"), listeners = new AbortController();
@@ -23,7 +23,7 @@ export function mountComparisonControls(
     const visible = (value: string) => value.replaceAll(" ", "·").replaceAll("\t", "⇥").replaceAll("\r", "␍").replaceAll("\n", "↵\n");
     let rendered: TextComparisonSnapshot | undefined;
     function render(): void {
-        const current = comparison.state.getSnapshot(), old = rendered;
+        const current = comparison.getSnapshot(), old = rendered;
         // Cursor counters do not change this control surface or its bounded preview.
         if (old && old.comparison.generation === current.comparison.generation && old.comparison.status === current.comparison.status
             && old.selectedHunk === current.selectedHunk && old.canNavigate === current.canNavigate && old.canRevert === current.canRevert
@@ -48,18 +48,18 @@ export function mountComparisonControls(
         } else { setText(referencePreview, ""); setText(workingPreview, ""); }
     }
     function navigate(direction: -1 | 1): void {
-        const state = comparison.state.getSnapshot(), count = state.comparison.hunks.length;
+        const state = comparison.getSnapshot(), count = state.comparison.hunks.length;
         const index = state.selectedHunk ?? (direction === 1 ? -1 : 0);
         if (state.canNavigate) comparison.selectHunk(state.comparison.generation, (index + direction + count) % count);
     }
     previous.addEventListener("click", () => navigate(-1), { signal: listeners.signal });
     next.addEventListener("click", () => navigate(1), { signal: listeners.signal });
     revert.addEventListener("click", () => {
-        const state = comparison.state.getSnapshot();
+        const state = comparison.getSnapshot();
         if (state.canRevert && state.selectedHunk !== null) comparison.revertHunk(state.comparison.generation, state.selectedHunk);
     }, { signal: listeners.signal });
     link.addEventListener("change", () => comparison.setScrollLinked(link.checked), { signal: listeners.signal });
     align.addEventListener("change", () => comparison.setRowsAligned(align.checked), { signal: listeners.signal });
-    const stop = comparison.state.subscribe(render); render();
+    const stop = comparison.subscribe(render); render();
     return () => { stop(); listeners.abort(); controls.remove(); preview.remove(); referenceHeading.remove(); workingHeading.remove(); };
 }

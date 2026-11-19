@@ -15,7 +15,6 @@ export type DomainSnapshot = Readonly<{ available: boolean; editable: boolean; v
     status: "idle" | "running" | "ready" | "applied" | "cancelled" | "failed"; message: string; work: number; total: number; pendingView: string | null;
     annotations: readonly DomainAnnotation[]; annotationCount: number; foldCount: number }>;
 const noAnnotations: readonly DomainAnnotation[] = Object.freeze([]);
-let nextSession = 0;
 
 /** Host service and presentation, independent of the runtime's domain/language policy. */
 export class HostDomainTools {
@@ -71,7 +70,7 @@ export class HostDomainTools {
         if (this.active === session) this.publish();
     }
     attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void {
-        const token = `domain-session-${++nextSession}`, revision = this.workspace.document(editor.view.documentId).revision;
+        const token = `domain-session-${this.workspace.allocateIdentity()}`, revision = this.workspace.document(editor.view.documentId).revision;
         const data = this.data.get(editor.view) ?? { revision, owned: new Map<string, OwnedFold>(), annotations: noAnnotations, index: new DomainAnnotationIndex(noAnnotations) };
         this.data.set(editor.view, data); const session = { token, id, editor, presentation, data, target: this.workspace.captureTab(tab) }, listeners = new AbortController(); this.sessions.set(token, session);
         const changed = () => { if (this.publishing) return; this.sync(session); if (this.job?.session === session && !this.current(this.job)) this.invalidate(this.job); };

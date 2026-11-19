@@ -19,7 +19,7 @@ export function attachFind(
     const clock = editor.element.ownerDocument.defaultView;
     if (!clock) throw new Error("The editor needs an attached browser window.");
     return createFindController(workspace, tab, editor, {
-        regularExpression: createRegexFindBackend({
+        regularExpressionBackend: createRegexFindBackend({
             clock,
             createWorker: () => new Worker(workerUrl, { type: "module" })
         })
@@ -32,10 +32,9 @@ Resolve `workerUrl` to the packaged `browser/regex-worker.js` asset, identified 
 client. The [packaging contract](packaging.md) describes asset staging. Literal-only hosts can
 omit the configuration; literal mode starts no worker.
 
-Subscribe to `FindController.state` to render progress, match counts and failures. Call
-`setQuery("name")`, `setOptions({ wholeWord: true })` and `next()` from host controls.
-Call `replaceAll("newName")` after the state becomes `ready`. Destroy the controller before
-destroying its editor.
+Subscribe to the find controller to render progress, match counts and failures. Call
+`setQuery("name")`, `setFlags({ wholeWord: true })` and `next()` from host controls.
+Call `replaceAll("newName")` after the state becomes `ready`. Dispose the controller before disposing its editor.
 
 ## Contract
 
@@ -46,8 +45,10 @@ the tab generation and retains a resource lease; focus changes never redirect it
 Its `FindHost` contract requires the view, owner-document events and clock, input composition
 events and read-only state, disposed/composing activity, offset reveal and focus. `TextEditor`
 satisfies this contract directly; find does not require editing commands or viewport navigation internals.
-`FindSnapshot` is immutable and includes query/options, revision, status, count, scan frontier,
-source length, current match index, match version, reason, message and component timings.
+`FindSnapshot` is immutable and includes query, search flags, revision, status, count, scan frontier,
+source length, current match index, match version, reason and message.
+Pass the optional backend and its query delay once through `FindControllerOptions`. Change per-search
+`FindFlags` with `setFlags(flags)`. Read the current presentation with `getSnapshot()` and watch it with `subscribe()`.
 
 | Option or command | Behavior |
 | --- | --- |
@@ -55,12 +56,12 @@ source length, current match index, match version, reason, message and component
 | `matchCase` | Defaults to `true`; locale-independent simple folding when disabled in literal mode |
 | `regularExpression` | Defaults to `false`; requires a configured `FindBackend` when enabled |
 | `setQuery(query)` | Cancels obsolete work and starts a search; an empty query is idle |
-| `setOptions(options)` | Patches only supplied flags; unchanged options do not restart work |
+| `setFlags(flags)` | Patches supplied flags and restarts only when a value changes |
 | `next(direction?)` | Selects a match in the captured view; direction is `1` by default or `-1` |
 | `replaceCurrent(text)` | Replaces an eligible current selection, or selects the next match |
 | `replaceAll(text)` | Plans a replacement from a completed index and commits one history command |
 | `cancel()` | Clears the index; later typing does not resume the cancelled search |
-| `destroy()` | Releases work, subscriptions, focus tracking, backend and resource lease |
+| `dispose()` | Releases work, subscriptions, focus tracking, backend and resource lease |
 
 `matchesIn(from, to, capture?)` returns frozen UTF-16 match ranges intersecting `[from, to)`.
 It includes matches crossing either boundary without clipping their offsets. Point matches
@@ -82,9 +83,12 @@ partial, navigation cannot wrap or skip an unsearched region, and current replac
 only confirmed matches. Initial and regular-expression searches wait for completion.
 
 States are `idle`, `searching`, `ready`, `replacing`, `failed`, `cancelled`, `expired` and
-`disposed`. A missing backend or failed worker produces an explicit message. Expired or destroyed
+`disposed`. A missing backend or failed worker produces an explicit message. Expired or disposed
 controllers cannot address a replacement tab. See the [clock glossary](README.md#glossary) for
-the boundaries of `maxScanStepMs` and `replaceTransactionMs`.
+the boundaries of `FindDiagnostics.maxScanStepMs` and `FindDiagnostics.replaceTransactionMs`.
+`getDiagnostics()` returns these measurements on demand. The scan maximum resets for a new search.
+The last transaction duration persists across searches. Both remain readable after disposal.
+Timing-only changes preserve snapshot identity and do not notify subscribers.
 
 ### Notice reasons
 
@@ -106,10 +110,9 @@ for current editing permissions. An ignored command can leave the previous notic
 | `replaced` | A replacement transaction was accepted, including a no-op |
 | An `EditResult` refusal reason | The workspace rejected the final transaction; its reason is forwarded unchanged |
 
-Starting/restarting a query, changing options, successful navigation, starting a queued
-replacement and destruction clear the notice. Unchanged options do not clear it. Scan progress,
-completion and timing-only publications preserve it; edits while cancelled preserve the
-cancellation notice. Obsolete asynchronous replies cannot overwrite it. Backend error text is
+Starting/restarting a query, changing flags, successful navigation, starting a queued
+replacement and disposal clear the notice. Unchanged flags, scan progress and completion preserve the notice.
+Edits while cancelled preserve the cancellation notice. Obsolete asynchronous replies cannot overwrite it. Backend error text is
 display data: identical text can have different reasons depending on which operation failed.
 
 ```ts
@@ -240,7 +243,7 @@ are synchronous bulk work.
 Own find/replacement controls, keyboard bindings, option persistence, messages and worker URLs.
 Render partial counts as partial, wait for readiness before replace-all, and preserve exact
 view identity across asynchronous UI work. Subscribe and unsubscribe with the attachment;
-call `destroy()` before releasing its view. Keep surrounding form focus independent of delayed
+call `dispose()` before releasing its view. Keep surrounding form focus independent of delayed
 editor commands. If supplying a backend, honor cursor cancellation, captured source identity,
 validated match order, replacement bounds and explicit disposal.
 

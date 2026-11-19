@@ -30,7 +30,7 @@ export function createLspProjectClient(options: LspProjectOptions) {
             } finally { busy = false; changed(); }
         },
         isCurrent: () => !disposed && runner.isCurrent(),
-        faultIdle: () => { if (disposed || busy || session.state.getSnapshot().phase !== "ready") return false; options.provider.disconnect(); return true; },
-        snapshot: () => Object.freeze({ connected: session.state.getSnapshot().phase === "ready", busy, disposed, version: "LSP3.17", epoch: session.state.getSnapshot().epoch, registered: session.commandNames().includes(options.reviewCommand), ...runner.snapshot(), protocol: session.snapshotOwnership() }),
-        dispose: () => { if (disposed) return; disposed = true; runner.dispose(); listeners.clear(); session.release(); } });
+        faultIdle: () => { if (disposed || busy || session.getSnapshot().phase !== "ready") return false; options.provider.disconnect(); return true; },
+        snapshot: () => Object.freeze({ connected: session.getSnapshot().phase === "ready", busy, disposed, version: "LSP3.17", epoch: session.getSnapshot().epoch, registered: session.commandNames().includes(options.reviewCommand), ...runner.snapshot(), protocol: session.snapshotOwnership() }),
+        dispose: () => { if (disposed) return; disposed = true; runner.dispose(); listeners.clear(); session.dispose(); } });
 }

@@ -10,8 +10,8 @@ export function createActivationSession(original: string, selection: Selection, 
     let editor: TextEditor | undefined, find: FindController | undefined, stopFind: (() => void) | undefined, viewState: ViewState | undefined;
     let disposed = false, mounts = 0, workers = 0;
     const busy = () => { const s = editor?.snapshot(); return !!s && (s.composing || s.pendingInput || s.pendingCommand || s.pendingWord || s.pendingGrapheme || s.pendingDragScroll); };
-    const unmount = () => { if (busy()) return false; stopFind?.(); stopFind = undefined; find?.destroy(); find = undefined;
-        if (editor) { viewState = editor.captureView(); editor.destroy(); editor = undefined; } return true; };
+    const unmount = () => { if (busy()) return false; stopFind?.(); stopFind = undefined; find?.dispose(); find = undefined;
+        if (editor) { viewState = editor.captureView(); editor.dispose(); editor = undefined; } return true; };
     return Object.freeze({
         mount: (host: HTMLElement, selection: Selection | undefined, update: (message: string) => void, readOnly = false) => {
             if (disposed || editor) throw new Error("Source session is unavailable.");
@@ -23,14 +23,14 @@ export function createActivationSession(original: string, selection: Selection, 
             editor = mountTextEditor(host, workspace, tab, { ariaLabel: shared?.label ?? "Activated source", view, readOnly }); mounts++;
             if (viewState) editor.restoreView({ ...viewState, ...view.getSnapshot().selection, selectionSet: view.getSnapshot().selectionSet });
             if (changed || !viewState) editor.viewport.revealOffset(view.getSnapshot().selection.head);
-            find = createFindController(workspace, tab, editor, { regularExpression: createRegexFindBackend({ clock: host.ownerDocument.defaultView!,
+            find = createFindController(workspace, tab, editor, { regularExpressionBackend: createRegexFindBackend({ clock: host.ownerDocument.defaultView!,
                 createWorker: () => { workers++; return new Worker(new URL("./regex-worker.js", import.meta.url), { type: "module" }); } }) });
-            stopFind = find.state.subscribe(() => { const s = find!.state.getSnapshot(); update(s.message || `${s.status}: ${s.count} matches`); });
+            stopFind = find.subscribe(() => { const s = find!.getSnapshot(); update(s.message || `${s.status}: ${s.count} matches`); });
             if (shared?.focus !== false) editor.input.focus({ preventScroll: true });
         },
         unmount,
         canUnmount: () => !busy(),
-        search: (query: string, regex: boolean) => { find?.setOptions({ regularExpression: regex }); find?.setQuery(query); },
+        search: (query: string, regex: boolean) => { find?.setFlags({ regularExpression: regex }); find?.setQuery(query); },
         next: () => find?.next(),
         select: (ranges: readonly Selection[], primary = 0) => view.setSelections(workspace.document(source.documentId).revision, ranges, primary),
         selection: () => view.getSnapshot().selection,
@@ -38,9 +38,9 @@ export function createActivationSession(original: string, selection: Selection, 
         snapshot: () => ({ resourceId: source.id, documentId: source.documentId, viewId: view.id, revision: source.getSnapshot().revision, selections: view.getSnapshot().selectionSet,
             tab: workspace.tabState.getSnapshot().find(tab => tab.id === (shared ? shared.tab() : ownTab)) ?? null, readOnly: editor?.input.readOnly ?? null,
             history: history.getSnapshot(), diagnostics: workspace.diagnostics(), mounts, workers, disposed,
-            input: editor?.snapshot() ?? null, viewport: editor?.viewport.snapshot() ?? null, find: find?.state.getSnapshot() ?? null,
+            input: editor?.snapshot() ?? null, viewport: editor?.viewport.snapshot() ?? null, find: find?.getSnapshot() ?? null,
             exports: disposed ? 0 : workspace.document(source.documentId).buffer.readMetrics().textExports }),
-        dispose: () => { if (!disposed) { stopFind?.(); stopFind = undefined; find?.destroy(); editor?.destroy(); editor = undefined; find = undefined; view.dispose();
+        dispose: () => { if (!disposed) { stopFind?.(); stopFind = undefined; find?.dispose(); editor?.dispose(); editor = undefined; find = undefined; view.dispose();
             if (!shared) { workspace.close(ownTab!); workspace.releaseResource(source.id, true); } disposed = true; } return workspace.diagnostics(); },
     });
 }

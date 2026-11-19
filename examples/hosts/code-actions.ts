@@ -22,7 +22,6 @@ type ActionChange = Readonly<{ document: DocumentId; title: string }>;
 export type ActionsSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; reconnectRequired: boolean; pending: boolean; canApply: boolean; token: number | null; module: string;
     status: "idle" | "pending" | "ready" | "expired" | "failed" | "applied" | "executed"; message: string; title: string; disabled: string | null; work: number; total: number; command: string | null;
     edits: readonly ActionNote[]; changed: ActionChange | null; changes: readonly ActionChange[]; choices: readonly ActionChoice[]; choice: number | null; choicePage: number; resolving: boolean; page: number; editCount: number }>;
-let serial = 0;
 /** Host-owned edit-bearing action. No provider command can execute without explicit confirmation. */
 export class HostActionsTools {
     private readonly workspace: Workspace;
@@ -87,7 +86,7 @@ export class HostActionsTools {
     private disabled(action: LspCodeAction): string | null { return action.disabled ?? (action.command ? !this.reviewOwner || !this.job?.batch?.supports(action.command) ? "This captured command is not permitted by the host." : null : !action.resolve && !action.edit?.documents.some(change => change.edits.length) ? "The provider returned no text changes." : null); }
     private publish(patch: Partial<ActionsSnapshot> = {}): void {
         const job = this.job; this.cell.set({ ...this.cell.get(), ...patch, choicePage: job?.choicePage ?? 0, available: !!this.active && this.available(this.active), connected: this.lane.value?.snapshot().connected ?? false,
-            disconnected: this.disconnected, reconnectRequired: this.provider?.state.getSnapshot().commandRequiresReconnect ?? false, token: this.execution?.token ?? job?.input.id ?? null, pending: !!this.execution || !!job && (!job.ready || job.resolving), choice: job?.choice ?? null, resolving: job?.resolving ?? false, command: job?.selected?.command?.command ?? null,
+            disconnected: this.disconnected, reconnectRequired: this.provider?.getSnapshot().commandRequiresReconnect ?? false, token: this.execution?.token ?? job?.input.id ?? null, pending: !!this.execution || !!job && (!job.ready || job.resolving), choice: job?.choice ?? null, resolving: job?.resolving ?? false, command: job?.selected?.command?.command ?? null,
             canApply: !this.execution && !!job?.ready && !job.resolving && this.current(job) && (!!job.batch && !!job.selected && !!(job.selected.edit || job.selected.command) && !this.disabled(job.selected)
                 && (!job.selected.command || !!this.reviewOwner?.canRunAction(job.origin.editor)) && (job.selected.edit?.documents ?? []).filter(change => change.edits.length).every(change => this.editable(change.target.document.documentId as DocumentId))) });
     }
@@ -133,7 +132,7 @@ export class HostActionsTools {
         }, { signal: events.signal });
     };
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const s = { token: ++serial, id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
+        const s = { token: this.workspace.allocateIdentity(), id, target: this.workspace.captureTab(tab), editor }, events = new AbortController(); this.sessions.set(s.token, s);
         editor.input.addEventListener("focus", () => { this.active = s; this.publish(); }, { signal: events.signal });
         editor.input.addEventListener("keydown", event => {
             if (!event.defaultPrevented && !event.isComposing && !editor.activity().composing && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key === ".") {
@@ -240,7 +239,7 @@ export class HostActionsTools {
                 const execution = { token: job.input.id, handle }; this.execution = execution; this.release();
                 this.publish({ status: "pending", message: "Executing the confirmed action under the host's captured edit policy.", edits: [], choices: [], editCount: 0, title: action.title });
                 void handle.result.then(receipt => { if (this.execution !== execution) return; this.execution = undefined; if (receipt.applied) this.metrics.applied++;
-                    if (this.provider ? this.provider.state.getSnapshot().phase !== "ready" : this.lane.value && !this.lane.value.snapshot().connected) this.disconnected = true;
+                    if (this.provider ? this.provider.getSnapshot().phase !== "ready" : this.lane.value && !this.lane.value.snapshot().connected) this.disconnected = true;
                     this.publish({ status: receipt.success ? receipt.applied ? "applied" : "executed" : "failed", message: receipt.reason,
                         title: "", changes: receipt.changes, changed: receipt.changes.find(change => change.document === job.document.id) ?? receipt.changes[0] ?? null }); });
             } catch (error) { this.publish({ message: error instanceof Error ? error.message : "Captured command cannot start." }); }

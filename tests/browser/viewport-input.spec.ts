@@ -53,7 +53,7 @@ test("viewport input ownership and render delivery survive removal, reentrancy a
             button.focus(); folding.setRanges(folding.getSnapshot(), []); viewport.flush();
             const removedFocus = document.activeElement === input && focus === 2;
             binding.dispose(); const detached = root.tabIndex === 0 && !root.querySelector(".st-viewport-layer")!.hasAttribute("aria-hidden");
-            const replacement = viewport.bindInput(() => viewport.destroy()); replacement.setComposing(true); binding.dispose();
+            const replacement = viewport.bindInput(() => viewport.dispose()); replacement.setComposing(true); binding.dispose();
             const expired = !binding.setComposing(false) && root.classList.contains("st-composing"); replacement.setComposing(false);
             folding.setRanges(folding.getSnapshot(), ranges.slice(0, 1)); viewport.flush();
             root.querySelector<HTMLButtonElement>(".st-fold-button")!.focus();
@@ -64,7 +64,7 @@ test("viewport input ownership and render delivery survive removal, reentrancy a
             return { firstOrder, secondOrder, revision: workspace.document(source.documentId).revision, errors, afterError, duplicate, invalid,
                 guarded, existingEscaped, newEscaped, markersIgnored, escapedFocus, removedFocus, detached, expired, inactive, afterDestroy,
                 destroyed: { disposed: destroyed.disposed, revision: destroyed.revision, rows: destroyed.rows, pending: destroyed.pending } };
-        } finally { window.removeEventListener("error", error); viewport.destroy(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+        } finally { window.removeEventListener("error", error); viewport.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
     });
     expect(result).toEqual({ firstOrder: ["first", "last"], secondOrder: ["first", "last", "last", "later"], revision: 1,
         errors: 1, afterError: 1, duplicate: true, invalid: true, guarded: true, existingEscaped: true, newEscaped: true, markersIgnored: true,

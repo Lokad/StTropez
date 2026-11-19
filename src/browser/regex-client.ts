@@ -9,7 +9,6 @@ type Pending = { resolve: (reply: RegexReply) => void; reject: (error: Error) =>
 const empty: readonly SearchMatch[] = Object.freeze([]);
 const noEdits: readonly TextEdit[] = Object.freeze([]);
 export type RegexCursorStep = SearchStep & Readonly<{ edits: readonly TextEdit[] }>;
-let sequence = 0;
 
 type Capture = Readonly<{ documentId: DocumentId; revision: number; buffer: TextBuffer }>;
 type QueryOptions = RegexOptions & Readonly<{ wholeWord?: boolean }>;
@@ -17,6 +16,7 @@ type QueryOptions = RegexOptions & Readonly<{ wholeWord?: boolean }>;
 /** One controller-owned worker and complete source capture. Active cancellation terminates
  * native matching; completed queries retain the lane. One exchange is in flight at a time. */
 export function createRegexClient(host: Readonly<{ clock: Pick<Window, "setTimeout" | "clearTimeout">; createWorker: () => Worker; timeoutMs?: number }>) {
+    let sequence = 0;
     const timeout = host.timeoutMs ?? 5000;
     if (!Number.isFinite(timeout) || timeout <= 0) throw new RangeError("Unsupported regex timeout.");
     let worker: Worker | undefined, listeners: AbortController | undefined, disposed = false;
