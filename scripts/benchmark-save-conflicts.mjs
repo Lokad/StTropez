@@ -6,14 +6,25 @@ import { corpus } from "../fixtures/workloads.ts";
 import { typeHostSuffix } from "./host-typing.mjs";
 import { createHostScene } from "./host-scene.mjs";
 
+/** @typedef {ReturnType<Window["hostFixture"]["snapshot"]>} HostState */
+/** @typedef {{inputHandlerMs: number | null, inputToReviewReadyProxyMs: number, wholeTextExports: number,
+ * sourceContextUnits: number | null, comparisonContextUnits: number, sourceRows: number | null, comparisonRows: number,
+ * diffWork: NonNullable<HostState["bindings"]["comparison"]>["work"], workingViewportRenders: number, referenceViewportRenders: number}} ConflictInput */
+/** @typedef {typeof globalThis & {conflictInputMeasurement: Promise<ConflictInput>}} MeasurementGlobal */
+/** @typedef {'conflictOutcomeActionProxyMs' | 'reviewWithTypingActionProxyMs' | 'retryWithTypingActionProxyMs' | 'workflowActionProxyMs'} WorkflowClock */
+/** @typedef {Record<WorkflowClock, number> & {point: ConflictInput & {completeActionProxyMs: number},
+ * lateTyping: Awaited<ReturnType<typeof typeHostSuffix>>, backgroundUpdates: number, sourceRevisions: number}} ConflictSample */
+
 const source = await sourceIdentity(), smoke = process.env.STTROPEZ_CONFLICT_SMOKE === "1", warmup = smoke ? 0 : 3, measured = smoke ? 1 : 10;
 const writer = await createReportWriter("artifacts/bench/save-conflicts", smoke ? "smoke" : "full");
 const harness = await openHarness(), scene = createHostScene(harness.page), cases = [], snapshot = scene.snapshot;
+/** @param {string} name */
 const click = name => harness.page.getByRole("button", { name, exact: true }).click();
 const ready = scene.sourceReady;
 try {
-    for (const editor of ["native", "candidate"]) for (const host of ["plain", "react"]) for (const corpusId of editor === "candidate" ? ["normal", "lines-100000", "unique-lines-100000", "single-line"] : ["normal"]) {
-        const original = (corpusId === "unique-lines-100000" ? Array.from({ length: 100000 }, (_, index) => `const value${String(index).padStart(6, "0")} = 123;\n`).join("") : corpus(corpusId)).trimEnd(), remote = `remote ${original}`, samples = [];
+    for (const editor of /** @type {const} */ (["native", "candidate"])) for (const host of ["plain", "react"]) for (const corpusId of editor === "candidate" ? /** @type {const} */ (["normal", "lines-100000", "unique-lines-100000", "single-line"]) : /** @type {const} */ (["normal"])) {
+        const original = (corpusId === "unique-lines-100000" ? Array.from({ length: 100000 }, (_, index) => `const value${String(index).padStart(6, "0")} = 123;\n`).join("") : corpus(corpusId)).trimEnd(), remote = `remote ${original}`;
+        /** @type {ConflictSample[]} */ const samples = [];
         for (let iteration = 0; iteration < warmup + measured; iteration++) {
             await scene.mount(host, editor); await ready();
             await harness.page.evaluate(({ original, remote }) => { const f = window.hostFixture, s = f.snapshot();
@@ -32,10 +43,14 @@ try {
             assert.equal(await input.evaluate(node => node.ownerDocument.activeElement === node), true);
             await harness.page.evaluate(editor => {
                 const input = document.querySelector('textarea[aria-label="Primary source"]'), before = window.hostFixture.snapshot();
-                globalThis.conflictInputMeasurement = new Promise((resolve, reject) => {
+                if (!input) throw new Error("Conflict measurement requires its source input.");
+                /** @type {MeasurementGlobal} */ (globalThis).conflictInputMeasurement = new Promise((resolve, reject) => {
                     const listeners = new AbortController();
-                    let start, frames = 0, frame, finished = false;
-                    const cleanup = () => { finished = true; listeners.abort(); cancelAnimationFrame(frame); clearTimeout(timeout); };
+                    /** @type {number | undefined} */ let start;
+                    /** @type {number | undefined} */ let frame;
+                    let frames = 0, finished = false;
+                    const cleanup = () => { finished = true; listeners.abort(); if (frame !== undefined) cancelAnimationFrame(frame); clearTimeout(timeout); };
+                    /** @param {unknown} error */
                     const fail = error => { if (finished) return; cleanup(); reject(error); };
                     const timeout = setTimeout(() => fail(new Error("Conflict input readiness timed out.")), 10000);
                     document.addEventListener("beforeinput", event => {
@@ -43,6 +58,7 @@ try {
                     }, { capture: true, signal: listeners.signal });
                     input.addEventListener("input", () => {
                         if (start === undefined) { fail(new Error("Conflict input missed its beforeinput origin.")); return; }
+                        const began = start;
                         const check = () => {
                             if (finished) return;
                             try {
@@ -50,12 +66,13 @@ try {
                                 if (!c || !(editor === "candidate" ? window.hostReferenceProbe.isReady(s) : window.hostReferenceProbe.isSourceReady(s))) {
                                     frames = 0; frame = requestAnimationFrame(check); return;
                                 }
+                                if (!view || !c.referenceViewport) { fail(new Error("Conflict measurement lost its source view or reference viewport.")); return; }
                                 if (s.source.revision !== before.source.revision + 1 || s.source.length !== before.source.length + 1
                                     || f.range(before.source.length, s.source.length) !== "z" || view.selection.anchor !== s.source.length || view.selection.head !== s.source.length) {
                                     fail(new Error("Conflict input had incorrect text, revision or selection.")); return;
                                 }
                                 if (++frames < 2) { frame = requestAnimationFrame(check); return; }
-                                const inputToReviewReadyProxyMs = performance.now() - start;
+                                const inputToReviewReadyProxyMs = performance.now() - began;
                                 cleanup(); resolve({ inputHandlerMs: view.metrics?.lastInputMs ?? null, inputToReviewReadyProxyMs,
                                     wholeTextExports: s.source.exports, sourceContextUnits: view.metrics?.inputUnits ?? null, comparisonContextUnits: c.input.inputUnits,
                                     sourceRows: view.metrics?.viewport.rows ?? null, comparisonRows: c.workingViewport.rows + c.referenceViewport.rows,
@@ -65,15 +82,16 @@ try {
                     }, { once: true, signal: listeners.signal });
                 });
                 // The next automation call consumes the result; handle early rejection meanwhile.
-                globalThis.conflictInputMeasurement.catch(() => {});
+                /** @type {MeasurementGlobal} */ (globalThis).conflictInputMeasurement.catch(() => {});
             }, editor);
             const pointStart = performance.now(); await harness.page.keyboard.type("z");
-            const point = await harness.page.evaluate(() => globalThis.conflictInputMeasurement); point.completeActionProxyMs = performance.now() - pointStart;
-            if (editor === "candidate") { assert.equal(point.wholeTextExports, 0); assert.ok(point.sourceContextUnits < 2600); assert.ok(point.sourceRows < 100); }
+            const observation = await harness.page.evaluate(() => /** @type {MeasurementGlobal} */ (globalThis).conflictInputMeasurement);
+            const completeActionProxyMs = performance.now() - pointStart, point = Object.assign(observation, { completeActionProxyMs });
+            if (editor === "candidate") { assert.equal(point.wholeTextExports, 0); assert.ok(point.sourceContextUnits !== null && point.sourceContextUnits < 2600); assert.ok(point.sourceRows !== null && point.sourceRows < 100); }
             assert.ok(point.comparisonContextUnits < 2600); assert.ok(point.comparisonRows < 200);
             const retryStart = performance.now(); await click("Save reviewed source");
             await harness.page.waitForFunction(() => window.hostFixture.snapshot().pendingSaves.length === 1);
-            const retryCapture = await snapshot(); assert.equal(retryCapture.pendingSaves[0].expectedServerVersion, "v1");
+            const retryCapture = await snapshot(); assert.equal(retryCapture.pendingSaves[0]?.expectedServerVersion, "v1");
             await input.press("Control+End"); const lateTyping = await typeHostSuffix(input, " later");
             assert.equal(lateTyping.beforeDepth, retryCapture.history.undoDepth);
             await harness.page.evaluate(() => window.hostFixture.finishSave());
@@ -93,18 +111,19 @@ try {
                 backgroundUpdates: after.activity.background - before.activity.background, sourceRevisions: after.source.revision - before.source.revision };
             if (iteration >= warmup) samples.push(sample);
         }
+        /** @param {WorkflowClock} key */
         const timing = key => distribution(samples.map(sample => sample[key]));
         const result = { host, editor, corpus: corpusId, length: original.length, warmup, measured,
             conflictOutcomeActionProxyMs: timing("conflictOutcomeActionProxyMs"), reviewWithTypingActionProxyMs: timing("reviewWithTypingActionProxyMs"),
             retryWithTypingActionProxyMs: timing("retryWithTypingActionProxyMs"), workflowActionProxyMs: timing("workflowActionProxyMs"),
-            inputHandlerMs: editor === "candidate" ? distribution(samples.map(s => s.point.inputHandlerMs)) : null,
+            inputHandlerMs: editor === "candidate" ? distribution(samples.map(s => { assert.ok(s.point.inputHandlerMs !== null, "Candidate input requires its handler clock."); return s.point.inputHandlerMs; })) : null,
             inputToReviewReadyProxyMs: distribution(samples.map(s => s.point.inputToReviewReadyProxyMs)), completeActionProxyMs: distribution(samples.map(s => s.point.completeActionProxyMs)), samples };
         const large = original.length > 100000;
         const statistic = result.completeActionProxyMs.statistic;
-        result.provisionalBudgets = { statistic, n: measured, handlerMs: 16, readyMs: large ? 250 : 100, completeActionMs: large ? 500 : 200,
+        const provisionalBudgets = { statistic, n: measured, handlerMs: 16, readyMs: large ? 250 : 100, completeActionMs: large ? 500 : 200,
             handlerMet: result.inputHandlerMs ? result.inputHandlerMs[statistic] <= 16 : null,
             readinessMet: result.inputToReviewReadyProxyMs[statistic] <= (large ? 250 : 100), completeActionMet: result.completeActionProxyMs[statistic] <= (large ? 500 : 200) };
-        cases.push(result); console.log(JSON.stringify({ host, editor, corpus: corpusId, handlerMs: result.inputHandlerMs ? timingSummary(result.inputHandlerMs) : null,
+        cases.push({ ...result, provisionalBudgets }); console.log(JSON.stringify({ host, editor, corpus: corpusId, handlerMs: result.inputHandlerMs ? timingSummary(result.inputHandlerMs) : null,
             reviewReadyMs: timingSummary(result.inputToReviewReadyProxyMs), completeActionMs: timingSummary(result.completeActionProxyMs), workflowMs: timingSummary(result.workflowActionProxyMs) }));
     }
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);

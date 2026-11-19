@@ -11,11 +11,12 @@ const writer = await createReportWriter("artifacts/bench/hosts", smoke ? "smoke"
 let activeCase;
 const harness = await openHarness(), scene = createHostScene(harness.page), cases = [];
 const snapshot = scene.snapshot;
+/** @param {string} name */
 const click = name => harness.page.getByRole("button", { name, exact: true }).click();
 const clock = () => harness.page.evaluate(() => performance.now());
 const ready = scene.sourceReady;
 try {
-    for (const editor of ["native", "candidate"]) for (const host of ["plain", "react"]) for (const corpusId of editor === "candidate" ? ["normal", "lines-10000", "lines-100000"] : ["normal", "lines-10000"]) {
+    for (const editor of /** @type {const} */ (["native", "candidate"])) for (const host of ["plain", "react"]) for (const corpusId of editor === "candidate" ? /** @type {const} */ (["normal", "lines-10000", "lines-100000"]) : /** @type {const} */ (["normal", "lines-10000"])) {
         const original = corpus(corpusId).trimEnd(), proposal = `agent ${original}`, corrected = `fixed ${proposal}`, samples = [];
         for (let iteration = 0; iteration < warmup + measured; iteration++) {
             activeCase = { editor, host, corpus: corpusId, iteration, stage: "mount" };
@@ -27,11 +28,12 @@ try {
             const start = await clock();
             activeCase.stage = "proposal";
             await click("Associate agent"); await click("Request proposal");
-            const request = (await snapshot()).requestInput; assert.equal(request.sourceLength, original.length);
+            const request = (await snapshot()).requestInput; assert.ok(request, "Host workflow requires its captured request."); assert.equal(request.sourceLength, original.length);
             await harness.page.evaluate(() => window.hostFixture.setPath("during-request.csv"));
             await harness.page.evaluate(text => window.hostFixture.deliverProposal(text), proposal);
             await harness.page.waitForFunction(() => window.hostFixture.snapshot().review.proposal !== null); await ready();
             const delivered = await snapshot(), input = harness.page.getByRole("textbox", { name: "Primary source", exact: true });
+            assert.ok(delivered.bindings.comparison?.baseline, "Delivered proposal requires its comparison baseline.");
             assert.equal(delivered.bindings.comparison.baseline.length, original.length);
             await input.press("Control+Home"); await input.pressSequentially("fixed "); await ready();
             const correction = await snapshot();
@@ -68,17 +70,20 @@ try {
             assert.equal(await input.evaluate(node => node.ownerDocument.activeElement === node), true);
             await input.pressSequentially("?"); await ready(); const running = await snapshot();
             await click("Request proposal"); const next = await snapshot();
+            assert.ok(next.requestInput, "Host workflow requires its next captured request.");
             assert.equal(next.requestInput.sourceLength, corrected.length + 8); assert.equal(next.requestInput.configurationRevision, next.configuration.revision);
             const workflowAutomationProxyMs = await clock() - start;
             // Full text checks run outside timing and use explicit bounded range reads.
             assert.equal(await scene.exactText(`${corrected} later!?`), true);
             assert.equal(await scene.exactText(original, "reference"), true);
             assert.equal(next.bindings.mounts, before.bindings.mounts); assert.equal(next.activity.errors, 1);
-            const metrics = [correction, typing, running].flatMap(s => s.bindings.views.filter(v => v.id === "primary" && v.metrics).map(v => v.metrics));
-            if (editor === "candidate") { assert.ok(metrics.every(s => s.inputUnits < 2600)); assert.ok(next.bindings.views.every(v => v.metrics.viewport.rows < 100)); }
-            const disposeStart = await clock(); let disposeAutomationProxyMs;
+            const metrics = [correction, typing, running].flatMap(s => s.bindings.views.filter(v => v.id === "primary").flatMap(v => v.metrics ? [v.metrics] : []));
+            if (editor === "candidate") { assert.ok(metrics.every(s => s.inputUnits < 2600)); assert.ok(next.bindings.views.every(v => v.metrics !== null && v.metrics.viewport.rows < 100)); }
+            const disposeStart = await clock(); /** @type {number | undefined} */ let disposeAutomationProxyMs;
             const disposed = await scene.dispose(async () => { disposeAutomationProxyMs = await clock() - disposeStart; });
+            assert.ok(disposed && disposeAutomationProxyMs !== undefined, "Mounted host disposal must finish its observation.");
             assert.equal(disposed.pendingCommands, 0);
+            assert.ok(next.bindings.comparison?.referenceViewport, "Host workflow requires the retained review viewport.");
             const sample = { workflowAutomationProxyMs, disposeAutomationProxyMs, proposalTransactionMs: delivered.proposalTransactionMs,
                 observedInputHandlerMs: metrics.map(s => s.lastInputMs), maxInputUnits: metrics.length ? Math.max(...metrics.map(s => s.inputUnits)) : null,
                 revisions: next.source.revision - before.source.revision, backgroundUpdates: next.activity.background - before.activity.background,
@@ -88,9 +93,10 @@ try {
                 mounts: next.bindings.mounts - before.bindings.mounts, writes: next.activity.writes, acknowledgements: next.activity.acknowledgements, completedRuns: next.activity.completedRuns };
             if (iteration >= warmup) samples.push(sample);
         }
-        cases.push({ host, editor, corpus: corpusId, length: original.length, warmup, measured, workflowAutomationProxyMs: distribution(samples.map(s => s.workflowAutomationProxyMs)),
-            disposeAutomationProxyMs: distribution(samples.map(s => s.disposeAutomationProxyMs)), proposalTransactionMs: distribution(samples.map(s => s.proposalTransactionMs)), samples });
-        console.log(JSON.stringify({ host, editor, corpus: corpusId, workflowProxyMs: timingSummary(cases.at(-1).workflowAutomationProxyMs), proposalMs: timingSummary(cases.at(-1).proposalTransactionMs) }));
+        const result = { host, editor, corpus: corpusId, length: original.length, warmup, measured, workflowAutomationProxyMs: distribution(samples.map(s => s.workflowAutomationProxyMs)),
+            disposeAutomationProxyMs: distribution(samples.map(s => s.disposeAutomationProxyMs)), proposalTransactionMs: distribution(samples.map(s => s.proposalTransactionMs)), samples };
+        cases.push(result);
+        console.log(JSON.stringify({ host, editor, corpus: corpusId, workflowProxyMs: timingSummary(result.workflowAutomationProxyMs), proposalMs: timingSummary(result.proposalTransactionMs) }));
     }
     assert.deepEqual(harness.errors, []); assert.equal((await sourceIdentity()).sha256, source.sha256);
     await writer.write({ schemaVersion: 3, status: "passed", created: new Date().toISOString(), source, smoke,

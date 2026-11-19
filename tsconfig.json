@@ -18,7 +18,8 @@
     "scripts/benchmark-editing.mjs", "scripts/benchmark-host-input.mjs", "scripts/benchmark-navigation.mjs", "scripts/benchmark-services.mjs",
     "scripts/check-docs.mjs", "scripts/documentation-audit.mjs",
     "scripts/generate-bidi-data.mjs", "scripts/generate-grapheme-data.mjs",
-    "scripts/benchmark-comparison.mjs", "scripts/benchmark-viewport.mjs"
+    "scripts/benchmark-comparison.mjs", "scripts/benchmark-viewport.mjs",
+    "scripts/benchmark-hosts.mjs", "scripts/benchmark-save-conflicts.mjs", "scripts/benchmark-save-recovery.mjs"
   ],
   "references": [
     { "path": "./tsconfig.core.json" },
