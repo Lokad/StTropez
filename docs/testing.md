@@ -528,6 +528,18 @@ The [support matrix](README.md#support-matrix) records support and unverified bo
 Choose and record the actual application platform before native qualification. Automated
 Chromium/Firefox/WebKit identify their engine revisions; headless WebKit is not Safari evidence.
 
+The persisted-transition tests exercise retention policy by dispatching page events. They do
+not establish a cache restoration: [Playwright disables BFCache and does not support restoration
+tests](https://playwright.dev/docs/navigations#backforward-cache-bfcache). A real history check
+uses an isolated browser profile and actual history navigation. Require a trusted persisted
+`pageshow`, retained document/editor identity and the browser's restoration signal. Check
+complete rendered text, full stored project values, selection/history and service readiness;
+the editor's bounded textarea context alone cannot prove complete document preservation.
+Use a visible page within the headless browser: an inactive tab can suspend animation frames
+and leave presentation readiness pending. This does not require activating a desktop window.
+Record the browser version and configuration, and keep this scope separate from native input
+and the broader device checks below.
+
 | Environment or path | Exercise |
 | --- | --- |
 | Windows with US English/French AZERTY hardware keyboards | Typing/navigation, shortcuts, AltGr/dead keys, focus to/from adjacent controls and read-only transitions |

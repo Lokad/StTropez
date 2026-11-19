@@ -43,12 +43,17 @@ that requires a real device or consuming application; it does not mean an automa
 | Text and editing | UTF-16 range edits; multiple selections; shared undo/redo; host language rules; bounded native input and rendered rows | Word wrapping; general rich-text editing | Native IME reconversion/placement; dead keys and AltGr across keyboard layouts; touch/mobile selection; browser/OS menu undo and redo |
 | Clipboard and drag | Plain-text clipboard events; host conversion; captured text transfer | Arbitrary rich-document import | OS/app clipboard formats and permissions; native drag images and token-preserving transfer across applications |
 | Search and review | Literal/regular-expression search; replacement; immutable references; editable comparisons; independent folding and aligned rows | General merge/conflict-resolution UI | Consuming-host review policies and durable retention |
-| Lifecycle and recovery | Explicit teardown, captured save conflicts and host-managed draft restoration | Portable previous-session undo; a crash/power-loss durability guarantee | Native application termination; actual browser back/forward-cache restoration; consuming-host storage policy |
+| Lifecycle and recovery | Explicit teardown, cached-page retention, captured save conflicts and host-managed draft restoration | Portable previous-session undo; a crash/power-loss durability guarantee | Native application termination; interactive/cross-browser back/forward-cache restoration; consuming-host storage policy |
 | Language services | [LSP subset](language-server.md), JSON-RPC 2.0, WebSocket transport, UTF-16 positions; host-defined URIs and custom messages | Full LSP coverage; full text synchronization, save notifications, prepare-rename, file operations/change annotations, notebooks/file watching, semantic tokens, formatting, code lens, inlay hints and completion follow-up commands | Compatibility with a consuming application's language server and deployment |
 | Documentation | Plaintext, code and a [focused Markdown subset](language-features.md#hover-and-documentation); explicit host link actions | Full CommonMark/GFM; nested lists, headings, tables, entities, reference links, automatic URLs, provider HTML and embedded media | — |
 | Presentation | Virtualized rows, decorations, measured local geometry, grapheme and bidirectional text support | Minimap; sticky scroll; bracket-pair coloring | Physical display latency; native font rendering across target devices; constrained hardware |
 | Distribution | Compiled dependency-free modules, declarations, CSS and worker assets in NuGet | A .NET runtime dependency or consumer-time library compilation | Production deployment/toolchain adoption |
 | Accessibility | Keyboard navigation and explicit focus traversal | A screen-reader support contract | — |
+
+Actual history restoration of the static demo has focused coverage in isolated headless Chrome
+on Windows: retained editor identity, complete source text, selection, undo/redo, service
+resumption and local save. Cache admission is browser policy; this scope does not establish
+general cache eligibility, interactive device behavior or other browser/platform combinations.
 
 ## Glossary
 
