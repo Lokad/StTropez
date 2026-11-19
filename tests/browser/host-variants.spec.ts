@@ -56,7 +56,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 }); expect((await snapshot(page)).hostSubscriptions).toBe(0);
 });
 
-for (const host of ["plain", "react"]) test(`${host} stale version loads and discard confirmations preserve later typing, takeover and composition`, async ({ page }) => {
+for (const host of ["plain", "react"]) test(`${host} stale version loads and discard confirmations preserve later typing, stale proposals and composition`, async ({ page }) => {
     test.setTimeout(90000); const original = "human source\r\nkept"; await mount(page, host, original); await click(page, "Keep draft version");
     await page.evaluate(() => window.hostFixture.externalWrite("remote")); await version(page, "server");
     await click(page, "Replace primary panel"); await click(page, "Reopen primary source"); await ready(page); const baseline = (await snapshot(page)).bindings.comparison!.baseline;
@@ -66,9 +66,9 @@ for (const host of ["plain", "react"]) test(`${host} stale version loads and dis
     await click(page, "Discard reviewed changes"); await append(page, " later"); const later = original + " later", before = await snapshot(page);
     await click(page, "Confirm reviewed discard"); await ready(page); await exact(page, later); expect((await snapshot(page)).history).toEqual(before.history);
     await click(page, "Discard reviewed changes"); await version(page, "saved"); await click(page, "Cancel version load"); await click(page, "Confirm reviewed discard"); await ready(page); await exact(page, later);
-    await click(page, "Discard reviewed changes"); await version(page, "server"); await click(page, "Associate agent"); await click(page, "Request proposal"); await click(page, "Interrupt agent");
-    await append(page, " human"); const corrected = later + " human"; await click(page, "Deliver proposal"); await click(page, "Finish version load"); await click(page, "Confirm reviewed discard"); await ready(page); await exact(page, corrected);
-    await click(page, "Detach agent"); await click(page, "Associate agent"); await click(page, "Request proposal"); await click(page, "Deliver proposal"); await ready(page);
+    await click(page, "Discard reviewed changes"); await version(page, "server"); await click(page, "Preview proposal");
+    await append(page, " human"); const corrected = later + " human"; await click(page, "Apply proposal"); await click(page, "Finish version load"); await click(page, "Confirm reviewed discard"); await ready(page); await exact(page, corrected);
+    await click(page, "Preview proposal"); await click(page, "Apply proposal"); await ready(page);
     await exact(page, "agent proposal"); await input(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, corrected);
     await input(page).press("Control+End"); await ready(page);
     await input(page).evaluate(node => {

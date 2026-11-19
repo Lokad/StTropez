@@ -126,12 +126,12 @@ for (const host of ["plain", "react"] as const) {
         const original = "    const café = 1;\r\n    const sample = 2;";
         await mount(page, host, "candidate", original); await activate(page, "Save source"); await activate(page, "Finish save");
         await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1");
-        await activate(page, "Associate agent"); await activate(page, "Request proposal"); await expect(primary(page)).toHaveAttribute("readonly", "");
+        await page.evaluate(() => window.hostFixture.setSourceReadOnly(true)); await expect(primary(page)).toHaveAttribute("readonly", "");
         await keyboardFocus(page, primary(page)); await page.keyboard.press("Control+Home"); await page.keyboard.type("!");
         const before = await snapshot(page); await exit(page, backward); await waitForViews(page); const after = await snapshot(page);
         await exact(page, original); expect(after.source.revision).toBe(before.source.revision); expect(after.history).toEqual(before.history);
         expect(selections(after)).toEqual(selections(before)); expect(after.source.exports).toBe(before.source.exports);
-        await activate(page, "Interrupt agent"); await keyboardFocus(page, primary(page)); await expect(primary(page)).not.toHaveAttribute("readonly", "");
+        await page.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await keyboardFocus(page, primary(page)); await expect(primary(page)).not.toHaveAttribute("readonly", "");
         await page.keyboard.press("Control+End"); await page.keyboard.type("!"); await exact(page, original + "!");
         await page.keyboard.press("Control+z"); await exact(page, original); expect((await snapshot(page)).source.dirty).toBe(false);
         await dispose(page);

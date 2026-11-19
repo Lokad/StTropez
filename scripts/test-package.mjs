@@ -434,7 +434,7 @@ try {
     assert.equal(remountedComparison.viewId, retainedComparison.viewId); assert.deepEqual(remountedComparison.selection, retainedComparison.selection);
     const saveReview = await page.evaluate(() => window.consumer.saveReview());
     assert.deepEqual(saveReview, { baselineBefore: "v0", precondition: "v1", saved: "saved", textAfter: "merged later", dirtyAfter: true,
-        cleanAfterUndo: true, serverVersion: "v2", leases: 0, acknowledgement: "acknowledged", proposalRetired: true });
+        cleanAfterUndo: true, serverVersion: "v2", leases: 0 });
     const graphemes = await page.evaluate(() => window.consumer.graphemes());
     assert.deepEqual(graphemes, { version: "18.0.0", boundaries: [0, 4, 9, 11], coordinate: "buffer", released: true, exports: 0 });
     const font = await page.evaluate(() => window.consumer.font());

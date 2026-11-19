@@ -17,7 +17,7 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await p.goto(`/hosts/${host}/?editor=candidate`);
     const input = p.getByRole("textbox", { name: "Primary source", exact: true }), field = p.getByRole("textbox", { name: "Configuration path", exact: true });
     await expect(input).toBeVisible(); const original = large ? Array(100000).fill("const café = 1234567;😀").join("\r\n") : "café😀\r\nrow two";
-    await button(p, "Associate agent").click(); await button(p, "Request proposal").click(); await p.evaluate(value => window.hostFixture.deliverProposal(value), original); await waitForReview(p);
+    await p.evaluate(value => { window.hostFixture.previewProposal(value); window.hostFixture.applyProposal(); }, original); await waitForReview(p);
     await p.evaluate(() => { const f = window.hostFixture, revision = f.snapshot().source.revision;
         for (const id of ["primary", "secondary", "comparison"] as const) if (!f.selectSourceSet(id, revision, [{ anchor: 4, head: 0 }, { anchor: 6, head: 6 }], 1)) throw new Error("Complete selection rejected"); }); await waitForReview(p);
     const prior = await snapshot(p), reference = await p.evaluate(() => { const f = window.hostFixture; return f.referenceRange(0, f.snapshot().bindings.comparison!.baseline!.length); }); await field.fill(" captured.csv ");
@@ -58,14 +58,11 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await field.fill("   "); await expect(field).toHaveAttribute("aria-invalid", "true"); await expect(button(p, "Save configuration")).toBeDisabled();
     await button(p, "Run captured inputs").click(); expect((await snapshot(p)).activity.pendingRuns).toBe(1); await button(p, "Dismiss message").click();
     await button(p, "Finish save").click(); await button(p, "Finish run").click(); await expect.poll(async () => (await snapshot(p)).activity.pendingRuns).toBe(0);
-    // Saved proposal receipts intentionally survive detach; finish their independent acknowledgement.
-    await expect.poll(async () => (await snapshot(p)).review.acknowledgements.length).toBe(1);
-    await button(p, "Retry acknowledgement").click(); await expect.poll(async () => (await snapshot(p)).review.acknowledgements[0]?.status).toBe("failed");
-    await button(p, "Retry acknowledgement").click(); await expect.poll(async () => (await snapshot(p)).review.acknowledgements.length).toBe(0);
     await field.fill(" final.csv "); await field.press("Control+s"); await expect(button(p, "Finish configuration save")).toBeEnabled(); await button(p, "Finish configuration save").click();
     await expect(field).toHaveValue("final.csv"); await expect.poll(async () => (await snapshot(p)).configuration.dirty).toBe(false); await exact(p, original + "!");
     expect(await p.evaluate(value => window.hostFixture.referenceRange(0, value.length) === value, reference!)).toBe(true);
-    expect((await snapshot(p)).bindings.comparison!.baseline).toEqual(prior.bindings.comparison!.baseline);
+    const baseline = prior.bindings.comparison!.baseline!;
+    expect((await snapshot(p)).bindings.comparison!.baseline).toMatchObject({ version: baseline.version, length: baseline.length });
     if (!large) await info.attach("configuration-save", { body: await p.screenshot(), contentType: "image/png" });
     await p.evaluate(() => window.hostFixture.dispose()); const stopped = await snapshot(p); expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0);
 

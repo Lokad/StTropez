@@ -41,7 +41,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         return { ...state, hostSubscriptions: state.hostSubscriptions + views.language.subscriptions + views.hover.subscriptions + views.tablePaste.subscriptions + views.domain.subscriptions + views.navigation.subscriptions + views.project.subscriptions + views.signature.subscriptions + views.rename.subscriptions + views.actions.subscriptions + views.links.subscriptions + views.colors.subscriptions + (draft?.debug().subscriptions ?? 0), draft: draft?.debug() ?? null, bindings: views, commits: commits() }; },
         editSource: (expectedRevision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: controller.source.documentId,
             expectedRevision, edits, origin: "host", history: { kind: "live" } }),
-        deliverProposal: controller.deliverProposalText, runCapture: (index: number) => controller.runCapture(index), setPath: controller.setPath, recoveryText: () => controller.recoveryText(),
+        previewProposal: controller.previewProposalText, applyProposal: controller.applyProposal, runCapture: (index: number) => controller.runCapture(index), setPath: controller.setPath, recoveryText: () => controller.recoveryText(),
         finishRun: controller.finishRun, failRun: controller.failRun, finishSave: controller.finishSave, failSave: controller.failSave,
         externalWrite: (text: string) => controller.externalWrite(text), finishConflictReview: controller.finishConflictReview, saveReviewedSource: controller.saveReviewedSource,
         configurationCapture: () => controller.configurationSave.capture(), configurationValue: () => { const s = controller.connection.getSnapshot(); return s.state === "ready" ? s.value() : null; },
@@ -104,7 +104,7 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; sett
     editSource: (expectedRevision: number, edits: readonly TextEdit[]) => ReturnType<HostController["workspace"]["edit"]>;
     seedInactiveDocuments: () => void;
     inactiveDocuments: () => readonly Readonly<{ id: ResourceId; revision: number; dirty: boolean; current: boolean; exports: number }>[];
-    deliverProposal: (text: string) => void; runCapture: (index: number) => ReturnType<HostController["runCapture"]>; setPath: (path: string) => void;
+    previewProposal: (text: string) => void; applyProposal: () => void; runCapture: (index: number) => ReturnType<HostController["runCapture"]>; setPath: (path: string) => void;
     recoveryText: () => string | null;
     finishRun: () => void; failRun: () => void; finishSave: () => void; failSave: () => void; range: (from: number, to: number) => string;
     externalWrite: (text: string) => void; finishConflictReview: () => boolean; saveReviewedSource: () => void;

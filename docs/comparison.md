@@ -175,7 +175,7 @@ export async function refreshReference(
 
 `ComparisonReversion` additionally captures generation and complete initiating selections. It
 expires after text/selection changes, a new reference intent, server-version or permission
-transitions, edit-lock/agent-ownership changes, tab replacement, view disposal or superseding
+transitions, edit-lock changes, tab replacement, view disposal or superseding
 confirmation. Restoring permission does not revive it. An empty comparison succeeds without
 adding history. Other views map through the single transaction normally.
 

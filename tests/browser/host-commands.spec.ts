@@ -27,8 +27,7 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
     for (const key of ["Tab", "Shift+Tab"]) test(`read-only ${key} cannot become a deferred edit after the host restores permission`, async ({ page }) => {
         const original = "    const sample = 1;\r\n".repeat(1024); await setSource(page, original);
         await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);
-        await page.getByRole("button", { name: "Associate agent", exact: true }).click();
-        await page.getByRole("button", { name: "Request proposal", exact: true }).click();
+        await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
         await expect(primary(page)).toHaveAttribute("readonly", ""); await primary(page).press("Control+a");
         const before = await snapshot(page);
         await primary(page).evaluate(node => {
@@ -41,7 +40,7 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
             const restore = (event: Event) => {
                 if ((event as KeyboardEvent).key !== "Tab") return; node.removeEventListener("keydown", restore);
                 if (!(node as HTMLTextAreaElement).readOnly) throw new Error("Permission must remain locked through the editor's handler.");
-                queueMicrotask(() => { const button = [...document.querySelectorAll("button")].find(b => b.textContent === "Interrupt agent"); if (!button) throw new Error("Missing interrupt command."); button.click(); });
+                queueMicrotask(() => window.hostFixture.setSourceReadOnly(false));
             };
             node.addEventListener("keydown", restore);
         });
@@ -52,7 +51,7 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
         await ready(page); const after = await snapshot(page);
         expect(after.source.revision).toBe(before.source.revision); expect(after.history).toEqual(before.history); expect(await source(page)).toBe(original);
         expect(after.bindings.views.map(v => v.selection)).toEqual(before.bindings.views.map(v => v.selection));
-        expect(after.source.exports).toBe(before.source.exports); // The agent request explicitly captured the source before this keypress.
+        expect(after.source.exports).toBe(before.source.exports);
         await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 });
     });
     test("multiline commands, clipboard history and focus escape remain independent during find, review and save", async ({ page }) => {
@@ -99,14 +98,14 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} integrate
     test("read-only editing commands cannot change text or shared history while copying and focus navigation remain usable", async ({ page }) => {
         const original = "😀 é\r\nconst sample = 1; // TODO"; await setSource(page, original);
         await page.getByRole("button", { name: "Open source review", exact: true }).click(); await ready(page);
-        await page.getByRole("button", { name: "Associate agent", exact: true }).click(); await page.getByRole("button", { name: "Request proposal", exact: true }).click();
+        await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
         await primary(page).press("Control+Home"); await primary(page).press("Shift+ArrowRight");
         expect(await clipboard(primary(page), "copy")).toBe("😀"); const before = await snapshot(page);
         for (const key of ["Backspace", "Delete", "Tab", "Shift+Tab", "Control+z", "Control+Shift+z"]) await primary(page).press(key);
         await primary(page).pressSequentially("(human)"); await clipboard(primary(page), "cut"); await clipboard(primary(page), "paste", "rejected\r\ntext"); await ready(page);
         const after = await snapshot(page); expect(after.source.revision).toBe(before.source.revision); expect(after.history).toEqual(before.history); expect(await source(page)).toBe(original);
         await primary(page).press("Escape"); await primary(page).press("Tab"); await expect(page.getByRole("textbox", { name: "Configuration path", exact: true })).toBeFocused();
-        await page.getByRole("button", { name: "Interrupt agent", exact: true }).click(); await primary(page).press("Control+End"); await primary(page).pressSequentially("!");
+        await page.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await primary(page).press("Control+End"); await primary(page).pressSequentially("!");
         expect(await source(page)).toBe(original + "!"); await primary(page).press("Control+z"); expect(await source(page)).toBe(original);
         await page.evaluate(() => window.hostFixture.dispose()); expect((await snapshot(page)).diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 });
     });

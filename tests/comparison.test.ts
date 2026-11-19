@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createAgentReview, createComparisonController, TextBuffer, Workspace } from "../src/index.ts";
+import { createComparisonController, TextBuffer, Workspace } from "../src/index.ts";
 import { mapComparisonHunks } from "../src/core/comparison-presentation.ts";
 import type { ComparisonController } from "../src/index.ts";
 function fixture(suffix = "") {
@@ -76,14 +76,13 @@ test("delayed whole-review reversion rejects newer typing, selection, reference 
     }
 });
 
-test("permission, lease and takeover cycles cannot revive an old discard confirmation", () => {
-    for (const change of ["permissions", "lease", "takeover"] as const) {
+test("permission and lease cycles cannot revive an old discard confirmation", () => {
+    for (const change of ["permissions", "lease"] as const) {
         const f = fixture(); ready(f.comparison); const ticket = f.comparison.beginReversion();
         if (change === "permissions") { f.workspace.setCapabilities(f.resource.id, { edit: ["host"], save: true, run: true }); f.workspace.setCapabilities(f.resource.id, { edit: ["human", "host", "agent"], save: true, run: true }); }
         if (change === "lease") { const lease = f.workspace.acquireEditLease(f.resource.id, "other", "host"); lease.release(); }
-        if (change === "takeover") { createAgentReview(f.workspace, f.resource).associate("one"); createAgentReview(f.workspace, f.resource).detach(); createAgentReview(f.workspace, f.resource).associate("two"); }
         const before = f.workspace.document(f.resource.documentId); assert.equal(ticket.complete(), false, change); assert.equal(f.workspace.document(f.resource.documentId), before);
-        f.comparison.dispose(); createAgentReview(f.workspace, f.resource).detach(); assert.equal(f.workspace.diagnostics().leases, 0);
+        f.comparison.dispose(); assert.equal(f.workspace.diagnostics().leases, 0);
     }
 });
 
@@ -96,16 +95,6 @@ test("cancelled and empty whole-review reversions are inert and release explicit
     const pending = f.comparison.beginReversion(); f.comparison.dispose(); assert.equal(pending.complete(), false); assert.equal(f.workspace.diagnostics().leases, 0); assert.equal(f.workspace.diagnostics().subscriptions, 0);
 });
 
-test("acknowledgement progress does not expire discard ownership but proposal retirement does", () => {
-    const f = fixture(); createAgentReview(f.workspace, f.resource).associate("agent");
-    const request = createAgentReview(f.workspace, f.resource).beginRequest({}), length = f.workspace.document(f.resource.documentId).buffer.length;
-    assert.equal(request.accept({ id: "proposal", revision: 1, edits: [{ from: length, to: length, insert: "proposal" }] }).applied, true); request.finish();
-    const save = createAgentReview(f.workspace, f.resource).captureSave(); save.start(); const receipt = save.accept({ serverVersion: "saved-2" }); save.finish(); ready(f.comparison);
-    const ticket = f.comparison.beginReversion(), ack = createAgentReview(f.workspace, f.resource).beginAcknowledgement(receipt.acknowledgementId!);
-    ack.fail(); ack.finish(); assert.equal(ticket.isCurrent(), true); assert.equal(ticket.complete(), true); ready(f.comparison);
-    const retired = f.comparison.beginReversion(), retry = createAgentReview(f.workspace, f.resource).beginAcknowledgement(receipt.acknowledgementId!); assert.equal(retry.accept().accepted, true); retry.finish();
-    assert.equal(retired.complete(), false); assert.equal(f.resource.metadata.getSnapshot().serverVersion, "saved-2"); f.comparison.dispose(); createAgentReview(f.workspace, f.resource).detach(); assert.equal(f.workspace.diagnostics().leases, 0);
-});
 
 test("comparison hunk reversion is revision-guarded, undoable and shared across views", () => {
     const { workspace, resource, reference, comparison, edit } = fixture(), sibling = workspace.createDocumentView(resource.documentId);

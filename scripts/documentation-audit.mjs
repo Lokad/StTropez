@@ -23,7 +23,7 @@ export const publicEntries = Object.fromEntries(libraryModules.map(entry => [ent
 // Declaration owners, rather than a second manually maintained list of public names.
 const ownerGroups = {
     "text-model": ["core/changes", "core/positions", "core/newlines", "core/text-buffer", "core/buffer-change", "core/selections", "core/snippets"],
-    workspace: ["core/workspace", "core/commands", "core/agent"],
+    workspace: ["core/workspace", "core/commands"],
     editor: ["core/language-edits", "core/bracket-matching", "browser/text-editor"],
     viewport: ["browser/viewport"],
     folding: ["core/folding", "core/fold-discovery", "browser/folding-controller", "protocol/lsp-folding"],

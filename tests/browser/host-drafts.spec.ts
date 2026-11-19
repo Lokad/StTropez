@@ -154,11 +154,11 @@ for (const host of ["plain", "react"]) for (const large of [false, true]) test(`
     await working.pressSequentially("N"); await button(p, "Finish save").click(); await expect.poll(async () => (await snapshot(p)).source.serverVersion).toBe("v4"); await waitForDraft(p); await exact(p, raw + "KLMN"); expect((await snapshot(p)).source.dirty).toBe(true);
     await source(p, "Secondary source").press("Control+z"); await waitForDraft(p); await exact(p, raw + "KLM"); expect((await snapshot(p)).source.dirty).toBe(false); await source(p, "Secondary source").press("Control+Shift+z"); await waitForDraft(p); await exact(p, raw + "KLMN");
     await ref.focus(); await button(p, "Run captured inputs").click(); const s = await snapshot(p); expect(s.activity.lastRun!.sourceRevision).toBe(s.source.revision); expect(s.bindings.comparison!.baseline!.version).toBe(remote); expect(await p.evaluate(() => window.hostFixture.runCapture(0)!.configuration.path)).toBe("recovered.csv"); expect(await p.evaluate(() => window.hostFixture.runCapture(0)!.source.slice(-4))).toBe("KLMN"); await button(p, "Finish run").click(); await waitForDraft(p);
-    // A genuine stored read is pending while authority is revoked and restored by takeover.
+    // Restore permission before the held read returns; its captured authority still expires.
     await holdDraftTransaction(p); await button(p, "Restore source draft").click(); await button(p, "Confirm draft action").click(); await p.waitForFunction(() => window.heldDraftTransactions.length === 1); const intent = await snapshot(p);
-    await button(p, "Associate agent").click(); await button(p, "Request proposal").click(); await button(p, "Interrupt agent").click(); await p.evaluate(() => window.releaseDraftTransactions()); await waitForDraft(p);
+    await p.evaluate(() => { window.hostFixture.setSourceReadOnly(true); window.hostFixture.setSourceReadOnly(false); window.releaseDraftTransactions(); }); await waitForDraft(p);
     await expect(p.getByLabel("Draft recovery status", { exact: true })).toContainText("became stale"); await exact(p, raw + "KLMN"); expect((await snapshot(p)).history).toEqual(intent.history); expect(selections(await snapshot(p))).toEqual(selections(intent));
-    await button(p, "Deliver proposal").click(); await expect.poll(async () => (await snapshot(p)).pendingCommands).toBe(0); await waitForDraft(p); await exact(p, raw + "KLMN"); expect((await snapshot(p)).review.proposal).toBeNull(); expect((await snapshot(p)).history).toEqual(intent.history); expect(selections(await snapshot(p))).toEqual(selections(intent)); await dispose(p);
+    await dispose(p);
 });
 for (const host of ["plain", "react"]) test(`${host} draft confirmation, authority, storage errors and discard never overwrite later work`, async ({ page: p }) => {
     test.setTimeout(120000);

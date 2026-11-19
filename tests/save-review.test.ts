@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createAgentReview, Workspace, WorkspaceCommands } from "../src/index.ts";
+import { Workspace, WorkspaceCommands } from "../src/index.ts";
 import type { SaveResponse, SaveSubmission } from "../src/index.ts";
 
 function fixture() {
@@ -62,17 +62,6 @@ test("a review version is copied at capture and an intervening local receipt exp
     assert.equal(source.metadata.getSnapshot().serverVersion, "other-receipt"); assert.equal(workspace.ownership(source.id).leases, 0);
 });
 
-test("reviewed writes retain proposal identity and independently retryable acknowledgement receipts", async () => {
-    const { workspace, source, edit, commands } = fixture(); createAgentReview(workspace, source).associate("agent");
-    const request = createAgentReview(workspace, source).beginRequest(null);
-    assert.equal(request.accept({ id: request.input.id, revision: 1, edits: [{ from: 0, to: 4, insert: "proposal" }] }).applied, true); request.finish();
-    edit("corrected"); const proposal = createAgentReview(workspace, source).getSnapshot().proposal!.target;
-    const result = await commands.save(createAgentReview(workspace, source).captureSave({ target: workspace.captureResource(source.id), expectedRevision: source.getSnapshot().revision, expectedServerVersion: "v1" }), { save: async submission => { assert.deepEqual(submission.proposal, proposal); return { kind: "saved", serverVersion: "v2" }; } });
-    assert.equal(result.kind, "saved"); assert.equal(createAgentReview(workspace, source).getSnapshot().acknowledgements.length, 1);
-    const acknowledgement = createAgentReview(workspace, source).getSnapshot().acknowledgements[0]!;
-    await createAgentReview(workspace, source).acknowledge(acknowledgement.id, { acknowledge: async () => {} });
-    assert.equal(workspace.ownership(source.id).leases, 0); assert.equal(workspace.document(source.documentId).text(), "corrected");
-});
 
 test("typed resources use the reviewed precondition without acquiring a text document", async () => {
     const workspace = new Workspace(), commands = new WorkspaceCommands(workspace);

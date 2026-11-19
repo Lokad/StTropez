@@ -1,10 +1,10 @@
-import type { AgentSnapshot, ResourceMetadata } from "../../src/index.ts";
+import type { ResourceMetadata } from "../../src/index.ts";
 import type { Activity, HostController } from "./controller.ts";
 import type { SaveConflictPresentation } from "./source-review.ts";
 
-export function operationStatusModel(review: AgentSnapshot, activity: Activity, metadata: ResourceMetadata) {
+export function operationStatusModel(activity: Activity, metadata: ResourceMetadata) {
     return { label: "Host operation status",
-        text: `Association: ${review.association?.id ?? "detached"} · Request: ${review.request ? "running" : "idle"} · Proposal: ${review.proposal?.target.revision ?? "none"} · Acknowledgement: ${review.acknowledgements[0]?.status ?? "none"} · ${metadata.dirty ? "Unsaved" : "Saved"} · Save status: ${metadata.saveStatus} · Saves: ${activity.writes} · Runs: ${activity.pendingRuns} pending, ${activity.completedRuns} completed${activity.lastRun ? ` · Captured run: source revision ${activity.lastRun.sourceRevision}, configuration revision ${activity.lastRun.configurationRevision}, ${activity.lastRun.mode}` : ""} · Background: ${activity.background}`,
+        text: `${metadata.dirty ? "Unsaved" : "Saved"} · Save status: ${metadata.saveStatus} · Saves: ${activity.writes} · Runs: ${activity.pendingRuns} pending, ${activity.completedRuns} completed${activity.lastRun ? ` · Captured run: source revision ${activity.lastRun.sourceRevision}, configuration revision ${activity.lastRun.configurationRevision}, ${activity.lastRun.mode}` : ""} · Background: ${activity.background}`,
     } as const;
 }
 

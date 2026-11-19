@@ -108,7 +108,7 @@ capture validation, native-input reconciliation and document commits. Successful
 their recovery text before presentation callbacks; cancellation recovers only unconsumed input.
 Caret presentation reads this state; the editor disposes it before destroying its viewport.
 
-Workspace publishes atomic content/history/view changes. Save, Run and proposal policy use
+Workspace publishes atomic content/history/view changes. Save and Run use
 captured resource APIs; extracting presentation or a computation helper does not split that
 transaction authority. Resource, tab, document and view lifetimes follow the
 [workspace ownership contract](workspace.md#identities-and-snapshots).

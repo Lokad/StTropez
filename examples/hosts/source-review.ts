@@ -1,4 +1,4 @@
-import { createAgentReview, TextBuffer } from "../../src/index.ts";
+import { TextBuffer } from "../../src/index.ts";
 import type { ComparisonBaseline, Observable, Operation, SavePort, SaveReview, SaveSubmission, TabTarget, TextResourceHandle, Workspace, WorkspaceCommands } from "../../src/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import { ReviewVariants } from "./variants.ts";
@@ -63,8 +63,8 @@ export class HostSourceReview {
     retainComparisonReference(baseline: ComparisonBaseline): void {
         if (!this.disposed) { this.referenceCell.set({ ...this.referenceCell.get(), baseline }); this.variants.referenceChanged(); }
     }
-    proposalApplied(baseline: ComparisonBaseline): void {
-        this.publish(baseline); this.variants.referenceChanged(); this.ports.present();
+    showComparison(baseline: ComparisonBaseline): void {
+        this.beginReferenceRequest(); this.publish(baseline); this.variants.referenceChanged(); this.ports.present();
     }
     readonly save = (): void => {
         if (this.disposed) return;
@@ -76,7 +76,7 @@ export class HostSourceReview {
         if (!this.ports.inputReady()) return;
         const conflictId = this.conflictCell.get()?.id;
         let captured: SaveSubmission<string> | undefined;
-        this.ports.track(this.commands.save(createAgentReview(this.workspace, this.source).captureSave(review), { save: submission => { captured = submission; return this.ports.save(submission); } })
+        this.ports.track(this.commands.save(this.workspace.captureSave(this.source, review), { save: submission => { captured = submission; return this.ports.save(submission); } })
             .then(result => {
                 if (!this.disposed && result.kind === "saved") {
                     this.variants.remember(this.savedReference);

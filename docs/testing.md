@@ -118,7 +118,7 @@ and integration, rather than repeating every source-model permutation.
 | --- | --- | --- |
 | Text, UTF-16 maps, newline conversion and complete selections | Buffer, positions, UTF-16 ranges and selections models | Editing, raw-CRLF caret and multiple-input journeys |
 | Atomic revisions, shared history and detached views | Workspace, history/history-bounds and resources models | Workspace, editing and host lifecycle journeys |
-| Save/conflict, canonical replies and agent decisions | Save-review, host-save-conflict/failure and agent models | Save/conflict, composition and complete host journeys |
+| Save/conflict and canonical replies | Save-review, host-save-conflict/failure models | Save/conflict, composition and complete host journeys |
 | Immutable reference, exact hunks and review lifetime | Comparison, comparison rows/scroll/scheduling models | Comparison ownership, lifecycle, reference input/find and aligned-pane journeys |
 | Demo recovery and syntax classification | Demo-recovery, demo-syntax and demo-syntax-colors models | Real storage/reload/failure, file/sample switching, save and visible-color journeys |
 | Positional LSP captures and invalid responses | LSP clients, workspace, workspace edits and protocol feature models | Focused hover/navigation/rename/action and input/synchronization journeys |
@@ -196,7 +196,7 @@ Use the owning [API contracts](README.md#subjects) to define expected behavior:
 | Editing and navigation | Actual keyboard typing, deletion, arrows/word/line/page/grapheme movement, indentation/comments, pairs, newline, multiple selections, regex/case/whole-word find/replace, clipboard/drag paths and focus escape yield exact text and selection |
 | Unicode and geometry | Surrogates, combining sequences, emoji/joiners, CRLF, selection affinities, zoom and fonts preserve source and expected caret/hit targets within the supported geometry contract |
 | Save and Run | Queued/captured saves preserve submitted content, server preconditions, retry/canonical/conflict behavior and dirty state while typing continues; Save and Run retain separate source/settings captures |
-| Agent review | Request, proposal, correction, interruption, save and acknowledgement-only retry retain their captured versions; an older saved proposal cannot retire a newer one |
+| Reviewed proposal | The host previews a replacement, checks its captured revision, then corrects and saves the applied edit |
 | Comparison | Reference, saved and proposal versions stay distinct; refresh/accept/revert/discard and hunk navigation handle stale decisions, whitespace, edits, delayed loads and takeover without losing history/corrections; both panes show their own source/color/fold state |
 | Language features | Visible token classes, completion edits, diagnostics, hover/signatures, navigation, rename/actions, links/colors and explicit command decisions use validated captures; editing works during provider outage |
 | Protocol | Initialization/capabilities, dynamic registration, incremental sync, cancellation, diagnostics, server edits, custom messages and reconnect exercise the declared actual transport; internal worker replies do not establish LSP compatibility |

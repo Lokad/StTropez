@@ -2,7 +2,7 @@ import { Workspace, TextBuffer, TextDiff, WordCursor, importText, exportText, an
 import { inputConflictEvent, createFontAssetController, createFindController, createRegexFindBackend, mountTextComparison, mountTextViewport, mountTextEditor } from "sttropez/browser";
 import * as browserApi from "sttropez/browser";
 import { fontFixture } from "./font-fixture.js";
-import { createAgentReview, WorkspaceCommands } from "sttropez";
+import { WorkspaceCommands } from "sttropez";
 import { createSelectionSet, planSelectionEdits } from "sttropez";
 import type { ResourceVisibility, SaveReview } from "sttropez";
 import type { FindDiagnostics, FindReason, TextComparisonDiagnostics, InputConflictDetail, PresentedLine, TextComparisonOptions, TextComparisonSnapshot, TextViewportOptions } from "sttropez/browser";
@@ -258,29 +258,23 @@ const fixture = { text: () => workspace.document(documentId).text(),
     },
     saveReview: async () => {
         const model = new Workspace(), source = model.createTextResource({ scope: "consumer", resource: "retry", variant: "working" }, "Retry", { value: "base", serverVersion: "v0" });
-        const agent = createAgentReview(model, source); agent.associate("consumer-agent");
-        const request = agent.beginRequest({ purpose: "review" });
-        request.accept({ id: "proposal", revision: 1, edits: [{ from: 0, to: 4, insert: "merged" }] }); request.finish();
+        const doc = model.document(source.documentId);
+        model.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "agent", history: { kind: "proposal" },
+            edits: [{ from: 0, to: doc.buffer.length, insert: "merged" }] });
         const commands = new WorkspaceCommands(model);
-        await commands.save(agent.captureSave(), { save: async () => ({ kind: "conflict", serverVersion: "v1" }) });
+        await commands.save(model.captureSave(source), { save: async () => ({ kind: "conflict", serverVersion: "v1" }) });
         const baselineBefore = source.metadata.getSnapshot().serverVersion;
         const review: SaveReview = { target: model.captureResource(source.id), expectedRevision: source.getSnapshot().revision, expectedServerVersion: "v1" };
         let precondition: string | null = null;
-        const saved = await commands.save(agent.captureSave(review), { save: async submission => {
+        const saved = await commands.save(model.captureSave(source, review), { save: async submission => {
             precondition = submission.expectedServerVersion;
-            if (submission.proposal?.id !== "proposal") throw new Error("Compiled review lost its captured proposal.");
             model.edit({ documentId: source.documentId, expectedRevision: submission.revision, origin: "human", edits: [{ from: 6, to: 6, insert: " later" }] });
             return { kind: "saved", serverVersion: "v2" };
         } });
         const textAfter = model.document(source.documentId).text(), dirtyAfter = source.metadata.getSnapshot().dirty;
         model.undo({ documentId: source.documentId, expectedRevision: source.getSnapshot().revision });
-        if (saved.kind !== "saved" || !saved.receipt.acknowledgementId) throw new Error("Compiled review did not retain an acknowledgement.");
-        const acknowledgement = await agent.acknowledge(saved.receipt.acknowledgementId, { acknowledge: async submission => {
-            if (submission.receipt !== saved.receipt || submission.receipt.submission.value !== "merged") throw new Error("Compiled acknowledgement lost the exact saved receipt.");
-        } });
         return { baselineBefore, precondition, saved: saved.kind, textAfter, dirtyAfter, cleanAfterUndo: !source.metadata.getSnapshot().dirty,
-            serverVersion: source.metadata.getSnapshot().serverVersion, leases: model.ownership(source.id).leases,
-            acknowledgement: acknowledgement.kind, proposalRetired: agent.getSnapshot().proposal === null };
+            serverVersion: source.metadata.getSnapshot().serverVersion, leases: model.ownership(source.id).leases };
     },
     graphemes: () => {
         const buffer = TextBuffer.from("🇦🇧👩‍💻\r\n"), cursor = createGraphemeCursor(buffer);

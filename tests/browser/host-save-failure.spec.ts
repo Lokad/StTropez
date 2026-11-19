@@ -43,15 +43,14 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await expect(page.getByRole("textbox", { name: "Primary source", exact: true })).toBeVisible();
         });
         for (const corpus of editor === "candidate" ? ["normal", "lines-100000"] : ["normal"]) {
-            test(`${corpus} typing, shared history and review survive a failed save, remounted retry and acknowledgement`, {
+            test(`${corpus} typing, shared history and review survive a failed save, remounted retry`, {
                 annotation: editor === "native" ? [{ type: "native-projection-cache", description: "Optional whole-value projection cache evicted between tasks; native exports are diagnostic and candidate zero-export gates remain strict." }] : [],
             }, async ({ page }) => {
                 const button = (name: string) => page.getByRole("button", { name, exact: true });
                 const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
                 const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });
                 const original = corpus === "normal" ? "proposal é 😀\r\nrow two" : Array(100000).fill("const sample = 1234567;").join("\r\n");
-                await button("Associate agent").click(); await button("Request proposal").click();
-                await page.evaluate(value => window.hostFixture.deliverProposal(value), original); await waitForSavedViews(page);
+                await page.evaluate(value => { window.hostFixture.previewProposal(value); window.hostFixture.applyProposal(); }, original); await waitForSavedViews(page);
                 await working.press("Control+Home"); await working.press("Shift+ArrowRight"); await working.press("Shift+ArrowRight");
                 await primary.press("Control+End"); await primary.pressSequentially(" corrected");
                 const corrected = original + " corrected";
@@ -69,13 +68,13 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
                 const failed = await snapshot(page);
                 expect(await text(page)).toBe(later); expect(failed.source.revision).toBe(before.source.revision);
                 expect(selections(failed)).toEqual(selections(before)); expect(failed.history).toEqual(before.history);
-                expect(failed.review).toEqual(before.review); expect(failed.server).toEqual(before.server);
+                expect(failed.server).toEqual(before.server);
                 expect(failed.bindings.comparison!.baseline).toEqual(before.bindings.comparison!.baseline);
                 expect(failed.comparisonReference).toEqual(before.comparisonReference);
                 expect(failed.diagnostics.leases).toBe(before.diagnostics.leases - 1);
                 expect(failed.source).toMatchObject({ serverVersion: "v0", dirty: true });
                 if (editor === "candidate") expect(failed.source.exports).toBe(0); else expect(failed.source.exports).toBeGreaterThan(0);
-                expect(failed.activity).toMatchObject({ writes: 0, errors: 1 }); expect(failed.review.acknowledgements).toEqual([]);
+                expect(failed.activity).toMatchObject({ writes: 0, errors: 1 });
                 await button("Dismiss message").click(); await button("Save source").click();
                 await expect.poll(async () => (await snapshot(page)).pendingSaves).toEqual([
                     { revision: failed.source.revision, length: later.length, expectedServerVersion: "v0" },
@@ -90,16 +89,12 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
                 await expect(primary).toBeFocused(); expect(await text(page)).toBe(newest);
                 const saved = await snapshot(page); expect(saved.source.dirty).toBe(true);
                 expect(saved.activity).toMatchObject({ writes: 1, lastSavedRevision: failed.source.revision });
-                expect(saved.review.acknowledgements).toHaveLength(1);
                 await primary.press("Control+z"); await waitForSavedViews(page); expect(await text(page)).toBe(later); expect((await snapshot(page)).source.dirty).toBe(false);
                 await primary.press("Control+Shift+z"); await waitForSavedViews(page); expect(await text(page)).toBe(newest); expect((await snapshot(page)).source.dirty).toBe(true);
                 await button("Capture reference refresh").click(); await button("Finish reference refresh").click(); await waitForSavedViews(page);
                 await expect(page.getByRole("heading", { name: "Baseline · reference:saved-v1", exact: true })).toBeVisible();
                 expect(await page.evaluate(length => window.hostFixture.referenceRange(0, length), later.length)).toBe(later);
                 expect((await snapshot(page)).bindings.comparison!.baseline!.length).toBe(later.length);
-                await button("Retry acknowledgement").click();
-                await expect.poll(async () => (await snapshot(page)).review.acknowledgements[0]?.status).toBe("failed");
-                await button("Retry acknowledgement").click(); await expect.poll(async () => (await snapshot(page)).review.proposal).toBeNull();
                 const final = await snapshot(page); expect(final.activity.writes).toBe(1);
                 if (editor === "candidate") expect(final.source.exports).toBe(0); else expect(final.source.exports).toBeGreaterThan(0);
                 expect(await text(page)).toBe(newest);
@@ -112,7 +107,6 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
                     expect(final.bindings.comparison!.referenceViewport!.rows).toBeLessThan(100);
                     expect(final.bindings.comparison!.referenceViewport!.readUnits).toBeLessThan(20000);
                 }
-                await button("Request proposal").click(); expect((await snapshot(page)).requestInput).toMatchObject({ sourceLength: newest.length, sourceRevision: final.source.revision });
                 await page.evaluate(() => window.hostFixture.dispose()); const stopped = await snapshot(page);
                 expect(stopped.diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 }); expect(stopped.hostSubscriptions).toBe(0);
             });

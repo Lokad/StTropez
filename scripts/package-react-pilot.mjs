@@ -156,11 +156,7 @@ async function workflow(page, original, activeCase, screenshot) {
     };
     const initial = await state(), started = performance.now();
     activeCase.stage = "proposal and correction";
-    await click("Associate agent"); await click("Request proposal");
-    await page.waitForFunction(() => window.hostFixture.snapshot().requestInput !== null);
-    const request = (await state()).requestInput; assert.ok(request); assert.equal(request.sourceLength, 5);
-    await page.evaluate(value => window.hostFixture.deliverProposal(value), original);
-    await page.waitForFunction(length => { const current = window.hostFixture.snapshot(); return current.review.proposal !== null && current.source.length === length; }, original.length);
+    await page.evaluate(value => { window.hostFixture.previewProposal(value); window.hostFixture.applyProposal(); }, original);
     await ready(); await exact(); const ids = identities(await state());
     const beforePeerNavigation = await state(), secondLineStart = original.indexOf("\n") + 1;
     await peer.focus();
@@ -191,13 +187,7 @@ async function workflow(page, original, activeCase, screenshot) {
     await page.evaluate(() => window.hostFixture.finishSave()); await settle("v1", true);
     await moveHistory("undo", tail.groups, failedSource); assert.equal((await state()).source.dirty, false);
     await moveHistory("redo", tail.groups, afterTail); assert.equal((await state()).source.dirty, true);
-    await click("Retry acknowledgement");
-    await page.waitForFunction(() => window.hostFixture.snapshot().review.acknowledgements[0]?.status === "failed");
-    await click("Retry acknowledgement"); await page.waitForFunction(() => window.hostFixture.snapshot().review.proposal === null);
-    assert.equal((await state()).activity.acknowledgements, 1); await click("Dismiss message");
-    await click("Request proposal"); await page.waitForFunction(() => window.hostFixture.snapshot().requestInput !== null);
-    const next = await state(); assert.ok(next.requestInput); assert.equal(next.requestInput.sourceLength, expected.length); assert.equal(next.requestInput.configurationRevision, next.configuration.revision);
-    await click("Interrupt agent"); await click("Deliver proposal"); await page.waitForFunction(() => window.hostFixture.snapshot().pendingCommands === 0); await exact();
+    await exact();
     activeCase.stage = "captured Run and independent configuration";
     const configuration = page.getByRole("textbox", { name: "Configuration path", exact: true });
     await configuration.fill("captured-run.csv"); await click("Run captured inputs");
@@ -287,7 +277,7 @@ async function workflow(page, original, activeCase, screenshot) {
     const final = await ready(); await exact(); await exact(expected, true);
     assert.equal(review(final).baseline?.version, "reference:saved-v6");
     assert.equal(review(final).hunks, 0); assert.deepEqual(identities(final), ids);
-    assert.equal(final.activity.writes, 5); assert.equal(final.activity.completedRuns, 1); assert.equal(final.activity.acknowledgements, 1);
+    assert.equal(final.activity.writes, 5); assert.equal(final.activity.completedRuns, 1);
     assert.ok(final.activity.background > initial.activity.background);
     assert.equal(final.pendingCommands, 0); assert.equal(final.saveConflict, null); assert.equal(final.layout.modal.kind, "none");
     if (screenshot) await screenshot("saved");
@@ -303,7 +293,7 @@ async function workflow(page, original, activeCase, screenshot) {
     for (const key of /** @type {const} */ (["leases", "views", "subscriptions"])) assert.equal(disposed.diagnostics[key], 0);
     assert.equal(disposed.hostSubscriptions, 0); assert.equal(disposed.pendingCommands, 0);
     assert.deepEqual(disposed.pendingSaves, []); assert.deepEqual(disposed.pendingRuns, []);
-    return { point, pointHistory, browserInputs, selectionNavigation, typing, captures, checkpoints, request,
+    return { point, pointHistory, browserInputs, selectionNavigation, typing, captures, checkpoints,
         run: { sourceLength: run.source.length, configuration: run.configuration, settings: run.settings },
         final, disposed, workflowAutomationProxyMs: performance.now() - started };
 }
@@ -463,7 +453,7 @@ export async function runPackagedReactPilot(browser, baseUrl, { directory, packa
         const textDrag = benchmark ? null : await proveCompiledTextDrag(browser, baseUrl);
         assert.equal((await sourceIdentity()).sha256, source.sha256);
         await writeFile(`${directory}/react-${benchmark ? "bench-" : ""}${browser.browserType().name()}.json`, JSON.stringify({ source, packageSha256, benchmark, environment: { ...environment(), browser: browser.version() }, cases, textDrag, errors,
-            boundaries: "Restored compiled assets and the existing development React host under Strict Mode. Initial mount/setup is separate; workflow starts at association/proposal request and ends after explicit disposal. Actual typing, deferred save/failure/conflict/canonical replies, shared history, Run, configuration, remount and references use original host ports. Point q alone has handler/readiness/action targets, with the shared all-pane/caret/scans/diff/reference/two-frame probe. Handler elapsed is not CPU; workflow includes transport, controls, exact-source oracles and local settlement, with no imposed service delay. Fresh page per workflow; warmups/raw samples retained. Semantic screenshots are outside point clocks and included in semantic workflow; repeated workflows omit screenshots. No native IME/OSclipboard/display, startup tail, browser heap-retention or production qualification." }, null, 2));
+            boundaries: "Restored compiled assets and the existing development React host under Strict Mode. Initial mount/setup is separate; workflow starts at proposal preview and ends after explicit disposal. Actual typing, deferred save/failure/conflict/canonical replies, shared history, Run, configuration, remount and references use original host ports. Point q alone has handler/readiness/action targets, with the shared all-pane/caret/scans/diff/reference/two-frame probe. Handler elapsed is not CPU; workflow includes transport, controls, exact-source oracles and local settlement, with no imposed service delay. Fresh page per workflow; warmups/raw samples retained. Semantic screenshots are outside point clocks and included in semantic workflow; repeated workflows omit screenshots. No native IME/OSclipboard/display, startup tail, browser heap-retention or production qualification." }, null, 2));
     } catch (error) {
         const failureId = Date.now();
         await writeFile(`${directory}/react-failure-${failureId}.json`, JSON.stringify({ source, packageSha256, activeCase, cases, completedSamples, errors, failure: String(error instanceof Error ? error.stack ?? error.message : error),

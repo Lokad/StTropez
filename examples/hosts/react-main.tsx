@@ -47,7 +47,7 @@ function Commands() {
     return <nav aria-label="Host commands">{actions(controller, bindings).map(action => <button key={action.label} onClick={action.invoke}>{action.label}</button>)}</nav>;
 }
 function Status() {
-    const model = operationStatusModel(useObserved(controller.review), useObserved(controller.activity), useObserved(controller.source.metadata));
+    const model = operationStatusModel(useObserved(controller.activity), useObserved(controller.source.metadata));
     return <output aria-label={model.label}>{model.text}</output>;
 }
 function SourceMetadata() {

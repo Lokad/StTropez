@@ -54,22 +54,22 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP revie
         await button(page, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(page)).pendingRuns.length).toBe(1);
         expect((await snapshot(page)).pendingRuns[0]!.sourceId).toBe(identity); expect(await page.evaluate(() => window.hostFixture.runCapture(0))).toMatchObject({ source: corrected + " later" });
     });
-    test("proposal locks expire an offered completion; a fresh correction survives save, acknowledgement retry and the next request", async ({ page }) => {
+    test("a read-only transition expires an offered completion and a corrected proposal survives save", async ({ page }) => {
         const original = "const saMORE = 1; // TODO";
         await seed(page, original); await offer(page);
         const offered = await page.evaluate(() => window.hostFixture.providerState()!.completionId), before = await snapshot(page);
         expect(offered).toBeGreaterThan(0); expect((await provider(page)).transport).toBe("lsp3.17");
         const obsoleteChoice = await page.getByRole("option", { name: "sample", exact: true }).getByRole("button").elementHandle();
         expect(obsoleteChoice).not.toBeNull();
-        await button(page, "Associate agent").click(); await button(page, "Request proposal").click();
-        const captured = (await snapshot(page)).requestInput, revision = (await snapshot(page)).source.revision;
+        await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
+        const revision = (await snapshot(page)).source.revision;
         await expect(page.getByRole("option")).toHaveCount(0); await expect(button(page, "Replace completion")).toBeDisabled();
         expect(await page.evaluate(() => window.hostFixture.providerState()!.completionId)).not.toBe(offered);
         await obsoleteChoice!.evaluate(node => node.dispatchEvent(new MouseEvent("click", { bubbles: true }))); await obsoleteChoice!.dispose();
         await button(page, "Replace completion").dispatchEvent("click");
         expect((await snapshot(page)).source.revision).toBe(revision); expect(await source(page)).toBe(original);
         expect((await snapshot(page)).history).toEqual(before.history);
-        await page.evaluate(() => window.hostFixture.deliverProposal("const saMORE = 2; // TODO")); await ready(page);
+        await page.evaluate(() => { const f = window.hostFixture; f.setSourceReadOnly(false); f.previewProposal("const saMORE = 2; // TODO"); f.applyProposal(); }); await ready(page);
         await field(page).press("Control+Home"); for (let i = 0; i < 8; i++) await field(page).press("ArrowRight");
         await offer(page); const proposed = await snapshot(page); await field(page).press("Alt+Enter"); await ready(page);
         await expect(field(page, "Secondary source")).toHaveValue("const sample = 2; // TODO");
@@ -79,14 +79,10 @@ for (const mode of ["plain", "react"] as const) test.describe(`${mode} LSP revie
         await button(page, "Save source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
         await field(page).press("Control+End"); await field(page).pressSequentially(" correction"); await ready(page);
         const corrected = await snapshot(page);
-        await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).review.acknowledgements.length).toBe(1);
-        await button(page, "Retry acknowledgement").click(); await expect.poll(async () => (await snapshot(page)).review.acknowledgements[0]?.status).toBe("failed");
-        await button(page, "Retry acknowledgement").click(); await expect.poll(async () => (await snapshot(page)).review.proposal).toBeNull();
+        await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).activity.writes).toBe(1);
         expect(await source(page)).toBe("const sample = 2; // TODO correction"); expect((await snapshot(page)).source.dirty).toBe(true);
         expect((await snapshot(page)).history).toEqual(corrected.history);
-        await button(page, "Request proposal").click(); const next = (await snapshot(page)).requestInput!;
-        expect(next.sourceLength).toBe("const sample = 2; // TODO correction".length);
-        expect(next.sourceRevision).toBe(corrected.source.revision); expect(next.sourceRevision).toBeGreaterThan(captured!.sourceRevision);
+        expect(corrected.source.revision).toBeGreaterThan(revision);
         await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
         expect(final.diagnostics).toMatchObject({ leases: 0, views: 0, subscriptions: 0 }); expect(final.hostSubscriptions).toBe(0);
         expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });

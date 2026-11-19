@@ -231,7 +231,7 @@ deployment job receives Pages-write and identity-token permissions.
 Open either development host with `?editor=candidate`. The shared
 [controller](../examples/hosts/controller.ts) owns two independently selected views of one source,
 configuration and transfer resources, review state and deferred local services. **Finish save**,
-**Deliver proposal**, **Finish run** and **Finish remote review** complete captured responses
+**Finish run** and **Finish remote review** complete captured responses
 explicitly. Reload resets simulated service state; recovery checkpoints have a separate lifetime.
 
 ### Editing, review and captured services
@@ -254,10 +254,11 @@ explicitly. Reload resets simulated service state; recovery checkpoints have a s
    **Review remote source** / **Finish remote review** captures the remote baseline. Correct the
    working source and choose **Save reviewed source**. Its precondition is the reviewed version;
    another remote write conflicts again. A failed reviewed save retains local work for retry.
-6. **Associate agent**, **Request proposal**, then **Deliver proposal**. Pending proposals make
-   source read-only while forms stay independent. Correct and save the proposal. **Retry
-   acknowledgement** exercises the fixture's failed first acknowledgement and successful retry.
-   **Interrupt agent** restores editing. **Run captured inputs** separately captures source/form
+6. Choose **Preview proposal** to compare a proposed replacement with the current source.
+   **Apply proposal** applies one whole-document edit at the revision captured for review.
+   An intervening source edit requires a fresh preview. Correct the applied text in either
+   working view and use **Save source** and **Finish save** to persist that correction.
+   **Run captured inputs** separately captures source/form
    values; **Finish run** / **Fail run** settle that request without following later typing.
 7. Edit **Configuration path**, Save it, then use **Finish configuration save** or **Fail
    configuration save**. New form edits survive an older receipt. A blank path blocks configuration

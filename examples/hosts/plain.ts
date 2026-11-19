@@ -27,7 +27,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         const button = document.createElement("button"); button.textContent = action.label;
         button.addEventListener("click", action.invoke, { signal: listeners.signal }); nav.append(button);
     }
-    const readStatus = () => operationStatusModel(controller.review.getSnapshot(), controller.activity.getSnapshot(), controller.source.metadata.getSnapshot());
+    const readStatus = () => operationStatusModel(controller.activity.getSnapshot(), controller.source.metadata.getSnapshot());
     const status = document.createElement("output"); status.setAttribute("aria-label", readStatus().label);
     const scene = document.createElement("main"), modal = document.createElement("div"); modal.setAttribute("role", "status"); modal.setAttribute("aria-label", "Host messages");
     const recovery = document.createElement("section"), recoveryNotice = document.createElement("output"), recoveryPreview = document.createElement("pre");
@@ -125,7 +125,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     // Controller lifecycle commands publish layout after workspace mutations finish; a workspace
     // notification itself cannot synchronously mount/release the comparison's display resources.
     subscriptions.push(controller.layout.subscribe(renderScene), controller.source.metadata.subscribe(updateStatus),
-        controller.review.subscribe(updateStatus), controller.activity.subscribe(updateStatus), controller.recovery.subscribe(updateRecovery),
+        controller.activity.subscribe(updateStatus), controller.recovery.subscribe(updateRecovery),
         controller.layout.subscribe(renderReview));
     renderScene(); renderReview(); updateStatus(); updateRecovery();
     return () => { destroyConflict(); destroyTransfer(); destroyConfiguration(); destroyDraft(); destroyColors(); destroyLinks(); destroyActions(); destroyRename(); destroySignature(); destroyProject(); destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };

@@ -1,7 +1,7 @@
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
-import { createAgentReview, FoldIndex, TextBuffer, Workspace, createFoldRegions } from "../src/index.ts";
+import { FoldIndex, TextBuffer, Workspace, createFoldRegions } from "../src/index.ts";
 import { mapFoldRegions, revealSelectionFolds } from "../src/core/folding.ts";
 
 test("nested collapsed rows keep independent child state and index visible rows without losing raw lines", () => {
@@ -75,7 +75,6 @@ for (const origin of ["edit", "proposal", "canonical"] as const) test(`${origin}
     const view = model.createDocumentView(source.documentId), peer = model.createDocumentView(source.documentId);
     view.setSelection(0, { anchor: 9, head: 9 }); peer.setSelection(0, { anchor: original.length, head: original.length });
     for (const target of [view, peer]) target.folding.setRanges(target.folding.getSnapshot(), [{ id: "block", from: 0, to: 13, collapsed: true }]);
-    if (origin === "proposal") createAgentReview(model, source).associate("session");
     const ticket = origin === "canonical" ? model.captureSave(source) : undefined; ticket?.start();
     let notifications = 0, expectedRevision = 1;
     const inspect = () => {
@@ -97,14 +96,14 @@ for (const origin of ["edit", "proposal", "canonical"] as const) test(`${origin}
     try {
         const edits = [{ from: 9, to: 9, insert: "new\n" }];
         if (ticket) assert.equal(ticket.accept({ serverVersion: "saved", canonical: updated }).canonicalApplied, true);
-        else if (origin === "proposal") assert.equal(createAgentReview(model, source).offer(createAgentReview(model, source).captureProposal(), { id: "proposal", revision: 1, edits }).applied, true);
+        else if (origin === "proposal") assert.equal(model.edit({ documentId: source.documentId, expectedRevision: source.getSnapshot().revision, origin: "agent", history: { kind: "proposal" }, edits }).applied, true);
         else assert.equal(model.edit({ documentId: source.documentId, expectedRevision: 0, origin: "host", edits }).applied, true);
         expectedRevision = 2; assert.equal(model.undo({ documentId: source.documentId, expectedRevision: 1 }).applied, true);
         expectedRevision = 3; assert.equal(model.redo({ documentId: source.documentId, expectedRevision: 2 }).applied, true);
         assert.equal(notifications, 3); assert.deepEqual(errors, []);
     } finally {
         subscriptions.forEach(unsubscribe => unsubscribe()); ticket?.finish(); view.dispose(); peer.dispose();
-        if (origin === "proposal") createAgentReview(model, source).detach(); model.releaseResource(source.id, true);
+        model.releaseResource(source.id, true);
         assert.equal(model.diagnostics().views, 0); assert.equal(model.diagnostics().leases, 0);
     }
 });

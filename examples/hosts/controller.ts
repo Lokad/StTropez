@@ -1,6 +1,6 @@
 import { HostCell } from "../shared/observable.ts";
-import { createAgentReview, Workspace, WorkspaceCommands } from "../../src/index.ts";
-import type { AgentRequest, ComparisonBaseline, DocumentId, DocumentView, TabId, TextEdit, TextResourceHandle } from "../../src/index.ts";
+import { TextBuffer, Workspace, WorkspaceCommands } from "../../src/index.ts";
+import type { ComparisonBaseline, DocumentId, DocumentView, TabId, TextEdit, TextResourceHandle } from "../../src/index.ts";
 import { HostSourceReview, type SaveConflict } from "./source-review.ts";
 import { HostLayout } from "./layout.ts";
 import { HostLoadedSource } from "./loaded-source.ts";
@@ -29,10 +29,9 @@ export class HostController {
     readonly transfer = new HostTransfer(this.workspace, this.commands, task => { void this.track(task); });
     readonly runResources = new RunResources(this.workspace, this.source, this.connection, this.transfer.resource);
     readonly instruction = new TransferInstruction(this);
-    readonly review = createAgentReview(this.workspace, this.source);
     private readonly presentation = new HostLayout(this.workspace, this.source, this.connection.id);
     readonly formTab = this.presentation.formTab;
-    private readonly activityCell = new HostCell<Activity>({ writes: 0, acknowledgements: 0, ackAttempts: 0, pendingRuns: 0, completedRuns: 0, background: 0, errors: 0, lastSavedRevision: null, lastRun: null, ordering: Object.freeze([]) });
+    private readonly activityCell = new HostCell<Activity>({ writes: 0, pendingRuns: 0, completedRuns: 0, background: 0, errors: 0, lastSavedRevision: null, lastRun: null, ordering: Object.freeze([]) });
     private readonly settingsCell = new HostCell<RunSettings>({ mode: "preview" });
     readonly layout = this.presentation.state;
     readonly activity = this.activityCell.observable;
@@ -49,7 +48,7 @@ export class HostController {
     readonly saveConflict = this.sourceReview.saveConflict;
     readonly saveConflictPresentation = this.sourceReview.saveConflictPresentation;
     readonly variants = this.sourceReview.variants;
-    private pendingAgent: AgentRequest<Readonly<{ configurationRevision: number; path: string }>> | undefined;
+    private proposal: Readonly<{ documentId: DocumentId; revision: number; original: ComparisonBaseline; preview: ComparisonBaseline; text: string }> | undefined;
     private readonly operations = new Set<Promise<unknown>>();
     private disposal: Promise<void> | undefined;
     private proposalTransactionMs = 0;
@@ -80,12 +79,12 @@ export class HostController {
         this.presentation.error("Wait for pending typing to finish, then try the source command again."); return false;
     }
     canCaptureRecovery(): boolean { return !this.disposed && [...this.inputCaptureGuards.keys()].every(ready => ready()); }
-    hasPendingRecoveryWork(includeLoaded = true): boolean { return this.loadedSlot.hasPendingRecoveryWork(includeLoaded) || this.operations.size > 0 || this.instruction.debug().pendingCopy || this.review.getSnapshot().request !== null || this.review.getSnapshot().acknowledgements.length > 0; }
+    hasPendingRecoveryWork(includeLoaded = true): boolean { return this.loadedSlot.hasPendingRecoveryWork(includeLoaded) || this.operations.size > 0 || this.instruction.debug().pendingCopy; }
     /** Recovery targets the host's temporary-source slot, never a surviving tab index. */
     restoreLoadedDraft(text: string, generation: number, view?: DocumentView): TextResourceHandle | undefined { return this.loadedSlot.restoreDraft(text, generation, view); }
     viewTab(id: "primary" | "secondary"): TabId { return this.presentation.viewTab(id); }
     readonly openReview = (): void => this.safe(() => { this.presentation.navigate("review"); });
-    readonly closeReview = (): void => this.safe(() => { this.sourceReview.dismiss(); this.presentation.navigate("workspace"); });
+    readonly closeReview = (): void => this.safe(() => { this.proposal = undefined; this.sourceReview.dismiss(); this.presentation.navigate("workspace"); });
     savedComparisonReference(): ComparisonBaseline { return this.sourceReview.savedComparisonReference(); }
     retainComparisonReference(baseline: ComparisonBaseline): void { this.sourceReview.retainComparisonReference(baseline); }
 
@@ -121,37 +120,28 @@ export class HostController {
     readonly inspectRecovery = (): void => { this.recoveryCell.set({ ...this.recoveryCell.get(), visible: true }); };
     readonly discardRecovery = (): void => { this.recoveryCell.set({ visible: false, items: [] }); };
     recoveryText(): string | null { return this.recoveryCell.get().items.at(-1)?.attemptedText ?? null; }
-    readonly associate = (): void => this.safe(() => { this.review.associate("synthetic-agent"); });
-    readonly requestAgent = (): void => this.safe(() => {
+    readonly previewProposal = (): void => this.previewProposalText("agent proposal");
+    readonly previewProposalText = (text: string): void => this.safe(() => {
         if (!this.sourceInputReady()) return;
-        const configuration = this.connection.getSnapshot();
-        if (configuration.state !== "ready") throw new Error("Configuration not ready.");
-        const before = this.workspace.document(this.source.documentId);
-        const baseline = Object.freeze({ buffer: before.buffer, version: `reference:before-proposal-r${before.revision}` });
-        const request = this.review.beginRequest({ configurationRevision: configuration.revision, path: configuration.value().path });
-        this.pendingAgent = request;
-        void this.track(this.services.proposal(request).then(text => {
-            const start = performance.now();
-            const result = request.accept({ id: request.input.id, revision: 1, edits: [{ from: 0, to: request.input.source.value.length, insert: text }] });
-            this.proposalTransactionMs = performance.now() - start;
-            if (result.applied) this.sourceReview.proposalApplied(baseline);
-        }).catch(error => { request.fail(); this.reportError(error); }).finally(() => {
-            request.finish(); if (this.pendingAgent === request) this.pendingAgent = undefined;
-        }));
+        const doc = this.workspace.document(this.source.documentId);
+        const preview = { buffer: TextBuffer.from(text), version: `proposal-for-r${doc.revision}` };
+        this.proposal = { documentId: doc.id, revision: doc.revision, original: { buffer: doc.buffer, version: `source-r${doc.revision}` }, preview, text };
+        this.sourceReview.showComparison(preview);
     });
-    readonly deliverProposal = (): void => { this.deliverProposalText("agent proposal"); };
-    readonly deliverProposalText = (text: string): void => { this.services.deliverProposal(text); };
-    readonly failAgent = (): void => { this.services.failAgent(); };
-    readonly offerNewerProposal = (): void => this.safe(() => {
-        const review = this.review.getSnapshot(), document = this.workspace.document(this.source.documentId);
-        if (!review.association || !review.proposal) throw new Error("A proposal is required.");
-        const result = this.review.offer(this.review.captureProposal(),
-            { id: review.proposal.target.id, revision: review.proposal.target.revision + 1,
-                edits: [{ from: 0, to: document.text().length, insert: "newer agent proposal" }] });
-        if (!result.applied) throw new Error(result.reason);
+    readonly applyProposal = (): void => this.safe(() => {
+        const proposal = this.proposal;
+        if (!proposal || !this.sourceInputReady()) return;
+        if (this.comparisonReference.getSnapshot().baseline.buffer !== proposal.preview.buffer) {
+            this.proposal = undefined; this.presentation.error("The comparison changed. Preview the proposal again."); return;
+        }
+        const start = performance.now();
+        const result = this.workspace.edit({ documentId: proposal.documentId, expectedRevision: proposal.revision, origin: "agent",
+            history: { kind: "proposal" }, edits: [{ from: 0, to: proposal.original.buffer.length, insert: proposal.text }] });
+        this.proposalTransactionMs = performance.now() - start;
+        this.proposal = undefined;
+        if (!result.applied) throw new Error("Source changed or became unavailable. Review the proposal again.");
+        this.sourceReview.showComparison(proposal.original);
     });
-    readonly interrupt = (): void => this.safe(() => { this.review.interrupt(); });
-    readonly detach = (): void => this.safe(() => { this.review.detach(); });
     readonly save = (): void => this.safe(this.sourceReview.save);
     /** Synthetic external writer; never updates the local document or its known saved version. */
     externalWrite(text: string): void {
@@ -166,11 +156,6 @@ export class HostController {
     readonly saveReviewedSource = (expected: SaveConflict | null = this.saveConflict.getSnapshot()): void => this.safe(() => this.sourceReview.saveReviewedSource(expected));
     readonly finishSave = (): void => { this.services.finishSave(); };
     readonly failSave = (): void => { this.services.failSave(); };
-    readonly retryAcknowledgement = (): void => this.safe(() => {
-        const acknowledgement = this.review.getSnapshot().acknowledgements[0];
-        if (!acknowledgement) return;
-        void this.track(this.review.acknowledge(acknowledgement.id, { acknowledge: this.services.acknowledge }, error => this.reportError(error)).catch(error => this.reportError(error)));
-    });
     readonly run = async (): Promise<void> => {
         if (this.disposed || !this.sourceInputReady()) return;
         const validation = this.configurationSave.validation() ?? this.runResources.validation(); if (validation) { this.reportError(new Error(validation)); return; }
@@ -240,20 +225,16 @@ export class HostController {
             ...this.services.debug(),
             lastError: this.reportedError instanceof Error ? { name: this.reportedError.name, message: this.reportedError.message, stack: this.reportedError.stack } : null,
             history: this.workspace.observeHistory(this.source.documentId).getSnapshot(),
-            configuration: { id: this.connection.id, revision: form.revision, dirty: form.metadata.dirty, serverVersion: form.metadata.serverVersion, saveStatus: form.metadata.saveStatus }, configurationSave: this.configurationSave.debug(), review: this.review.getSnapshot(),
-            requestInput: this.pendingAgent ? { sourceRevision: this.pendingAgent.input.source.revision,
-                sourceLength: this.pendingAgent.input.source.value.length, configurationRevision: this.pendingAgent.input.context.configurationRevision } : null,
+            configuration: { id: this.connection.id, revision: form.revision, dirty: form.metadata.dirty, serverVersion: form.metadata.serverVersion, saveStatus: form.metadata.saveStatus }, configurationSave: this.configurationSave.debug(),
             proposalTransactionMs: this.proposalTransactionMs, pendingCommands: this.operations.size,
             inputRecovery: this.recoveryCell.get().items.map(item => ({ documentId: item.documentId, expectedRevision: item.expectedRevision, reason: item.reason, contextFrom: item.contextFrom, attemptedUnits: item.attemptedText.length })),
             hostSubscriptions: this.presentation.subscriptions() + this.activityCell.count() + this.settingsCell.count() + this.loadedSlot.subscriptions() + this.recoveryCell.count() + this.sourceReview.subscriptions() + this.configurationSave.debug().subscriptions + this.transfer.save.debug().subscriptions + this.runResources.debug().subscriptions + this.instruction.debug().subscriptions, inputCaptureGuards: this.inputCaptureGuards.size, loadPending: this.loadedSlot.pending, disposed: this.disposed };
     }
     dispose(): Promise<void> {
-        if (this.disposal) return this.disposal; this.disposed = true; this.sourceReview.dispose();
+        if (this.disposal) return this.disposal; this.disposed = true; this.proposal = undefined; this.sourceReview.dispose();
         this.configurationSave.dispose(); this.transfer.save.dispose(); this.runResources.dispose(); this.instruction.dispose();
         this.inputCaptureGuards.clear();
         if (this.timer !== undefined) clearInterval(this.timer); this.timer = undefined;
-        this.review.interrupt();
-        this.review.detach();
         this.services.dispose();
         this.updateActivity({ pendingRuns: 0 });
         this.presentation.dispose(); this.loadedSlot.dispose();

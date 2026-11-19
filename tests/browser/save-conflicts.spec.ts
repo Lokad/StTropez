@@ -8,10 +8,10 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await page.goto(`/hosts/${mode}/?editor=${editor}`);
             await expect(page.getByRole("textbox", { name: "Primary source", exact: true })).toBeVisible();
         });
-        test("proposal conflict review, correction, guarded save and acknowledgement preserve later keyboard edits", async ({ page }) => {
+        test("proposal conflict review, correction and guarded save preserve later keyboard edits", async ({ page }) => {
             const primary = page.getByRole("textbox", { name: "Primary source", exact: true }), secondary = page.getByRole("textbox", { name: "Secondary source", exact: true });
             const button = (name: string) => page.getByRole("button", { name, exact: true });
-            await button("Associate agent").click(); await button("Request proposal").click(); await button("Deliver proposal").click();
+            await button("Preview proposal").click(); await button("Apply proposal").click();
             await primary.press("End"); await primary.pressSequentially(" corrected"); await button("Save source").click();
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().pendingSaves.length)).toBe(1);
             await page.evaluate(() => window.hostFixture.externalWrite("remote source\r\n"));
@@ -21,7 +21,7 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             await button("Save reviewed source").evaluate(node => { node.dataset.retained = "reviewed-save"; });
             const failed = await page.evaluate(() => window.hostFixture.snapshot());
             expect(failed.source).toMatchObject({ serverVersion: "v0", dirty: true, saveStatus: "conflict" });
-            expect(failed.review.acknowledgements).toEqual([]); expect(failed.activity.writes).toBe(0);
+            expect(failed.activity.writes).toBe(0);
             await button("Review remote source").click(); await primary.press("End"); await primary.pressSequentially(" reading");
             await primary.evaluate(node => { node.dataset.retained = "yes"; });
             await page.evaluate(() => window.hostFixture.finishConflictReview());
@@ -40,10 +40,6 @@ for (const editor of ["native", "candidate"] as const) for (const mode of ["plai
             expect((await page.evaluate(() => window.hostFixture.snapshot())).source.dirty).toBe(false);
             await primary.press("Control+Shift+z"); await expect(primary).toHaveValue("merged during save");
             expect(await page.evaluate(() => window.hostFixture.referenceRange(0, 15))).toBe("remote source\r\n");
-            await button("Retry acknowledgement").click(); await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().review.acknowledgements[0]?.status)).toBe("failed");
-            await button("Retry acknowledgement").click(); await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().review.proposal)).toBeNull();
-            await button("Request proposal").click();
-            expect((await page.evaluate(() => window.hostFixture.snapshot())).requestInput!.sourceLength).toBe("merged during save".length);
             await page.evaluate(() => window.hostFixture.dispose());
             expect((await page.evaluate(() => window.hostFixture.snapshot())).diagnostics).toMatchObject({ views: 0, subscriptions: 0, leases: 0 });
         });

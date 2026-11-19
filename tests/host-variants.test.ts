@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { HostController } from "../examples/hosts/controller.ts";
 import { TextBuffer } from "../src/index.ts";
-const settled = () => new Promise<void>(resolve => setImmediate(resolve));
 const text = (host: HostController) => { const buffer = host.workspace.document(host.source.documentId).buffer; return buffer.slice(0, buffer.length); };
 function edit(host: HostController, value: string): void {
     const current = host.workspace.document(host.source.documentId);
@@ -52,30 +51,23 @@ test("version reads follow their captured tab through moves and reject replaced 
     }
 });
 
-test("takeover and an interrupted proposal expire a read while human corrections remain in shared history", async () => {
+test("a preview supersedes an outstanding reference read and refuses a stale whole-document edit", async () => {
     const host = new HostController();
     try {
-        host.variants.review("server"); host.associate(); assert.equal(host.variants.finishNext(), false);
-        host.variants.review("saved"); host.requestAgent(); host.interrupt(); edit(host, "human takeover correction"); host.deliverProposalText("late proposal"); await settled();
-        assert.equal(host.variants.finishNext(), false); assert.equal(text(host), "human takeover correction"); assert.equal(host.debug().history.undoDepth, 1);
-        host.detach(); host.associate(); host.variants.review("server"); assert.equal(host.variants.finishNext(), true);
-        assert.equal(text(host), "human takeover correction"); assert.equal(host.workspace.undo({ documentId: host.source.documentId, expectedRevision: host.debug().source.revision }).applied, true); assert.equal(text(host), "start");
+        host.variants.review("server");
+        host.previewProposalText("proposed");
+        assert.equal(host.variants.finishNext(), false);
+        assert.equal(reference(host), "proposed"); assert.equal(text(host), "start");
+        edit(host, "human correction");
+        const before = host.debug();
+        host.applyProposal();
+        assert.equal(text(host), "human correction"); assert.deepEqual(host.debug().history, before.history);
+        assert.equal(host.debug().source.revision, before.source.revision);
+        host.previewProposalText("discarded"); host.variants.review("server"); assert.equal(host.variants.finishNext(), true);
+        host.applyProposal(); assert.equal(text(host), "human correction");
+        host.previewProposalText("fresh"); host.applyProposal();
+        assert.equal(text(host), "fresh"); assert.equal(reference(host), "human correction");
     } finally { await host.dispose(); }
-    assert.equal(host.debug().diagnostics.leases, 0);
-});
-
-test("acknowledgement progress preserves a captured version read while retirement expires it", async () => {
-    const host = new HostController();
-    try {
-        host.associate(); host.requestAgent(); host.deliverProposalText("proposal"); await settled();
-        host.variants.review("saved"); host.save(); await settled(); host.finishSave(); await settled();
-        assert.equal(host.variants.finishNext(), true); assert.equal(reference(host), "start"); assert.equal(text(host), "proposal");
-        host.variants.review("server"); host.retryAcknowledgement(); await settled(); assert.equal(host.debug().review.acknowledgements[0]!.status, "failed");
-        assert.equal(host.variants.finishNext(), true); assert.equal(reference(host), "proposal");
-        host.variants.review("saved"); host.retryAcknowledgement(); await settled(); assert.equal(host.debug().review.proposal, null); assert.equal(host.variants.finishNext(), false);
-        assert.equal(text(host), "proposal");
-    } finally { await host.dispose(); }
-    assert.equal(host.debug().diagnostics.leases, 0);
 });
 
 test("failed/cancelled retrieval and bounded historical eviction preserve immutable snapshots and ownership", async () => {
@@ -88,13 +80,13 @@ test("failed/cancelled retrieval and bounded historical eviction preserve immuta
         const supplied = { buffer: TextBuffer.from("historical raw\r\n"), version: "historical-1" }; host.variants.remember(supplied);
         const choice = host.variants.state.getSnapshot().choices.find(value => value.version === supplied.version)!;
         supplied.buffer = TextBuffer.from("mutated"); supplied.version = "mutated";
-        assert.equal(host.variants.review(choice.id), true); assert.equal(host.workspace.diagnostics().subscriptions, subscriptions + 1);
+        assert.equal(host.variants.review(choice.id), true); assert.equal(host.workspace.diagnostics().subscriptions, subscriptions);
         assert.equal(host.variants.finishNext(), true); assert.equal(host.workspace.diagnostics().subscriptions, subscriptions); assert.equal(host.debug().hostSubscriptions, 0); assert.equal(reference(host), "historical raw\r\n");
         for (let i = 0; i < 12; i++) { edit(host, `draft ${i}`); host.variants.keepDraft(); }
         const state = host.variants.state.getSnapshot(); assert.equal(state.choices.filter(choice => choice.kind === "history").length, 8); assert.equal(Object.isFrozen(state.choices), true); assert.equal(initial.choices.length, 3);
         assert.equal(host.variants.review(evicted), false); const before = host.comparisonReference.getSnapshot();
         host.variants.review("server"); host.variants.failNext(); assert.equal(host.variants.state.getSnapshot().status, "failed"); assert.equal(host.comparisonReference.getSnapshot(), before); assert.equal(host.workspace.diagnostics().subscriptions, subscriptions);
-        host.variants.review("server"); host.variants.review("saved"); assert.equal(host.workspace.diagnostics().subscriptions, subscriptions + 1);
+        host.variants.review("server"); host.variants.review("saved"); assert.equal(host.workspace.diagnostics().subscriptions, subscriptions);
         host.variants.cancel(); assert.equal(host.variants.finishNext(), false); assert.equal(host.debug().diagnostics.leases, 0); assert.equal(host.workspace.diagnostics().subscriptions, subscriptions);
         host.variants.review("draft"); await host.dispose(); const stopped = host.debug(); assert.equal(host.variants.finishNext(), false); host.variants.keepDraft(); assert.equal(host.variants.review("server"), false);
         assert.deepEqual(host.debug(), stopped); assert.equal(text(host), "draft 11"); assert.equal(stopped.hostSubscriptions, 0);

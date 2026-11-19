@@ -1,7 +1,7 @@
 # Workspace
 
 `Workspace` owns resources, text revisions, tabs, shared history and captured operations.
-`WorkspaceCommands` coordinates host-provided save, Run and acknowledgement callbacks.
+`WorkspaceCommands` coordinates host-provided save and Run callbacks.
 Views share document data while retaining independent presentation state; storage, services
 and application controls belong to the host.
 
@@ -208,13 +208,12 @@ consecutive compatible edits with the same document, origin, kind, group and ini
 Core grouping has no timer. Selection movement, undo/redo and that document's save
 capture/settlement seal its group; unrelated background documents do not split it.
 `sealHistory(documentId)` explicitly ends grouping without creating an undo entry or changing
-the document revision. Review uses it for accepted proposals that leave text unchanged.
+the document revision.
 Multi-document transactions form standalone shared units.
 
 Editing after undo invalidates dependent redo units. Reload or release clears the affected
 history and linked boundaries; closing a tab, disposing a view or changing capabilities does not. Canonical save
-responses and proposals use the same text history as human edits. Undo changes text, not
-remote persistence, proposal identities or acknowledgement delivery.
+responses and proposals use the same text history as human edits. Remote persistence follows the host save ticket.
 
 ### History limits
 
@@ -360,77 +359,6 @@ and receipt types through the same queue.
 targets, keys, revisions, values and server versions plus copied settings. It checks Run
 capability and retains both resources until settlement. It does not save; Run failures reject
 the returned promise. These callbacks perform no built-in networking, storage or execution.
-
-### Agent review
-
-An association, request, proposal and document revision are independent.
-`createAgentReview(workspace, source)` returns the same `AgentReview` handle for the same live
-text resource. Its observable snapshot exposes association, request, proposal and acknowledgement
-queue. `associate(id)` attaches an opaque host ID; a different association requires `detach()` first.
-The handle composes public workspace leases, operations, edits and save tickets. Workspace
-resource records do not own review state or apply review-specific save/load policy.
-
-`review.beginRequest(context)` requires a ready associated text resource, agent edit permission, settled
-saves and no pending request, proposal or acknowledgement. It captures immutable source/context
-and an exclusive agent edit lease. Deliver through that request's `accept` method:
-
-```ts
-import { createAgentReview } from "sttropez";
-import type { AgentInput, ProposedEdits, SnapshotValue,
-    TextResourceHandle, Workspace } from "sttropez";
-
-export async function requestProposal<T extends SnapshotValue>(
-    workspace: Workspace, source: TextResourceHandle, context: T,
-    propose: (input: AgentInput<T>, cancelled: () => boolean) => Promise<ProposedEdits>
-) {
-    const request = createAgentReview(workspace, source).beginRequest(context);
-    try {
-        return request.accept(await propose(request.input, request.isCancelled));
-    } catch (error) {
-        request.fail();
-        throw error;
-    } finally {
-        request.finish();
-    }
-}
-```
-
-Delivery, failure or interruption releases the edit lock. `review.interrupt()` permits human
-corrections immediately while cancelled work retains its operation lease until settlement.
-Late replies cannot target a newer request or association. For unsolicited versioned updates,
-capture `review.captureProposal()` before awaiting and pass that guard to `review.offer`.
-Request callbacks must keep their original request ticket. Proposal retirement advances its
-generation even when text is unchanged, preventing an old offer from reviving it.
-
-A proposal records its association generation, own generation, opaque ID/revision, base
-document revision and resulting document revision. Older/equal versions of that proposal
-are rejected. Human corrections use ordinary edits without rewriting proposal identity.
-For review-managed source, capture all saves with `review.captureSave(saveReview?)` and pass
-the returned ticket to the shared command coordinator. Ordinary `workspace.captureSave` does
-not attach proposal policy. `AgentSaveSubmission` includes the captured proposal;
-`AgentSaveReceipt` adds its acknowledgement ID. A successful save of proposal/corrections creates
-an acknowledgement retaining that exact receipt; later typing or proposals cannot alter it.
-An older ticket cannot apply canonical content over a newer proposal, even when the newer
-proposal leaves text unchanged. Its returned saved baseline advances.
-
-`review.acknowledge(acknowledgementId, port, onError?)` sends the earliest pending
-entry. Failure preserves the save and immutable acknowledgement for retry; retry does not save
-again. The host service must make retries idempotent. Acknowledgement retires only a matching
-association/proposal generation, ID and revision, and never edits text. An older receipt can
-be acknowledged without retiring a newer proposal. Port failures return `failed` and invoke
-the optional error callback; callback exceptions cannot prevent ticket cleanup. Hosts with
-their own coordinator can use `beginAcknowledgement(id)` and always finish its ticket.
-
-Proposals and acknowledgements retain resources after views close. Detach ends the association
-and proposal ownership without discarding text; saved acknowledgements keep their original
-recipient and remain retryable. The next request captures current corrected text and the saved
-server version once proposals, saves and acknowledgements have settled.
-
-The review handle has no background subscription or lifetime lease of its own. Each caller
-owns its subscriptions; request tickets, proposals and saved receipts own their respective
-leases. Detach is not a discard of pending acknowledgements. Release the resource only after
-those owners settle; a retained review handle then reads an empty snapshot. Review subscribers
-also receive source-metadata notifications and may read the same review snapshot on those calls.
 
 ### Observables
 

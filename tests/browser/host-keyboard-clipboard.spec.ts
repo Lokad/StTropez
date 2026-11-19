@@ -159,9 +159,9 @@ for (const host of ["plain", "react"] as const) for (const editor of ["native", 
         test.skip(browserName !== "chromium", unverifiedBackend);
         await isolatedClipboard(baseURL, info, async page => {
             await mount(page, host, editor, normal);
-            // Agent requests require settled saves; test the lock before capturing the next save.
+            // Exercise the read-only command before capturing the next save.
             await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.serverVersion).toBe("v1"); await waitForReview(page);
-            await button(page, "Associate agent").click(); await button(page, "Request proposal").click();
+            await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
             await expect(primary(page)).toHaveAttribute("readonly", ""); await primary(page).focus();
             const from = 6, to = normal.indexOf("const end"); await select(page, from, to); await select(page, 3, 3, "secondary");
             await copyToKnownControl(page, normal.slice(from, to)); const before = await snapshot(page);
@@ -169,7 +169,7 @@ for (const host of ["plain", "react"] as const) for (const editor of ["native", 
             const after = await snapshot(page); await exact(page, normal);
             expect(after.source.revision).toBe(before.source.revision); expect(after.source.exports).toBe(before.source.exports);
             expect(after.history).toEqual(before.history); expect(after.pendingSaves).toEqual(before.pendingSaves); expect(selections(after)).toEqual(selections(before));
-            await button(page, "Interrupt agent").click(); await expect(primary(page)).not.toHaveAttribute("readonly", ""); await primary(page).focus(); await waitForReview(page);
+            await page.evaluate(() => window.hostFixture.setSourceReadOnly(false)); await expect(primary(page)).not.toHaveAttribute("readonly", ""); await primary(page).focus(); await waitForReview(page);
             expect(sourceSelection(await snapshot(page), "primary")).toEqual(sourceSelection(before, "primary"));
             await button(page, "Save source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
             const pending = (await snapshot(page)).pendingSaves; await primary(page).focus();

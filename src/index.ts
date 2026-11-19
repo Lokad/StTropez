@@ -48,7 +48,3 @@ export type { DocumentationContent, DocumentationPart } from "./core/documentati
 export type { Immutable, SnapshotValue } from "./core/values.ts";
 export { WorkspaceCommands } from "./core/commands.ts";
 export type { CapturedResource, RunPort, RunSubmission, SaveOutcome, SavePort, SaveResponse } from "./core/commands.ts";
-export { createAgentReview } from "./core/agent.ts";
-export type { AcknowledgementPort, AcknowledgementState, AcknowledgementSubmission, AcknowledgementTicket, AgentAssociation, AgentInput,
-    AgentChangeResult, AgentReview, AgentRequest, AgentSnapshot, AgentSaveSubmission, AgentSaveReceipt, AgentSaveTicket,
-    Proposal, ProposalGuard, ProposalTarget, ProposedEdits } from "./core/agent.ts";

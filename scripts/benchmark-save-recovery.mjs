@@ -85,7 +85,7 @@ try{
             activeSample.failure={failureWithTypingActionProxyMs,failureToReviewAndMessageReadyProxyMs};
             const failed=await snapshot();assert.equal(await fullText(retryValue),true);assert.equal(failed.source.serverVersion,"v1");assert.equal(failed.source.dirty,true);
             assert.ok(failed.bindings.comparison,"Failed-save observation requires its comparison.");
-            assert.equal(failed.activity.writes,1);assert.equal(failed.activity.errors,1);assert.deepEqual(failed.review.acknowledgements,[]);
+            assert.equal(failed.activity.writes,1);assert.equal(failed.activity.errors,1);
             assert.deepEqual(failed.server,before.server);assert.deepEqual(failed.bindings.comparison.baseline,before.bindings.comparison.baseline);
             assert.deepEqual(failed.comparisonReference,before.comparisonReference);assert.equal(point.exports,0);assert.equal(point.records.length,1);
             assert.deepEqual(point.secondarySelection,before.bindings.views.find(v=>v.id==="secondary")?.selection);

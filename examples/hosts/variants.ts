@@ -1,4 +1,3 @@
-import { createAgentReview } from "../../src/index.ts";
 import type { ComparisonBaseline, Observable, Operation, TabTarget, TextResourceHandle, Workspace } from "../../src/index.ts";
 import { HostCell } from "../shared/observable.ts";
 
@@ -18,12 +17,10 @@ export class ReviewVariants {
     private readonly cell: HostCell<VariantReviewSnapshot>;
     private readonly lane: string;
     private readonly history = new Map<string, ComparisonBaseline>();
-    private readonly loads: { operation: Operation; reference: ReferencePublication; currentRequest: () => boolean; baseline: ComparisonBaseline; choice: ReviewVariant; ownerGeneration: number }[] = [];
+    private readonly loads: { operation: Operation; reference: ReferencePublication; currentRequest: () => boolean; baseline: ComparisonBaseline; choice: ReviewVariant }[] = [];
     private draft: ComparisonBaseline | undefined;
     private serial = 0;
     private disposed = false;
-    private ownerGeneration = 0;
-    private unsubscribeOwner: (() => void) | undefined;
     readonly state: Observable<VariantReviewSnapshot>;
     constructor(workspace: Workspace, source: TextResourceHandle, ports: VariantPorts) {
         if (workspace.resourceForDocument(source.documentId) !== source) throw new Error("Variant source belongs to another workspace.");
@@ -36,19 +33,6 @@ export class ReviewVariants {
     referenceChanged(): void {
         if (!this.disposed) this.cell.set({ ...this.cell.get(), selected: null, requested: null,
             status: this.loads.length ? "expired" : "idle", message: "The reference changed independently of version selection." });
-    }
-    private watchOwner(): void {
-        if (this.unsubscribeOwner) return;
-        const agent = createAgentReview(this.workspace, this.source); let previous = agent.getSnapshot();
-        const unsubscribeAgent = agent.subscribe(() => { const current = agent.getSnapshot();
-            if (current.association?.id !== previous.association?.id || current.association?.generation !== previous.association?.generation
-                || current.request?.id !== previous.request?.id || current.proposalGeneration !== previous.proposalGeneration) this.ownerGeneration++;
-            previous = current;
-        });
-        this.unsubscribeOwner = unsubscribeAgent;
-    }
-    private releaseOwner(): void {
-        if (!this.loads.length) { this.unsubscribeOwner?.(); this.unsubscribeOwner = undefined; }
     }
     private choices(): readonly ReviewVariant[] {
         const saved = this.ports.saved(), server = this.ports.server();
@@ -80,15 +64,13 @@ export class ReviewVariants {
         if (tab?.surface.kind !== "text" || tab.surface.documentId !== this.source.documentId) return false;
         this.ports.present();
         const operation = this.workspace.beginOperation(this.source.id, this.lane, presentation);
-        this.watchOwner();
         this.loads.push({ operation, baseline: captureBaseline(baseline), choice, reference: this.ports.reference.getSnapshot(),
-            currentRequest: this.ports.beginReferenceRequest(), ownerGeneration: this.ownerGeneration });
+            currentRequest: this.ports.beginReferenceRequest() });
         this.cell.set({ ...this.cell.get(), generation: this.cell.get().generation + 1, choices: this.choices(), requested: choice, status: "loading", pending: this.loads.length,
             message: "Loading the captured version. Working text stays editable." }); return true;
     }
     private current(load: (typeof this.loads)[number]): boolean {
-        return !this.disposed && load.currentRequest() && load.operation.presentationCurrent() && this.ports.reference.getSnapshot() === load.reference
-            && this.ownerGeneration === load.ownerGeneration;
+        return !this.disposed && load.currentRequest() && load.operation.presentationCurrent() && this.ports.reference.getSnapshot() === load.reference;
     }
     readonly finishNext = (): boolean => {
         const load = this.loads.shift(); if (!load) return false;
@@ -99,17 +81,16 @@ export class ReviewVariants {
             }
             this.ports.publish(load.baseline);
             this.cell.set({ ...this.cell.get(), selected: load.choice, requested: null, status: "ready", message: "Reviewing the captured version. Save and Run still use the working source." }); return true;
-        } finally { load.operation.finish(); this.releaseOwner(); if (!this.disposed) this.cell.set({ ...this.cell.get(), pending: this.loads.length }); }
+        } finally { load.operation.finish(); if (!this.disposed) this.cell.set({ ...this.cell.get(), pending: this.loads.length }); }
     };
     readonly failNext = (): void => {
         const load = this.loads.shift(); if (!load) return;
         try { if (this.current(load)) this.cell.set({ ...this.cell.get(), requested: null, status: "failed", message: "Version loading failed. The current reference and working text were retained." }); }
-        finally { load.operation.finish(); this.releaseOwner(); if (!this.disposed) this.cell.set({ ...this.cell.get(), pending: this.loads.length }); }
+        finally { load.operation.finish(); if (!this.disposed) this.cell.set({ ...this.cell.get(), pending: this.loads.length }); }
     };
     readonly cancel = (): void => {
         if (this.disposed) return;
         for (const load of this.loads.splice(0)) { load.operation.cancel(); load.operation.finish(); }
-        this.releaseOwner();
         this.cell.set({ ...this.cell.get(), requested: null, status: "idle", pending: 0, message: "Version loading cancelled. Working text was retained." });
     };
     dispose(): void {
