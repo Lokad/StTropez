@@ -5,9 +5,15 @@ import { BidiCursor, TextBuffer } from "../src/index.ts";
 import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
 
+/** @typedef {ReturnType<Window["editingFixture"]["snapshot"]>} EditorState */
+/** @typedef {{readyProxyMs: number, frames: number, runningFrames: number, paragraph: EditorState["paragraph"],
+ * document: NonNullable<EditorState["document"]>, revisionDelta: number, primary: EditorState["primary"],
+ * secondary: EditorState["secondary"], level: ReturnType<Window["editingFixture"]["paragraphLevel"]>}} ParagraphObservation */
+/** @typedef {typeof globalThis & {paragraphMeasurement: Promise<ParagraphObservation>}} MeasurementGlobal */
+
 const source = await sourceIdentity(), kernel = [];
-for (const [name, text] of [["million-ltr-tail", "a".repeat(1_000_000) + " אבג"], ["mixed", "abc אבג (12) \u2067العربية\u2069 👩‍💻 ".repeat(4000)],
-    ["brackets", "a (אבג [12]) ".repeat(8000)], ["many-paragraphs", "abc אבג\r\n".repeat(12000)]]) {
+for (const [name, text] of /** @type {const} */ ([["million-ltr-tail", "a".repeat(1_000_000) + " אבג"], ["mixed", "abc אבג (12) \u2067العربية\u2069 👩‍💻 ".repeat(4000)],
+    ["brackets", "a (אבג [12]) ".repeat(8000)], ["many-paragraphs", "abc אבג\r\n".repeat(12000)]])) {
     const buffer = TextBuffer.from(text), samples = []; let retained;
     globalThis.gc?.(); const heapBefore = process.memoryUsage().heapUsed;
     for (let trial = 0; trial < 23; trial++) {
@@ -24,6 +30,7 @@ for (const [name, text] of [["million-ltr-tail", "a".repeat(1_000_000) + " אב�
         if (trial >= 3) samples.push({ totalMs, advanceMs, advances: advanceMs.length, maximumWork, workUnits: step.workUnits, readUnits: step.readUnits });
     }
     globalThis.gc?.(); const heapAfter = process.memoryUsage().heapUsed;
+    assert.ok(retained, "Paragraph summary requires its retained completed index.");
     kernel.push({ name, units: text.length, warmup: 3, measured: samples.length, visualLength: retained.visualLength, paragraphCount: retained.paragraphCount,
         totalMs: distribution(samples.map(s => s.totalMs)), advanceMs: distribution(samples.flatMap(s => s.advanceMs)), heap: { exposedGc: typeof globalThis.gc === "function", before: heapBefore, after: heapAfter, delta: heapAfter - heapBefore }, samples });
 }
@@ -37,23 +44,26 @@ try {
         for (let trial = 0; trial < 13; trial++) {
             await harness.page.evaluate(name => { window.editingFixture.setText(name === "million-ltr-tail" ? "a".repeat(1_000_000) + " אבג" : "abc אבג (12) \u2067العربية\u2069 👩‍💻 ".repeat(4000)); }, name); await ready();
             await harness.page.evaluate(() => {
-                const before = window.editingFixture.snapshot();
-                globalThis.paragraphMeasurement = new Promise((resolve, reject) => {
+                const before = window.editingFixture.snapshot(), captured = before.document;
+                if (!captured) throw new Error("Paragraph measurement requires its captured document.");
+                /** @type {MeasurementGlobal} */ (globalThis).paragraphMeasurement = new Promise((resolve, reject) => {
                     const start = performance.now(); let frames = 0, runningFrames = 0;
                     const timeout = setTimeout(() => reject(new Error("Paragraph measurement timed out.")), 30000);
-                    if (!window.editingFixture.analyzeParagraph(0, before.document.length, before.document.revision)) throw new Error("Paragraph request was rejected.");
+                    if (!window.editingFixture.analyzeParagraph(0, captured.length, captured.revision)) { clearTimeout(timeout); throw new Error("Paragraph request was rejected."); }
                     const check = () => {
                         frames++; const s = window.editingFixture.snapshot();
                         if (s.paragraph.status === "running") { runningFrames++; requestAnimationFrame(check); return; }
                         clearTimeout(timeout); if (s.paragraph.status !== "ready") { reject(new Error(`Paragraph ended ${s.paragraph.status}.`)); return; }
+                        if (!s.document) { reject(new Error("Paragraph measurement lost its current document.")); return; }
                         resolve({ readyProxyMs: performance.now() - start, frames, runningFrames, paragraph: s.paragraph, document: s.document,
-                            revisionDelta: s.document.revision - before.document.revision, primary: s.primary, secondary: s.secondary,
-                            level: window.editingFixture.paragraphLevel(before.document.length > 500000 ? 1_000_001 : 4) });
+                            revisionDelta: s.document.revision - captured.revision, primary: s.primary, secondary: s.secondary,
+                            level: window.editingFixture.paragraphLevel(captured.length > 500000 ? 1_000_001 : 4) });
                     }; requestAnimationFrame(check);
                 });
             });
-            const sample = await harness.page.evaluate(() => globalThis.paragraphMeasurement);
+            const sample = await harness.page.evaluate(() => /** @type {MeasurementGlobal} */ (globalThis).paragraphMeasurement);
             assert.equal(sample.revisionDelta, 0); assert.equal(sample.document.exports, 0); assert.equal(sample.level, 1); assert.ok(sample.runningFrames > 0);
+            assert.ok(sample.paragraph.progress, "Paragraph readiness requires its completed progress.");
             assert.equal(sample.paragraph.progress.scannedUnits, sample.document.length); assert.deepEqual(sample.paragraph.range, { from: 0, to: sample.document.length }); assert.equal(sample.paragraph.pending, false);
             assert.ok(sample.paragraph.turns > 1); assert.ok(sample.primary.inputUnits <= 2600); assert.equal(await harness.page.locator("textarea.st-textarea-baseline").count(), 0);
             for (const view of [sample.primary, sample.secondary]) assert.ok(view.viewport.textUnits <= view.viewport.rows * (Math.max(512, Math.ceil(view.viewport.width / view.viewport.columnWidth)) + 80));

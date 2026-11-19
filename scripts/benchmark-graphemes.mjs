@@ -5,6 +5,8 @@ import { TextBuffer, createGraphemeCursor } from "../src/index.ts";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
 
 const verify = process.argv.includes("--verify"), now = () => verify ? 0 : performance.now(), source = await sourceIdentity(), budget = 4096, cases = [];
+/** @typedef {{name: string, text: string, kind?: "string"} & ({clusters: number, cancel?: never} | {cancel: "scan" | "publish", clusters?: never})} Condition */
+/** @type {Condition[]} */
 const prepared = [
     { name: "ascii-rope-200000", text: "A".repeat(200_000), clusters: 200_000 },
     { name: "marks-rope-1000000", text: "A" + "\u0301".repeat(1_000_000), clusters: 1 },
@@ -12,13 +14,15 @@ const prepared = [
     { name: "regional-indicators-rope-200002", text: "🇦".repeat(100_001), clusters: 50_001 },
     { name: "unicode18-linker-extend-200002", text: "्" + "\u0301".repeat(200_000) + "क", clusters: 1 },
     { name: "crlf-rope-200000", text: "\r\n".repeat(100_000), clusters: 100_000 },
-    ...["scan", "publish"].map(cancel => ({ name: `cancel-${cancel}-200000`, text: "A".repeat(200_000), cancel }))
+    .../** @type {const} */ (["scan", "publish"]).map(cancel => ({ name: `cancel-${cancel}-200000`, text: "A".repeat(200_000), cancel }))
 ];
 for (const c of prepared) {
-    const buffer = TextBuffer.from(c.text), reads = buffer.readMetrics(), samples = [];
+    const buffer = TextBuffer.from(c.text), samples = [];
     for (let trial = 0; trial < (verify ? 1 : 23); trial++) {
         const before = process.memoryUsage(), began = now(), constructorAt = now(), cursor = createGraphemeCursor(c.kind === "string" ? c.text : buffer), constructorMs = now() - constructorAt;
-        const slices = [], deltas = [], phases = {}; let step, prior = 0, maximum = { elapsedMs: 0, phase: "scan", workUnits: 0 };
+        const slices = [], deltas = [];
+        /** @type {Partial<Record<ReturnType<typeof cursor.next>["phase"], number>>} */ const phases = {};
+        let step, prior = 0, maximum = { elapsedMs: 0, phase: "scan", workUnits: 0 };
         while (true) {
             const at = now(); step = cursor.next(budget); const elapsedMs = now() - at, delta = step.workUnits - prior; prior = step.workUnits;
             slices.push(elapsedMs); deltas.push(delta); phases[step.phase] = (phases[step.phase] ?? 0) + 1;
@@ -30,7 +34,7 @@ for (const c of prepared) {
         assert.equal(cursor.snapshot().result, null); assert.equal(cursor.snapshot().status, "disposed"); assert.ok(deltas.every(d => d <= budget + 256)); assert.equal(buffer.readMetrics().textExports, 0);
         if (c.cancel) { assert.equal(step.status, "running"); assert.equal(step.phase, c.cancel); assert.equal(step.result, null); }
         else {
-            const index = step.result; assert.equal(index.clusterCount, c.clusters); assert.equal(index.boundaryCount, c.clusters + 1); assert.equal(index.boundaryAt(0), 0); assert.equal(index.to, buffer.length);
+            const index = step.result; assert.ok(index, "Completed grapheme scan requires its published index."); assert.equal(index.clusterCount, c.clusters); assert.equal(index.boundaryCount, c.clusters + 1); assert.equal(index.boundaryAt(0), 0); assert.equal(index.to, buffer.length);
             assert.equal(index.following(0), index.boundaryAt(1)); assert.equal(index.preceding(index.to), index.boundaryAt(c.clusters - 1)); assert.equal(index.clusterIndexAt(index.to - 1), c.clusters - 1);
             assert.ok(step.workUnits < (buffer.length) * 8 + 256);
         }
@@ -38,9 +42,9 @@ for (const c of prepared) {
             steps: slices.length, workUnits: step.workUnits, readUnits: step.readUnits, inputPoints: step.inputPoints, clusters: step.result?.clusterCount ?? null, publishedBoundaries: step.publishedBoundaries, finalPhase: step.phase });
     }
     if (verify) { console.log(`Verified ${c.name}`); continue; }
-    cases.push({ name: c.name, inputUnits: buffer.length, coordinate: "utf16", kind: c.kind ?? "buffer", budget, cancel: c.cancel ?? null, warmup: 3, measured: samples.length,
-        elapsedMs: distribution(samples.map(s => s.elapsedMs)), constructorMs: distribution(samples.map(s => s.constructorMs)), maximumSliceMs: distribution(samples.map(s => Math.max(...s.slicesMs.samples))), samples });
-    console.log(JSON.stringify({ name: c.name, elapsedP95Ms: cases.at(-1).elapsedMs.p95, maximumSliceP95Ms: cases.at(-1).maximumSliceMs.p95 }));
+    const item = { name: c.name, inputUnits: buffer.length, coordinate: "utf16", kind: c.kind ?? "buffer", budget, cancel: c.cancel ?? null, warmup: 3, measured: samples.length,
+        elapsedMs: distribution(samples.map(s => s.elapsedMs)), constructorMs: distribution(samples.map(s => s.constructorMs)), maximumSliceMs: distribution(samples.map(s => Math.max(...s.slicesMs.samples))), samples };
+    cases.push(item); console.log(JSON.stringify({ name: c.name, elapsedP95Ms: item.elapsedMs.p95, maximumSliceP95Ms: item.maximumSliceMs.p95 }));
 }
 assert.equal((await sourceIdentity()).sha256, source.sha256);
 if (!verify) {

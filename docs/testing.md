@@ -56,7 +56,8 @@ static-demo building/serving and package host-fixture staging, qualification coo
 public export resolution, public import remapping, compiler-root isolation and the restored
 React host/table-paste callers and the inspection caller against the host fixture's declared snapshot. The host caller's
 browser event observations are local types; its point results use the shared readiness probe.
-The Node model/storage/bulk callers, workers, workloads and storage summary are also checked.
+The Node model/storage/bulk callers, workers, workloads and storage summary are also checked,
+along with the bidi, grapheme and paragraph-analysis callers against their model and fixture types.
 Worker report types come from their actual result objects; these type imports do not run workers.
 Browser editing, host input/reference/focus/pointer/word-selection/drag-scroll/folding/table-paste,
 navigation, service, comparison, viewport and host save/recovery callers use the existing source
