@@ -395,6 +395,9 @@ with change colors. The host owns syntax/search state and calls the appropriate 
 
 ### Linked scrolling and aligned rows
 
+Pass `minimap: true` to show the [viewport minimap](viewport.md#mounting-and-presentation)
+in both panes, including each replacement baseline. Each pane follows its own row projection.
+
 `scrollLinked` and `rowsAligned` are boolean mount options. Both default to `false`; when
 `rowsAligned` is true and `scrollLinked` is omitted, scrolling is linked. Use
 `setScrollLinked(boolean)` and `setRowsAligned(boolean)` to change them. Enabling alignment

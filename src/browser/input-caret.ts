@@ -20,7 +20,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
         if (disposed) return;
         const composing = isComposing();
         const { selection: selected, selectionSet } = view.getSnapshot(), focused = isFocused(input);
-        let rectangle = clientBox(root);
+        let rectangle = clientBox(root, viewport.minimap());
         const currentDocument = readDocument();
         let state = viewport.snapshot(), point = viewport.coordsAt(selected.head, selected.headAffinity);
         let visible = point && point.left >= rectangle.left && point.left < rectangle.right
@@ -37,7 +37,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
         if (layoutChanged) {
             viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" });
             viewport.flush();
-            rectangle = clientBox(root);
+            rectangle = clientBox(root, viewport.minimap());
             state = viewport.snapshot(); point = viewport.coordsAt(selected.head, selected.headAffinity);
             visible = point && point.left >= rectangle.left && point.left < rectangle.right && point.top + point.height > rectangle.top && point.top < rectangle.bottom;
         }
@@ -61,7 +61,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
                     && at.top + at.height > rectangle.top && at.top < rectangle.bottom) points.push(at);
             }
         }
-        const scrollLeft = root.scrollLeft, scrollTop = root.scrollTop, width = root.clientWidth, height = root.clientHeight;
+        const scrollLeft = root.scrollLeft, scrollTop = root.scrollTop, width = (rectangle.right - rectangle.left) / rectangle.zoom, height = root.clientHeight;
         const left = ((point?.left ?? rectangle.left) - rectangle.left) / rectangle.zoom;
         const top = ((point?.top ?? rectangle.top) - rectangle.top) / rectangle.zoom;
         const caretHeight = point ? point.height / rectangle.zoom : state.lineHeight;

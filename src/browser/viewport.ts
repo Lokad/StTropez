@@ -1,4 +1,4 @@
-import { clientBox, cssZoom } from "./dom-coordinates.ts";
+import { clientBox, cssZoom, minimapWidth } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, TabId, Workspace } from "../core/workspace.ts";
 import type { Selection } from "../core/history.ts";
@@ -18,6 +18,7 @@ import { decorationParts, validDecorationClass } from "./decoration-parts.ts";
 import type { RowPart } from "./decoration-parts.ts";
 import type { ComparisonRowIndex } from "../core/comparison-rows.ts";
 import { mountColumnRulers, resolveColumnRulers } from "./column-rulers.ts";
+import { mountMinimap } from "./minimap.ts";
 type RowIndex = FoldIndex | ComparisonRowIndex;
 const emptyIndex = new FoldIndex(1, []);
 const overscanLines = 4, overscanUnits = 32;
@@ -57,6 +58,8 @@ export type TextViewport = Readonly<{ element: HTMLDivElement; view: DocumentVie
     fontLigatures: () => boolean;
     configureFontLigatures: (enabled: boolean) => boolean;
     scrollBeyondLastLine: () => boolean;
+    minimap: () => boolean;
+    configureMinimap: (enabled: boolean) => boolean;
     configureScrollBeyondLastLine: (enabled: boolean) => boolean;
     captureView: () => ViewState; restoreView: (state: ViewState) => void;
     scrollTo: (position: Readonly<{ top?: number; left?: number }>) => void;
@@ -93,7 +96,7 @@ export type LineDecorator = (line: PresentedLine) => readonly InlineDecoration[]
 export type LineClass = (line: PresentedLine) => string | undefined;
 export type RevealOptions = Readonly<{ horizontal?: "center" | "nearest"; vertical?: "center" | "nearest"; affinity?: Affinity }>;
 export type TextViewportOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; decorate?: LineDecorator; lineClass?: LineClass;
-    columnRulers?: readonly number[]; highlightCurrentLine?: boolean; fontLigatures?: boolean; scrollBeyondLastLine?: boolean }>;
+    columnRulers?: readonly number[]; highlightCurrentLine?: boolean; fontLigatures?: boolean; scrollBeyondLastLine?: boolean; minimap?: boolean }>;
 
 /** Bounded DOM view layer with local native text geometry. Native-device qualification remains separate. */
 export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId: TabId,
@@ -105,6 +108,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
 export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: TabId,
     options: TextViewportOptions = {}): Readonly<{ viewport: TextViewport; navigation: ViewportNavigation; setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean }> {
     let columns = resolveColumnRulers(options.columnRulers);
+    if (options.minimap !== undefined && typeof options.minimap !== "boolean") throw new TypeError("Minimap preference must be boolean.");
     let highlightCurrentLine = options.highlightCurrentLine === undefined ? false : options.highlightCurrentLine;
     if (typeof highlightCurrentLine !== "boolean") throw new TypeError("Current-line highlighting must be boolean.");
     let fontLigatures = options.fontLigatures === undefined ? false : options.fontLigatures;
@@ -234,6 +238,14 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
         schedule();
     };
+    const createMinimap = () => mountMinimap(root, top => {
+        if (!workspace.resolveTab(target)) return;
+        setScroll({ top });
+        // A native scroll notification from the preceding drag step can arrive before
+        // the next render. Make it observe the current destination, as a real thumb does.
+        root.scrollTop = y.toPhysical(top);
+    });
+    let minimap = options.minimap ? createMinimap() : undefined;
     function mapRowSources(current: DocumentSnapshot | undefined): void {
         if (current?.revision === rowSourceRevision) return;
         const change = current?.change;
@@ -425,7 +437,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         frame = undefined; if (disposed) return;
         const started = win.performance.now();
         // Read container metrics before writing rows; bounded shaping reads follow the writes.
-        width = root.clientWidth; height = root.clientHeight;
+        const clientWidth = root.clientWidth, mapWidth = minimap ? minimapWidth(clientWidth) : 0;
+        width = clientWidth - mapWidth; height = root.clientHeight;
         const zoom = cssZoom(root);
         columnWidth = probe.getBoundingClientRect().width / zoom / 64 || 8.4;
         const style = win.getComputedStyle(root); naturalLineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.6; lineHeight = naturalLineHeight;
@@ -435,6 +448,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         if (font !== measuredFont) { measuredWidth = 0; measuredFont = font; }
         const document = workspace.resolveTab(target) ? workspace.observeDocument(documentId).getSnapshot() : undefined;
         if (!document) {
+            minimap?.dispose(); minimap = undefined;
             rulers.clear();
             clearCurrentLine();
             painted = undefined; commandGeometry = undefined;
@@ -469,6 +483,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         const trailingSpace = scrollBeyondLastLine && index.visibleLineCount > 1 ? Math.max(0, height - lineHeight - padding * 2) : 0;
         y = scrollAxis(index.visibleLineCount * lineHeight + padding * 2 + trailingSpace, height);
         top = position(y, top); left = position(x, left);
+        minimap?.paint(document.buffer, index, mapWidth, height, top, y.extent, lineHeight, padding, style.color);
         // Presentation-only configuration can repaint guides without reading or rebuilding rows.
         rulers.paint(columns, columnWidth, left, width);
         const { selection: selected, selectionSet } = view.getSnapshot();
@@ -494,10 +509,10 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         partialRows = next.filter(row => !row.complete).length;
         // A fitting document must not fill rounded client metrics: a fractional viewport can be
         // slightly smaller, making classic scrollbars repeatedly add/remove each other.
-        spacer.style.width = `${Math.min(x.extent, x.physicalExtent)}px`; spacer.style.height = `${Math.min(y.extent, y.physicalExtent)}px`;
+        spacer.style.width = `${Math.min(x.extent, x.physicalExtent) + mapWidth}px`; spacer.style.height = `${Math.min(y.extent, y.physicalExtent)}px`;
         const physicalLeft = x.toPhysical(left), physicalTop = y.toPhysical(top);
         root.scrollLeft = physicalLeft; root.scrollTop = physicalTop;
-        layer.style.width = "100%"; layer.style.height = "100%";
+        layer.style.width = mapWidth ? `calc(100% - ${mapWidth}px)` : "100%"; layer.style.height = "100%";
         layer.style.transform = `translate(${physicalLeft}px, ${physicalTop}px)`;
         const highlightedTop = highlightedLine === undefined ? undefined : padding + index.rowAt(highlightedLine) * lineHeight - top;
         if (highlightedTop === undefined || highlightedTop + lineHeight <= 0 || highlightedTop >= height) clearCurrentLine();
@@ -698,6 +713,15 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
             fontLigatures = enabled; root.style.fontVariantLigatures = enabled ? "normal" : "none"; invalidate(); return true;
         },
         scrollBeyondLastLine: () => scrollBeyondLastLine,
+        minimap: () => !!minimap,
+        configureMinimap: enabled => {
+            notifications.assertWritable(); if (disposed || !workspace.resolveTab(target)) return false;
+            if (typeof enabled !== "boolean") throw new TypeError("Minimap preference must be boolean.");
+            if (enabled === !!minimap) return true;
+            if (enabled) minimap = createMinimap();
+            else { minimap?.dispose(); minimap = undefined; }
+            schedule(); return true;
+        },
         configureScrollBeyondLastLine: enabled => {
             notifications.assertWritable(); if (disposed) return false;
             if (typeof enabled !== "boolean") throw new TypeError("Scrolling beyond the last line must be boolean.");
@@ -716,7 +740,9 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         hitTest: (clientX: number, clientY: number) => {
             if (!Number.isFinite(clientX) || !Number.isFinite(clientY) || disposed || !workspace.resolveTab(target)
                 || workspace.observeDocument(documentId).getSnapshot()?.revision !== renderedRevision) return undefined;
-            const rectangle = clientBox(root), at = Math.max(0, Math.min(renderedIndex.visibleLineCount - 1, Math.floor(((clientY - rectangle.top) / rectangle.zoom + top - padding) / lineHeight))), gap = gapAt(renderedIndex, at);
+            const rectangle = clientBox(root, !!minimap);
+            if (minimap && clientX >= rectangle.right) return undefined;
+            const at = Math.max(0, Math.min(renderedIndex.visibleLineCount - 1, Math.floor(((clientY - rectangle.top) / rectangle.zoom + top - padding) / lineHeight))), gap = gapAt(renderedIndex, at);
             if (gap) return Object.freeze({ offset: gap.offset, affinity: "after", left: rectangle.left + (padding - left) * rectangle.zoom, top: rectangle.top + (padding + at * lineHeight - top) * rectangle.zoom, height: lineHeight * rectangle.zoom, revision: renderedRevision!, padding: true });
             let element: HTMLDivElement | undefined, distance = Infinity;
             for (const candidate of rows.values()) {
@@ -775,6 +801,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
             clearCurrentLine(); highlightCurrentLine = false;
             fontLigatures = false;
             scrollBeyondLastLine = false;
+            minimap?.dispose(); minimap = undefined;
             observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); rowSources.clear(); rowSourceRevision = null; paddingRows.clear(); comparisonRows = undefined; renderedAlignmentId = null; geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             painted = undefined; commandGeometry = undefined; commandRow.replaceChildren(); commandMeasure.remove(); clearPreparedRows();
             navigationBatches = 0; maxNavigationBatchRows = 0;

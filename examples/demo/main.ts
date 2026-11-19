@@ -49,6 +49,7 @@ function configurePresentation(view: TextEditor | undefined): void {
     view.viewport.configureCurrentLineHighlight(field("view-current-line").checked);
     view.viewport.configureFontLigatures(field("view-ligatures").checked);
     view.viewport.configureScrollBeyondLastLine(field("view-trailing-space").checked);
+    view.viewport.configureMinimap(field("view-minimap").checked);
 }
 let referencePresentation: DemoPresentation | undefined;
 let problemPage = 0, problemBatch: unknown;
@@ -74,7 +75,7 @@ function renderOutput(): void {
     if (presentation.status === "ready") {
         const text = presentation.javascript || "// This file emits no JavaScript.\n";
         if (output) output.update(text);
-        else { host.replaceChildren(); output = mountDemoOutput(host, text); }
+        else { host.replaceChildren(); output = mountDemoOutput(host, text, field("view-minimap").checked); }
     } else if (!output) {
         // Keep the last completed output for this view while the footer reports pending/failed analysis.
         const note = document.createElement("p"); note.className = "panel-note";
@@ -465,8 +466,9 @@ field("character-warnings").addEventListener("change", () => {
     editor?.characterWarnings.configure(enabled); comparison?.reference.getSnapshot()?.editor.characterWarnings.configure(enabled);
     element("character-warning-details").replaceChildren();
 }, { signal: listeners.signal });
-for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-trailing-space"]) field(id).addEventListener("change", () => {
+for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-trailing-space", "view-minimap"]) field(id).addEventListener("change", () => {
     configurePresentation(editor); configurePresentation(comparison?.reference.getSnapshot()?.editor);
+    output?.configureMinimap(field("view-minimap").checked);
 }, { signal: listeners.signal });
 on("quickfix", () => languageView?.quickfix());
 for (const command of ["line-comment", "block-comment", "indent", "outdent"] as const) on(command, () => {

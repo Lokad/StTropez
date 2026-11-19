@@ -24,6 +24,13 @@
     overflow-anchor: none;
 }
 .st-viewport-spacer { pointer-events: none; }
+.st-minimap-anchor { position: sticky; top: 0; left: 0; height: 0; z-index: 3; }
+.st-minimap { position: absolute; right: 0; top: 0; overflow: hidden; user-select: none; touch-action: none;
+    cursor: pointer; background: var(--st-background, #131b27); box-shadow: inset 1px 0 var(--st-minimap-border, #79889a66); }
+.st-minimap canvas { display: block; opacity: .58; pointer-events: none; }
+.st-minimap-marker { position: absolute; inset: 0 0 auto; box-sizing: border-box; cursor: grab;
+    border: 1px solid var(--st-minimap-border, #79889a); background: var(--st-minimap-marker, #879eb535); }
+.st-minimap:active .st-minimap-marker { cursor: grabbing; }
 .st-viewport-layer { position: absolute; top: 0; left: 0; overflow: hidden; contain: strict; }
 .st-column-rulers { position: absolute; inset: 0; pointer-events: none; z-index: -1; }
 .st-column-ruler { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--st-column-ruler, #71849c40); }

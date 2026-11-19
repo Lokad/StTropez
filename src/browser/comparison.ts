@@ -17,7 +17,7 @@ import { createComparisonPanes } from "./comparison-panes.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 
 export type ComparisonReferenceView = Readonly<{ editor: TextEditor; target: TabTarget; epoch: number; version: string }>;
-export type TextComparisonOptions = Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView; controls?: boolean; scrollLinked?: boolean; rowsAligned?: boolean;
+export type TextComparisonOptions = Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView; controls?: boolean; scrollLinked?: boolean; rowsAligned?: boolean; minimap?: boolean;
     workingDecorate?: (line: PresentedLine) => readonly InlineDecoration[]; baselineDecorate?: (line: PresentedLine) => readonly InlineDecoration[] }>;
 export type TextComparisonSnapshot = Readonly<{
     comparison: ComparisonSnapshot;
@@ -47,6 +47,8 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     if (options.scrollLinked !== undefined && typeof options.scrollLinked !== "boolean") throw new TypeError("Expected a scroll-link preference.");
     if (options.rowsAligned !== undefined && typeof options.rowsAligned !== "boolean") throw new TypeError("Expected a row-alignment preference.");
     if (options.controls !== undefined && typeof options.controls !== "boolean") throw new TypeError("Expected a default-controls preference.");
+    const minimap = options.minimap === undefined ? false : options.minimap;
+    if (typeof minimap !== "boolean") throw new TypeError("Minimap preference must be boolean.");
     const owner = host.ownerDocument, win = owner.defaultView;
     if (!win) throw new Error("Comparison requires an attached browser document.");
     const controller = createComparisonController(workspace, workingTab, baseline, options), runner = createCooperativeRunner(win);
@@ -80,7 +82,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     };
     const lineClass = (side: "baseline" | "working") => (line: PresentedLine) => (side !== "working" || line.revision === state.working?.revision) && rangeAt(side, line.line) ? `st-comparison-line-${side}` : undefined;
     let workingMount: MountedTextEditor;
-    try { workingMount = mountEditor(workingPane.content, workspace, workingTab, { view: controller.view, ariaLabel: "Comparison working source", decorate: decorate("working"), lineClass: lineClass("working") }); }
+    try { workingMount = mountEditor(workingPane.content, workspace, workingTab, { view: controller.view, minimap, ariaLabel: "Comparison working source", decorate: decorate("working"), lineClass: lineClass("working") }); }
     catch (error) { root.remove(); controller.dispose(); throw error; }
     const working = workingMount.editor, pair = createComparisonPanes(workingMount, changed), referenceEditor = () => pair.reference()?.editor, referenceViewport = () => referenceEditor()?.viewport;
     const busy = (editor: TextEditor | undefined) => { const input = editor?.activity(); return !!input && (input.composing || input.pendingInput || input.pendingCommand); };
@@ -131,7 +133,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
                 { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false, run: false }, { visibility: "internal" });
             displayTab = workspace.open({ kind: "text", documentId: display.documentId }, display.id);
             displayTarget = workspace.captureTab(displayTab);
-            const mounted = mountEditor(referencePane.content, workspace, displayTab, { ariaLabel: "Comparison baseline source", decorate: decorate("baseline"), lineClass: lineClass("baseline") });
+            const mounted = mountEditor(referencePane.content, workspace, displayTab, { ariaLabel: "Comparison baseline source", minimap, decorate: decorate("baseline"), lineClass: lineClass("baseline") });
             const editor = mounted.editor;
             try { pair.setReference(mounted); } catch (error) { editor.dispose(); throw error; }
             publishReference(Object.freeze({ editor, target: displayTarget, epoch, version: state.baseline.version }));

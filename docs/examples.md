@@ -44,6 +44,8 @@ The development WebSocket endpoint `/lsp-fixture` is a fixture service, not an H
 
 ## TypeScript demo
 
+Choose **View → Minimap** to show an overview beside the source, generated JavaScript and both Changes panes. Click it to jump or drag its marker to scroll while keeping your selection.
+
 Start with **Shopping cart** or **Fix a type error**. Edit the source, undo/redo, inspect
 JavaScript or Problems, and open Changes to compare against the saved text. Save stores the
 sample locally. The demo compiles edited TypeScript but does not execute the generated program.

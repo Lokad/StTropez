@@ -18,6 +18,7 @@ export function showPreview(host: HTMLElement, workspace: Workspace, tab: TabId)
     const options: TextViewportOptions = {
         ariaLabel: "Source preview",
         columnRulers: [80, 120],
+        minimap: true,
         highlightCurrentLine: true
     };
     const viewport = mountTextViewport(host, workspace, tab, options);
@@ -47,6 +48,7 @@ instead of redirecting it to the replacement document.
 | `columnRulers` | Empty; at most 128 positive safe integers, copied, sorted and deduplicated |
 | `highlightCurrentLine` | `false`; boolean |
 | `fontLigatures` | `false`; boolean |
+| `minimap` | `false`; boolean |
 | `scrollBeyondLastLine` | `false`; boolean |
 
 `LineDecorator` receives a `PresentedLine`: captured document/revision, source line number,
@@ -62,6 +64,7 @@ Each presentation option has a getter and a live setter:
 | `columnRulers()` | `configureColumnRulers(columns)` | Guides at measured monospace cells from the left text origin |
 | `currentLineHighlight()` | `configureCurrentLineHighlight(enabled)` | Background for the primary collapsed caret, including a folded header |
 | `fontLigatures()` | `configureFontLigatures(enabled)` | Native common/contextual font ligatures; invalidates font and caret measurements |
+| `minimap()` | `configureMinimap(enabled)` | A document overview with a draggable visible-region marker |
 | `scrollBeyondLastLine()` | `configureScrollBeyondLastLine(enabled)` | Space to scroll the last visible row to the top text padding |
 
 Setters validate before mutation, run outside workspace notification callbacks and return
@@ -70,6 +73,14 @@ background add no text or scroll extent. A noncollapsed primary selection hides 
 highlight; secondary carets do not add highlights. Each view has independent settings.
 Use `--st-column-ruler`, `--st-current-line` and `--st-current-line-border` for their colors.
 Host `font-feature-settings` can override individual ligature features.
+
+The minimap reserves space at the right of the text area. It samples indentation, words and
+blank space from bounded line prefixes across the visual rows. Collapsed lines disappear
+from the overview and comparison alignment gaps appear blank. The marker follows scrolling,
+edits and resizing. It fills the track when all rows fit and keeps a minimum grab height on
+long documents. Click outside the marker to jump or drag it to scroll while preserving focus,
+horizontal position and the complete selection. Use `--st-minimap-border` and
+`--st-minimap-marker` to style the marker outline and fill.
 
 ### Scrolling and saved views
 
@@ -93,7 +104,8 @@ by document/view identity. [Folding](folding.md) describes projection and select
 `rowBounds(line)` returns `RenderedRowBounds`. These APIs use client coordinates, including
 inherited CSS zoom. Returned positions carry their document revision. Unmounted ranges and
 stale projections can return `undefined`; `coordsAt` snaps a grapheme interior by affinity.
-Scrolling uses local CSS units. The [editor](editor.md) owns keyboard navigation, preferred
+The minimap is outside the text hit area. The viewport snapshot reports the width available
+for text. Scrolling uses local CSS units. The [editor](editor.md) owns keyboard navigation, preferred
 columns and temporary measurement batches. For explicit host navigation, update the captured
 view's selection and use `revealOffset` to reveal it.
 

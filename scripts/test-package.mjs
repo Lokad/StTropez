@@ -291,6 +291,9 @@ try {
     await page.waitForFunction(() => { const state = window.consumer.viewport(); return state.revision === 3 && !state.pending; });
     const viewport = await page.evaluate(() => window.consumer.viewport()); assert.equal(viewport.rows, 1);
     assert.equal(await page.getByRole("region", { name: "Restored viewport" }).locator(".st-viewport-row").textContent(), "edited restored package");
+    const minimap = page.getByRole("region", { name: "Restored viewport" }).locator(".st-minimap");
+    const track = await minimap.boundingBox(), marker = await minimap.locator(".st-minimap-marker").boundingBox();
+    assert.ok(track && marker && track.height > 0 && marker.height === track.height, "Restored single-line viewport needs a full-height minimap marker.");
     const storage = await page.evaluate(() => window.consumer.storage());
     assert.deepEqual(storage, { original: "a😀\nb", exported: "aX\r\nb", readMetrics: { textExports: 1, sliceUnits: 0 }, batch: { text: "X\r\nYb", mappedEnd: 5, lineOffset: 3 }, lineCount: 2, lineOffset: 3, mappedEnd: 4,
         anchor: { from: 2, to: 4, fromAffinity: "after", toAffinity: "before", onDelete: "collapse" } });

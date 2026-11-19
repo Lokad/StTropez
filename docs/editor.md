@@ -63,7 +63,7 @@ instead of redirecting input to the replacement. Omitting `view` creates a mount
 | `readOnly` | `false` by default; captured for this mount |
 | `language` | Host indentation, comment, pair and Enter rules; see [language configuration](#language-configuration) |
 | `decorate`, `lineClass` | Host syntax/annotation presentation through the [viewport contract](viewport.md#mounting-and-presentation) |
-| `columnRulers`, `highlightCurrentLine`, `fontLigatures`, `scrollBeyondLastLine` | Initial [viewport settings](viewport.md#mounting-and-presentation); live setters are on `editor.viewport` |
+| `columnRulers`, `highlightCurrentLine`, `fontLigatures`, `scrollBeyondLastLine`, `minimap` | Initial [viewport settings](viewport.md#mounting-and-presentation); live setters are on `editor.viewport` |
 | `bracketMatching` | Off by default; `true` or explicit matching limits enable it |
 | `characterWarnings` | Off by default; `true` or a [character-warning policy](unicode.md#character-warnings) enables it |
 

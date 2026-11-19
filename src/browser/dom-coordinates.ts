@@ -12,8 +12,13 @@ export function cssZoom(element: Element): number {
     return result;
 }
 
-export function clientBox(element: HTMLElement) {
+export function minimapWidth(clientWidth: number): number {
+    return Math.min(72, Math.floor(clientWidth * .18));
+}
+
+export function clientBox(element: HTMLElement, minimap = false) {
     const zoom = cssZoom(element), rectangle = element.getBoundingClientRect();
     const left = rectangle.left + element.clientLeft * zoom, top = rectangle.top + element.clientTop * zoom;
-    return { left, top, right: left + element.clientWidth * zoom, bottom: top + element.clientHeight * zoom, zoom };
+    const width = element.clientWidth;
+    return { left, top, right: left + (minimap ? width - minimapWidth(width) : width) * zoom, bottom: top + element.clientHeight * zoom, zoom };
 }

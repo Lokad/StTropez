@@ -9,8 +9,10 @@ test("view controls survive file switches and saved-reference replacement in bot
     await expect(source.locator(".st-current-line")).toHaveCount(1);
     const mounted = await source.elementHandle(), initialHeight = await source.evaluate(element => element.scrollHeight);
     await page.locator("#view-menu summary").click();
-    for (const id of ["view-rulers", "view-ligatures", "view-trailing-space"]) await page.locator(`#${id}`).check();
+    for (const id of ["view-rulers", "view-ligatures", "view-trailing-space", "view-minimap"]) await page.locator(`#${id}`).check();
     await expect(source.locator(".st-column-ruler").first()).toBeVisible();
+    await expect(source.locator(".st-minimap-marker")).toBeVisible();
+    await expect(page.locator(".demo-output .st-minimap-marker")).toBeVisible();
     await expect(source).toHaveCSS("font-variant-ligatures", "normal");
     await expect.poll(() => source.evaluate(element => element.scrollHeight)).toBeGreaterThan(initialHeight);
     expect(await mounted!.evaluate(element => element.isConnected)).toBe(true);
@@ -21,6 +23,7 @@ test("view controls survive file switches and saved-reference replacement in bot
     await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
     for (const pane of [left, right]) {
         await expect(pane.locator(".st-column-ruler").first()).toBeVisible();
+        await expect(pane.locator(".st-minimap-marker")).toBeVisible();
         await expect(pane.locator(".st-current-line")).toHaveCount(1);
         await expect(pane.locator(".st-viewport")).toHaveCSS("font-variant-ligatures", "normal");
     }
@@ -35,11 +38,11 @@ test("view controls survive file switches and saved-reference replacement in bot
     await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
     for (const pane of [left, right]) await expect(pane.locator(".demo-token-string").first()).toBeVisible();
     await page.locator("#view-menu summary").click();
-    for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-trailing-space"]) await expect(page.locator(`#${id}`)).toBeChecked();
+    for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-trailing-space", "view-minimap"]) await expect(page.locator(`#${id}`)).toBeChecked();
     await info.attach("presentation-controls", { body: await page.screenshot(), contentType: "image/png" });
-    for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-trailing-space"]) await page.locator(`#${id}`).uncheck();
+    for (const id of ["view-rulers", "view-current-line", "view-ligatures", "view-trailing-space", "view-minimap"]) await page.locator(`#${id}`).uncheck();
     for (const pane of [left, right]) {
-        await expect(pane.locator(".st-column-ruler, .st-current-line-background")).toHaveCount(0);
+        await expect(pane.locator(".st-column-ruler, .st-current-line-background, .st-minimap")).toHaveCount(0);
         await expect(pane.locator(".st-viewport")).toHaveCSS("font-variant-ligatures", "none");
     }
     await page.locator("#view-menu summary").press("Escape"); await expect(page.locator("#view-menu summary")).toBeFocused();
