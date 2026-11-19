@@ -499,6 +499,12 @@ editing rules, folding, highlights, documentation, unopened navigation and actio
 route exercises the WebSocket provider; the static route exercises the browser worker and
 repository-prefix asset loading. Restored qualification retains isolated declarations, compiled
 asset input checks, browser-error collection and provider cleanup around its integration journeys.
+The copied measurement host also passes the isolated consumer compile, including its hook,
+before bundling. Ordinary demo bundles omit that hook. A separate strict JavaScript check covers
+the restored-demo and measurement callers; their observation bridge derives from the actual
+copied host. This tooling program includes Node/provider helpers and uses the development
+setting `skipLibCheck: true` for third-party declarations. The independent consumer compile
+retains `skipLibCheck: false`, no ambient development types and restored declarations only.
 
 ### Native-device checklist
 

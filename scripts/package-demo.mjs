@@ -24,10 +24,11 @@ const project = resolve("."), source = await sourceIdentity();
 const reusePath = process.argv.find(arg => arg.startsWith("--reuse-consumer="))?.slice("--reuse-consumer=".length);
 assert.ok(reusePath, "Restore a package first, then pass --reuse-consumer=<metadata>; use --scenarios=full,lsp,demo.");
 const browserName = process.argv.find(arg => arg.startsWith("--browser="))?.slice("--browser=".length) ?? "chromium";
-assert.ok(["chromium", "firefox", "webkit"].includes(browserName));
+assert.ok(browserName === "chromium" || browserName === "firefox" || browserName === "webkit");
 const prepareOnly = process.argv.includes("--prepare-only");
 const measureOnly = process.argv.includes("--measure-only");
 assert.ok(!measureOnly || browserName === "chromium" && !prepareOnly, "Integrated measurement requires Chromium without --prepare-only.");
+/** @param {string | Uint8Array} bytes */
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 const archivePath = "artifacts/nuget/feed/StTropez.Assets.0.0.0-local.nupkg", archive = await readFile(archivePath);
 const packageSha256 = hash(archive), reused = JSON.parse(await readFile(reusePath, "utf8"));
@@ -36,7 +37,10 @@ assert.ok(!reused.retention?.removed && reused.retention?.state !== "removing", 
 const consumer = await realpath(reused.consumer), assetRoot = await realpath(reused.assetRoot);
 assert.ok(!within(project, consumer) && within(await realpath(tmpdir()), consumer) && basename(consumer).startsWith("sttropez-consumer-"));
 assert.ok(relative(consumer, assetRoot).replaceAll("\\", "/").startsWith("obj/sttropez/"));
-const entries = unzipSync(archive), assets = JSON.parse(strFromU8(entries["assets/manifest.json"]));
+const entries = unzipSync(archive);
+assert.ok(entries["assets/manifest.json"] && entries["StTropez.Assets.nuspec"]);
+/** @type {{assets: readonly {path: string, sha256: string}[], entries: {regexWorker: string}}} */
+const assets = JSON.parse(strFromU8(entries["assets/manifest.json"]));
 assert.ok(!/<dependency\b/.test(strFromU8(entries["StTropez.Assets.nuspec"])));
 async function checkStage() {
     assert.equal(hash(await readFile(archivePath)), packageSha256, "Package changed during qualification.");
@@ -54,9 +58,12 @@ const hostRoot = join(consumer, "demo-host"), sources = [], seen = new Set();
 const entryPoints = { app: "examples/demo/main.ts", "demo-syntax-worker": "examples/demo/syntax-worker.ts" };
 const pending = [...Object.values(entryPoints)];
 while (pending.length) {
-    const path = pending.pop(); if (seen.has(path)) continue; seen.add(path);
+    const path = pending.pop(); assert.ok(path); if (seen.has(path)) continue; seen.add(path);
     assert.ok((path.startsWith("examples/") || path.startsWith("fixtures/language/")) && within(project, resolve(project, path)) && /\.(ts|css)$/.test(path), `Unexpected host source: ${path}`);
-    const original = resolve(project, path), text = await readFile(original, "utf8"), edits = [], imports = [];
+    const original = resolve(project, path), text = await readFile(original, "utf8");
+    /** @type {{from: number, to: number, text: string}[]} */ const edits = [];
+    /** @type {{original: string, restored: string}[]} */ const imports = [];
+    /** @param {string} value @param {number} from @param {number} to */
     function specifier(value, from, to) {
         if (!value.startsWith(".")) { assert.equal(value, "typescript-demo", `Unexpected host dependency: ${value}`); return; }
         const target = resolve(dirname(original), value), local = relative(project, target).replaceAll("\\", "/");
@@ -69,6 +76,7 @@ while (pending.length) {
     }
     if (path.endsWith(".css")) {
         for (const match of text.matchAll(/@import\s+["']([^"']+)["']/g)) {
+            assert.ok(match[1]);
             const from = match.index + match[0].indexOf(match[1]); specifier(match[1], from, from + match[1].length);
         }
     } else {
@@ -81,6 +89,10 @@ while (pending.length) {
 }
 await writeFile(join(hostRoot, "styles.d.ts"), 'declare module "*.css";\n');
 await writeFile(join(hostRoot, "package.json"), '{"type":"module"}\n');
+// Check the exact instrumented host even during ordinary qualification. Only measurement
+// bundles select it; the ordinary host remains byte-for-byte free of the hook.
+const measurementEntry = "examples/demo/measurement-main.ts";
+await writeFile(join(hostRoot, measurementEntry), await readFile(join(hostRoot, entryPoints.app), "utf8") + demoMeasurementHook);
 const compilerRoots = await consumerCompilerRoots(project), demoCompiler = await realpath(join(project, "node_modules/typescript-demo"));
 const compilerOptions = { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM", "DOM.Iterable"],
     strict: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true, noUnusedLocals: true, noUnusedParameters: true,
@@ -88,7 +100,7 @@ const compilerOptions = { target: "ES2022", module: "NodeNext", moduleResolution
         sttropez: [join(assetRoot, "index.d.ts")], "sttropez/browser": [join(assetRoot, "browser/index.d.ts")],
         "sttropez/protocol": [join(assetRoot, "protocol/index.d.ts")], "typescript-demo": [join(demoCompiler, "lib/typescript.d.ts")],
     } };
-const compilerFiles = [...Object.values(entryPoints), "styles.d.ts"];
+const compilerFiles = [...Object.values(entryPoints), measurementEntry, "styles.d.ts"];
 await writeFile(join(hostRoot, "tsconfig.json"), JSON.stringify({ compilerOptions, files: compilerFiles }));
 const compilerOutput = execFileSync(process.execPath, [join(project, "node_modules/typescript/bin/tsc"), "-p", join(hostRoot, "tsconfig.json"), "--listFiles", "--pretty", "false"],
     { cwd: hostRoot, encoding: "utf8", stdio: "pipe" });
@@ -99,23 +111,61 @@ for (const path of compilerOutput.split(/\r?\n/).filter(Boolean)) {
     assert.ok(within(hostRoot, input) || /\.d\.[cm]?ts$/.test(input) && [assetRoot, demoCompiler, ...compilerRoots].some(root => within(root, input)), `Unexpected type input: ${path}`);
     typeInputs.push(input);
 }
+// The automation bridge derives its public snapshots from the checked, copied host.
+// Node and test declarations belong to this separate program, not the consumer compile.
+const bridge = join(hostRoot, "measurement-harness.d.ts");
+await writeFile(bridge, `import type { DemoMeasurementHook } from "./examples/demo/measurement-main.js";
+import type { InputWork, HostPerformance, BulkObservation } from ${JSON.stringify(join(project, "scripts/measure-demo.mjs").replaceAll("\\", "/"))};
+declare global {
+    var sttropezDemoMeasurement: DemoMeasurementHook;
+    var demoInputMeasurement: InputWork;
+    var demoHostPerformance: HostPerformance;
+    var demoBulkObservation: BulkObservation;
+}
+`);
+const scripts = await Promise.all(["scripts/package-demo.mjs", "scripts/measure-demo.mjs"].map(path => realpath(join(project, path))));
+const harnessConfiguration = join(hostRoot, "tsconfig.harness.json");
+await writeFile(harnessConfiguration, JSON.stringify({ compilerOptions: { ...compilerOptions, allowJs: true, checkJs: true,
+    // Match development checking for third-party provider declarations; consumer declarations
+    // above retain skipLibCheck:false and no ambient development types.
+    skipLibCheck: true, types: ["node"], typeRoots: [join(project, "node_modules/@types")] }, files: [...compilerFiles, bridge, ...scripts] }));
+const harnessOutput = execFileSync(process.execPath, [join(project, "node_modules/typescript/bin/tsc"), "-p", harnessConfiguration, "--listFiles", "--pretty", "false"],
+    { cwd: hostRoot, encoding: "utf8", stdio: "pipe", windowsHide: true });
+await writeFile(join(hostRoot, "harness-compiler-inputs.txt"), harnessOutput);
+const toolFiles = await Promise.all([...scripts, "package.json", "scripts/measurement.mjs", "scripts/module-specifiers.mjs",
+    "scripts/package-host.mjs", "scripts/library-entries.mjs", "scripts/package-react-host.mjs",
+    "examples/demo/provider-server.ts", "examples/demo/samples.ts", "examples/demo/completion-templates.ts",
+    "examples/demo/diagnostics.ts", "examples/demo/action-fixture.ts", "src/index.ts",
+    "tests/browser/demo-walkthrough.ts", "tests/browser/demo-host-integrations.ts", "tests/helpers/browser-errors.ts",
+].map(path => realpath(resolve(project, path))));
+const toolRoots = [demoCompiler, ...compilerRoots, ...await Promise.all([
+    "@types/node", "@types/ws", "@playwright/test", "playwright", "playwright-core", "undici-types", "esbuild", "fflate",
+    "vscode-jsonrpc", "vscode-languageserver-protocol", "vscode-languageserver-types", "vscode-uri",
+].map(name => realpath(join(project, "node_modules", name))))];
+const harnessInputs = [];
+for (const path of harnessOutput.split(/\r?\n/).filter(Boolean)) {
+    const input = await realpath(resolve(hostRoot, path));
+    // The Node provider's fixture types reference core; this is not the isolated consumer
+    // or browser bundle. Both of those graphs are checked separately against restored assets.
+    assert.ok(within(hostRoot, input) || toolFiles.includes(input) || within(join(project, "src/core"), input)
+        || /\.d\.[cm]?ts$/.test(input) && [assetRoot, ...toolRoots].some(root => within(root, input)), `Unexpected demo harness input: ${input}`);
+    harnessInputs.push(input);
+}
+for (const path of [...scripts, bridge, join(hostRoot, measurementEntry), join(assetRoot, "browser/index.d.ts")]) {
+    assert.ok(harnessInputs.includes(await realpath(path)), "Demo harness must check its callers, actual hook and restored declarations.");
+}
 // Keep bundler working-directory resolution in the development host, with explicit staged
 // entries and dependencies. Input checks below still reject every checkout library source.
-const runtimeEntries = Object.fromEntries(Object.entries(entryPoints).map(([name, path]) => [name, join(hostRoot, path)]));
+const runtimeEntries = Object.fromEntries(Object.entries(entryPoints).map(([name, path]) => [name, join(hostRoot, measureOnly && name === "app" ? measurementEntry : path)]));
 const site = join(hostRoot, "site"), bundle = await build({ absWorkingDir: project, entryPoints: runtimeEntries, outdir: site,
     bundle: true, platform: "browser", format: "esm", target: "es2022", metafile: true,
-    tsconfigRaw: {}, alias: { sttropez: assetRoot }, nodePaths: [join(project, "node_modules")],
-    ...(measureOnly ? { plugins: [{ name: "demo-measurement-host", setup(builder) {
-        builder.onLoad({ filter: /[\\/]demo[\\/]main\.ts$/ }, async args => {
-            assert.equal(args.path, join(hostRoot, "examples/demo/main.ts"));
-            return { contents: await readFile(args.path, "utf8") + demoMeasurementHook, loader: "ts" };
-        });
-    } }] } : {}) });
+    tsconfigRaw: {}, alias: { sttropez: assetRoot }, nodePaths: [join(project, "node_modules")] });
 const inputs = Object.keys(bundle.metafile.inputs).sort();
 const compilerMetadata = JSON.parse(await readFile(join(demoCompiler, "package.json"), "utf8"));
 const disabledHostModules = new Set(Object.entries(compilerMetadata.browser).filter(([, value]) => value === false).map(([name]) => `(disabled):${name}`));
 for (const path of inputs) {
-    if (disabledHostModules.has(path)) { assert.equal(bundle.metafile.inputs[path].bytes, 0); assert.deepEqual(bundle.metafile.inputs[path].imports, []); continue; }
+    const details = bundle.metafile.inputs[path]; assert.ok(details);
+    if (disabledHostModules.has(path)) { assert.equal(details.bytes, 0); assert.deepEqual(details.imports, []); continue; }
     const input = await realpath(resolve(project, path));
     assert.ok(within(hostRoot, input) || within(assetRoot, input) && /\.(js|css)$/.test(input)
         || within(demoCompiler, input) && /\.js$/.test(input), `Unexpected browser input: ${path}`);
@@ -127,28 +177,34 @@ await writeFile(join(site, "index.html"), (await readFile(join(project, "example
 await copyFile(join(assetRoot, assets.entries.regexWorker), join(site, "regex-worker.js"));
 await copyFile(join(assetRoot, "UNICODE-LICENSE.txt"), join(site, "UNICODE-LICENSE.txt"));
 await copyFile(join(assetRoot, "LICENSE.txt"), join(site, "LICENSE.txt"));
-const evidence = { schemaVersion: 1, sourceSha256: source.sha256, packageSha256, consumer, assetRoot: reused.assetRoot, reusedStage: true,
+/** @type {{measurement?: Awaited<ReturnType<typeof measureDemo>>, journeys?: Record<string, unknown>, providerAfterClose?: ReturnType<ReturnType<typeof attachDemoProvider>["snapshot"]>}} */
+const runtimeEvidence = {};
+const evidence = Object.assign(runtimeEvidence, { schemaVersion: 1, sourceSha256: source.sha256, packageSha256, consumer, assetRoot: reused.assetRoot, reusedStage: true,
     browser: browserName, scenario: "demo", mode: prepareOnly ? "prepare-only" : measureOnly ? "measurement" : "walkthrough",
     declarations: { strict: true, skipLibCheck: false, passed: true, files: compilerFiles, inputs: typeInputs },
+    harness: { checkedJavaScript: true, strict: true, skipLibCheck: true, hook: measurementEntry, inputs: harnessInputs },
     sources: sources.sort((a, b) => a.path.localeCompare(b.path)), inputs, librarySourceCompilation: false,
     host: { node: process.version, compiler: JSON.parse(await readFile(join(project, "node_modules/typescript/package.json"), "utf8")).version,
         typescript: ts.version, server: "5.1.3", protocol: "3.17 / JSON-RPC 2.0 / WebSocket / UTF-16",
         note: "Only the project-owned demo host is compiled. Compiler/provider/test dependencies belong to the development host; no consumer package installation is performed." },
-    native: "IME, OS clipboard and physical display remain UNVERIFIED" };
+    native: "IME, OS clipboard and physical display remain UNVERIFIED" });
 await mkdir("artifacts/package", { recursive: true });
 if (!prepareOnly) {
     const routes = new Map(["index.html", "app.js", "app.css", "demo-syntax-worker.js", "regex-worker.js", "LICENSE.txt", "UNICODE-LICENSE.txt"].map(name => ["/" + name, name]));
     routes.set("/", "index.html");
-    const failures = [];
+    /** @type {unknown[]} */ const failures = [];
     const requests = createPackageRequestHandler(async (request, response) => {
         if (await provider.handle(request, response)) return;
+        assert.ok(request.url);
         const file = routes.get(new URL(request.url, "http://localhost").pathname);
         if (!file || request.method !== "GET") { response.writeHead(404).end(); return; }
         response.setHeader("Content-Type", file.endsWith(".js") ? "text/javascript" : file.endsWith(".css") ? "text/css" : file.endsWith(".txt") ? "text/plain" : "text/html");
         response.end(await readFile(join(site, file)));
     }, failures);
     const server = createServer(requests.listener);
-    const provider = attachDemoProvider(server); let browser, browserServer;
+    const provider = attachDemoProvider(server);
+    /** @type {import("@playwright/test").Browser | undefined} */ let browser;
+    /** @type {import("@playwright/test").BrowserServer | undefined} */ let browserServer;
     try {
         await listenPackageServer(server);
         if (measureOnly) {
@@ -156,9 +212,14 @@ if (!prepareOnly) {
             browserServer = await chromium.launchServer({ headless: true, host: "127.0.0.1" });
             browser = await chromium.connect(browserServer.wsEndpoint());
         } else browser = await ({ chromium, firefox, webkit })[browserName].launch({ headless: true });
-        const url = `http://127.0.0.1:${server.address().port}/`, journeys = {};
-        if (measureOnly) evidence.measurement = await measureDemo(browser, url, { sourceSha256: source.sha256, packageSha256 }, () => browserServer.kill());
-        for (const [name, run] of measureOnly ? [] : [["walkthrough", runDemoWalkthrough], ["conflict", runDemoConflict], ["hostIntegrations", runDemoHostIntegrations]]) {
+        const address = server.address(); assert.ok(address && typeof address !== "string");
+        const url = `http://127.0.0.1:${address.port}/`;
+        /** @type {Record<string, unknown>} */ const journeys = {};
+        if (measureOnly) {
+            assert.ok(browserServer); const ownedServer = browserServer;
+            evidence.measurement = await measureDemo(browser, url, { sourceSha256: source.sha256, packageSha256 }, () => ownedServer.kill());
+        }
+        for (const [name, run] of measureOnly ? [] : /** @type {const} */ ([["walkthrough", runDemoWalkthrough], ["conflict", runDemoConflict], ["hostIntegrations", runDemoHostIntegrations]])) {
             const context = await browser.newContext({ viewport: { width: 1200, height: 760 } }), errors = captureBrowserErrors(context);
             try { journeys[name] = await run(await context.newPage(), url); console.log(`Restored demo ${name} passed (${browserName}).`); }
             finally { try { await context.close(); } finally { errors.dispose(); errors.assertClean(); } }
