@@ -8,7 +8,7 @@
 </head>
 <body>
     <header><a class="brand" href="./">STTROPEZ<span>TypeScript editor</span></a>
-        <div class="toolbar"><label>Example <select id="sample"></select></label>
+        <div class="toolbar"><label>Example <select id="sample" disabled></select></label>
             <button id="find-toggle" title="Find (Ctrl+F)">Find</button>
             <details id="code-menu" class="toolbar-menu"><summary>Code</summary><div>
                 <button id="complete" title="Ctrl+Space">Complete</button>
@@ -45,7 +45,7 @@
                 <label class="menu-check"><input id="view-trailing-space" type="checkbox"> Scroll beyond last line</label>
                 <p>Applies to source and both review panes. Ligatures depend on the current font.</p>
             </div></details>
-            <button id="compare">Compare</button><button id="reset" title="Restore the selected sample's original files; other samples and stored drafts are kept">Reset sample</button>
+            <button id="compare">Compare</button><button id="reset" disabled title="Restore the selected sample's original files; other samples and stored drafts are kept">Reset sample</button>
             <button id="save" class="primary" title="Save in this browser (Ctrl+S)">Save locally</button>
         </div>
     </header>

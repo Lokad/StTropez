@@ -378,9 +378,13 @@ function goBack(): void {
     }
     renderMetadata(); editor?.focus();
 }
+function selectSample(id: SampleId): void {
+    sample.value = id;
+    button("reset").disabled = project?.sample.id !== id;
+}
 async function openSample(id: SampleId): Promise<void> {
-    if (editor?.activity().composing) { sample.value = project!.sample.id; return; }
-    const generation = ++opening; sample.disabled = true;
+    if (editor?.activity().composing) { selectSample(project!.sample.id); return; }
+    const generation = ++opening; selectSample(id); sample.disabled = true;
     if (id === "host") {
         // Keep the current editor and sample picker usable while the shared stylesheet loads.
         sample.disabled = false;
@@ -388,7 +392,7 @@ async function openSample(id: SampleId): Promise<void> {
         catch (error) {
             if (!(error instanceof DemoStylesUnavailable)) throw error;
             if (disposed || generation !== opening) return;
-            sample.value = project?.sample.id ?? "pricing";
+            selectSample(project?.sample.id ?? "pricing");
             if (project) { project.message = error.message; renderMetadata(); }
             return;
         }
@@ -405,7 +409,7 @@ async function openSample(id: SampleId): Promise<void> {
         } catch (error) {
             console.error(error);
             if (disposed || generation !== opening) return;
-            sample.disabled = false; sample.value = project?.sample.id ?? id;
+            sample.disabled = false; selectSample(project?.sample.id ?? id);
             const message = "Could not open this sample. Choose a sample to try again.";
             if (project) { project.message = message; renderMetadata(); } else element("status").textContent = message;
             return;
@@ -414,13 +418,13 @@ async function openSample(id: SampleId): Promise<void> {
     }
     if (disposed || generation !== opening) return;
     // A composition can start in the retained editor during asynchronous preparation.
-    if (editor?.activity().composing) { sample.value = project!.sample.id; sample.disabled = false; return; }
+    if (editor?.activity().composing) { selectSample(project!.sample.id); sample.disabled = false; return; }
     stopWorkspace?.(); stopWorkspace = undefined;
     stopRecovery?.(); stopRecovery = undefined;
     stopLanguage?.(); stopLanguage = undefined;
     if (active && editor) savedViews.set(active.view, editor.captureView());
     detachView(); project?.language.suspend(); active = undefined; project = next;
-    sample.value = id; sample.disabled = false;
+    selectSample(id); sample.disabled = false;
     element("description").textContent = next.sample.description;
     const tabs = next.files.map(file => {
         const tab = document.createElement("button"); tab.dataset.file = file.name; tab.textContent = file.name;
@@ -504,7 +508,7 @@ on("panel-collapse", () => {
 });
 on("walkthrough-toggle", () => { element("walkthrough").hidden = !element("walkthrough").hidden; });
 on("reset", () => {
-    if (!project || editor?.activity().composing || !window.confirm(`Restore the original files in “${project.sample.title}”? You can undo this change. Other samples and recovery drafts are kept. The saved copy changes only when you save locally.`)) return;
+    if (!project || project.sample.id !== sample.value || editor?.activity().composing || !window.confirm(`Restore the original files in “${project.sample.title}”? You can undo this change. Other samples and recovery drafts are kept. The saved copy changes only when you save locally.`)) return;
     project.reset(); renderMetadata(); editor?.focus();
 });
 async function save(reviewed = false): Promise<void> {

@@ -172,7 +172,7 @@ suspends the inactive provider. Closing a project cancels its work and releases 
 the local server also stops its owned process and removes its allocated temporary workspace.
 Idle local allocations expire after two minutes.
 
-Saved files and recovery drafts use browser-local IndexedDB. **Reset sample** restores only
+Saved files and recovery drafts use browser-local IndexedDB. **Reset sample** becomes available when the selected sample is open. It restores only
 that sample's original text as an undoable edit; it does not clear another sample's saved files
 or drafts. A recovery notice identifies the offered files. Restore applies the draft, Download
 exports it, and **Keep current files** discards that exact offered draft. A draft identical to

@@ -1,3 +1,4 @@
+import { latch } from "../helpers/latch.ts";
 import { expect, test } from "./fixtures.ts";
 import { runDemoHostIntegrations } from "./demo-host-integrations.ts";
 import { runDemoDiagnosticRetention } from "./demo-diagnostics.ts";
@@ -181,7 +182,13 @@ test("peer recovery reads only the changed sample while unrelated samples stay c
 
 test("reset names its sample and recovery follows the stored draft across sample switches and reload", async ({ page, baseURL }) => {
     const prompts: string[] = []; page.on("dialog", dialog => { prompts.push(dialog.message()); void dialog.accept(); });
-    await page.goto(baseURL!);
+    const startup = latch<void>();
+    await page.route("**/app.js", async route => { await startup.promise; await route.continue(); }, { times: 1 });
+    const opening = page.goto(baseURL!);
+    try {
+        await expect(page.getByRole("button", { name: "Reset sample", exact: true })).toBeDisabled();
+        await expect(page.getByLabel("Example", { exact: true })).toBeDisabled();
+    } finally { startup.resolve(); await opening; }
     await page.getByRole("button", { name: "Reset sample", exact: true }).click();
     expect(prompts.at(-1)).toContain("Shopping cart");
     await page.locator("#sample").selectOption("large");
