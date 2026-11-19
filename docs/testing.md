@@ -58,8 +58,9 @@ React host/table-paste callers and the inspection caller against the host fixtur
 browser event observations are local types; its point results use the shared readiness probe.
 The Node model/storage/bulk callers, workers, workloads and storage summary are also checked.
 Worker report types come from their actual result objects; these type imports do not run workers.
-Browser editing, host input/reference/focus/pointer/word-selection, navigation, service, comparison, viewport and host save/recovery
-callers use the existing source fixture snapshots and local observation types for their separate clocks.
+Browser editing, host input/reference/focus/pointer/word-selection/drag-scroll/folding/table-paste,
+navigation, service, comparison, viewport and host save/recovery callers use the existing source
+fixture snapshots and local observation types for their separate clocks.
 The documentation parser/auditor and isolated example compiler use the Markdown/compiler
 library types; their integration tests import the actual script exports.
 The offline Unicode data generators also belong to this checking project.
