@@ -98,7 +98,9 @@ The [sample catalogue](../examples/demo/samples.ts) loads the larger cases on de
   comments, structured insertion and mapped source notes. Both operate without a language
   provider; their language rules and UI are host-owned.
 
-Source folding uses the selected provider's ranges. Changes colors both snapshots and discovers
+The TypeScript demo offers an import-group fold for three or more consecutive import declarations.
+Comments and blank lines between declarations do not count toward the threshold. Individual
+multiline imports can have a syntax fold. Changes colors both snapshots and discovers
 reference folds through its snapshot-bound compiler worker. The panes keep independent fold
 choices; the working side retains source-view preferences. Hidden-line labels and the review hint
 distinguish collapsed rows from alignment gaps. Find and explicit navigation reveal their targets.

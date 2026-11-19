@@ -50,7 +50,7 @@ export class TypeScriptSyntax {
         const file = "sample.ts", text = this.current.text, service = this.service;
         const spans = new Uint32Array(service.getEncodedSyntacticClassifications(file, { start: 0, length: text.length }).spans);
         const document = analysis.folds ? service.getProgram()!.getSourceFile(file)! : undefined, starts = document?.getLineStarts();
-        const folds = document ? typeScriptFoldingRanges(offset => document.getLineAndCharacterOfPosition(offset), service.getOutliningSpans(file)).map(range => ({
+        const folds = document ? typeScriptFoldingRanges(document, service.getOutliningSpans(file)).map(range => ({
             from: starts![range.startLine]!, to: starts![range.endLine + 1] ?? text.length, group: range.kind,
         })) : [];
         return { spans, javascript: analysis.emit === false ? "" : service.getEmitOutput(file).outputFiles.find(output => output.name.endsWith(".js"))?.text ?? "", folds };

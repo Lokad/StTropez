@@ -24,7 +24,7 @@ test("demo compiler classifies multiline syntax and emits actual JavaScript", ()
 });
 
 test("saved TypeScript snapshots classify and outline their own imports and blocks without emitting", () => {
-    const text = 'import { one } from "./one";\r\nimport { two } from "./two";\r\n\r\nfunction f() {\r\n  return one + two;\r\n}';
+    const text = 'import one = require("./one");\r\nimport type { Two } from "./two";\r\nimport "./three";\r\n\r\nfunction f() {\r\n  return one;\r\n}';
     const snapshot = analyzeTypeScript(text, { emit: false, folds: true });
     assert.equal(snapshot.javascript, "");
     assert.deepEqual(snapshot.folds, [
@@ -32,8 +32,12 @@ test("saved TypeScript snapshots classify and outline their own imports and bloc
         { from: text.indexOf("function"), to: text.length, group: "code" },
     ]);
     assert.ok(snapshot.spans.length > 0);
-    const changed = analyzeTypeScript(text.replace('import { two } from "./two";\r\n', ""), { emit: false, folds: true });
-    assert.equal(changed.folds.some(range => range.group === "imports"), false);
+    const pair = 'import {\n  one,\n} from "./one";\n\n// import "./decoy";\nimport "./two";\n';
+    const changed = analyzeTypeScript(pair, { emit: false, folds: true });
+    assert.deepEqual(changed.folds, [{ from: 0, to: pair.indexOf("\n\n") + 1, group: "code" }]);
+    const split = 'import "./a";\nimport "./b";\nvoid import("./lazy");\nimport "./c";\nimport "./d";\nimport "./e";';
+    assert.deepEqual(analyzeTypeScript(split, { emit: false, folds: true }).folds,
+        [{ from: split.indexOf('import "./c"'), to: split.length, group: "imports" }]);
     assert.deepEqual(analyzeTypeScript(text).folds, []); // Ordinary typing does not add outlining work.
 });
 

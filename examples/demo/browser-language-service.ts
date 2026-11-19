@@ -157,7 +157,8 @@ export class BrowserLanguageService {
         }
         if (method === "textDocument/foldingRange") {
             const file = this.file(object(object(params).textDocument).uri);
-            return typeScriptFoldingRanges(offset => file.document.positionAt(offset), this.service.getOutliningSpans(file.path));
+            const source = this.service.getProgram()!.getSourceFile(file.path)!;
+            return typeScriptFoldingRanges(source, this.service.getOutliningSpans(file.path), offset => file.document.positionAt(offset));
         }
         const { p, file, offset } = this.cursor(params);
         if (method === "textDocument/documentHighlight") {

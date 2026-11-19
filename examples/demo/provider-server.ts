@@ -15,6 +15,7 @@ import type { SampleId } from "./samples.ts";
 import { demoTemplateCompletions, demoTemplateUri, resolveDemoTemplate } from "./completion-templates.ts";
 import { demoDiagnosticFixture } from "./diagnostics.ts";
 import { demoProjectActions } from "./action-fixture.ts";
+import { containsImportGroup } from "./typescript-folds.ts";
 
 const compiler = fileURLToPath(import.meta.resolve("typescript-demo/lib/tsserver.js"));
 const executable = fileURLToPath(new URL("lib/cli.mjs", import.meta.resolve("typescript-language-server/package.json")));
@@ -79,6 +80,7 @@ export function attachDemoProvider(server: Server, options: Readonly<{ refactori
         const shutdownId = "sttropez-demo-shutdown";
         const resolving = new Map<string | number, Readonly<{ data: unknown; present: boolean }>>();
         const completing = new Map<string | number, Readonly<{ line: number; character: number }>>();
+        const folding = new Map<string | number, TextDocument>();
         const documents = new Map<string, TextDocument>();
         type Problem = Readonly<{ from: number; to: number; wire: Diagnostic }>;
         type Kind = "semantic" | "syntactic";
@@ -110,6 +112,13 @@ export function attachDemoProvider(server: Server, options: Readonly<{ refactori
             const value = message as unknown as Record<string, unknown>;
             if (value.id === shutdownId) { void send({ jsonrpc: "2.0", method: "exit" }).then(() => child.stdin.end()).catch(() => {}); return; }
             if (typeof value.id === "string" || typeof value.id === "number") {
+                const foldDocument = folding.get(value.id); folding.delete(value.id);
+                if (foldDocument && Array.isArray(value.result)) value.result = value.result.filter(range => {
+                    if (!object(range) || range.kind !== "imports" || typeof range.startLine !== "number" || typeof range.endLine !== "number"
+                        || !Number.isSafeInteger(range.startLine) || !Number.isSafeInteger(range.endLine) || range.startLine < 0
+                        || range.endLine <= range.startLine || range.endLine >= foldDocument.lineCount) return true;
+                    return containsImportGroup(foldDocument.getText({ start: { line: range.startLine, character: 0 }, end: { line: range.endLine + 1, character: 0 } }));
+                });
                 const diagnostic = diagnosing.get(value.id); diagnosing.delete(value.id);
                 // Correlate read-command results with the actual mirrored document, never a later
                 // version or the provider's unversioned diagnostic pushes.
@@ -242,6 +251,11 @@ export function attachDemoProvider(server: Server, options: Readonly<{ refactori
             if (message.method === "completionItem/resolve" && object(message.params) && (typeof message.id === "number" || typeof message.id === "string")) {
                 if (resolving.size >= 128) { reject(message.id, "Too many pending completion resolutions."); return; }
                 resolving.set(message.id, { data: message.params.data, present: Object.hasOwn(message.params, "data") });
+            }
+            if (message.method === "textDocument/foldingRange" && (typeof message.id === "number" || typeof message.id === "string")) {
+                const params = message.params, doc = object(params) && object(params.textDocument) && documents.get(String(params.textDocument.uri));
+                if (!doc || folding.size >= 128) { reject(message.id, "Expected an open document and an available folding request."); return; }
+                folding.set(message.id, doc);
             }
             if (message.method === "textDocument/codeAction") {
                 const params = message.params, doc = object(params) && object(params.textDocument) && documents.get(String(params.textDocument.uri));

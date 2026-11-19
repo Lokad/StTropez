@@ -544,7 +544,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
             }
             orderedButtons.push(button);
             button.dataset.fold = region.id; button.dataset.revision = String(document.revision); button.dataset.generation = String(folds.generation);
-            const label = `${region.collapsed ? "Expand" : "Collapse"} lines ${region.lineFrom + 2}–${region.lineTo}`;
+            const action = region.collapsed ? "Expand" : "Collapse";
+            const label = region.group === "imports" ? `${action} imports` : `${action} lines ${region.lineFrom + 2}–${region.lineTo}`;
             button.setAttribute("aria-label", label); button.title = label; button.setAttribute("aria-expanded", String(!region.collapsed));
             // Replacing even identical text during a pointer press cancels WebKit's native click.
             const arrow = region.collapsed ? "▸" : "▾"; if (button.textContent !== arrow) button.textContent = arrow;

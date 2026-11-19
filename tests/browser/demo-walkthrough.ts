@@ -225,18 +225,25 @@ export async function runDemoFolding(page: Page, url = "/") {
     // Both TypeScript snapshots use syntax colors/outlining; review fold choices stay independent.
     await page.locator('[data-panel="javascript"]').click(); await page.locator("#sample").selectOption("navigation");
     const imports = page.getByRole("textbox", { name: "main.ts", exact: true });
-    const original = await imports.inputValue(), header = page.locator('#editor .st-viewport-row[data-line="0"]');
-    await expect(page.locator("#editor .st-fold-button").first()).toBeVisible({ timeout: 30000 });
-    await page.locator("#editor .st-fold-button").first().click();
-    await expect(header).toHaveAttribute("data-folded-summary", "… 1 line hidden");
+    const header = page.locator('#editor .st-viewport-row[data-line="0"]');
+    await expect(imports).toHaveValue(/import type \{ RecordId \}/);
+    await expect(page.locator("#folding-status")).toHaveText("0 folds · 0 collapsed", { timeout: 30000 });
+    await expect(page.locator("#editor .st-fold-button")).toHaveCount(0);
+    await imports.press("Control+Home"); await imports.press("ArrowDown"); await imports.press("ArrowDown"); await imports.press("Home");
+    await page.keyboard.insertText('import "./labels";\n');
+    const original = await imports.inputValue();
+    await page.getByRole("button", { name: "Save locally", exact: true }).click();
+    const collapse = page.locator("#editor").getByRole("button", { name: "Collapse imports", exact: true });
+    await expect(collapse).toHaveAttribute("title", "Collapse imports", { timeout: 30000 }); await collapse.click();
+    await expect(header).toHaveAttribute("data-folded-summary", "… 2 lines hidden");
     await expect(imports).toHaveValue(original); await expect(page.locator('#editor .st-viewport-row[data-line="1"]')).toHaveCount(0);
     await page.getByRole("button", { name: "Compare", exact: true }).click();
     await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
     const coloredImport = (pane: typeof left) => pane.locator('.st-viewport-row[data-line="0"] .demo-token-keyword').first();
     await expect(coloredImport(left)).toHaveText("import"); await expect(coloredImport(right)).toHaveText("import");
-    await expect(left.locator(".st-fold-button")).toHaveAttribute("aria-expanded", "true");
-    await expect(right.locator(".st-fold-button")).toHaveAttribute("aria-expanded", "false");
-    await expect(right.locator('[data-folded-summary]')).toHaveAttribute("data-folded-summary", "… 1 line hidden");
+    await expect(left.getByRole("button", { name: "Collapse imports" })).toHaveAttribute("aria-expanded", "true");
+    await expect(right.getByRole("button", { name: "Expand imports" })).toHaveAttribute("aria-expanded", "false");
+    await expect(right.locator('[data-folded-summary]')).toHaveAttribute("data-folded-summary", "… 2 lines hidden");
     await right.locator(".st-fold-button").click();
     await expect(right.locator('[data-folded-summary]')).toHaveCount(0);
     await expect.poll(() => right.locator(".st-viewport-row").allTextContents()).toEqual(await left.locator(".st-viewport-row").allTextContents());
@@ -256,7 +263,7 @@ export async function runDemoFolding(page: Page, url = "/") {
     await expect(page.locator(".st-comparison-controls output")).toHaveText("No changes");
     await expect(left.locator(".st-fold-button")).toHaveCount(1);
     await right.locator(".st-fold-button").click(); await page.locator('[data-panel="javascript"]').click();
-    await expect(page.locator('#editor [data-folded-summary]')).toHaveAttribute("data-folded-summary", "… 1 line hidden");
+    await expect(page.locator('#editor [data-folded-summary]')).toHaveAttribute("data-folded-summary", "… 2 lines hidden");
     await expect(imports).toHaveValue("// working only\n" + original);
 }
 

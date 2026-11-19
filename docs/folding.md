@@ -158,7 +158,8 @@ reveals its visible header edge; it does not replace hidden selection endpoints.
 A collapsed logical caret paints at its header. Arrow/Page traversal skips hidden rows.
 Explicit selection, typing, Find and reveal expand hidden targets. Disclosure buttons toggle
 with Enter/Space; Escape returns focus to the source. Buttons capture tab, revision and fold
-generation. Inline hidden-line counts add no source text, clipboard data or caret offsets.
+generation. For the `imports` group the button reads **Collapse imports** or **Expand imports**.
+Inline hidden-line counts add no source text, clipboard data or caret offsets.
 Comparison panes retain independent fold choices; hunk reveal expands the entire target range.
 
 Retained view handles preserve folds through remount. The [viewport view-state contract](viewport.md#scrolling-and-saved-views)
