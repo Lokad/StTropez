@@ -21,7 +21,13 @@ try {
     }
     const cdp = await harness.page.context().newCDPSession(harness.page);
     await cdp.send("Performance.enable");
-    const metrics = async () => Object.fromEntries((await cdp.send("Performance.getMetrics")).metrics.map(({ name, value }) => [name, value]));
+    const metrics = async () => {
+        const values = Object.fromEntries((await cdp.send("Performance.getMetrics")).metrics.map(({ name, value }) => [name, value]));
+        const layout = values.LayoutDuration, style = values.RecalcStyleDuration;
+        assert.ok(typeof layout === "number" && Number.isFinite(layout), "Missing/invalid layout counter.");
+        assert.ok(typeof style === "number" && Number.isFinite(style), "Missing/invalid style counter.");
+        return { LayoutDuration: layout, RecalcStyleDuration: style };
+    };
     const scenarios = [];
     for (const id of corpusIds) {
         for (const position of ["start", "middle", "end"]) {
@@ -32,26 +38,28 @@ try {
             // Native rendering uses LF coordinates; range transactions preserve untouched model CRLF.
             const normalized = original.replaceAll("\r\n", "\n");
             const offset = position === "start" ? 0 : position === "end" ? normalized.length : Math.floor(normalized.length / 2);
-            await input.evaluate((input, offset) => input.setSelectionRange(offset, offset), offset);
+            await input.evaluate((input, offset) => { if (!(input instanceof HTMLTextAreaElement)) throw new Error("Baseline measurement requires its native textarea."); input.setSelectionRange(offset, offset); }, offset);
             const frameSamples = [], handlerSamples = [];
-            let before;
+            /** @type {Awaited<ReturnType<typeof metrics>> | undefined} */ let before;
             for (let index = 0; index < 25; index++) {
                 if (index === 5) before = await metrics();
                 const previous = await harness.page.evaluate(() => window.sttropez.sampleCount());
                 await input.pressSequentially("z");
                 await harness.page.waitForFunction(previous => window.sttropez.sampleCount() > previous, previous);
                 if (index >= 5) {
-                    frameSamples.push(await harness.page.evaluate(() => window.sttropez.frameSamples().at(-1)));
-                    handlerSamples.push(await harness.page.evaluate(() => window.sttropez.handlerSamples().at(-1)));
+                    frameSamples.push(await harness.page.evaluate(() => { const sample = window.sttropez.frameSamples().at(-1); if (sample === undefined) throw new Error("Missing baseline frame observation."); return sample; }));
+                    handlerSamples.push(await harness.page.evaluate(() => { const sample = window.sttropez.handlerSamples().at(-1); if (sample === undefined) throw new Error("Missing baseline handler observation."); return sample; }));
                 }
             }
             const after = await metrics();
+            assert.ok(before, "Baseline measurement requires its starting counters.");
             const layoutTotal = (after.LayoutDuration - before.LayoutDuration) * 1_000;
             const styleTotal = (after.RecalcStyleDuration - before.RecalcStyleDuration) * 1_000;
             assert.ok(Number.isFinite(layoutTotal) && layoutTotal >= 0, "Missing/invalid layout counter.");
             assert.ok(Number.isFinite(styleTotal) && styleTotal >= 0, "Missing/invalid style counter.");
             assert.equal(await input.inputValue(), normalized.slice(0, offset) + "z".repeat(25) + normalized.slice(offset));
-            assert.equal((await harness.page.evaluate(() => window.sttropez.snapshot())).documents[0].length, original.length + 25);
+            const document = (await harness.page.evaluate(() => window.sttropez.snapshot())).documents[0];
+            assert.ok(document, "Baseline measurement requires its source document."); assert.equal(document.length, original.length + 25);
             scenarios.push({ corpus: id, position, length: original.length, nativeLength: normalized.length, warmup: 5, measured: 20,
                 inputHandlerMs: distribution(handlerSamples), secondFrameProxyMs: distribution(frameSamples),
                 browserWork: { unit: "ms", measuredInputs: 20,
@@ -60,6 +68,7 @@ try {
         }
     }
     const font = await harness.page.getByRole("textbox", { name: "Transform source", exact: true }).evaluate(element => { const style = getComputedStyle(element);
+        if (!(element instanceof HTMLTextAreaElement)) throw new Error("Baseline display observation requires its native textarea.");
         return { font: style.font, tabSize: style.tabSize, wrapping: element.wrap, devicePixelRatio }; });
     const report = { schemaVersion: 2, created: new Date().toISOString(), source: await sourceIdentity(), seed: workloadSeed,
         runtime: "native-textarea-with-piece-tree-history", buildMode: harness.buildMode, activeTextViews: 2, environment: { ...environment(), browser: harness.browser.version(), buildMode: harness.buildMode, viewport: { width: 1440, height: 900 }, font },

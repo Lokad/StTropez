@@ -64,7 +64,9 @@ navigation, service, comparison, viewport and host save/recovery callers use the
 fixture snapshots and local observation types for their separate clocks.
 The documentation parser/auditor and isolated example compiler use the Markdown/compiler
 library types; their integration tests import the actual script exports.
-The offline Unicode data generators also belong to this checking project.
+The offline Unicode data generators and fixture-only textarea baseline/trace callers also belong
+to this checking project. Baseline counters and selected trace timing fields must be present;
+trace reports exclude event arguments and other content-bearing fields.
 Other scripts are outside its JavaScript checking scope.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected

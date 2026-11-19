@@ -23,7 +23,8 @@
     "scripts/benchmark-host-reference.mjs", "scripts/benchmark-host-reference-focus.mjs",
     "scripts/benchmark-host-pointer.mjs", "scripts/benchmark-host-word-selection.mjs",
     "scripts/benchmark-host-drag-scroll.mjs", "scripts/benchmark-host-folding.mjs", "scripts/benchmark-host-table-paste.mjs",
-    "scripts/benchmark-bidi.mjs", "scripts/benchmark-graphemes.mjs", "scripts/benchmark-paragraph.mjs"
+    "scripts/benchmark-bidi.mjs", "scripts/benchmark-graphemes.mjs", "scripts/benchmark-paragraph.mjs",
+    "scripts/benchmark.mjs", "scripts/benchmark-trace.mjs"
   ],
   "references": [
     { "path": "./tsconfig.core.json" },
