@@ -102,7 +102,10 @@ The TypeScript demo offers an import-group fold for three or more consecutive im
 Comments and blank lines between declarations do not count toward the threshold. Individual
 multiline imports can have a syntax fold. Changes colors both snapshots and discovers
 reference folds through its snapshot-bound compiler worker. The panes keep independent fold
-choices; the working side retains source-view preferences. Hidden-line labels and the review hint
+choices. Both demo providers and the saved snapshot project compiler spans onto complete source
+rows. A closing delimiter on its own row stays visible, as does a row shared with the next
+branch, statement or comment. A fold needs at least one body row to hide.
+The working side retains source-view preferences. Hidden-line labels and the review hint
 distinguish collapsed rows from alignment gaps. Find and explicit navigation reveal their targets.
 The [folding](folding.md) and [comparison](comparison.md) pages own these library contracts.
 

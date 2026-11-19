@@ -265,6 +265,21 @@ export async function runDemoFolding(page: Page, url = "/") {
     await right.locator(".st-fold-button").click(); await page.locator('[data-panel="javascript"]').click();
     await expect(page.locator('#editor [data-folded-summary]')).toHaveAttribute("data-folded-summary", "… 2 lines hidden");
     await expect(imports).toHaveValue("// working only\n" + original);
+
+    const branches = ["if (true) {", "  first();", "} else {", "  second();", "} const after = 1;", "function empty() {", "}"];
+    await imports.press("Control+a"); await page.keyboard.insertText(branches.join("\n"));
+    await page.getByRole("button", { name: "Save locally", exact: true }).click();
+    await page.getByRole("button", { name: "Compare", exact: true }).click();
+    await expect(page.locator(".st-comparison-controls output")).toHaveText("No changes");
+    for (const pane of [left, right]) {
+        const toggles = pane.locator(".st-fold-button");
+        await expect(toggles).toHaveCount(2);
+        await toggles.first().click(); await toggles.last().click();
+        await expect(pane.locator(".st-viewport-row")).toHaveText([branches[0]!, branches[2]!, ...branches.slice(4)]);
+    }
+    await left.locator(".st-fold-button").first().click();
+    await expect(left.locator('.st-viewport-row[data-line="1"]')).toHaveText("  first();");
+    await expect(right.locator('.st-viewport-row[data-line="1"]')).toHaveCount(0);
 }
 
 export async function runDemoEditingRules(page: Page, url = "/") {

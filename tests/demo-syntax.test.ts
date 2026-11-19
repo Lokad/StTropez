@@ -29,16 +29,26 @@ test("saved TypeScript snapshots classify and outline their own imports and bloc
     assert.equal(snapshot.javascript, "");
     assert.deepEqual(snapshot.folds, [
         { from: 0, to: text.indexOf("\r\n\r\n") + 2, group: "imports" },
-        { from: text.indexOf("function"), to: text.length, group: "code" },
+        { from: text.indexOf("function"), to: text.lastIndexOf("}"), group: "code" },
     ]);
     assert.ok(snapshot.spans.length > 0);
     const pair = 'import {\n  one,\n} from "./one";\n\n// import "./decoy";\nimport "./two";\n';
     const changed = analyzeTypeScript(pair, { emit: false, folds: true });
-    assert.deepEqual(changed.folds, [{ from: 0, to: pair.indexOf("\n\n") + 1, group: "code" }]);
+    assert.deepEqual(changed.folds, [{ from: 0, to: pair.indexOf("}"), group: "code" }]);
     const split = 'import "./a";\nimport "./b";\nvoid import("./lazy");\nimport "./c";\nimport "./d";\nimport "./e";';
     assert.deepEqual(analyzeTypeScript(split, { emit: false, folds: true }).folds,
         [{ from: split.indexOf('import "./c"'), to: split.length, group: "imports" }]);
     assert.deepEqual(analyzeTypeScript(text).folds, []); // Ordinary typing does not add outlining work.
+});
+
+test("whole-row outlines preserve adjacent branches, sibling statements and standalone closing delimiters", () => {
+    const rows = ["if (ok) {", "  yes();", "} else {", "  no();", "}", "const xs = [", "  1,", "]; after();",
+        "/* comment", " */ const keep = 1;", "function empty() {", "}", "function f() {", "  work();", "} const next = 2;"];
+    for (const eol of ["\n", "\r\n"]) {
+        const text = rows.join(eol);
+        const result = analyzeTypeScript(text, { folds: true, emit: false });
+        assert.deepEqual(result.folds.map(f => text.slice(f.from, f.to)), [0, 2, 5, 12].map(start => rows.slice(start, start + 2).join(eol) + eol));
+    }
 });
 
 test("retained syntax snapshots give exact change ranges and agree with fresh analysis through edits and resets", () => {

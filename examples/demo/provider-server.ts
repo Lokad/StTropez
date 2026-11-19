@@ -15,7 +15,8 @@ import type { SampleId } from "./samples.ts";
 import { demoTemplateCompletions, demoTemplateUri, resolveDemoTemplate } from "./completion-templates.ts";
 import { demoDiagnosticFixture } from "./diagnostics.ts";
 import { demoProjectActions } from "./action-fixture.ts";
-import { containsImportGroup } from "./typescript-folds.ts";
+import { typeScriptFoldingRanges } from "./typescript-folds.ts";
+import type { OutlineSpan } from "./typescript-folds.ts";
 
 const compiler = fileURLToPath(import.meta.resolve("typescript-demo/lib/tsserver.js"));
 const executable = fileURLToPath(new URL("lib/cli.mjs", import.meta.resolve("typescript-language-server/package.json")));
@@ -25,6 +26,13 @@ type Document = Readonly<{ uri: string; path: string }>;
 type Project = { id: string; directory: string; rootUri: string; documents: Record<string, Document>; idle: NodeJS.Timeout | undefined;
     connection: WebSocket | undefined; stopping: Promise<void>; stopProcess: (() => Promise<void>) | undefined; removed: boolean };
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+
+function validOutline(value: unknown, length: number): value is OutlineSpan {
+    if (!object(value) || !object(value.textSpan) || !["code", "comment", "imports", "region"].includes(String(value.kind))) return false;
+    const span = value.textSpan;
+    return typeof span.start === "number" && Number.isSafeInteger(span.start) && span.start >= 0
+        && typeof span.length === "number" && Number.isSafeInteger(span.length) && span.length >= 0 && span.start + span.length <= length;
+}
 
 function sameOrigin(request: IncomingMessage): boolean {
     if (!request.headers.origin) return true;
@@ -113,12 +121,12 @@ export function attachDemoProvider(server: Server, options: Readonly<{ refactori
             if (value.id === shutdownId) { void send({ jsonrpc: "2.0", method: "exit" }).then(() => child.stdin.end()).catch(() => {}); return; }
             if (typeof value.id === "string" || typeof value.id === "number") {
                 const foldDocument = folding.get(value.id); folding.delete(value.id);
-                if (foldDocument && Array.isArray(value.result)) value.result = value.result.filter(range => {
-                    if (!object(range) || range.kind !== "imports" || typeof range.startLine !== "number" || typeof range.endLine !== "number"
-                        || !Number.isSafeInteger(range.startLine) || !Number.isSafeInteger(range.endLine) || range.startLine < 0
-                        || range.endLine <= range.startLine || range.endLine >= foldDocument.lineCount) return true;
-                    return containsImportGroup(foldDocument.getText({ start: { line: range.startLine, character: 0 }, end: { line: range.endLine + 1, character: 0 } }));
-                });
+                if (foldDocument && !value.error) {
+                    const text = foldDocument.getText(), reply = value.result;
+                    if (object(reply) && reply.success === true && Array.isArray(reply.body) && reply.body.every(span => validOutline(span, text.length))) {
+                        value.result = typeScriptFoldingRanges(text, reply.body, offset => foldDocument.positionAt(offset));
+                    } else { delete value.result; value.error = { code: -32603, message: "The compiler could not outline this document." }; }
+                }
                 const diagnostic = diagnosing.get(value.id); diagnosing.delete(value.id);
                 // Correlate read-command results with the actual mirrored document, never a later
                 // version or the provider's unversioned diagnostic pushes.
@@ -253,9 +261,16 @@ export function attachDemoProvider(server: Server, options: Readonly<{ refactori
                 resolving.set(message.id, { data: message.params.data, present: Object.hasOwn(message.params, "data") });
             }
             if (message.method === "textDocument/foldingRange" && (typeof message.id === "number" || typeof message.id === "string")) {
-                const params = message.params, doc = object(params) && object(params.textDocument) && documents.get(String(params.textDocument.uri));
-                if (!doc || folding.size >= 128) { reject(message.id, "Expected an open document and an available folding request."); return; }
+                const params = message.params;
+                const uri = object(params) && object(params.textDocument) && params.textDocument.uri;
+                const file = Object.values(project.documents).find(item => item.uri === uri);
+                const doc = file && documents.get(file.uri);
+                if (!file || !doc || folding.size >= 128) { reject(message.id, "Expected an open document and an available folding request."); return; }
                 folding.set(message.id, doc);
+                // The ordinary server folding adapter discards the character boundary at a closing brace.
+                void send({ jsonrpc: "2.0", id: message.id, method: "workspace/executeCommand", params: { command: "typescript.tsserverRequest",
+                    arguments: ["outliningSpans", { file: file.path }, { expectsResult: true, isAsync: false }] } }).catch(() => {});
+                return;
             }
             if (message.method === "textDocument/codeAction") {
                 const params = message.params, doc = object(params) && object(params.textDocument) && documents.get(String(params.textDocument.uri));
@@ -281,7 +296,7 @@ export function attachDemoProvider(server: Server, options: Readonly<{ refactori
                 completing.set(message.id, { line, character });
             }
             if (message.method === "$/cancelRequest" && object(message.params) && (typeof message.params.id === "number" || typeof message.params.id === "string")) {
-                resolving.delete(message.params.id); completing.delete(message.params.id); diagnosing.delete(message.params.id); acting.delete(message.params.id);
+                resolving.delete(message.params.id); completing.delete(message.params.id); folding.delete(message.params.id); diagnosing.delete(message.params.id); acting.delete(message.params.id);
             }
             if (message.method === "workspace/executeCommand") {
                 const params = message.params;

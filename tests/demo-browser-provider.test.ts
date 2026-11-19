@@ -43,7 +43,7 @@ test("browser TypeScript folding uses outlining spans without requiring a cursor
         provider.notify("textDocument/didOpen", { textDocument: { uri, languageId: "typescript", version: 1, text: "function demo() {\r\n  return 1;\r\n}\r\n" } });
         const initialized = provider.request("initialize", {}) as { capabilities: { foldingRangeProvider: boolean } };
         assert.equal(initialized.capabilities.foldingRangeProvider, true);
-        assert.deepEqual(provider.request("textDocument/foldingRange", { textDocument: { uri } }), [{ startLine: 0, endLine: 2, kind: "code" }]);
+        assert.deepEqual(provider.request("textDocument/foldingRange", { textDocument: { uri } }), [{ startLine: 0, endLine: 1, kind: "code" }]);
     } finally { provider.dispose(); }
 });
 

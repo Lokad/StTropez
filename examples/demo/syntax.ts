@@ -1,6 +1,6 @@
 import ts from "typescript-demo";
 import type { DiscoveredFold } from "../../src/index.ts";
-import { typeScriptFoldingRanges } from "./typescript-folds.ts";
+import { typeScriptFolds } from "./typescript-folds.ts";
 
 export type SyntaxOptions = Readonly<{ emit?: boolean; folds?: boolean }>;
 export type SyntaxAnalysis = Readonly<{ spans: Uint32Array; javascript: string; folds: readonly DiscoveredFold[] }>;
@@ -49,10 +49,8 @@ export class TypeScriptSyntax {
         this.active();
         const file = "sample.ts", text = this.current.text, service = this.service;
         const spans = new Uint32Array(service.getEncodedSyntacticClassifications(file, { start: 0, length: text.length }).spans);
-        const document = analysis.folds ? service.getProgram()!.getSourceFile(file)! : undefined, starts = document?.getLineStarts();
-        const folds = document ? typeScriptFoldingRanges(document, service.getOutliningSpans(file)).map(range => ({
-            from: starts![range.startLine]!, to: starts![range.endLine + 1] ?? text.length, group: range.kind,
-        })) : [];
+        const document = analysis.folds ? service.getProgram()!.getSourceFile(file)! : undefined;
+        const folds = document ? typeScriptFolds(text, service.getOutliningSpans(file), document) : [];
         return { spans, javascript: analysis.emit === false ? "" : service.getEmitOutput(file).outputFiles.find(output => output.name.endsWith(".js"))?.text ?? "", folds };
     }
     dispose(): void { if (this.disposed) return; this.disposed = true; this.service.dispose(); this.current = new SyntaxSnapshot(""); }
