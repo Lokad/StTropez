@@ -87,13 +87,14 @@ test("broader project actions retain preview, stale recovery and atomic multi-fi
 test("unopened targets load for navigation and atomic rename with read-only declarations and return", async ({ page, baseURL }) => {
     await runDemoUnopenedNavigation(page, baseURL!);
 });
-import { runDemoCompletionCatalogue, runDemoConflict, runDemoSnippets, runDemoWalkthrough, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoHighlights, runDemoDocumentation } from "./demo-walkthrough.ts";
+import { runDemoCompletionCatalogue, runDemoConflict, runDemoSnippets, runDemoWalkthrough, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoFoldingBoundaries, runDemoHighlights, runDemoDocumentation } from "./demo-walkthrough.ts";
 
 test("documentation and diagnostic details preserve metadata and open permitted help through the host", async ({ page, baseURL }) => { await runDemoDocumentation(page, baseURL!); });
 
 test("occurrences follow the caret, edits and large virtualized documents", async ({ page, baseURL }) => { await runDemoHighlights(page, baseURL!, true); });
 
 test("automatic folding survives edits, find and independent review views", async ({ page, baseURL }) => { await runDemoFolding(page, baseURL!); });
+test("review folding preserves adjacent branches and statements in both panes", async ({ page, baseURL }) => { await runDemoFoldingBoundaries(page, baseURL!); });
 import { runDemoPresentationContinuity, runDemoSyntaxDemand, runDemoMetadataBatching } from "./demo-presentation.ts";
 
 test("metadata batches frame writes while typing, switching files and disposing", async ({ page, baseURL }, info) => {

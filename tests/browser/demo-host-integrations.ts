@@ -54,7 +54,7 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
     await page.locator("#sample").selectOption("host");
     const source = page.getByRole("textbox", { name: "workflow.rules", exact: true });
     const notes = page.locator(".demo-source-note"), inventory = notes.filter({ hasText: "Inventory source" });
-    const foldsReady = () => expect(page.locator("#folding-status")).toHaveText(/^\d+ folds · \d+ collapsed$/);
+    const foldsReady = () => expect(page.locator("#folding-status")).toHaveText(/^(Source|Your changes|Saved copy) · \d+ folds? · \d+ collapsed$/);
     const inventoryFold = (surface: Locator) => surface.getByRole("button", { name: /^(Collapse|Expand) lines 3–/ });
     await expect(page.locator("#language-status")).toHaveText("Host language · no language server");
     await expect(page.locator("#editor .demo-token-keyword").first()).toHaveText("dataset");

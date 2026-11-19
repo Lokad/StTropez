@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures.ts";
-import { runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoHighlights, runDemoUnopenedNavigation } from "./demo-walkthrough.ts";
+import { runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoFoldingBoundaries, runDemoHighlights, runDemoUnopenedNavigation } from "./demo-walkthrough.ts";
 import { holdDemoFolds } from "./demo-folding-gate.ts";
 import { runDemoDiagnosticRetention } from "./demo-diagnostics.ts";
 
@@ -52,6 +52,7 @@ test("late occurrences cannot follow a changed caret or disposed file view", asy
 });
 
 test("automatic folding survives edits, find and independent review views", async ({ page }) => { await runDemoFolding(page); });
+test("review folding preserves adjacent branches and statements in both panes", async ({ page }) => { await runDemoFoldingBoundaries(page); });
 
 test("configured editing commands, quotes and comments share review and undo", async ({ page }) => { await runDemoEditingRules(page); });
 

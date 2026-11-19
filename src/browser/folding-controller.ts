@@ -95,14 +95,22 @@ export function createFoldingController(workspace: Workspace, tabId: TabId, edit
     });
     const stopTab = workspace.tabState.subscribe(() => { if (!available()) cancel(); });
     const stopFolds = view.folding.subscribe(() => { if (!disposed) publish(cell.get().status, cell.get().message); });
+    const commandFilter = (command: FoldCommand, group?: string) => {
+        const collapse = command === "collapse" || command === "collapse-all";
+        const atCaret = command === "collapse" || command === "expand";
+        const line = atCaret ? workspace.document(view.documentId).buffer.lineAt(view.getSnapshot().selection.head) : 0;
+        return (range: FoldRegion) => range.collapsed !== collapse && (group === undefined || range.group === group)
+            && (!atCaret || range.lineFrom <= line && line < range.lineTo);
+    };
+    const canRunCommand = (command: FoldCommand, group?: string) =>
+        available() && !busy() && view.folding.getSnapshot().regions.some(commandFilter(command, group));
     const runCommand = (command: FoldCommand, group?: string): boolean => {
         notifications.assertWritable();
         if (!available() || busy()) return false;
         const document = workspace.document(view.documentId), before = view.folding.getSnapshot(), state = view.getSnapshot();
         const line = document.buffer.lineAt(state.selection.head), collapse = command === "collapse" || command === "collapse-all";
-        let candidates = before.regions.filter(range => group === undefined || range.group === group);
+        let candidates = before.regions.filter(commandFilter(command, group));
         if (command === "collapse" || command === "expand") {
-            candidates = candidates.filter(range => range.lineFrom <= line && line < range.lineTo && range.collapsed !== collapse);
             const chosen = collapse ? candidates.at(-1) : candidates[0]; candidates = chosen ? [chosen] : [];
         }
         if (!candidates.length) return false;
@@ -127,7 +135,7 @@ export function createFoldingController(workspace: Workspace, tabId: TabId, edit
         if (command && runCommand(command)) event.preventDefault();
     }, { capture: true, signal: listeners.signal });
     refresh();
-    return Object.freeze({ ...cell.observable, refresh: () => { notifications.assertWritable(); refresh(); }, runCommand, dispose: () => {
+    return Object.freeze({ ...cell.observable, refresh: () => { notifications.assertWritable(); refresh(); }, canRunCommand, runCommand, dispose: () => {
         if (disposed) return; notifications.assertWritable(); disposed = true; cancel(); listeners.abort(); stopDocument(); stopTab(); stopFolds(); publish("disposed");
     } });
 }

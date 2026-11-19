@@ -151,7 +151,9 @@ and collapse policy.
 ### Commands and interaction
 
 `FoldCommand` supports `collapse`, `expand`, `collapse-all` and `expand-all`, with an optional
-group filter. The controller handles Ctrl/Cmd+Shift+[ and Ctrl/Cmd+Shift+] at the caret.
+group filter. Use `canRunCommand(command, group)` to enable menu actions for the current
+caret, group and collapse state. `runCommand` checks availability again before applying the change.
+The controller handles Ctrl/Cmd+Shift+[ and Ctrl/Cmd+Shift+] at the caret.
 Commands reject busy or unavailable views. Collapsing preserves the logical selection and
 reveals its visible header edge; it does not replace hidden selection endpoints.
 

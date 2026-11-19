@@ -11,6 +11,7 @@ import { mountDemoLanguage } from "./language-view.ts";
 import type { DemoSymbolTarget } from "./symbols.ts";
 import { mountDemoOutput } from "./output.ts";
 import { initializeDemoFolds, mountDemoFolding, outlineFolds } from "./folding.ts";
+import { mountDemoFoldMenu } from "./fold-menu.ts";
 import { canOpenDemoHelp } from "./diagnostics.ts";
 import { hostConfiguration, hostDecorations, mountHostIntegrations } from "./host-integrations.ts";
 import { inspectCharacters } from "./character-warnings.ts";
@@ -20,6 +21,8 @@ import "./style.css";
 const element = (id: string) => document.getElementById(id)!;
 const field = (id: string) => element(id) as HTMLInputElement;
 const button = (id: string) => element(id) as HTMLButtonElement;
+const codeMenu = element("code-menu") as HTMLDetailsElement;
+const foldMenu = mountDemoFoldMenu(codeMenu);
 const projects = new Map<SampleId, DemoProject>(), activeFiles = new Map<SampleId, string>();
 const listeners = new AbortController(), sample = element("sample") as HTMLSelectElement;
 const openProvider = selectDemoProvider(new URL(location.href).searchParams.get("provider") ?? document.documentElement.dataset.demoProvider ?? "browser");
@@ -33,6 +36,7 @@ let stopWorkspace: (() => void) | undefined, stopRecovery: (() => void) | undefi
 let stopLanguage: (() => void) | undefined, languageView: ReturnType<typeof mountDemoLanguage> | undefined;
 let languageViewFailure: Readonly<{ error: unknown }> | undefined;
 let stopReference: (() => void) | undefined;
+let stopReferenceFolding: (() => void) | undefined;
 let folding: FoldingController | undefined, referenceFolding: FoldingController | undefined, stopFolding: (() => void) | undefined;
 let viewListeners: AbortController | undefined;
 let stopRender: (() => void) | undefined;
@@ -58,13 +62,6 @@ function editingConfiguration(rules = presentation.editing) {
     const config = rules.configuration(indentation.value === "2" ? 2 : 4, indentation.value !== "tabs");
     if (project?.sample.id === "host") return hostConfiguration(config.tabSize!, config.insertSpaces!);
     return project?.sample.id === "outline" ? { tabSize: config.tabSize!, insertSpaces: config.insertSpaces!, lineComment: "#", pairs: [], enter: "keep" as const } : config;
-}
-function renderFolding(): void {
-    const state = folding?.getSnapshot(), select = element("fold-group") as HTMLSelectElement, chosen = select.value;
-    const groups = state?.groups ?? [], all = document.createElement("option"); all.value = ""; all.textContent = "All groups";
-    select.replaceChildren(all, ...groups.map(group => { const option = document.createElement("option"); option.value = group; option.textContent = group; return option; }));
-    if (groups.includes(chosen)) select.value = chosen;
-    element("folding-status").textContent = !state ? "" : state.message || `${state.regions} folds · ${state.collapsed} collapsed`;
 }
 
 function renderOutput(): void {
@@ -233,7 +230,8 @@ function paintMetadata(): void {
 }
 function detachView(): void {
     hostIntegrations?.dispose(); hostIntegrations = undefined;
-    stopFolding?.(); stopFolding = undefined; folding?.dispose(); folding = undefined; referenceFolding?.dispose(); referenceFolding = undefined;
+    stopFolding?.(); stopFolding = undefined; folding?.dispose(); folding = undefined;
+    stopReferenceFolding?.(); stopReferenceFolding = undefined; referenceFolding?.dispose(); referenceFolding = undefined;
     stopReference?.(); stopReference = undefined;
     referencePresentation?.dispose(); referencePresentation = undefined;
     output?.dispose(); output = undefined;
@@ -297,6 +295,7 @@ function mountFile(file: DemoFile, focus = false): void {
         labels.append(savedLabel, workingLabel, hint); surface.prepend(labels);
         editor = comparison.working;
         const configureReference = () => {
+            stopReferenceFolding?.(); stopReferenceFolding = undefined;
             referenceFolding?.dispose(); referenceFolding = undefined;
             referencePresentation?.dispose(); referencePresentation = undefined;
             const reference = comparison?.reference.getSnapshot(); if (!reference) return;
@@ -312,6 +311,7 @@ function mountFile(file: DemoFile, focus = false): void {
             referenceFolding = createFoldingController(project!.workspace, reference.target.id, reference.editor,
                 (capture, signal) => plain
                     ? discoverIndentationFolds(capture.buffer, outlineFolds(editingConfiguration().tabSize!)) : syntax!.discoverFolds(capture, signal));
+            stopReferenceFolding = foldMenu.bind(reference.editor, referenceFolding, "Saved copy", false);
         };
         let referenceSyncQueued = false, referenceSyncActive = true;
         const unsubscribeReference = comparison.reference.subscribe(() => {
@@ -331,7 +331,7 @@ function mountFile(file: DemoFile, focus = false): void {
     if (savedViews.has(file.view)) editor.restoreView({ ...savedViews.get(file.view)!, ...file.view.getSnapshot().selection,
         selectionSet: file.view.getSnapshot().selectionSet });
     folding = mountDemoFolding(project, file, editor, () => editingConfiguration().tabSize!);
-    stopFolding = folding.subscribe(renderFolding); renderFolding();
+    stopFolding = foldMenu.bind(editor, folding, comparison ? "Your changes" : "Source", true);
     viewListeners = new AbortController();
     stopRender = editor.viewport.onRender(renderGutter);
     editor.input.addEventListener("compositionstart", renderMetadata, { signal: viewListeners.signal });
@@ -476,10 +476,6 @@ indentation.addEventListener("change", () => {
     editor?.configureLanguage(editingConfiguration());
     comparison?.referenceEditor()?.configureLanguage(editingConfiguration(referencePresentation?.editing)); folding?.refresh(); referenceFolding?.refresh(); editor?.focus();
 }, { signal: listeners.signal });
-on("fold", () => { folding?.runCommand("collapse"); }); on("unfold", () => { folding?.runCommand("expand"); });
-on("fold-group-collapse", () => { folding?.runCommand("collapse-all", (element("fold-group") as HTMLSelectElement).value || undefined); });
-on("fold-group-expand", () => { folding?.runCommand("expand-all", (element("fold-group") as HTMLSelectElement).value || undefined); });
-const codeMenu = element("code-menu") as HTMLDetailsElement;
 codeMenu.addEventListener("click", event => {
     const target = event.target as HTMLElement;
     // Inspection can replace its clicked entry before this bubbling listener runs.
@@ -557,7 +553,7 @@ window.addEventListener("beforeunload", event => {
 }, { signal: listeners.signal });
 window.addEventListener("pagehide", event => {
     if (event.persisted) return;
-    disposed = true; opening++; listeners.abort(); stopWorkspace?.(); stopRecovery?.(); stopLanguage?.(); detachView(); presentation.dispose();
+    disposed = true; opening++; listeners.abort(); stopWorkspace?.(); stopRecovery?.(); stopLanguage?.(); detachView(); foldMenu.dispose(); presentation.dispose();
     for (const project of projects.values()) project.dispose(); projects.clear(); savedViews.clear();
 }, { signal: listeners.signal });
 await openSample("pricing");

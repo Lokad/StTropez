@@ -105,7 +105,8 @@ reference folds through its snapshot-bound compiler worker. The panes keep indep
 choices. Both demo providers and the saved snapshot project compiler spans onto complete source
 rows. A closing delimiter on its own row stays visible, as does a row shared with the next
 branch, statement or comment. A fold needs at least one body row to hide.
-The working side retains source-view preferences. Hidden-line labels and the review hint
+The working side retains source-view preferences. The Code menu names the last focused or clicked
+source pane and enables fold actions for its caret and selected group. Hidden-line labels and the review hint
 distinguish collapsed rows from alignment gaps. Find and explicit navigation reveal their targets.
 The [folding](folding.md) and [comparison](comparison.md) pages own these library contracts.
 
