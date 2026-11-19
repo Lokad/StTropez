@@ -44,11 +44,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     const requestedBudget = options.workBudget ?? 4096;
     validateWorkBudget(requestedBudget, "Comparison");
     const budget = Math.min(requestedBudget, 4096);
-    if (options.scrollLinked !== undefined && typeof options.scrollLinked !== "boolean") throw new TypeError("Expected a scroll-link preference.");
-    if (options.rowsAligned !== undefined && typeof options.rowsAligned !== "boolean") throw new TypeError("Expected a row-alignment preference.");
-    if (options.controls !== undefined && typeof options.controls !== "boolean") throw new TypeError("Expected a default-controls preference.");
     const minimap = options.minimap === undefined ? false : options.minimap;
-    if (typeof minimap !== "boolean") throw new TypeError("Minimap preference must be boolean.");
     const owner = host.ownerDocument, win = owner.defaultView;
     if (!win) throw new Error("Comparison requires an attached browser document.");
     const controller = createComparisonController(workspace, workingTab, baseline, options), runner = createCooperativeRunner(win);
@@ -114,7 +110,6 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, wor
     const setScrollLinked = (value: boolean) => { referenceScope.assertWritable(); scroll.setLinked(value); publishState(); };
     const setRowsAligned = (value: boolean) => {
         referenceScope.assertWritable();
-        if (typeof value !== "boolean") throw new TypeError("Expected a row-alignment preference.");
         if (value && !alignment.snapshot().enabled) scroll.setLinked(true);
         alignment.setEnabled(value); publishState();
     };

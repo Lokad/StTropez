@@ -151,8 +151,7 @@ retain their affinities. Hit testing and pointer selection use the same row geom
 `CharacterWarnings` classifies source characters without changing them. All categories in
 `characterWarningKinds` are enabled by default. `categories` can disable individual kinds;
 `allow` copies a list of exact permitted characters into an immutable `configuration`.
-Unknown categories, non-boolean switches and entries containing more than one code point
-are rejected. `kind(codePoint, offset)` returns a category or `null`.
+Each allow-list entry must contain exactly one code point. `kind(codePoint, offset)` returns a category or `null`.
 
 | Category | Meaning |
 | --- | --- |

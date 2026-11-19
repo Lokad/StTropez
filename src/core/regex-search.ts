@@ -30,7 +30,6 @@ function lineAnchors(pattern: string): string {
     return source;
 }
 export function regexExpression(pattern: string, matchCase = true, wholeWord = false): RegExp {
-    if (typeof pattern !== "string" || typeof matchCase !== "boolean" || typeof wholeWord !== "boolean") throw new TypeError("Invalid regex search options.");
     const flags = matchCase ? "gmu" : "gimu", validated = new RegExp(pattern, flags);
     const lines = lineAnchors(pattern);
     // Wrap before native matching so alternatives/backtracking can reach a valid boundary.
@@ -38,7 +37,6 @@ export function regexExpression(pattern: string, matchCase = true, wholeWord = f
     return source === pattern ? validated : new RegExp(source, flags);
 }
 function nativeMatches(text: string, pattern: string, matchCase: boolean, wholeWord: boolean, from: number) {
-    if (typeof text !== "string") throw new TypeError("Invalid regex search input.");
     if (!Number.isSafeInteger(from) || from < 0 || from > text.length || splitsSurrogatePair(text, from)) throw new RangeError("Invalid regex start offset.");
     // The platform iterator handles Unicode zero-width progression, including EOF.
     // Multiline anchors match editor lines; dot still requires an explicit class to cross lines.
@@ -60,7 +58,6 @@ export function* regexMatches(text: string, pattern: string, matchCase = true, w
  * The worker owns the complete captured input; prefix/suffix substitutions are explicit bulk work.
  * The controller must bound planned output before publishing a transaction. */
 export function regexReplacement(text: string, match: RegexMatch, replacement: string, maxUnits = Number.MAX_SAFE_INTEGER): string {
-    if (typeof replacement !== "string") throw new TypeError("Expected replacement text.");
     if (!Number.isSafeInteger(maxUnits) || maxUnits < 0) throw new RangeError("Invalid regex replacement budget.");
     let result = "";
     const append = (value: string) => { if (value.length > maxUnits - result.length) throw new RangeError("Regex replacement output limit exceeded."); result += value; };

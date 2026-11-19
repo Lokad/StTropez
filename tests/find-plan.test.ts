@@ -16,18 +16,14 @@ test("replacement assembly owns streamed edits before a backend reuses its buffe
     assert.ok(Object.isFrozen(complete)); assert.ok(complete!.every(Object.isFrozen));
 });
 
-test("replacement assembly rejects malformed, oversized, incomplete and excess steps", () => {
+test("replacement assembly rejects oversized, incomplete and excess steps", () => {
     const first = { from: 0, to: 3, insert: "dog" }, second = { from: 4, to: 7, insert: "fox" };
-    const cases: readonly [unknown, RegExp][] = [
-        [null, /Invalid replacement plan step/],
-        [{ done: "yes", edits: [] }, /Invalid replacement plan step/],
-        [{ done: true, edits: {} }, /Invalid replacement plan step/],
+    const cases: readonly [FindPlanStep, RegExp][] = [
         [{ done: false, edits: Array(1025).fill(first) }, /Invalid replacement plan step/],
         [{ done: true, edits: [first] }, /Incomplete replacement plan/],
         [{ done: true, edits: [first, second, second] }, /Invalid replacement plan\./],
-        [{ done: true, edits: [{ ...first, insert: 7 }] }, /Invalid replacement plan\./],
     ];
-    for (const [step, error] of cases) assert.throws(() => createFindReplacementPlan(positions(), 2)(step as FindPlanStep), error);
+    for (const [step, error] of cases) assert.throws(() => createFindReplacementPlan(positions(), 2)(step), error);
     const receive = createFindReplacementPlan(positions(), 2);
     assert.equal(receive({ done: false, edits: [first] }), undefined);
     assert.throws(() => receive({ done: true, edits: [] }), /Incomplete replacement plan/);

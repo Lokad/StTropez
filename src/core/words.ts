@@ -68,7 +68,7 @@ export class WordCursor {
     private readonly driver: KernelCursor<WordStep>;
     constructor(buffer: TextBuffer, offset: number, direction: -1 | 1, options: WordOptions = {}) {
         const from = options.from ?? 0, to = options.to ?? buffer.length;
-        if (![offset, from, to].every(Number.isSafeInteger) || from < 0 || from > offset || offset > to || to > buffer.length || direction !== -1 && direction !== 1) throw new RangeError("Invalid word command target.");
+        if (![offset, from, to].every(Number.isSafeInteger) || from < 0 || from > offset || offset > to || to > buffer.length) throw new RangeError("Invalid word command target.");
         const counters: Counters = { work: 0, yielded: 0, reads: 0 };
         this.driver = kernelCursor(scan(buffer, offset, direction, counters, { from, to }, options.skipWhitespace !== false),
             () => counters.work, (status, offset, failure): WordStep => Object.freeze({ status, offset, failure, workUnits: counters.work, readUnits: counters.reads }), "Word");

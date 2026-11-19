@@ -222,7 +222,6 @@ export class TextBuffer {
     readonly #root: Root;
     private constructor(root: Root) { this.#root = root; Object.freeze(this); }
     static from(text: string): TextBuffer {
-        if (typeof text !== "string") throw new TypeError("Text must be a string.");
         return new TextBuffer(original(text));
     }
     get length(): number { return this.#root?.length ?? 0; }
@@ -275,7 +274,6 @@ export class TextBuffer {
      * Ranges use raw UTF-16. Iteration retains captures until it ends or is closed.
      */
     sharedEdge(other: TextBuffer, side: "start" | "end", range: PairRange = { from: 0, to: this.length, otherFrom: 0, otherTo: other.length }): Iterable<number> {
-        if (side !== "start" && side !== "end") throw new RangeError("Invalid shared edge.");
         validateRange(this.length, range.from, range.to); validateRange(other.length, range.otherFrom, range.otherTo);
         return sharedEdge(this.#root, other.#root, side, { ...range });
     }

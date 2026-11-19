@@ -25,7 +25,6 @@ test("selection sets normalize overlaps, occupied carets and primary direction w
     assert.deepEqual(endpoints(createSelectionSet(5, [{ anchor: 0, head: 2 }, { anchor: 2, head: 4 }])), [[0, 2], [2, 4]]);
     for (const run of [() => createSelectionSet(-1, [{ anchor: 0, head: 0 }]), () => createSelectionSet(2, []),
         () => createSelectionSet(2, [{ anchor: 3, head: 0 }]), () => createSelectionSet(2, [{ anchor: 0, head: 0 }], 1)]) assert.throws(run, RangeError);
-    assert.throws(() => createSelectionSet(2, [{ anchor: 0, head: 0, headAffinity: "wrong" as "after" }]), TypeError);
 });
 
 test("mapping coalesces deleted carets while retaining primary identity and individual affinities", () => {

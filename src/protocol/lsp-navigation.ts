@@ -8,7 +8,6 @@ export function createLspNavigationClient(provider: LspWorkspace) {
     const client = createLspClient(provider);
     return Object.freeze({ ...lspFeatureHandle(client, ["textDocument/definition", "textDocument/references"]),
         run: async (snapshots: readonly DocumentSnapshot[], origin: DocumentId, offset: number, kind: "definition" | "references", includeDeclaration = true, prepare?: LspPrepare) => {
-            if (kind !== "definition" && kind !== "references" || typeof includeDeclaration !== "boolean") throw new TypeError("Invalid LSP navigation query.");
             const value = await client.request(snapshots, origin, kind === "definition" ? "textDocument/definition" : "textDocument/references", capture => ({
                 position: capture.index.at(offset), ...(kind === "references" ? { context: { includeDeclaration } } : {}) }), prepare).result;
             const uris = value.decode(() => lspLocationUris(value.response, kind)); await value.resolveTargets(uris, "navigation");

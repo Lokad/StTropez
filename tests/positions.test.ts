@@ -30,7 +30,6 @@ test("position mapping defines insertion, replacement, deletion and adjacent-bat
     for (const offset of [4, 0, 1, 1, 2, 3, 3, 4, 1]) for (const side of ["after", "before", "after"] as const)
         assert.deepEqual(cursor(offset, side), stacked.map(offset, side));
     assert.throws(() => cursor(-1), RangeError); assert.throws(() => cursor(5), RangeError);
-    assert.throws(() => cursor(1, "invalid" as "after"), TypeError);
     assert.deepEqual(cursor(1, "before"), stacked.map(1, "before"));
     // Length-only maps need no document allocation, including near the safe-integer bound.
     const length = Number.MAX_SAFE_INTEGER;

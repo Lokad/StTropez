@@ -32,9 +32,8 @@ test("viewport input ownership and render delivery survive removal, reentrancy a
             const stopError = viewport.onRender(() => { stopError(); throw new Error("viewport observer test"); });
             const stopAfter = viewport.onRender(() => afterError++); viewport.invalidate(); viewport.flush(); stopAfter();
             const binding = viewport.bindInput(() => { focus++; input.focus({ preventScroll: true }); });
-            let duplicate = false, invalid = false;
+            let duplicate = false;
             try { viewport.bindInput(() => {}); } catch { duplicate = true; }
-            try { binding.setComposing("yes" as unknown as boolean); } catch { invalid = true; }
             const buffer = workspace.document(source.documentId).buffer, folding = viewport.view.folding;
             const ranges = [{ id: "first", from: 0, to: buffer.offsetAt(2) }, { id: "second", from: buffer.offsetAt(2), to: buffer.offsetAt(4) }];
             folding.setRanges(folding.getSnapshot(), ranges.slice(0, 1)); viewport.flush();
@@ -61,13 +60,13 @@ test("viewport input ownership and render delivery survive removal, reentrancy a
             folding.setRanges(folding.getSnapshot(), []); viewport.flush();
             const destroyed = viewport.snapshot(); const inactive = !replacement.setTabEscape(true); replacement.dispose();
             viewport.onRender(() => afterDestroy++)(); viewport.flush();
-            return { firstOrder, secondOrder, revision: workspace.document(source.documentId).revision, errors, afterError, duplicate, invalid,
+            return { firstOrder, secondOrder, revision: workspace.document(source.documentId).revision, errors, afterError, duplicate,
                 guarded, existingEscaped, newEscaped, markersIgnored, escapedFocus, removedFocus, detached, expired, inactive, afterDestroy,
                 destroyed: { disposed: destroyed.disposed, revision: destroyed.revision, rows: destroyed.rows, pending: destroyed.pending } };
         } finally { window.removeEventListener("error", error); viewport.dispose(); workspace.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
     });
     expect(result).toEqual({ firstOrder: ["first", "last"], secondOrder: ["first", "last", "last", "later"], revision: 1,
-        errors: 1, afterError: 1, duplicate: true, invalid: true, guarded: true, existingEscaped: true, newEscaped: true, markersIgnored: true,
+        errors: 1, afterError: 1, duplicate: true, guarded: true, existingEscaped: true, newEscaped: true, markersIgnored: true,
         escapedFocus: true, removedFocus: true, detached: true, expired: true, inactive: true, afterDestroy: 0,
         destroyed: { disposed: true, revision: null, rows: 0, pending: false } });
 });

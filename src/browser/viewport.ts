@@ -108,13 +108,9 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
 export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: TabId,
     options: TextViewportOptions = {}, overview: Pick<TextViewportOptions, "decorate" | "lineClass"> = options): Readonly<{ viewport: TextViewport; navigation: ViewportNavigation; setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean }> {
     let columns = resolveColumnRulers(options.columnRulers);
-    if (options.minimap !== undefined && typeof options.minimap !== "boolean") throw new TypeError("Minimap preference must be boolean.");
     let highlightCurrentLine = options.highlightCurrentLine === undefined ? false : options.highlightCurrentLine;
-    if (typeof highlightCurrentLine !== "boolean") throw new TypeError("Current-line highlighting must be boolean.");
     let fontLigatures = options.fontLigatures === undefined ? false : options.fontLigatures;
-    if (typeof fontLigatures !== "boolean") throw new TypeError("Font ligatures must be boolean.");
     let scrollBeyondLastLine = options.scrollBeyondLastLine === undefined ? false : options.scrollBeyondLastLine;
-    if (typeof scrollBeyondLastLine !== "boolean") throw new TypeError("Scrolling beyond the last line must be boolean.");
     const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
     if (!tab || tab.surface.kind !== "text") throw new Error("Expected a text surface.");
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId);
@@ -136,7 +132,6 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
     const events = new win.EventTarget(), observationStops = new Set<() => void>();
     let inputOwner: { composing: boolean; tabEscaped: boolean; detach: () => void } | undefined;
     const observe = (type: "render" | "focus", listener: () => void): (() => void) => {
-        if (typeof listener !== "function") throw new TypeError("Viewport listener must be a function.");
         if (disposed || !workspace.resolveTab(target)) return () => {};
         const invoke = () => { if (!disposed && workspace.resolveTab(target)) listener(); };
         const stop = () => { events.removeEventListener(type, invoke); observationStops.delete(stop); };
@@ -677,7 +672,6 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
             const binding = { composing: false, tabEscaped: false, detach: observe("focus", focus) };
             inputOwner = binding; root.tabIndex = -1; layer.setAttribute("aria-hidden", "true");
             const update = (key: "composing" | "tabEscaped", value: boolean): boolean => {
-                if (typeof value !== "boolean") throw new TypeError("Input interaction state must be boolean.");
                 if (disposed || inputOwner !== binding || !workspace.resolveTab(target) || binding[key] === value) return false;
                 binding[key] = value;
                 if (key === "composing") { root.classList.toggle("st-composing", value); invalidate(); }
@@ -702,14 +696,12 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         currentLineHighlight: () => highlightCurrentLine,
         configureCurrentLineHighlight: enabled => {
             notifications.assertWritable(); if (disposed) return false;
-            if (typeof enabled !== "boolean") throw new TypeError("Current-line highlighting must be boolean.");
             if (highlightCurrentLine === enabled) return true;
             highlightCurrentLine = enabled; clearPreparedRows(); commandGeometry = undefined; schedule(); return true;
         },
         fontLigatures: () => fontLigatures,
         configureFontLigatures: enabled => {
             notifications.assertWritable(); if (disposed) return false;
-            if (typeof enabled !== "boolean") throw new TypeError("Font ligatures must be boolean.");
             if (fontLigatures === enabled) return true;
             fontLigatures = enabled; root.style.fontVariantLigatures = enabled ? "normal" : "none"; invalidate(); return true;
         },
@@ -717,7 +709,6 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         minimap: () => !!minimap,
         configureMinimap: enabled => {
             notifications.assertWritable(); if (disposed || !workspace.resolveTab(target)) return false;
-            if (typeof enabled !== "boolean") throw new TypeError("Minimap preference must be boolean.");
             if (enabled === !!minimap) return true;
             if (enabled) minimap = createMinimap();
             else { minimap?.dispose(); minimap = undefined; }
@@ -725,7 +716,6 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         },
         configureScrollBeyondLastLine: enabled => {
             notifications.assertWritable(); if (disposed) return false;
-            if (typeof enabled !== "boolean") throw new TypeError("Scrolling beyond the last line must be boolean.");
             if (scrollBeyondLastLine === enabled) return true;
             scrollBeyondLastLine = enabled; schedule(); return true;
         },
@@ -846,7 +836,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         },
         visualRowAt: line => renderedIndex.rowAt(line),
         navigationLine: (line, direction, count, page) => {
-            if (!Number.isSafeInteger(count) || count < 1 || direction !== -1 && direction !== 1) throw new RangeError("Invalid row navigation.");
+            if (!Number.isSafeInteger(count) || count < 1) throw new RangeError("Invalid row navigation.");
             const index = page ? renderedIndex : view.folding.getSnapshot().index, at = Math.max(0, Math.min(index.visibleLineCount - 1, index.rowAt(line) + direction * count));
             return "nextLine" in index ? index.nextLine(at, direction) : index.lineAt(at);
         }

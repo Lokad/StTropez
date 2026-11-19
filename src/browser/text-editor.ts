@@ -972,7 +972,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     warnings = mountCharacterWarnings(workspace, tabId, view, viewport, warningOptions);
     const editor: TextEditor = Object.freeze({ element: root, input, view, viewport, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
         captureInsertion: (kind = "paste") => {
-            if (kind !== "paste" && kind !== "replace") throw new TypeError("Unknown captured insertion kind.");
             hostInsertion?.cancel();
             const available = () => !disposed && root.isConnected && !readOnly && !input.disabled && !input.readOnly && !composing
                 && !inputQueue.pending && !inputQueue.executing && !rangeCommand && !wordJob && !graphemeJob && !insertion && !drag;

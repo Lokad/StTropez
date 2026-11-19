@@ -14,7 +14,7 @@ export type FontAssetController = Observable<FontAssetSnapshot> & Readonly<{
 /** Explicitly owned single-face font assets. The host decides which views use the returned family. */
 export function createFontAssetController(owner: Document, fontId: string,
     options: Readonly<{ onListenerError?: (error: unknown) => void }> = {}): FontAssetController {
-    if (typeof fontId !== "string" || !fontId) throw new TypeError("A font resource identity is required.");
+    if (!fontId) throw new TypeError("A font resource identity is required.");
     const win = owner.defaultView; if (!win || !owner.fonts || !win.FontFace) throw new Error("Font loading is unavailable.");
     const scope = new NotificationScope(options.onListenerError ?? (() => {})), store = new Store<FontAssetSnapshot>(Object.freeze({ fontId, generation: 0, status: "idle", current: null, failure: null }), scope);
     let disposed = false, currentFace: FontFace | undefined;

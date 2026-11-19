@@ -19,8 +19,6 @@ export type CapturedViewRequest = Readonly<{
 export function captureViewRequest(workspace: Workspace, target: TabTarget, view: DocumentView,
     options: CapturedViewOptions = {}): CapturedViewRequest | undefined {
     const { editOrigin, available = () => true } = options;
-    if (editOrigin !== undefined && !["human", "agent", "host"].includes(editOrigin)) throw new TypeError("Invalid captured edit origin.");
-    if (typeof available !== "function") throw new TypeError("Expected a captured-view availability function.");
     const capturedTarget = Object.freeze({ ...target }), tab = workspace.resolveTab(capturedTarget);
     if (!workspace.ownsDocumentView(view) || tab?.surface.kind !== "text" || tab.surface.documentId !== view.documentId || !available()) return;
     const document = workspace.observeDocument(view.documentId).getSnapshot(); if (!document) return;
@@ -56,11 +54,6 @@ export function captureViewRequest(workspace: Workspace, target: TabTarget, view
         cancel: () => cancel(), commit: operation => {
             if (!isCurrent()) return false;
             detach();
-            try {
-                if (typeof operation !== "function") throw new TypeError("Expected a synchronous captured-view operation.");
-                const result = operation();
-                if (typeof result !== "boolean") throw new TypeError("A captured-view operation must return a boolean synchronously.");
-                return result;
-            } finally { release(); }
+            try { return operation(); } finally { release(); }
         } });
 }

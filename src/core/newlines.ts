@@ -7,7 +7,6 @@ export type ImportedText = Readonly<{ text: string; detected: LineEnding | "mixe
 
 /** Import/export conversion is explicit; UTF-16 text is never silently repaired or normalized. */
 export function importText(text: string, policy: "preserve" | "lf"): ImportedText {
-    if (policy !== "preserve" && policy !== "lf") throw new TypeError("Unknown newline import policy.");
     const kinds = new Set<LineEnding>(), edits: TextEdit[] = [];
     for (const match of text.matchAll(/\r\n|\r|\n/g)) {
         const kind: LineEnding = match[0] === "\r\n" ? "crlf" : match[0] === "\r" ? "cr" : "lf";
@@ -20,7 +19,6 @@ export function importText(text: string, policy: "preserve" | "lf"): ImportedTex
 }
 
 export function exportText(text: string, ending: LineEnding | "preserve"): Readonly<{ text: string; mapping: PositionMap }> {
-    if (!["lf", "crlf", "cr", "preserve"].includes(ending)) throw new TypeError("Unknown newline export policy.");
     const edits: TextEdit[] = [], insert = ending === "crlf" ? "\r\n" : ending === "cr" ? "\r" : "\n";
     if (ending !== "preserve") for (const match of text.matchAll(/\r\n|\r|\n/g)) {
         if (match[0] !== insert) edits.push({ from: match.index, to: match.index + match[0].length, insert });

@@ -19,7 +19,7 @@ export function createLspSignatureClient(provider: LspWorkspace) {
         cancel: () => { previous = undefined; lane.cancel(); }, dispose: () => { previous = undefined; stop(); lane.dispose(); } }),
         run: (document: DocumentSnapshot, offset: number, context: LspSignatureContext = { triggerKind: 1, isRetrigger: false }, prepare?: LspPrepare) => {
             const wireContext = jsonSnapshot(context);
-            if (![1, 2, 3].includes(context.triggerKind) || typeof context.isRetrigger !== "boolean" || context.triggerCharacter !== undefined && (typeof context.triggerCharacter !== "string" || !context.triggerCharacter.length || context.triggerCharacter.length > 8)
+            if (context.triggerCharacter !== undefined && (!context.triggerCharacter.length || context.triggerCharacter.length > 8)
                 || JSON.stringify(wireContext).length > wireLimits.signatureContextUnits) throw new TypeError("Invalid signature help context.");
             const retrigger = context.isRetrigger, inherit = context.activeSignatureHelp === undefined;
             if (!retrigger) previous = undefined;

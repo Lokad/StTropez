@@ -25,10 +25,8 @@ export class WorkspaceCommands {
             try {
                 const response = await port.save(ticket.start());
                 if (response.kind === "conflict") {
-                    if (typeof response.serverVersion !== "string") throw new TypeError("Conflict requires a server version.");
                     ticket.conflict(); return { kind: "conflict", serverVersion: response.serverVersion };
                 }
-                if (response.kind !== "saved") throw new TypeError("Unknown save response.");
                 return { kind: "saved", receipt: ticket.accept(response) };
             } catch (error) {
                 ticket.fail();

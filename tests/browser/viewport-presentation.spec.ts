@@ -140,9 +140,7 @@ test.describe("scrolling beyond the last line", () => {
             const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "trailing-space", variant: "text" }, "Trailing space", { value: "head\nbody\nend" });
             const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "trailing-space"), host = document.createElement("section");
             host.style.cssText = "height:240.4px;width:600.4px;zoom:1.25"; document.body.append(host);
-            try { mountTextEditor(host, workspace, tab, { scrollBeyondLastLine: 1 as unknown as boolean }); throw new Error("Invalid scroll option accepted."); }
-            catch (error) { if (!(error instanceof TypeError)) throw error; }
-            if (host.childNodes.length || workspace.diagnostics().views) throw new Error("Invalid scroll mount leaked ownership.");
+
             const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Trailing source" }), viewport = editor.viewport;
             window.presentationFixture = { workspace, editor, host, tab, resource: resource.id };
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
@@ -153,12 +151,11 @@ test.describe("scrolling beyond the last line", () => {
             const layer = host.querySelector(".st-viewport-layer")!.getBoundingClientRect();
             viewport.configureScrollBeyondLastLine(false); viewport.flush();
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush(); const restored = viewport.snapshot();
-            let invalid = false; try { viewport.configureScrollBeyondLastLine(null as unknown as boolean); } catch (error) { invalid = error instanceof TypeError; }
             const renders = restored.renders; viewport.configureScrollBeyondLastLine(false); viewport.flush();
-            return { defaults, ordinary, enabled, end, topError: Math.abs((last.top - layer.top) / 1.25 - 12), preserved, invalid,
+            return { defaults, ordinary, enabled, end, topError: Math.abs((last.top - layer.top) / 1.25 - 12), preserved,
                 restored, sameSelection: selection === editor.view.getSnapshot().selectionSet, noOpRenders: viewport.snapshot().renders - renders, pending: viewport.activity().pending };
         });
-        expect(initial).toMatchObject({ defaults: false, preserved: true, invalid: true, sameSelection: true, noOpRenders: 0, pending: false });
+        expect(initial).toMatchObject({ defaults: false, preserved: true, sameSelection: true, noOpRenders: 0, pending: false });
         expect(initial.ordinary.verticalExtent).toBeCloseTo(3 * initial.ordinary.lineHeight + 24, 5);
         expect(initial.enabled.verticalExtent).toBeCloseTo(2 * initial.enabled.lineHeight + initial.enabled.height, 5);
         expect(initial.end.scrollTop).toBeCloseTo(2 * initial.end.lineHeight, 5); expect(initial.topError).toBeLessThan(.05);
@@ -265,9 +262,7 @@ test("ligature policy changes native shaping while preserving caret, selection, 
         const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "ligatures", variant: "text" }, "Ligatures", { value: "fi AB\nfi" });
         const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "ligatures"), host = document.createElement("section");
         host.style.cssText = "height:240px;width:600px;--st-font:StLigatureFixture;--st-font-size:40px"; document.body.append(host);
-        try { mountTextEditor(host, workspace, tab, { fontLigatures: "normal" as unknown as boolean }); throw new Error("Invalid ligatures accepted."); }
-        catch (error) { if (!(error instanceof TypeError)) throw error; }
-        if (host.childNodes.length || workspace.diagnostics().views) throw new Error("Invalid ligature mount leaked ownership.");
+
         const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Ligature source" }), viewport = editor.viewport;
         window.presentationFixture = { workspace, editor, host, tab, resource: resource.id };
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
@@ -286,11 +281,10 @@ test("ligature policy changes native shaping while preserving caret, selection, 
         const observer = new MutationObserver(() => {}); observer.observe(viewport.element, { subtree: true, childList: true, attributes: true });
         const renders = viewport.snapshot().renders; viewport.configureFontLigatures(true); viewport.flush();
         const noOp = { mutations: observer.takeRecords().length, renders: viewport.snapshot().renders - renders, pending: viewport.activity().pending }; observer.disconnect();
-        let invalid = false; try { viewport.configureFontLigatures(null as unknown as boolean); } catch (error) { invalid = error instanceof TypeError; }
-        return { off, on, restored, again, noOp, invalid, enabled: viewport.fontLigatures(), sameChild: child === host.querySelector('.st-viewport-row[data-line="0"]')!.firstChild,
+        return { off, on, restored, again, noOp, enabled: viewport.fontLigatures(), sameChild: child === host.querySelector('.st-viewport-row[data-line="0"]')!.firstChild,
             sameSelection: selection === editor.view.getSnapshot().selectionSet, revision: workspace.document(resource.documentId).revision };
     }, Array.from(fontFixture({ ligatures: true })));
-    expect(initial).toMatchObject({ invalid: true, enabled: true, sameChild: true, sameSelection: true, revision: 0,
+    expect(initial).toMatchObject({ enabled: true, sameChild: true, sameSelection: true, revision: 0,
         noOp: { mutations: 0, renders: 0, pending: false }, off: { enabled: false, css: "none" }, on: { enabled: true, css: "normal" } });
     expect(initial.off.width).toBeCloseTo(24, 1); expect(initial.on.width).toBeCloseTo(20, 1);
     expect(initial.restored).toEqual(initial.off); expect(initial.again).toEqual(initial.on);
@@ -432,9 +426,7 @@ test("current-line presentation follows the primary caret through input, folding
         const tab = workspace.open({ kind: "text", documentId: resource.documentId }, "current-line"), host = document.createElement("section"), style = document.createElement("style");
         host.style.cssText = "height:400px;width:800px;--st-current-line:#ffffff18";
         style.textContent = ".host-row { background: rgb(30, 45, 65) } .host-color { color: rgb(180, 60, 160) }"; document.body.append(style, host);
-        try { mountTextEditor(host, workspace, tab, { highlightCurrentLine: "yes" as unknown as boolean }); throw new Error("Invalid current-line option accepted."); }
-        catch (error) { if (!(error instanceof TypeError)) throw error; }
-        if (host.childNodes.length || workspace.diagnostics().views) throw new Error("Invalid highlight mount leaked ownership.");
+
         const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Line source", lineClass: () => "host-row",
             decorate: line => [{ from: line.from, to: line.to, className: "host-color" }] }), viewport = editor.viewport;
         window.presentationFixture = { workspace, editor, tab, resource: resource.id, host };
@@ -442,14 +434,13 @@ test("current-line presentation follows the primary caret through input, folding
         const defaults = viewport.currentLineHighlight(), point = viewport.coordsAt(1), row = host.querySelector('.st-viewport-row[data-line="0"]')!, child = row.firstChild;
         const extent = [viewport.element.scrollWidth, viewport.element.scrollHeight]; viewport.configureCurrentLineHighlight(true); viewport.flush();
         const enabled = viewport.currentLineHighlight(), background = host.querySelector<HTMLElement>(".st-current-line-background")!;
-        let invalid = false; try { viewport.configureCurrentLineHighlight("yes" as unknown as boolean); } catch { invalid = true; }
         viewport.configureCurrentLineHighlight(true);
-        return { defaults, enabled, invalid, noOpPending: viewport.activity().pending, samePoint: JSON.stringify(point) === JSON.stringify(viewport.coordsAt(1)),
+        return { defaults, enabled, noOpPending: viewport.activity().pending, samePoint: JSON.stringify(point) === JSON.stringify(viewport.coordsAt(1)),
             sameChild: row.firstChild === child, className: row.className, background: getComputedStyle(row).backgroundColor, color: getComputedStyle(child as HTMLElement).color,
             width: background.getBoundingClientRect().width, viewportWidth: viewport.element.clientWidth, extent,
             nextExtent: [viewport.element.scrollWidth, viewport.element.scrollHeight] };
     });
-    expect(initial).toMatchObject({ defaults: false, enabled: true, invalid: true, noOpPending: false, samePoint: true, sameChild: true,
+    expect(initial).toMatchObject({ defaults: false, enabled: true, noOpPending: false, samePoint: true, sameChild: true,
         className: "st-viewport-row host-row st-current-line", background: "rgb(30, 45, 65)", color: "rgb(180, 60, 160)" });
     expect(initial.extent).toEqual(initial.nextExtent); expect(initial.width).toBe(initial.viewportWidth);
     const source = page.getByRole("textbox", { name: "Line source", exact: true }), current = page.locator(".st-viewport-layer .st-current-line");

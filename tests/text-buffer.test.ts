@@ -221,7 +221,6 @@ test("multi-range batches preserve the string oracle and map untouched original 
     }
     assert.throws(() => validateTextEdits(-1, []), RangeError);
     assert.throws(() => validateTextEdits(Number.NaN, []), RangeError);
-    assert.throws(() => TextBuffer.from(42 as unknown as string), TypeError);
 });
 
 test("packed batches preserve raw seams, duplicate insertion order and exact mappings across backing boundaries", () => {

@@ -2,7 +2,7 @@ import type { TextEdit } from "./changes.ts";
 import { textDifference } from "./changes.ts";
 import { TextBuffer } from "./text-buffer.ts";
 import type { PositionMapping } from "./positions.ts";
-import { TextHistory, validateHistory } from "./history.ts";
+import { TextHistory, validateHistoryGroup } from "./history.ts";
 import type { EditKind, HistoryChange, HistoryOptions, HistorySnapshot, Selection } from "./history.ts";
 import { createSelectionSet, mapSelectionSet, sameSelectionSet } from "./selections.ts";
 import type { SelectionSet } from "./selections.ts";
@@ -110,7 +110,6 @@ type ResourceRecord = {
 };
 const defaultCapabilities: Capabilities = Object.freeze({ edit: Object.freeze(["human", "agent", "host"] as const), save: true, run: true });
 function capabilities(value: Capabilities): Capabilities {
-    if (value.edit.some(origin => !["human", "agent", "host"].includes(origin))) throw new TypeError("Unknown edit origin.");
     return Object.freeze({ edit: Object.freeze([...new Set(value.edit)]), save: value.save, run: value.run });
 }
 function sameMetadata(a: ResourceMetadata, b: ResourceMetadata): boolean {
@@ -202,7 +201,6 @@ export class Workspace {
     }
     /** Retain an immutable buffer directly, without exporting or reparsing its text. */
     createTextResourceFromBuffer(key: ResourceKey, title: string, loaded: LoadedTextBuffer, permissions = defaultCapabilities, options: ResourceOptions = {}): TextResourceHandle {
-        if (!(loaded.buffer instanceof TextBuffer)) throw new TypeError("Text resource requires a TextBuffer.");
         return this.create(key, title, "text", loaded, permissions, options) as TextResourceHandle;
     }
     createDocument(key: ResourceKey, title: string, text: string): DocumentId {
@@ -211,7 +209,6 @@ export class Workspace {
     private create(key: ResourceKey, title: string, kind: "text" | "panel", loaded: LoadedResource<SnapshotValue> | LoadedTextBuffer | undefined, permissions: Capabilities, options: ResourceOptions): ResourceHandle<SnapshotValue> {
         this.scope.assertWritable();
         const visibility = options.visibility === undefined ? "workspace" : options.visibility;
-        if (visibility !== "workspace" && visibility !== "internal") throw new TypeError("Expected workspace or internal resource visibility.");
         key = Object.freeze({ ...key });
         const identity = resourceKeyIdentity(key);
         if (this.resourceKeys.has(identity)) throw new Error("Resource already exists in this workspace.");
@@ -285,7 +282,6 @@ export class Workspace {
             setRanges: (expected, ranges) => foldTarget(expected) && setFoldRegions(createFoldRegions(record.buffer!, ranges, folds.get().regions)),
             setCollapsed: (expected, id, collapsed) => {
                 if (!foldTarget(expected)) return false;
-                if (typeof id !== "string" || typeof collapsed !== "boolean") throw new TypeError("Expected a fold identity and boolean state.");
                 const previous = folds.get().regions, region = previous.find(r => r.id === id); if (!region) return false; if (region.collapsed === collapsed) return true;
                 return setFoldRegions(collapseFoldRegion(previous, id, collapsed));
             },
@@ -332,7 +328,7 @@ export class Workspace {
         this.scope.assertWritable();
         if (!requests.length) throw new RangeError("A text transaction needs at least one document.");
         const ids = new Set<DocumentId>(), first = requests[0]!, kind = first.history?.kind ?? "replace", group = first.history?.group;
-        validateHistory(kind, group);
+        validateHistoryGroup(group);
         const prepared = [];
         for (const request of requests) {
             if (ids.has(request.documentId)) throw new Error("A document may appear only once in a transaction."); ids.add(request.documentId);
@@ -485,7 +481,6 @@ export class Workspace {
         this.scope.assertWritable();
         const record = this.requireResource(id), lease = Symbol("resource-lease");
         const preventReload = options.preventReload ?? false;
-        if (typeof preventReload !== "boolean") throw new TypeError("preventReload must be a boolean.");
         record.leases.add(lease); if (preventReload) record.reloadReservations++;
         return Object.freeze({ resourceId: id, active: () => record.leases.has(lease), release: () => {
             this.scope.assertWritable();
@@ -572,7 +567,7 @@ export class Workspace {
         if (!record || initial?.state !== "ready" || !initial.metadata.capabilities.save || record.editLease) throw new Error("Resource is not ready or cannot be saved.");
         const reviewedVersion = review?.expectedServerVersion;
         if (review !== undefined) {
-            if (!review || !Number.isSafeInteger(review.expectedRevision) || review.expectedRevision < 0 || typeof reviewedVersion !== "string") throw new TypeError("Reviewed save requires a revision and server version.");
+            if (!Number.isSafeInteger(review.expectedRevision) || review.expectedRevision < 0) throw new TypeError("Reviewed save requires a revision and server version.");
             if (!review.target || this.resolveResource(review.target) !== handle) throw new Error("Reviewed save belongs to another resource or workspace.");
             if (initial.revision !== review.expectedRevision || record.saveReservations !== 0) throw new Error("Reviewed save has changed or another save is pending.");
         }
@@ -603,8 +598,6 @@ export class Workspace {
             status("saving"); return submission;
         }, accept: (response: Readonly<{ serverVersion: string; canonical?: T }>, options: Readonly<{ applyCanonical?: boolean }> = {}) => {
             const submitted = requireStarted();
-            if (options.applyCanonical !== undefined && typeof options.applyCanonical !== "boolean") throw new TypeError("applyCanonical must be a boolean.");
-            if (typeof response.serverVersion !== "string") throw new TypeError("Save receipt requires a server version.");
             const savedValue = response.canonical === undefined ? value : snapshotValue(response.canonical);
             if (record.documentId !== null && typeof savedValue !== "string") throw new TypeError("Canonical text must be a string.");
             const current = record.state.get();

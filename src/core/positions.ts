@@ -26,17 +26,14 @@ type UnchangedEdges = Readonly<{ prefix: number; suffix: number }>;
 function position(length: number, offset: number): void {
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > length) throw new RangeError("Position is outside the original document.");
 }
-function affinity(value: Affinity): void { if (value !== "before" && value !== "after") throw new TypeError("Unknown selection affinity."); }
-function validateRange(length: number, from: number, to: number, fromAffinity: Affinity, toAffinity: Affinity, onDelete: AnchoredRange["onDelete"]): void {
+function validateRange(length: number, from: number, to: number): void {
     position(length, from); position(length, to);
     if (to < from) throw new RangeError("Anchored ranges must be ordered.");
-    affinity(fromAffinity); affinity(toAffinity);
-    if (onDelete !== "collapse" && onDelete !== "invalidate") throw new TypeError("Unknown anchor deletion policy.");
 }
 export function anchoredRange(length: number, from: number, to: number, options: Readonly<{
     fromAffinity?: Affinity; toAffinity?: Affinity; onDelete?: "collapse" | "invalidate" }> = {}): AnchoredRange {
     const fromAffinity = options.fromAffinity ?? "after", toAffinity = options.toAffinity ?? "before", onDelete = options.onDelete ?? "collapse";
-    validateRange(length, from, to, fromAffinity, toAffinity, onDelete);
+    validateRange(length, from, to);
     return Object.freeze({ from, to, fromAffinity, toAffinity, onDelete });
 }
 
@@ -69,13 +66,13 @@ class ChangePositionMap implements PositionMapping {
     }
     [batchChanges](): readonly Change[] { return this.changes; }
     map(offset: number, side: Affinity = "after"): MappedPosition {
-        position(this.oldLength, offset); affinity(side);
+        position(this.oldLength, offset);
         return this.mapped(offset, side, this.preceding(offset, side));
     }
     createMapper(): PositionMapping["map"] {
         let previous = -1, before = -1, after = -1;
         return (offset, side = "after") => {
-            position(this.oldLength, offset); affinity(side);
+            position(this.oldLength, offset);
             if (offset !== previous) {
                 before = this.preceding(offset, "before", offset > previous ? after + 1 : 0);
                 after = this.preceding(offset, "after", before + 1);
@@ -114,7 +111,7 @@ class ChangePositionMap implements PositionMapping {
         }) - 1;
     }
     mapRange(range: AnchoredRange): AnchoredRange | undefined {
-        validateRange(this.oldLength, range.from, range.to, range.fromAffinity ?? "after", range.toAffinity ?? "before", range.onDelete ?? "collapse");
+        validateRange(this.oldLength, range.from, range.to);
         const from = this.map(range.from, range.fromAffinity), to = this.map(range.to, range.toAffinity);
         if (range.onDelete === "invalidate") {
             const change = this.changes[this.preceding(range.from, "after")];
@@ -180,12 +177,12 @@ class ComposedPositionMap implements PositionMapping {
     [unchangedEdges](): UnchangedEdges { return this.#edges; }
     [compiledGeometry](): GeometryPair { return this.#geometry; }
     map(offset: number, side: Affinity = "after"): MappedPosition {
-        position(this.oldLength, offset); affinity(side);
+        position(this.oldLength, offset);
         const pieces = geometryPieces(this.#geometry.forward, side), piece = pieces[pieceAt(pieces, offset)]!;
         return Object.freeze({ offset: pieceOffset(piece, offset), deleted: piece.deleted });
     }
     mapRange(range: AnchoredRange): AnchoredRange | undefined {
-        validateRange(this.oldLength, range.from, range.to, range.fromAffinity ?? "after", range.toAffinity ?? "before", range.onDelete ?? "collapse");
+        validateRange(this.oldLength, range.from, range.to);
         const from = this.map(range.from, range.fromAffinity), to = this.map(range.to, range.toAffinity);
         if (range.onDelete === "invalidate" && geometryInvalidates(this.#geometry.forward, range.from, range.to,
             range.fromAffinity ?? "after", range.toAffinity ?? "after", from.deleted)) return undefined;

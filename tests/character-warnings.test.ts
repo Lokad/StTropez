@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CharacterWarnings, characterWarningKinds, characterWarningLabel, TextBuffer } from "../src/index.ts";
-import type { CharacterWarning, CharacterWarningKind, CharacterWarningOptions } from "../src/index.ts";
+import type { CharacterWarning, CharacterWarningKind } from "../src/index.ts";
 
 test("directional controls and unusual whitespace follow their distinct categories", () => {
     const rules = new CharacterWarnings();
@@ -78,7 +78,6 @@ test("invalid warning options, ranges and limits are refused", () => {
     for (const [from, to] of [[-1, 0], [0, 2], [1, 0], [.5, 1], [NaN, 1]]) assert.throws(() => rules.scan(buffer, from, to), RangeError);
     for (const maxUnits of [0, 1, .5, NaN, Infinity]) assert.throws(() => rules.scan(buffer, 0, 1, { maxUnits }), RangeError);
     for (const maxWarnings of [0, -1, .5, NaN, Infinity]) assert.throws(() => rules.scanText("x", 0, { maxWarnings }), RangeError);
-    for (const allow of [[""], ["ab"], [123], "abc"]) assert.throws(() => new CharacterWarnings({ allow } as CharacterWarningOptions), TypeError);
-    for (const categories of [{ unknown: true }, { invisible: 1 }]) assert.throws(() => new CharacterWarnings({ categories } as CharacterWarningOptions), TypeError);
+    for (const allow of [[""], ["ab"]]) assert.throws(() => new CharacterWarnings({ allow }), TypeError);
     assert.throws(() => rules.scanText("xx", Number.MAX_SAFE_INTEGER), RangeError); assert.throws(() => rules.kind(0x110000), RangeError);
 });

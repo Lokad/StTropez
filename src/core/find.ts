@@ -21,10 +21,10 @@ const planStepEdits = 1024;
 export function createFindReplacementPlan(positions: FindIndex, total: number, range?: SearchMatch): (step: FindPlanStep) => readonly TextEdit[] | undefined {
     const edits: TextEdit[] = [];
     return result => {
-        if (!result || typeof result.done !== "boolean" || !Array.isArray(result.edits) || result.edits.length > planStepEdits) throw new Error("Invalid replacement plan step.");
+        if (result.edits.length > planStepEdits) throw new Error("Invalid replacement plan step.");
         for (const edit of result.edits) {
             const index = edits.length;
-            if (index >= total || typeof edit.insert !== "string") throw new Error("Invalid replacement plan.");
+            if (index >= total) throw new Error("Invalid replacement plan.");
             const at = range ?? positions.at(index);
             if (edit.from !== at.from || edit.to !== at.to) throw new Error("Replacement plan does not match the captured search.");
             edits.push(Object.freeze({ from: edit.from, to: edit.to, insert: edit.insert }));

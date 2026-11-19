@@ -86,7 +86,6 @@ export function createComparisonScroll(win: Window, panes: ComparisonPanes,
     }
     return Object.freeze({ update, snapshot: () => Object.freeze({ linked, pending: frame !== undefined || paused }),
         setLinked(value: boolean): void {
-            if (typeof value !== "boolean") throw new TypeError("Expected a scroll-link preference.");
             if (disposed || value === linked) return; cancel(); paused = false; linked = value;
             if (linked) {
                 remember(working); const baseline = reference(); if (baseline) remember(baseline);

@@ -160,7 +160,7 @@ a rejection `reason`. It supports numbered stops (`$1`, `${1}`), literal default
 (`${1:value}`), choices (`${2|draft,ready|}`), escapes, repeated occurrences and final `$0`.
 A missing `$0` is placed at the expansion end. Forward references share their definition;
 conflicting explicit definitions are rejected. Variables, nested placeholders and transforms
-return a reason. Invalid argument types or limits throw.
+return a reason. Invalid numeric limits throw.
 
 `Snippet` has expanded `text` and ordered `stops`. Each `SnippetStop` has its source stop number,
 choices and `SnippetOccurrence` ranges; positive stop numbers ascend and zero comes last.

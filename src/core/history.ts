@@ -13,11 +13,10 @@ export type HistoryChange = Readonly<{ documentId: string; before: TextBuffer; a
 export type HistoryEntry = Readonly<{ id: number; origin: string; kind: EditKind; group: string | null;
     changes: readonly HistoryChange[]; steps: number; units: number }>;
 
-const kinds: readonly EditKind[] = ["typing", "delete", "paste", "composition", "form", "refactor", "proposal", "live", "replace", "canonical"];
 const selectionRanges = (changes: readonly HistoryChange[]): number => changes.reduce((total, change) => total
     + (change.selection ? change.selection.before.ranges.length + change.selection.after.ranges.length : 0), 0);
-export function validateHistory(kind: EditKind, group: string | undefined): void {
-    if (!kinds.includes(kind) || (group !== undefined && (typeof group !== "string" || !group))) throw new TypeError("Invalid history kind or group.");
+export function validateHistoryGroup(group: string | undefined): void {
+    if (group !== undefined && !group) throw new TypeError("Expected a nonempty history group.");
 }
 
 /** Workspace-local history units shared by the participating documents. No I/O or clock policy. */
@@ -52,7 +51,7 @@ export class TextHistory {
     }
     seal(id: string): void { this.last.delete(id); }
     record(changes: readonly HistoryChange[], origin: string, kind: EditKind, group?: string): void {
-        validateHistory(kind, group);
+        validateHistoryGroup(group);
         this.clearFuture(changes.map(change => change.documentId));
         const units = changes.reduce((total, change) => total + change.units, 0), previous = this.last.get(changes[0]!.documentId);
         if (!this.limits.groups || !this.limits.changes || units > this.limits.units || selectionRanges(changes) > this.limits.selections) {

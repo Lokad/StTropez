@@ -16,7 +16,7 @@ class UnsupportedSnippet extends Error {}
 
 /** Numbered stops, literal defaults/choices and mirrors; no variables, nesting or transforms. */
 export function parseSnippet(source: string, maxExpandedUnits = Number.MAX_SAFE_INTEGER): SnippetParseResult {
-    if (typeof source !== "string" || !Number.isSafeInteger(maxExpandedUnits) || maxExpandedUnits < 0) throw new TypeError("Invalid snippet input or expansion limit.");
+    if (!Number.isSafeInteger(maxExpandedUnits) || maxExpandedUnits < 0) throw new TypeError("Invalid snippet input or expansion limit.");
     const fail = (reason: string): never => { throw new UnsupportedSnippet(reason); };
     type Part = string | { index: number };
     const parts: Part[] = [], definitions = new Map<number, { text: string; choices: readonly string[] }>();

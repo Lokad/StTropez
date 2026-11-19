@@ -55,9 +55,7 @@ export function createLspCompletionClient(provider: LspWorkspace) {
         snapshot: () => Object.freeze({ ...client.snapshot(), received }),
         run: (document: DocumentSnapshot, offset: number, options: LspCompletionRequestOptions = {}, prepare?: LspPrepare): LspCall<LspCompletionBatch> => {
             const context = Object.freeze({ ...(options.context ?? { triggerKind: 1 }) });
-            if (![1, 2, 3].includes(context.triggerKind) || (context.triggerKind === 2
-                ? typeof context.triggerCharacter !== "string" || !context.triggerCharacter.length || context.triggerCharacter.length > 8
-                : context.triggerCharacter !== undefined)) throw new TypeError("Invalid completion trigger context.");
+            if (context.triggerKind === 2 && (!context.triggerCharacter.length || context.triggerCharacter.length > 8)) throw new TypeError("Invalid completion trigger context.");
             const indentation = options.indentation && Object.freeze({ ...options.indentation }),
                 fallback = options.fallback && (typeof options.fallback === "function" ? options.fallback : Object.freeze({ ...options.fallback }));
             if (options.retain) {

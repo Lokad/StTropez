@@ -88,5 +88,5 @@ function create(source: GraphemeSource, length: number, options: GraphemeOptions
 }
 export function createGraphemeCursor(source: TextBuffer | string, options: GraphemeOptions = {}): GraphemeCursor { return create(typeof source === "string" ? Object.freeze({ kind: "string", text: source }) : Object.freeze({ kind: "buffer", buffer: source }), source.length, options); }
 export function graphemeBoundaries(text: string): readonly number[] {
-    if (typeof text !== "string") throw new TypeError("Invalid grapheme text."); const cursor = createGraphemeCursor(text); try { let step = cursor.next(65536); while (step.status === "running") step = cursor.next(65536); return step.result!.boundaries(); } finally { cursor.dispose(); }
+    const cursor = createGraphemeCursor(text); try { let step = cursor.next(65536); while (step.status === "running") step = cursor.next(65536); return step.result!.boundaries(); } finally { cursor.dispose(); }
 }

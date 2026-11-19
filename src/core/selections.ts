@@ -11,14 +11,14 @@ function normalizeSelection(length: number, value: Selection): Readonly<Required
     if (![value.anchor, value.head].every(offset => Number.isSafeInteger(offset) && offset >= 0 && offset <= length)) throw new RangeError("Selection is outside the document.");
     const anchorAffinity = value.anchorAffinity ?? (value.anchor <= value.head ? "after" : "before");
     const headAffinity = value.headAffinity ?? (value.anchor === value.head ? anchorAffinity : value.anchor < value.head ? "before" : "after");
-    if (![anchorAffinity, headAffinity].every(side => side === "before" || side === "after")) throw new TypeError("Unknown selection affinity.");
+
     return Object.freeze({ anchor: value.anchor, head: value.head, anchorAffinity, headAffinity });
 }
 
 /** Sort and merge overlaps/occupied carets. Adjacent nonempty ranges remain independent. */
 export function createSelectionSet(length: number, ranges: readonly Selection[], primary = 0): SelectionSet {
     if (!Number.isSafeInteger(length) || length < 0) throw new RangeError("Invalid document length.");
-    if (!Array.isArray(ranges) || !ranges.length || !Number.isSafeInteger(primary) || primary < 0 || primary >= ranges.length) throw new RangeError("A selection set needs ranges and a valid primary index.");
+    if (!ranges.length || !Number.isSafeInteger(primary) || primary < 0 || primary >= ranges.length) throw new RangeError("A selection set needs ranges and a valid primary index.");
     const known = normalizedSets.get(ranges);
     if (known?.primary === primary) {
         const last = ranges.at(-1)!;
@@ -80,7 +80,7 @@ export function planSelectionEdits(length: number, selections: SelectionSet, rep
     const value = createSelectionSet(length, selections.ranges, selections.primary);
     if (value.primary !== selections.primary || value.ranges.length !== selections.ranges.length
         || value.ranges.some((range, index) => range.anchor !== selections.ranges[index]!.anchor || range.head !== selections.ranges[index]!.head)) throw new RangeError("Selection edits require normalized range order.");
-    if (typeof replacement !== "string" && (!Array.isArray(replacement) || replacement.length !== value.ranges.length || replacement.some(text => typeof text !== "string"))) throw new TypeError("Expected replacement text for every selection.");
+    if (typeof replacement !== "string" && replacement.length !== value.ranges.length) throw new TypeError("Expected replacement text for every selection.");
     let delta = 0;
     const carets: Selection[] = [], edits = value.ranges.map((range, index) => {
         const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head), insert = typeof replacement === "string" ? replacement : replacement[index]!;

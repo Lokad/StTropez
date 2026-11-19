@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createAgentReview, Workspace, WorkspaceCommands } from "../src/index.ts";
-import type { SaveResponse, SaveReview, SaveSubmission } from "../src/index.ts";
+import type { SaveResponse, SaveSubmission } from "../src/index.ts";
 
 function fixture() {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "review", resource: "source", variant: "working" }, "Source", { value: "base", serverVersion: "v0" });
@@ -41,9 +41,8 @@ test("another remote change rejects a reviewed retry without adopting either rem
 test("stale or malformed review and reserved saves reject before acquiring ownership or changing snapshots", () => {
     const { workspace, source, edit } = fixture(); edit("local"); const revision = source.getSnapshot().revision;
     const before = source.getSnapshot(), history = workspace.observeHistory(source.documentId).getSnapshot();
-    for (const review of [{ target: workspace.captureResource(source.id), expectedRevision: revision - 1, expectedServerVersion: "v1" }, { target: workspace.captureResource(source.id), expectedRevision: -1, expectedServerVersion: "v1" },
-        { target: workspace.captureResource(source.id), expectedRevision: revision, expectedServerVersion: null }, null]) {
-        assert.throws(() => workspace.captureSave(source, review as unknown as SaveReview));
+    for (const review of [{ target: workspace.captureResource(source.id), expectedRevision: revision - 1, expectedServerVersion: "v1" }, { target: workspace.captureResource(source.id), expectedRevision: -1, expectedServerVersion: "v1" } ]) {
+        assert.throws(() => workspace.captureSave(source, review));
         assert.equal(source.getSnapshot(), before); assert.equal(workspace.observeHistory(source.documentId).getSnapshot(), history);
         assert.equal(workspace.ownership(source.id).leases, 0);
     }

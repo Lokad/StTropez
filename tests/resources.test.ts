@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer, Workspace, WorkspaceCommands } from "../src/index.ts";
-import type { ResourceOptions, SaveResponse, SaveSubmission } from "../src/index.ts";
+import type { SaveResponse, SaveSubmission } from "../src/index.ts";
 
 function deferred<T>() {
     let resolve!: (value: T) => void;
@@ -171,13 +171,6 @@ test("resource keys retain exact component identity through failed creation and 
     }
     const key = { scope: "lifecycle", resource: "item", variant: "working" }, before = workspace.getSnapshot();
     assert.throws(() => workspace.createResource(key, "Bad value", { value: NaN }), TypeError);
-    assert.throws(() => workspace.createResource(key, "Bad permissions", { value: 0 }, { edit: ["bad" as "human"], save: true, run: false }), TypeError);
-    for (const visibility of [null, "private", false, 3]) {
-        const invalid = { visibility } as unknown as ResourceOptions;
-        assert.throws(() => workspace.createResource(key, "Bad visibility", { value: 0 }, undefined, invalid), TypeError);
-        assert.throws(() => workspace.createTextResource(key, "Bad visibility", { value: "x" }, undefined, invalid), TypeError);
-        assert.throws(() => workspace.createTextResourceFromBuffer(key, "Bad visibility", { buffer: TextBuffer.from("x") }, undefined, invalid), TypeError);
-    }
     assert.equal(workspace.getSnapshot(), before);
     const handle = workspace.createResource(key, "Valid", { value: 0 }), capturedKey = { ...key }, target = workspace.captureResource(handle.id);
     key.resource = "mutated";

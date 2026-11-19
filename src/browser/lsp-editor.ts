@@ -240,7 +240,7 @@ export function createLspEditor(workspace: Workspace, tabId: TabId, editor: Text
     const snippetCurrent = (captured: SnippetSession) => snippet === captured && available() && !editor.input.readOnly && indentationCurrent(captured.indentation) && authorityCurrent(captured.authority) && workspace.document(documentId).revision === captured.revision;
     const moveSnippet = (direction: -1 | 1, id?: number): boolean => {
         const captured = snippet;
-        if (!captured || direction !== -1 && direction !== 1 || id !== undefined && id !== captured.id || !snippetCurrent(captured) || !idle()) return false;
+        if (!captured || id !== undefined && id !== captured.id || !snippetCurrent(captured) || !idle()) return false;
         const active = Math.max(0, captured.active + direction), stop = captured.stops[active]; if (!stop) return false;
         applying = true;
         try {

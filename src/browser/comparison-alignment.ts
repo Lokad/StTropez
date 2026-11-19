@@ -85,7 +85,7 @@ export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
             const phase = stale ? "building" : status;
             return Object.freeze({ enabled, status: phase, pending: enabled && target && (phase === "building" || phase === "waiting"), work, runs: result?.runCount ?? 0, failure });
         },
-        setEnabled(value: boolean): void { if (typeof value !== "boolean") throw new TypeError("Expected a row-alignment preference."); if (disposed || value === enabled) return; enabled = value; if (enabled) { failure = undefined; listen(); update(); } else { cancel(); clear(); unlisten(); capture = undefined; result = undefined; status = "idle"; installedPitch = 0; } changed(); },
+        setEnabled(value: boolean): void { if (disposed || value === enabled) return; enabled = value; if (enabled) { failure = undefined; listen(); update(); } else { cancel(); clear(); unlisten(); capture = undefined; result = undefined; status = "idle"; installedPitch = 0; } changed(); },
         dispose(): void { if (disposed) return; disposed = true; cancel(); clear(); unlisten(); capture = undefined; result = undefined; status = "idle"; }
     });
 }

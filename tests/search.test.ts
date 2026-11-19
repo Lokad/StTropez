@@ -41,7 +41,6 @@ test("whole-word search checks Unicode neighbours outside scan bounds and preser
     assert.deepEqual(all(TextBuffer.from("😀 😀"), "😀", 1, { wholeWord: true }), [{ from: 0, to: 2 }, { from: 3, to: 5 }]);
     const pending = new LiteralSearch(buffer, "cat", { wholeWord: true }); pending.next(3); pending.dispose();
     assert.deepEqual(pending.next(1), { done: true, scanned: 3, readUnits: 0, matches: [] });
-    assert.throws(() => new LiteralSearch(buffer, "cat", { wholeWord: "yes" as unknown as boolean }), TypeError);
 });
 
 test("fragmented whole-word scans agree with an independent flat code-point oracle at tiny budgets", () => {
@@ -82,8 +81,6 @@ test("adversarial prefixes, match/read budgets, ranged scans and disposal stay e
     assert.throws(() => cursor.next(0), RangeError); assert.throws(() => new LiteralSearch(buffer, "a", { from: -1 }), RangeError);
     assert.deepEqual(all(TextBuffer.from("xxabxx"), "ab"), [{ from: 2, to: 4 }]);
     assert.deepEqual(new LiteralSearch(buffer, "b", { from: 0, to: 100_000 }).next(100_001).matches, []);
-    // @ts-expect-error Bounds belong in the options object.
-    assert.throws(() => new LiteralSearch(buffer, "a", 0), TypeError);
 });
 test("seeded fragmented snapshots agree with the platform literal-search oracle", () => {
     let seed = 0x51a7, text = "a😀\r\néabc".repeat(20), buffer = TextBuffer.from(text);
@@ -111,7 +108,6 @@ test("case-insensitive literals preserve raw spans across pieces and tiny read b
     assert.deepEqual(all(TextBuffer.from("k K K"), "k"), [{ from: 0, to: 1 }]);
     const pending = new LiteralSearch(TextBuffer.from("𐐀"), "𐐨", { matchCase: false }); pending.next(1); pending.dispose();
     assert.deepEqual(pending.next(1), { done: true, scanned: 1, readUnits: 0, matches: [] });
-    assert.throws(() => new LiteralSearch(buffer, "k", { matchCase: "no" as unknown as boolean }), TypeError);
 });
 
 test("fragmented caseless whole-word scans agree with an independent Unicode regex oracle", () => {

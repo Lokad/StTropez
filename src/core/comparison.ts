@@ -36,7 +36,6 @@ export type ComparisonController = Observable<ComparisonSnapshot> & Readonly<{
 }>;
 const empty: readonly DiffHunk[] = Object.freeze([]);
 function baseline(value: ComparisonBaseline, epoch: number): ComparisonBaseline & Readonly<{ epoch: number }> {
-    if (!(value.buffer instanceof TextBuffer) || typeof value.version !== "string") throw new TypeError("Expected an immutable buffer and reference version.");
     return Object.freeze({ buffer: value.buffer, version: value.version, epoch });
 }
 

@@ -19,9 +19,6 @@ test("off-side discovery handles nested indentation, tab stops, interior blanks 
     const invalidPrior = [{ ...ranges[0]!, id: "x".repeat(257) }];
     assert.throws(() => createFoldRegions(b, reconcileFoldRanges(b, discovered, invalidPrior)), /identit/);
     assert.throws(() => createFoldRegions(b, reconcileFoldRanges(b, discovered, ranges.map(r => ({ ...r, id: "duplicate" })))), /identit/);
-    const invalidState = ranges.map(r => ({ ...r, collapsed: "invalid" })) as unknown as typeof ranges;
-    assert.throws(() => createFoldRegions(b, reconcileFoldRanges(b, discovered, ranges), invalidState), /boolean/);
-    assert.throws(() => createFoldRegions(b, ranges.map(({ collapsed: _collapsed, ...r }) => r), invalidState), /boolean/);
     const lineAt = TextBuffer.prototype.lineAt; let reads = 0;
     try {
         TextBuffer.prototype.lineAt = function(offset) { reads++; return lineAt.call(this, offset); };

@@ -112,7 +112,7 @@ function* discover(buffer: TextBuffer, options: IndentationFoldingOptions, work:
 export function reconcileFoldRanges(buffer: TextBuffer, discovered: readonly DiscoveredFold[], previous: readonly FoldRegion[]): readonly FoldRange[] {
     const sorted = discovered.map(value => {
         if (!Number.isSafeInteger(value.from) || !Number.isSafeInteger(value.to) || value.from < 0 || value.to > buffer.length || value.to <= value.from
-            || value.group !== undefined && (typeof value.group !== "string" || !value.group)) throw new RangeError("Invalid discovered fold range.");
+            || value.group !== undefined && !value.group) throw new RangeError("Invalid discovered fold range.");
         return { ...value, ...(discoveredRows.get(buffer)?.get(value) ?? { lineFrom: buffer.lineAt(value.from), lineTo: buffer.lineAt(value.to - 1) + 1 }) };
     }).sort((a, b) => a.lineFrom - b.lineFrom || b.lineTo - a.lineTo);
     const prior = new Map(previous.map(value => [value.lineFrom, value])), ids = new Set(previous.map(value => value.id));
@@ -122,7 +122,7 @@ export function reconcileFoldRanges(buffer: TextBuffer, discovered: readonly Dis
         if (!appendNestedFold(stack, item)) continue;
         const old = prior.get(item.lineFrom); let id = old?.group === item.group ? old?.id : undefined;
         if (!id) { do { id = `discovered-${++serial}`; } while (ids.has(id)); ids.add(id); }
-        if (typeof id !== "string" || id.length > 256 || assigned.has(id)) throw new TypeError("Expected unique fold identities.");
+        if (id.length > 256 || assigned.has(id)) throw new TypeError("Expected unique fold identities.");
         assigned.add(id);
         ranges.push(Object.freeze({ id, from: item.from, to: item.to, ...(item.group === undefined ? {} : { group: item.group }) }));
         regions.push(Object.freeze({ ...ranges.at(-1)!, lineFrom: item.lineFrom, lineTo: item.lineTo, collapsed: false }));

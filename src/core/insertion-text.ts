@@ -15,7 +15,7 @@ export type InsertionText = Readonly<{ text: string; mapping: PositionMapping;
     markerIndentation: (offset: number) => InsertionMarkerIndentation | undefined }>;
 
 export function validateInsertionIndentation(value: InsertionIndentation): void {
-    if (!Number.isSafeInteger(value.tabSize) || value.tabSize < 1 || value.tabSize > 256 || typeof value.insertSpaces !== "boolean")
+    if (!Number.isSafeInteger(value.tabSize) || value.tabSize < 1 || value.tabSize > 256)
         throw new RangeError("Invalid insertion indentation.");
 }
 /** Read only leading whitespace before the insertion, in bounded source slices. */
@@ -41,9 +41,9 @@ export function adjustInsertionText(value: string, context: InsertionContext, ma
 /** Transfer editor-generated newline indentation between captured insertion contexts. */
 export function reindentInsertionText(value: string, sourceColumns: number, context: InsertionContext, maxUnits = Number.MAX_SAFE_INTEGER): InsertionText {
     validateInsertionIndentation(context);
-    if (typeof value !== "string" || !Number.isSafeInteger(context.columns) || context.columns < 0
+    if (!Number.isSafeInteger(context.columns) || context.columns < 0
         || !Number.isSafeInteger(sourceColumns) || sourceColumns < 0
-        || context.lineEnding !== "\n" && context.lineEnding !== "\r\n" || !Number.isSafeInteger(maxUnits) || maxUnits < 0)
+        || !Number.isSafeInteger(maxUnits) || maxUnits < 0)
         throw new RangeError("Invalid insertion text context or limit.");
     const changes: { from: number; to: number; insert: string | number }[] = [];
     const runs: { from: number; to: number; columns: number; tabEnds: number[] }[] = [];

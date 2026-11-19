@@ -18,7 +18,6 @@ export function captureInsertion(workspace: Workspace, target: TabTarget, view: 
     return Object.freeze({ documentId: document.id, revision: document.revision, length: document.buffer.length, selectionSet,
         signal: capture.signal, isCurrent: capture.isCurrent, cancel, insert: text => {
             if (!capture.isCurrent()) { cancel(); return false; }
-            if (typeof text !== "string") { cancel(); throw new TypeError("Captured insertion expects text."); }
             // Empty clipboard/conversion results never delete selected source text.
             if (!text.length) { cancel(); return false; }
             try {

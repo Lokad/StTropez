@@ -29,15 +29,11 @@ export class CharacterWarnings {
     readonly configuration: CharacterWarningConfiguration;
     readonly #allowed: ReadonlySet<number>;
     constructor(options: CharacterWarningOptions = {}) {
-        if (options.allow !== undefined && !Array.isArray(options.allow)) throw new TypeError("Character allow-list must be an array.");
         const categories = { "bidi-control": true, invisible: true, bom: true, "non-breaking-space": true, "unusual-space": true };
-        for (const [kind, enabled] of Object.entries(options.categories ?? {})) {
-            if (!Object.hasOwn(categories, kind) || typeof enabled !== "boolean") throw new TypeError("Invalid character-warning category.");
-            categories[kind as CharacterWarningKind] = enabled;
-        }
+        for (const kind of characterWarningKinds) categories[kind] = options.categories?.[kind] ?? true;
         const allowed = new Set<number>();
         for (const character of options.allow ?? []) {
-            if (typeof character !== "string" || !character.length || character.length !== (character.codePointAt(0)! > 0xffff ? 2 : 1)) throw new TypeError("Allow-list entries must be single characters.");
+            if (!character.length || character.length !== (character.codePointAt(0)! > 0xffff ? 2 : 1)) throw new TypeError("Allow-list entries must be single characters.");
             allowed.add(character.codePointAt(0)!);
         }
         this.#allowed = allowed;

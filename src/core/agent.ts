@@ -94,7 +94,7 @@ class Review implements AgentReview {
     associate(id: string): AgentAssociation {
         this.scope.assertWritable(); this.requireSource();
         const review = this.store.get();
-        if (this.source.getSnapshot().state !== "ready" || typeof id !== "string" || !id) throw new Error("Expected a ready text resource and association ID.");
+        if (this.source.getSnapshot().state !== "ready" || !id) throw new Error("Expected a ready text resource and association ID.");
         if (review.association) {
             if (review.association.id === id) return review.association;
             throw new Error("Explicitly detach the existing association before taking over.");
@@ -164,7 +164,7 @@ class Review implements AgentReview {
         const review = this.store.get();
         if (!review.association || review.association.id !== association.id || review.association.generation !== association.generation) return { applied: false, reason: "stale-association" };
         if (review.proposalGeneration !== generation) return { applied: false, reason: "stale-proposal" };
-        if (typeof proposal.id !== "string" || !proposal.id || !Number.isSafeInteger(proposal.revision) || proposal.revision < 1) throw new RangeError("Proposal identity and positive revision are required.");
+        if (!proposal.id || !Number.isSafeInteger(proposal.revision) || proposal.revision < 1) throw new RangeError("Proposal identity and positive revision are required.");
         if (review.proposal?.target.id === proposal.id && proposal.revision <= review.proposal.target.revision) return { applied: false, reason: "stale-proposal" };
         const result = this.workspace.edit({ documentId: this.source.documentId, expectedRevision: revision, origin: "agent", ...(lease ? { lease } : {}),
             edits: proposal.edits, history: { kind: "proposal" } });
@@ -182,7 +182,6 @@ class Review implements AgentReview {
         return Object.freeze({ ...ticket, start: () => this.scope.batch(() => {
             submitted = Object.freeze({ ...ticket.start(), proposal }); return submitted;
         }), accept: (response, options) => this.scope.batch(() => {
-            if (options?.applyCanonical !== undefined && typeof options.applyCanonical !== "boolean") throw new TypeError("applyCanonical must be a boolean.");
             const current = this.store.get().proposal?.target ?? null;
             const applyCanonical = options?.applyCanonical !== false && (proposal === null ? current === null : current !== null && sameProposal(proposal, current));
             const accepted = ticket.accept(response, { applyCanonical });

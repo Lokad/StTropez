@@ -43,14 +43,12 @@ export function sameFoldRegions(a: readonly FoldRegion[], b: readonly FoldRegion
     return a === b || a.length === b.length && a.every((r, i) => { const s = b[i]!; return r.id === s.id && r.from === s.from && r.to === s.to && r.collapsed === s.collapsed && r.lineFrom === s.lineFrom && r.lineTo === s.lineTo && r.group === s.group; });
 }
 export function createFoldRegions(buffer: TextBuffer, ranges: readonly FoldRange[], previous: readonly FoldRegion[] = empty): readonly FoldRegion[] {
-    if (!Array.isArray(ranges)) throw new TypeError("Expected fold ranges.");
     const prepared = resolved.get(buffer)?.get(ranges);
     if (prepared) {
         if (ranges === previous && owned.has(previous)) return previous;
         const prior = new Map(previous.map(r => [r.id, r])); let changed = false;
         const regions = prepared.map((r, i) => {
             const collapsed = ranges[i]!.collapsed ?? prior.get(r.id)?.collapsed ?? false;
-            if (typeof collapsed !== "boolean") throw new TypeError("Expected boolean fold state.");
             if (collapsed === r.collapsed) return r;
             changed = true; return Object.freeze({ ...r, collapsed });
         });
@@ -59,10 +57,9 @@ export function createFoldRegions(buffer: TextBuffer, ranges: readonly FoldRange
     }
     const prior = new Map(previous.map(r => [r.id, r])), ids = new Set<string>();
     const regions = ranges.map(r => {
-        if (!r || typeof r.id !== "string" || !r.id.length || r.id.length > 256 || ids.has(r.id) || r.collapsed !== undefined && typeof r.collapsed !== "boolean") throw new TypeError("Expected unique fold identities and boolean state.");
-        if (r.group !== undefined && (typeof r.group !== "string" || !r.group)) throw new TypeError("Expected a nonempty fold group.");
+        if (!r.id.length || r.id.length > 256 || ids.has(r.id)) throw new TypeError("Expected unique fold identities.");
+        if (r.group !== undefined && !r.group) throw new TypeError("Expected a nonempty fold group.");
         const collapsed = r.collapsed ?? prior.get(r.id)?.collapsed ?? false;
-        if (typeof collapsed !== "boolean") throw new TypeError("Expected boolean fold state.");
         ids.add(r.id); const value = region(buffer, r.id, r.from, r.to, collapsed, r.group);
         if (!value) throw new RangeError("A fold needs a header and at least one body row."); return value;
     }).sort((a, b) => a.lineFrom - b.lineFrom || b.lineTo - a.lineTo);
@@ -158,9 +155,9 @@ export class FoldIndex {
         const hidden: Hidden[] = []; let removed = 0, prior = -1, collapsed = 0; const stack: FoldRegion[] = [], ids = new Set<string>();
         for (const r of this.regions) {
             if (!metadata) {
-                if (typeof r.id !== "string" || !r.id.length || r.id.length > 256 || ids.has(r.id) || !integer(r.from) || !integer(r.to) || r.from >= r.to
-                    || typeof r.collapsed !== "boolean" || !integer(r.lineFrom) || !integer(r.lineTo) || r.lineFrom <= prior || r.lineTo > lineCount || r.lineTo <= r.lineFrom + 1) throw new RangeError("Invalid fold row interval.");
-                if (r.group !== undefined && (typeof r.group !== "string" || !r.group)) throw new TypeError("Expected a nonempty fold group.");
+                if (!r.id.length || r.id.length > 256 || ids.has(r.id) || !integer(r.from) || !integer(r.to) || r.from >= r.to
+                    || !integer(r.lineFrom) || !integer(r.lineTo) || r.lineFrom <= prior || r.lineTo > lineCount || r.lineTo <= r.lineFrom + 1) throw new RangeError("Invalid fold row interval.");
+                if (r.group !== undefined && !r.group) throw new TypeError("Expected a nonempty fold group.");
                 ids.add(r.id);
                 prior = r.lineFrom;
                 if (!appendNestedFold(stack, r)) throw new RangeError("Crossing fold rows.");

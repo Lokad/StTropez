@@ -143,7 +143,7 @@ out of the tab order and hides its duplicate text projection from semantic navig
 `setTabEscape(boolean)` controls existing and subsequently rendered fold tab stops.
 These states belong to the binding; CSS classes and DOM attributes do not grant input authority.
 
-Both setters validate booleans and return whether live state changed. `dispose()` releases the
+Both setters return whether live state changed. `dispose()` releases the
 binding, restores viewport/fold tab stops and clears composition presentation. A stale binding
 cannot alter a replacement binding. Binding an already bound, destroyed or replaced viewport
 throws; setters on expired bindings return `false`. Focus callbacks and render subscriptions

@@ -50,7 +50,6 @@ function isAsync<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
 export function createFindController(workspace: Workspace, tabId: TabId, editor: FindHost, options: FindControllerOptions = {}): FindController {
     const backend = options.regularExpressionBackend, regexDelay = options.regularExpressionDelayMs ?? 80;
     if (!Number.isFinite(regexDelay) || regexDelay < 0 || regexDelay > 1000) throw new RangeError("Invalid regular-expression query delay.");
-    if (backend !== undefined && (typeof backend?.search !== "function" || typeof backend.replace !== "function" || typeof backend.dispose !== "function")) throw new TypeError("Expected a find backend.");
     const target = workspace.captureTab(tabId), tab = workspace.resolveTab(target);
     if (!tab || tab.surface.kind !== "text" || tab.surface.documentId !== editor.view.documentId || !workspace.ownsDocumentView(editor.view)) throw new Error("Find requires the captured document view.");
     const documentId = tab.surface.documentId, resource = workspace.resourceForDocument(documentId), lease = workspace.acquire(resource.id), owner = editor.element.ownerDocument, win = owner.defaultView!;
@@ -161,7 +160,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
             const accept = (result: SearchStep, began: number, dispatchMs: number): boolean => {
                 if (token !== generation) return false;
                 if (!valid() || workspace.document(documentId).revision !== document.revision) { restart(query); return false; }
-                if (!result || typeof result.done !== "boolean" || !Array.isArray(result.matches) || result.matches.length > 8192
+                if (result.matches.length > 8192
                     || !Number.isSafeInteger(result.scanned) || result.scanned < scanned || result.scanned > document.buffer.length) throw new Error("Invalid search result.");
                 for (const match of repair ? [] : result.matches) {
                     if (!Number.isSafeInteger(match.from) || !Number.isSafeInteger(match.to) || match.from < 0 || match.to < match.from || match.to > document.buffer.length
@@ -229,7 +228,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         finally { selectedSearch.dispose(); }
     };
     const next = (direction: 1 | -1 = 1): boolean => {
-        scope.assertWritable(); if (direction !== 1 && direction !== -1) throw new RangeError("Invalid search direction.");
+        scope.assertWritable();
         const state = store.get(); if (!valid() || state.status !== "ready" && !(state.status === "searching" && state.retained) || !count) return false;
         if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before navigating." }); return false; }
         const selection = editor.view.getSnapshot(), selected = selection.selection, bound = direction === 1 ? Math.max(selected.anchor, selected.head) : Math.min(selected.anchor, selected.head);
@@ -295,7 +294,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         later(step); return true;
     }
     const replaceCurrent = (replacement: string): boolean => {
-        scope.assertWritable(); if (typeof replacement !== "string") throw new TypeError("Expected replacement text.");
+        scope.assertWritable();
         if (!valid()) return false;
         if (!canEdit()) { publish({ reason: "editing-unavailable", message: "read-only" }); return false; }
         if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before replacing." }); return false; }
@@ -303,7 +302,7 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         return planReplacement(store.get(), replacement, match);
     };
     const replaceAll = (replacement: string): void => {
-        scope.assertWritable(); if (typeof replacement !== "string") throw new TypeError("Expected replacement text.");
+        scope.assertWritable();
         const state = store.get(); if (!valid() || state.status !== "ready" || !count) return;
         planReplacement(state, replacement);
     };
@@ -321,9 +320,9 @@ export function createFindController(workspace: Workspace, tabId: TabId, editor:
         if (store.get().status === "cancelled" && valid()) { observed = workspace.document(documentId); publish({ revision: observed.revision, length: observed.buffer.length }); }
         else { const state = store.get(); restart(state.query, state.wholeWord, state.matchCase, state.regularExpression, true); }
     }), workspace.tabState.subscribe(() => { if (!valid()) { stop(); disposeBackends(); reset({ status: "expired", reason: "view-unavailable", message: "View is unavailable." }); } })];
-    return Object.freeze({ ...store.observable, getDiagnostics: () => Object.freeze({ maxScanStepMs: scanMaximum, replaceTransactionMs }), matchesIn, setQuery: (query: string) => { scope.assertWritable(); if (typeof query !== "string") throw new TypeError("Expected a search string."); if (!disposed) restart(query); },
+    return Object.freeze({ ...store.observable, getDiagnostics: () => Object.freeze({ maxScanStepMs: scanMaximum, replaceTransactionMs }), matchesIn, setQuery: (query: string) => { scope.assertWritable(); if (!disposed) restart(query); },
         setFlags: (flags: FindFlags) => {
-            scope.assertWritable(); if (flags === null || typeof flags !== "object" || (flags.wholeWord !== undefined && typeof flags.wholeWord !== "boolean" || flags.matchCase !== undefined && typeof flags.matchCase !== "boolean" || flags.regularExpression !== undefined && typeof flags.regularExpression !== "boolean")) throw new TypeError("Expected find flags.");
+            scope.assertWritable();
             const state = store.get(), wholeWord = flags.wholeWord ?? state.wholeWord, matchCase = flags.matchCase ?? state.matchCase, regularExpression = flags.regularExpression ?? state.regularExpression;
             if (!disposed && (wholeWord !== store.get().wholeWord || matchCase !== store.get().matchCase || regularExpression !== store.get().regularExpression)) restart(store.get().query, wholeWord, matchCase, regularExpression);
         },

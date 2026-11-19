@@ -107,7 +107,6 @@ export class LspSession {
     constructor(options: LspSessionOptions) {
         this.options = Object.freeze({ ...options, ...(options.rpc ? { rpc: Object.freeze({ ...options.rpc }) } : {}) });
         this.features = new Set(options.features ?? []);
-        if ([...this.features].some(method => !Object.hasOwn(providers, method))) throw new TypeError("Unsupported LSP feature declaration.");
         this.maxDocuments = options.maxDocuments ?? 100; this.maxDocumentUnits = options.maxDocumentUnits ?? 3 * 1024 * 1024; this.maxTotalUnits = options.maxTotalUnits ?? 16 * 1024 * 1024;
         if (![this.maxDocuments, this.maxDocumentUnits, this.maxTotalUnits].every(value => integer(value) && value > 0)) throw new RangeError("Invalid LSP document limits.");
         const textDocument: Record<string, JsonValue> = { synchronization: { dynamicRegistration: true, didSave: false, willSave: false, willSaveWaitUntil: false } };
