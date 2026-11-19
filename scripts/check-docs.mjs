@@ -7,6 +7,7 @@ import { apiPages, subjectPages, documentationPages, publicEntries as entries, p
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 
+/** @param {string} path @param {string} markdown */
 export function documentationExamples(path, markdown) {
     const page = parseDocumentation(path, markdown);
     const issue = page.diagnostics.find(issue => issue.code === "fence");
@@ -14,14 +15,17 @@ export function documentationExamples(path, markdown) {
     return page.examples;
 }
 
-/** Compile each example as its own module against the public source entry points. */
+/** Compile each example as its own module against the public source entry points.
+ * @param {ReturnType<typeof parseDocumentation>["examples"]} examples */
 export async function compileDocumentation(examples) {
     if (!examples.length) throw new Error("No TypeScript documentation examples found.");
     for (const example of examples) {
         let specifiers;
         try { specifiers = moduleSpecifiers(`${example.path}.${example.language === "tsx" ? "tsx" : "ts"}`, example.code); }
         catch (error) {
-            const line = example.line + example.code.slice(0, error.offset ?? 0).split("\n").length - 1;
+            if (!(error instanceof Error)) throw error;
+            const offset = "offset" in error && typeof error.offset === "number" ? error.offset : 0;
+            const line = example.line + example.code.slice(0, offset).split("\n").length - 1;
             throw new Error(`${example.path}:${line}: ${error.message}`, { cause: error });
         }
         for (const specifier of specifiers) {
@@ -53,8 +57,10 @@ export async function compileDocumentation(examples) {
         if (result.error) throw result.error;
         let output = (result.stdout ?? "") + (result.stderr ?? "");
         for (const [index, file] of files.entries()) {
+            // Each scratch file corresponds to the example at the same index.
+            const example = /** @type {ReturnType<typeof parseDocumentation>["examples"][number]} */ (examples[index]);
             for (const path of [file, relative(root, file)]) {
-                output = output.replaceAll(path, examples[index].path).replaceAll(path.split(sep).join("/"), examples[index].path);
+                output = output.replaceAll(path, example.path).replaceAll(path.split(sep).join("/"), example.path);
             }
         }
         return { success: result.status === 0, output };
@@ -67,6 +73,7 @@ export async function compileDocumentation(examples) {
 async function main() {
     const actual = (await readdir(resolve(root, "docs"))).map(name => `docs/${name}`).sort();
     if (JSON.stringify(actual) !== JSON.stringify([...subjectPages].sort())) throw new Error("docs/: Update the subject-page inventory when adding or removing a page.");
+    /** @param {string} path */
     const read = path => readFile(resolve(root, path), "utf8");
     const pages = await Promise.all(documentationPages.map(async path => parseDocumentation(path, await read(path))));
     const inventory = spawnSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: root, encoding: "utf8", windowsHide: true });

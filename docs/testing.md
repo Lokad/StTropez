@@ -60,6 +60,8 @@ The Node model/storage/bulk callers, workers, workloads and storage summary are 
 Worker report types come from their actual result objects; these type imports do not run workers.
 Browser editing, host input, navigation and service callers use the existing source fixture
 snapshots and local observation types for their separate clocks.
+The documentation parser/auditor and isolated example compiler use the Markdown/compiler
+library types; their integration tests import the actual script exports.
 Other scripts are outside its JavaScript checking scope.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected

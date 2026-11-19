@@ -4,22 +4,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-type Example = { path: string; line: number; language: string; code: string };
-const { documentationExamples, compileDocumentation } = await import(new URL("../../scripts/check-docs.mjs", import.meta.url).href) as {
-    documentationExamples(path: string, markdown: string): Example[];
-    compileDocumentation(examples: Example[]): Promise<{ success: boolean; output: string }>;
-};
-
-type Issue = { path: string; line: number; code: string; message: string };
-type Page = { path: string; examples: Example[]; anchors: Set<string>; contract: string; diagnostics: Issue[] };
-type Value = { entry: string; name: string; source: string; line: number };
-const { parseDocumentation, auditPage, auditLinks, publicValues, auditValueCoverage } = await import(new URL("../../scripts/documentation-audit.mjs", import.meta.url).href) as {
-    parseDocumentation(path: string, markdown: string): Page;
-    auditPage(page: Page, options?: { api?: boolean; vocabulary?: boolean }): Issue[];
-    auditLinks(pages: Page[], files: Set<string>, read: (path: string) => Promise<string>): Promise<Issue[]>;
-    publicValues(root: string, entries: Record<string, string>): Promise<Value[]>;
-    auditValueCoverage(values: Value[], pages: Page[], owners: Record<string, string>): Issue[];
-};
+import { documentationExamples, compileDocumentation } from "../../scripts/check-docs.mjs";
+import { parseDocumentation, auditPage, auditLinks, publicValues, auditValueCoverage } from "../../scripts/documentation-audit.mjs";
 
 test("documentation examples preserve source lines and fence boundaries", () => {
     const markdown = ["# Guide", "", "````markdown", "```ts", "not an example", "```", "````", "",
