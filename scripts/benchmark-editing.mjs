@@ -4,6 +4,11 @@ import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
 import { corpusIds } from "../fixtures/workloads.ts";
 
+/** @typedef {ReturnType<Window["editingFixture"]["snapshot"]>} EditingState */
+/** @typedef {{beforeInputToFrameProxyMs: number, inputHandlerMs: number, inputEvents: number, commits: number,
+ * revisionDelta: number, length: number, wholeTextExports: number, primary: EditingState["primary"], secondary: EditingState["secondary"]}} InputObservation */
+/** @typedef {typeof globalThis & {editingMeasurement: Promise<InputObservation>}} MeasurementGlobal */
+
 const source = await sourceIdentity(), harness = await openHarness();
 try {
     await harness.page.goto("/editing/");
@@ -16,24 +21,29 @@ try {
     const cases = [];
     for (const corpus of corpusIds) for (const position of ["start", "middle", "end"]) {
         await harness.page.evaluate(corpus => window.editingFixture.load(corpus), corpus); await ready();
-        const length = (await harness.page.evaluate(() => window.editingFixture.snapshot())).document.length;
+        const documentState = (await harness.page.evaluate(() => window.editingFixture.snapshot())).document;
+        assert.ok(documentState, "Editing measurement requires a document."); const length = documentState.length;
         const offset = position === "start" ? 0 : position === "middle" ? Math.floor(length / 2) : length;
         await harness.page.evaluate(offset => { window.editingFixture.select("primary", { anchor: offset, head: offset }); window.editingFixture.focus("primary"); }, offset); await ready();
         const samples = [];
         for (let index = 0; index < 23; index++) {
             await harness.page.evaluate(() => {
                 const input = document.querySelector("#primary textarea"), before = window.editingFixture.snapshot();
-                globalThis.editingMeasurement = new Promise((resolve, reject) => {
-                    let start, readyFrames = 0;
+                if (!input || !before.document) throw new Error("Editing measurement requires its input and document.");
+                const beforeDocument = before.document;
+                /** @type {MeasurementGlobal} */ (globalThis).editingMeasurement = new Promise((resolve, reject) => {
+                    /** @type {number} */ let start;
+                    let readyFrames = 0;
                     const timeout = setTimeout(() => reject(new Error("Candidate input measurement did not complete.")), 5000);
                     input.addEventListener("beforeinput", () => { start = performance.now(); }, { once: true });
                     input.addEventListener("input", () => {
                         const check = () => {
                             const state = window.editingFixture.snapshot();
+                            if (!state.document) { clearTimeout(timeout); reject(new Error("Editing document detached during input.")); return; }
                             if (state.primary.viewport.revision !== state.document.revision || state.secondary.viewport.revision !== state.document.revision
                                 || state.primary.viewport.pending || state.secondary.viewport.pending) { readyFrames = 0; requestAnimationFrame(check); return; }
                             const expected = before.primary.selection.head + 1;
-                            if (state.document.revision !== before.document.revision + 1 || state.primary.selection.anchor !== expected || state.primary.selection.head !== expected
+                            if (state.document.revision !== beforeDocument.revision + 1 || state.primary.selection.anchor !== expected || state.primary.selection.head !== expected
                                 || window.editingFixture.range(expected - 1, expected) !== "z") {
                                 clearTimeout(timeout); reject(new Error("Input readiness had incorrect text, revision or selection.")); return;
                             }
@@ -41,7 +51,7 @@ try {
                             clearTimeout(timeout);
                             resolve({ beforeInputToFrameProxyMs: performance.now() - start, inputHandlerMs: state.primary.lastInputMs,
                                 inputEvents: state.primary.inputEvents - before.primary.inputEvents, commits: state.primary.commits - before.primary.commits,
-                                revisionDelta: state.document.revision - before.document.revision, length: state.document.length, wholeTextExports: state.document.exports,
+                                revisionDelta: state.document.revision - beforeDocument.revision, length: state.document.length, wholeTextExports: state.document.exports,
                                 primary: state.primary, secondary: state.secondary });
                         }; requestAnimationFrame(check);
                     }, { once: true });
@@ -49,8 +59,9 @@ try {
             });
             const actionStart = performance.now();
             await harness.page.keyboard.type("z");
-            const sample = await harness.page.evaluate(() => globalThis.editingMeasurement);
-            sample.completeActionProxyMs = performance.now() - actionStart;
+            const observation = await harness.page.evaluate(() => /** @type {MeasurementGlobal} */ (globalThis).editingMeasurement);
+            const completeActionProxyMs = performance.now() - actionStart;
+            const sample = Object.assign(observation, { completeActionProxyMs });
             assert.equal(sample.inputEvents, 1); assert.equal(sample.commits, 1); assert.equal(sample.revisionDelta, 1);
             assert.equal(sample.wholeTextExports, 0); assert.equal(sample.length, length + index + 1);
             assert.equal(await harness.page.evaluate(offset => window.editingFixture.range(offset, offset + 1), offset + index), "z");

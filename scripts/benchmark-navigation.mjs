@@ -5,8 +5,11 @@ import { TextBuffer, WordCursor } from "../src/index.ts";
 import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
 
+/** @typedef {ReturnType<Window["editingFixture"]["snapshot"]>} EditingState */
+/** @typedef {typeof globalThis & {navigationMeasurement: Promise<{keyToFrameReadyProxyMs: number, state: EditingState}>}} MeasurementGlobal */
+
 const source = await sourceIdentity(), kernel = [];
-for (const content of ["word", "whitespace"]) for (const direction of [-1, 1]) {
+for (const content of ["word", "whitespace"]) for (const direction of /** @type {const} */ ([-1, 1])) {
     const buffer = TextBuffer.from(content === "word" ? "x".repeat(1_000_000) : " ".repeat(1_000_000)), samples = [];
     for (let trial = 0; trial < 23; trial++) {
         const cursor = new WordCursor(buffer, direction < 0 ? buffer.length : 0, direction), advances = [], began = performance.now();
@@ -42,17 +45,21 @@ try {
                     expected: isPage ? null : backward ? 0 : 1_000_002, lineUnits: line.length + eol.length, head };
             }, name); await ready();
             const before = await harness.page.evaluate(() => window.editingFixture.snapshot());
+            assert.ok(before.document, "Navigation measurement requires a document.");
             const expected = config.expected ?? config.head + config.lineUnits * Math.max(1, Math.floor(before.primary.viewport.height / before.primary.viewport.lineHeight) - 1);
             await harness.page.evaluate(key => {
                 const input = document.querySelector("#primary textarea");
-                globalThis.navigationMeasurement = new Promise((resolve, reject) => {
+                if (!(input instanceof HTMLTextAreaElement)) throw new Error("Navigation measurement requires its source textarea.");
+                /** @type {MeasurementGlobal} */ (globalThis).navigationMeasurement = new Promise((resolve, reject) => {
                     const timeout = setTimeout(() => reject(new Error("Navigation measurement timed out.")), 15000);
+                    /** @param {KeyboardEvent} event */
                     const onKey = event => {
                         if (event.key !== key) return;
                         input.removeEventListener("keydown", onKey, true);
                         const start = performance.now();
                         const check = () => {
                             const s = window.editingFixture.snapshot();
+                            if (!s.document) { clearTimeout(timeout); reject(new Error("Navigation document detached during the command.")); return; }
                             if (s.primary.pendingWord || s.primary.viewport.pending || s.secondary.viewport.pending || s.primary.viewport.revision !== s.document.revision) { requestAnimationFrame(check); return; }
                             clearTimeout(timeout); resolve({ keyToFrameReadyProxyMs: performance.now() - start, state: s });
                         }; requestAnimationFrame(check);
@@ -61,7 +68,8 @@ try {
                 });
             }, config.key.split("+").at(-1));
             await harness.page.keyboard.press(config.key);
-            const sample = await harness.page.evaluate(() => globalThis.navigationMeasurement), state = sample.state;
+            const sample = await harness.page.evaluate(() => /** @type {MeasurementGlobal} */ (globalThis).navigationMeasurement), state = sample.state;
+            assert.ok(state.document, "Navigation measurement lost its document.");
             assert.equal(state.primary.selection.head, name.startsWith("delete") ? 0 : expected);
             assert.equal(state.document.revision - before.document.revision, name.startsWith("delete") ? 1 : 0);
             assert.equal(state.document.length, name === "delete-forward" ? 4 : name === "delete-backward" ? 6 : before.document.length);

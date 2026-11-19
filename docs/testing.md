@@ -58,6 +58,8 @@ React host/table-paste callers and the inspection caller against the host fixtur
 browser event observations are local types; its point results use the shared readiness probe.
 The Node model/storage/bulk callers, workers, workloads and storage summary are also checked.
 Worker report types come from their actual result objects; these type imports do not run workers.
+Browser editing, host input, navigation and service callers use the existing source fixture
+snapshots and local observation types for their separate clocks.
 Other scripts are outside its JavaScript checking scope.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected

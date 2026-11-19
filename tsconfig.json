@@ -14,7 +14,8 @@
     "scripts/run-benchmarks.mjs", "scripts/host-scene.mjs", "scripts/serve-demo.mjs", "scripts/package-exports.mjs", "scripts/qualify-package.mjs",
     "scripts/package-table-paste.mjs", "scripts/package-react-pilot.mjs", "scripts/inspect.mjs",
     "scripts/benchmark-model.mjs", "scripts/benchmark-storage.mjs", "scripts/benchmark-bulk.mjs",
-    "scripts/bulk-worker.mjs", "scripts/bulk-workloads.mjs", "scripts/storage-worker.mjs", "scripts/summarize-storage.mjs"
+    "scripts/bulk-worker.mjs", "scripts/bulk-workloads.mjs", "scripts/storage-worker.mjs", "scripts/summarize-storage.mjs",
+    "scripts/benchmark-editing.mjs", "scripts/benchmark-host-input.mjs", "scripts/benchmark-navigation.mjs", "scripts/benchmark-services.mjs"
   ],
   "references": [
     { "path": "./tsconfig.core.json" },

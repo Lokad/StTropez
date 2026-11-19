@@ -3,6 +3,9 @@ import { createReportWriter } from "./benchmark-report.mjs";
 import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity, timingSummary } from "./measurement.mjs";
 import { corpus, corpusIds } from "../fixtures/workloads.ts";
+/** @typedef {{wallFrameProxyMs: number, maxScanStepMs: number, count: number, scanned: number, exports: number, length: number}} SearchSample */
+/** @typedef {{wallFrameProxyMs: number, replaceTransactionMs: number, revisionDelta: number, length: number, matches: number, exports: number, historyDelta: number}} ReplaceSample */
+/** @param {string} text @param {string} query */
 const caselessCount = (text, query) => { let count = 0; for (const match of text.matchAll(new RegExp(query, "giu"))) { assert.ok(match[0].length); count++; } return count; };
 const wholeWord = process.argv.includes("--whole-word"), matchCase = !process.argv.includes("--ignore-case"), regularExpression = process.argv.includes("--regex");
 const source = await sourceIdentity(), writer = await createReportWriter("artifacts/bench/services", `${regularExpression ? "regex" : "literal"}-${wholeWord ? "whole-word" : "substring"}-${matchCase ? "case-sensitive" : "ignore-case"}`);
@@ -10,8 +13,9 @@ const harness = await openHarness(), search = [], replacements = [];
 try {
     await harness.page.goto("/editing/");
     // Full oracle validation is deliberately outside timed intervals and uses bounded buffer reads.
+    /** @param {string} expected */
     const equalsText = expected => harness.page.evaluate(expected => {
-        if (window.editingFixture.snapshot().document.length !== expected.length) return false;
+        if (window.editingFixture.snapshot().document?.length !== expected.length) return false;
         for (let from = 0; from < expected.length; from += 65536) {
             const to = Math.min(expected.length, from + 65536);
             if (window.editingFixture.range(from, to) !== expected.slice(from, to)) return false;
@@ -26,13 +30,14 @@ try {
         const text = corpus(id), literal = id === "single-line" ? "xxxx" : matchCase ? "const" : "CONST", query = regularExpression ? `(?<keyword>${literal})` : literal;
         const expected = wholeWord && id === "single-line" ? 0 : matchCase ? text.split(literal).length - 1 : caselessCount(text, literal), samples = [];
         for (let index = 0; index < 13; index++) {
-            const sample = await harness.page.evaluate(query => new Promise((resolve, reject) => {
+            const sample = await harness.page.evaluate(query => /** @type {Promise<SearchSample>} */ (new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => reject(new Error("Search measurement did not complete.")), 15000);
                 const start = performance.now(); window.editingFixture.find(query);
                 const check = () => { const s = window.editingFixture.snapshot(); if (s.find.status !== "ready") { requestAnimationFrame(check); return; }
+                    if (!s.document) { clearTimeout(timeout); reject(new Error("Search document detached during measurement.")); return; }
                     clearTimeout(timeout); resolve({ wallFrameProxyMs: performance.now() - start, maxScanStepMs: s.find.maxScanStepMs, count: s.find.count, scanned: s.find.scanned,
                         exports: s.document.exports, length: s.document.length }); }; requestAnimationFrame(check);
-            }), query);
+            })), query);
             assert.equal((await harness.page.evaluate(() => window.editingFixture.snapshot())).find.matchCase, matchCase);
             assert.equal((await harness.page.evaluate(() => window.editingFixture.snapshot())).find.regularExpression, regularExpression);
             assert.equal(sample.count, expected); assert.equal(sample.scanned, text.length); assert.equal(sample.exports, 0);
@@ -45,21 +50,24 @@ try {
         // Stress replacement has one diagnostic observation; smaller conditions have repeated samples.
         const measured = id === "lines-100000" ? 1 : 10, warmup = id === "lines-100000" ? 0 : 2, replaceSamples = [];
         for (let index = 0; index < measured + warmup; index++) {
-            const sample = await harness.page.evaluate(() => new Promise((resolve, reject) => {
+            const sample = await harness.page.evaluate(() => /** @type {Promise<ReplaceSample>} */ (new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => reject(new Error("Replacement measurement did not complete.")), 30000);
-                const before = window.editingFixture.snapshot(), start = performance.now(); window.editingFixture.replaceAll("let");
+                const before = window.editingFixture.snapshot();
+                if (!before.document || !before.history) { clearTimeout(timeout); reject(new Error("Replacement measurement requires its document and history.")); return; }
+                const beforeDocument = before.document, beforeHistory = before.history, start = performance.now(); window.editingFixture.replaceAll("let");
                 const check = () => { const s = window.editingFixture.snapshot();
-                    if (s.document.revision !== before.document.revision + 1 || s.find.status !== "ready" || s.primary.viewport.pending) { requestAnimationFrame(check); return; }
-                    clearTimeout(timeout); resolve({ wallFrameProxyMs: performance.now() - start, replaceTransactionMs: s.find.replaceTransactionMs, revisionDelta: s.document.revision - before.document.revision,
-                        length: s.document.length, matches: s.find.count, exports: s.document.exports, historyDelta: s.history.undoDepth - before.history.undoDepth });
+                    if (!s.document || !s.history) { clearTimeout(timeout); reject(new Error("Replacement document or history detached during measurement.")); return; }
+                    if (s.document.revision !== beforeDocument.revision + 1 || s.find.status !== "ready" || s.primary.viewport.pending) { requestAnimationFrame(check); return; }
+                    clearTimeout(timeout); resolve({ wallFrameProxyMs: performance.now() - start, replaceTransactionMs: s.find.replaceTransactionMs, revisionDelta: s.document.revision - beforeDocument.revision,
+                        length: s.document.length, matches: s.find.count, exports: s.document.exports, historyDelta: s.history.undoDepth - beforeHistory.undoDepth });
                 }; requestAnimationFrame(check);
-            }));
+            })));
             assert.equal(sample.revisionDelta, 1); assert.equal(sample.length, text.length - expected * 2); assert.equal(sample.matches, 0); assert.equal(sample.exports, 0); assert.equal(sample.historyDelta, 1);
             assert.equal(await equalsText(text.split("const").join("let")), true, "Replacement differs from the full literal oracle.");
             if (index >= warmup) replaceSamples.push(sample);
             await harness.page.evaluate(() => window.editingFixture.history("undo"));
             await harness.page.waitForFunction(expected => { const s = window.editingFixture.snapshot(); return s.find.status === "ready" && s.find.count === expected; }, expected); await ready();
-            assert.equal((await harness.page.evaluate(() => window.editingFixture.snapshot())).document.length, text.length);
+            assert.equal((await harness.page.evaluate(() => window.editingFixture.snapshot())).document?.length, text.length);
             assert.equal(await equalsText(text), true, "Undo differs from the full original oracle.");
         }
         replacements.push({ corpus: id, matches: expected, warmup, measured, diagnosticOnly: measured === 1,
