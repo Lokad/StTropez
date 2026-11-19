@@ -135,7 +135,7 @@ await writeFile(join(hostRoot, "harness-compiler-inputs.txt"), harnessOutput);
 const toolFiles = await Promise.all([...scripts, "package.json", "scripts/measurement.mjs", "scripts/module-specifiers.mjs",
     "scripts/package-host.mjs", "scripts/library-entries.mjs", "scripts/package-react-host.mjs",
     "examples/demo/provider-server.ts", "examples/demo/samples.ts", "examples/demo/completion-templates.ts",
-    "examples/demo/diagnostics.ts", "examples/demo/action-fixture.ts", "src/index.ts",
+    "examples/demo/diagnostics.ts", "examples/demo/action-fixture.ts", "examples/demo/typescript-folds.ts", "src/index.ts",
     "tests/browser/demo-walkthrough.ts", "tests/browser/demo-host-integrations.ts", "tests/helpers/browser-errors.ts",
 ].map(path => realpath(resolve(project, path))));
 const toolRoots = [demoCompiler, ...compilerRoots, ...await Promise.all([

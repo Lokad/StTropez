@@ -15,7 +15,7 @@ const sttropezDemoMeasurement = Object.freeze({
         return { sample: project.sample.id, name: active.name, revision: doc.revision, length: doc.buffer.length, lines: doc.buffer.lineCount,
             selection: active.view.getSnapshot().selection, editor: editor.snapshot(), viewport: editor.viewport.snapshot(),
             reference: comparison?.referenceViewport()?.snapshot(), review: review && { status: review.status, hunks: review.hunks.length },
-            comparison: comparison?.snapshot(), output: { status: presentation.status, units: presentation.javascript.length,
+            comparison: comparison?.getDiagnostics(), output: { status: presentation.status, units: presentation.javascript.length,
                 viewport: output?.snapshot(), domUnits: document.querySelector(".demo-output")?.textContent?.length ?? 0 },
             presentation: { styledRows: editor.element.querySelectorAll(".st-viewport-row:has([class*=demo-token-])").length },
             language: { status: language.status, checking: language.checking, diagnostics: language.diagnostics.length },
