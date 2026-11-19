@@ -62,6 +62,7 @@ Browser editing, host input, navigation and service callers use the existing sou
 snapshots and local observation types for their separate clocks.
 The documentation parser/auditor and isolated example compiler use the Markdown/compiler
 library types; their integration tests import the actual script exports.
+The offline Unicode data generators also belong to this checking project.
 Other scripts are outside its JavaScript checking scope.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected

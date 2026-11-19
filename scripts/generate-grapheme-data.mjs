@@ -5,16 +5,24 @@ import { unicodeArguments, readUnicodeInputs, emitUnicodeFiles } from "./unicode
 const { input, check } = unicodeArguments(process.argv.slice(2));
 const names = ["ReadMe", "GraphemeBreakProperty", "GraphemeBreakTest", "DerivedCoreProperties", "emoji-data"];
 const files = await readUnicodeInputs("grapheme", input);
-assert.ok(files.ReadMe.includes("final data files for version 18.0.0"));
-for (const name of ["GraphemeBreakProperty", "GraphemeBreakTest", "DerivedCoreProperties"]) assert.ok(files[name].startsWith(`# ${name}-18.0.0.txt`));
-assert.ok(files["emoji-data"].includes("# Version: 18.0.0"));
-const records = text => text.split(/\r?\n/).map(line => line.replace(/#.*/, "").trim()).filter(Boolean).map(line => line.split(";").map(v => v.trim()));
-const interval = text => { const [from, to = from] = text.split("..").map(v => parseInt(v, 16)); assert.ok(from >= 0 && to >= from && to <= 0x10ffff); return [from, to]; };
+assert.ok(files.ReadMe?.includes("final data files for version 18.0.0"));
+for (const name of ["GraphemeBreakProperty", "GraphemeBreakTest", "DerivedCoreProperties"]) assert.ok(files[name]?.startsWith(`# ${name}-18.0.0.txt`));
+const grapheme = files.GraphemeBreakProperty, derived = files.DerivedCoreProperties, emoji = files["emoji-data"];
+assert.ok(grapheme && derived && emoji && emoji.includes("# Version: 18.0.0"));
+/** @param {string} text */
+const records = text => text.split(/\r?\n/).map(line => line.replace(/#.*/, "").trim()).filter(Boolean).map(line => {
+    const fields = line.split(";").map(v => v.trim()), [range, property] = fields;
+    assert.ok(range && property, "Reviewed property records require a range and property.");
+    return { range, property, value: fields[2] };
+});
+/** @param {string} text @returns {[number, number]} */
+const interval = text => { const [from, to = from] = text.split("..").map(v => parseInt(v, 16)); assert.ok(from !== undefined && to !== undefined && from >= 0 && to >= from && to <= 0x10ffff); return [from, to]; };
 const kinds = ["Other", "CR", "LF", "Control", "Extend", "ZWJ", "Regional_Indicator", "Prepend", "SpacingMark", "L", "V", "T", "LV", "LVT"], conjunct = ["None", "Consonant", "Extend", "Linker"], packed = new Uint8Array(0x110000);
-for (const [range, property] of records(files.GraphemeBreakProperty)) { const [from, to] = interval(range), at = kinds.indexOf(property); assert.ok(at >= 0); for (let cp = from; cp <= to; cp++) { assert.equal(packed[cp] & 15, 0); packed[cp] |= at; } }
-for (const [range, property, value] of records(files.DerivedCoreProperties)) if (property === "InCB") { const [from, to] = interval(range), at = conjunct.indexOf(value); assert.ok(at >= 0); for (let cp = from; cp <= to; cp++) { assert.equal(packed[cp] & 48, 0); packed[cp] |= at << 4; } }
-for (const [range, property] of records(files["emoji-data"])) if (property === "Extended_Pictographic") { const [from, to] = interval(range); for (let cp = from; cp <= to; cp++) packed[cp] |= 64; }
-for (const [range, property] of records(files.DerivedCoreProperties)) if (property === "Default_Ignorable_Code_Point") { const [from, to] = interval(range); for (let cp = from; cp <= to; cp++) packed[cp] |= 128; }
+// interval() bounds every code point to the allocated table.
+for (const { range, property } of records(grapheme)) { const [from, to] = interval(range), at = kinds.indexOf(property); assert.ok(at >= 0); for (let cp = from; cp <= to; cp++) { assert.equal(/** @type {number} */ (packed[cp]) & 15, 0); /** @type {number} */ (packed[cp]) |= at; } }
+for (const { range, property, value } of records(derived)) if (property === "InCB") { assert.ok(value); const [from, to] = interval(range), at = conjunct.indexOf(value); assert.ok(at >= 0); for (let cp = from; cp <= to; cp++) { assert.equal(/** @type {number} */ (packed[cp]) & 48, 0); /** @type {number} */ (packed[cp]) |= at << 4; } }
+for (const { range, property } of records(emoji)) if (property === "Extended_Pictographic") { const [from, to] = interval(range); for (let cp = from; cp <= to; cp++) /** @type {number} */ (packed[cp]) |= 64; }
+for (const { range, property } of records(derived)) if (property === "Default_Ignorable_Code_Point") { const [from, to] = interval(range); for (let cp = from; cp <= to; cp++) /** @type {number} */ (packed[cp]) |= 128; }
 // The direct ASCII lookup must agree with all four reviewed properties.
 for (let cp = 0; cp < 128; cp++) assert.equal(packed[cp], cp === 13 ? 1 : cp === 10 ? 2 : cp < 32 || cp === 127 ? 3 : 0);
 // Hangul's regular LV/LVT alternation need not occupy hundreds of interval records.
@@ -43,9 +51,10 @@ export const indicConjunctBreak = (cp: number): IndicConjunctBreak => conjunct[g
 export const extendedPictographic = (cp: number): boolean => !!(graphemeProperties(cp) & 64);
 export const defaultIgnorable = (cp: number): boolean => !!(graphemeProperties(cp) & 128);
 `;
-const outputs = { "src/core/grapheme-data.ts": source };
+/** @type {Record<string, string | Uint8Array>} */ const outputs = { "src/core/grapheme-data.ts": source };
 for (const name of names.filter(n => n !== "ReadMe")) {
-    const text = files[name].split(/\r?\n/).map(line => line.replace(/#.*/, "").trim()).filter(Boolean).join("\n") + "\n";
+    const file = files[name]; assert.ok(file, `Missing reviewed grapheme input: ${name}`);
+    const text = file.split(/\r?\n/).map(line => line.replace(/#.*/, "").trim()).filter(Boolean).join("\n") + "\n";
     outputs[`tests/fixtures/graphemes/${name}.txt.gz`] = gzipSync(text, { level: 9 });
 }
 await emitUnicodeFiles(outputs, check);
