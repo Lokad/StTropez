@@ -5,11 +5,13 @@ import { bulkWorkloadIds } from "./bulk-workloads.mjs";
 import { sourceIdentity, environment } from "./measurement.mjs";
 const rounds = Number(process.env.STTROPEZ_BULK_ROUNDS ?? 5);
 if (!Number.isSafeInteger(rounds) || rounds < 1 || rounds > 10) throw new Error("Invalid bulk round count.");
-const source = await sourceIdentity(), cases = [];
+const source = await sourceIdentity();
+/** @type {(typeof import("./bulk-worker.mjs").result & {round: number})[]} */ const cases = [];
 for (let round = 0; round < rounds; round++) for (const workload of round % 2 ? [...bulkWorkloadIds].reverse() : bulkWorkloadIds) {
     const child = spawnSync(process.execPath, ["--expose-gc", "scripts/bulk-worker.mjs", workload], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024, timeout: 120000 });
     if (child.status !== 0 || child.error) throw new Error(`Bulk measurement failed (${workload}): ${child.error ?? child.stderr}`);
-    const result = JSON.parse(child.stdout); assert.equal(result.measured, 10); assert.equal(result.applyMs.samples.length, 10); cases.push({ round, ...result });
+    /** @type {typeof import("./bulk-worker.mjs").result} */ const result = JSON.parse(child.stdout);
+    assert.equal(result.measured, 10); assert.equal(result.applyMs.samples.length, 10); cases.push({ round, ...result });
 }
 assert.equal((await sourceIdentity()).sha256, source.sha256, "Source changed during the campaign.");
 const report = { schemaVersion: 1, created: new Date().toISOString(), source, environment: environment(), runtime: "piece-tree-bulk-batches", rounds, cases,

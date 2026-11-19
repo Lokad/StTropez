@@ -1,5 +1,8 @@
 import { corpus, sourceLine } from "../fixtures/workloads.ts";
 export const bulkWorkloadIds = ["dense-100", "dense-10000", "dense-100000", "sparse-line", "fragmented-point", "unicode", "large-inserts", "same-position"];
+/** @param {string} id
+ * @returns {{text: string, setup?: readonly import("../src/core/changes.ts").TextEdit[], edits: readonly import("../src/core/changes.ts").TextEdit[]}}
+ */
 export function bulkWorkload(id) {
     if (!bulkWorkloadIds.includes(id)) throw new Error("Unknown bulk workload.");
     if (id.startsWith("dense-")) {
@@ -14,6 +17,7 @@ export function bulkWorkload(id) {
     if (id === "large-inserts") return { text: "x".repeat(70000) + "\r\n😀é\ud800", edits: [
         { from: 0, to: 0, insert: "\ud83d" }, { from: 0, to: 0, insert: "\ude00" }, { from: 1, to: 2, insert: "\n".repeat(65536) },
         { from: 2, to: 3, insert: "\r" + "Z".repeat(65537) }, { from: 60000, to: 60001, insert: "é".repeat(64) }] };
-    if (id === "same-position") return { text: "ab", edits: Array.from({ length: 10000 }, (_, index) => ({ from: 0, to: 0, insert: ["\ud83d", "\ude00", "\r", "\n", "é"][index % 5] })) };
+    // The modulo index stays within this fixed, nonempty sequence.
+    if (id === "same-position") return { text: "ab", edits: Array.from({ length: 10000 }, (_, index) => ({ from: 0, to: 0, insert: /** @type {string} */ (["\ud83d", "\ude00", "\r", "\n", "é"][index % 5]) })) };
     throw new Error("Unknown bulk workload.");
 }

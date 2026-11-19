@@ -150,7 +150,9 @@ export function* findWords(buffer: TextBuffer, query: string): Generator<readonl
 
 `next(maxUnits?, maxMatches?)` returns a frozen `SearchStep` with completion, absolute scan
 frontier, units read and matches. Budgets default to 32,768 units and 8,192 matches and must be
-positive safe integers. Dispose or close the generator when abandoning a scan. Preparation
+positive safe integers. `scanned` is the absolute UTF-16 frontier. `readUnits` counts work in the
+current advance, including rereading boundary text; its sum can exceed the scanned range.
+Dispose or close the generator when abandoning a scan. Preparation
 is synchronous and proportional to query length; work budgets are not elapsed-time deadlines.
 The browser controller advances literal scans by at most 4,096 read units/1,024 matches.
 A task batches at most 32 advances, checking its cooperative 4 ms target after each advance

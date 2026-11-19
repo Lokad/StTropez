@@ -69,6 +69,7 @@ export async function benchmarkModel() {
             const source = workspace.createTextResource({ scope: "bench", resource: "source", variant: "working" }, "Source", { value: "baseline" });
             const others = Array.from({ length: resources - 1 }, (_, index) => workspace.createResource(
                 { scope: "bench", resource: `form-${index}`, variant: "working" }, "Form", { value: { field: "unchanged" } }));
+            /** @param {string} value */
             const write = value => workspace.edit({ documentId: source.documentId,
                 expectedRevision: workspace.document(source.documentId).revision, origin: "human",
                 edits: [{ from: 0, to: workspace.document(source.documentId).buffer.length, insert: value }] });

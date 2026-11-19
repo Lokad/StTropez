@@ -56,6 +56,8 @@ static-demo building/serving and package host-fixture staging, qualification coo
 public export resolution, public import remapping, compiler-root isolation and the restored
 React host/table-paste callers and the inspection caller against the host fixture's declared snapshot. The host caller's
 browser event observations are local types; its point results use the shared readiness probe.
+The Node model/storage/bulk callers, workers, workloads and storage summary are also checked.
+Worker report types come from their actual result objects; these type imports do not run workers.
 Other scripts are outside its JavaScript checking scope.
 
 The CI workflow runs types, the documentation gate, models, library build, the selected

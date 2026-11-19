@@ -2,20 +2,24 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { candidates, ChunkTree, retained } from "../experiments/text-storage.ts";
-import { corpus, editLog } from "../fixtures/workloads.ts";
+import { corpus, corpusIds, editLog } from "../fixtures/workloads.ts";
 import { distribution, environment } from "./measurement.mjs";
 
 const [candidate, corpusId, action, measurement = "timing"] = process.argv.slice(2);
-const Candidate = candidates[candidate];
+assert.ok(candidate && Object.hasOwn(candidates, candidate), "Unknown storage candidate.");
+assert.ok(action, "Expected a storage action.");
+assert.ok(corpusIds.some(id => id === corpusId), "Unknown storage corpus.");
+const Candidate = candidates[/** @type {keyof typeof candidates} */ (candidate)];
 if (!Candidate || !["start", "middle", "end", "random", "paste"].includes(action)) throw new Error("Unknown storage scenario.");
 if (!globalThis.gc) throw new Error("Storage probes require --expose-gc; missing memory samples must fail.");
-const initial = corpus(corpusId), count = 100, warmup = 10;
-let oracle = initial;
+const initial = corpus(/** @type {import("../fixtures/workloads.ts").CorpusId} */ (corpusId)), count = 100, warmup = 10;
+/** @type {string | null} */ let oracle = initial;
 const plan = [];
 const random = editLog(initial.length, count);
 for (let index = 0; index < count; index++) {
     let from, to, insert;
-    if (action === "random") ({ from, to, insert } = random[index]);
+    // editLog receives the same count as this loop's bound.
+    if (action === "random") ({ from, to, insert } = /** @type {import("../src/core/changes.ts").TextEdit} */ (random[index]));
     else if (action === "paste") {
         from = Math.floor(oracle.length / 2); to = Math.min(oracle.length, from + (index % 2 ? 6_000 : 0));
         insert = index % 2 ? "" : "pasted 😀 line\r\n".repeat(400);
@@ -36,7 +40,7 @@ oracle = null;
 globalThis.gc();
 const heapBefore = process.memoryUsage().heapUsed;
 const constructionStart = performance.now();
-let current = new Candidate(initial);
+/** @type {import("../experiments/text-storage.ts").Storage} */ let current = new Candidate(initial);
 // First-read startup includes line indexing for every candidate.
 const actualInitialLine = current.lineAt(initial.length);
 const constructionMs = performance.now() - constructionStart;
@@ -78,11 +82,12 @@ for (let index = 0; index < 100; index++) {
     const line = current.lineAt(offset), located = current.offsetAt(line);
     warmLookup.push(performance.now() - start); assert.ok(located <= offset);
 }
-console.log(JSON.stringify({ candidate, corpus: corpusId, action, measurement, environment: environment(),
+export const result = { candidate, corpus: corpusId, action, measurement, environment: environment(),
     count, warmup, measured: count - warmup, initialLength: initial.length, finalLength: current.length, finalHash: actualHash,
     constructionAndFirstLookupMs: constructionMs, editMs: distribution(edit), coldLookupAfterEditMs: distribution(lookupAfterEdit),
     retainSnapshotMs: distribution(snapshot), sliceMs: distribution(slice), mixedEditLookupSliceMs: distribution(mixed),
     warmLookupMs: distribution(warmLookup), exportAndUtf16ChecksumMs: exportAndChecksumMs,
     memory: { heapBefore, heapWithHistory, heapCurrentOnly, historyDelta: heapWithHistory - heapBefore,
         currentDelta: heapCurrentOnly - heapBefore, logicalHistory, logicalCurrent,
-        note: "GC heap samples include runtime allocation/noise. Logical counts are not engine byte estimates; strings can share hidden backing allocations. Snapshots are immutable object references." } }));
+        note: "GC heap samples include runtime allocation/noise. Logical counts are not engine byte estimates; strings can share hidden backing allocations. Snapshots are immutable object references." } };
+console.log(JSON.stringify(result));
