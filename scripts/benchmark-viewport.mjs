@@ -4,6 +4,10 @@ import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
 import { corpusIds } from "../fixtures/workloads.ts";
 
+/** @typedef {ReturnType<Window["viewportFixture"]["snapshot"]>} ViewportState */
+/** @typedef {{modelMs: number, frameReadyProxyMs: number, primary: ViewportState["primary"],
+ * secondary: ViewportState["secondary"], wholeTextExports: number, length: number}} ViewportSample */
+
 const harness = await openHarness();
 try {
     await harness.page.goto("/viewport/");
@@ -13,23 +17,27 @@ try {
     const cases = [];
     for (const corpus of corpusIds) for (const position of ["start", "middle", "end"]) {
         await harness.page.evaluate(corpus => window.viewportFixture.load(corpus), corpus); await ready();
-        const length = (await harness.page.evaluate(() => window.viewportFixture.snapshot())).document.length;
+        const documentState = (await harness.page.evaluate(() => window.viewportFixture.snapshot())).document;
+        assert.ok(documentState, "Viewport measurement requires a document."); const length = documentState.length;
         const offset = position === "start" ? 0 : position === "middle" ? Math.floor(length / 2) : length;
         await harness.page.evaluate(offset => window.viewportFixture.reveal("primary", offset), offset); await ready();
         const samples = [];
         for (let index = 0; index < 23; index++) {
-            const sample = await harness.page.evaluate(offset => new Promise(resolve => {
-                const before = window.viewportFixture.snapshot(), start = performance.now();
+            const sample = await harness.page.evaluate(offset => /** @type {Promise<ViewportSample>} */ (new Promise((resolve, reject) => {
+                const before = window.viewportFixture.snapshot();
+                if (!before.document) throw new Error("Viewport measurement requires a document.");
+                const start = performance.now();
                 const result = window.viewportFixture.edit(before.document.revision, [{ from: offset, to: offset, insert: "z" }]);
                 if (!result.applied) throw new Error("Viewport edit failed.");
                 const committed = performance.now();
                 const check = () => {
                     const state = window.viewportFixture.snapshot();
+                    if (!state.document) { reject(new Error("Viewport document detached during measurement.")); return; }
                     if (state.primary.revision !== result.revision || state.secondary.revision !== result.revision || state.primary.pending || state.secondary.pending) { requestAnimationFrame(check); return; }
                     resolve({ modelMs: committed - start, frameReadyProxyMs: performance.now() - start,
                         primary: state.primary, secondary: state.secondary, wholeTextExports: state.document.exports, length: state.document.length });
                 }; requestAnimationFrame(check);
-            }), offset + index);
+            })), offset + index);
             assert.equal(sample.wholeTextExports, 0); assert.equal(sample.length, length + index + 1);
             for (const view of [sample.primary, sample.secondary]) {
                 assert.ok(view.rows <= Math.ceil(view.height / view.lineHeight) + 10);
@@ -37,7 +45,7 @@ try {
                 assert.ok(Number.isFinite(view.lastRenderMs));
             }
             assert.equal(await harness.page.evaluate(() => [...document.querySelectorAll(".st-viewport-row")].every(row =>
-                row.textContent === window.viewportFixture.range(Number(row.dataset.from), Number(row.dataset.to)).replaceAll("\r", "␍"))), true);
+                row instanceof HTMLElement && row.textContent === window.viewportFixture.range(Number(row.dataset.from), Number(row.dataset.to)).replaceAll("\r", "␍"))), true);
             if (index >= 3) samples.push(sample);
         }
         cases.push({ corpus, position, initialLength: length, warmup: 3, measured: 20,

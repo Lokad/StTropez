@@ -5,8 +5,13 @@ import { corpus } from "../fixtures/workloads.ts";
 import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
 
+/** @typedef {ReturnType<Window["comparisonFixture"]["snapshot"]>["comparison"] & {
+ * wallFrameProxyMs: number, hunks: number, exports: number, baselineExports: number, rows: number}} ComparisonSample */
+
 const source = await sourceIdentity(), model = [];
-const cases = ["normal", "lines-10000", "lines-100000", "single-line", "unicode"].map(id => {
+const corpora = /** @type {const} */ (["normal", "lines-10000", "lines-100000", "single-line", "unicode"]);
+/** @type {{id: string, text: string, edits: import("../src/index.ts").TextEdit[]}[]} */
+const cases = corpora.map(id => {
     const text = corpus(id), at = Math.floor(text.length / 2); return { id, text, edits: [{ from: at, to: at, insert: "changed\r\n" }] };
 });
 cases.push({ id: "disjoint-lines", text: "baseline\n".repeat(10000), edits: [{ from: 0, to: 90000, insert: "working\n".repeat(10000) }] });
@@ -35,7 +40,7 @@ for (const { id, text, edits } of cases) {
 }
 const harness = await openHarness(), browser = [];
 try {
-    for (const id of ["normal", "lines-10000", "lines-100000", "single-line", "unicode"]) {
+    for (const id of corpora) {
         await harness.page.goto("/comparison/");
         await harness.page.waitForFunction(() => window.comparisonFixture?.snapshot().status === "ready");
         const text = corpus(id), working = text.slice(0, Math.floor(text.length / 2)) + "changed\r\n" + text.slice(Math.floor(text.length / 2));
@@ -43,19 +48,23 @@ try {
         await harness.page.waitForFunction(() => window.comparisonFixture.snapshot().status === "ready");
         const warmup = id === "lines-100000" || id === "single-line" ? 0 : 2, measured = warmup ? 10 : 1, samples = [];
         for (let iteration = 0; iteration < warmup + measured; iteration++) {
-            const sample = await harness.page.evaluate(text => new Promise((resolve, reject) => {
+            const sample = await harness.page.evaluate(text => /** @type {Promise<ComparisonSample>} */ (new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => reject(new Error("Comparison did not become ready.")), 60000);
                 const start = performance.now(); window.comparisonFixture.setText(text);
                 const check = () => { const s = window.comparisonFixture.snapshot();
                     if (s.status !== "ready" || s.editor.viewport.pending || s.reference?.pending) { requestAnimationFrame(check); return; }
+                    if (!s.baseline || !s.reference) { clearTimeout(timeout); reject(new Error("Comparison measurement lost its baseline or reference viewport.")); return; }
                     clearTimeout(timeout); resolve({ wallFrameProxyMs: performance.now() - start, ...s.comparison, hunks: s.hunks.length, exports: s.working.exports, baselineExports: s.baseline.exports, rows: s.editor.viewport.rows + s.reference.rows });
                 }; requestAnimationFrame(check);
-            }), working);
+            })), working);
             assert.equal(sample.hunks, 1); assert.equal(sample.exports, 0); assert.equal(sample.baselineExports, 0); assert.ok(sample.rows < 150);
             if (iteration >= warmup) samples.push(sample);
             // Exact reconstruction is verified outside timing, using bounded reads of both snapshots.
             assert.equal(await harness.page.evaluate(() => {
-                const f = window.comparisonFixture, s = f.snapshot(), h = s.hunks[0], delta = h.working.to - h.working.from - (h.baseline.to - h.baseline.from);
+                const f = window.comparisonFixture, s = f.snapshot(), h = s.hunks[0];
+                if (!h || !s.baseline) throw new Error("Comparison reconstruction requires its hunk and baseline.");
+                const delta = h.working.to - h.working.from - (h.baseline.to - h.baseline.from);
+                /** @param {number} a0 @param {number} b0 @param {number} length */
                 const same = (a0, b0, length) => { for (let n = 0; n < length; n += 65536) { const count = Math.min(65536, length - n); if (f.baselineRange(a0 + n, a0 + n + count) !== f.range(b0 + n, b0 + n + count)) return false; } return true; };
                 return s.working.length - s.baseline.length === delta && same(0, 0, h.baseline.from) && same(h.baseline.to, h.working.to, s.baseline.length - h.baseline.to);
             }), true);
