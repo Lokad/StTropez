@@ -95,7 +95,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, tabId: TabI
     try { const mounted = mountViewport(host, workspace, tabId, { ...options, view, decorate: line => {
         const own = brackets?.decorate(line), flagged = warnings?.decorate(line), host = options.decorate?.(line);
         return own?.length || flagged?.length ? [...(host ?? emptyDecorations), ...(own ?? emptyDecorations), ...(flagged ?? emptyDecorations)] : host ?? emptyDecorations;
-    } }); viewport = mounted.viewport; navigation = mounted.navigation; setComparisonRows = mounted.setComparisonRows; }
+    } }, options); viewport = mounted.viewport; navigation = mounted.navigation; setComparisonRows = mounted.setComparisonRows; }
     catch (error) { if (!options.view) view.dispose(); throw error; }
     const root = viewport.element;
     root.style.tabSize = String(language.tabSize);

@@ -1,6 +1,6 @@
 import type { FoldRange } from "../../src/index.ts";
 
-export type SampleId = "pricing" | "errors" | "unicode" | "large" | "catalogue" | "templates" | "results" | "outline" | "documentation" | "navigation" | "diagnostics" | "actions" | "host";
+export type SampleId = "pricing" | "shipping" | "errors" | "unicode" | "large" | "catalogue" | "templates" | "results" | "outline" | "documentation" | "navigation" | "diagnostics" | "actions" | "host";
 export type DemoSample = Readonly<{ id: SampleId; title: string; description: string; files: Readonly<Record<string, string>>;
     initialFiles?: readonly string[]; initialFolds?: Readonly<Record<string, readonly FoldRange[]>>; declarations?: Readonly<Record<string, string>> }>;
 
@@ -32,7 +32,7 @@ console.log(message);
 `;
 
 export const sampleChoices: readonly Readonly<{ id: SampleId; title: string }>[] = Object.freeze([
-    { id: "pricing", title: "Shopping cart" }, { id: "errors", title: "Fix a type error" },
+    { id: "pricing", title: "Shopping cart" }, { id: "shipping", title: "Shipping quotes" }, { id: "errors", title: "Fix a type error" },
     { id: "unicode", title: "Languages & Unicode" }, { id: "large", title: "Large file · 100,000 lines" },
     { id: "catalogue", title: "Completion catalogue · 1,200 fields" },
     { id: "templates", title: "Snippets & lazy completion" },
@@ -47,6 +47,80 @@ export const sampleChoices: readonly Readonly<{ id: SampleId; title: string }>[]
 
 /** Large fixtures are built only on explicit selection. */
 export function demoSample(id: SampleId): DemoSample {
+    if (id === "shipping") return { id, title: "Shipping quotes",
+        description: "Turn on View → Minimap. Hover to locate the rate table, then jump to the quote calculation. Change a rate and open Changes to review your edit.",
+        files: { "shipping.ts": `type Zone = "local" | "regional";
+
+interface Parcel {
+    weightKg: number;
+    lengthCm: number;
+    widthCm: number;
+    heightCm: number;
+}
+
+interface Service {
+    name: string;
+    days: number;
+    limitKg: number;
+    baseCents: Record<Zone, number>;
+    perKgCents: number;
+}
+
+// Rates are in cents. The base charge covers the first kilogram.
+const services: Service[] = [
+    {
+        name: "Ground",
+        days: 4,
+        limitKg: 30,
+        baseCents: { local: 450, regional: 700 },
+        perKgCents: 80,
+    },
+    {
+        name: "Express",
+        days: 1,
+        limitKg: 20,
+        baseCents: { local: 950, regional: 1400 },
+        perKgCents: 160,
+    },
+    {
+        name: "Bicycle courier",
+        days: 1,
+        limitKg: 5,
+        baseCents: { local: 600, regional: Infinity },
+        perKgCents: 0,
+    },
+];
+
+/** Bulky parcels are charged by volume when that exceeds their scale weight. */
+function billableKg(parcel: Parcel): number {
+    const volume = parcel.lengthCm * parcel.widthCm * parcel.heightCm;
+    return Math.max(1, Math.ceil(Math.max(parcel.weightKg, volume / 5000)));
+}
+
+function shippingQuotes(parcel: Parcel, zone: Zone) {
+    const weight = billableKg(parcel);
+    return services
+        .filter(service => weight <= service.limitKg)
+        .filter(service => Number.isFinite(service.baseCents[zone]))
+        .map(service => ({
+            name: service.name,
+            days: service.days,
+            cents: service.baseCents[zone] + (weight - 1) * service.perKgCents,
+        }))
+        .sort((a, b) => a.cents - b.cents || a.days - b.days);
+}
+
+const parcel: Parcel = {
+    weightKg: 1.8,
+    lengthCm: 40,
+    widthCm: 30,
+    heightCm: 20,
+};
+
+for (const quote of shippingQuotes(parcel, "local")) {
+    console.log(quote.name, quote.days, (quote.cents / 100).toFixed(2));
+}
+` } };
     if (id === "host") {
         const workflow = '# Example-owned language; no compiler or execution.\ndataset Inventory:\n  columns sku, quantity\n  row "A-100", 12\n  row "B-200", 8\n\nrule Reorder:\n  when quantity < 10\n  emit "Review stock"\n';
         return { id, title: "Host integrations",

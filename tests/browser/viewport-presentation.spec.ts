@@ -44,6 +44,7 @@ test("minimap gestures preserve focus and multiple selections as the document pr
     });
     const track = page.locator(".st-minimap"), marker = track.locator(".st-minimap-marker"), canvas = track.locator("canvas");
     const bitmap = () => canvas.evaluate(c => (c as HTMLCanvasElement).toDataURL());
+    await expect.poll(() => canvas.evaluate(c => (c as HTMLCanvasElement).width)).toBeGreaterThan(0);
     const original = await bitmap(), trackBox = (await track.boundingBox())!;
     expect(await page.evaluate(({ x, y }) => window.presentationFixture.editor.viewport.hitTest(x + 5, y + 5), trackBox)).toBeUndefined();
     const snapshot = () => page.evaluate(() => window.presentationFixture.editor.viewport.snapshot());
@@ -73,14 +74,15 @@ test("minimap gestures preserve focus and multiple selections as the document pr
     });
     await expect.poll(async () => (await snapshot()).visibleLines).toBe(6);
     await expect.poll(async () => (await marker.boundingBox())!.height).toBeCloseTo((await track.boundingBox())!.height, 0);
-    expect(await bitmap()).not.toBe(original);
+    await expect.poll(bitmap).not.toBe(original);
     await page.evaluate(() => {
         const { editor } = window.presentationFixture, folds = editor.view.folding;
         folds.setCollapsed(folds.getSnapshot(), "block", false); editor.viewport.scrollTo({ left: 10000 }); editor.viewport.flush();
     });
+    // Expanding the fold restores the native scrollbar. Its resize observation updates the map width.
+    await expect.poll(async () => (await track.boundingBox())!.width).toBeCloseTo(trackBox.width, 0);
     const resized = (await track.boundingBox())!;
-    // Native scroll offsets and scrollport widths round independently at fractional zoom.
-    expect(Math.abs(resized.x - trackBox.x)).toBeLessThanOrEqual(1.5);
+    expect(Math.abs(resized.x + resized.width - trackBox.x - trackBox.width)).toBeLessThanOrEqual(1.5);
     await page.mouse.click(resized.x + 3, resized.y + resized.height - 1);
     await expect.poll(async () => (await snapshot()).lastLine).toBe(200);
     expect((await snapshot()).scrollLeft).toBeGreaterThan(0);
@@ -107,9 +109,9 @@ test("minimap projects comparison gaps and follows linked and independent scroll
     const maps = page.locator(".st-minimap"), saved = maps.first(), working = maps.last();
     const bandHasInk = (map: typeof saved) => map.locator("canvas").evaluate(element => {
         const c = element as HTMLCanvasElement;
-        return c.getContext("2d")!.getImageData(0, Math.round(c.height / 3), c.width, 10).data.some((v, i) => i % 4 === 3 && v > 0);
+        return c.width ? c.getContext("2d")!.getImageData(0, Math.round(c.height / 3), c.width, 10).data.some((v, i) => i % 4 === 3 && v > 0) : undefined;
     });
-    expect(await bandHasInk(saved)).toBe(true); expect(await bandHasInk(working)).toBe(false);
+    await expect.poll(() => bandHasInk(saved)).toBe(true); await expect.poll(() => bandHasInk(working)).toBe(false);
     const box = (await saved.boundingBox())!;
     await page.mouse.click(box.x + 5, box.y + box.height * .8);
     await page.waitForFunction(() => { const c = window.presentationFixture.comparison!, ref = c.referenceViewport()!.snapshot(), work = c.working.viewport.snapshot();

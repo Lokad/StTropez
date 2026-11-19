@@ -44,7 +44,10 @@ The development WebSocket endpoint `/lsp-fixture` is a fixture service, not an H
 
 ## TypeScript demo
 
-Choose **View → Minimap** to show an overview beside the source, generated JavaScript and both Changes panes. Click it to jump or drag its marker to scroll while keeping your selection.
+Choose **Shipping quotes** and enable **View → Minimap**. The interfaces, rate table and
+calculation have distinct shapes in the thumbnail. Hover to read a line before jumping to
+it, or drag the marker while keeping your selection. The same control applies to generated
+JavaScript and both Changes panes.
 
 Start with **Shopping cart** or **Fix a type error**. Edit the source, undo/redo, inspect
 JavaScript or Problems, and open Changes to compare against the saved text. Save stores the

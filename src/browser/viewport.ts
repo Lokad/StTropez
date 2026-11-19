@@ -106,7 +106,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, tabId
 
 /** Internal mount: navigation and comparison publication share the viewport lifetime. */
 export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: TabId,
-    options: TextViewportOptions = {}): Readonly<{ viewport: TextViewport; navigation: ViewportNavigation; setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean }> {
+    options: TextViewportOptions = {}, overview: Pick<TextViewportOptions, "decorate" | "lineClass"> = options): Readonly<{ viewport: TextViewport; navigation: ViewportNavigation; setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean }> {
     let columns = resolveColumnRulers(options.columnRulers);
     if (options.minimap !== undefined && typeof options.minimap !== "boolean") throw new TypeError("Minimap preference must be boolean.");
     let highlightCurrentLine = options.highlightCurrentLine === undefined ? false : options.highlightCurrentLine;
@@ -244,7 +244,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         // A native scroll notification from the preceding drag step can arrive before
         // the next render. Make it observe the current destination, as a real thumb does.
         root.scrollTop = y.toPhysical(top);
-    });
+    }, overview.decorate, overview.lineClass);
     let minimap = options.minimap ? createMinimap() : undefined;
     function mapRowSources(current: DocumentSnapshot | undefined): void {
         if (current?.revision === rowSourceRevision) return;
@@ -483,7 +483,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, tabId: Ta
         const trailingSpace = scrollBeyondLastLine && index.visibleLineCount > 1 ? Math.max(0, height - lineHeight - padding * 2) : 0;
         y = scrollAxis(index.visibleLineCount * lineHeight + padding * 2 + trailingSpace, height);
         top = position(y, top); left = position(x, left);
-        minimap?.paint(document.buffer, index, mapWidth, height, top, y.extent, lineHeight, padding, style.color);
+        minimap?.paint(document, index, mapWidth, height, top, y.extent, lineHeight, padding, style.color,
+            Math.max(1, parseFloat(style.tabSize) || 4), Math.max(2, Math.min(3, win.devicePixelRatio * zoom)), paintEpoch);
         // Presentation-only configuration can repaint guides without reading or rebuilding rows.
         rulers.paint(columns, columnWidth, left, width);
         const { selection: selected, selectionSet } = view.getSnapshot();

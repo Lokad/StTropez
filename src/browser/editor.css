@@ -25,12 +25,22 @@
 }
 .st-viewport-spacer { pointer-events: none; }
 .st-minimap-anchor { position: sticky; top: 0; left: 0; height: 0; z-index: 3; }
-.st-minimap { position: absolute; right: 0; top: 0; overflow: hidden; user-select: none; touch-action: none;
-    cursor: pointer; background: var(--st-background, #131b27); box-shadow: inset 1px 0 var(--st-minimap-border, #79889a66); }
-.st-minimap canvas { display: block; opacity: .58; pointer-events: none; }
-.st-minimap-marker { position: absolute; inset: 0 0 auto; box-sizing: border-box; cursor: grab;
-    border: 1px solid var(--st-minimap-border, #79889a); background: var(--st-minimap-marker, #879eb535); }
-.st-minimap:active .st-minimap-marker { cursor: grabbing; }
+.st-minimap { position: absolute; right: 0; top: 0; overflow: hidden; user-select: none; touch-action: none; cursor: default; }
+.st-minimap-scrollable { cursor: pointer; }
+.st-minimap canvas { display: block; width: 100%; height: 100%; pointer-events: none; }
+.st-minimap-marker { position: absolute; inset: 0 0 auto; box-sizing: border-box; pointer-events: none;
+    border-left: 2px solid var(--st-minimap-border, #859cb5); background: var(--st-minimap-marker, #879eb52b); opacity: .25; }
+.st-minimap-scrollable .st-minimap-marker { pointer-events: auto; opacity: .72; cursor: grab; }
+.st-minimap-scrollable:hover .st-minimap-marker { opacity: 1; }
+.st-minimap-scrollable:active .st-minimap-marker { cursor: grabbing; }
+.st-minimap-preview { position: absolute; z-index: 1; width: max-content; box-sizing: border-box; overflow: hidden;
+    padding: 6px 9px; border: 1px solid var(--st-minimap-border, #70849b); border-radius: 4px;
+    background: var(--st-background, #131b27); color: var(--st-foreground, #e1e7ef); box-shadow: 0 3px 12px #0004;
+    font: 12px/1.45 var(--st-font, ui-monospace, Consolas, monospace); pointer-events: none; }
+.st-minimap-preview strong, .st-minimap-preview span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.st-minimap-preview strong { font-size: 11px; margin-bottom: 3px; }
+.st-minimap-preview span { opacity: .65; }
+.st-minimap-preview .st-minimap-preview-line { opacity: 1; }
 .st-viewport-layer { position: absolute; top: 0; left: 0; overflow: hidden; contain: strict; }
 .st-column-rulers { position: absolute; inset: 0; pointer-events: none; z-index: -1; }
 .st-column-ruler { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--st-column-ruler, #71849c40); }

@@ -2,6 +2,48 @@ import { latch } from "../helpers/latch.ts";
 import { expect, test } from "./fixtures.ts";
 import { runDemoHostIntegrations } from "./demo-host-integrations.ts";
 import { runDemoDiagnosticRetention } from "./demo-diagnostics.ts";
+import { demoSample } from "../../examples/demo/samples.ts";
+
+test("minimap shows compact colored code and previews the destination before a jump", async ({ page, baseURL }, info) => {
+    await page.goto(baseURL!);
+    const root = page.locator("#editor .st-viewport"), track = root.locator(".st-minimap");
+    await page.locator("#view-menu summary").click(); await page.locator("#view-minimap").check();
+    await page.locator("#view-menu summary").press("Escape");
+    const short = (await track.boundingBox())!;
+    expect(short.height).toBeLessThan((await root.boundingBox())!.height / 4);
+    await page.locator("#sample").selectOption("shipping");
+    await expect(page.locator("#analysis-status")).toContainText("syntax & emit", { timeout: 30000 });
+    // Count the actual syntax foregrounds in the thumbnail, independently of the source DOM.
+    await expect.poll(() => track.locator("canvas").evaluate(element => {
+        const c = element as HTMLCanvasElement;
+        if (!c.width) return false;
+        const pixels = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+        let keyword = false, string = false;
+        for (let i = 0; i < pixels.length; i += 4) {
+            if (pixels[i + 3]! < 100) continue;
+            const r = pixels[i]!, g = pixels[i + 1]!, b = pixels[i + 2]!;
+            if (b > g + 45 && r > g + 15) keyword = true;
+            if (g > r + 25 && g > b + 35) string = true;
+        }
+        return keyword && string;
+    })).toBe(true);
+    const lines = demoSample("shipping").files["shipping.ts"]!.split("\n");
+    const row = lines.findIndex(line => line.startsWith("function shippingQuotes"));
+    const map = (await track.boundingBox())!, pointer = { x: 12, y: Math.round((row + 1) * map.height / (lines.length + 1)) };
+    await track.hover({ position: pointer });
+    const preview = root.locator(".st-minimap-preview");
+    await expect(preview.locator("strong")).toHaveText("Line " + (row + 1));
+    await expect(preview.locator(".st-minimap-preview-line")).toHaveText(lines[row]!);
+    await info.attach("minimap-destination", { body: await page.screenshot(), contentType: "image/png" });
+    await track.click({ position: pointer });
+    await expect(preview).toBeHidden();
+    await expect.poll(() => root.evaluate((el, line) => {
+        const target = el.querySelector(`.st-viewport-row[data-line="${line}"]`);
+        if (!target) return Infinity;
+        const source = el.getBoundingClientRect(), row = target.getBoundingClientRect();
+        return Math.abs(row.top + row.height / 2 - source.top - el.clientHeight / 2) / row.height;
+    }, row)).toBeLessThan(1.5);
+});
 
 test("view controls survive file switches and saved-reference replacement in both review panes", async ({ page, baseURL }, info) => {
     await page.setViewportSize({ width: 2000, height: 1000 }); await page.goto(baseURL!);

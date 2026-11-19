@@ -13,7 +13,7 @@ export function cssZoom(element: Element): number {
 }
 
 export function minimapWidth(clientWidth: number): number {
-    return Math.min(72, Math.floor(clientWidth * .18));
+    return Math.min(112, Math.floor(clientWidth * .18));
 }
 
 export function clientBox(element: HTMLElement, minimap = false) {

@@ -74,13 +74,20 @@ highlight; secondary carets do not add highlights. Each view has independent set
 Use `--st-column-ruler`, `--st-current-line` and `--st-current-line-border` for their colors.
 Host `font-feature-settings` can override individual ligature features.
 
-The minimap reserves space at the right of the text area. It samples indentation, words and
-blank space from bounded line prefixes across the visual rows. Collapsed lines disappear
-from the overview and comparison alignment gaps appear blank. The marker follows scrolling,
-edits and resizing. It fills the track when all rows fit and keeps a minimum grab height on
-long documents. Click outside the marker to jump or drag it to scroll while preserving focus,
-horizontal position and the complete selection. Use `--st-minimap-border` and
-`--st-minimap-marker` to style the marker outline and fill.
+The minimap draws a compact thumbnail at the right of the text area. Short files occupy only
+the height of their miniature text. Longer files fit the track by sampling bounded line
+prefixes across the entire folded or aligned document. When enabled, the minimap also calls
+`decorate` and `lineClass` for those samples. It reads foreground colors from the returned
+inline CSS classes and backgrounds from row classes. A read-only view uses the same rules.
+Collapsed lines disappear and alignment gaps stay blank. Call `invalidate()` after changing
+theme or decorations. The thumbnail refreshes in batches and keeps its previous complete
+image until the new one is ready.
+
+Hover over a scrollable thumbnail to see the source line number and nearby text. Click
+outside the marker to center that location or drag the marker to scroll. Both gestures
+preserve focus, horizontal position and the complete selection. The marker covers the
+thumbnail when the document fits. Long documents keep a minimum grab height. Use
+`--st-minimap-border` and `--st-minimap-marker` for the marker edge and fill.
 
 ### Scrolling and saved views
 
